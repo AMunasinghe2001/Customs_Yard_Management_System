@@ -15,35 +15,36 @@ class PackagesScreen extends ConsumerStatefulWidget {
 }
 
 class _PackagesScreenState extends ConsumerState<PackagesScreen> {
-  // ── SR Quick Search state ──────────────────────────────────────
-  final _srSearchCtrl = TextEditingController();
-  bool _srSearching = false;
+  final _tableSearchCtrl = TextEditingController();
   PackageModel? _srResult;
   String? _srError;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _tableSearchCtrl.text = ref.read(packageSearchProvider);
+    });
+  }
+
+  @override
   void dispose() {
-    _srSearchCtrl.dispose();
+    _tableSearchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _searchBySr() async {
-    final sr = _srSearchCtrl.text.trim();
-    if (sr.isEmpty) return;
-    setState(() { _srSearching = true; _srResult = null; _srError = null; });
-    try {
-      final packages = await ref.read(livePackagesProvider.future);
-      final match = packages.where(
-        (p) => p.srNumber.toLowerCase() == sr.toLowerCase()).firstOrNull;
-      setState(() {
-        _srResult = match;
-        _srError = match == null ? 'No package found for SR: "$sr"' : null;
-      });
-    } catch (e) {
-      setState(() => _srError = 'Error: $e');
-    } finally {
-      setState(() => _srSearching = false);
+  void _onSrSubmitted(String val) {
+    final sr = val.trim();
+    if (sr.isEmpty) {
+      setState(() { _srResult = null; _srError = null; });
+      return;
     }
+    final packages = ref.read(livePackagesProvider).valueOrNull ?? [];
+    final match = packages.where((p) => p.srNumber.toLowerCase().contains(sr.toLowerCase())).firstOrNull;
+    setState(() {
+      _srResult = match;
+      _srError = match == null ? 'No package found matching: "$sr"' : null;
+    });
   }
 
   @override
@@ -90,25 +91,83 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   const Gap(12),
                   Row(children: [
                     Expanded(
-                      child: TextField(
-                        controller: _srSearchCtrl,
-                        decoration: InputDecoration(
-                          hintText: 'Enter SR number (e.g. GL 1/SR/01/2025)',
-                          prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
-                          isDense: true,
-                        ),
-                        onSubmitted: (_) => _searchBySr(),
-                      ),
-                    ),
-                    const Gap(12),
-                    SizedBox(
-                      height: 48,
-                      child: ElevatedButton.icon(
-                        icon: _srSearching
-                            ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
-                            : const Icon(Icons.search_rounded, size: 18),
-                        label: const Text('Search'),
-                        onPressed: _srSearching ? null : _searchBySr,
+                      child: Autocomplete<PackageModel>(
+                        displayStringForOption: (p) => p.srNumber,
+                        optionsBuilder: (textEditingValue) {
+                          final query = textEditingValue.text.trim().toLowerCase();
+                          if (query.isEmpty) return const [];
+                          final packages = ref.read(livePackagesProvider).valueOrNull ?? [];
+                          return packages.where((p) => p.srNumber.toLowerCase().contains(query));
+                        },
+                        onSelected: (package) {
+                          setState(() {
+                            _srResult = package;
+                            _srError = null;
+                          });
+                        },
+                        optionsViewBuilder: (context, onSelected, options) {
+                          return Align(
+                            alignment: Alignment.topLeft,
+                            child: Material(
+                              color: Colors.transparent,
+                              child: Container(
+                                width: 350,
+                                margin: const EdgeInsets.only(top: 8),
+                                decoration: BoxDecoration(
+                                  color: context.colors.surfaceDark,
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: context.colors.borderColor),
+                                  boxShadow: [
+                                    BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))
+                                  ],
+                                ),
+                                child: ListView.builder(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  shrinkWrap: true,
+                                  itemCount: options.length,
+                                  itemBuilder: (context, index) {
+                                    final option = options.elementAt(index);
+                                    return InkWell(
+                                      onTap: () => onSelected(option),
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                        child: Text(option.srNumber, style: TextStyle(color: context.colors.textPrimary)),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                          return TextField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            style: TextStyle(color: context.colors.textPrimary),
+                            decoration: InputDecoration(
+                              hintText: 'Enter SR number (e.g. GL 1/SR/01/2025)',
+                              prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
+                              suffixIcon: controller.text.isNotEmpty
+                                  ? IconButton(
+                                      icon: Icon(Icons.clear_rounded, color: context.colors.textMuted),
+                                      onPressed: () {
+                                        controller.clear();
+                                        setState(() { _srResult = null; _srError = null; });
+                                      },
+                                    )
+                                  : null,
+                              isDense: true,
+                            ),
+                            onChanged: (v) {
+                              setState(() {}); // to show/hide clear button
+                              if (v.trim().isEmpty) {
+                                setState(() { _srResult = null; _srError = null; });
+                              }
+                            },
+                            onSubmitted: (v) => _onSrSubmitted(v),
+                          );
+                        },
                       ),
                     ),
                   ]),
@@ -139,9 +198,27 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               // ── Filter Bar ──────────────────────────────────────
               Row(children: [
                 Expanded(child: TextField(
-                  decoration: InputDecoration(hintText: 'Search SR # or consignee...',
-                      prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted), isDense: true),
-                  onChanged: (v) => ref.read(packageSearchProvider.notifier).state = v,
+                  controller: _tableSearchCtrl,
+                  style: TextStyle(color: context.colors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Search SR # or consignee...',
+                    prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
+                    suffixIcon: _tableSearchCtrl.text.isNotEmpty
+                        ? IconButton(
+                            icon: Icon(Icons.clear_rounded, color: context.colors.textMuted),
+                            onPressed: () {
+                              _tableSearchCtrl.clear();
+                              ref.read(packageSearchProvider.notifier).state = '';
+                              setState(() {});
+                            },
+                          )
+                        : null,
+                    isDense: true,
+                  ),
+                  onChanged: (v) {
+                    ref.read(packageSearchProvider.notifier).state = v;
+                    setState(() {}); // to show/hide clear button
+                  },
                 )),
                 const Gap(12),
                 ...['all', 'detained', 'forfeited', 'pending'].map((s) => Padding(

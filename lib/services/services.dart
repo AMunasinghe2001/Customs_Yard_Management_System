@@ -10,19 +10,34 @@ final authServiceProvider = Provider((ref) => AuthService());
 class AuthService {
   Future<ProfileModel?> signIn(String email, String password) async {
     try {
+      print('DEBUG: AuthService.signIn attempting for: "$email" (Length: ${email.length})');
       final response = await supabase.auth.signInWithPassword(
-        email: email, password: password,
+        email: email.trim(), // Robust trimming for email
+        password: password,
       );
+      print('DEBUG: Auth response received. User ID: ${response.user?.id}');
       if (response.user == null) return null;
       final profileData = await supabase.from('profiles').select().eq('id', response.user!.id).single();
-      return ProfileModel.fromJson(profileData);
+      final profile = ProfileModel.fromJson(profileData);
+      print('DEBUG: Profile fetched: ${profile.fullName}, isAdmin: ${profile.isAdmin}, isActive: ${profile.isActive}');
+      
+      if (!profile.isActive) {
+        print('DEBUG: AuthService.signIn - Account is deactivated for: ${profile.fullName}');
+        await signOut();
+        throw Exception('account_deactivated');
+      }
+      return profile;
     } on AuthApiException catch (e) {
+      print('DEBUG: AuthService.signIn AuthApiException: $e');
       if (e.statusCode == '400' && e.message.contains('email_not_confirmed')) {
         throw Exception('email_not_confirmed');
       }
       if (e.message.contains('Invalid login credentials')) {
         throw Exception('invalid_credentials');
       }
+      rethrow;
+    } catch (e) {
+      print('DEBUG: AuthService.signIn general error: $e');
       rethrow;
     }
   }
@@ -215,7 +230,15 @@ class CustomsRulesService {
   }
 
   Future<void> toggleRule(String id, bool isActive) async {
-    await supabase.from('customs_rules').update({'is_active': isActive}).eq('id', id);
+    print('DEBUG: Toggling rule $id to $isActive');
+    final response = await supabase.from('customs_rules')
+        .update({'is_active': isActive})
+        .eq('id', id)
+        .select();
+    if (response.isEmpty) {
+      print('DEBUG: toggleRule FAILED - No rows updated for ID: $id. Check RLS policies.');
+      throw Exception('Update failed. You may not have permission to change this rule.');
+    }
   }
 
   Future<void> deleteRule(String id) async {
@@ -272,7 +295,7 @@ class AdminService {
     return data.map((e) => ProfileModel.fromJson(e)).toList();
   }
 
-  /// Create officer/admin — checks for duplicate email first
+  /// Create officer/admin — relies on Auth to reject duplicate emails
   Future<void> createOfficer({
     required String email,
     required String password,
@@ -280,16 +303,7 @@ class AdminService {
     required String badgeNumber,
     required String role,
   }) async {
-    // Check if this email already exists in profiles
-    final existing = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-    if (existing != null) {
-      throw Exception('already_registered');
-    }
-
+    print('DEBUG: Creating officer with email: "$email"');
     final response = await supabase.auth.signUp(
       email: email,
       password: password,
@@ -301,20 +315,31 @@ class AdminService {
       try {
         await supabase.from('profiles').upsert({
           'id': response.user!.id,
-          'email': email,
           'full_name': fullName,
           'badge_number': badgeNumber,
           'role': role,
           'is_active': true,
         });
-      } catch (_) {
+      } catch (e) {
+        print('DEBUG: createOfficer profile sync error: $e');
         // Profile may already be created by trigger — ignore
       }
+    } else {
+      print('DEBUG: createOfficer no user returned in response');
+      throw Exception('Already registered or unable to register this email.');
     }
   }
 
   Future<void> toggleUserStatus(String profileId, bool isActive) async {
-    await supabase.from('profiles').update({'is_active': isActive}).eq('id', profileId);
+    print('DEBUG: Toggling user $profileId to $isActive');
+    final response = await supabase.from('profiles')
+        .update({'is_active': isActive})
+        .eq('id', profileId)
+        .select();
+    if (response.isEmpty) {
+      print('DEBUG: toggleUserStatus FAILED - No rows updated for ID: $profileId. Check RLS policies.');
+      throw Exception('Update failed. You may not have permission to change this user status.');
+    }
   }
 
   Future<void> updateProfile(String id, {String? fullName, String? badgeNumber, String? role}) async {

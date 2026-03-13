@@ -21,11 +21,14 @@ class HomeScreen extends ConsumerWidget {
             child: _GlowBlob(color: context.colors.primaryGold.withOpacity(0.12), size: 320)),
         Positioned(top: 24, right: 24,
             child: IconButton(
-              icon: Icon(ref.watch(themeModeProvider) == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, color: context.colors.textSecondary),
+              icon: Icon(ref.watch(themeModeProvider) == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, 
+                  color: context.colors.textPrimary),
               tooltip: 'Toggle Theme',
               onPressed: () {
                 final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
-                ref.read(themeModeProvider.notifier).state = isDark ? ThemeMode.light : ThemeMode.dark;
+                final nextMode = isDark ? ThemeMode.light : ThemeMode.dark;
+                print('DEBUG: HomeScreen toggling theme. Current isDark: $isDark, nextMode: $nextMode');
+                ref.read(themeModeProvider.notifier).state = nextMode;
               },
             ),
         ),
@@ -37,12 +40,13 @@ class HomeScreen extends ConsumerWidget {
               child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
                 const Spacer(),
                 // Logo
-                SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 160, height: 160,
-                  colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                SvgPicture.asset(
+                  'Sri_Lanka_Customs_logo.svg', 
+                  width: 160, height: 160,
                 ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
                 const Gap(20),
-                const Text('Sri Lanka Customs',
-                  style: TextStyle(color: Colors.white, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 1.2),
+                Text('Sri Lanka Customs',
+                  style: TextStyle(color: context.colors.customsBlue, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 1.2),
                 ).animate().slideY(begin: 0.4, duration: 500.ms, delay: 200.ms).fadeIn(),
                 const Gap(6),
                 Text('Yard Management System',

@@ -26,8 +26,9 @@ class CustomsApp extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final router = ref.watch(routerProvider);
     final themeMode = ref.watch(themeModeProvider);
+    print('DEBUG: CustomsApp building with themeMode: $themeMode');
+    final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: 'Sri Lanka Customs - Yard Management',
       theme: AppTheme.lightTheme,

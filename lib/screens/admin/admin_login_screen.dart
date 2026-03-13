@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -22,6 +23,38 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   bool _obscurePassword = true;
   bool _isLoading = false;
   String? _error;
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    final savedEmail = prefs.getString('admin_saved_email') ?? '';
+    final savedPass = prefs.getString('admin_saved_password') ?? '';
+    print('DEBUG: AdminLoginScreen loaded credentials. Email length: ${savedEmail.length}');
+    setState(() {
+      _emailCtrl.text = savedEmail;
+      _passwordCtrl.text = savedPass;
+      _rememberMe = prefs.getBool('admin_remember_me') ?? false;
+    });
+  }
+
+  Future<void> _saveCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setString('admin_saved_email', _emailCtrl.text.trim());
+      await prefs.setString('admin_saved_password', _passwordCtrl.text);
+      await prefs.setBool('admin_remember_me', true);
+    } else {
+      await prefs.remove('admin_saved_email');
+      await prefs.remove('admin_saved_password');
+      await prefs.setBool('admin_remember_me', false);
+    }
+  }
 
   @override
   void dispose() { _emailCtrl.dispose(); _passwordCtrl.dispose(); super.dispose(); }
@@ -43,6 +76,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
         await supabase.auth.signOut();
         setState(() => _error = 'Account is disabled. Contact super admin.'); return;
       }
+      await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;
       if (mounted) context.go('/admin');
     } catch (e) {
@@ -60,6 +94,9 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
     if (raw.contains('too many requests') || raw.contains('over_email_send_rate_limit')) {
       return 'Too many attempts. Please wait a moment and try again.';
     }
+    if (raw.contains('account_deactivated')) {
+      return 'Your account has been deactivated. Please contact another administrator.';
+    }
     return 'Sign in failed. Please check your credentials.';
   }
 
@@ -67,7 +104,8 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
-      body: Row(children: [
+      body: Stack(children: [
+        Row(children: [
         // Left - Dark Admin Branding (navy)
         Expanded(flex: 5, child: Container(
           decoration: BoxDecoration(
@@ -81,7 +119,6 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             SvgPicture.asset(
               'Sri_Lanka_Customs_logo.svg',
               width: 200, height: 200,
-              colorFilter: ColorFilter.mode(context.colors.primaryGold, BlendMode.srcIn),
             ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
             const Gap(36),
             Text('Sri Lanka Customs',
@@ -108,7 +145,6 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             ).animate().fadeIn(delay: 300.ms),
           ]),
         )),
-
         // Right - Admin Login form
         Expanded(flex: 4, child: Center(
           child: Container(
@@ -175,7 +211,20 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                   validator: (v) => v == null || v.isEmpty ? 'Password required' : null,
                   onFieldSubmitted: (_) => _signIn(),
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
-                const Gap(32),
+                const Gap(12),
+                Row(children: [
+                  SizedBox(
+                    width: 24, height: 24,
+                    child: Checkbox(
+                      value: _rememberMe,
+                      activeColor: context.colors.primaryGold,
+                      onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                    ),
+                  ),
+                  const Gap(8),
+                  Text('Remember me', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+                ]).animate().fadeIn(delay: 350.ms),
+                const Gap(24),
                 SizedBox(height: 54, child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: context.colors.primaryGold,
@@ -207,6 +256,17 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
           ),
         )),
       ]),
+      Positioned(top: 24, right: 24,
+        child: IconButton(
+          icon: Icon(ref.watch(themeModeProvider) == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, 
+              color: context.colors.textPrimary),
+          onPressed: () {
+            final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
+            ref.read(themeModeProvider.notifier).state = isDark ? ThemeMode.light : ThemeMode.dark;
+          },
+        ),
+      ),
+    ]),
     );
   }
 }

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -20,6 +21,35 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscurePassword = true;
+  bool _rememberMe = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSavedCredentials();
+  }
+
+  Future<void> _loadSavedCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _emailCtrl.text = prefs.getString('saved_email') ?? '';
+      _passwordCtrl.text = prefs.getString('saved_password') ?? '';
+      _rememberMe = prefs.getBool('remember_me') ?? false;
+    });
+  }
+
+  Future<void> _saveCredentials() async {
+    final prefs = await SharedPreferences.getInstance();
+    if (_rememberMe) {
+      await prefs.setString('saved_email', _emailCtrl.text.trim());
+      await prefs.setString('saved_password', _passwordCtrl.text);
+      await prefs.setBool('remember_me', true);
+    } else {
+      await prefs.remove('saved_email');
+      await prefs.remove('saved_password');
+      await prefs.setBool('remember_me', false);
+    }
+  }
 
   @override
   void dispose() { _emailCtrl.dispose(); _passwordCtrl.dispose(); super.dispose(); }
@@ -41,6 +71,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         await supabase.auth.signOut();
         ref.read(loginErrorProvider.notifier).state = 'Admin accounts must use the Admin Sign In.'; return;
       }
+      await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;
       if (mounted) context.go('/dashboard');
     } catch (e) {
@@ -58,6 +89,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (raw.contains('too many requests') || raw.contains('over_email_send_rate_limit')) {
       return 'Too many attempts. Please wait a moment and try again.';
     }
+    if (raw.contains('account_deactivated')) {
+      return 'Your account has been deactivated. Please contact an administrator.';
+    }
     return 'Sign in failed. Please check your credentials.';
   }
 
@@ -68,7 +102,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
-      body: Row(children: [
+      body: Stack(children: [
+        Row(children: [
         // Left – branding
         Expanded(flex: 5, child: Container(
           decoration: BoxDecoration(
@@ -79,7 +114,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 200, height: 200,
-              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
             ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
             const Gap(36),
             const Text('Sri Lanka Customs',
@@ -104,7 +138,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ]),
         )),
-
         // Right – login form
         Expanded(flex: 4, child: Center(
           child: Container(
@@ -169,7 +202,20 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   validator: (v) => v == null || v.isEmpty ? 'Password required' : null,
                   onFieldSubmitted: (_) => _signIn(),
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
-                const Gap(32),
+                const Gap(12),
+                Row(children: [
+                  SizedBox(
+                    width: 24, height: 24,
+                    child: Checkbox(
+                      value: _rememberMe,
+                      activeColor: context.colors.accentLightBlue,
+                      onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                    ),
+                  ),
+                  const Gap(8),
+                  Text('Remember me', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+                ]).animate().fadeIn(delay: 350.ms),
+                const Gap(24),
                 SizedBox(height: 54, child: ElevatedButton(
                   onPressed: isLoading ? null : _signIn,
                   child: isLoading
@@ -192,6 +238,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
         )),
       ]),
-    );
+      Positioned(top: 24, right: 24,
+        child: IconButton(
+          icon: Icon(ref.watch(themeModeProvider) == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, 
+              color: context.colors.textPrimary),
+          onPressed: () {
+            final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
+            ref.read(themeModeProvider.notifier).state = isDark ? ThemeMode.light : ThemeMode.dark;
+          },
+        ),
+      ),
+    ]),
+  );
   }
 }
