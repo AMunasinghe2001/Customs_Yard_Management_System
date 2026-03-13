@@ -143,6 +143,9 @@ class AppTheme {
   static const Color _textMutedDark = Color(0xFF78909C);
 
   // Backward-compatible aliases used by older screens
+  static const Color customsBlue = _customsBlue;
+  static const Color customsBlueDark = _customsBlueDark;
+  static const Color customsBlueLight = _customsBlueLight;
   static const Color primaryNavy = _primaryNavy;
   static const Color accentBlue = _accentBlue;
   static const Color accentLightBlue = _accentLightBlue;
