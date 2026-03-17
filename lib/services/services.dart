@@ -206,6 +206,14 @@ class WarehouseService {
     return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
   }
 
+  Future<List<WarehouseEntryModel>> getAllWarehouseEntries({bool? isReturned}) async {
+    var query = supabase.from('warehouse_entries')
+        .select('*, warehouses(*), packages(*)');
+    if (isReturned != null) query = query.eq('is_returned', isReturned);
+    final data = await query.order('admitted_at', ascending: false);
+    return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
+  }
+
   Future<void> addEntry({
     required String packageId,
     required String warehouseId,

@@ -39,18 +39,18 @@ class ReportService {
   }
 
   /// Generates a PDF report for warehouse entries
-  Future<void> generateWarehousePdf(List<WarehouseEntryModel> entries, {String? title}) async {
+  Future<void> generateWarehousePdf(List<WarehouseEntryModel> entries, {String? title, bool isReturnedReport = false}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: PdfPageFormat.a4.landscape, // Use landscape for more columns
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader(title ?? 'Warehouse Status Report', dateStr),
+          _buildHeader(title ?? (isReturnedReport ? 'Returned Packages Report' : 'Warehouse Status Report'), dateStr),
           pw.SizedBox(height: 20),
-          _buildWarehouseTable(entries),
+          _buildWarehouseTable(entries, isReturnedReport: isReturnedReport),
           pw.SizedBox(height: 20),
           _buildFooter(entries.length),
         ],
@@ -59,12 +59,118 @@ class ReportService {
 
     await Printing.layoutPdf(
       onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: '${title?.replaceAll(' ', '_') ?? 'Warehouse_Report'}_$dateStr.pdf',
+      name: '${(title ?? 'Warehouse_Report').replaceAll(' ', '_')}_$dateStr.pdf',
     );
   }
 
-  /// Exports package data to Excel
-  Future<void> exportPackagesToExcel(List<PackageModel> packages) async {
+  /// Generates a summary report PDF
+  Future<void> generateSummaryReportPdf({
+    required String title,
+    required List<Map<String, dynamic>> summaryData,
+    required String periodLabel,
+  }) async {
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          _buildHeader(title, dateStr),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headers: [periodLabel, 'Admitted', 'Returned', 'Net Change'],
+            data: summaryData.map((d) => [
+              d['period'],
+              d['admitted'].toString(),
+              d['returned'].toString(),
+              (d['admitted'] - d['returned']).toString(),
+            ]).toList(),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+            cellAlignments: {
+              0: pw.Alignment.centerLeft,
+              1: pw.Alignment.center,
+              2: pw.Alignment.center,
+              3: pw.Alignment.center,
+            },
+          ),
+          pw.SizedBox(height: 20),
+          _buildFooter(summaryData.length, label: 'Total Periods:'),
+        ],
+      ),
+    );
+
+    await Printing.layoutPdf(
+      onLayout: (PdfPageFormat format) async => pdf.save(),
+      name: '${title.replaceAll(' ', '_')}_$dateStr.pdf',
+    );
+  }
+
+  /// Exports warehouse data to Excel bytes
+  Future<Uint8List?> exportWarehouseToExcel(List<WarehouseEntryModel> entries, {bool isReturned = false}) async {
+    var excel = Excel.createExcel();
+    Sheet sheetObject = excel[isReturned ? 'Returned' : 'In_Warehouse'];
+    excel.delete('Sheet1');
+
+    // Add Headers
+    List<String> headers = [
+      'SR Number', 'Consignee', 'Warehouse', 'Admitted At', 'Reason', 'Items'
+    ];
+    if (isReturned) {
+      headers.addAll(['Returned At', 'Return Notes']);
+    }
+    
+    sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
+
+    // Add Data
+    for (var e in entries) {
+      List<CellValue> row = [
+        TextCellValue(e.srNumber ?? ''),
+        TextCellValue(e.consigneeName ?? ''),
+        TextCellValue(e.warehouseCode),
+        TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(e.admittedAt)),
+        TextCellValue(e.holdReason),
+        IntCellValue(e.itemCount),
+      ];
+      if (isReturned) {
+        row.add(TextCellValue(e.returnedAt != null ? DateFormat('yyyy-MM-dd HH:mm').format(e.returnedAt!) : ''));
+        row.add(TextCellValue(e.returnNotes ?? ''));
+      }
+      sheetObject.appendRow(row);
+    }
+
+    return Uint8List.fromList(excel.encode()!);
+  }
+
+  /// Exports summary data to Excel bytes
+  Future<Uint8List?> exportSummaryToExcel(List<Map<String, dynamic>> summaryData, String periodLabel) async {
+    var excel = Excel.createExcel();
+    Sheet sheetObject = excel['Summary'];
+    excel.delete('Sheet1');
+
+    sheetObject.appendRow([
+      TextCellValue(periodLabel),
+      TextCellValue('Admitted'),
+      TextCellValue('Returned'),
+      TextCellValue('Net Change')
+    ]);
+
+    for (var d in summaryData) {
+      sheetObject.appendRow([
+        TextCellValue(d['period'].toString()),
+        IntCellValue(d['admitted']),
+        IntCellValue(d['returned']),
+        IntCellValue(d['admitted'] - d['returned']),
+      ]);
+    }
+
+    return Uint8List.fromList(excel.encode()!);
+  }
+
+  /// Exports package data to Excel bytes
+  Future<Uint8List?> exportPackagesToExcel(List<PackageModel> packages) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['Packages'];
     excel.delete('Sheet1');
@@ -92,17 +198,7 @@ class ReportService {
       ]);
     }
 
-    final bytes = excel.save();
-    if (bytes != null) {
-      final directory = await getApplicationDocumentsDirectory();
-      final dateStr = DateFormat('yyyyMMdd_HHmm').format(DateTime.now());
-      final filePath = '${directory.path}/Package_Export_$dateStr.xlsx';
-      final file = File(filePath);
-      await file.writeAsBytes(bytes);
-      
-      // Since it's a desktop app, we can just let the user know where it's saved or try to open it
-      // For now, we'll assume the UI will handle showing a success message with path.
-    }
+    return Uint8List.fromList(excel.encode()!);
   }
 
   pw.Widget _buildHeader(String title, String date) {
@@ -143,35 +239,50 @@ class ReportService {
     );
   }
 
-  pw.Widget _buildWarehouseTable(List<WarehouseEntryModel> entries) {
-    const headers = ['SR No', 'Warehouse', 'Reason', 'Admitted', 'Items'];
+  pw.Widget _buildWarehouseTable(List<WarehouseEntryModel> entries, {bool isReturnedReport = false}) {
+    final headers = [
+      'SR No', 'Consignee', 'Warehouse', 'Reason', 'Admitted', 'Items'
+    ];
+    if (isReturnedReport) {
+      headers.add('Returned');
+    }
 
     return pw.TableHelper.fromTextArray(
       headers: headers,
-      data: entries.map((e) => [
-        e.srNumber ?? '-',
-        e.warehouseCode,
-        e.holdReason,
-        DateFormat('yyyy-MM-dd').format(e.admittedAt),
-        e.itemCount.toString(),
-      ]).toList(),
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+      data: entries.map((e) {
+        final row = [
+          e.srNumber ?? '-',
+          e.consigneeName ?? '-',
+          e.warehouseCode,
+          e.holdReason,
+          DateFormat('yyyy-MM-dd').format(e.admittedAt),
+          e.itemCount.toString(),
+        ];
+        if (isReturnedReport) {
+          row.add(e.returnedAt != null ? DateFormat('yyyy-MM-dd').format(e.returnedAt!) : '-');
+        }
+        return row;
+      }).toList(),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+      cellStyle: const pw.TextStyle(fontSize: 9),
       headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
-      cellHeight: 25,
+      cellHeight: 20,
       cellAlignments: {
         0: pw.Alignment.centerLeft,
-        1: pw.Alignment.center,
-        2: pw.Alignment.centerLeft,
-        3: pw.Alignment.center,
+        1: pw.Alignment.centerLeft,
+        2: pw.Alignment.center,
+        3: pw.Alignment.centerLeft,
         4: pw.Alignment.center,
+        5: pw.Alignment.center,
+        6: pw.Alignment.center,
       },
     );
   }
 
-  pw.Widget _buildFooter(int count) {
+  pw.Widget _buildFooter(int count, {String label = 'Total Records:'}) {
     return pw.Container(
       alignment: pw.Alignment.centerRight,
-      child: pw.Text('Total Records: $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+      child: pw.Text('$label $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
     );
   }
 }
