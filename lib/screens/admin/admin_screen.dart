@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
@@ -18,7 +19,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 3,
+        length: 4,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
           body: Column(
@@ -46,6 +47,7 @@ class AdminScreen extends ConsumerWidget {
                         unselectedLabelColor: context.colors.textMuted,
                         indicatorColor: context.colors.primaryGold,
                         tabs: const [
+                          Tab(icon: Icon(Icons.dashboard_rounded), text: 'Overview'),
                           Tab(icon: Icon(Icons.people_rounded), text: 'Officers'),
                           Tab(icon: Icon(Icons.gavel_rounded), text: 'Customs Rules'),
                           Tab(icon: Icon(Icons.history_toggle_off_rounded), text: 'Activity Logs'),
@@ -57,9 +59,226 @@ class AdminScreen extends ConsumerWidget {
                 ),
               ),
               const Gap(4),
-              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _LogsTab()])),
+              const Expanded(child: TabBarView(children: [_DashboardTab(), _OfficersTab(), _RulesTab(), _LogsTab()])),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Dashboard Tab ──────────────────────────────────────────────
+
+class _DashboardTab extends ConsumerWidget {
+  const _DashboardTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final profiles = ref.watch(allProfilesProvider);
+    final online = ref.watch(onlineProfilesProvider);
+    final rules = ref.watch(allRulesProvider);
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              _buildStatCard(
+                context,
+                'Total Officers',
+                profiles.maybeWhen(data: (d) => d.length.toString(), orElse: () => '...'),
+                Icons.people_alt_rounded,
+                context.colors.accentBlue,
+              ),
+              const Gap(16),
+              _buildStatCard(
+                context,
+                'Online Now',
+                online.maybeWhen(data: (d) => d.length.toString(), orElse: () => '...'),
+                Icons.online_prediction_rounded,
+                context.colors.successGreen,
+              ),
+              const Gap(16),
+              _buildStatCard(
+                context,
+                'Active Rules',
+                rules.maybeWhen(data: (d) => d.where((r) => r.isActive).length.toString(), orElse: () => '...'),
+                Icons.gavel_rounded,
+                context.colors.warningAmber,
+              ),
+            ],
+          ).animate().fadeIn().slideY(begin: 0.1),
+          const Gap(28),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Online Officers List
+              Expanded(
+                flex: 3,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Officers Currently Logged In', 
+                        style: TextStyle(color: context.colors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Gap(12),
+                    Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: context.colors.cardDark,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: context.colors.borderColor),
+                      ),
+                      child: online.when(
+                        loading: () => const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())),
+                        error: (e, _) => Center(child: Text('Error: $e')),
+                        data: (list) => list.isEmpty 
+                          ? const _EmptyOnline() 
+                          : ListView.separated(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: list.length,
+                              separatorBuilder: (_, __) => Divider(height: 1, color: context.colors.borderColor, indent: 60),
+                              itemBuilder: (ctx, i) => _OnlineMemberTile(profile: list[i]),
+                            ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Gap(28),
+              // Quick Shortcuts
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Quick Shortcuts', 
+                        style: TextStyle(color: context.colors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Gap(12),
+                    _buildShortcut(context, 'Register Officer', Icons.person_add_rounded, () {
+                      DefaultTabController.of(context).animateTo(1);
+                    }),
+                    const Gap(12),
+                    _buildShortcut(context, 'Customs Rules', Icons.gavel_rounded, () {
+                      DefaultTabController.of(context).animateTo(2);
+                    }),
+                    const Gap(12),
+                    _buildShortcut(context, 'System Audit Logs', Icons.history_rounded, () {
+                      DefaultTabController.of(context).animateTo(3);
+                    }),
+                    const Gap(12),
+                    _buildShortcut(context, 'Generate Reports', Icons.summarize_rounded, () {
+                      context.go('/reports');
+                    }, color: context.colors.primaryGold),
+                  ],
+                ),
+              ),
+            ],
+          ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatCard(BuildContext context, String label, String value, IconData icon, Color color) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: context.colors.cardDark,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: context.colors.borderColor),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: color, size: 24),
+            ),
+            const Gap(16),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: TextStyle(color: context.colors.textMuted, fontSize: 12, fontWeight: FontWeight.w500)),
+                Text(value, style: TextStyle(color: context.colors.textPrimary, fontSize: 24, fontWeight: FontWeight.bold)),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildShortcut(BuildContext context, String label, IconData icon, VoidCallback onTap, {Color? color}) {
+    final themeColor = color ?? context.colors.accentLightBlue;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+          decoration: BoxDecoration(
+            color: context.colors.cardDark,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: context.colors.borderColor),
+          ),
+          child: Row(
+            children: [
+              Icon(icon, color: themeColor, size: 20),
+              const Gap(12),
+              Text(label, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600)),
+              const Spacer(),
+              Icon(Icons.chevron_right_rounded, color: context.colors.textMuted, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlineMemberTile extends StatelessWidget {
+  final ProfileModel profile;
+  const _OnlineMemberTile({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      leading: CircleAvatar(
+        backgroundColor: context.colors.primaryGold.withOpacity(0.15),
+        child: Text(profile.fullName[0].toUpperCase(), 
+            style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)),
+      ),
+      title: Text(profile.fullName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600)),
+      subtitle: Text('ID: ${profile.badgeNumber ?? "—"} • ${profile.role.toUpperCase()}', 
+          style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
+      trailing: Container(
+        width: 10, height: 10,
+        decoration: BoxDecoration(color: context.colors.successGreen, shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: context.colors.successGreen.withOpacity(0.5), blurRadius: 4, spreadRadius: 1)]),
+      ),
+    );
+  }
+}
+
+class _EmptyOnline extends StatelessWidget {
+  const _EmptyOnline();
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(40),
+      child: Center(
+        child: Column(
+          children: [
+            Icon(Icons.sensors_off_rounded, color: context.colors.textMuted, size: 40),
+            const Gap(12),
+            Text('No officers currently online', style: TextStyle(color: context.colors.textMuted, fontSize: 14)),
+          ],
         ),
       ),
     );

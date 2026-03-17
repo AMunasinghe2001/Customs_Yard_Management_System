@@ -365,6 +365,8 @@ class ProfileModel {
   final String? badgeNumber;
   final String role;
   final bool isActive;
+  final bool isOnline;
+  final DateTime? lastSeenAt;
   final DateTime createdAt;
 
   const ProfileModel({
@@ -373,6 +375,8 @@ class ProfileModel {
     this.badgeNumber,
     required this.role,
     required this.isActive,
+    this.isOnline = false,
+    this.lastSeenAt,
     required this.createdAt,
   });
 
@@ -383,11 +387,26 @@ class ProfileModel {
       badgeNumber: json['badge_number'] as String?,
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
+      isOnline: json['is_online'] as bool? ?? false,
+      lastSeenAt: json['last_seen_at'] != null ? DateTime.tryParse(json['last_seen_at'].toString()) : null,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
 
   bool get isAdmin => role == 'admin';
+
+  ProfileModel copyWithOnline(bool online, DateTime? seenAt) {
+    return ProfileModel(
+      id: id,
+      fullName: fullName,
+      badgeNumber: badgeNumber,
+      role: role,
+      isActive: isActive,
+      isOnline: online,
+      lastSeenAt: seenAt,
+      createdAt: createdAt,
+    );
+  }
 }
 
 class AuditLogModel {

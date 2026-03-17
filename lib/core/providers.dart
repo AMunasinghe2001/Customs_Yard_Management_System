@@ -65,6 +65,24 @@ final warehouseEntriesChangeTriggerProvider = StreamProvider<int>((ref) async* {
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
+// ── Realtime: Profiles Stream ──────────────────────────
+final profilesChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  int tick = 0;
+  yield tick;
+  final channel = supabase.channel('profiles-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'profiles',
+      callback: (_) {
+        tick++;
+        ref.invalidateSelf();
+      },
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
 // ── Shared Data Providers ──────────────────────────────────────
 final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
   return ref.read(warehouseServiceProvider).getWarehouses();
@@ -98,7 +116,20 @@ final liveWarehouseEntriesProvider =
 
 // ── Admin Data Providers ───────────────────────────────────────
 final allProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
+  ref.watch(profilesChangeTriggerProvider);
   return ref.read(adminServiceProvider).getAllProfiles();
+});
+
+final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
+  ref.watch(profilesChangeTriggerProvider);
+  final all = await ref.watch(allProfilesProvider.future);
+  // Consider online if is_online is true AND last_seen_at is within last 5 minutes
+  final now = DateTime.now();
+  return all.where((p) {
+    if (!p.isOnline) return false;
+    if (p.lastSeenAt == null) return false;
+    return now.difference(p.lastSeenAt!).inMinutes < 5;
+  }).toList();
 });
 
 final allRulesProvider = FutureProvider<List<CustomsRule>>((ref) async {

@@ -27,9 +27,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   
   // Track loading state for each button uniquely
   final Map<String, bool> _loadingStates = {};
+  final ScrollController _scrollController = ScrollController();
 
   bool _isLoading(String key) => _loadingStates[key] ?? false;
   void _setLoading(String key, bool val) => setState(() => _loadingStates[key] = val);
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,7 +73,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           
           Expanded(
             child: Scrollbar(
+              controller: _scrollController,
               child: SingleChildScrollView(
+                controller: _scrollController,
                 physics: const ClampingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
                 child: _buildReportCards(),

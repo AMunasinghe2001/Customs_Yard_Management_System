@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -6,6 +7,7 @@ import '../core/theme.dart';
 import '../core/supabase_client.dart';
 import '../core/providers.dart';
 import '../models/models.dart';
+import '../services/services.dart';
 
 class NavItem {
   final String label;
@@ -31,13 +33,42 @@ const _adminNav = [
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];
 
-class AppShell extends ConsumerWidget {
+class AppShell extends ConsumerStatefulWidget {
   final Widget child;
   final String currentRoute;
   const AppShell({super.key, required this.child, required this.currentRoute});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AppShell> createState() => _AppShellState();
+}
+
+class _AppShellState extends ConsumerState<AppShell> {
+  Timer? _heartbeatTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Start heartbeat: update status every 2 minutes
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
+      if (mounted) {
+        ref.read(authServiceProvider).updateHeartbeat();
+      }
+    });
+    
+    // Initial heartbeat
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(authServiceProvider).updateHeartbeat();
+    });
+  }
+
+  @override
+  void dispose() {
+    _heartbeatTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final profile = ref.watch(currentProfileProvider);
     final navItems = profile?.isAdmin == true ? _adminNav : _officerNav;
     final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
@@ -101,8 +132,8 @@ class AppShell extends ConsumerWidget {
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: navItems.map((item) {
                       final isActive = item.route == '/admin' 
-                          ? currentRoute == '/admin' 
-                          : (currentRoute == item.route || (currentRoute.startsWith(item.route) && item.route.length > 1));
+                          ? widget.currentRoute == '/admin' 
+                          : (widget.currentRoute == item.route || (widget.currentRoute.startsWith(item.route) && item.route.length > 1));
                       return _NavTile(item: item, isActive: isActive);
                     }).toList(),
                   ),
@@ -164,7 +195,7 @@ class AppShell extends ConsumerWidget {
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () async {
-                            await supabase.auth.signOut();
+                            await ref.read(authServiceProvider).signOut();
                             ref.read(currentProfileProvider.notifier).state = null;
                             if (context.mounted) context.go('/');
                           },
@@ -176,7 +207,7 @@ class AppShell extends ConsumerWidget {
               ],
             ),
           ),
-          Expanded(child: child),
+          Expanded(child: widget.child),
         ],
       ),
     );

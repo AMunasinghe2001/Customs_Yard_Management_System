@@ -22,10 +22,30 @@ class AuthService {
       print('DEBUG: Profile fetched: ${profile.fullName}, isAdmin: ${profile.isAdmin}, isActive: ${profile.isActive}');
       
       if (!profile.isActive) {
-        print('DEBUG: AuthService.signIn - Account is deactivated for: ${profile.fullName}');
+        print('DEBUG: AuthService.signIn - Account is de-activated for: ${profile.fullName}');
         await signOut();
         throw Exception('account_deactivated');
       }
+
+      // Update online status - WRAPPED in try-catch to prevent blocking login if schema cache is stale
+      try {
+        await supabase.from('profiles').update({
+          'is_online': true,
+          'last_seen_at': DateTime.now().toIso8601String(),
+        }).eq('id', profile.id);
+      } catch (e) {
+        print('DEBUG: AuthService.signIn - Status update failed (schema cache might be stale): $e');
+        // We continue anyway so the user is not blocked
+      }
+
+      // Log login
+      await AuditLogService().recordLog(
+        userId: profile.id,
+        action: 'Signed In',
+        entityType: 'auth',
+        entityId: profile.id,
+      );
+
       return profile;
     } on AuthApiException catch (e) {
       print('DEBUG: AuthService.signIn AuthApiException: $e');
@@ -42,7 +62,25 @@ class AuthService {
     }
   }
 
-  Future<void> signOut() async => await supabase.auth.signOut();
+  Future<void> signOut() async {
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      // Log logout
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Signed Out',
+        entityType: 'auth',
+        entityId: user.id,
+      );
+      // Update online status
+      try {
+        await supabase.from('profiles').update({'is_online': false}).eq('id', user.id);
+      } catch (e) {
+        print('DEBUG: AuthService.signOut - Status update failed: $e');
+      }
+    }
+    await supabase.auth.signOut();
+  }
 
   Future<ProfileModel?> getCurrentProfile() async {
     final user = supabase.auth.currentUser;
@@ -54,6 +92,19 @@ class AuthService {
   }
 
   bool get isLoggedIn => supabase.auth.currentUser != null;
+
+  Future<void> updateHeartbeat() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+    try {
+      await supabase.from('profiles').update({
+        'is_online': true,
+        'last_seen_at': DateTime.now().toIso8601String(),
+      }).eq('id', user.id);
+    } catch (e) {
+      print('DEBUG: updateHeartbeat error: $e');
+    }
+  }
 }
 
 // ── Package Service ──────────────────────────────────────────
