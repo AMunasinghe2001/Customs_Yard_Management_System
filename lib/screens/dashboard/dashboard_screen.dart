@@ -10,6 +10,7 @@ import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
+import 'package:data_table_2/data_table_2.dart';
 
 final dashboardStatsProvider = FutureProvider<Map<String, int>>((ref) async {
   return ref.read(packageServiceProvider).getDashboardStats();
@@ -200,42 +201,37 @@ class _RecentPackagesTable extends StatelessWidget {
       );
     }
     return Container(
+      height: 400, // Fixed height to prevent unbounded height crash and enable sticky headers
       decoration: BoxDecoration(
         color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
         border: Border.all(color: context.colors.borderColor),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: DataTable(
-                  columns: const [
-                    DataColumn(label: Text('SR Number')),
-                    DataColumn(label: Text('Consignee')),
-                    DataColumn(label: Text('Origin')),
-                    DataColumn(label: Text('Items')),
-                    DataColumn(label: Text('Status')),
-                    DataColumn(label: Text('Date')),
-                  ],
-                  rows: packages.map((p) => DataRow(cells: [
-                    DataCell(Text(p.srNumber,
-                        style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                    DataCell(Text(p.consigneeName)),
-                    DataCell(Text(p.originCountry)),
-                    DataCell(Text('${p.totalItemCount}')),
-                    DataCell(StatusChip(status: p.status)),
-                    DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(p.createdAt))),
-                  ])).toList(),
-                ),
-              ),
-            );
-          },
+        child: DataTable2(
+          columnSpacing: 12,
+          horizontalMargin: 12,
+          fixedTopRows: 1,
+          isVerticalScrollBarVisible: true,
+          isHorizontalScrollBarVisible: false,
+          dataRowColor: WidgetStateProperty.all(Colors.transparent),
+          headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+          columns: [
+            DataColumn2(label: Text('SR Number', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.M),
+            DataColumn2(label: Text('Consignee', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
+            DataColumn2(label: Text('Origin', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.M),
+            DataColumn2(label: Text('Items', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 80),
+            DataColumn2(label: Text('Status', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
+            DataColumn2(label: Text('Date', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.M),
+          ],
+          rows: packages.map((p) => DataRow(cells: [
+            DataCell(Text(p.srNumber,
+                style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
+            DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
+            DataCell(Text(p.originCountry, overflow: TextOverflow.ellipsis)),
+            DataCell(Text('${p.totalItemCount}')),
+            DataCell(StatusChip(status: p.status)),
+            DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(p.createdAt))),
+          ])).toList(),
         ),
-      ),
     );
   }
 }

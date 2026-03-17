@@ -98,8 +98,9 @@ class AppShell extends ConsumerWidget {
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: navItems.map((item) {
-                      final isActive = currentRoute == item.route ||
-                          (currentRoute.startsWith(item.route) && item.route.length > 1);
+                      final isActive = item.route == '/admin' 
+                          ? currentRoute == '/admin' 
+                          : (currentRoute == item.route || (currentRoute.startsWith(item.route) && item.route.length > 1));
                       return _NavTile(item: item, isActive: isActive);
                     }).toList(),
                   ),

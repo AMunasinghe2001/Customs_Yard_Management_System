@@ -15,6 +15,8 @@ class StatusChip extends StatelessWidget {
         label = 'CLEARED';
         break;
       case 'held':
+      case 'detained':
+      case 'forfeited':
         color = context.colors.heldOrange;
         label = 'HELD';
         break;

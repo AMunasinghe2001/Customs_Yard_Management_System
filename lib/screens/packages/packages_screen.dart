@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
+import 'package:data_table_2/data_table_2.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
   const PackagesScreen({super.key});
@@ -221,7 +222,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   },
                 )),
                 const Gap(12),
-                ...['all', 'detained', 'forfeited', 'pending'].map((s) => Padding(
+                ...['all', 'pending', 'held', 'cleared'].map((s) => Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: FilterChip(
                     label: Text(s.toUpperCase()),
@@ -250,47 +251,42 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               border: Border.all(color: context.colors.borderColor)),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14),
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                return SingleChildScrollView(
-                                  scrollDirection: Axis.horizontal,
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                                    child: DataTable(
-                                      columns: const [
-                                        DataColumn(label: Text('SR Number')),
-                                        DataColumn(label: Text('Consignee')),
-                                        DataColumn(label: Text('Declarant')),
-                                        DataColumn(label: Text('Cusdec No')),
-                                        DataColumn(label: Text('Cusdec Date')),
-                                        DataColumn(label: Text('Reason')),
-                                        DataColumn(label: Text('Status')),
-                                        DataColumn(label: Text('Entry Date')),
-                                        DataColumn(label: Text('Warehouse')),
-                                        DataColumn(label: Text('Details')),
-                                      ],
-                                      rows: list.map((p) => DataRow(cells: [
-                                        DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                                        DataCell(Text(p.consigneeName)),
-                                        DataCell(Text(p.declarantName ?? '-')),
-                                        DataCell(Text(p.cusdecNo ?? '-')),
-                                        DataCell(Text(p.cusdecDate ?? '-')),
-                                        DataCell(Text(p.reason ?? '-')),
-                                        DataCell(StatusChip(status: p.status)),
-                                        DataCell(Text(p.entryDate != null
-                                          ? DateFormat('dd/MM/yy').format(p.entryDate!)
-                                          : DateFormat('dd/MM/yy').format(p.createdAt))),
-                                        DataCell(_WarehousePill(warehouseEntries: p.warehouseEntries)),
-                                        DataCell(IconButton(
-                                          icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
-                                          onPressed: () => _showDetails(context, p),
-                                        )),
-                                      ])).toList(),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
+                        child: DataTable2(
+                          columnSpacing: 12,
+                          horizontalMargin: 12,
+                          fixedTopRows: 1,
+                          isVerticalScrollBarVisible: true,
+                          isHorizontalScrollBarVisible: false, // No horizontal scroll
+                          columns: const [
+                            DataColumn2(label: Text('SR Number'), size: ColumnSize.L, fixedWidth: 140),
+                            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Declarant'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Cusdec No'), size: ColumnSize.S),
+                            DataColumn2(label: Text('Cusdec Date'), size: ColumnSize.S),
+                            DataColumn2(label: Text('Reason'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Text('Entry Date'), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Text('Warehouse'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Details'), size: ColumnSize.S, fixedWidth: 60),
+                          ],
+                          rows: list.map((p) => DataRow(cells: [
+                            DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
+                            DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
+                            DataCell(Text(p.declarantName ?? '-', overflow: TextOverflow.ellipsis)),
+                            DataCell(Text(p.cusdecNo ?? '-', overflow: TextOverflow.ellipsis)),
+                            DataCell(Text(p.cusdecDate ?? '-')),
+                            DataCell(Text(p.reason ?? '-', overflow: TextOverflow.ellipsis)),
+                            DataCell(StatusChip(status: p.status)),
+                            DataCell(Text(p.entryDate != null
+                              ? DateFormat('dd/MM/yy').format(p.entryDate!)
+                              : DateFormat('dd/MM/yy').format(p.createdAt))),
+                            DataCell(_WarehousePill(warehouseEntries: p.warehouseEntries)),
+                            DataCell(IconButton(
+                              icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
+                              onPressed: () => _showDetails(context, p),
+                            )),
+                          ])).toList(),
+                        ),
                           ),
                         ),
                 ),

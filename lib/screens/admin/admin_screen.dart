@@ -7,13 +7,7 @@ import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
-
-final allProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
-  return ref.read(adminServiceProvider).getAllProfiles();
-});
-final allRulesProvider = FutureProvider<List<CustomsRule>>((ref) async {
-  return ref.read(customsRulesServiceProvider).getAllRules();
-});
+import 'package:data_table_2/data_table_2.dart';
 
 class AdminScreen extends ConsumerWidget {
   const AdminScreen({super.key});
@@ -23,7 +17,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 2,
+        length: 3,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
           body: Column(
@@ -46,6 +40,7 @@ class AdminScreen extends ConsumerWidget {
                       tabs: const [
                         Tab(icon: Icon(Icons.people_rounded), text: 'Officers'),
                         Tab(icon: Icon(Icons.gavel_rounded), text: 'Customs Rules'),
+                        Tab(icon: Icon(Icons.history_toggle_off_rounded), text: 'Activity Logs'),
                       ],
                       dividerColor: Colors.transparent,
                     ),
@@ -53,7 +48,7 @@ class AdminScreen extends ConsumerWidget {
                 ]),
               ),
               const Gap(4),
-              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab()])),
+              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _LogsTab()])),
             ],
           ),
         ),
@@ -90,50 +85,53 @@ class _OfficersTab extends ConsumerWidget {
             loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
             error: (e, _) => Center(child: Text('Error: $e', style: TextStyle(color: context.colors.dangerRed))),
             data: (list) => Container(
+              width: double.infinity,
               decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: context.colors.borderColor)),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: SingleChildScrollView(
-                  child: DataTable(
-                    dataRowColor: WidgetStateProperty.all(Colors.transparent),
-                    headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
-                    columns: [
-                      DataColumn(label: Text('Name', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Salary No', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Role', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Active', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Actions', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                    ],
-                    rows: list.map((p) => DataRow(cells: [
-                      DataCell(Text(p.fullName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600))),
-                      DataCell(Text(p.badgeNumber ?? '—', style: TextStyle(color: context.colors.textMuted))),
-                      DataCell(_RoleChip(role: p.role)),
-                      DataCell(
-                        _StatusToggle(
-                          isActive: p.isActive,
-                          onChanged: (v) async {
-                            final currentProfile = ref.read(currentProfileProvider);
-                            if (v == false && currentProfile?.id == p.id) {
-                              if (context.mounted) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('You cannot deactivate your own account!'), 
-                                  backgroundColor: Colors.orange, duration: Duration(seconds: 2)));
-                              }
-                              return;
+                child: DataTable2(
+                  horizontalMargin: 24,
+                  columnSpacing: 20,
+                  fixedTopRows: 1,
+                  isHorizontalScrollBarVisible: false,
+                  dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                  headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                  columns: [
+                    DataColumn2(label: Text('Name', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Salary No', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.M),
+                    DataColumn2(label: Text('Role', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Active', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Actions', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 80),
+                  ],
+                  rows: list.map((p) => DataRow(cells: [
+                    DataCell(Text(p.fullName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600))),
+                    DataCell(Text(p.badgeNumber ?? '—', style: TextStyle(color: context.colors.textMuted))),
+                    DataCell(_RoleChip(role: p.role)),
+                    DataCell(
+                      _StatusToggle(
+                        isActive: p.isActive,
+                        onChanged: (v) async {
+                          final currentProfile = ref.read(currentProfileProvider);
+                          if (v == false && currentProfile?.id == p.id) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('You cannot deactivate your own account!'), 
+                                backgroundColor: Colors.orange, duration: Duration(seconds: 2)));
                             }
-                            await ref.read(adminServiceProvider).toggleUserStatus(p.id, v);
-                            ref.invalidate(allProfilesProvider);
-                          },
-                          label: p.fullName,
-                        )
-                      ),
-                      DataCell(IconButton(
-                        icon: Icon(Icons.edit_outlined, color: context.colors.accentLightBlue, size: 18),
-                        onPressed: () => _showEditDialog(context, ref, p),
-                      )),
-                    ])).toList(),
-                  ),
+                            return;
+                          }
+                          await ref.read(adminServiceProvider).toggleUserStatus(p.id, v);
+                          ref.invalidate(allProfilesProvider);
+                        },
+                        label: p.fullName,
+                      )
+                    ),
+                    DataCell(IconButton(
+                      icon: Icon(Icons.edit_outlined, color: context.colors.accentLightBlue, size: 18),
+                      onPressed: () => _showEditDialog(context, ref, p),
+                    )),
+                  ])).toList(),
                 ),
               ),
             ),
@@ -275,56 +273,59 @@ class _RulesTab extends ConsumerWidget {
             loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
             error: (e, _) => Center(child: Text('Error: $e', style: TextStyle(color: context.colors.dangerRed))),
             data: (list) => Container(
+              width: double.infinity,
               decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: context.colors.borderColor)),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: SingleChildScrollView(
-                  child: DataTable(
-                    dataRowColor: WidgetStateProperty.all(Colors.transparent),
-                    headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
-                    columns: [
-                      DataColumn(label: Text('Rule Name', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Type', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Threshold', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Description', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Active', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                      DataColumn(label: Text('Del', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600))),
-                    ],
-                    rows: list.map((r) => DataRow(cells: [
-                      DataCell(Text(r.ruleName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600))),
-                      DataCell(_RuleTypeChip(type: r.ruleType)),
-                      DataCell(Text(r.thresholdValue?.toString() ?? r.stringValue ?? '—',
-                          style: TextStyle(color: context.colors.accentLightBlue))),
-                      DataCell(SizedBox(width: 180, child: Text(r.description ?? '—',
-                          overflow: TextOverflow.ellipsis, style: TextStyle(color: context.colors.textMuted, fontSize: 13)))),
-                      DataCell(
-                        _StatusToggle(
-                          isActive: r.isActive,
-                          onChanged: (v) async {
-                            await ref.read(customsRulesServiceProvider).toggleRule(r.id, v);
-                            ref.invalidate(allRulesProvider);
-                          },
-                          label: 'Rule "${r.ruleName}"',
-                        )
-                      ),
-                      DataCell(IconButton(
-                        icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 18),
-                        onPressed: () async {
-                          final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
-                            title: const Text('Delete Rule'),
-                            content: Text('Delete "${r.ruleName}"?'),
-                            actions: [
-                              TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                              ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
-                                  onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-                            ],
-                          ));
-                          if (ok == true) { await ref.read(customsRulesServiceProvider).deleteRule(r.id); ref.invalidate(allRulesProvider); }
+                child: DataTable2(
+                  horizontalMargin: 24,
+                  columnSpacing: 20,
+                  fixedTopRows: 1,
+                  isHorizontalScrollBarVisible: false,
+                  dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                  headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                  columns: [
+                    DataColumn2(label: Text('Rule Name', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Type', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 120),
+                    DataColumn2(label: Text('Threshold', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Description', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Active', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Del', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 80),
+                  ],
+                  rows: list.map((r) => DataRow(cells: [
+                    DataCell(Text(r.ruleName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600))),
+                    DataCell(_RuleTypeChip(type: r.ruleType)),
+                    DataCell(Text(r.thresholdValue?.toString() ?? r.stringValue ?? '—',
+                        style: TextStyle(color: context.colors.accentLightBlue))),
+                    DataCell(Text(r.description ?? '—', overflow: TextOverflow.ellipsis, maxLines: 1,
+                        style: TextStyle(color: context.colors.textMuted, fontSize: 13))),
+                    DataCell(
+                      _StatusToggle(
+                        isActive: r.isActive,
+                        onChanged: (v) async {
+                          await ref.read(customsRulesServiceProvider).toggleRule(r.id, v);
+                          ref.invalidate(allRulesProvider);
                         },
-                      )),
-                    ])).toList(),
-                  ),
+                        label: 'Rule "${r.ruleName}"',
+                      )
+                    ),
+                    DataCell(IconButton(
+                      icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 18),
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+                          title: const Text('Delete Rule'),
+                          content: Text('Delete "${r.ruleName}"?'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
+                                onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                          ],
+                        ));
+                        if (ok == true) { await ref.read(customsRulesServiceProvider).deleteRule(r.id); ref.invalidate(allRulesProvider); }
+                      },
+                    )),
+                  ])).toList(),
                 ),
               ),
             ),
@@ -481,6 +482,63 @@ class _StatusToggleState extends State<_StatusToggle> {
           if (mounted) setState(() => _loading = false);
         }
       },
+    );
+  }
+}
+
+// ── Logs Tab ──────────────────────────────────────────────────
+
+class _LogsTab extends ConsumerWidget {
+  const _LogsTab();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final logs = ref.watch(allLogsProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('Activity Logs', style: TextStyle(color: context.colors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
+        const Gap(16),
+        Expanded(
+          child: logs.when(
+            loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
+            error: (e, _) => Center(child: Text('Error: $e', style: TextStyle(color: context.colors.dangerRed))),
+            data: (list) => Container(
+              width: double.infinity,
+              decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: context.colors.borderColor)),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: DataTable2(
+                  horizontalMargin: 24,
+                  columnSpacing: 20,
+                  fixedTopRows: 1,
+                  isHorizontalScrollBarVisible: false, // No horizontal scroll
+                  dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                  headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                  columns: [
+                    DataColumn2(label: Text('Time', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 140),
+                    DataColumn2(label: Text('User', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.M),
+                    DataColumn2(label: Text('Action', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Entity', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Details', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
+                  ],
+                  rows: list.map((l) {
+                    final timeStr = '${l.createdAt.hour}:${l.createdAt.minute.toString().padLeft(2, '0')} ${l.createdAt.day}/${l.createdAt.month}';
+                    return DataRow(cells: [
+                      DataCell(Text(timeStr, style: TextStyle(color: context.colors.textMuted, fontSize: 13))),
+                      DataCell(Text(l.userFullName ?? 'Unknown', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600))),
+                      DataCell(Text(l.action, style: TextStyle(color: context.colors.accentLightBlue))),
+                      DataCell(Text(l.entityType.toUpperCase(), style: TextStyle(color: context.colors.textMuted, fontSize: 11, fontWeight: FontWeight.w700))),
+                      DataCell(Text(l.details?.toString() ?? '—', overflow: TextOverflow.ellipsis, maxLines: 1, 
+                          style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
+                    ]);
+                  }).toList(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ]),
     );
   }
 }

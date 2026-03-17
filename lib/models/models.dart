@@ -389,3 +389,39 @@ class ProfileModel {
 
   bool get isAdmin => role == 'admin';
 }
+
+class AuditLogModel {
+  final String id;
+  final String userId;
+  final String action;
+  final String entityType;
+  final String entityId;
+  final Map<String, dynamic>? details;
+  final DateTime createdAt;
+  // Joined field
+  final String? userFullName;
+
+  const AuditLogModel({
+    required this.id,
+    required this.userId,
+    required this.action,
+    required this.entityType,
+    required this.entityId,
+    this.details,
+    required this.createdAt,
+    this.userFullName,
+  });
+
+  factory AuditLogModel.fromJson(Map<String, dynamic> json) {
+    return AuditLogModel(
+      id: json['id'] as String,
+      userId: json['user_id'] as String,
+      action: json['action'] as String,
+      entityType: json['entity_type'] as String,
+      entityId: json['entity_id'] as String,
+      details: json['details'] as Map<String, dynamic>?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      userFullName: (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+    );
+  }
+}

@@ -119,6 +119,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             SvgPicture.asset(
               'Sri_Lanka_Customs_logo.svg',
               width: 200, height: 200,
+              colorFilter: ColorFilter.mode(context.colors.primaryGold, BlendMode.srcIn),
             ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
             const Gap(36),
             Text('Sri Lanka Customs',

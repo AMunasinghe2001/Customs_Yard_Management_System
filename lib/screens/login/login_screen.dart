@@ -114,6 +114,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 200, height: 200,
+              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
             ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
             const Gap(36),
             const Text('Sri Lanka Customs',
@@ -237,18 +238,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             )),
           ),
         )),
-      ]),
-      Positioned(top: 24, right: 24,
-        child: IconButton(
-          icon: Icon(ref.watch(themeModeProvider) == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, 
-              color: context.colors.textPrimary),
-          onPressed: () {
-            final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
-            ref.read(themeModeProvider.notifier).state = isDark ? ThemeMode.light : ThemeMode.dark;
-          },
+        ]),
+        Positioned(top: 24, right: 24,
+          child: IconButton(
+            icon: Icon(ref.watch(themeModeProvider) == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, 
+                color: context.colors.textPrimary),
+            onPressed: () {
+              final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
+              ref.read(themeModeProvider.notifier).state = isDark ? ThemeMode.light : ThemeMode.dark;
+            },
+          ),
         ),
-      ),
-    ]),
-  );
+      ]),
+    );
   }
 }

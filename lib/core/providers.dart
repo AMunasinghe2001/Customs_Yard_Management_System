@@ -95,3 +95,34 @@ final liveWarehouseEntriesProvider =
   return ref.read(warehouseServiceProvider).getEntriesByWarehouse(
     warehouseId, isReturned: showReturned ? null : false);
 });
+
+// ── Admin Data Providers ───────────────────────────────────────
+final allProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
+  return ref.read(adminServiceProvider).getAllProfiles();
+});
+
+final allRulesProvider = FutureProvider<List<CustomsRule>>((ref) async {
+  return ref.read(customsRulesServiceProvider).getAllRules();
+});
+
+final auditLogsChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  int tick = 0;
+  yield tick;
+  final channel = supabase.channel('audit-logs-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'audit_logs',
+      callback: (_) {
+        tick++;
+        ref.invalidateSelf();
+      },
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
+final allLogsProvider = FutureProvider<List<AuditLogModel>>((ref) async {
+  ref.watch(auditLogsChangeTriggerProvider);
+  return ref.read(auditLogServiceProvider).getAllLogs();
+});

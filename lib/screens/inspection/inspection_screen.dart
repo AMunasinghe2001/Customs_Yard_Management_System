@@ -71,7 +71,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       _reasonCtrlMain.text = pkg.reason ?? '';
       _notesCtrl.text = pkg.notes ?? '';
       setState(() {
-        _statusValue = pkg.status;
+        _statusValue = (pkg.status == 'detained' || pkg.status == 'forfeited') ? 'held' : pkg.status;
         _isUpdate = true;
         _items.clear();
         if (pkg.items != null && pkg.items!.isNotEmpty) {
@@ -240,9 +240,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                           ),
                           const Gap(8),
                           Expanded(child: DropdownButtonFormField<String>(
-                            value: _statusValue,
+                            value: ['pending', 'held', 'cleared'].contains(_statusValue) ? _statusValue : 'pending',
                             decoration: const InputDecoration(labelText: 'Status *'),
-                            items: ['pending', 'detained', 'forfeited', 'cleared']
+                            items: ['pending', 'held', 'cleared']
                                 .map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase()))).toList(),
                             onChanged: (v) => setState(() => _statusValue = v!),
                           )),
@@ -277,7 +277,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         ]),
                         const Gap(16),
                         TextFormField(controller: _reasonCtrlMain,
-                            decoration: const InputDecoration(labelText: 'Reason (if detached/forfeited)')),
+                            decoration: const InputDecoration(labelText: 'Reason (if held)')),
                         const Gap(16),
                         TextFormField(controller: _descCtrl,
                             decoration: const InputDecoration(labelText: 'Package Description'), maxLines: 2),
@@ -437,24 +437,28 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
               width: double.infinity,
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
-                color: widget.passed ? context.colors.successGreen.withOpacity(0.1) : context.colors.dangerRed.withOpacity(0.1),
+                color: context.colors.successGreen.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: widget.passed ? context.colors.successGreen.withOpacity(0.5) : context.colors.dangerRed.withOpacity(0.5),
+                  color: context.colors.successGreen.withOpacity(0.5),
                   width: 2,
                 ),
               ),
               child: Column(children: [
-                Icon(widget.passed ? Icons.check_circle_rounded : Icons.cancel_rounded,
-                    color: widget.passed ? context.colors.successGreen : context.colors.dangerRed, size: 56)
+                Icon(Icons.check_circle_rounded, color: context.colors.successGreen, size: 56)
                     .animate().scale(duration: 400.ms),
                 const Gap(12),
                 Text('ENTRY SAVED SUCCESSFULLY',
                   style: TextStyle(
-                    color: widget.passed ? context.colors.successGreen : context.colors.dangerRed,
+                    color: context.colors.successGreen,
                     fontWeight: FontWeight.w800, fontSize: 18,
                   ), textAlign: TextAlign.center,
                 ).animate().slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
+                if (!widget.passed) ...[
+                  const Gap(8),
+                  Text('Customs Rule Violations Detected',
+                    style: TextStyle(color: context.colors.warningAmber, fontWeight: FontWeight.w600, fontSize: 13)),
+                ],
               ]),
             ),
             const Gap(20),

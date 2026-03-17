@@ -80,6 +80,19 @@ class PackageService {
         items.map((i) => i.toInsertJson(created.id)).toList(),
       );
     }
+    
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created new package SR: ${created.srNumber}',
+        entityType: 'package',
+        entityId: created.id,
+        details: {'consignee': created.consigneeName},
+      );
+    }
+    
     return created;
   }
 
@@ -118,7 +131,20 @@ class PackageService {
           .select('*, package_items(*), warehouse_entries(*, warehouses(*))')
           .eq('id', existing.id)
           .single();
-      return PackageModel.fromJson(refreshed);
+      final resultP = PackageModel.fromJson(refreshed);
+
+      // Log action
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        await AuditLogService().recordLog(
+          userId: user.id,
+          action: 'Updated package SR: ${resultP.srNumber}',
+          entityType: 'package',
+          entityId: resultP.id,
+        );
+      }
+
+      return resultP;
     } else {
       return createPackage(pkg, items);
     }
@@ -133,6 +159,18 @@ class PackageService {
     };
     if (status == 'cleared') data['cleared_at'] = DateTime.now().toIso8601String();
     await supabase.from('packages').update(data).eq('id', id);
+    
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Updated status to $status',
+        entityType: 'package',
+        entityId: id,
+        details: {'notes': notes},
+      );
+    }
   }
 
   Future<Map<String, int>> getDashboardStats() async {
@@ -182,6 +220,18 @@ class WarehouseService {
       'admitted_by': supabase.auth.currentUser?.id,
       'admitted_at': DateTime.now().toIso8601String(),
     });
+
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Sent package to warehouse',
+        entityType: 'warehouse_entry',
+        entityId: 'new',
+        details: {'package_id': packageId, 'warehouse_id': warehouseId},
+      );
+    }
   }
 
   Future<void> markAsReturned(String entryId, {String? returnNotes}) async {
@@ -191,6 +241,17 @@ class WarehouseService {
       'returned_by': supabase.auth.currentUser?.id,
       if (returnNotes != null) 'return_notes': returnNotes,
     }).eq('id', entryId);
+
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Marked warehouse entry as returned',
+        entityType: 'warehouse_entry',
+        entityId: entryId,
+      );
+    }
   }
 
   Future<Map<String, int>> getWarehouseStats() async {
@@ -227,6 +288,17 @@ class CustomsRulesService {
       ...rule.toJson(),
       'created_by': supabase.auth.currentUser?.id,
     });
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created rule "${rule.ruleName}"',
+        entityType: 'customs_rule',
+        entityId: 'new',
+        details: rule.toJson(),
+      );
+    }
   }
 
   Future<void> toggleRule(String id, bool isActive) async {
@@ -239,10 +311,30 @@ class CustomsRulesService {
       print('DEBUG: toggleRule FAILED - No rows updated for ID: $id. Check RLS policies.');
       throw Exception('Update failed. You may not have permission to change this rule.');
     }
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: '${isActive ? 'Activated' : 'Deactivated'} rule',
+        entityType: 'customs_rule',
+        entityId: id,
+      );
+    }
   }
 
   Future<void> deleteRule(String id) async {
     await supabase.from('customs_rules').delete().eq('id', id);
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Deleted rule',
+        entityType: 'customs_rule',
+        entityId: id,
+      );
+    }
   }
 
   Future<List<String>> checkPackageAgainstRules({
@@ -328,6 +420,18 @@ class AdminService {
       print('DEBUG: createOfficer no user returned in response');
       throw Exception('Already registered or unable to register this email.');
     }
+
+    // Log action
+    final admin = supabase.auth.currentUser;
+    if (admin != null) {
+      await AuditLogService().recordLog(
+        userId: admin.id,
+        action: 'Created officer "$fullName" ($role)',
+        entityType: 'profile',
+        entityId: 'new',
+        details: {'email': email, 'badge': badgeNumber},
+      );
+    }
   }
 
   Future<void> toggleUserStatus(String profileId, bool isActive) async {
@@ -340,6 +444,16 @@ class AdminService {
       print('DEBUG: toggleUserStatus FAILED - No rows updated for ID: $profileId. Check RLS policies.');
       throw Exception('Update failed. You may not have permission to change this user status.');
     }
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: '${isActive ? 'Activated' : 'Deactivated'} user status',
+        entityType: 'profile',
+        entityId: profileId,
+      );
+    }
   }
 
   Future<void> updateProfile(String id, {String? fullName, String? badgeNumber, String? role}) async {
@@ -349,6 +463,51 @@ class AdminService {
     if (role != null) updates['role'] = role;
     if (updates.isNotEmpty) {
       await supabase.from('profiles').update(updates).eq('id', id);
+      // Log action
+      final admin = supabase.auth.currentUser;
+      if (admin != null) {
+        await AuditLogService().recordLog(
+          userId: admin.id,
+          action: 'Updated profile info',
+          entityType: 'profile',
+          entityId: id,
+          details: updates,
+        );
+      }
+    }
+  }
+}
+
+// ── Audit Log Service ──────────────────────────────────────────
+
+final auditLogServiceProvider = Provider((ref) => AuditLogService());
+
+class AuditLogService {
+  Future<List<AuditLogModel>> getAllLogs() async {
+    final data = await supabase
+        .from('audit_logs')
+        .select('*, profiles(full_name)')
+        .order('created_at', ascending: false);
+    return data.map((e) => AuditLogModel.fromJson(e)).toList();
+  }
+
+  Future<void> recordLog({
+    required String userId,
+    required String action,
+    required String entityType,
+    required String entityId,
+    Map<String, dynamic>? details,
+  }) async {
+    try {
+      await supabase.from('audit_logs').insert({
+        'user_id': userId,
+        'action': action,
+        'entity_type': entityType,
+        'entity_id': entityId,
+        'details': details,
+      });
+    } catch (e) {
+      print('DEBUG: AuditLogService.recordLog error: $e');
     }
   }
 }

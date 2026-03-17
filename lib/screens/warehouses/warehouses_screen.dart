@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
+import 'package:data_table_2/data_table_2.dart';
 
 
 class WarehousesScreen extends ConsumerWidget {
@@ -131,55 +132,49 @@ class _WarehouseTab extends ConsumerWidget {
                         border: Border.all(color: context.colors.borderColor)),
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: ConstrainedBox(
-                              constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                              child: DataTable(
-                                columns: const [
-                                  DataColumn(label: Text('SR Number')),
-                                  DataColumn(label: Text('Consignee')),
-                                  DataColumn(label: Text('Items Held')),
-                                  DataColumn(label: Text('Hold Reason')),
-                                  DataColumn(label: Text('Admitted')),
-                                  DataColumn(label: Text('Status')),
-                                  DataColumn(label: Text('Returned')),
-                                  DataColumn(label: Text('Action')),
-                                ],
-                                rows: list.map((e) => DataRow(cells: [
-                                  DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
-                                      style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                                  DataCell(Text(e.consigneeName ?? '—', style: const TextStyle(fontSize: 13))),
-                                  DataCell(Text('${e.itemCount}')),
-                                  DataCell(SizedBox(width: 160, child: Text(e.holdReason, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13)))),
-                                  DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(e.admittedAt))),
-                                  DataCell(Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: e.isReturned ? context.colors.successGreen.withOpacity(0.15) : context.colors.heldOrange.withOpacity(0.15),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: e.isReturned ? context.colors.successGreen.withOpacity(0.4) : context.colors.heldOrange.withOpacity(0.4)),
-                                    ),
-                                    child: Text(e.isReturned ? 'RETURNED' : 'IN HOLD',
-                                        style: TextStyle(color: e.isReturned ? context.colors.successGreen : context.colors.heldOrange, fontSize: 11, fontWeight: FontWeight.w700)),
-                                  )),
-                                  DataCell(Text(e.returnedAt != null ? DateFormat('dd/MM/yy').format(e.returnedAt!) : '—',
-                                      style: TextStyle(color: context.colors.textMuted))),
-                                  DataCell(e.isReturned
-                                      ? Text('—', style: TextStyle(color: context.colors.textMuted))
-                                      : TextButton(
-                                          onPressed: () => _showReturnDialog(context, ref, e),
-                                          style: TextButton.styleFrom(foregroundColor: context.colors.successGreen),
-                                          child: const Text('Mark Returned'),
-                                        )),
-                                ])).toList(),
+                        child: DataTable2(
+                          columnSpacing: 12,
+                          horizontalMargin: 12,
+                          fixedTopRows: 1,
+                          isHorizontalScrollBarVisible: false, // No horizontal scroll
+                          columns: const [
+                            DataColumn2(label: Text('SR Number'), size: ColumnSize.M, fixedWidth: 120),
+                            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Items Held'), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Text('Hold Reason'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Admitted'), size: ColumnSize.M, fixedWidth: 140),
+                            DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Text('Returned'), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Text('Action'), size: ColumnSize.S, fixedWidth: 140),
+                          ],
+                          rows: list.map((e) => DataRow(cells: [
+                            DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
+                                style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
+                            DataCell(Text(e.consigneeName ?? '—', style: const TextStyle(fontSize: 13))),
+                            DataCell(Text('${e.itemCount}')),
+                            DataCell(Text(e.holdReason, style: const TextStyle(fontSize: 13))),
+                            DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(e.admittedAt))),
+                            DataCell(Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: e.isReturned ? context.colors.successGreen.withOpacity(0.15) : context.colors.heldOrange.withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: e.isReturned ? context.colors.successGreen.withOpacity(0.4) : context.colors.heldOrange.withOpacity(0.4)),
                               ),
-                            ),
-                          );
-                        },
-                      ),
+                              child: Text(e.isReturned ? 'RETURNED' : 'IN HOLD',
+                                  style: TextStyle(color: e.isReturned ? context.colors.successGreen : context.colors.heldOrange, fontSize: 11, fontWeight: FontWeight.w700)),
+                            )),
+                            DataCell(Text(e.returnedAt != null ? DateFormat('dd/MM/yy').format(e.returnedAt!) : '—',
+                                style: TextStyle(color: context.colors.textMuted))),
+                            DataCell(e.isReturned
+                                ? Text('—', style: TextStyle(color: context.colors.textMuted))
+                                : TextButton(
+                                    onPressed: () => _showReturnDialog(context, ref, e),
+                                    style: TextButton.styleFrom(foregroundColor: context.colors.successGreen),
+                                    child: const Text('Mark Returned'),
+                                  )),
+                          ])).toList(),
+                        ),
                     ),
                   ),
                 ),
