@@ -11,6 +11,7 @@ import '../screens/inspection/inspection_screen.dart';
 import '../screens/warehouses/warehouses_screen.dart';
 import '../screens/packages/packages_screen.dart';
 import '../screens/admin/admin_screen.dart';
+import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/profile/edit_profile_screen.dart';
 import '../screens/reports/reports_screen.dart';
 import '../widgets/app_shell.dart';
@@ -39,8 +40,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/inspection', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const InspectionScreen())),
       GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),
       GoRoute(path: '/packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const PackagesScreen())),
-      GoRoute(path: '/admin', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DashboardScreen())),
-      GoRoute(path: '/admin/panel', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminScreen())),
+      GoRoute(path: '/admin', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminDashboardScreen())),
+      GoRoute(path: '/admin/panel', pageBuilder: (_, state) {
+        final tabStr = state.uri.queryParameters['tab'];
+        final tabIndex = int.tryParse(tabStr ?? '0') ?? 0;
+        return NoTransitionPage(key: state.pageKey, child: AdminScreen(initialIndex: tabIndex));
+      }),
       GoRoute(path: '/profile', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const EditProfileScreen())),
       GoRoute(path: '/reports', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: AppShell(currentRoute: '/reports', child: const ReportsScreen()))),
     ],
