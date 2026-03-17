@@ -6,12 +6,23 @@ import 'core/theme.dart';
 import 'core/router.dart';
 import 'core/providers.dart';
 
+class _NoPersistLocalStorage extends LocalStorage {
+  @override Future<void> initialize() async {}
+  @override Future<bool> hasAccessToken() async => false;
+  @override Future<String?> accessToken() async => null;
+  @override Future<void> removePersistedSession() async {}
+  @override Future<void> persistSession(String persistSessionString) async {}
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Supabase.initialize(
     url: supabaseUrl,
     anonKey: supabaseAnonKey,
+    authOptions: FlutterAuthClientOptions(
+      localStorage: _NoPersistLocalStorage(),
+    ),
   );
 
   runApp(
