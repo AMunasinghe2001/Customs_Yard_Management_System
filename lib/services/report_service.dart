@@ -14,13 +14,13 @@ class ReportService {
   ReportService._internal();
 
   /// Generates a PDF report for a list of packages
-  Future<Uint8List> generatePackagePdf(List<PackageModel> packages, {String? title}) async {
+  Future<Uint8List> generatePackagePdf(List<PackageModel> packages, {String? title, PdfPageFormat? format}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: format ?? PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
           _buildHeader(title ?? 'Package Summary Report', dateStr),
@@ -36,13 +36,17 @@ class ReportService {
   }
 
   /// Generates a PDF report for warehouse entries
-  Future<Uint8List> generateWarehousePdf(List<WarehouseEntryModel> entries, {String? title, bool isReturnedReport = false}) async {
+  Future<Uint8List> generateWarehousePdf(List<WarehouseEntryModel> entries, {
+    String? title, 
+    bool isReturnedReport = false,
+    PdfPageFormat? format,
+  }) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape, 
+        pageFormat: format ?? PdfPageFormat.a4.landscape, 
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
           _buildHeader(title ?? (isReturnedReport ? 'Returned Packages Report' : 'Warehouse Status Report'), dateStr),
@@ -62,13 +66,14 @@ class ReportService {
     required String title,
     required List<Map<String, dynamic>> summaryData,
     required String periodLabel,
+    PdfPageFormat? format,
   }) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: format ?? PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
           _buildHeader(title, dateStr),
@@ -81,8 +86,9 @@ class ReportService {
               d['returned'].toString(),
               (d['admitted'] - d['returned']).toString(),
             ]).toList(),
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)), // Customs Blue
+            rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
             cellAlignments: {
               0: pw.Alignment.centerLeft,
               1: pw.Alignment.center,
@@ -114,6 +120,16 @@ class ReportService {
     }
     
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
+
+    // Style the header row
+    var headerRow = sheetObject.row(0);
+    var cellStyle = CellStyle(
+      bold: true,
+      backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'), // Light Blue
+    );
+    for (var cell in headerRow) {
+      if (cell != null) cell.cellStyle = cellStyle;
+    }
 
     // Add Data
     for (var e in entries) {
@@ -148,6 +164,16 @@ class ReportService {
       TextCellValue('Net Change')
     ]);
 
+    // Style the header row
+    var headerRow = sheetObject.row(0);
+    var cellStyle = CellStyle(
+      bold: true,
+      backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+    );
+    for (var cell in headerRow) {
+      if (cell != null) cell.cellStyle = cellStyle;
+    }
+
     for (var d in summaryData) {
       sheetObject.appendRow([
         TextCellValue(d['period'].toString()),
@@ -173,6 +199,16 @@ class ReportService {
     ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
+    // Style the header row
+    var headerRow = sheetObject.row(0);
+    var cellStyle = CellStyle(
+      bold: true,
+      backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+    );
+    for (var cell in headerRow) {
+      if (cell != null) cell.cellStyle = cellStyle;
+    }
+
     // Add Data
     for (var p in packages) {
       sheetObject.appendRow([
@@ -193,13 +229,13 @@ class ReportService {
   }
 
   /// Generates a PDF report for registered staff
-  Future<Uint8List> generateStaffPdf(List<ProfileModel> profiles) async {
+  Future<Uint8List> generateStaffPdf(List<ProfileModel> profiles, {PdfPageFormat? format}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
+        pageFormat: format ?? PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
           _buildHeader('Registered Staff Audit Report', dateStr),
@@ -233,6 +269,16 @@ class ReportService {
     List<String> headers = ['Full Name', 'Badge Number', 'Role', 'Status', 'Registered Date'];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
+    // Style the header row
+    var headerRow = sheetObject.row(0);
+    var cellStyle = CellStyle(
+      bold: true,
+      backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'),
+    );
+    for (var cell in headerRow) {
+      if (cell != null) cell.cellStyle = cellStyle;
+    }
+
     // Add Data
     for (var p in profiles) {
       sheetObject.appendRow([
@@ -251,11 +297,36 @@ class ReportService {
     return pw.Column(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
       children: [
-        pw.Text(title, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold)),
-        pw.SizedBox(height: 4),
-        pw.Text('Sri Lanka Customs - Yard Management System', style: const pw.TextStyle(fontSize: 12)),
-        pw.Text('Generated on: $date', style: const pw.TextStyle(fontSize: 10)),
-        pw.Divider(thickness: 1),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(title, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
+                pw.SizedBox(height: 4),
+                pw.Text('Sri Lanka Customs - Yard Management System', style: pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
+              ],
+            ),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(6),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColor.fromInt(0xFF0D47A1), width: 2),
+                borderRadius: pw.BorderRadius.circular(4),
+              ),
+              child: pw.Text('SLC', style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
+            ),
+          ],
+        ),
+        pw.SizedBox(height: 10),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('Report Type: Standard Audit', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+            pw.Text('Generated on: $date', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+          ],
+        ),
+        pw.Divider(thickness: 2, color: PdfColor.fromInt(0xFF0D47A1)),
       ],
     );
   }
@@ -272,8 +343,9 @@ class ReportService {
         p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : '-',
         NumberFormat.currency(symbol: '', decimalDigits: 2).format(p.declaredValue),
       ]).toList(),
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+      headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+      rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
       cellHeight: 25,
       cellAlignments: {
         0: pw.Alignment.centerLeft,
@@ -309,9 +381,10 @@ class ReportService {
         }
         return row;
       }).toList(),
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.white),
       cellStyle: const pw.TextStyle(fontSize: 9),
-      headerDecoration: const pw.BoxDecoration(color: PdfColors.grey300),
+      headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+      rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
       cellHeight: 20,
       cellAlignments: {
         0: pw.Alignment.centerLeft,
@@ -326,9 +399,17 @@ class ReportService {
   }
 
   pw.Widget _buildFooter(int count, {String label = 'Total Records:'}) {
-    return pw.Container(
-      alignment: pw.Alignment.centerRight,
-      child: pw.Text('$label $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 12)),
+    return pw.Column(
+      children: [
+        pw.Divider(thickness: 1, color: PdfColors.grey300),
+        pw.Row(
+          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+          children: [
+            pw.Text('Report validated by Yard Management System', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
+            pw.Text('$label $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColor.fromInt(0xFF0D47A1))),
+          ],
+        ),
+      ],
     );
   }
 }
