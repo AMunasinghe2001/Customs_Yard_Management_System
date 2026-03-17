@@ -14,7 +14,7 @@ class ReportService {
   ReportService._internal();
 
   /// Generates a PDF report for a list of packages
-  Future<void> generatePackagePdf(List<PackageModel> packages, {String? title}) async {
+  Future<Uint8List> generatePackagePdf(List<PackageModel> packages, {String? title}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -32,20 +32,17 @@ class ReportService {
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: '${title?.replaceAll(' ', '_') ?? 'Package_Report'}_$dateStr.pdf',
-    );
+    return pdf.save();
   }
 
   /// Generates a PDF report for warehouse entries
-  Future<void> generateWarehousePdf(List<WarehouseEntryModel> entries, {String? title, bool isReturnedReport = false}) async {
+  Future<Uint8List> generateWarehousePdf(List<WarehouseEntryModel> entries, {String? title, bool isReturnedReport = false}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape, // Use landscape for more columns
+        pageFormat: PdfPageFormat.a4.landscape, 
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
           _buildHeader(title ?? (isReturnedReport ? 'Returned Packages Report' : 'Warehouse Status Report'), dateStr),
@@ -57,14 +54,11 @@ class ReportService {
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: '${(title ?? 'Warehouse_Report').replaceAll(' ', '_')}_$dateStr.pdf',
-    );
+    return pdf.save();
   }
 
   /// Generates a summary report PDF
-  Future<void> generateSummaryReportPdf({
+  Future<Uint8List> generateSummaryReportPdf({
     required String title,
     required List<Map<String, dynamic>> summaryData,
     required String periodLabel,
@@ -102,10 +96,7 @@ class ReportService {
       ),
     );
 
-    await Printing.layoutPdf(
-      onLayout: (PdfPageFormat format) async => pdf.save(),
-      name: '${title.replaceAll(' ', '_')}_$dateStr.pdf',
-    );
+    return pdf.save();
   }
 
   /// Exports warehouse data to Excel bytes
@@ -195,6 +186,61 @@ class ReportService {
         TextCellValue(p.cusdecNo ?? ''),
         TextCellValue(p.originCountry),
         TextCellValue(p.description ?? ''),
+      ]);
+    }
+
+    return Uint8List.fromList(excel.encode()!);
+  }
+
+  /// Generates a PDF report for registered staff
+  Future<Uint8List> generateStaffPdf(List<ProfileModel> profiles) async {
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          _buildHeader('Registered Staff Audit Report', dateStr),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            headers: ['Full Name', 'Badge No', 'Role', 'Status', 'Registered Date'],
+            data: profiles.map((p) => [
+              p.fullName,
+              p.badgeNumber ?? 'N/A',
+              p.role.toUpperCase(),
+              p.isActive ? 'Active' : 'Deactivated',
+              DateFormat('yyyy-MM-dd').format(p.createdAt),
+            ]).toList(),
+          ),
+          _buildFooter(profiles.length, label: 'Confidential Staff Audit Log - Total:'),
+        ],
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  /// Exports registered staff data to Excel bytes
+  Future<Uint8List?> exportStaffToExcel(List<ProfileModel> profiles) async {
+    var excel = Excel.createExcel();
+    Sheet sheetObject = excel['Staff'];
+    excel.delete('Sheet1');
+
+    // Add Headers
+    List<String> headers = ['Full Name', 'Badge Number', 'Role', 'Status', 'Registered Date'];
+    sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
+
+    // Add Data
+    for (var p in profiles) {
+      sheetObject.appendRow([
+        TextCellValue(p.fullName),
+        TextCellValue(p.badgeNumber ?? ''),
+        TextCellValue(p.role.toUpperCase()),
+        TextCellValue(p.isActive ? 'Active' : 'Inactive'),
+        TextCellValue(DateFormat('yyyy-MM-dd').format(p.createdAt)),
       ]);
     }
 

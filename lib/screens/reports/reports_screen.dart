@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:printing/printing.dart';
 import '../../core/theme.dart';
 import '../../services/services.dart';
 import '../../services/report_service.dart';
@@ -161,63 +162,134 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth > 900 ? 3 : (constraints.maxWidth > 600 ? 2 : 1);
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Standard Reports', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-            const Gap(12),
-            GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: crossAxisCount,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.8,
+
+        return FutureBuilder<ProfileModel?>(
+          future: ref.read(authServiceProvider).getCurrentProfile(),
+          builder: (context, snapshot) {
+            final isAdmin = snapshot.data?.isAdmin ?? false;
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildReportCard(
-                  title: 'Warehouse Stock',
-                  description: 'Current stock across network.',
-                  icon: Icons.warehouse_rounded,
-                  color: Colors.blue,
-                  onPdf: _generateWarehouseStockPdf,
-                  onExcel: _exportWarehouseStockExcel,
+                Text('Standard Reports', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                const Gap(12),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 1.8,
+                  children: [
+                    _buildReportCard(
+                      title: 'Warehouse Stock',
+                      description: 'Current stock across network.',
+                      icon: Icons.warehouse_rounded,
+                      color: Colors.blue,
+                      onPdf: _generateWarehouseStockPdf,
+                      onExcel: _exportWarehouseStockExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Returned Packages',
+                      description: 'Items returned from yard.',
+                      icon: Icons.assignment_return_rounded,
+                      color: Colors.orange,
+                      onPdf: _generateReturnedPdf,
+                      onExcel: _exportReturnedExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Package Audit',
+                      description: 'Full package audit log.',
+                      icon: Icons.fact_check_rounded,
+                      color: Colors.green,
+                      onExcel: _exportExcel,
+                    ),
+                    if (isAdmin)
+                      _buildReportCard(
+                        title: 'Staff Audit',
+                        description: 'Registered officers & admins.',
+                        icon: Icons.people_alt_rounded,
+                        color: Colors.redAccent,
+                        onPdf: _generateStaffPdf,
+                        onExcel: _exportStaffExcel,
+                      ),
+                  ],
                 ),
-                _buildReportCard(
-                  title: 'Returned Packages',
-                  description: 'Items returned from yard.',
-                  icon: Icons.assignment_return_rounded,
-                  color: Colors.orange,
-                  onPdf: _generateReturnedPdf,
-                  onExcel: _exportReturnedExcel,
-                ),
-                _buildReportCard(
-                  title: 'Package Audit',
-                  description: 'Full package audit log.',
-                  icon: Icons.fact_check_rounded,
-                  color: Colors.green,
-                  onExcel: _exportExcel,
+                const Gap(24),
+                Text('Periodic Summaries', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
+                const Gap(12),
+                 GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 16,
+                  mainAxisSpacing: 16,
+                  childAspectRatio: 1.8,
+                  children: [
+                    _buildSummaryCard('Daily Summary', Icons.calendar_view_day_rounded, Colors.purple, 'day'),
+                    _buildSummaryCard('Weekly Summary', Icons.calendar_view_week_rounded, Colors.teal, 'week'),
+                    _buildSummaryCard('Monthly Summary', Icons.calendar_view_month_rounded, Colors.indigo, 'month'),
+                  ],
                 ),
               ],
-            ),
-            const Gap(24),
-            Text('Periodic Summaries', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 16)),
-            const Gap(12),
-             GridView.count(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              crossAxisCount: crossAxisCount,
-              crossAxisSpacing: 16,
-              mainAxisSpacing: 16,
-              childAspectRatio: 1.8,
-              children: [
-                _buildSummaryCard('Daily Summary', Icons.calendar_view_day_rounded, Colors.purple, 'day'),
-                _buildSummaryCard('Weekly Summary', Icons.calendar_view_week_rounded, Colors.teal, 'week'),
-                _buildSummaryCard('Monthly Summary', Icons.calendar_view_month_rounded, Colors.indigo, 'month'),
-              ],
-            ),
-          ],
+            );
+          }
         );
       },
+    );
+  }
+
+  /// Shows a modern, themed PDF preview dialog
+  void _showPdfPreview(Uint8List pdfBytes, String fileName) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (context) => Dialog(
+        backgroundColor: context.colors.scaffoldBg,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 30),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('Report Preview', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: context.colors.textPrimary)),
+                  IconButton(
+                    icon: Icon(Icons.close, color: context.colors.textSecondary),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(16)),
+                child: PdfPreview(
+                  build: (format) => pdfBytes,
+                  canChangePageFormat: false,
+                  canChangeOrientation: false,
+                  canDebug: false,
+                  maxPageWidth: 700,
+                  pdfFileName: fileName,
+                  loadingWidget: const Center(child: CircularProgressIndicator()),
+                  previewPageMargin: const EdgeInsets.all(20),
+                  actions: [
+                    PdfPreviewAction(
+                      icon: const Icon(Icons.save_alt_rounded),
+                      onPressed: (context, build, format) async {
+                        await _handleFileSave(pdfBytes, fileName.replaceAll('.pdf', ''), 'pdf');
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -360,7 +432,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       if (filtered.isEmpty) {
         _showNoDataMessage();
       } else {
-        await ReportService().generateWarehousePdf(filtered, title: 'Current Warehouse Stock Report', isReturnedReport: false);
+      final bytes = await ReportService().generateWarehousePdf(filtered, title: 'Current Warehouse Stock Report', isReturnedReport: false);
+      _showPdfPreview(bytes, 'Warehouse_Stock_Report.pdf');
       }
     } catch (e) {
       _showError(e.toString());
@@ -394,11 +467,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
       final filtered = _filterWarehouseByDate(entries);
-      if (filtered.isEmpty) {
-        _showNoDataMessage();
-      } else {
-        await ReportService().generateWarehousePdf(filtered, title: 'Returned Packages Report', isReturnedReport: true);
-      }
+      final bytes = await ReportService().generateWarehousePdf(
+        filtered, 
+        title: 'Returned Packages Report',
+        isReturnedReport: true,
+      );
+      _showPdfPreview(bytes, 'Returned_Packages_Report.pdf');
     } catch (e) {
       _showError(e.toString());
     } finally {
@@ -443,11 +517,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final periodLabel = periodType == 'day' ? 'Date' : (periodType == 'week' ? 'Week Reference' : 'Month');
 
       if (format == 'pdf') {
-        await ReportService().generateSummaryReportPdf(
+        final bytes = await ReportService().generateSummaryReportPdf(
           title: reportTitle,
           summaryData: summary,
           periodLabel: periodLabel,
         );
+        _showPdfPreview(bytes, '${reportTitle.replaceAll(' ', '_')}.pdf');
       } else {
         final bytes = await ReportService().exportSummaryToExcel(summary, periodLabel);
         await _handleFileSave(bytes, reportTitle.replaceAll(' ', '_'), 'xlsx');
@@ -516,6 +591,34 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         final bytes = await ReportService().exportPackagesToExcel(filtered);
         await _handleFileSave(bytes, 'Package_Audit_Log', 'xlsx');
       }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _generateStaffPdf() async {
+    const key = 'Staff Audit_pdf';
+    _setLoading(key, true);
+    try {
+      final profiles = await ref.read(adminServiceProvider).getAllProfiles();
+      final bytes = await ReportService().generateStaffPdf(profiles);
+      _showPdfPreview(bytes, 'Staff_Audit_Report.pdf');
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _exportStaffExcel() async {
+    const key = 'Staff Audit_excel';
+    _setLoading(key, true);
+    try {
+      final profiles = await ref.read(adminServiceProvider).getAllProfiles();
+      final bytes = await ReportService().exportStaffToExcel(profiles);
+      await _handleFileSave(bytes, 'Staff_Audit_Report', 'xlsx');
     } catch (e) {
       _showError(e.toString());
     } finally {
