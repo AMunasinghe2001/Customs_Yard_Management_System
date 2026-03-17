@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
@@ -25,27 +26,35 @@ class AdminScreen extends ConsumerWidget {
             children: [
               Padding(
                 padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Admin Panel', style: TextStyle(color: context.colors.textPrimary, fontSize: 32, fontWeight: FontWeight.w800)),
-                  Text('Manage officers, customs rules and system configuration',
-                      style: TextStyle(color: context.colors.textSecondary)),
-                  const Gap(20),
-                  Container(
-                    decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: context.colors.borderColor)),
-                    child: TabBar(
-                      labelColor: context.colors.primaryGold,
-                      unselectedLabelColor: context.colors.textMuted,
-                      indicatorColor: context.colors.primaryGold,
-                      tabs: const [
-                        Tab(icon: Icon(Icons.people_rounded), text: 'Officers'),
-                        Tab(icon: Icon(Icons.gavel_rounded), text: 'Customs Rules'),
-                        Tab(icon: Icon(Icons.history_toggle_off_rounded), text: 'Activity Logs'),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Admin Panel', style: Theme.of(context).textTheme.headlineLarge),
+                        Text('Manage officers, customs rules and system configuration',
+                            style: TextStyle(color: context.colors.textSecondary)),
                       ],
-                      dividerColor: Colors.transparent,
-                    ),
-                  ),
-                ]),
+                    ).animate().fadeIn(),
+                    const Gap(20),
+                    Container(
+                      decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: context.colors.borderColor)),
+                      child: TabBar(
+                        labelColor: context.colors.primaryGold,
+                        unselectedLabelColor: context.colors.textMuted,
+                        indicatorColor: context.colors.primaryGold,
+                        tabs: const [
+                          Tab(icon: Icon(Icons.people_rounded), text: 'Officers'),
+                          Tab(icon: Icon(Icons.gavel_rounded), text: 'Customs Rules'),
+                          Tab(icon: Icon(Icons.history_toggle_off_rounded), text: 'Activity Logs'),
+                        ],
+                        dividerColor: Colors.transparent,
+                      ),
+                    ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+                  ],
+                ),
               ),
               const Gap(4),
               const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _LogsTab()])),
@@ -134,7 +143,7 @@ class _OfficersTab extends ConsumerWidget {
                   ])).toList(),
                 ),
               ),
-            ),
+            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
           ),
         ),
       ]),
@@ -328,7 +337,7 @@ class _RulesTab extends ConsumerWidget {
                   ])).toList(),
                 ),
               ),
-            ),
+            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
           ),
         ),
       ]),
@@ -535,7 +544,7 @@ class _LogsTab extends ConsumerWidget {
                   }).toList(),
                 ),
               ),
-            ),
+            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
           ),
         ),
       ]),

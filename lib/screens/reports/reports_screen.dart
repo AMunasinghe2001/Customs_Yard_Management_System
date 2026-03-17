@@ -6,6 +6,7 @@ import '../../services/report_service.dart';
 import '../../models/models.dart';
 import 'package:intl/intl.dart';
 import 'package:gap/gap.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -30,23 +31,26 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Icon(Icons.summarize_rounded, color: context.colors.primaryGold, size: 32),
-                const Gap(12),
-                Text('Report Generator', 
-                  style: TextStyle(color: context.colors.textPrimary, fontSize: 28, fontWeight: FontWeight.bold)),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Report Generator', style: Theme.of(context).textTheme.headlineLarge),
+                    Text('Generate PDF and Excel reports for packages and warehouse records.',
+                        style: TextStyle(color: context.colors.textSecondary)),
+                  ],
+                ),
+                Icon(Icons.summarize_rounded, color: context.colors.primaryGold.withOpacity(0.5), size: 40),
               ],
-            ),
-            const Gap(8),
-            Text('Generate PDF and Excel reports for packages and warehouse records.',
-                style: TextStyle(color: context.colors.textMuted, fontSize: 16)),
-            const Gap(32),
+            ).animate().fadeIn(),
+            const Gap(28),
 
             Expanded(
               child: SingleChildScrollView(
                 child: Column(
                   children: [
-                    _buildFilterSection(),
+                    _buildFilterSection().animate().slideY(begin: 0.1).fadeIn(delay: 100.ms),
                     const Gap(32),
                     _buildReportCards(),
                   ],
@@ -166,7 +170,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               color: Colors.blue,
               actionLabel: 'Generate PDF',
               onTap: _generatePackagePdf,
-            ),
+            ).animate().slideY(begin: 0.2, duration: 400.ms, delay: 200.ms).fadeIn(),
             _buildReportCard(
               title: 'Warehouse Status',
               description: 'Report of all items currently held in warehouses.',
@@ -174,7 +178,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               color: Colors.orange,
               actionLabel: 'Generate PDF',
               onTap: _generateWarehousePdf,
-            ),
+            ).animate().slideY(begin: 0.2, duration: 400.ms, delay: 300.ms).fadeIn(),
             _buildReportCard(
               title: 'Data Export (Excel)',
               description: 'Complete package data export for detailed audit and analysis.',
@@ -182,7 +186,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               color: Colors.green,
               actionLabel: 'Export Excel',
               onTap: _exportExcel,
-            ),
+            ).animate().slideY(begin: 0.2, duration: 400.ms, delay: 400.ms).fadeIn(),
           ],
         );
       },

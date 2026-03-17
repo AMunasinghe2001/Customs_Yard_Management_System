@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import '../../core/theme.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
@@ -62,16 +63,24 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('Package History', style: Theme.of(context).textTheme.headlineLarge),
-                  Text('Search and filter all inspected packages',
-                      style: TextStyle(color: context.colors.textSecondary)),
-                ]),
-                packages.when(
-                  data: (list) => Text('${list.length} packages', style: TextStyle(color: context.colors.textMuted, fontSize: 14)),
-                  loading: () => const SizedBox(), error: (_, __) => const SizedBox()),
-              ]),
+               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Package History', style: Theme.of(context).textTheme.headlineLarge),
+                      Text('Search and filter all inspected packages',
+                          style: TextStyle(color: context.colors.textSecondary)),
+                    ],
+                  ),
+                  packages.when(
+                    data: (list) => Text('${list.length} packages', style: TextStyle(color: context.colors.textMuted, fontSize: 14)),
+                    loading: () => const SizedBox(),
+                    error: (_, __) => const SizedBox()
+                  ),
+                ],
+              ).animate().fadeIn(),
               const Gap(20),
 
               // ── SR Quick Search Card ────────────────────────────
@@ -193,7 +202,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     _SrResultCard(package: _srResult!),
                   ],
                 ]),
-              ),
+              ).animate().slideY(begin: 0.1).fadeIn(delay: 100.ms),
               const Gap(16),
 
               // ── Filter Bar ──────────────────────────────────────
@@ -238,7 +247,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                 const Gap(8),
                 IconButton(icon: Icon(Icons.refresh_rounded, color: context.colors.textMuted),
                     onPressed: () => ref.invalidate(livePackagesProvider), tooltip: 'Refresh'),
-              ]),
+              ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
               const Gap(16),
               Expanded(
                 child: packages.when(
@@ -251,44 +260,44 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               border: Border.all(color: context.colors.borderColor)),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14),
-                        child: DataTable2(
-                          columnSpacing: 12,
-                          horizontalMargin: 12,
-                          fixedTopRows: 1,
-                          isVerticalScrollBarVisible: true,
-                          isHorizontalScrollBarVisible: false, // No horizontal scroll
-                          columns: const [
-                            DataColumn2(label: Text('SR Number'), size: ColumnSize.L, fixedWidth: 140),
-                            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
-                            DataColumn2(label: Text('Declarant'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Cusdec No'), size: ColumnSize.S),
-                            DataColumn2(label: Text('Cusdec Date'), size: ColumnSize.S),
-                            DataColumn2(label: Text('Reason'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
-                            DataColumn2(label: Text('Entry Date'), size: ColumnSize.S, fixedWidth: 100),
-                            DataColumn2(label: Text('Warehouse'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Details'), size: ColumnSize.S, fixedWidth: 60),
-                          ],
-                          rows: list.map((p) => DataRow(cells: [
-                            DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                            DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
-                            DataCell(Text(p.declarantName ?? '-', overflow: TextOverflow.ellipsis)),
-                            DataCell(Text(p.cusdecNo ?? '-', overflow: TextOverflow.ellipsis)),
-                            DataCell(Text(p.cusdecDate ?? '-')),
-                            DataCell(Text(p.reason ?? '-', overflow: TextOverflow.ellipsis)),
-                            DataCell(StatusChip(status: p.status)),
-                            DataCell(Text(p.entryDate != null
-                              ? DateFormat('dd/MM/yy').format(p.entryDate!)
-                              : DateFormat('dd/MM/yy').format(p.createdAt))),
-                            DataCell(_WarehousePill(warehouseEntries: p.warehouseEntries)),
-                            DataCell(IconButton(
-                              icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
-                              onPressed: () => _showDetails(context, p),
-                            )),
-                          ])).toList(),
-                        ),
+                            child: DataTable2(
+                              columnSpacing: 12,
+                              horizontalMargin: 12,
+                              fixedTopRows: 1,
+                              isVerticalScrollBarVisible: true,
+                              isHorizontalScrollBarVisible: false,
+                              columns: const [
+                                DataColumn2(label: Text('SR Number'), size: ColumnSize.L, fixedWidth: 140),
+                                DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+                                DataColumn2(label: Text('Declarant'), size: ColumnSize.M),
+                                DataColumn2(label: Text('Cusdec No'), size: ColumnSize.S),
+                                DataColumn2(label: Text('Cusdec Date'), size: ColumnSize.S),
+                                DataColumn2(label: Text('Reason'), size: ColumnSize.M),
+                                DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
+                                DataColumn2(label: Text('Entry Date'), size: ColumnSize.S, fixedWidth: 100),
+                                DataColumn2(label: Text('Warehouse'), size: ColumnSize.M),
+                                DataColumn2(label: Text('Details'), size: ColumnSize.S, fixedWidth: 60),
+                              ],
+                              rows: list.map((p) => DataRow(cells: [
+                                DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
+                                DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
+                                DataCell(Text(p.declarantName ?? '-', overflow: TextOverflow.ellipsis)),
+                                DataCell(Text(p.cusdecNo ?? '-', overflow: TextOverflow.ellipsis)),
+                                DataCell(Text(p.cusdecDate ?? '-')),
+                                DataCell(Text(p.reason ?? '-', overflow: TextOverflow.ellipsis)),
+                                DataCell(StatusChip(status: p.status)),
+                                DataCell(Text(p.entryDate != null
+                                  ? DateFormat('dd/MM/yy').format(p.entryDate!)
+                                  : DateFormat('dd/MM/yy').format(p.createdAt))),
+                                DataCell(_WarehousePill(warehouseEntries: p.warehouseEntries)),
+                                DataCell(IconButton(
+                                  icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
+                                  onPressed: () => _showDetails(context, p),
+                                )),
+                              ])).toList(),
+                            ),
                           ),
-                        ),
+                        ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
                 ),
               ),
             ],

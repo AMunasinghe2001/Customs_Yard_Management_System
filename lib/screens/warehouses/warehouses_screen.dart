@@ -81,7 +81,7 @@ class WarehousesScreen extends ConsumerWidget {
                       dividerColor: Colors.transparent,
                     ),
                   ),
-                ),
+                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
               ),
               const Gap(16),
               Expanded(
@@ -124,7 +124,7 @@ class _WarehouseTab extends ConsumerWidget {
                   _MiniStat(label: 'Held', value: '${list.where((e) => !e.isReturned).length}', color: context.colors.heldOrange),
                   const Gap(12),
                   _MiniStat(label: 'Returned', value: '${list.where((e) => e.isReturned).length}', color: context.colors.successGreen),
-                ]),
+                ]).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
                 const Gap(16),
                 Expanded(
                   child: Container(
@@ -176,7 +176,7 @@ class _WarehouseTab extends ConsumerWidget {
                           ])).toList(),
                         ),
                     ),
-                  ),
+                  ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                 ),
               ]),
             ),

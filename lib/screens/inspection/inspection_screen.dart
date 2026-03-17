@@ -196,9 +196,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Package Inspection', style: Theme.of(context).textTheme.headlineLarge),
-                      Text('Enter incoming package details for customs clearance check',
-                          style: TextStyle(color: context.colors.textSecondary)),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Package Inspection', style: Theme.of(context).textTheme.headlineLarge),
+                          Text('Enter incoming package details for customs clearance check',
+                              style: TextStyle(color: context.colors.textSecondary)),
+                        ],
+                      ).animate().fadeIn(),
                       const Gap(28),
                       _SectionCard(title: 'SR Register Information', icon: Icons.inventory_2_rounded, children: [
                         if (_isUpdate)
@@ -281,7 +286,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         const Gap(16),
                         TextFormField(controller: _descCtrl,
                             decoration: const InputDecoration(labelText: 'Package Description'), maxLines: 2),
-                      ]),
+                      ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                       const Gap(16),
                       _SectionCard(title: 'Consignee Information', icon: Icons.person_rounded, children: [
                         Row(children: [
@@ -296,7 +301,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         TextFormField(controller: _consigneePhoneCtrl,
                             decoration: const InputDecoration(labelText: 'Phone Number'),
                             keyboardType: TextInputType.phone),
-                      ]),
+                      ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
                       const Gap(16),
                       _SectionCard(
                         title: 'Package Items', icon: Icons.list_alt_rounded,
@@ -312,7 +317,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                             onChanged: () => setState(() {}),
                           ),
                         )),
-                      ),
+                      ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
                       const Gap(16),
                       _SectionCard(
                         title: 'Additional Info (Optional)', icon: Icons.info_outline_rounded,
@@ -330,13 +335,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                                 decoration: const InputDecoration(labelText: 'Origin Country'))),
                           ]),
                         ],
-                      ),
+                      ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
                       const Gap(16),
                       _SectionCard(title: 'Officer Notes', icon: Icons.note_rounded, children: [
                         TextFormField(controller: _notesCtrl,
                             decoration: const InputDecoration(hintText: 'Additional inspection notes...'),
                             maxLines: 3),
-                      ]),
+                      ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 500.ms).fadeIn(),
                       const Gap(24),
                       Row(
                         children: [
