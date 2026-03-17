@@ -110,15 +110,15 @@ class _OfficersTab extends ConsumerWidget {
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                   columns: [
-                    DataColumn2(label: Text('Name', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
-                    DataColumn2(label: Text('Salary No', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.M),
-                    DataColumn2(label: Text('Role', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
-                    DataColumn2(label: Text('Active', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
-                    DataColumn2(label: Text('Actions', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 80),
+                    DataColumn2(label: Text('Name', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Salary No', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M),
+                    DataColumn2(label: Text('Role', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Active', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Actions', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 80),
                   ],
                   rows: list.map((p) => DataRow(cells: [
-                    DataCell(Text(p.fullName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600))),
-                    DataCell(Text(p.badgeNumber ?? '—', style: TextStyle(color: context.colors.textMuted))),
+                    DataCell(Text(p.fullName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 13))),
+                    DataCell(Text(p.badgeNumber ?? '—', style: TextStyle(color: context.colors.textMuted, fontSize: 13))),
                     DataCell(_RoleChip(role: p.role)),
                     DataCell(
                       _StatusToggle(
@@ -298,20 +298,20 @@ class _RulesTab extends ConsumerWidget {
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                   columns: [
-                    DataColumn2(label: Text('Rule Name', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
-                    DataColumn2(label: Text('Type', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 120),
-                    DataColumn2(label: Text('Threshold', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
-                    DataColumn2(label: Text('Description', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
-                    DataColumn2(label: Text('Active', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
-                    DataColumn2(label: Text('Del', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 80),
+                    DataColumn2(label: Text('Rule Name', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Type', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 120),
+                    DataColumn2(label: Text('Threshold', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Description', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Active', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Del', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 80),
                   ],
                   rows: list.map((r) => DataRow(cells: [
-                    DataCell(Text(r.ruleName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600))),
+                    DataCell(Text(r.ruleName, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 13))),
                     DataCell(_RuleTypeChip(type: r.ruleType)),
                     DataCell(Text(r.thresholdValue?.toString() ?? r.stringValue ?? '—',
-                        style: TextStyle(color: context.colors.accentLightBlue))),
+                        style: TextStyle(color: context.colors.accentLightBlue, fontSize: 13))),
                     DataCell(Text(r.description ?? '—', overflow: TextOverflow.ellipsis, maxLines: 1,
-                        style: TextStyle(color: context.colors.textMuted, fontSize: 13))),
+                        style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
                     DataCell(
                       _StatusToggle(
                         isActive: r.isActive,
@@ -528,11 +528,11 @@ class _LogsTab extends ConsumerWidget {
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                   columns: [
-                    DataColumn2(label: Text('Time', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 140),
-                    DataColumn2(label: Text('User', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.M),
-                    DataColumn2(label: Text('Action', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
-                    DataColumn2(label: Text('Entity', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.S, fixedWidth: 100),
-                    DataColumn2(label: Text('Details', style: TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.w600)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Time', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 140),
+                    DataColumn2(label: Text('User', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M),
+                    DataColumn2(label: Text('Action', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Entity', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Details', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
                   ],
                   rows: list.map((l) {
                     final timeStr = '${l.createdAt.hour}:${l.createdAt.minute.toString().padLeft(2, '0')} ${l.createdAt.day}/${l.createdAt.month}';

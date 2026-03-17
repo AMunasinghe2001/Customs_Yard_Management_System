@@ -307,25 +307,31 @@ class _RecentPackagesTable extends StatelessWidget {
     return Container(
       height: 350,
       decoration: BoxDecoration(
-        color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: context.colors.borderColor),
       ),
-      child: DataTable2(
-        columnSpacing: 12,
-        horizontalMargin: 12,
-        fixedTopRows: 1,
-        columns: const [
-          DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-          DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
-          DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
-          DataColumn2(label: Text('Date'), size: ColumnSize.M),
-        ],
-        rows: packages.map((p) => DataRow(cells: [
-          DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-          DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
-          DataCell(StatusChip(status: p.status)),
-          DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(p.createdAt))),
-        ])).toList(),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: DataTable2(
+          columnSpacing: 12,
+          horizontalMargin: 12,
+          fixedTopRows: 1,
+          headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+          dataRowColor: WidgetStateProperty.all(Colors.transparent),
+          columns: [
+            DataColumn2(label: Text('SR Number', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M),
+            DataColumn2(label: Text('Consignee', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+            DataColumn2(label: Text('Status', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
+            DataColumn2(label: Text('Date', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M),
+          ],
+          rows: packages.map((p) => DataRow(cells: [
+            DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600, fontSize: 13))),
+            DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13))),
+            DataCell(StatusChip(status: p.status)),
+            DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(p.createdAt), style: TextStyle(color: context.colors.textMuted, fontSize: 13))),
+          ])).toList(),
+        ),
       ),
     );
   }
