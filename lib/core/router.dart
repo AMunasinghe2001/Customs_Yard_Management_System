@@ -12,6 +12,8 @@ import '../screens/warehouses/warehouses_screen.dart';
 import '../screens/packages/packages_screen.dart';
 import '../screens/admin/admin_screen.dart';
 import '../screens/profile/edit_profile_screen.dart';
+import '../screens/reports/reports_screen.dart';
+import '../widgets/app_shell.dart';
 import '../core/supabase_client.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
@@ -40,6 +42,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/admin', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DashboardScreen())),
       GoRoute(path: '/admin/panel', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminScreen())),
       GoRoute(path: '/profile', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const EditProfileScreen())),
+      GoRoute(path: '/reports', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: AppShell(currentRoute: '/reports', child: const ReportsScreen()))),
     ],
   );
 });

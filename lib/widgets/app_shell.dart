@@ -19,6 +19,7 @@ const _officerNav = [
   NavItem('Inspection', Icons.search_rounded, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
+  NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
 const _adminNav = [
@@ -26,6 +27,7 @@ const _adminNav = [
   NavItem('Inspection', Icons.search_rounded, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
+  NavItem('Reports', Icons.summarize_rounded, '/reports'),
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];
 
