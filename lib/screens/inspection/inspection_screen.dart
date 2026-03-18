@@ -245,9 +245,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                           ),
                           const Gap(8),
                           Expanded(child: DropdownButtonFormField<String>(
-                            value: ['pending', 'held', 'cleared'].contains(_statusValue) ? _statusValue : 'pending',
+                            value: ['pending', 'held', 'cleared', 'confiscated'].contains(_statusValue) ? _statusValue : 'pending',
                             decoration: const InputDecoration(labelText: 'Status *'),
-                            items: ['pending', 'held', 'cleared']
+                            items: ['pending', 'held', 'cleared', 'confiscated']
                                 .map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase()))).toList(),
                             onChanged: (v) => setState(() => _statusValue = v!),
                           )),
@@ -579,15 +579,16 @@ class _ItemRow {
   bool isProhibited = false;
 }
 
-class _ItemRowWidget extends StatefulWidget {
+class _ItemRowWidget extends ConsumerStatefulWidget {
   final _ItemRow row; final int index; final VoidCallback? onRemove; final VoidCallback onChanged;
   const _ItemRowWidget({required this.row, required this.index, this.onRemove, required this.onChanged});
-  @override State<_ItemRowWidget> createState() => _ItemRowWidgetState();
+  @override ConsumerState<_ItemRowWidget> createState() => _ItemRowWidgetState();
 }
 
-class _ItemRowWidgetState extends State<_ItemRowWidget> {
+class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
   @override
   Widget build(BuildContext context) {
+    final categories = ref.watch(packageCategoriesProvider);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: context.colors.surfaceDark, borderRadius: BorderRadius.circular(10),
@@ -610,8 +611,20 @@ class _ItemRowWidgetState extends State<_ItemRowWidget> {
               decoration: const InputDecoration(labelText: 'Qty', isDense: true),
               keyboardType: TextInputType.number)),
           const Gap(8),
-          Expanded(flex: 2, child: TextField(controller: widget.row.categoryCtrl,
-              decoration: const InputDecoration(labelText: 'Category', isDense: true))),
+          Expanded(flex: 2, child: categories.when(
+            loading: () => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+            error: (e, _) => const Text('Error'),
+            data: (list) => DropdownButtonFormField<String>(
+              isDense: true,
+              value: list.any((c) => c.name == widget.row.categoryCtrl.text) ? widget.row.categoryCtrl.text : null,
+              decoration: const InputDecoration(labelText: 'Category', isDense: true),
+              items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12)))).toList(),
+              onChanged: (v) {
+                widget.row.categoryCtrl.text = v ?? '';
+                widget.onChanged();
+              },
+            ),
+          )),
         ]),
         const Gap(8),
         Row(children: [

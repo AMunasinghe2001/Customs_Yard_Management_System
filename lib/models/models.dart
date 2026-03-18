@@ -169,6 +169,16 @@ class PackageModel {
   bool get isCleared => status == 'cleared';
   bool get isHeld => status == 'held';
   bool get isPending => status == 'pending';
+  bool get isConfiscated => status == 'confiscated';
+
+  bool get isReturned => warehouseEntries.isNotEmpty && warehouseEntries.every((e) => e.isReturned);
+
+  DateTime? get returnedAt {
+    if (warehouseEntries.isEmpty) return null;
+    final returnedEntries = warehouseEntries.where((e) => e.isReturned && e.returnedAt != null).toList();
+    if (returnedEntries.isEmpty) return null;
+    return returnedEntries.map((e) => e.returnedAt!).reduce((a, b) => a.isAfter(b) ? a : b);
+  }
 }
 
 class PackageItem {
@@ -237,6 +247,7 @@ class WarehouseEntryModel {
   // From joined packages table
   final String? srNumber;
   final String? consigneeName;
+  final String? packageStatus;
 
   const WarehouseEntryModel({
     required this.id,
@@ -256,6 +267,7 @@ class WarehouseEntryModel {
     this.returnNotes,
     this.srNumber,
     this.consigneeName,
+    this.packageStatus,
   });
 
   factory WarehouseEntryModel.fromJson(Map<String, dynamic> json) {
@@ -283,8 +295,11 @@ class WarehouseEntryModel {
       returnNotes: json['return_notes'] as String?,
       srNumber: package?['sr_number'] as String?,
       consigneeName: package?['consignee_name'] as String?,
+      packageStatus: package?['status'] as String?,
     );
   }
+
+  bool get isPackageConfiscated => packageStatus == 'confiscated';
 }
 
 class WarehouseModel {
@@ -442,5 +457,35 @@ class AuditLogModel {
       createdAt: DateTime.parse(json['created_at'] as String),
       userFullName: (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
+  }
+}
+
+class PackageCategory {
+  final String id;
+  final String name;
+  final String? description;
+  final DateTime createdAt;
+
+  const PackageCategory({
+    required this.id,
+    required this.name,
+    this.description,
+    required this.createdAt,
+  });
+
+  factory PackageCategory.fromJson(Map<String, dynamic> json) {
+    return PackageCategory(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      description: json['description'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'description': description,
+    };
   }
 }

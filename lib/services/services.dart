@@ -570,3 +570,47 @@ class AuditLogService {
     }
   }
 }
+
+// ── Package Category Service ──────────────────────────────────
+
+final packageCategoryServiceProvider = Provider((ref) => PackageCategoryService());
+
+class PackageCategoryService {
+  Future<List<PackageCategory>> getCategories() async {
+    final data = await supabase.from('package_categories').select().order('name');
+    return data.map((e) => PackageCategory.fromJson(e)).toList();
+  }
+
+  Future<void> createCategory(String name, {String? description}) async {
+    await supabase.from('package_categories').insert({
+      'name': name,
+      'description': description,
+    });
+    
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created package category: $name',
+        entityType: 'package_category',
+        entityId: 'new',
+      );
+    }
+  }
+
+  Future<void> deleteCategory(String id) async {
+    await supabase.from('package_categories').delete().eq('id', id);
+    
+    // Log action
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Deleted package category',
+        entityType: 'package_category',
+        entityId: id,
+      );
+    }
+  }
+}

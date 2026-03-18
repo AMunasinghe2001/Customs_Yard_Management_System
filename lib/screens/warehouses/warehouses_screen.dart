@@ -109,13 +109,30 @@ class _WarehouseTab extends ConsumerWidget {
     return entries.when(
       loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
       error: (e, _) => Center(child: Text('Error: $e')),
-      data: (list) => list.isEmpty
-          ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.warehouse_rounded, size: 64, color: context.colors.textMuted.withOpacity(0.4)),
-              const Gap(16),
-              Text('${warehouse.name} is empty', style: TextStyle(color: context.colors.textMuted, fontSize: 16)),
-            ]))
-          : Padding(
+      data: (list) {
+        final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
+        final search = ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
+
+        final filteredList = list.where((e) {
+          if (filter != 'all' && e.packageStatus != filter) return false;
+          if (search.isNotEmpty) {
+            final matchesSr = (e.srNumber?.toLowerCase() ?? '').contains(search);
+            final matchesConsignee = (e.consigneeName?.toLowerCase() ?? '').contains(search);
+            final matchesReason = e.holdReason.toLowerCase().contains(search);
+            if (!matchesSr && !matchesConsignee && !matchesReason) return false;
+          }
+          return true;
+        }).toList();
+
+        if (list.isEmpty) {
+          return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(Icons.warehouse_rounded, size: 64, color: context.colors.textMuted.withOpacity(0.4)),
+            const Gap(16),
+            Text('${warehouse.name} is empty', style: TextStyle(color: context.colors.textMuted, fontSize: 16)),
+          ]));
+        }
+
+        return Padding(
               padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Row(children: [
@@ -125,6 +142,44 @@ class _WarehouseTab extends ConsumerWidget {
                   const Gap(12),
                   _MiniStat(label: 'Returned', value: '${list.where((e) => e.isReturned).length}', color: context.colors.successGreen),
                 ]).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
+                const Gap(20),
+
+                // ── Unified Search & Filter Bar ──────────────────────
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: context.colors.cardDark,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
+                  ),
+                  child: Row(children: [
+                    Expanded(
+                      child: TextField(
+                        style: TextStyle(color: context.colors.textPrimary),
+                        onChanged: (v) => ref.read(warehouseSearchProvider(warehouse.id).notifier).state = v,
+                        decoration: InputDecoration(
+                          hintText: 'Search SR #, consignee or reason...',
+                          prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
+                          isDense: true,
+                        ),
+                      ),
+                    ),
+                    const Gap(12),
+                    ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => Padding(
+                      padding: const EdgeInsets.only(left: 8),
+                      child: FilterChip(
+                        label: Text(s.toUpperCase()),
+                        selected: filter == s,
+                        onSelected: (_) => ref.read(warehouseStatusFilterProvider(warehouse.id).notifier).state = s,
+                        selectedColor: context.colors.primaryGold.withOpacity(0.2),
+                        checkmarkColor: context.colors.primaryGold,
+                        labelStyle: TextStyle(
+                          color: filter == s ? context.colors.primaryGold : context.colors.textSecondary,
+                          fontSize: 12, fontWeight: filter == s ? FontWeight.w700 : FontWeight.w400),
+                      ),
+                    )),
+                  ]),
+                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                 const Gap(16),
                 Expanded(
                   child: Container(
@@ -147,7 +202,7 @@ class _WarehouseTab extends ConsumerWidget {
                             DataColumn2(label: Text('Returned'), size: ColumnSize.S, fixedWidth: 100),
                             DataColumn2(label: Text('Action'), size: ColumnSize.S, fixedWidth: 140),
                           ],
-                          rows: list.map((e) => DataRow(cells: [
+                          rows: filteredList.map((e) => DataRow(cells: [
                             DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
                                 style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
                             DataCell(Text(e.consigneeName ?? '—', style: const TextStyle(fontSize: 13))),
@@ -157,29 +212,41 @@ class _WarehouseTab extends ConsumerWidget {
                             DataCell(Container(
                               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                               decoration: BoxDecoration(
-                                color: e.isReturned ? context.colors.successGreen.withOpacity(0.15) : context.colors.heldOrange.withOpacity(0.15),
+                                color: e.isReturned 
+                                    ? context.colors.successGreen.withOpacity(0.15) 
+                                    : (e.isPackageConfiscated ? context.colors.dangerRed.withOpacity(0.15) : context.colors.heldOrange.withOpacity(0.15)),
                                 borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: e.isReturned ? context.colors.successGreen.withOpacity(0.4) : context.colors.heldOrange.withOpacity(0.4)),
+                                border: Border.all(color: e.isReturned 
+                                    ? context.colors.successGreen.withOpacity(0.4) 
+                                    : (e.isPackageConfiscated ? context.colors.dangerRed.withOpacity(0.4) : context.colors.heldOrange.withOpacity(0.4))),
                               ),
-                              child: Text(e.isReturned ? 'RETURNED' : 'IN HOLD',
-                                  style: TextStyle(color: e.isReturned ? context.colors.successGreen : context.colors.heldOrange, fontSize: 11, fontWeight: FontWeight.w700)),
+                              child: Text(e.isReturned 
+                                  ? 'RETURNED' 
+                                  : (e.isPackageConfiscated ? 'CONFISCATED' : 'IN HOLD'),
+                                  style: TextStyle(color: e.isReturned 
+                                      ? context.colors.successGreen 
+                                      : (e.isPackageConfiscated ? context.colors.dangerRed : context.colors.heldOrange), 
+                                      fontSize: 11, fontWeight: FontWeight.w700)),
                             )),
                             DataCell(Text(e.returnedAt != null ? DateFormat('dd/MM/yy').format(e.returnedAt!) : '—',
                                 style: TextStyle(color: context.colors.textMuted))),
                             DataCell(e.isReturned
                                 ? Text('—', style: TextStyle(color: context.colors.textMuted))
-                                : TextButton(
-                                    onPressed: () => _showReturnDialog(context, ref, e),
-                                    style: TextButton.styleFrom(foregroundColor: context.colors.successGreen),
-                                    child: const Text('Mark Returned'),
-                                  )),
+                                : (e.isPackageConfiscated 
+                                    ? Tooltip(message: 'Confiscated goods cannot be returned', child: Text('LOCKED', style: TextStyle(color: context.colors.textMuted, fontSize: 11, fontWeight: FontWeight.bold)))
+                                    : TextButton(
+                                        onPressed: () => _showReturnDialog(context, ref, e),
+                                        style: TextButton.styleFrom(foregroundColor: context.colors.successGreen),
+                                        child: const Text('Mark Returned'),
+                                      ))),
                           ])).toList(),
                         ),
                     ),
                   ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                 ),
               ]),
-            ),
+            );
+      },
     );
   }
 

@@ -74,188 +74,167 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           style: TextStyle(color: context.colors.textSecondary)),
                     ],
                   ),
-                  packages.when(
-                    data: (list) => Text('${list.length} packages', style: TextStyle(color: context.colors.textMuted, fontSize: 14)),
-                    loading: () => const SizedBox(),
-                    error: (_, __) => const SizedBox()
-                  ),
+                  Row(children: [
+                    Text('Show Returned', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+                    const Gap(8),
+                    Switch(
+                      value: ref.watch(packageShowReturnedProvider),
+                      onChanged: (v) => ref.read(packageShowReturnedProvider.notifier).state = v,
+                      activeColor: context.colors.primaryGold,
+                    ),
+                    const Gap(24),
+                    packages.when(
+                      data: (list) => Text('${list.length} packages', style: TextStyle(color: context.colors.textMuted, fontSize: 14)),
+                      loading: () => const SizedBox(),
+                      error: (_, __) => const SizedBox()
+                    ),
+                  ]),
                 ],
               ).animate().fadeIn(),
               const Gap(20),
 
-              // ── SR Quick Search Card ────────────────────────────
+              // ── Unified Search & Filter Bar ──────────────────────
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: context.colors.cardDark,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.colors.primaryGold.withOpacity(0.35)),
+                  border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
                 ),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Row(children: [
-                    Icon(Icons.manage_search_rounded, color: context.colors.primaryGold, size: 18),
-                    const Gap(8),
-                    Text('SR Number Quick Search',
-                        style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 14)),
-                  ]),
-                  const Gap(12),
-                  Row(children: [
-                    Expanded(
-                      child: Autocomplete<PackageModel>(
-                        displayStringForOption: (p) => p.srNumber,
-                        optionsBuilder: (textEditingValue) {
-                          final query = textEditingValue.text.trim().toLowerCase();
-                          if (query.isEmpty) return const [];
-                          final packages = ref.read(livePackagesProvider).valueOrNull ?? [];
-                          return packages.where((p) => p.srNumber.toLowerCase().contains(query));
-                        },
-                        onSelected: (package) {
-                          setState(() {
-                            _srResult = package;
-                            _srError = null;
-                          });
-                        },
-                        optionsViewBuilder: (context, onSelected, options) {
-                          return Align(
-                            alignment: Alignment.topLeft,
-                            child: Material(
-                              color: Colors.transparent,
-                              child: Container(
-                                width: 350,
-                                margin: const EdgeInsets.only(top: 8),
-                                decoration: BoxDecoration(
-                                  color: context.colors.surfaceDark,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: context.colors.borderColor),
-                                  boxShadow: [
-                                    BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))
-                                  ],
-                                ),
-                                child: ListView.builder(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  shrinkWrap: true,
-                                  itemCount: options.length,
-                                  itemBuilder: (context, index) {
-                                    final option = options.elementAt(index);
-                                    return InkWell(
-                                      onTap: () => onSelected(option),
-                                      child: Padding(
-                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                        child: Text(option.srNumber, style: TextStyle(color: context.colors.textPrimary)),
+                child: Row(children: [
+                  Expanded(
+                    child: Autocomplete<PackageModel>(
+                      displayStringForOption: (p) => p.srNumber,
+                      initialValue: TextEditingValue(text: _tableSearchCtrl.text),
+                      optionsBuilder: (textEditingValue) {
+                        final query = textEditingValue.text.trim().toLowerCase();
+                        if (query.isEmpty) return const [];
+                        final packages = ref.read(livePackagesProvider).valueOrNull ?? [];
+                        return packages.where((p) => p.srNumber.toLowerCase().contains(query) || p.consigneeName.toLowerCase().contains(query));
+                      },
+                      onSelected: (package) {
+                        setState(() {
+                          _srResult = package;
+                          _tableSearchCtrl.text = package.srNumber;
+                          ref.read(packageSearchProvider.notifier).state = package.srNumber;
+                        });
+                      },
+                      optionsViewBuilder: (context, onSelected, options) {
+                        return Align(
+                          alignment: Alignment.topLeft,
+                          child: Material(
+                            color: Colors.transparent,
+                            child: Container(
+                              width: 500,
+                              margin: const EdgeInsets.only(top: 8),
+                              decoration: BoxDecoration(
+                                color: context.colors.surfaceDark,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: context.colors.borderColor),
+                                boxShadow: [
+                                  BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))
+                                ],
+                              ),
+                              child: ListView.builder(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                shrinkWrap: true,
+                                itemCount: options.length,
+                                itemBuilder: (context, index) {
+                                  final option = options.elementAt(index);
+                                  return InkWell(
+                                    onTap: () => onSelected(option),
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                      child: Row(
+                                        children: [
+                                          Text(option.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold)),
+                                          const Gap(12),
+                                          Expanded(child: Text(option.consigneeName, style: TextStyle(color: context.colors.textSecondary, fontSize: 13), overflow: TextOverflow.ellipsis)),
+                                          StatusChip(status: option.status),
+                                        ],
                                       ),
-                                    );
-                                  },
-                                ),
+                                    ),
+                                  );
+                                },
                               ),
                             ),
-                          );
-                        },
-                        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
-                          return TextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            style: TextStyle(color: context.colors.textPrimary),
-                            decoration: InputDecoration(
-                              hintText: 'Enter SR number (e.g. GL 1/SR/01/2025)',
-                              prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
-                              suffixIcon: controller.text.isNotEmpty
-                                  ? IconButton(
-                                      icon: Icon(Icons.clear_rounded, color: context.colors.textMuted),
-                                      onPressed: () {
-                                        controller.clear();
-                                        setState(() { _srResult = null; _srError = null; });
-                                      },
-                                    )
-                                  : null,
-                              isDense: true,
-                            ),
-                            onChanged: (v) {
-                              setState(() {}); // to show/hide clear button
-                              if (v.trim().isEmpty) {
-                                setState(() { _srResult = null; _srError = null; });
-                              }
-                            },
-                            onSubmitted: (v) => _onSrSubmitted(v),
-                          );
-                        },
-                      ),
+                          ),
+                        );
+                      },
+                      fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+                        // Sync external controller if needed
+                        if (controller.text != _tableSearchCtrl.text && _tableSearchCtrl.text.isNotEmpty && controller.text.isEmpty) {
+                           controller.text = _tableSearchCtrl.text;
+                        }
+                        return TextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          style: TextStyle(color: context.colors.textPrimary),
+                          decoration: InputDecoration(
+                            hintText: 'Search SR #, consignee or declarant...',
+                            prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
+                            suffixIcon: controller.text.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.clear_rounded, color: context.colors.textMuted),
+                                    onPressed: () {
+                                      controller.clear();
+                                      _tableSearchCtrl.clear();
+                                      ref.read(packageSearchProvider.notifier).state = '';
+                                      setState(() { _srResult = null; });
+                                    },
+                                  )
+                                : null,
+                            isDense: true,
+                          ),
+                          onChanged: (v) {
+                            _tableSearchCtrl.text = v;
+                            ref.read(packageSearchProvider.notifier).state = v;
+                            setState(() {
+                               if (v.trim().isEmpty) _srResult = null;
+                            });
+                          },
+                        );
+                      },
                     ),
-                  ]),
-                  if (_srError != null) ...[
-                    const Gap(12),
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: context.colors.dangerRed.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: context.colors.dangerRed.withOpacity(0.3)),
-                      ),
-                      child: Row(children: [
-                        Icon(Icons.info_outline, color: context.colors.dangerRed, size: 16),
-                        const Gap(8),
-                        Text(_srError!, style: TextStyle(color: context.colors.dangerRed, fontSize: 13)),
-                      ]),
+                  ),
+                  const Gap(12),
+                  ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: FilterChip(
+                      label: Text(s.toUpperCase()),
+                      selected: filter == s,
+                      onSelected: (_) => ref.read(packageFilterProvider.notifier).state = s,
+                      selectedColor: context.colors.primaryGold.withOpacity(0.2),
+                      checkmarkColor: context.colors.primaryGold,
+                      labelStyle: TextStyle(
+                        color: filter == s ? context.colors.primaryGold : context.colors.textSecondary,
+                        fontSize: 12, fontWeight: filter == s ? FontWeight.w700 : FontWeight.w400),
                     ),
-                  ],
-                  if (_srResult != null) ...[
-                    const Gap(12),
-                    _SrResultCard(package: _srResult!),
-                  ],
+                  )),
                 ]),
-              ).animate().slideY(begin: 0.1).fadeIn(delay: 100.ms),
-              const Gap(16),
+              ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
 
-              // ── Filter Bar ──────────────────────────────────────
-              Row(children: [
-                Expanded(child: TextField(
-                  controller: _tableSearchCtrl,
-                  style: TextStyle(color: context.colors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Search SR # or consignee...',
-                    prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
-                    suffixIcon: _tableSearchCtrl.text.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(Icons.clear_rounded, color: context.colors.textMuted),
-                            onPressed: () {
-                              _tableSearchCtrl.clear();
-                              ref.read(packageSearchProvider.notifier).state = '';
-                              setState(() {});
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                  ),
-                  onChanged: (v) {
-                    ref.read(packageSearchProvider.notifier).state = v;
-                    setState(() {}); // to show/hide clear button
-                  },
-                )),
-                const Gap(12),
-                ...['all', 'pending', 'held', 'cleared'].map((s) => Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: FilterChip(
-                    label: Text(s.toUpperCase()),
-                    selected: filter == s,
-                    onSelected: (_) => ref.read(packageFilterProvider.notifier).state = s,
-                    selectedColor: context.colors.primaryGold.withOpacity(0.2),
-                    checkmarkColor: context.colors.primaryGold,
-                    labelStyle: TextStyle(
-                      color: filter == s ? context.colors.primaryGold : context.colors.textSecondary,
-                      fontSize: 12, fontWeight: filter == s ? FontWeight.w700 : FontWeight.w400),
-                  ),
-                )),
-                const Gap(8),
-                IconButton(icon: Icon(Icons.refresh_rounded, color: context.colors.textMuted),
-                    onPressed: () => ref.invalidate(livePackagesProvider), tooltip: 'Refresh'),
-              ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+              if (_srResult != null) ...[
+                const Gap(16),
+                _SrResultCard(package: _srResult!, onDetails: () => _showDetails(context, _srResult!)).animate().fadeIn(),
+              ],
               const Gap(16),
               Expanded(
                 child: packages.when(
                   loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
                   error: (e, _) => Center(child: Text('Error: $e')),
-                  data: (list) => list.isEmpty
-                      ? Center(child: Text('No packages found', style: TextStyle(color: context.colors.textMuted, fontSize: 16)))
-                      : Container(
+                  data: (list) {
+                    final showReturned = ref.watch(packageShowReturnedProvider);
+                    final filteredList = list.where((p) {
+                      if (!showReturned && p.isReturned) return false;
+                      return true;
+                    }).toList();
+
+                    if (filteredList.isEmpty) {
+                      return Center(child: Text('No packages found', style: TextStyle(color: context.colors.textMuted, fontSize: 16)));
+                    }
+
+                    return Container(
                           decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
                               border: Border.all(color: context.colors.borderColor)),
                           child: ClipRRect(
@@ -275,6 +254,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                 DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                                 DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
                                 DataColumn2(label: Text('Entry Date'), size: ColumnSize.S, fixedWidth: 100),
+                                DataColumn2(label: Text('Returned'), size: ColumnSize.S, fixedWidth: 100),
                                 DataColumn2(label: Text('Warehouse'), size: ColumnSize.M),
                                 DataColumn2(label: Text('Details'), size: ColumnSize.S, fixedWidth: 60),
                               ],
@@ -289,6 +269,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                 DataCell(Text(p.entryDate != null
                                   ? DateFormat('dd/MM/yy').format(p.entryDate!)
                                   : DateFormat('dd/MM/yy').format(p.createdAt))),
+                                DataCell(Text(p.returnedAt != null 
+                                  ? DateFormat('dd/MM/yy').format(p.returnedAt!) 
+                                  : '—', style: TextStyle(color: context.colors.successGreen, fontWeight: FontWeight.w600))),
                                 DataCell(_WarehousePill(warehouseEntries: p.warehouseEntries)),
                                 DataCell(IconButton(
                                   icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
@@ -297,7 +280,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               ])).toList(),
                             ),
                           ),
-                        ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
+                        ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn();
+                  },
                 ),
               ),
             ],
@@ -379,7 +363,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
 
 class _SrResultCard extends StatelessWidget {
   final PackageModel package;
-  const _SrResultCard({required this.package});
+  final VoidCallback onDetails;
+  const _SrResultCard({required this.package, required this.onDetails});
 
   @override
   Widget build(BuildContext context) {
@@ -440,6 +425,19 @@ class _SrResultCard extends StatelessWidget {
             ]),
           )),
         ],
+        const Gap(16),
+        Center(
+          child: OutlinedButton.icon(
+            onPressed: onDetails,
+            icon: const Icon(Icons.info_outline_rounded, size: 16),
+            label: const Text('View Full Details', style: TextStyle(fontSize: 12)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: context.colors.accentLightBlue,
+              side: BorderSide(color: context.colors.accentLightBlue.withOpacity(0.5)),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+            ),
+          ),
+        ),
       ]),
     );
   }

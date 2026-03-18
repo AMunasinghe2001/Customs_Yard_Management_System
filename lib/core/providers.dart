@@ -83,6 +83,24 @@ final profilesChangeTriggerProvider = StreamProvider<int>((ref) async* {
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
+// ── Realtime: Package Categories Stream ──────────────────────────
+final categoryChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  int tick = 0;
+  yield tick;
+  final channel = supabase.channel('categories-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'package_categories',
+      callback: (_) {
+        tick++;
+        ref.invalidateSelf();
+      },
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
 // ── Shared Data Providers ──────────────────────────────────────
 final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
   return ref.read(warehouseServiceProvider).getWarehouses();
@@ -91,6 +109,7 @@ final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
 // ── Live Packages Provider (re-fetches on realtime trigger) ────
 final packageFilterProvider = StateProvider<String>((ref) => 'all');
 final packageSearchProvider = StateProvider<String>((ref) => '');
+final packageShowReturnedProvider = StateProvider<bool>((ref) => true);
 
 final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   // Watch trigger so we re-run whenever table changes
@@ -113,6 +132,9 @@ final liveWarehouseEntriesProvider =
   return ref.read(warehouseServiceProvider).getEntriesByWarehouse(
     warehouseId, isReturned: showReturned ? null : false);
 });
+
+final warehouseStatusFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
+final warehouseSearchProvider = StateProvider.family<String, String>((ref, warehouseId) => '');
 
 // ── Admin Data Providers ───────────────────────────────────────
 final allProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
@@ -156,4 +178,9 @@ final auditLogsChangeTriggerProvider = StreamProvider<int>((ref) async* {
 final allLogsProvider = FutureProvider<List<AuditLogModel>>((ref) async {
   ref.watch(auditLogsChangeTriggerProvider);
   return ref.read(auditLogServiceProvider).getAllLogs();
+});
+
+final packageCategoriesProvider = FutureProvider<List<PackageCategory>>((ref) async {
+  ref.watch(categoryChangeTriggerProvider);
+  return ref.read(packageCategoryServiceProvider).getCategories();
 });

@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
+import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
@@ -20,7 +21,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 3,
+        length: 4,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -51,6 +52,7 @@ class AdminScreen extends ConsumerWidget {
                         tabs: const [
                           Tab(icon: Icon(Icons.people_rounded), text: 'Officers'),
                           Tab(icon: Icon(Icons.gavel_rounded), text: 'Customs Rules'),
+                          Tab(icon: Icon(Icons.category_rounded), text: 'Categories'),
                           Tab(icon: Icon(Icons.history_toggle_off_rounded), text: 'Activity Logs'),
                         ],
                         dividerColor: Colors.transparent,
@@ -60,7 +62,7 @@ class AdminScreen extends ConsumerWidget {
                 ),
               ),
               const Gap(4),
-              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _LogsTab()])),
+              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _CategoriesTab(), _LogsTab()])),
             ],
           ),
         ),
@@ -495,6 +497,106 @@ class _StatusToggleState extends State<_StatusToggle> {
         }
       },
     );
+  }
+}
+
+// ── Categories Tab ──────────────────────────────────────────────
+
+class _CategoriesTab extends ConsumerWidget {
+  const _CategoriesTab();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final categories = ref.watch(packageCategoriesProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+          Text('Item Categories', style: TextStyle(color: context.colors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: context.colors.primaryGold,
+              foregroundColor: context.colors.primaryNavy,
+            ),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: const Text('Add Category', style: TextStyle(fontWeight: FontWeight.w600)),
+            onPressed: () => _showAddCategoryDialog(context, ref),
+          ),
+        ]),
+        const Gap(16),
+        Expanded(
+          child: categories.when(
+            loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
+            error: (e, _) => Center(child: Text('Error: $e', style: TextStyle(color: context.colors.dangerRed))),
+            data: (list) => Container(
+              width: double.infinity,
+              decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: context.colors.borderColor)),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: DataTable2(
+                  horizontalMargin: 24,
+                  columnSpacing: 20,
+                  fixedTopRows: 1,
+                  isHorizontalScrollBarVisible: false,
+                  dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                  headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                  columns: [
+                    DataColumn2(label: Text('Category Name', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Description', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Created At', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M, fixedWidth: 150),
+                    DataColumn2(label: Text('Del', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 80),
+                  ],
+                  rows: list.map((c) => DataRow(cells: [
+                    DataCell(Text(c.name, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 13))),
+                    DataCell(Text(c.description ?? '—', style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
+                    DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(c.createdAt), style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
+                    DataCell(IconButton(
+                      icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 18),
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+                          title: const Text('Delete Category'),
+                          content: Text('Delete "${c.name}"?'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
+                                onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                          ],
+                        ));
+                        if (ok == true) {
+                          await ref.read(packageCategoryServiceProvider).deleteCategory(c.id);
+                          ref.invalidate(packageCategoriesProvider);
+                        }
+                      },
+                    )),
+                  ])).toList(),
+                ),
+              ),
+            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  void _showAddCategoryDialog(BuildContext context, WidgetRef ref) {
+    final nameC = TextEditingController(), descC = TextEditingController();
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Add Package Category'),
+      content: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: nameC, decoration: const InputDecoration(labelText: 'Category Name *')),
+        const Gap(12),
+        TextField(controller: descC, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
+      ]),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(onPressed: () async {
+          if (nameC.text.isEmpty) return;
+          await ref.read(packageCategoryServiceProvider).createCategory(nameC.text.trim(), description: descC.text.trim());
+          ref.invalidate(packageCategoriesProvider);
+          if (ctx.mounted) Navigator.pop(ctx);
+        }, child: const Text('Add Category')),
+      ],
+    ));
   }
 }
 
