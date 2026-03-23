@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
+import '../../widgets/error_view.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
   const InspectionScreen({super.key});
@@ -222,12 +223,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                                   style: TextStyle(color: context.colors.primaryGold, fontSize: 13)),
                             ]),
                           ),
-                        Row(children: [
-                          Expanded(child: TextFormField(controller: _srNumberCtrl,
-                              decoration: const InputDecoration(labelText: 'SR Number *', hintText: 'e.g. GL 1/SR/01/2025'),
-                              validator: (v) => v!.isEmpty ? 'Required' : null,
-                              onFieldSubmitted: (_) => _loadBySrNumber())),
-                          const Gap(8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 12,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 160),
+                            child: IntrinsicWidth(child: TextFormField(controller: _srNumberCtrl,
+                                decoration: const InputDecoration(labelText: 'SR Number *', hintText: 'e.g. GL 1/SR/01/2025'),
+                                validator: (v) => v!.isEmpty ? 'Required' : null,
+                                onFieldSubmitted: (_) => _loadBySrNumber())),
+                          ),
                           SizedBox(
                             height: 52,
                             child: ElevatedButton.icon(
@@ -243,15 +250,17 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                               onPressed: _isLookingUp ? null : _loadBySrNumber,
                             ),
                           ),
-                          const Gap(8),
-                          Expanded(child: DropdownButtonFormField<String>(
-                            value: ['pending', 'held', 'cleared', 'confiscated'].contains(_statusValue) ? _statusValue : 'pending',
-                            decoration: const InputDecoration(labelText: 'Status *'),
-                            items: ['pending', 'held', 'cleared', 'confiscated']
-                                .map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase()))).toList(),
-                            onChanged: (v) => setState(() => _statusValue = v!),
-                          )),
-                        ]),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(minWidth: 160),
+                            child: IntrinsicWidth(child: DropdownButtonFormField<String>(
+                              value: ['pending', 'held', 'cleared', 'confiscated'].contains(_statusValue) ? _statusValue : 'pending',
+                              decoration: const InputDecoration(labelText: 'Status *'),
+                              items: ['pending', 'held', 'cleared', 'confiscated']
+                                  .map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase()))).toList(),
+                              onChanged: (v) => setState(() => _statusValue = v!),
+                            )),
+                          ),
+                          ]),
                         const Gap(16),
                         Row(children: [
                           Expanded(child: TextFormField(controller: _declarantCtrl,
@@ -602,30 +611,42 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 onPressed: widget.onRemove, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
         ]),
         const Gap(8),
-        Row(children: [
-          Expanded(flex: 3, child: TextField(controller: widget.row.nameCtrl,
-              decoration: const InputDecoration(labelText: 'Item Name', isDense: true),
-              onChanged: (_) => widget.onChanged())),
-          const Gap(8),
-          Expanded(child: TextField(controller: widget.row.qtyCtrl,
-              decoration: const InputDecoration(labelText: 'Qty', isDense: true),
-              keyboardType: TextInputType.number)),
-          const Gap(8),
-          Expanded(flex: 2, child: categories.when(
-            loading: () => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
-            error: (e, _) => const Text('Error'),
-            data: (list) => DropdownButtonFormField<String>(
-              isDense: true,
-              value: list.any((c) => c.name == widget.row.categoryCtrl.text) ? widget.row.categoryCtrl.text : null,
-              decoration: const InputDecoration(labelText: 'Category', isDense: true),
-              items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12)))).toList(),
-              onChanged: (v) {
-                widget.row.categoryCtrl.text = v ?? '';
-                widget.onChanged();
-              },
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 200),
+              child: IntrinsicWidth(child: TextField(controller: widget.row.nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Item Name', isDense: true),
+                  onChanged: (_) => widget.onChanged())),
             ),
-          )),
-        ]),
+            SizedBox(
+              width: 80,
+              child: TextField(controller: widget.row.qtyCtrl,
+                  decoration: const InputDecoration(labelText: 'Qty', isDense: true),
+                  keyboardType: TextInputType.number),
+            ),
+            ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 140),
+              child: IntrinsicWidth(child: categories.when(
+                loading: () => const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                error: (e, _) => IconButton(icon: const Icon(Icons.refresh, size: 16, color: Colors.orange),
+                    onPressed: () => ref.refresh(packageCategoriesProvider), tooltip: 'Error loading categories. Click to retry.'),
+                data: (list) => DropdownButtonFormField<String>(
+                  isDense: true,
+                  value: list.any((c) => c.name == widget.row.categoryCtrl.text) ? widget.row.categoryCtrl.text : null,
+                  decoration: const InputDecoration(labelText: 'Category', isDense: true),
+                  items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12)))).toList(),
+                  onChanged: (v) {
+                    widget.row.categoryCtrl.text = v ?? '';
+                    widget.onChanged();
+                  },
+                ),
+              )),
+            ),
+          ],
+        ),
         const Gap(8),
         Row(children: [
           Checkbox(value: widget.row.isProhibited,

@@ -12,6 +12,7 @@ import '../../models/models.dart';
 import 'package:intl/intl.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../../widgets/error_view.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   const ReportsScreen({super.key});
@@ -185,6 +186,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                if (snapshot.hasError) 
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 20),
+                    child: ErrorView(error: snapshot.error!, onRetry: () => setState(() {})),
+                  ),
                 Text('Standard Reports', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
                 const Gap(8),
                 GridView.count(

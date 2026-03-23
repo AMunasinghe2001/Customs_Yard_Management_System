@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:window_manager/window_manager.dart';
 import 'core/supabase_client.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
@@ -16,6 +17,16 @@ class _NoPersistLocalStorage extends LocalStorage {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await windowManager.ensureInitialized();
+  WindowOptions windowOptions = const WindowOptions(
+    minimumSize: Size(1000, 700),
+    title: 'Sri Lanka Customs - Yard Management',
+  );
+  windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.show();
+    await windowManager.focus();
+  });
 
   await Supabase.initialize(
     url: supabaseUrl,

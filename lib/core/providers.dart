@@ -134,6 +134,11 @@ final liveWarehouseEntriesProvider =
     warehouseId, isReturned: showReturned ? null : false);
 });
 
+final allWarehouseEntriesProvider = FutureProvider<List<WarehouseEntryModel>>((ref) async {
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  return ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+});
+
 final warehouseStatusFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
 final warehouseSearchProvider = StateProvider.family<String, String>((ref, id) => '');
 final warehouseDateRangeProvider = StateProvider.family<DateTimeRange?, String>((ref, warehouseId) => null);

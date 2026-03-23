@@ -9,6 +9,7 @@ import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
+import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
 import 'package:data_table_2/data_table_2.dart';
 
@@ -66,40 +67,45 @@ class DashboardScreen extends ConsumerWidget {
 
               stats.when(
                 loading: () => _StatsLoadingRow(),
-                error: (e, _) => Text('Error: $e', style: TextStyle(color: context.colors.dangerRed)),
-                data: (data) => IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _StatCard(label: 'Total Today', value: "${data['total'] ?? 0}",
+                error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(dashboardStatsProvider)),
+                data: (data) => Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: [
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 180),
+                      child: _StatCard(label: 'Total Today', value: "${data['total'] ?? 0}",
                         icon: Icons.inventory_2_rounded, color: context.colors.accentLightBlue)
-                        .animate().slideY(begin: 0.3, duration: 400.ms).fadeIn()),
-                      const Gap(16),
-                      Expanded(child: _StatCard(label: 'Cleared', value: "${data['cleared'] ?? 0}",
+                        .animate().slideY(begin: 0.3, duration: 400.ms).fadeIn(),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 180),
+                      child: _StatCard(label: 'Cleared', value: "${data['cleared'] ?? 0}",
                         icon: Icons.check_circle_rounded, color: context.colors.successGreen)
-                        .animate().slideY(begin: 0.3, duration: 400.ms, delay: 100.ms).fadeIn()),
-                      const Gap(16),
-                      Expanded(child: _StatCard(label: 'Held in SR', value: "${data['held'] ?? 0}",
+                        .animate().slideY(begin: 0.3, duration: 400.ms, delay: 100.ms).fadeIn(),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 180),
+                      child: _StatCard(label: 'Held in SR', value: "${data['held'] ?? 0}",
                         icon: Icons.warehouse_rounded, color: context.colors.heldOrange)
-                        .animate().slideY(begin: 0.3, duration: 400.ms, delay: 200.ms).fadeIn()),
-                      const Gap(16),
-                      Expanded(
-                        child: warehouseStats.when(
-                          loading: () => _StatCard(label: 'SR Warehouses', value: '—',
-                              icon: Icons.warehouse_rounded, color: context.colors.accentBlue),
-                          error: (_, __) => _StatCard(label: 'SR Warehouses', value: 'Err',
-                              icon: Icons.warehouse_rounded, color: context.colors.dangerRed),
-                          data: (ws) => _StatCard(
-                            label: 'SR-W01 Active',
-                            value: "${ws['SR-W01'] ?? 0}",
-                            subLabel: "W02: ${ws['SR-W02'] ?? 0}  W03: ${ws['SR-W03'] ?? 0}",
-                            icon: Icons.warehouse_rounded,
-                            color: context.colors.accentBlue,
-                          ),
+                        .animate().slideY(begin: 0.3, duration: 400.ms, delay: 200.ms).fadeIn(),
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 180),
+                      child: warehouseStats.when(
+                        loading: () => _StatCard(label: 'SR Warehouses', value: '—',
+                            icon: Icons.warehouse_rounded, color: context.colors.accentBlue),
+                        error: (e, __) => ErrorView(error: e, onRetry: () => ref.refresh(warehouseStatsProvider)),
+                        data: (ws) => _StatCard(
+                          label: 'SR-W01 Active',
+                          value: "${ws['SR-W01'] ?? 0}",
+                          subLabel: "W02: ${ws['SR-W02'] ?? 0}  W03: ${ws['SR-W03'] ?? 0}",
+                          icon: Icons.warehouse_rounded,
+                          color: context.colors.accentBlue,
                         ),
                       ).animate().slideY(begin: 0.3, duration: 400.ms, delay: 300.ms).fadeIn(),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
               const Gap(28),
@@ -114,7 +120,7 @@ class DashboardScreen extends ConsumerWidget {
               const Gap(12),
               recent.when(
                 loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-                error: (e, _) => Text('Error: $e'),
+                error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(recentPackagesProvider)),
                 data: (packages) => _RecentPackagesTable(packages: packages),
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 500.ms).fadeIn(),
             ],

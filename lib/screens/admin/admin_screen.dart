@@ -10,6 +10,7 @@ import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
+import '../../widgets/error_view.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 class AdminScreen extends ConsumerWidget {
@@ -98,7 +99,7 @@ class _OfficersTab extends ConsumerWidget {
         Expanded(
           child: profiles.when(
             loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-            error: (e, _) => Center(child: Text('Error: $e', style: TextStyle(color: context.colors.dangerRed))),
+            error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(allProfilesProvider)),
             data: (list) => Container(
               width: double.infinity,
               decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
@@ -286,7 +287,7 @@ class _RulesTab extends ConsumerWidget {
         Expanded(
           child: rules.when(
             loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-            error: (e, _) => Center(child: Text('Error: $e', style: TextStyle(color: context.colors.dangerRed))),
+            error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(allRulesProvider)),
             data: (list) => Container(
               width: double.infinity,
               decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
@@ -757,7 +758,7 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
           height: 400,
           child: ref.watch(storageRateHistoryProvider).when(
             loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-            error: (e, _) => Center(child: Text('Error loading history: $e')),
+            error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(storageRateHistoryProvider)),
             data: (history) => history.isEmpty
               ? Center(child: Text('No charge history found', style: TextStyle(color: context.colors.textMuted)))
               : Container(

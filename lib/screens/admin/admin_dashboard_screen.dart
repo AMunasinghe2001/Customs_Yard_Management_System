@@ -9,6 +9,7 @@ import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
+import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
 import 'package:data_table_2/data_table_2.dart';
 
@@ -42,8 +43,10 @@ class AdminDashboardScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                runSpacing: 12,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -61,15 +64,14 @@ class AdminDashboardScreen extends ConsumerWidget {
               // TOP SECTION: Operational Stats
               pkgStats.when(
                 loading: () => const _StatsLoadingRow(),
-                error: (e, _) => Text('Error: $e'),
-                data: (data) => Row(
+                error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(dashboardStatsProvider)),
+                data: (data) => Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
                   children: [
                     _buildPkgStat(context, 'Total Today', "${data['total'] ?? 0}", Icons.inventory_2_rounded, context.colors.accentLightBlue),
-                    const Gap(16),
                     _buildPkgStat(context, 'Cleared', "${data['cleared'] ?? 0}", Icons.check_circle_rounded, context.colors.successGreen),
-                    const Gap(16),
                     _buildPkgStat(context, 'Held in SR', "${data['held'] ?? 0}", Icons.report_problem_rounded, context.colors.heldOrange),
-                    const Gap(16),
                     _buildPkgStat(context, 'Active Rules', rules.maybeWhen(data: (d) => d.where((r) => r.isActive).length.toString(), orElse: () => '...'), Icons.gavel_rounded, context.colors.warningAmber),
                   ],
                 ),
@@ -78,16 +80,17 @@ class AdminDashboardScreen extends ConsumerWidget {
               const Gap(28),
 
               // MIDDLE SECTION: Online Officers & Shortcuts
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              Wrap(
+                spacing: 24,
+                runSpacing: 20,
+                crossAxisAlignment: WrapCrossAlignment.start,
                 children: [
-                   Expanded(
-                    flex: 3,
-                    child: _buildOnlineOfficersList(context, online),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 280),
+                    child: _buildOnlineOfficersList(context, ref, online),
                   ),
-                  const Gap(24),
-                  Expanded(
-                    flex: 2,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 220),
                     child: _buildQuickShortcuts(context),
                   ),
                 ],
@@ -96,8 +99,9 @@ class AdminDashboardScreen extends ConsumerWidget {
               const Gap(28),
 
               // BOTTOM SECTION: Recent Activity
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text('Recent Package Inspections', style: Theme.of(context).textTheme.titleLarge),
                   TextButton(onPressed: () => context.go('/packages'), child: const Text('View All Packages →')),
@@ -106,7 +110,7 @@ class AdminDashboardScreen extends ConsumerWidget {
               const Gap(12),
               recent.when(
                 loading: () => const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator())),
-                error: (e, _) => Text('Error: $e'),
+                error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(recentPackagesProvider)),
                 data: (packages) => _RecentPackagesTable(packages: packages),
               ),
             ],
@@ -145,7 +149,8 @@ class AdminDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildPkgStat(BuildContext context, String label, String value, IconData icon, Color color) {
-    return Expanded(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 160),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -154,6 +159,7 @@ class AdminDashboardScreen extends ConsumerWidget {
           border: Border.all(color: context.colors.borderColor),
         ),
         child: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, color: color, size: 20),
             const Gap(12),
@@ -170,7 +176,7 @@ class AdminDashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildOnlineOfficersList(BuildContext context, AsyncValue<List<ProfileModel>> online) {
+  Widget _buildOnlineOfficersList(BuildContext context, WidgetRef ref, AsyncValue<List<ProfileModel>> online) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -185,7 +191,7 @@ class AdminDashboardScreen extends ConsumerWidget {
           ),
           child: online.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => Center(child: Text('Error: $e')),
+            error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(onlineProfilesProvider)),
             data: (list) => list.isEmpty 
               ? _buildEmptyOnline(context)
               : ListView.separated(

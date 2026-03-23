@@ -7,6 +7,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
+import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
@@ -66,33 +67,44 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Package History', style: Theme.of(context).textTheme.headlineLarge),
-                      Text('Search and filter all inspected packages',
-                          style: TextStyle(color: context.colors.textSecondary)),
-                    ],
-                  ),
-                  Row(children: [
-                    Text('Show Returned', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
-                    const Gap(8),
-                    Switch(
-                      value: ref.watch(packageShowReturnedProvider),
-                      onChanged: (v) => ref.read(packageShowReturnedProvider.notifier).state = v,
-                      activeColor: context.colors.primaryGold,
+               // Header row
+              SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 8,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Package History', style: Theme.of(context).textTheme.headlineLarge),
+                        Text('Search and filter all inspected packages',
+                            style: TextStyle(color: context.colors.textSecondary)),
+                      ],
                     ),
-                    const Gap(24),
-                    packages.when(
-                      data: (list) => Text('${list.length} packages', style: TextStyle(color: context.colors.textMuted, fontSize: 14)),
-                      loading: () => const SizedBox(),
-                      error: (_, __) => const SizedBox()
-                    ),
-                  ]),
-                ],
+                    Row(mainAxisSize: MainAxisSize.min, children: [
+                      packages.when(
+                        data: (list) {
+                          final total = list.length;
+                          final returned = list.where((p) => p.isReturned).length;
+                          return Text('$returned Returned',
+                              style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.bold));
+                        },
+                        loading: () => const SizedBox(),
+                        error: (_, __) => const SizedBox()
+                      ),
+                      const Gap(24),
+                      Text('Show Returned', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+                      const Gap(8),
+                      Switch(
+                        value: ref.watch(packageShowReturnedProvider),
+                        onChanged: (v) => ref.read(packageShowReturnedProvider.notifier).state = v,
+                        activeColor: context.colors.primaryGold,
+                      ),
+                    ]),
+                  ],
+                ),
               ).animate().fadeIn(),
               const Gap(20),
 
@@ -104,30 +116,33 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
                 ),
-                child: Row(children: [
-                  Expanded(
-                    child: Autocomplete<PackageModel>(
-                      displayStringForOption: (p) => p.srNumber,
-                      initialValue: TextEditingValue(text: _tableSearchCtrl.text),
-                      optionsBuilder: (textEditingValue) {
-                        final query = textEditingValue.text.trim().toLowerCase();
-                        if (query.isEmpty) return const [];
-                        final packages = ref.read(livePackagesProvider).valueOrNull ?? [];
-                        return packages.where((p) => p.srNumber.toLowerCase().contains(query) || p.consigneeName.toLowerCase().contains(query));
-                      },
-                      onSelected: (package) {
-                        setState(() {
-                          _srResult = package;
-                          _tableSearchCtrl.text = package.srNumber;
-                          ref.read(packageSearchProvider.notifier).state = package.srNumber;
-                        });
-                      },
-                      optionsViewBuilder: (context, onSelected, options) {
-                        return Align(
-                          alignment: Alignment.topLeft,
-                          child: Material(
-                            color: Colors.transparent,
-                            child: Container(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Expanded(
+                        child: Autocomplete<PackageModel>(
+                          displayStringForOption: (p) => p.srNumber,
+                          initialValue: TextEditingValue(text: _tableSearchCtrl.text),
+                          optionsBuilder: (textEditingValue) {
+                            final query = textEditingValue.text.trim().toLowerCase();
+                            if (query.isEmpty) return const [];
+                            final packages = ref.read(livePackagesProvider).valueOrNull ?? [];
+                            return packages.where((p) => p.srNumber.toLowerCase().contains(query) || p.consigneeName.toLowerCase().contains(query));
+                          },
+                          onSelected: (package) {
+                            setState(() {
+                              _srResult = package;
+                              _tableSearchCtrl.text = package.srNumber;
+                              ref.read(packageSearchProvider.notifier).state = package.srNumber;
+                            });
+                          },
+                          optionsViewBuilder: (context, onSelected, options) {
+                            return Align(
+                              alignment: Alignment.topLeft,
+                              child: Material(
+                                color: Colors.transparent,
+                                child: Container(
                               width: 500,
                               margin: const EdgeInsets.only(top: 8),
                               decoration: BoxDecoration(
@@ -200,67 +215,70 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       },
                     ),
                   ),
-                  const Gap(12),
-                  ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: FilterChip(
-                      label: Text(s.toUpperCase()),
-                      selected: filter == s,
-                      onSelected: (_) => ref.read(packageFilterProvider.notifier).state = s,
-                      selectedColor: context.colors.primaryGold.withOpacity(0.2),
-                      checkmarkColor: context.colors.primaryGold,
-                      labelStyle: TextStyle(
-                        color: filter == s ? context.colors.primaryGold : context.colors.textSecondary,
-                        fontSize: 12, fontWeight: filter == s ? FontWeight.w700 : FontWeight.w400),
-                    ),
-                  )),
-                  const Gap(16),
-                  Container(height: 24, width: 1, color: context.colors.borderColor),
-                  const Gap(16),
-                  Consumer(builder: (context, ref, _) {
-                    final dateRange = ref.watch(packageDateRangeProvider);
-                    return Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () async {
-                            final picked = await showDialog<dynamic>(
-                              context: context,
-                              builder: (context) => custom.DateRangePickerDialog(initialRange: dateRange),
-                            );
-                            if (picked is DateTimeRange) {
-                              ref.read(packageDateRangeProvider.notifier).state = picked;
-                            } else if (picked == false) {
-                              ref.read(packageDateRangeProvider.notifier).state = null;
-                            }
-                          },
-                          icon: Icon(Icons.date_range_rounded, size: 16, color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary),
-                          label: Text(
-                            dateRange != null 
-                              ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
-                              : 'Date Range',
-                            style: TextStyle(color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary, fontSize: 12, fontWeight: dateRange != null ? FontWeight.bold : FontWeight.normal),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: dateRange != null ? context.colors.primaryGold : context.colors.borderColor),
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                          ),
-                        ),
-                        if (dateRange != null) ...[
-                          const Gap(8),
-                          IconButton(
-                            icon: Icon(Icons.clear_rounded, size: 16, color: context.colors.dangerRed),
-                            onPressed: () => ref.read(packageDateRangeProvider.notifier).state = null,
-                            tooltip: 'Clear Date Filter',
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                          ),
-                        ],
-                      ],
-                    );
-                  }),
                 ]),
+                    const Gap(8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => FilterChip(
+                          label: Text(s.toUpperCase()),
+                          selected: filter == s,
+                          onSelected: (_) => ref.read(packageFilterProvider.notifier).state = s,
+                          selectedColor: context.colors.primaryGold.withOpacity(0.2),
+                          checkmarkColor: context.colors.primaryGold,
+                          labelStyle: TextStyle(
+                            color: filter == s ? context.colors.primaryGold : context.colors.textSecondary,
+                            fontSize: 12, fontWeight: filter == s ? FontWeight.w700 : FontWeight.w400),
+                        )),
+                        Consumer(builder: (context, ref, _) {
+                          final dateRange = ref.watch(packageDateRangeProvider);
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              OutlinedButton.icon(
+                                onPressed: () async {
+                                  final picked = await showDialog<dynamic>(
+                                    context: context,
+                                    builder: (context) => custom.DateRangePickerDialog(initialRange: dateRange),
+                                  );
+                                  if (picked is DateTimeRange) {
+                                    ref.read(packageDateRangeProvider.notifier).state = picked;
+                                  } else if (picked == false) {
+                                    ref.read(packageDateRangeProvider.notifier).state = null;
+                                  }
+                                },
+                                icon: Icon(Icons.date_range_rounded, size: 16, color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary),
+                                label: Text(
+                                  dateRange != null
+                                    ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
+                                    : 'Date Range',
+                                  style: TextStyle(color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary, fontSize: 12, fontWeight: dateRange != null ? FontWeight.bold : FontWeight.normal),
+                                ),
+                                style: OutlinedButton.styleFrom(
+                                  side: BorderSide(color: dateRange != null ? context.colors.primaryGold : context.colors.borderColor),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                ),
+                              ),
+                              if (dateRange != null) ...[
+                                const Gap(8),
+                                IconButton(
+                                  icon: Icon(Icons.clear_rounded, size: 16, color: context.colors.dangerRed),
+                                  onPressed: () => ref.read(packageDateRangeProvider.notifier).state = null,
+                                  tooltip: 'Clear Date Filter',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                              ],
+                            ],
+                          );
+                        }),
+                      ],
+                    ),
+                  ],
+                ),
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
 
               if (_srResult != null) ...[
@@ -274,7 +292,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               Expanded(
                 child: packages.when(
                   loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-                  error: (e, _) => Center(child: Text('Error: $e')),
+                  error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(livePackagesProvider)),
                   data: (list) {
                     final showReturned = ref.watch(packageShowReturnedProvider);
                     final dateRange = ref.watch(packageDateRangeProvider);
@@ -305,18 +323,18 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               isVerticalScrollBarVisible: true,
                               isHorizontalScrollBarVisible: false,
                               columns: const [
-                                DataColumn2(label: Center(child: Text('SR Number')), size: ColumnSize.S, fixedWidth: 100),
-                                DataColumn2(label: Center(child: Text('Consignee')), size: ColumnSize.L),
-                                DataColumn2(label: Center(child: Text('Items')), size: ColumnSize.S, fixedWidth: 50),
-                                DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S, fixedWidth: 110),
-                                DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.S, fixedWidth: 90),
-                                DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.S, fixedWidth: 95),
-                                DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 50),
+                                DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                                DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+                                DataColumn2(label: Text('Items'), size: ColumnSize.S, fixedWidth: 55),
+                                DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
+                                DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.M),
+                                DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.M),
+                                DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 55),
                               ],
                               rows: filteredList.map((p) => DataRow(cells: [
-                                DataCell(Center(child: Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600)))),
-                                DataCell(Center(child: Text(p.consigneeName, overflow: TextOverflow.ellipsis))),
-                                DataCell(Center(child: Text('${p.totalItemCount}'))),
+                                DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
+                                DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
+                                DataCell(Text('${p.totalItemCount}')),
                                 DataCell(Center(child: StatusChip(status: p.isReturned ? 'returned' : p.status))),
                                 DataCell(Center(child: Text(p.entryDate != null
                                   ? DateFormat('dd/MM/yy').format(p.entryDate!)
