@@ -110,6 +110,7 @@ final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
 final packageFilterProvider = StateProvider<String>((ref) => 'all');
 final packageSearchProvider = StateProvider<String>((ref) => '');
 final packageShowReturnedProvider = StateProvider<bool>((ref) => true);
+final packageDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 
 final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   // Watch trigger so we re-run whenever table changes
@@ -135,6 +136,7 @@ final liveWarehouseEntriesProvider =
 
 final warehouseStatusFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
 final warehouseSearchProvider = StateProvider.family<String, String>((ref, id) => '');
+final warehouseDateRangeProvider = StateProvider.family<DateTimeRange?, String>((ref, warehouseId) => null);
 
 final storageRateProvider = FutureProvider<double>((ref) async {
   return ref.watch(customsRulesServiceProvider).getStorageRate();

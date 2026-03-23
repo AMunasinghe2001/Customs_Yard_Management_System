@@ -9,6 +9,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/date_range_picker_dialog.dart' as custom;
 import 'package:data_table_2/data_table_2.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
@@ -213,6 +214,52 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                         fontSize: 12, fontWeight: filter == s ? FontWeight.w700 : FontWeight.w400),
                     ),
                   )),
+                  const Gap(16),
+                  Container(height: 24, width: 1, color: context.colors.borderColor),
+                  const Gap(16),
+                  Consumer(builder: (context, ref, _) {
+                    final dateRange = ref.watch(packageDateRangeProvider);
+                    return Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showDialog<dynamic>(
+                              context: context,
+                              builder: (context) => custom.DateRangePickerDialog(initialRange: dateRange),
+                            );
+                            if (picked is DateTimeRange) {
+                              ref.read(packageDateRangeProvider.notifier).state = picked;
+                            } else if (picked == false) {
+                              ref.read(packageDateRangeProvider.notifier).state = null;
+                            }
+                          },
+                          icon: Icon(Icons.date_range_rounded, size: 16, color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary),
+                          label: Text(
+                            dateRange != null 
+                              ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
+                              : 'Date Range',
+                            style: TextStyle(color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary, fontSize: 12, fontWeight: dateRange != null ? FontWeight.bold : FontWeight.normal),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(color: dateRange != null ? context.colors.primaryGold : context.colors.borderColor),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        if (dateRange != null) ...[
+                          const Gap(8),
+                          IconButton(
+                            icon: Icon(Icons.clear_rounded, size: 16, color: context.colors.dangerRed),
+                            onPressed: () => ref.read(packageDateRangeProvider.notifier).state = null,
+                            tooltip: 'Clear Date Filter',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ],
+                    );
+                  }),
                 ]),
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
 
@@ -230,8 +277,15 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   error: (e, _) => Center(child: Text('Error: $e')),
                   data: (list) {
                     final showReturned = ref.watch(packageShowReturnedProvider);
+                    final dateRange = ref.watch(packageDateRangeProvider);
                     final filteredList = list.where((p) {
                       if (!showReturned && p.isReturned) return false;
+                      if (dateRange != null) {
+                        final date = p.entryDate ?? p.createdAt;
+                        final startOfDay = DateTime(dateRange.start.year, dateRange.start.month, dateRange.start.day);
+                        final endOfDay = DateTime(dateRange.end.year, dateRange.end.month, dateRange.end.day, 23, 59, 59);
+                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay)) return false;
+                      }
                       return true;
                     }).toList();
 
@@ -257,7 +311,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                 DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S, fixedWidth: 110),
                                 DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.S, fixedWidth: 90),
                                 DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.S, fixedWidth: 95),
-                                DataColumn2(label: Center(child: Text('Action')), size: ColumnSize.S, fixedWidth: 100),
                                 DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 50),
                               ],
                               rows: filteredList.map((p) => DataRow(cells: [
@@ -272,7 +325,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                   p.warehouseEntries.isEmpty ? '—' : 'LKR ${NumberFormat('#,##0.00').format(p.warehouseEntries.fold(0.0, (sum, e) => sum + e.calculateCharge(storageRate)))}',
                                   style: TextStyle(color: p.isConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold)
                                 ))),
-                                DataCell(Center(child: Text('—', style: TextStyle(color: context.colors.textMuted)))),
                                 DataCell(Center(child: IconButton(
                                   icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
                                   onPressed: () => showDialog(

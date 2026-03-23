@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
@@ -116,8 +117,15 @@ class _WarehouseTab extends ConsumerWidget {
         final search = ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
         final storageRate = ref.watch(storageRateProvider).valueOrNull ?? 0.0;
 
+        final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
         final filteredList = list.where((e) {
           if (filter != 'all' && e.packageStatus != filter) return false;
+          if (dateRange != null) {
+            final date = e.admittedAt;
+            final startOfDay = DateTime(dateRange.start.year, dateRange.start.month, dateRange.start.day);
+            final endOfDay = DateTime(dateRange.end.year, dateRange.end.month, dateRange.end.day, 23, 59, 59);
+            if (date.isBefore(startOfDay) || date.isAfter(endOfDay)) return false;
+          }
           if (search.isNotEmpty) {
             final matchesSr = (e.srNumber?.toLowerCase() ?? '').contains(search);
             final matchesConsignee = (e.consigneeName?.toLowerCase() ?? '').contains(search);
@@ -183,6 +191,52 @@ class _WarehouseTab extends ConsumerWidget {
                           fontSize: 12, fontWeight: filter == s ? FontWeight.w700 : FontWeight.w400),
                       ),
                     )),
+                    const Gap(16),
+                    Container(height: 24, width: 1, color: context.colors.borderColor),
+                    const Gap(16),
+                    Consumer(builder: (context, ref, _) {
+                      final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
+                      return Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: () async {
+                              final picked = await showDialog<dynamic>(
+                                context: context,
+                                builder: (context) => custom.DateRangePickerDialog(initialRange: dateRange),
+                              );
+                              if (picked is DateTimeRange) {
+                                ref.read(warehouseDateRangeProvider(warehouse.id).notifier).state = picked;
+                              } else if (picked == false) {
+                                ref.read(warehouseDateRangeProvider(warehouse.id).notifier).state = null;
+                              }
+                            },
+                            icon: Icon(Icons.date_range_rounded, size: 16, color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary),
+                            label: Text(
+                              dateRange != null 
+                                ? '${DateFormat('MMM d').format(dateRange.start)} - ${DateFormat('MMM d').format(dateRange.end)}'
+                                : 'Date Range',
+                              style: TextStyle(color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary, fontSize: 12, fontWeight: dateRange != null ? FontWeight.bold : FontWeight.normal),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: dateRange != null ? context.colors.primaryGold : context.colors.borderColor),
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                          ),
+                          if (dateRange != null) ...[
+                            const Gap(8),
+                            IconButton(
+                              icon: Icon(Icons.clear_rounded, size: 16, color: context.colors.dangerRed),
+                              onPressed: () => ref.read(warehouseDateRangeProvider(warehouse.id).notifier).state = null,
+                              tooltip: 'Clear Date Filter',
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                          ],
+                        ],
+                      );
+                    }),
                   ]),
                 ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                 const Gap(16),
