@@ -704,10 +704,10 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text('System Settings', style: TextStyle(color: context.colors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
+        Text('Storage Rates & Charges', style: TextStyle(color: context.colors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
         const Gap(24),
         Container(
           width: 500,
@@ -753,7 +753,8 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
         const Gap(32),
         Text('Charge Rate History', style: TextStyle(color: context.colors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
         const Gap(16),
-        Expanded(
+        Container(
+          height: 400,
           child: ref.watch(storageRateHistoryProvider).when(
             loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
             error: (e, _) => Center(child: Text('Error loading history: $e')),
@@ -767,10 +768,10 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
                     borderRadius: BorderRadius.circular(14),
                     child: DataTable2(
                       headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
-                      columns: const [
-                        DataColumn2(label: Text('Date & Time'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Officer/Admin'), size: ColumnSize.L),
-                        DataColumn2(label: Text('Action / Value Change'), size: ColumnSize.L),
+                      columns: [
+                        DataColumn2(label: Text('Date & Time', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M),
+                        DataColumn2(label: Text('Officer/Admin', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                        DataColumn2(label: Text('Action / Value Change', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
                       ],
                       rows: history.map((h) => DataRow(cells: [
                         DataCell(Text(DateFormat('dd MMM yyyy, HH:mm').format(h.createdAt), style: TextStyle(color: context.colors.textMuted, fontSize: 13))),

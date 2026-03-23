@@ -158,6 +158,17 @@ class PackageService {
     return PackageModel.fromJson(data);
   }
 
+  /// Look up a package by ID
+  Future<PackageModel?> getPackageById(String id) async {
+    final data = await supabase
+        .from('packages')
+        .select('*, package_items(*), warehouse_entries(*, warehouses(*))')
+        .eq('id', id)
+        .maybeSingle();
+    if (data == null) return null;
+    return PackageModel.fromJson(data);
+  }
+
   /// Create or update a package by SR number.
   /// If a package with this SR number already exists it is updated and its items replaced.
   Future<PackageModel> upsertPackage(PackageModel pkg, List<PackageItem> items) async {

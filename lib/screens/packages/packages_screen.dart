@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/package_details_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
@@ -217,7 +218,10 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
 
               if (_srResult != null) ...[
                 const Gap(16),
-                _SrResultCard(package: _srResult!, onDetails: () => _showDetails(context, _srResult!, storageRate)).animate().fadeIn(),
+                _SrResultCard(package: _srResult!, onDetails: () => showDialog(
+                  context: context,
+                  builder: (_) => PackageDetailsDialog(package: _srResult!, storageRate: storageRate),
+                )).animate().fadeIn(),
               ],
               const Gap(16),
               Expanded(
@@ -247,37 +251,35 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               isVerticalScrollBarVisible: true,
                               isHorizontalScrollBarVisible: false,
                               columns: const [
-                                DataColumn2(label: Text('SR Number'), size: ColumnSize.L, fixedWidth: 140),
-                                DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
-                                DataColumn2(label: Text('Declarant'), size: ColumnSize.M),
-                                DataColumn2(label: Text('Cusdec No'), size: ColumnSize.S),
-                                DataColumn2(label: Text('Cusdec Date'), size: ColumnSize.S),
-                                DataColumn2(label: Text('Reason'), size: ColumnSize.M),
-                                DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
-                                DataColumn2(label: Text('Entry Date'), size: ColumnSize.S, fixedWidth: 100),
-                                DataColumn2(label: Text('Returned'), size: ColumnSize.S, fixedWidth: 100),
-                                DataColumn2(label: Text('Warehouse'), size: ColumnSize.M),
-                                DataColumn2(label: Text('Details'), size: ColumnSize.S, fixedWidth: 60),
+                                DataColumn2(label: Center(child: Text('SR Number')), size: ColumnSize.S, fixedWidth: 100),
+                                DataColumn2(label: Center(child: Text('Consignee')), size: ColumnSize.L),
+                                DataColumn2(label: Center(child: Text('Items')), size: ColumnSize.S, fixedWidth: 50),
+                                DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S, fixedWidth: 110),
+                                DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.S, fixedWidth: 90),
+                                DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.S, fixedWidth: 95),
+                                DataColumn2(label: Center(child: Text('Action')), size: ColumnSize.S, fixedWidth: 100),
+                                DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 50),
                               ],
                               rows: filteredList.map((p) => DataRow(cells: [
-                                DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                                DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.declarantName ?? '-', overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.cusdecNo ?? '-', overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.cusdecDate ?? '-')),
-                                DataCell(Text(p.reason ?? '-', overflow: TextOverflow.ellipsis)),
-                                DataCell(StatusChip(status: p.status)),
-                                DataCell(Text(p.entryDate != null
+                                DataCell(Center(child: Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600)))),
+                                DataCell(Center(child: Text(p.consigneeName, overflow: TextOverflow.ellipsis))),
+                                DataCell(Center(child: Text('${p.totalItemCount}'))),
+                                DataCell(Center(child: StatusChip(status: p.isReturned ? 'returned' : p.status))),
+                                DataCell(Center(child: Text(p.entryDate != null
                                   ? DateFormat('dd/MM/yy').format(p.entryDate!)
-                                  : DateFormat('dd/MM/yy').format(p.createdAt))),
-                                DataCell(Text(p.returnedAt != null
-                                  ? DateFormat('dd/MM/yy').format(p.returnedAt!)
-                                  : '—', style: TextStyle(color: context.colors.successGreen, fontWeight: FontWeight.w600))),
-                                DataCell(_WarehousePill(warehouseEntries: p.warehouseEntries)),
-                                DataCell(IconButton(
+                                  : DateFormat('dd/MM/yy').format(p.createdAt)))),
+                                DataCell(Center(child: Text(
+                                  p.warehouseEntries.isEmpty ? '—' : 'LKR ${NumberFormat('#,##0.00').format(p.warehouseEntries.fold(0.0, (sum, e) => sum + e.calculateCharge(storageRate)))}',
+                                  style: TextStyle(color: p.isConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold)
+                                ))),
+                                DataCell(Center(child: Text('—', style: TextStyle(color: context.colors.textMuted)))),
+                                DataCell(Center(child: IconButton(
                                   icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
-                                  onPressed: () => _showDetails(context, p, storageRate),
-                                )),
+                                  onPressed: () => showDialog(
+                                    context: context,
+                                    builder: (_) => PackageDetailsDialog(package: p, storageRate: storageRate),
+                                  ),
+                                ))),
                               ])).toList(),
                             ),
                           ),
@@ -288,75 +290,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  void _showDetails(BuildContext context, PackageModel p, double storageRate) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text('SR Register Entry: ${p.srNumber}'),
-        content: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-              _Row('Status', p.status.toUpperCase()),
-              _Row('Reason', p.reason ?? '-'),
-              _Row('Consignee', p.consigneeName),
-              if (p.consigneeNic != null) _Row('NIC', p.consigneeNic!),
-              if (p.consigneePhone != null) _Row('Phone', p.consigneePhone!),
-              _Row('Declarant', p.declarantName ?? '-'),
-              _Row('Cusdec No', p.cusdecNo ?? '-'),
-              _Row('Cusdec Date', p.cusdecDate ?? '-'),
-              if (p.entryDate != null) _Row('Entry Date', DateFormat('dd/MM/yyyy').format(p.entryDate!)),
-              if (p.originCountry.isNotEmpty) _Row('Origin', p.originCountry),
-              if (p.declaredValue > 0) _Row('Value', 'LKR ${NumberFormat('#,##0.00').format(p.declaredValue)}'),
-              if (p.weightKg > 0) _Row('Weight', '${p.weightKg} kg'),
-              if (p.description != null && p.description!.isNotEmpty) _Row('Description', p.description!),
-              if (p.notes != null && p.notes!.isNotEmpty) _Row('Notes', p.notes!),
-              _Row('Created At', DateFormat('dd/MM/yyyy HH:mm').format(p.createdAt)),
-              if (p.items.isNotEmpty) ...[
-                const Gap(16),
-                Text('Items', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700)),
-                const Gap(8),
-                ...p.items.map((item) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(children: [
-                    Container(width: 6, height: 6, decoration: BoxDecoration(color: context.colors.primaryGold, shape: BoxShape.circle)),
-                    const Gap(8),
-                    Expanded(child: Text(item.itemName)),
-                    Text('x${item.quantity}', style: TextStyle(color: context.colors.textMuted)),
-                    if (item.category != null) ...[const Gap(8), Text('[${item.category}]', style: TextStyle(color: context.colors.textMuted, fontSize: 12))],
-                    if (item.isProhibited) ...[const Gap(8), Icon(Icons.warning_amber_rounded, color: context.colors.dangerRed, size: 14)],
-                  ]),
-                )),
-              ],
-              if (p.warehouseEntries.isNotEmpty) ...[
-                const Gap(16),
-                Text('Warehouse History', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700)),
-                const Gap(8),
-                ...p.warehouseEntries.map((we) => Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(color: context.colors.surfaceDark, borderRadius: BorderRadius.circular(8)),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(we.warehouseName, style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w600)),
-                    Text('Admitted: ${DateFormat('dd/MM/yy HH:mm').format(we.admittedAt)}', style: TextStyle(color: context.colors.textSecondary, fontSize: 12)),
-                    Text('Reason: ${we.holdReason}', style: const TextStyle(fontSize: 13)),
-                    Text('Items: ${we.itemCount}', style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
-                      if (we.isReturned && we.returnedAt != null)
-                        Text('Returned: ${DateFormat('dd/MM/yy').format(we.returnedAt!)}',
-                            style: TextStyle(color: context.colors.successGreen, fontSize: 12)),
-                      Text('Charge: LKR ${NumberFormat('#,##0.00').format(we.calculateCharge(storageRate))}',
-                          style: TextStyle(color: we.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontSize: 12, fontWeight: FontWeight.bold)),
-                    ]),
-                )),
-              ],
-            ]),
-          ),
-        ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
       ),
     );
   }
@@ -386,7 +319,7 @@ class _SrResultCard extends StatelessWidget {
           Text(package.srNumber,
               style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w700, fontSize: 15)),
           const Spacer(),
-          StatusChip(status: package.status),
+          StatusChip(status: package.isReturned ? 'returned' : package.status),
         ]),
         const Gap(8),
         Text('Consignee: ${package.consigneeName}',

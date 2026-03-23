@@ -11,8 +11,9 @@ class StatusChip extends StatelessWidget {
     String label;
     switch (status) {
       case 'cleared':
+      case 'returned':
         color = context.colors.successGreen;
-        label = 'CLEARED';
+        label = status.toUpperCase();
         break;
       case 'held':
       case 'detained':
@@ -42,6 +43,8 @@ class StatusChip extends StatelessWidget {
       child: Text(
         label,
         style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+        maxLines: 1,
+        softWrap: false,
       ),
     );
   }

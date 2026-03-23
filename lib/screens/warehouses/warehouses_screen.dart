@@ -4,6 +4,8 @@ import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
+import '../../widgets/status_chip.dart';
+import '../../widgets/package_details_dialog.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
@@ -141,6 +143,8 @@ class _WarehouseTab extends ConsumerWidget {
                   const Gap(12),
                   _MiniStat(label: 'Held', value: '${list.where((e) => !e.isReturned).length}', color: context.colors.heldOrange),
                   const Gap(12),
+                  _MiniStat(label: 'Confiscated', value: '${list.where((e) => e.isPackageConfiscated).length}', color: context.colors.dangerRed),
+                  const Gap(12),
                   _MiniStat(label: 'Returned', value: '${list.where((e) => e.isReturned).length}', color: context.colors.successGreen),
                 ]).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
                 const Gap(20),
@@ -189,60 +193,62 @@ class _WarehouseTab extends ConsumerWidget {
                     child: ClipRRect(
                       borderRadius: BorderRadius.circular(14),
                         child: DataTable2(
-                          columnSpacing: 12,
+                          columnSpacing: 10,
                           horizontalMargin: 12,
                           fixedTopRows: 1,
-                          isHorizontalScrollBarVisible: false, // No horizontal scroll
                           columns: const [
-                            DataColumn2(label: Text('SR Number'), size: ColumnSize.M, fixedWidth: 120),
-                            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
-                            DataColumn2(label: Text('Items Held'), size: ColumnSize.S, fixedWidth: 100),
-                            DataColumn2(label: Text('Hold Reason'), size: ColumnSize.L),
-                            DataColumn2(label: Text('Admitted'), size: ColumnSize.M, fixedWidth: 140),
-                            DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
-                            DataColumn2(label: Text('Returned'), size: ColumnSize.S, fixedWidth: 100),
-                            DataColumn2(label: Text('Charge (LKR)'), size: ColumnSize.S, fixedWidth: 120),
-                            DataColumn2(label: Text('Action'), size: ColumnSize.S, fixedWidth: 140),
+                            DataColumn2(label: Center(child: Text('SR Number')), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Center(child: Text('Consignee')), size: ColumnSize.L),
+                            DataColumn2(label: Center(child: Text('Items')), size: ColumnSize.S, fixedWidth: 50),
+                            DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S, fixedWidth: 110),
+                            DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.S, fixedWidth: 90),
+                            DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.S, fixedWidth: 95),
+                            DataColumn2(label: Center(child: Text('Action')), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 50),
                           ],
                           rows: filteredList.map((e) => DataRow(cells: [
-                            DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
-                                style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                            DataCell(Text(e.consigneeName ?? '—', style: const TextStyle(fontSize: 13))),
-                            DataCell(Text('${e.itemCount}')),
-                            DataCell(Text(e.holdReason, style: const TextStyle(fontSize: 13))),
-                            DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(e.admittedAt))),
-                            DataCell(Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: e.isReturned 
-                                    ? context.colors.successGreen.withOpacity(0.15) 
-                                    : (e.isPackageConfiscated ? context.colors.dangerRed.withOpacity(0.15) : context.colors.heldOrange.withOpacity(0.15)),
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: e.isReturned 
-                                    ? context.colors.successGreen.withOpacity(0.4) 
-                                    : (e.isPackageConfiscated ? context.colors.dangerRed.withOpacity(0.4) : context.colors.heldOrange.withOpacity(0.4))),
-                              ),
-                              child: Text(e.isReturned 
-                                  ? 'RETURNED' 
-                                  : (e.isPackageConfiscated ? 'CONFISCATED' : 'IN HOLD'),
-                                  style: TextStyle(color: e.isReturned 
-                                      ? context.colors.successGreen 
-                                      : (e.isPackageConfiscated ? context.colors.dangerRed : context.colors.heldOrange), 
-                                      fontSize: 11, fontWeight: FontWeight.w700)),
-                            )),
-                            DataCell(Text(e.returnedAt != null ? DateFormat('dd/MM/yy').format(e.returnedAt!) : '—',
-                                style: TextStyle(color: context.colors.textMuted))),
-                            DataCell(Text('LKR ${NumberFormat('#,##0.00').format(e.calculateCharge(storageRate))}',
-                                style: TextStyle(color: e.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold))),
-                            DataCell(e.isReturned
-                                ? Text('—', style: TextStyle(color: context.colors.textMuted))
-                                : (e.isPackageConfiscated 
-                                    ? Tooltip(message: 'Confiscated goods cannot be returned', child: Text('LOCKED', style: TextStyle(color: context.colors.textMuted, fontSize: 11, fontWeight: FontWeight.bold)))
-                                    : TextButton(
-                                        onPressed: () => _showReturnDialog(context, ref, e),
-                                        style: TextButton.styleFrom(foregroundColor: context.colors.successGreen),
-                                        child: const Text('Mark Returned'),
-                                      ))),
+                            DataCell(Center(child: Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
+                                style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600)))),
+                            DataCell(Center(child: Text(e.consigneeName ?? '—', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))),
+                            DataCell(Center(child: Text('${e.itemCount}'))),
+                            DataCell(Center(child: StatusChip(status: e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held')))),
+                            DataCell(Center(child: Text(DateFormat('dd/MM/yy').format(e.admittedAt)))),
+                            DataCell(Center(child: Text('LKR ${NumberFormat('#,##0.00').format(e.calculateCharge(storageRate))}',
+                                style: TextStyle(color: e.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold)))),
+                            DataCell(Center(child: (!e.isReturned && !e.isPackageConfiscated)
+                                ? InkWell(
+                                    onTap: () => _showReturnDialog(context, ref, e),
+                                    borderRadius: BorderRadius.circular(6),
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: context.colors.successGreen.withOpacity(0.15),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: context.colors.successGreen.withOpacity(0.4)),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Icon(Icons.play_circle_fill_rounded, size: 12, color: context.colors.successGreen),
+                                          const Gap(6),
+                                          Text('RELEASE', style: TextStyle(color: context.colors.successGreen, fontSize: 11, fontWeight: FontWeight.bold)),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                : Text('—', style: TextStyle(color: context.colors.textMuted)))),
+                            DataCell(Center(child: IconButton(
+                              icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
+                              onPressed: () async {
+                                final pkg = await ref.read(packageServiceProvider).getPackageById(e.packageId);
+                                if (pkg != null && context.mounted) {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => PackageDetailsDialog(package: pkg, storageRate: storageRate),
+                                  );
+                                }
+                              },
+                            ))),
                           ])).toList(),
                         ),
                     ),
