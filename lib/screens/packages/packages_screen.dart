@@ -53,6 +53,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   Widget build(BuildContext context) {
     final filter = ref.watch(packageFilterProvider);
     final packages = ref.watch(livePackagesProvider);
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ?? 0.0;
 
     return AppShell(
       currentRoute: '/packages',
@@ -216,7 +217,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
 
               if (_srResult != null) ...[
                 const Gap(16),
-                _SrResultCard(package: _srResult!, onDetails: () => _showDetails(context, _srResult!)).animate().fadeIn(),
+                _SrResultCard(package: _srResult!, onDetails: () => _showDetails(context, _srResult!, storageRate)).animate().fadeIn(),
               ],
               const Gap(16),
               Expanded(
@@ -258,7 +259,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                 DataColumn2(label: Text('Warehouse'), size: ColumnSize.M),
                                 DataColumn2(label: Text('Details'), size: ColumnSize.S, fixedWidth: 60),
                               ],
-                              rows: list.map((p) => DataRow(cells: [
+                              rows: filteredList.map((p) => DataRow(cells: [
                                 DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
                                 DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
                                 DataCell(Text(p.declarantName ?? '-', overflow: TextOverflow.ellipsis)),
@@ -269,13 +270,13 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                 DataCell(Text(p.entryDate != null
                                   ? DateFormat('dd/MM/yy').format(p.entryDate!)
                                   : DateFormat('dd/MM/yy').format(p.createdAt))),
-                                DataCell(Text(p.returnedAt != null 
-                                  ? DateFormat('dd/MM/yy').format(p.returnedAt!) 
+                                DataCell(Text(p.returnedAt != null
+                                  ? DateFormat('dd/MM/yy').format(p.returnedAt!)
                                   : '—', style: TextStyle(color: context.colors.successGreen, fontWeight: FontWeight.w600))),
                                 DataCell(_WarehousePill(warehouseEntries: p.warehouseEntries)),
                                 DataCell(IconButton(
                                   icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
-                                  onPressed: () => _showDetails(context, p),
+                                  onPressed: () => _showDetails(context, p, storageRate),
                                 )),
                               ])).toList(),
                             ),
@@ -291,7 +292,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     );
   }
 
-  void _showDetails(BuildContext context, PackageModel p) {
+  void _showDetails(BuildContext context, PackageModel p, double storageRate) {
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
@@ -344,10 +345,12 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     Text('Admitted: ${DateFormat('dd/MM/yy HH:mm').format(we.admittedAt)}', style: TextStyle(color: context.colors.textSecondary, fontSize: 12)),
                     Text('Reason: ${we.holdReason}', style: const TextStyle(fontSize: 13)),
                     Text('Items: ${we.itemCount}', style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
-                    if (we.isReturned && we.returnedAt != null)
-                      Text('Returned: ${DateFormat('dd/MM/yy').format(we.returnedAt!)}',
-                          style: TextStyle(color: context.colors.successGreen, fontSize: 12)),
-                  ]),
+                      if (we.isReturned && we.returnedAt != null)
+                        Text('Returned: ${DateFormat('dd/MM/yy').format(we.returnedAt!)}',
+                            style: TextStyle(color: context.colors.successGreen, fontSize: 12)),
+                      Text('Charge: LKR ${NumberFormat('#,##0.00').format(we.calculateCharge(storageRate))}',
+                          style: TextStyle(color: we.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontSize: 12, fontWeight: FontWeight.bold)),
+                    ]),
                 )),
               ],
             ]),

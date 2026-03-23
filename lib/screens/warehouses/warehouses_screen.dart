@@ -112,6 +112,7 @@ class _WarehouseTab extends ConsumerWidget {
       data: (list) {
         final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
         final search = ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
+        final storageRate = ref.watch(storageRateProvider).valueOrNull ?? 0.0;
 
         final filteredList = list.where((e) {
           if (filter != 'all' && e.packageStatus != filter) return false;
@@ -200,6 +201,7 @@ class _WarehouseTab extends ConsumerWidget {
                             DataColumn2(label: Text('Admitted'), size: ColumnSize.M, fixedWidth: 140),
                             DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 100),
                             DataColumn2(label: Text('Returned'), size: ColumnSize.S, fixedWidth: 100),
+                            DataColumn2(label: Text('Charge (LKR)'), size: ColumnSize.S, fixedWidth: 120),
                             DataColumn2(label: Text('Action'), size: ColumnSize.S, fixedWidth: 140),
                           ],
                           rows: filteredList.map((e) => DataRow(cells: [
@@ -230,6 +232,8 @@ class _WarehouseTab extends ConsumerWidget {
                             )),
                             DataCell(Text(e.returnedAt != null ? DateFormat('dd/MM/yy').format(e.returnedAt!) : '—',
                                 style: TextStyle(color: context.colors.textMuted))),
+                            DataCell(Text('LKR ${NumberFormat('#,##0.00').format(e.calculateCharge(storageRate))}',
+                                style: TextStyle(color: e.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold))),
                             DataCell(e.isReturned
                                 ? Text('—', style: TextStyle(color: context.colors.textMuted))
                                 : (e.isPackageConfiscated 

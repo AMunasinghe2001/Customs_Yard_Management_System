@@ -134,7 +134,15 @@ final liveWarehouseEntriesProvider =
 });
 
 final warehouseStatusFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
-final warehouseSearchProvider = StateProvider.family<String, String>((ref, warehouseId) => '');
+final warehouseSearchProvider = StateProvider.family<String, String>((ref, id) => '');
+
+final storageRateProvider = FutureProvider<double>((ref) async {
+  return ref.watch(customsRulesServiceProvider).getStorageRate();
+});
+
+final storageRateHistoryProvider = FutureProvider<List<AuditLogModel>>((ref) async {
+  return ref.read(customsRulesServiceProvider).getStorageRateHistory();
+});
 
 // ── Admin Data Providers ───────────────────────────────────────
 final allProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {

@@ -300,6 +300,17 @@ class WarehouseEntryModel {
   }
 
   bool get isPackageConfiscated => packageStatus == 'confiscated';
+
+  int get storageDays {
+    final end = returnedAt ?? DateTime.now();
+    final diff = end.difference(admittedAt).inDays;
+    return diff < 1 ? 1 : diff; // Charge at least 1 day if admitted
+  }
+
+  double calculateCharge(double dailyRate) {
+    if (isPackageConfiscated) return 0;
+    return storageDays * dailyRate;
+  }
 }
 
 class WarehouseModel {

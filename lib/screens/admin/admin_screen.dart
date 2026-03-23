@@ -21,7 +21,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 4,
+        length: 5,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -53,6 +53,7 @@ class AdminScreen extends ConsumerWidget {
                           Tab(icon: Icon(Icons.people_rounded), text: 'Officers'),
                           Tab(icon: Icon(Icons.gavel_rounded), text: 'Customs Rules'),
                           Tab(icon: Icon(Icons.category_rounded), text: 'Categories'),
+                          Tab(icon: Icon(Icons.settings_suggest_rounded), text: 'Settings'),
                           Tab(icon: Icon(Icons.history_toggle_off_rounded), text: 'Activity Logs'),
                         ],
                         dividerColor: Colors.transparent,
@@ -62,7 +63,7 @@ class AdminScreen extends ConsumerWidget {
                 ),
               ),
               const Gap(4),
-              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _CategoriesTab(), _LogsTab()])),
+              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _CategoriesTab(), _SettingsTab(), _LogsTab()])),
             ],
           ),
         ),
@@ -650,6 +651,135 @@ class _LogsTab extends ConsumerWidget {
                 ),
               ),
             ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Settings Tab ──────────────────────────────────────────────
+
+class _SettingsTab extends ConsumerStatefulWidget {
+  const _SettingsTab();
+  @override
+  ConsumerState<_SettingsTab> createState() => _SettingsTabState();
+}
+
+class _SettingsTabState extends ConsumerState<_SettingsTab> {
+  final _chargeCtrl = TextEditingController();
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final rate = ref.read(storageRateProvider).valueOrNull ?? 0;
+      _chargeCtrl.text = rate.toString();
+    });
+  }
+
+  @override
+  void dispose() {
+    _chargeCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final rate = double.tryParse(_chargeCtrl.text) ?? 0;
+    setState(() => _loading = true);
+    try {
+      await ref.read(customsRulesServiceProvider).updateStorageRate(rate);
+      ref.invalidate(storageRateProvider);
+      ref.invalidate(storageRateHistoryProvider);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: const Text('Settings updated successfully'), backgroundColor: context.colors.successGreen));
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('System Settings', style: TextStyle(color: context.colors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
+        const Gap(24),
+        Container(
+          width: 500,
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(16), border: Border.all(color: context.colors.borderColor)),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Icon(Icons.warehouse_rounded, color: context.colors.primaryGold, size: 20),
+              const Gap(10),
+              Text('Warehouse Storage Charges', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold, fontSize: 16)),
+            ]),
+            const Gap(12),
+            Text('Set the daily storage fee per package. This rate is used to calculate the total cost for held items (excluding confiscated goods).', 
+                style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+            const Gap(24),
+            TextField(
+              controller: _chargeCtrl,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              style: TextStyle(color: context.colors.textPrimary),
+              decoration: InputDecoration(
+                labelText: 'Daily Charge Rate (LKR)', 
+                prefixText: 'LKR ',
+                helperText: 'e.g. 150.00',
+                filled: true,
+                fillColor: context.colors.surfaceDark.withOpacity(0.5),
+              ),
+            ),
+            const Gap(32),
+            ElevatedButton(
+              onPressed: _loading ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.primaryGold, 
+                foregroundColor: context.colors.primaryNavy, 
+                minimumSize: const Size(double.infinity, 54),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: _loading 
+                ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)) 
+                : const Text('Save Settings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            ),
+          ]),
+        ),
+        const Gap(32),
+        Text('Charge Rate History', style: TextStyle(color: context.colors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+        const Gap(16),
+        Expanded(
+          child: ref.watch(storageRateHistoryProvider).when(
+            loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
+            error: (e, _) => Center(child: Text('Error loading history: $e')),
+            data: (history) => history.isEmpty
+              ? Center(child: Text('No charge history found', style: TextStyle(color: context.colors.textMuted)))
+              : Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: context.colors.borderColor)),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: DataTable2(
+                      headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                      columns: const [
+                        DataColumn2(label: Text('Date & Time'), size: ColumnSize.M),
+                        DataColumn2(label: Text('Officer/Admin'), size: ColumnSize.L),
+                        DataColumn2(label: Text('Action / Value Change'), size: ColumnSize.L),
+                      ],
+                      rows: history.map((h) => DataRow(cells: [
+                        DataCell(Text(DateFormat('dd MMM yyyy, HH:mm').format(h.createdAt), style: TextStyle(color: context.colors.textMuted, fontSize: 13))),
+                        DataCell(Text(h.userFullName ?? 'System', style: const TextStyle(fontWeight: FontWeight.w600))),
+                        DataCell(Text(h.action, style: TextStyle(color: context.colors.primaryGold, fontSize: 13))),
+                      ])).toList(),
+                    ),
+                  ),
+                ),
           ),
         ),
       ]),

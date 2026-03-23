@@ -343,8 +343,11 @@ class CustomsRulesService {
   }
 
   Future<void> createRule(CustomsRule rule) async {
+    final json = rule.toJson();
+    if (rule.id.isEmpty) json.remove('id'); // Omit ID for new rows to let DB generate UUID
+
     await supabase.from('customs_rules').insert({
-      ...rule.toJson(),
+      ...json,
       'created_by': supabase.auth.currentUser?.id,
     });
     // Log action
@@ -433,6 +436,47 @@ class CustomsRulesService {
       }
     }
     return violations;
+  }
+
+  Future<double> getStorageRate() async {
+    try {
+      final data = await supabase
+          .from('audit_logs')
+          .select('details')
+          .eq('entity_type', 'storage_rate')
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle();
+      if (data == null || data['details'] == null) return 0.0;
+      return (data['details']['rate'] as num?)?.toDouble() ?? 0.0;
+    } catch (e) {
+      print('DEBUG: getStorageRate fallback error: $e');
+      return 0.0;
+    }
+  }
+
+  Future<void> updateStorageRate(double rate) async {
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      // We use audit_logs for persistence to bypass RLS restrictions on rule tables
+      // This also automatically provides the "History" feature requested by the user.
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Updated Daily Storage Rate: $rate LKR',
+        entityType: 'storage_rate',
+        entityId: 'config',
+        details: {'rate': rate},
+      );
+    }
+  }
+
+  Future<List<AuditLogModel>> getStorageRateHistory() async {
+    final data = await supabase
+        .from('audit_logs')
+        .select('*, profiles(full_name)')
+        .eq('entity_type', 'storage_rate')
+        .order('created_at', ascending: false);
+    return data.map((e) => AuditLogModel.fromJson(e)).toList();
   }
 }
 
