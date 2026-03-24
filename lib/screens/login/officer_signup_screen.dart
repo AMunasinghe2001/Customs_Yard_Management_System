@@ -6,6 +6,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../services/services.dart';
+import '../../core/providers.dart';
 
 class OfficerSignupScreen extends ConsumerStatefulWidget {
   const OfficerSignupScreen({super.key});

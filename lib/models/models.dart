@@ -17,6 +17,8 @@ class PackageModel {
   final String? reason;
   final String status;
   final String? inspectedBy;
+  final String? inspectedByName;
+  final String? inspectedByBadge;
   final DateTime? inspectedAt;
   final DateTime? clearedAt;
   final String? notes;
@@ -44,6 +46,8 @@ class PackageModel {
     this.reason,
     required this.status,
     this.inspectedBy,
+    this.inspectedByName,
+    this.inspectedByBadge,
     this.inspectedAt,
     this.clearedAt,
     this.notes,
@@ -86,6 +90,8 @@ class PackageModel {
       reason: json['reason'] as String?,
       status: json['status'] as String? ?? 'pending',
       inspectedBy: json['inspected_by'] as String?,
+      inspectedByName: json['profiles'] != null ? json['profiles']['full_name'] as String? : null,
+      inspectedByBadge: json['profiles'] != null ? json['profiles']['badge_number'] as String? : null,
       inspectedAt: json['inspected_at'] != null
           ? DateTime.parse(json['inspected_at'] as String)
           : null,
@@ -125,12 +131,16 @@ class PackageModel {
       'reason': reason,
       'status': status,
       'notes': notes,
+      'inspected_by': inspectedBy,
+      'inspected_at': inspectedAt?.toIso8601String(),
     };
   }
 
   PackageModel copyWith({
     String? status,
     String? inspectedBy,
+    String? inspectedByName,
+    String? inspectedByBadge,
     DateTime? inspectedAt,
     DateTime? clearedAt,
     String? notes,
@@ -156,6 +166,8 @@ class PackageModel {
       reason: reason,
       status: status ?? this.status,
       inspectedBy: inspectedBy ?? this.inspectedBy,
+      inspectedByName: inspectedByName ?? this.inspectedByName,
+      inspectedByBadge: inspectedByBadge ?? this.inspectedByBadge,
       inspectedAt: inspectedAt ?? this.inspectedAt,
       clearedAt: clearedAt ?? this.clearedAt,
       notes: notes ?? this.notes,
@@ -244,6 +256,8 @@ class WarehouseEntryModel {
   final String? returnedBy;
   final String? returnedByName;
   final String? returnNotes;
+  final double? dailyRate;
+  final double? accumulatedCharge;
   // From joined packages table
   final String? srNumber;
   final String? consigneeName;
@@ -265,6 +279,8 @@ class WarehouseEntryModel {
     this.returnedBy,
     this.returnedByName,
     this.returnNotes,
+    this.dailyRate,
+    this.accumulatedCharge,
     this.srNumber,
     this.consigneeName,
     this.packageStatus,
@@ -293,6 +309,8 @@ class WarehouseEntryModel {
       returnedByName:
           (json['returned_profile'] as Map<String, dynamic>?)?['full_name'] as String?,
       returnNotes: json['return_notes'] as String?,
+      dailyRate: (json['daily_rate'] as num?)?.toDouble() ?? 0,
+      accumulatedCharge: (json['accumulated_storage_charge'] as num?)?.toDouble() ?? 0,
       srNumber: package?['sr_number'] as String?,
       consigneeName: package?['consignee_name'] as String?,
       packageStatus: package?['status'] as String?,
@@ -302,14 +320,20 @@ class WarehouseEntryModel {
   bool get isPackageConfiscated => packageStatus == 'confiscated';
 
   int get storageDays {
-    final end = returnedAt ?? DateTime.now();
-    final diff = end.difference(admittedAt).inDays;
-    return diff < 1 ? 1 : diff; // Charge at least 1 day if admitted
+    // Calculate days between admittedAt and (returnedAt or now)
+    // We count the number of midnights passed + 1
+    final start = DateTime(admittedAt.year, admittedAt.month, admittedAt.day);
+    final endDateTime = returnedAt ?? DateTime.now();
+    final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
+    
+    return end.difference(start).inDays + 1;
   }
 
-  double calculateCharge(double dailyRate) {
+  double calculateCharge(double globalRate) {
     if (isPackageConfiscated) return 0;
-    return storageDays * dailyRate;
+    // Use stored dailyRate if available, otherwise fallback to passed rate
+    final rate = (dailyRate ?? 0) > 0 ? dailyRate! : globalRate;
+    return storageDays * rate;
   }
 }
 
@@ -498,5 +522,24 @@ class PackageCategory {
       'name': name,
       'description': description,
     };
+  }
+}
+class HoldReasonModel {
+  final String id;
+  final String reasonText;
+  final DateTime createdAt;
+
+  const HoldReasonModel({
+    required this.id,
+    required this.reasonText,
+    required this.createdAt,
+  });
+
+  factory HoldReasonModel.fromJson(Map<String, dynamic> json) {
+    return HoldReasonModel(
+      id: json['id'] as String,
+      reasonText: json['reason_text'] as String,
+      createdAt: DateTime.parse(json['created_at'] as String),
+    );
   }
 }

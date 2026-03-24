@@ -49,9 +49,14 @@ class WarehousesScreen extends ConsumerWidget {
                       SizedBox(child: Row(mainAxisSize: MainAxisSize.min, children: [
                         ref.watch(allWarehouseEntriesProvider).when(
                           data: (list) {
-                            final returned = list.where((e) => e.isReturned).length;
-                            final total = list.length;
-                            return Text('$returned Returned',
+                            final packageEntries = <String, List<WarehouseEntryModel>>{};
+                            for (var e in list) {
+                              packageEntries.putIfAbsent(e.packageId, () => []).add(e);
+                            }
+                            final returnedCount = packageEntries.values.where((entries) => 
+                              entries.every((e) => e.isReturned)
+                            ).length;
+                            return Text('$returnedCount Returned',
                                 style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.bold));
                           },
                           loading: () => const SizedBox(),
@@ -94,7 +99,12 @@ class WarehousesScreen extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
                       ),
-                      overlayColor: WidgetStateProperty.all(Colors.transparent),
+                      splashBorderRadius: BorderRadius.circular(12),
+                      overlayColor: WidgetStateProperty.resolveWith<Color?>((states) {
+                        if (states.contains(WidgetState.hovered)) return Colors.grey.withOpacity(0.1);
+                        if (states.contains(WidgetState.focused)) return Colors.grey.withOpacity(0.1);
+                        return Colors.transparent;
+                      }),
                       splashFactory: NoSplash.splashFactory,
                       labelColor: context.colors.primaryGold,
                       unselectedLabelColor: context.colors.textSecondary,
@@ -131,12 +141,14 @@ class _WarehouseTab extends ConsumerWidget {
       error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(liveWarehouseEntriesProvider(warehouse.id))),
       data: (list) {
         final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
+        final reasonFilter = ref.watch(warehouseReasonFilterProvider(warehouse.id));
         final search = ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
         final storageRate = ref.watch(storageRateProvider).valueOrNull ?? 0.0;
 
         final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
         final filteredList = list.where((e) {
           if (filter != 'all' && e.packageStatus != filter) return false;
+          if (reasonFilter != 'all' && e.holdReason != reasonFilter) return false;
           if (dateRange != null) {
             final date = e.admittedAt;
             final startOfDay = DateTime(dateRange.start.year, dateRange.start.month, dateRange.start.day);
@@ -257,6 +269,40 @@ class _WarehouseTab extends ConsumerWidget {
                             ],
                           );
                         }),
+                        Consumer(builder: (context, ref, _) {
+                          final rFilter = ref.watch(warehouseReasonFilterProvider(warehouse.id));
+                          return ref.watch(holdReasonsProvider).when(
+                            loading: () => const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                            error: (_, __) => const SizedBox.shrink(),
+                            data: (reasons) {
+                              final items = ['all', ...reasons.map((r) => r.reasonText)];
+                              return Container(
+                                height: 32,
+                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: context.colors.borderColor),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String>(
+                                    value: items.contains(rFilter) ? rFilter : 'all',
+                                    isDense: true,
+                                    dropdownColor: context.colors.surfaceDark,
+                                    icon: Icon(Icons.arrow_drop_down, color: context.colors.primaryGold, size: 16),
+                                    style: TextStyle(color: context.colors.textPrimary, fontSize: 12),
+                                    onChanged: (v) {
+                                      if (v != null) ref.read(warehouseReasonFilterProvider(warehouse.id).notifier).state = v;
+                                    },
+                                    items: items.map((s) => DropdownMenuItem(
+                                      value: s,
+                                      child: Text(s == 'all' ? 'All Reasons' : s),
+                                    )).toList(),
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        }),
                       ],
                     ),
                   ],
@@ -275,8 +321,9 @@ class _WarehouseTab extends ConsumerWidget {
                           fixedTopRows: 1,
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(label: Text('Items'), size: ColumnSize.S, fixedWidth: 55),
+                            DataColumn2(label: Text('Hold Reason'), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.M),
@@ -288,6 +335,7 @@ class _WarehouseTab extends ConsumerWidget {
                                 style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
                             DataCell(Text(e.consigneeName ?? '—', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
                             DataCell(Text('${e.itemCount}')),
+                            DataCell(Text(e.holdReason, style: const TextStyle(fontStyle: FontStyle.italic), overflow: TextOverflow.ellipsis)),
                             DataCell(Center(child: StatusChip(status: e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held')))),
                             DataCell(Center(child: Text(DateFormat('dd/MM/yy').format(e.admittedAt)))),
                             DataCell(Center(child: Text('LKR ${NumberFormat('#,##0.00').format(e.calculateCharge(storageRate))}',
@@ -339,18 +387,38 @@ class _WarehouseTab extends ConsumerWidget {
 
   void _showReturnDialog(BuildContext context, WidgetRef ref, WarehouseEntryModel entry) {
     final notesCtrl = TextEditingController();
+    final storageRate = ref.read(storageRateProvider).valueOrNull ?? 0.0;
+    final charge = entry.calculateCharge(storageRate);
+
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Mark as Returned'),
+        title: const Text('Mark as Returned / Release'),
         content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Package: ${entry.packageId.substring(0, 8).toUpperCase()}',
+          Text('SR Number: ${entry.srNumber ?? entry.packageId.substring(0, 8).toUpperCase()}',
               style: TextStyle(color: context.colors.textSecondary)),
-          Text('Reason: ${entry.holdReason}',
-              style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w600)),
+          Text('Location: ${entry.warehouseName}',
+              style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
+          const Gap(12),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: context.colors.surfaceDark, borderRadius: BorderRadius.circular(8)),
+            child: Column(children: [
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('Storage Days:', style: TextStyle(color: context.colors.textMuted)),
+                Text('${entry.storageDays}', style: const TextStyle(fontWeight: FontWeight.bold)),
+              ]),
+              const Gap(4),
+              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                Text('Final Charge:', style: TextStyle(color: context.colors.textMuted)),
+                Text('LKR ${NumberFormat('#,##0.00').format(charge)}',
+                    style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold, fontSize: 16)),
+              ]),
+            ]),
+          ),
           const Gap(16),
           TextField(controller: notesCtrl,
-              decoration: const InputDecoration(labelText: 'Return Notes (optional)'), maxLines: 2),
+              decoration: const InputDecoration(labelText: 'Return / Release Notes (optional)'), maxLines: 2),
         ]),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),

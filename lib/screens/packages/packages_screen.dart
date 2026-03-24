@@ -222,7 +222,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => FilterChip(
+                        ...['all', 'pending', 'held', 'cleared', 'confiscated', 'returned'].map((s) => FilterChip(
                           label: Text(s.toUpperCase()),
                           selected: filter == s,
                           onSelected: (_) => ref.read(packageFilterProvider.notifier).state = s,
@@ -272,6 +272,39 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                   constraints: const BoxConstraints(),
                                 ),
                               ],
+                              const Gap(8),
+                              ref.watch(holdReasonsProvider).when(
+                                loading: () => const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+                                error: (_, __) => const SizedBox.shrink(),
+                                data: (reasons) {
+                                  final items = ['all', ...reasons.map((r) => r.reasonText)];
+                                  final currentReason = ref.watch(packageReasonFilterProvider);
+                                  return Container(
+                                    height: 32,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                                    decoration: BoxDecoration(
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(color: context.colors.borderColor),
+                                    ),
+                                    child: DropdownButtonHideUnderline(
+                                      child: DropdownButton<String>(
+                                        value: items.contains(currentReason) ? currentReason : 'all',
+                                        isDense: true,
+                                        dropdownColor: context.colors.surfaceDark,
+                                        icon: Icon(Icons.arrow_drop_down, color: context.colors.primaryGold, size: 16),
+                                        style: TextStyle(color: context.colors.textPrimary, fontSize: 12),
+                                        onChanged: (v) {
+                                          if (v != null) ref.read(packageReasonFilterProvider.notifier).state = v;
+                                        },
+                                        items: items.map((s) => DropdownMenuItem(
+                                          value: s,
+                                          child: Text(s == 'all' ? 'All Reasons' : s),
+                                        )).toList(),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
                             ],
                           );
                         }),
@@ -296,8 +329,17 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                   data: (list) {
                     final showReturned = ref.watch(packageShowReturnedProvider);
                     final dateRange = ref.watch(packageDateRangeProvider);
+                    final rFilter = ref.watch(packageReasonFilterProvider);
                     final filteredList = list.where((p) {
-                      if (!showReturned && p.isReturned) return false;
+                      if (filter != 'all') {
+                        if (filter == 'returned') {
+                          if (!p.isReturned) return false;
+                        } else {
+                          if (p.status != filter) return false;
+                        }
+                      }
+                      if (!showReturned && p.isReturned && filter != 'returned') return false;
+                      if (rFilter != 'all' && p.reason != rFilter) return false;
                       if (dateRange != null) {
                         final date = p.entryDate ?? p.createdAt;
                         final startOfDay = DateTime(dateRange.start.year, dateRange.start.month, dateRange.start.day);
@@ -322,20 +364,22 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               fixedTopRows: 1,
                               isVerticalScrollBarVisible: true,
                               isHorizontalScrollBarVisible: false,
-                              columns: const [
-                                DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                                DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
-                                DataColumn2(label: Text('Items'), size: ColumnSize.S, fixedWidth: 55),
-                                DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
+                                columns: const [
+                                  DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                                  DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                                  DataColumn2(label: Text('Items'), size: ColumnSize.S, fixedWidth: 55),
+                                  DataColumn2(label: Text('Hold Reason'), size: ColumnSize.M),
+                                  DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
                                 DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.M),
                                 DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.M),
                                 DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 55),
                               ],
                               rows: filteredList.map((p) => DataRow(cells: [
                                 DataCell(Text(p.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                                DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
-                                DataCell(Text('${p.totalItemCount}')),
-                                DataCell(Center(child: StatusChip(status: p.isReturned ? 'returned' : p.status))),
+                                  DataCell(Text(p.consigneeName, overflow: TextOverflow.ellipsis)),
+                                  DataCell(Text('${p.totalItemCount}')),
+                                  DataCell(Text(p.reason?.isNotEmpty == true ? p.reason! : '—', style: const TextStyle(fontStyle: FontStyle.italic), overflow: TextOverflow.ellipsis)),
+                                  DataCell(Center(child: StatusChip(status: p.isReturned ? 'returned' : p.status))),
                                 DataCell(Center(child: Text(p.entryDate != null
                                   ? DateFormat('dd/MM/yy').format(p.entryDate!)
                                   : DateFormat('dd/MM/yy').format(p.createdAt)))),

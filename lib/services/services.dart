@@ -1,44 +1,35 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/supabase_client.dart';
 import '../models/models.dart';
 
 // ── Auth Service ──────────────────────────────────────────────
 
-final authServiceProvider = Provider((ref) => AuthService());
-
 class AuthService {
   Future<ProfileModel?> signIn(String email, String password) async {
     try {
-      print('DEBUG: AuthService.signIn attempting for: "$email" (Length: ${email.length})');
+      print('DEBUG: AuthService.signIn attempting for: "$email"');
       final response = await supabase.auth.signInWithPassword(
-        email: email.trim(), // Robust trimming for email
+        email: email.trim(),
         password: password,
       );
-      print('DEBUG: Auth response received. User ID: ${response.user?.id}');
       if (response.user == null) return null;
       final profileData = await supabase.from('profiles').select().eq('id', response.user!.id).single();
       final profile = ProfileModel.fromJson(profileData);
-      print('DEBUG: Profile fetched: ${profile.fullName}, isAdmin: ${profile.isAdmin}, isActive: ${profile.isActive}');
       
       if (!profile.isActive) {
-        print('DEBUG: AuthService.signIn - Account is de-activated for: ${profile.fullName}');
         await signOut();
         throw Exception('account_deactivated');
       }
 
-      // Update online status - WRAPPED in try-catch to prevent blocking login if schema cache is stale
       try {
         await supabase.from('profiles').update({
           'is_online': true,
           'last_seen_at': DateTime.now().toIso8601String(),
         }).eq('id', profile.id);
       } catch (e) {
-        print('DEBUG: AuthService.signIn - Status update failed (schema cache might be stale): $e');
-        // We continue anyway so the user is not blocked
+        print('DEBUG: AuthService.signIn - Status update failed: $e');
       }
 
-      // Log login
       await AuditLogService().recordLog(
         userId: profile.id,
         action: 'Signed In',
@@ -48,7 +39,6 @@ class AuthService {
 
       return profile;
     } on AuthApiException catch (e) {
-      print('DEBUG: AuthService.signIn AuthApiException: $e');
       if (e.statusCode == '400' && e.message.contains('email_not_confirmed')) {
         throw Exception('email_not_confirmed');
       }
@@ -57,7 +47,6 @@ class AuthService {
       }
       rethrow;
     } catch (e) {
-      print('DEBUG: AuthService.signIn general error: $e');
       rethrow;
     }
   }
@@ -65,14 +54,12 @@ class AuthService {
   Future<void> signOut() async {
     final user = supabase.auth.currentUser;
     if (user != null) {
-      // Log logout
       await AuditLogService().recordLog(
         userId: user.id,
         action: 'Signed Out',
         entityType: 'auth',
         entityId: user.id,
       );
-      // Update online status
       try {
         await supabase.from('profiles').update({'is_online': false}).eq('id', user.id);
       } catch (e) {
@@ -109,12 +96,10 @@ class AuthService {
 
 // ── Package Service ──────────────────────────────────────────
 
-final packageServiceProvider = Provider((ref) => PackageService());
-
 class PackageService {
   Future<List<PackageModel>> getAllPackages({String? status, String? search}) async {
     var query = supabase.from('packages')
-        .select('*, package_items(*), warehouse_entries(*, warehouses(*))');
+        .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)');
     if (status != null && status != 'all') query = query.eq('status', status);
     if (search != null && search.isNotEmpty) {
       query = query.or('sr_number.ilike.%$search%,consignee_name.ilike.%$search%');
@@ -124,7 +109,13 @@ class PackageService {
   }
 
   Future<PackageModel> createPackage(PackageModel pkg, List<PackageItem> items) async {
-    final pkgData = await supabase.from('packages').insert(pkg.toInsertJson()).select().single();
+    final user = supabase.auth.currentUser;
+    final data = pkg.toInsertJson();
+    if (data['inspected_by'] == null && user != null) {
+      data['inspected_by'] = user.id;
+      data['inspected_at'] = DateTime.now().toIso8601String();
+    }
+    final pkgData = await supabase.from('packages').insert(data).select().single();
     final created = PackageModel.fromJson(pkgData);
     if (items.isNotEmpty) {
       await supabase.from('package_items').insert(
@@ -132,8 +123,6 @@ class PackageService {
       );
     }
     
-    // Log action
-    final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
@@ -147,55 +136,44 @@ class PackageService {
     return created;
   }
 
-  /// Look up a package by SR number (returns null if not found)
   Future<PackageModel?> getPackageBySrNumber(String srNumber) async {
     final data = await supabase
         .from('packages')
-        .select('*, package_items(*), warehouse_entries(*, warehouses(*))')
+        .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
         .eq('sr_number', srNumber)
         .maybeSingle();
     if (data == null) return null;
     return PackageModel.fromJson(data);
   }
 
-  /// Look up a package by ID
   Future<PackageModel?> getPackageById(String id) async {
     final data = await supabase
         .from('packages')
-        .select('*, package_items(*), warehouse_entries(*, warehouses(*))')
+        .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
         .eq('id', id)
         .maybeSingle();
     if (data == null) return null;
     return PackageModel.fromJson(data);
   }
 
-  /// Create or update a package by SR number.
-  /// If a package with this SR number already exists it is updated and its items replaced.
   Future<PackageModel> upsertPackage(PackageModel pkg, List<PackageItem> items) async {
     final existing = await getPackageBySrNumber(pkg.srNumber);
 
     if (existing != null) {
-      // Update package row
-      await supabase
-          .from('packages')
-          .update(pkg.toInsertJson())
-          .eq('id', existing.id);
-      // Replace all items
+      await supabase.from('packages').update(pkg.toInsertJson()).eq('id', existing.id);
       await supabase.from('package_items').delete().eq('package_id', existing.id);
       if (items.isNotEmpty) {
         await supabase.from('package_items').insert(
           items.map((i) => i.toInsertJson(existing.id)).toList(),
         );
       }
-      // Return the refreshed package
       final refreshed = await supabase
           .from('packages')
-          .select('*, package_items(*), warehouse_entries(*, warehouses(*))')
+          .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
           .eq('id', existing.id)
           .single();
       final resultP = PackageModel.fromJson(refreshed);
 
-      // Log action
       final user = supabase.auth.currentUser;
       if (user != null) {
         await AuditLogService().recordLog(
@@ -205,7 +183,6 @@ class PackageService {
           entityId: resultP.id,
         );
       }
-
       return resultP;
     } else {
       return createPackage(pkg, items);
@@ -222,7 +199,6 @@ class PackageService {
     if (status == 'cleared') data['cleared_at'] = DateTime.now().toIso8601String();
     await supabase.from('packages').update(data).eq('id', id);
     
-    // Log action
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -250,8 +226,6 @@ class PackageService {
 }
 
 // ── Warehouse Service ────────────────────────────────────────
-
-final warehouseServiceProvider = Provider((ref) => WarehouseService());
 
 class WarehouseService {
   Future<List<WarehouseModel>> getWarehouses() async {
@@ -282,16 +256,18 @@ class WarehouseService {
     required String holdReason,
     required int itemCount,
   }) async {
+    final rate = await CustomsRulesService().getStorageRate();
+
     await supabase.from('warehouse_entries').insert({
       'package_id': packageId,
       'warehouse_id': warehouseId,
       'hold_reason': holdReason,
       'item_count': itemCount,
+      'daily_rate': rate,
       'admitted_by': supabase.auth.currentUser?.id,
       'admitted_at': DateTime.now().toIso8601String(),
     });
 
-    // Log action
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -299,7 +275,7 @@ class WarehouseService {
         action: 'Sent package to warehouse',
         entityType: 'warehouse_entry',
         entityId: 'new',
-        details: {'package_id': packageId, 'warehouse_id': warehouseId},
+        details: {'package_id': packageId, 'warehouse_id': warehouseId, 'rate': rate},
       );
     }
   }
@@ -312,7 +288,6 @@ class WarehouseService {
       if (returnNotes != null) 'return_notes': returnNotes,
     }).eq('id', entryId);
 
-    // Log action
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -340,8 +315,6 @@ class WarehouseService {
 
 // ── Customs Rules Service ───────────────────────────────────
 
-final customsRulesServiceProvider = Provider((ref) => CustomsRulesService());
-
 class CustomsRulesService {
   Future<List<CustomsRule>> getActiveRules() async {
     final data = await supabase.from('customs_rules').select().eq('is_active', true);
@@ -355,13 +328,11 @@ class CustomsRulesService {
 
   Future<void> createRule(CustomsRule rule) async {
     final json = rule.toJson();
-    if (rule.id.isEmpty) json.remove('id'); // Omit ID for new rows to let DB generate UUID
-
+    if (rule.id.isEmpty) json.remove('id');
     await supabase.from('customs_rules').insert({
       ...json,
       'created_by': supabase.auth.currentUser?.id,
     });
-    // Log action
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -369,22 +340,12 @@ class CustomsRulesService {
         action: 'Created rule "${rule.ruleName}"',
         entityType: 'customs_rule',
         entityId: 'new',
-        details: rule.toJson(),
       );
     }
   }
 
   Future<void> toggleRule(String id, bool isActive) async {
-    print('DEBUG: Toggling rule $id to $isActive');
-    final response = await supabase.from('customs_rules')
-        .update({'is_active': isActive})
-        .eq('id', id)
-        .select();
-    if (response.isEmpty) {
-      print('DEBUG: toggleRule FAILED - No rows updated for ID: $id. Check RLS policies.');
-      throw Exception('Update failed. You may not have permission to change this rule.');
-    }
-    // Log action
+    await supabase.from('customs_rules').update({'is_active': isActive}).eq('id', id);
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -398,7 +359,6 @@ class CustomsRulesService {
 
   Future<void> deleteRule(String id) async {
     await supabase.from('customs_rules').delete().eq('id', id);
-    // Log action
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -460,17 +420,12 @@ class CustomsRulesService {
           .maybeSingle();
       if (data == null || data['details'] == null) return 0.0;
       return (data['details']['rate'] as num?)?.toDouble() ?? 0.0;
-    } catch (e) {
-      print('DEBUG: getStorageRate fallback error: $e');
-      return 0.0;
-    }
+    } catch (_) { return 0.0; }
   }
 
   Future<void> updateStorageRate(double rate) async {
     final user = supabase.auth.currentUser;
     if (user != null) {
-      // We use audit_logs for persistence to bypass RLS restrictions on rule tables
-      // This also automatically provides the "History" feature requested by the user.
       await AuditLogService().recordLog(
         userId: user.id,
         action: 'Updated Daily Storage Rate: $rate LKR',
@@ -493,15 +448,12 @@ class CustomsRulesService {
 
 // ── Admin Service ────────────────────────────────────────────
 
-final adminServiceProvider = Provider((ref) => AdminService());
-
 class AdminService {
   Future<List<ProfileModel>> getAllProfiles() async {
     final data = await supabase.from('profiles').select().order('created_at');
     return data.map((e) => ProfileModel.fromJson(e)).toList();
   }
 
-  /// Create officer/admin — relies on Auth to reject duplicate emails
   Future<void> createOfficer({
     required String email,
     required String password,
@@ -509,14 +461,12 @@ class AdminService {
     required String badgeNumber,
     required String role,
   }) async {
-    print('DEBUG: Creating officer with email: "$email"');
     final response = await supabase.auth.signUp(
       email: email,
       password: password,
       data: {'full_name': fullName, 'role': role, 'badge_number': badgeNumber},
     );
 
-    // If email confirmation is disabled and we have a user, update profile
     if (response.user != null) {
       try {
         await supabase.from('profiles').upsert({
@@ -526,39 +476,24 @@ class AdminService {
           'role': role,
           'is_active': true,
         });
-      } catch (e) {
-        print('DEBUG: createOfficer profile sync error: $e');
-        // Profile may already be created by trigger — ignore
-      }
+      } catch (_) {}
     } else {
-      print('DEBUG: createOfficer no user returned in response');
       throw Exception('Already registered or unable to register this email.');
     }
 
-    // Log action
     final admin = supabase.auth.currentUser;
     if (admin != null) {
       await AuditLogService().recordLog(
         userId: admin.id,
-        action: 'Created officer "$fullName" ($role)',
+        action: 'Created officer "$fullName"',
         entityType: 'profile',
         entityId: 'new',
-        details: {'email': email, 'badge': badgeNumber},
       );
     }
   }
 
   Future<void> toggleUserStatus(String profileId, bool isActive) async {
-    print('DEBUG: Toggling user $profileId to $isActive');
-    final response = await supabase.from('profiles')
-        .update({'is_active': isActive})
-        .eq('id', profileId)
-        .select();
-    if (response.isEmpty) {
-      print('DEBUG: toggleUserStatus FAILED - No rows updated for ID: $profileId. Check RLS policies.');
-      throw Exception('Update failed. You may not have permission to change this user status.');
-    }
-    // Log action
+    await supabase.from('profiles').update({'is_active': isActive}).eq('id', profileId);
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -577,7 +512,6 @@ class AdminService {
     if (role != null) updates['role'] = role;
     if (updates.isNotEmpty) {
       await supabase.from('profiles').update(updates).eq('id', id);
-      // Log action
       final admin = supabase.auth.currentUser;
       if (admin != null) {
         await AuditLogService().recordLog(
@@ -593,8 +527,6 @@ class AdminService {
 }
 
 // ── Audit Log Service ──────────────────────────────────────────
-
-final auditLogServiceProvider = Provider((ref) => AuditLogService());
 
 class AuditLogService {
   Future<List<AuditLogModel>> getAllLogs() async {
@@ -624,11 +556,50 @@ class AuditLogService {
       print('DEBUG: AuditLogService.recordLog error: $e');
     }
   }
+
+  Future<String?> getPackageCreator(String packageId) async {
+    try {
+      final res = await supabase
+          .from('audit_logs')
+          .select('profiles(full_name, badge_number)')
+          .eq('entity_type', 'package')
+          .eq('entity_id', packageId)
+          .like('action', 'Created new package%')
+          .maybeSingle();
+
+      if (res != null && res['profiles'] != null) {
+        final profile = res['profiles'];
+        final name = profile['full_name'] as String?;
+        final badge = profile['badge_number'] as String?;
+        if (name != null) {
+          return '$name${badge != null ? " (Salary No: $badge)" : ""}';
+        }
+      }
+    } catch (e) {
+      print('DEBUG: AuditLogService.getPackageCreator error: $e');
+    }
+    return null;
+  }
+}
+
+// ── Hold Reason Service ───────────────────────────────────────
+
+class HoldReasonService {
+  Future<List<HoldReasonModel>> getReasons() async {
+    final res = await supabase.from('hold_reasons').select().order('reason_text', ascending: true);
+    return (res as List).map((json) => HoldReasonModel.fromJson(json)).toList();
+  }
+
+  Future<void> addReason(String reasonText) async {
+    await supabase.from('hold_reasons').insert({'reason_text': reasonText});
+  }
+
+  Future<void> deleteReason(String id) async {
+    await supabase.from('hold_reasons').delete().eq('id', id);
+  }
 }
 
 // ── Package Category Service ──────────────────────────────────
-
-final packageCategoryServiceProvider = Provider((ref) => PackageCategoryService());
 
 class PackageCategoryService {
   Future<List<PackageCategory>> getCategories() async {
@@ -642,7 +613,6 @@ class PackageCategoryService {
       'description': description,
     });
     
-    // Log action
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -657,7 +627,6 @@ class PackageCategoryService {
   Future<void> deleteCategory(String id) async {
     await supabase.from('package_categories').delete().eq('id', id);
     
-    // Log action
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(

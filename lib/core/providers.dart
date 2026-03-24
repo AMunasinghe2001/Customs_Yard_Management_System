@@ -5,6 +5,16 @@ import '../models/models.dart';
 import '../services/services.dart';
 import 'supabase_client.dart';
 
+// ── Service Providers ──────────────────────────────────────────
+final authServiceProvider = Provider((ref) => AuthService());
+final packageServiceProvider = Provider((ref) => PackageService());
+final warehouseServiceProvider = Provider((ref) => WarehouseService());
+final customsRulesServiceProvider = Provider((ref) => CustomsRulesService());
+final adminServiceProvider = Provider((ref) => AdminService());
+final auditLogServiceProvider = Provider((ref) => AuditLogService());
+final packageCategoryServiceProvider = Provider((ref) => PackageCategoryService());
+final holdReasonServiceProvider = Provider((ref) => HoldReasonService());
+
 // ── Shared Auth State ──────────────────────────────────────────
 final currentProfileProvider = StateProvider<ProfileModel?>((ref) => null);
 final loginLoadingProvider = StateProvider<bool>((ref) => false);
@@ -14,12 +24,9 @@ final loginErrorProvider = StateProvider<String?>((ref) => null);
 final themeModeProvider = StateProvider<ThemeMode>((ref) => ThemeMode.light);
 
 // ── Realtime: Packages Stream ──────────────────────────────────
-// Lightweight stream that fires whenever the packages table changes.
-// Consumers just watch this to know when to reload package data.
 final packagesChangeTriggerProvider = StreamProvider<int>((ref) async* {
   int tick = 0;
-  yield tick; // emit immediately so first-render works
-
+  yield tick;
   final channel = supabase.channel('packages-realtime')
     ..onPostgresChanges(
       event: PostgresChangeEvent.all,
@@ -27,7 +34,6 @@ final packagesChangeTriggerProvider = StreamProvider<int>((ref) async* {
       table: 'packages',
       callback: (_) {
         tick++;
-        // invalidate dependent providers
         ref.invalidateSelf();
       },
     )
@@ -41,7 +47,6 @@ final packagesChangeTriggerProvider = StreamProvider<int>((ref) async* {
       },
     )
     ..subscribe();
-
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
@@ -49,7 +54,6 @@ final packagesChangeTriggerProvider = StreamProvider<int>((ref) async* {
 final warehouseEntriesChangeTriggerProvider = StreamProvider<int>((ref) async* {
   int tick = 0;
   yield tick;
-
   final channel = supabase.channel('warehouse-entries-realtime')
     ..onPostgresChanges(
       event: PostgresChangeEvent.all,
@@ -61,24 +65,22 @@ final warehouseEntriesChangeTriggerProvider = StreamProvider<int>((ref) async* {
       },
     )
     ..subscribe();
-
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
-// ── Realtime: Profiles Stream ──────────────────────────
+// ── Realtime: Profiles Stream ──────────────────────────────────
 final profilesChangeTriggerProvider = StreamProvider<int>((ref) async* {
   int tick = 0;
   yield tick;
   final channel = supabase.channel('profiles-realtime')
     ..onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'profiles',
-      callback: (_) {
-        tick++;
-        ref.invalidateSelf();
-      },
-    )
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'profiles',
+        callback: (_) {
+          tick++;
+          ref.invalidateSelf();
+        })
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
 });
@@ -89,14 +91,13 @@ final categoryChangeTriggerProvider = StreamProvider<int>((ref) async* {
   yield tick;
   final channel = supabase.channel('categories-realtime')
     ..onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'package_categories',
-      callback: (_) {
-        tick++;
-        ref.invalidateSelf();
-      },
-    )
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'package_categories',
+        callback: (_) {
+          tick++;
+          ref.invalidateSelf();
+        })
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
 });
@@ -106,23 +107,23 @@ final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
   return ref.read(warehouseServiceProvider).getWarehouses();
 });
 
-// ── Live Packages Provider (re-fetches on realtime trigger) ────
+// ── Live Packages Provider ─────────────────────────────────────
 final packageFilterProvider = StateProvider<String>((ref) => 'all');
 final packageSearchProvider = StateProvider<String>((ref) => '');
 final packageShowReturnedProvider = StateProvider<bool>((ref) => true);
 final packageDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
+final packageReasonFilterProvider = StateProvider<String>((ref) => 'all');
 
 final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
-  // Watch trigger so we re-run whenever table changes
   ref.watch(packagesChangeTriggerProvider);
   final filter = ref.watch(packageFilterProvider);
   final search = ref.watch(packageSearchProvider);
   return ref.read(packageServiceProvider).getAllPackages(
-    status: filter, search: search.isEmpty ? null : search);
+      status: filter, search: search.isEmpty ? null : search);
 });
 
 // ── Live Warehouse Entries Provider ─────────────────────────────
-final warehouseEntryFilterProvider = StateProvider<bool>((ref) => false); // false = active only
+final warehouseEntryFilterProvider = StateProvider<bool>((ref) => false);
 final selectedWarehouseIdProvider = StateProvider<String?>((ref) => null);
 
 final liveWarehouseEntriesProvider =
@@ -131,7 +132,7 @@ final liveWarehouseEntriesProvider =
   ref.watch(packagesChangeTriggerProvider);
   final showReturned = ref.watch(warehouseEntryFilterProvider);
   return ref.read(warehouseServiceProvider).getEntriesByWarehouse(
-    warehouseId, isReturned: showReturned ? null : false);
+      warehouseId, isReturned: showReturned ? null : false);
 });
 
 final allWarehouseEntriesProvider = FutureProvider<List<WarehouseEntryModel>>((ref) async {
@@ -142,6 +143,7 @@ final allWarehouseEntriesProvider = FutureProvider<List<WarehouseEntryModel>>((r
 final warehouseStatusFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
 final warehouseSearchProvider = StateProvider.family<String, String>((ref, id) => '');
 final warehouseDateRangeProvider = StateProvider.family<DateTimeRange?, String>((ref, warehouseId) => null);
+final warehouseReasonFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
 
 final storageRateProvider = FutureProvider<double>((ref) async {
   return ref.watch(customsRulesServiceProvider).getStorageRate();
@@ -160,7 +162,6 @@ final allProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
 final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   ref.watch(profilesChangeTriggerProvider);
   final all = await ref.watch(allProfilesProvider.future);
-  // Consider online if is_online is true AND last_seen_at is within last 5 minutes
   final now = DateTime.now();
   return all.where((p) {
     if (!p.isOnline) return false;
@@ -178,14 +179,13 @@ final auditLogsChangeTriggerProvider = StreamProvider<int>((ref) async* {
   yield tick;
   final channel = supabase.channel('audit-logs-realtime')
     ..onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'audit_logs',
-      callback: (_) {
-        tick++;
-        ref.invalidateSelf();
-      },
-    )
+        event: PostgresChangeEvent.all,
+        schema: 'public',
+        table: 'audit_logs',
+        callback: (_) {
+          tick++;
+          ref.invalidateSelf();
+        })
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
 });
@@ -198,4 +198,8 @@ final allLogsProvider = FutureProvider<List<AuditLogModel>>((ref) async {
 final packageCategoriesProvider = FutureProvider<List<PackageCategory>>((ref) async {
   ref.watch(categoryChangeTriggerProvider);
   return ref.read(packageCategoryServiceProvider).getCategories();
+});
+
+final holdReasonsProvider = FutureProvider<List<HoldReasonModel>>((ref) async {
+  return ref.read(holdReasonServiceProvider).getReasons();
 });

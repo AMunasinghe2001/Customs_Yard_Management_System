@@ -4,7 +4,10 @@ import 'package:intl/intl.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 
-class PackageDetailsDialog extends StatelessWidget {
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../services/services.dart';
+
+class PackageDetailsDialog extends ConsumerStatefulWidget {
   final PackageModel package;
   final double storageRate;
 
@@ -15,8 +18,45 @@ class PackageDetailsDialog extends StatelessWidget {
   });
 
   @override
+  ConsumerState<PackageDetailsDialog> createState() => _PackageDetailsDialogState();
+}
+
+class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
+  String? _creatorFallback;
+  bool _isLoadingCreator = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.package.inspectedBy == null) {
+      _lookupCreator();
+    }
+  }
+
+  Future<void> _lookupCreator() async {
+    setState(() => _isLoadingCreator = true);
+    try {
+      final creator = await AuditLogService().getPackageCreator(widget.package.id);
+      if (mounted) setState(() => _creatorFallback = creator);
+    } catch (_) {}
+    if (mounted) setState(() => _isLoadingCreator = false);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final p = package;
+    final p = widget.package;
+    String officerDisplay = 'Unknown Officer';
+    
+    if (p.inspectedByName != null) {
+      officerDisplay = '${p.inspectedByName}${p.inspectedByBadge != null ? " (Salary No: ${p.inspectedByBadge})" : ""}';
+    } else if (p.inspectedBy != null) {
+      officerDisplay = 'Officer ID: ${p.inspectedBy}';
+    } else if (_isLoadingCreator) {
+      officerDisplay = 'Loading...';
+    } else if (_creatorFallback != null) {
+      officerDisplay = _creatorFallback!;
+    }
+
     return AlertDialog(
       title: Text('SR Register Entry: ${p.srNumber}'),
       content: SizedBox(
@@ -40,6 +80,7 @@ class PackageDetailsDialog extends StatelessWidget {
               if (p.weightKg > 0) _Row('Weight', '${p.weightKg} kg'),
               if (p.description != null && p.description!.isNotEmpty) _Row('Description', p.description!),
               if (p.notes != null && p.notes!.isNotEmpty) _Row('Notes', p.notes!),
+              _Row('Added/Inspected By', officerDisplay),
               _Row('Created At', DateFormat('dd/MM/yyyy HH:mm').format(p.createdAt)),
               if (p.items.isNotEmpty) ...[
                 const Gap(16),
@@ -73,7 +114,7 @@ class PackageDetailsDialog extends StatelessWidget {
                     if (we.isReturned && we.returnedAt != null)
                       Text('Returned: ${DateFormat('dd/MM/yy').format(we.returnedAt!)}',
                           style: TextStyle(color: context.colors.successGreen, fontSize: 12)),
-                    Text('Charge: LKR ${NumberFormat('#,##0.00').format(we.calculateCharge(storageRate))}',
+                    Text('Charge: LKR ${NumberFormat('#,##0.00').format(we.calculateCharge(widget.storageRate))}',
                         style: TextStyle(color: we.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontSize: 12, fontWeight: FontWeight.bold)),
                   ]),
                 )),

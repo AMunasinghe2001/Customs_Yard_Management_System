@@ -7,6 +7,7 @@ import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import '../../core/theme.dart';
 import '../../services/services.dart';
+import '../../core/providers.dart';
 import '../../services/report_service.dart';
 import '../../models/models.dart';
 import 'package:intl/intl.dart';

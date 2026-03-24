@@ -22,7 +22,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 5,
+        length: 6,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -44,27 +44,48 @@ class AdminScreen extends ConsumerWidget {
                     ).animate().fadeIn(),
                     const Gap(20),
                     Container(
-                      decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: context.colors.borderColor)),
-                      child: TabBar(
-                        labelColor: context.colors.primaryGold,
-                        unselectedLabelColor: context.colors.textMuted,
-                        indicatorColor: context.colors.primaryGold,
-                        tabs: const [
-                          Tab(icon: Icon(Icons.people_rounded), text: 'Officers'),
-                          Tab(icon: Icon(Icons.gavel_rounded), text: 'Customs Rules'),
-                          Tab(icon: Icon(Icons.category_rounded), text: 'Categories'),
-                          Tab(icon: Icon(Icons.settings_suggest_rounded), text: 'Settings'),
-                          Tab(icon: Icon(Icons.history_toggle_off_rounded), text: 'Activity Logs'),
-                        ],
-                        dividerColor: Colors.transparent,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: context.colors.surfaceDark,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: context.colors.borderColor),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: TabBar(
+                          indicatorSize: TabBarIndicatorSize.tab,
+                          indicatorPadding: const EdgeInsets.all(2),
+                          indicator: BoxDecoration(
+                            color: context.colors.primaryGold.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
+                          ),
+                          splashBorderRadius: BorderRadius.circular(12),
+                          overlayColor: WidgetStateProperty.resolveWith<Color?>((states) {
+                            if (states.contains(WidgetState.hovered)) return Colors.grey.withOpacity(0.1);
+                            if (states.contains(WidgetState.focused)) return Colors.grey.withOpacity(0.1);
+                            return Colors.transparent;
+                          }),
+                          splashFactory: NoSplash.splashFactory,
+                          labelColor: context.colors.primaryGold,
+                          unselectedLabelColor: context.colors.textMuted,
+                          dividerColor: Colors.transparent,
+                          tabs: const [
+                            Tab(icon: Icon(Icons.people_rounded, size: 20), text: 'Officers'),
+                            Tab(icon: Icon(Icons.gavel_rounded, size: 20), text: 'Rules'),
+                            Tab(icon: Icon(Icons.category_rounded, size: 20), text: 'Items'),
+                            Tab(icon: Icon(Icons.payments_rounded, size: 20), text: 'Storage Charges'),
+                            Tab(icon: Icon(Icons.list_alt_rounded, size: 20), text: 'Hold Reasons'),
+                            Tab(icon: Icon(Icons.history_toggle_off_rounded, size: 20), text: 'Logs'),
+                          ],
+                        ),
                       ),
                     ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                   ],
                 ),
               ),
               const Gap(4),
-              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _CategoriesTab(), _SettingsTab(), _LogsTab()])),
+              const Expanded(child: TabBarView(children: [_OfficersTab(), _RulesTab(), _CategoriesTab(), _StorageChargesTab(), _HoldReasonsTab(), _LogsTab()])),
             ],
           ),
         ),
@@ -659,15 +680,15 @@ class _LogsTab extends ConsumerWidget {
   }
 }
 
-// ── Settings Tab ──────────────────────────────────────────────
+// ── Storage Charges Tab ───────────────────────────────────────
 
-class _SettingsTab extends ConsumerStatefulWidget {
-  const _SettingsTab();
+class _StorageChargesTab extends ConsumerStatefulWidget {
+  const _StorageChargesTab();
   @override
-  ConsumerState<_SettingsTab> createState() => _SettingsTabState();
+  ConsumerState<_StorageChargesTab> createState() => _StorageChargesTabState();
 }
 
-class _SettingsTabState extends ConsumerState<_SettingsTab> {
+class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
   final _chargeCtrl = TextEditingController();
   bool _loading = false;
 
@@ -786,5 +807,92 @@ class _SettingsTabState extends ConsumerState<_SettingsTab> {
         ),
       ]),
     );
+  }
+}
+
+// ── Hold Reasons Tab ──────────────────────────────────────────
+
+class _HoldReasonsTab extends ConsumerWidget {
+  const _HoldReasonsTab();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reasons = ref.watch(holdReasonsProvider);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Text('Hold Reasons', style: TextStyle(color: context.colors.textPrimary, fontSize: 24, fontWeight: FontWeight.w700)),
+          const Spacer(),
+          ElevatedButton.icon(
+              onPressed: () => _showAddReasonDialog(context, ref),
+              icon: const Icon(Icons.add, size: 18),
+              label: const Text('Add Reason')),
+        ]),
+        const Gap(16),
+        Expanded(
+          child: reasons.when(
+            loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
+            error: (e, _) => Center(child: Text('Error: $e', style: TextStyle(color: context.colors.dangerRed))),
+            data: (list) => Container(
+              width: double.infinity,
+              decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: context.colors.borderColor)),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: DataTable2(
+                  horizontalMargin: 24,
+                  columnSpacing: 20,
+                  headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                  columns: [
+                    DataColumn2(label: Text('Reason Text', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Created At', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 120),
+                    DataColumn2(label: Text('Del', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 60, numeric: true),
+                  ],
+                  rows: list.map((r) => DataRow(cells: [
+                    DataCell(Text(r.reasonText, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w500))),
+                    DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(r.createdAt), style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
+                    DataCell(IconButton(
+                      icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 18),
+                      onPressed: () async {
+                        final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+                          title: const Text('Delete Reason?'),
+                          content: Text('Delete "${r.reasonText}"?'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
+                                onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                          ],
+                        ));
+                        if (ok == true) {
+                          await ref.read(holdReasonServiceProvider).deleteReason(r.id);
+                          ref.invalidate(holdReasonsProvider);
+                        }
+                      },
+                    )),
+                  ])).toList(),
+                ),
+              ),
+            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  void _showAddReasonDialog(BuildContext context, WidgetRef ref) {
+    final ctrl = TextEditingController();
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Add Hold Reason'),
+      content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Reason Text *')),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(onPressed: () async {
+          if (ctrl.text.isEmpty) return;
+          await ref.read(holdReasonServiceProvider).addReason(ctrl.text.trim());
+          ref.invalidate(holdReasonsProvider);
+          if (ctx.mounted) Navigator.pop(ctx);
+        }, child: const Text('Add Reason')),
+      ],
+    ));
   }
 }

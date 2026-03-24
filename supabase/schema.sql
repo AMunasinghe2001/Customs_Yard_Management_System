@@ -97,6 +97,8 @@ CREATE TABLE warehouse_entries (
   returned_at TIMESTAMPTZ,
   returned_by UUID REFERENCES profiles(id),
   return_notes TEXT,
+  daily_rate NUMERIC(12,2) DEFAULT 0,
+  accumulated_storage_charge NUMERIC(12,2) DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

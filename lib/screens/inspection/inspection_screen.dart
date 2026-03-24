@@ -9,6 +9,7 @@ import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
+import '../../core/supabase_client.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
   const InspectionScreen({super.key});
@@ -156,7 +157,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         entryDate: _entryDateCtrl.text.isNotEmpty ? DateTime.tryParse(_entryDateCtrl.text) : null,
         reason: _reasonCtrlMain.text.trim(),
         status: _statusValue,
-        notes: _notesCtrl.text, createdAt: DateTime.now(), updatedAt: DateTime.now(),
+        notes: _notesCtrl.text,
+        inspectedBy: supabase.auth.currentUser?.id,
+        inspectedAt: DateTime.now(),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
       );
       // Upsert: update if SR exists, insert if new
       final saved = await ref.read(packageServiceProvider).upsertPackage(pkg, items);
@@ -290,8 +295,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                               ))),
                         ]),
                         const Gap(16),
-                        TextFormField(controller: _reasonCtrlMain,
-                            decoration: const InputDecoration(labelText: 'Reason (if held)')),
+                        ref.watch(holdReasonsProvider).when(
+                          loading: () => const LinearProgressIndicator(),
+                          error: (e, _) => Text('Error loading reasons: $e', style: TextStyle(color: context.colors.dangerRed, fontSize: 12)),
+                          data: (list) => DropdownButtonFormField<String>(
+                            value: list.any((r) => r.reasonText == _reasonCtrlMain.text) ? _reasonCtrlMain.text : null,
+                            decoration: const InputDecoration(labelText: 'Reason (if held)'),
+                            items: list.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
+                            onChanged: (v) => setState(() => _reasonCtrlMain.text = v ?? ''),
+                          ),
+                        ),
                         const Gap(16),
                         TextFormField(controller: _descCtrl,
                             decoration: const InputDecoration(labelText: 'Package Description'), maxLines: 2),
@@ -543,9 +556,16 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
               ),
             ),
             const Gap(16),
-            TextFormField(controller: _reasonCtrl,
-                decoration: const InputDecoration(labelText: 'Hold Reason *', hintText: 'Reason for holding...'),
-                maxLines: 2),
+            ref.watch(holdReasonsProvider).when(
+              loading: () => const LinearProgressIndicator(),
+              error: (e, _) => Text('Error: $e', style: TextStyle(color: context.colors.dangerRed)),
+              data: (list) => DropdownButtonFormField<String>(
+                value: list.any((r) => r.reasonText == _reasonCtrl.text) ? _reasonCtrl.text : null,
+                decoration: const InputDecoration(labelText: 'Hold Reason *', hintText: 'Select reason...'),
+                items: list.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
+                onChanged: (v) => setState(() => _reasonCtrl.text = v ?? ''),
+              ),
+            ),
             const Gap(12),
             TextFormField(controller: _itemCountCtrl,
                 decoration: const InputDecoration(labelText: 'Number of Items Held'),
