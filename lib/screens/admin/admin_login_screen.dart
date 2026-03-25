@@ -125,9 +125,9 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             Text('Sri Lanka Customs',
               style: TextStyle(color: context.colors.primaryGold, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2),
             ).animate().slideY(begin: 0.5, duration: 500.ms).fadeIn(),
-            const Gap(8),
-            const Text('Yard Management System',
-              style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 17),
+            const Text('Inventory Management System\nGrey Line 1',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2),
             ).animate().slideY(begin: 0.5, duration: 500.ms, delay: 100.ms).fadeIn(),
             const Gap(28),
             Container(

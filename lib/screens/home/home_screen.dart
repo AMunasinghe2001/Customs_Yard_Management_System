@@ -49,8 +49,8 @@ class HomeScreen extends ConsumerWidget {
                   style: TextStyle(color: context.colors.customsBlue, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 1.2),
                 ).animate().slideY(begin: 0.4, duration: 500.ms, delay: 200.ms).fadeIn(),
                 const Gap(6),
-                Text('Yard Management System',
-                  style: TextStyle(color: context.colors.textSecondary, fontSize: 16),
+                Text('Inventory Management System - Grey Line 1',
+                  style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
                 ).animate().slideY(begin: 0.4, duration: 500.ms, delay: 300.ms).fadeIn(),
                 const Gap(44),
 

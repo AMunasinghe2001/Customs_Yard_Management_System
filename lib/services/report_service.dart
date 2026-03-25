@@ -305,7 +305,7 @@ class ReportService {
               children: [
                 pw.Text(title, style: pw.TextStyle(fontSize: 24, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
                 pw.SizedBox(height: 4),
-                pw.Text('Sri Lanka Customs - Yard Management System', style: pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
+                pw.Text('Sri Lanka Customs - Inventory Management System (Grey Line 1)', style: pw.TextStyle(fontSize: 12, color: PdfColors.grey700)),
               ],
             ),
             pw.Container(
@@ -405,7 +405,7 @@ class ReportService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Report validated by Yard Management System', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
+            pw.Text('Report validated by Inventory Management System (Grey Line 1)', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
             pw.Text('$label $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColor.fromInt(0xFF0D47A1))),
           ],
         ),

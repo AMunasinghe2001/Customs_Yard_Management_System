@@ -118,8 +118,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                           children: [
                             Text('SL Customs',
                                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
-                            Text('Yard Management',
-                                style: TextStyle(color: Colors.white54, fontSize: 10)),
+                            Text('Inventory Management\nGrey Line 1',
+                                style: TextStyle(color: Colors.white54, fontSize: 10, height: 1.2)),
                           ],
                         ),
                       ),

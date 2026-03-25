@@ -102,9 +102,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
             const Gap(36),
             Text('Sri Lanka Customs',
               style: TextStyle(color: context.colors.primaryGold, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
-            const Gap(8),
-            const Text('Yard Management System',
-              style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 17)),
+            const Text('Inventory Management System\nGrey Line 1',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
             const Gap(28),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),

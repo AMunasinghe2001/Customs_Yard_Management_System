@@ -52,7 +52,7 @@ class CustomsApp extends ConsumerWidget {
     print('DEBUG: CustomsApp building with themeMode: $themeMode');
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
-      title: 'Sri Lanka Customs - Yard Management',
+      title: 'Sri Lanka Customs Inventory Management System',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
