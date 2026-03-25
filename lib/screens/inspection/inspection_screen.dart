@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:uuid/uuid.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
@@ -35,6 +36,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   final _descCtrl = TextEditingController();
   final _reasonCtrlMain = TextEditingController();
   final _notesCtrl = TextEditingController();
+
+  final _dateMask = MaskTextInputFormatter(
+    mask: '####-##-##', 
+    filter: {"#": RegExp(r'[0-9]')},
+    type: MaskAutoCompletionType.lazy,
+  );
+  
+  final _srMask = MaskTextInputFormatter(
+    mask: '## #/SR/##/####',
+    filter: {
+      "#": RegExp(r'[0-9]'),
+      "A": RegExp(r'[A-Za-z]'),
+    },
+    type: MaskAutoCompletionType.lazy,
+  );
+
   String _statusValue = 'pending';
   final List<_ItemRow> _items = [_ItemRow()];
 
@@ -276,6 +293,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                             Expanded(
                               child: TextFormField(
                                 controller: _srNumberCtrl,
+                                inputFormatters: [
+                                  MaskTextInputFormatter(
+                                    mask: 'AA #/SR/##/####', // Expect GL 1/SR/01/2025
+                                    filter: {"#": RegExp(r'[0-9]'), "A": RegExp(r'[A-Za-z]')},
+                                    type: MaskAutoCompletionType.lazy,
+                                  )
+                                ],
                                 decoration: InputDecoration(
                                   labelText: 'SR Number *',
                                   hintText: 'e.g. GL 1/SR/01/2025',
@@ -309,14 +333,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                               validator: (v) => v!.isEmpty ? 'Required' : null)),
                           const Gap(12),
                           Expanded(child: TextFormField(controller: _entryDateCtrl,
+                              inputFormatters: [
+                                MaskTextInputFormatter(
+                                  mask: '####-##-##',
+                                  filter: {"#": RegExp(r'[0-9]')},
+                                  type: MaskAutoCompletionType.lazy,
+                                )
+                              ],
                               decoration: InputDecoration(
                                 labelText: 'Entry Date *',
+                                hintText: 'YYYY-MM-DD',
                                 suffixIcon: IconButton(
                                   icon: Icon(Icons.calendar_month, color: context.colors.primaryGold),
                                   onPressed: () => _selectDate(_entryDateCtrl),
                                 ),
                               ),
-                              validator: (v) => v!.isEmpty ? 'Required' : null)),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) return 'Required';
+                                final reg = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+                                if (!reg.hasMatch(v)) return 'Use YYYY-MM-DD format';
+                                return null;
+                              })),
                         ]),
                         const Gap(16),
                         Row(children: [
@@ -325,14 +362,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                               validator: (v) => v!.isEmpty ? 'Required' : null)),
                           const Gap(12),
                           Expanded(child: TextFormField(controller: _cusdecDateCtrl,
+                              inputFormatters: [
+                                MaskTextInputFormatter(
+                                  mask: '####-##-##',
+                                  filter: {"#": RegExp(r'[0-9]')},
+                                  type: MaskAutoCompletionType.lazy,
+                                )
+                              ],
                               decoration: InputDecoration(
                                 labelText: 'Cusdec Date *',
+                                hintText: 'YYYY-MM-DD',
                                 suffixIcon: IconButton(
                                   icon: Icon(Icons.calendar_month, color: context.colors.primaryGold),
                                   onPressed: () => _selectDate(_cusdecDateCtrl),
                                 ),
                               ),
-                              validator: (v) => v!.isEmpty ? 'Required' : null)),
+                              validator: (v) {
+                                if (v == null || v.isEmpty) return 'Required';
+                                final reg = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+                                if (!reg.hasMatch(v)) return 'Use YYYY-MM-DD format';
+                                return null;
+                              })),
                         ]),
                         const Gap(16),
                         if (['held', 'confiscated'].contains(_statusValue))

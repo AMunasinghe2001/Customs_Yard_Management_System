@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
+import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/theme.dart';
 import '../core/providers.dart';
 import '../core/supabase_client.dart';
@@ -1120,14 +1121,27 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                     Expanded(
                                       child: TextFormField(
                                         controller: _entryDateCtrl,
-                                        readOnly: true,
+                                        readOnly: false,
                                         onTap: () => _selectDate(_entryDateCtrl),
+                                        inputFormatters: [
+                                          MaskTextInputFormatter(
+                                            mask: '####-##-##',
+                                            filter: {"#": RegExp(r'[0-9]')},
+                                            type: MaskAutoCompletionType.lazy,
+                                          )
+                                        ],
                                         decoration: InputDecoration(
                                           labelText: 'Entry Date *',
+                                          hintText: 'YYYY-MM-DD',
                                           suffixIcon: const Icon(Icons.calendar_month_rounded),
                                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
-                                        validator: (v) => v!.isEmpty ? 'Required' : null,
+                                        validator: (v) {
+                                          if (v == null || v.isEmpty) return 'Required';
+                                          final reg = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+                                          if (!reg.hasMatch(v)) return 'Use YYYY-MM-DD';
+                                          return null;
+                                        },
                                       ),
                                     ),
                                   ],
@@ -1149,14 +1163,27 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                     Expanded(
                                       child: TextFormField(
                                         controller: _cusdecDateCtrl,
-                                        readOnly: true,
+                                        readOnly: false,
                                         onTap: () => _selectDate(_cusdecDateCtrl),
+                                        inputFormatters: [
+                                          MaskTextInputFormatter(
+                                            mask: '####-##-##',
+                                            filter: {"#": RegExp(r'[0-9]')},
+                                            type: MaskAutoCompletionType.lazy,
+                                          )
+                                        ],
                                         decoration: InputDecoration(
                                           labelText: 'Cusdec Date *',
+                                          hintText: 'YYYY-MM-DD',
                                           suffixIcon: const Icon(Icons.calendar_month_rounded),
                                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
-                                        validator: (v) => v!.isEmpty ? 'Required' : null,
+                                        validator: (v) {
+                                          if (v == null || v.isEmpty) return 'Required';
+                                          final reg = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+                                          if (!reg.hasMatch(v)) return 'Use YYYY-MM-DD';
+                                          return null;
+                                        },
                                       ),
                                     ),
                                   ],
