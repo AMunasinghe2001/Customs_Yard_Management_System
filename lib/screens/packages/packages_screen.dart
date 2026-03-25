@@ -57,6 +57,19 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     });
   }
 
+  String _formatWarehouseName(String name) {
+    // Extract warehouse number from names like "SR Warehouse 03" -> "Warehouse 3"
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(name);
+    if (match != null) {
+      final number = int.tryParse(match.group(1)!);
+      if (number != null) {
+        return 'Warehouse $number';
+      }
+    }
+    return name;
+  }
+
   @override
   Widget build(BuildContext context) {
     final filter = ref.watch(packageFilterProvider);
@@ -614,6 +627,18 @@ class _SrResultCard extends StatelessWidget {
   final VoidCallback onDetails;
   const _SrResultCard({required this.package, required this.onDetails});
 
+  String _formatWarehouseName(String name) {
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(name);
+    if (match != null) {
+      final number = int.tryParse(match.group(1)!);
+      if (number != null) {
+        return 'Warehouse $number';
+      }
+    }
+    return name;
+  }
+
   @override
   Widget build(BuildContext context) {
     final activeEntries =
@@ -679,7 +704,7 @@ class _SrResultCard extends StatelessWidget {
                       child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                        Text(e.warehouseName,
+                        Text(_formatWarehouseName(e.warehouseName),
                             style: TextStyle(
                                 color: context.colors.heldOrange,
                                 fontWeight: FontWeight.w700)),
@@ -724,6 +749,19 @@ class _WarehousePill extends StatelessWidget {
   final List<WarehouseEntryModel> warehouseEntries;
   const _WarehousePill({required this.warehouseEntries});
 
+  static String _formatWarehouseName(String name) {
+    // Extract warehouse number from names like "SR Warehouse 03" -> "Warehouse 3"
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(name);
+    if (match != null) {
+      final number = int.tryParse(match.group(1)!);
+      if (number != null) {
+        return 'Warehouse $number';
+      }
+    }
+    return name;
+  }
+
   @override
   Widget build(BuildContext context) {
     final active = warehouseEntries.where((e) => !e.isReturned).toList();
@@ -741,7 +779,7 @@ class _WarehousePill extends StatelessWidget {
                     border: Border.all(
                         color: context.colors.heldOrange.withOpacity(0.4)),
                   ),
-                  child: Text(e.warehouseName,
+                  child: Text(_formatWarehouseName(e.warehouseName),
                       style: TextStyle(
                           color: context.colors.heldOrange,
                           fontSize: 11,

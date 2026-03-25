@@ -18,6 +18,19 @@ import 'package:data_table_2/data_table_2.dart';
 class WarehousesScreen extends ConsumerWidget {
   const WarehousesScreen({super.key});
 
+  String _formatWarehouseName(String name) {
+    // Extract warehouse number from names like "SR Warehouse 03" -> "Warehouse 3"
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(name);
+    if (match != null) {
+      final number = int.tryParse(match.group(1)!);
+      if (number != null) {
+        return 'Warehouse $number';
+      }
+    }
+    return name;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final warehouses = ref.watch(warehousesProvider);
@@ -90,7 +103,7 @@ class WarehousesScreen extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(14),
                     child: TabBar(
                       tabs: ws.map((w) => Tab(
-                        child: Text(w.name, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                        child: Text(_formatWarehouseName(w.name), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                       )).toList(),
                       indicatorSize: TabBarIndicatorSize.tab,
                       indicatorPadding: const EdgeInsets.all(2),
@@ -132,6 +145,18 @@ class WarehousesScreen extends ConsumerWidget {
 class _WarehouseTab extends ConsumerWidget {
   final WarehouseModel warehouse;
   const _WarehouseTab({required this.warehouse});
+
+  String _formatWarehouseName(String name) {
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(name);
+    if (match != null) {
+      final number = int.tryParse(match.group(1)!);
+      if (number != null) {
+        return 'Warehouse $number';
+      }
+    }
+    return name;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -176,7 +201,7 @@ class _WarehouseTab extends ConsumerWidget {
           return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(Icons.warehouse_rounded, size: 64, color: context.colors.textMuted.withOpacity(0.4)),
             const Gap(16),
-            Text('${warehouse.name} is empty', style: TextStyle(color: context.colors.textMuted, fontSize: 16)),
+            Text('${_formatWarehouseName(warehouse.name)} is empty', style: TextStyle(color: context.colors.textMuted, fontSize: 16)),
           ]));
         }
 

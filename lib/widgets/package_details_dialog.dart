@@ -1110,9 +1110,10 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                       child: TextFormField(
                                         controller: _declarantNameCtrl,
                                         decoration: InputDecoration(
-                                          labelText: 'Declarant Name',
+                                          labelText: 'Declarant Name *',
                                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
+                                        validator: (v) => v!.isEmpty ? 'Required' : null,
                                       ),
                                     ),
                                     const Gap(16),
@@ -1122,10 +1123,11 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                         readOnly: true,
                                         onTap: () => _selectDate(_entryDateCtrl),
                                         decoration: InputDecoration(
-                                          labelText: 'Entry Date',
+                                          labelText: 'Entry Date *',
                                           suffixIcon: const Icon(Icons.calendar_month_rounded),
                                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
+                                        validator: (v) => v!.isEmpty ? 'Required' : null,
                                       ),
                                     ),
                                   ],
@@ -1137,9 +1139,10 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                       child: TextFormField(
                                         controller: _cusdecNoCtrl,
                                         decoration: InputDecoration(
-                                          labelText: 'Cusdec No',
+                                          labelText: 'Cusdec No *',
                                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
+                                        validator: (v) => v!.isEmpty ? 'Required' : null,
                                       ),
                                     ),
                                     const Gap(16),
@@ -1149,10 +1152,11 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                         readOnly: true,
                                         onTap: () => _selectDate(_cusdecDateCtrl),
                                         decoration: InputDecoration(
-                                          labelText: 'Cusdec Date',
+                                          labelText: 'Cusdec Date *',
                                           suffixIcon: const Icon(Icons.calendar_month_rounded),
                                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                         ),
+                                        validator: (v) => v!.isEmpty ? 'Required' : null,
                                       ),
                                     ),
                                   ],
@@ -1201,15 +1205,21 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                 TextFormField(
                                   controller: _consigneePhoneCtrl,
                                   decoration: InputDecoration(
-                                    labelText: 'Phone Number',
+                                    labelText: 'Phone Number (10 digits)',
                                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                                   ),
+                                  validator: (v) {
+                                    if (v != null && v.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(v)) {
+                                      return 'Must be exactly 10 digits';
+                                    }
+                                    return null;
+                                  },
                                 ),
                               ],
                               isDark,
                             ),
                             _buildSection(
-                              'Additional Info',
+                              'Additional Info (Optional)',
                               Icons.info_rounded,
                               [
                                 Row(

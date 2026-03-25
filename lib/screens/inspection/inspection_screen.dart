@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/custom_dropdown.dart';
+import '../../widgets/warehouse_selection_dialog.dart';
 import '../../core/supabase_client.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
@@ -44,6 +45,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   String? _savedPackageId;
   String? _suggestedWarehouseId;
   bool _isUpdate = false;
+  
+  // Temporary storage for package data before warehouse confirmation
+  PackageModel? _tempPackageData;
+  List<PackageItem>? _tempPackageItems;
 
   /// Fetch an existing package by SR number and populate the form
   Future<void> _loadBySrNumber() async {
@@ -165,8 +170,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         createdAt: DateTime.now(),
         updatedAt: DateTime.now(),
       );
-      // Upsert: update if SR exists, insert if new
-      final saved = await ref.read(packageServiceProvider).upsertPackage(pkg, items);
+      
+      // Store temporarily - don't save to database yet
+      _tempPackageData = pkg;
+      _tempPackageItems = items;
+      
       String? suggestedWh;
       final cats = ref.read(packageCategoriesProvider).value;
       if (cats != null) {
@@ -182,8 +190,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       setState(() { 
         _passed = violations.isEmpty; 
         _violations = violations; 
-        _savedPackageId = saved.id; 
         _suggestedWarehouseId = suggestedWh;
+        _savedPackageId = null; // Clear any previous package ID
       });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -200,7 +208,22 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     _consigneeCtrl.clear(); _consigneeNicCtrl.clear(); _consigneePhoneCtrl.clear();
     _declarantCtrl.clear(); _cusdecCtrl.clear(); _cusdecDateCtrl.clear(); _entryDateCtrl.clear();
     _descCtrl.clear(); _reasonCtrlMain.clear(); _notesCtrl.clear();
+    _tempPackageData = null;
+    _tempPackageItems = null;
     setState(() { _statusValue = 'pending'; _items.clear(); _items.add(_ItemRow()); _passed = null; _violations = []; _savedPackageId = null; _suggestedWarehouseId = null; });
+  }
+
+  String _formatWarehouseName(String name) {
+    // Extract warehouse number from names like "SR Warehouse 03" -> "Warehouse 3"
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(name);
+    if (match != null) {
+      final number = int.tryParse(match.group(1)!);
+      if (number != null) {
+        return 'Warehouse $number';
+      }
+    }
+    return name;
   }
 
   @override
@@ -282,30 +305,34 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         const Gap(16),
                         Row(children: [
                           Expanded(child: TextFormField(controller: _declarantCtrl,
-                              decoration: const InputDecoration(labelText: 'Declarant Name'))),
+                              decoration: const InputDecoration(labelText: 'Declarant Name *'),
+                              validator: (v) => v!.isEmpty ? 'Required' : null)),
                           const Gap(12),
                           Expanded(child: TextFormField(controller: _entryDateCtrl,
                               decoration: InputDecoration(
-                                labelText: 'Entry Date',
+                                labelText: 'Entry Date *',
                                 suffixIcon: IconButton(
                                   icon: Icon(Icons.calendar_month, color: context.colors.primaryGold),
                                   onPressed: () => _selectDate(_entryDateCtrl),
                                 ),
-                              ))),
+                              ),
+                              validator: (v) => v!.isEmpty ? 'Required' : null)),
                         ]),
                         const Gap(16),
                         Row(children: [
                           Expanded(child: TextFormField(controller: _cusdecCtrl,
-                              decoration: const InputDecoration(labelText: 'Cusdec No'))),
+                              decoration: const InputDecoration(labelText: 'Cusdec No *'),
+                              validator: (v) => v!.isEmpty ? 'Required' : null)),
                           const Gap(12),
                           Expanded(child: TextFormField(controller: _cusdecDateCtrl,
                               decoration: InputDecoration(
-                                labelText: 'Cusdec Date',
+                                labelText: 'Cusdec Date *',
                                 suffixIcon: IconButton(
                                   icon: Icon(Icons.calendar_month, color: context.colors.primaryGold),
                                   onPressed: () => _selectDate(_cusdecDateCtrl),
                                 ),
-                              ))),
+                              ),
+                              validator: (v) => v!.isEmpty ? 'Required' : null)),
                         ]),
                         const Gap(16),
                         if (['held', 'confiscated'].contains(_statusValue))
@@ -339,8 +366,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         ]),
                         const Gap(16),
                         TextFormField(controller: _consigneePhoneCtrl,
-                            decoration: const InputDecoration(labelText: 'Phone Number'),
-                            keyboardType: TextInputType.phone),
+                            decoration: const InputDecoration(labelText: 'Phone Number (10 digits)'),
+                            keyboardType: TextInputType.phone,
+                            validator: (v) {
+                              if (v != null && v.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(v)) {
+                                return 'Must be exactly 10 digits';
+                              }
+                              return null;
+                            }),
                       ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
                       const Gap(16),
                       _SectionCard(
@@ -408,8 +441,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
             if (_passed != null)
               Expanded(flex: 4, child: _ResultPanel(
                 passed: _passed!, violations: _violations,
-                savedPackageId: _savedPackageId, 
                 suggestedWarehouseId: _suggestedWarehouseId,
+                tempPackageData: _tempPackageData,
+                tempPackageItems: _tempPackageItems,
                 onReset: _reset,
               )),
           ],
@@ -424,10 +458,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
 class _ResultPanel extends ConsumerStatefulWidget {
   final bool passed;
   final List<String> violations;
-  final String? savedPackageId;
   final String? suggestedWarehouseId;
+  final PackageModel? tempPackageData;
+  final List<PackageItem>? tempPackageItems;
   final VoidCallback onReset;
-  const _ResultPanel({super.key, required this.passed, required this.violations, this.savedPackageId, this.suggestedWarehouseId, required this.onReset});
+  const _ResultPanel({super.key, required this.passed, required this.violations, this.suggestedWarehouseId, this.tempPackageData, this.tempPackageItems, required this.onReset});
   @override
   ConsumerState<_ResultPanel> createState() => _ResultPanelState();
 }
@@ -435,6 +470,7 @@ class _ResultPanel extends ConsumerStatefulWidget {
 class _ResultPanelState extends ConsumerState<_ResultPanel> {
   String? _selectedWarehouseId;
   bool _isSending = false;
+  bool _warehouseSent = false;
 
   @override
   void initState() {
@@ -454,24 +490,56 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     }
   }
 
+  String _formatWarehouseName(String name) {
+    final regex = RegExp(r'(\d+)');
+    final match = regex.firstMatch(name);
+    if (match != null) {
+      final number = int.tryParse(match.group(1)!);
+      if (number != null) {
+        return 'Warehouse $number';
+      }
+    }
+    return name;
+  }
+
   Future<void> _sendToWarehouse() async {
     if (_selectedWarehouseId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Select a warehouse')));
       return;
     }
+    
+    if (widget.tempPackageData == null || widget.tempPackageItems == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Package data not found')));
+      return;
+    }
+    
     setState(() => _isSending = true);
     try {
+      // First save the package to database
+      final saved = await ref.read(packageServiceProvider).upsertPackage(
+        widget.tempPackageData!,
+        widget.tempPackageItems!,
+      );
+      
+      // Then add to warehouse
       await ref.read(warehouseServiceProvider).addEntry(
-        packageId: widget.savedPackageId!,
+        packageId: saved.id,
         warehouseId: _selectedWarehouseId!,
         holdReason: 'System Assigned',
-        itemCount: 1, // Or fetched from items if required
+        itemCount: 1,
       );
+      
       if (mounted) {
+        setState(() => _warehouseSent = true);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: const Text('✅ Package sent to warehouse'), backgroundColor: context.colors.successGreen));
-        widget.onReset();
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted) {
+            widget.onReset();
+          }
+        });
       }
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
@@ -494,39 +562,61 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
           children: [
             Text('Inspection Result', style: Theme.of(context).textTheme.titleLarge),
             const Gap(20),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: context.colors.successGreen.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: context.colors.successGreen.withOpacity(0.5),
-                  width: 2,
+            if (_warehouseSent)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: context.colors.successGreen.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: context.colors.successGreen.withOpacity(0.5),
+                    width: 2,
+                  ),
                 ),
-              ),
-              child: Column(children: [
-                Icon(Icons.check_circle_rounded, color: context.colors.successGreen, size: 56).animate().scale(duration: 400.ms),
-                const Gap(12),
-                Text('ENTRY SAVED SUCCESSFULLY',
-                  style: TextStyle(
-                    color: context.colors.successGreen,
-                    fontWeight: FontWeight.w800, fontSize: 18,
-                  ), textAlign: TextAlign.center,
-                ).animate().slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
-                if (!widget.passed) ...[
+                child: Column(children: [
+                  Icon(Icons.check_circle_rounded, color: context.colors.successGreen, size: 56).animate().scale(duration: 400.ms),
+                  const Gap(12),
+                  Text('ENTRY SAVED SUCCESSFULLY',
+                    style: TextStyle(
+                      color: context.colors.successGreen,
+                      fontWeight: FontWeight.w800, fontSize: 18,
+                    ), textAlign: TextAlign.center,
+                  ).animate().slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
+                  if (!widget.passed) ...[
+                    const Gap(8),
+                    Text('Customs Rule Violations Detected',
+                      style: TextStyle(color: context.colors.warningAmber, fontWeight: FontWeight.w600, fontSize: 13)),
+                  ],
+                ]),
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: context.colors.primaryGold.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: context.colors.primaryGold.withOpacity(0.5),
+                    width: 2,
+                  ),
+                ),
+                child: Column(children: [
+                  Icon(Icons.warehouse, color: context.colors.primaryGold, size: 56).animate().scale(duration: 400.ms),
+                  const Gap(12),
+                  Text('SELECT WAREHOUSE TO COMPLETE',
+                    style: TextStyle(
+                      color: context.colors.primaryGold,
+                      fontWeight: FontWeight.w800, fontSize: 18,
+                    ), textAlign: TextAlign.center,
+                  ).animate().slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
                   const Gap(8),
-                  Text('Customs Rule Violations Detected',
-                    style: TextStyle(color: context.colors.warningAmber, fontWeight: FontWeight.w600, fontSize: 13)),
-                ],
-              ]),
-            ),
+                  Text('Warehouse assignment is required to finalize the entry.',
+                    style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+                ]),
+              ),
             const Gap(20),
-            Text('Assign to Warehouse', style: Theme.of(context).textTheme.titleMedium),
-            const Gap(4),
-            Text('Select which warehouse should hold this package.',
-                style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
-            const Gap(12),
             if (!widget.passed) ...[
               Text('Violations', style: Theme.of(context).textTheme.titleSmall?.copyWith(color: context.colors.dangerRed)),
               const Gap(8),
@@ -546,8 +636,13 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                   ]),
                 ),
               )),
-              const Gap(12),
+              const Gap(20),
             ],
+            Text('Assign to Warehouse', style: Theme.of(context).textTheme.titleMedium),
+            const Gap(4),
+            Text('Select which warehouse should hold this package.',
+                style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+            const Gap(12),
             warehouses.when(
               loading: () => const CircularProgressIndicator(),
               error: (e, _) => Text('Error: $e'),
@@ -580,10 +675,14 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                 : (isSelected ? context.colors.primaryGold : context.colors.textMuted), size: 20),
                         const Gap(12),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text(w.name, style: TextStyle(
+                          Text(
+                            _formatWarehouseName(w.name), 
+                            style: TextStyle(
                               color: isOther ? context.colors.textMuted.withOpacity(0.5)
                                   : (isSelected ? context.colors.primaryGold : context.colors.textPrimary),
-                              fontWeight: FontWeight.w600)),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                           if (w.location != null)
                             Text(w.location!, style: TextStyle(color: isOther ? context.colors.textMuted.withOpacity(0.3) : context.colors.textMuted, fontSize: 12)),
                         ])),
