@@ -54,7 +54,7 @@ class WarehousesScreen extends ConsumerWidget {
                               packageEntries.putIfAbsent(e.packageId, () => []).add(e);
                             }
                             final returnedCount = packageEntries.values.where((entries) => 
-                              entries.every((e) => e.isReturned)
+                              entries.any((e) => e.isReturned)
                             ).length;
                             return Text('$returnedCount Returned',
                                 style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.bold));
@@ -146,8 +146,16 @@ class _WarehouseTab extends ConsumerWidget {
         final storageRate = ref.watch(storageRateProvider).valueOrNull ?? 0.0;
 
         final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
+        final showReturned = ref.watch(warehouseEntryFilterProvider);
         final filteredList = list.where((e) {
-          if (filter != 'all' && e.packageStatus != filter) return false;
+          if (filter != 'all') {
+            if (filter == 'returned') {
+              if (!e.isReturned) return false;
+            } else {
+              if (e.packageStatus != filter) return false;
+            }
+          }
+          if (!showReturned && e.isReturned && filter != 'returned') return false;
           if (reasonFilter != 'all' && e.holdReason != reasonFilter) return false;
           if (dateRange != null) {
             final date = e.admittedAt;
@@ -216,7 +224,7 @@ class _WarehouseTab extends ConsumerWidget {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => FilterChip(
+                        ...['all', 'pending', 'held', 'cleared', 'confiscated', 'returned'].map((s) => FilterChip(
                           label: Text(s.toUpperCase()),
                           selected: filter == s,
                           onSelected: (_) => ref.read(warehouseStatusFilterProvider(warehouse.id).notifier).state = s,

@@ -100,7 +100,7 @@ class PackageService {
   Future<List<PackageModel>> getAllPackages({String? status, String? search}) async {
     var query = supabase.from('packages')
         .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)');
-    if (status != null && status != 'all') query = query.eq('status', status);
+    if (status != null && status != 'all' && status != 'returned') query = query.eq('status', status);
     if (search != null && search.isNotEmpty) {
       query = query.or('sr_number.ilike.%$search%,consignee_name.ilike.%$search%');
     }

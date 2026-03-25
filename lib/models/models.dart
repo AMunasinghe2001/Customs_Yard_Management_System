@@ -183,7 +183,7 @@ class PackageModel {
   bool get isPending => status == 'pending';
   bool get isConfiscated => status == 'confiscated';
 
-  bool get isReturned => warehouseEntries.isNotEmpty && warehouseEntries.every((e) => e.isReturned);
+  bool get isReturned => warehouseEntries.isNotEmpty && warehouseEntries.any((e) => e.isReturned);
 
   DateTime? get returnedAt {
     if (warehouseEntries.isEmpty) return null;
