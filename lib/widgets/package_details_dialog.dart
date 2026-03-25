@@ -150,7 +150,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
               ),
               Flexible(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(20),
+                  padding: const EdgeInsets.all(24),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -159,84 +159,131 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         children: [
                           Expanded(
                             flex: 3,
-                            child: _GlassCard(
-                              child: Column(
-                                children: [
-                                  _ModernDetailRow(label: 'Consignee', value: p.consigneeName, subValue: p.consigneeNic != null && p.consigneeNic!.isNotEmpty ? 'NIC: ${p.consigneeNic}' : null, icon: Icons.person_rounded),
-                                  const Gap(8),
-                                  _ModernDetailRow(label: 'Declarant', value: p.declarantName ?? 'N/A', icon: Icons.business_rounded),
-                                  const Gap(8),
-                                  _ModernDetailRow(label: 'Origin', value: p.originCountry, icon: Icons.public_rounded),
-                                ],
-                              ),
-                            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _SectionHeader('Consignee & Declarant', Icons.person_pin_rounded),
+                                const Gap(12),
+                                _GlassCard(
+                                  child: Column(
+                                    children: [
+                                      _ModernDetailRow(
+                                        label: 'Consignee', 
+                                        value: p.consigneeName, 
+                                        subValue: p.consigneeNic != null && p.consigneeNic!.isNotEmpty ? 'NIC: ${p.consigneeNic}' : null, 
+                                        icon: Icons.person_rounded,
+                                      ),
+                                      const Gap(12),
+                                      _ModernDetailRow(
+                                        label: 'Declarant', 
+                                        value: p.declarantName ?? 'N/A', 
+                                        icon: Icons.business_rounded,
+                                      ),
+                                      const Gap(12),
+                                      _ModernDetailRow(
+                                        label: 'Origin', 
+                                        value: p.originCountry, 
+                                        icon: Icons.public_rounded,
+                                      ),
+                                    ],
+                                  ),
+                                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+                              ],
+                            ),
                           ),
-                          const Gap(16),
+                          const Gap(24),
                           Expanded(
                             flex: 2,
-                            child: _GlassCard(
-                              child: Column(
-                                children: [
-                                  _ModernDetailRow(label: 'Value', value: 'LKR ${NumberFormat('#,##0').format(p.declaredValue)}', icon: Icons.payments_rounded, color: context.colors.successGreen),
-                                  const Gap(8),
-                                  _ModernDetailRow(label: 'Weight', value: '${p.weightKg} kg', icon: Icons.scale_rounded),
-                                  const Gap(8),
-                                  _ModernDetailRow(label: 'Entry Date', value: p.entryDate != null ? DateFormat('dd MMM yyyy').format(p.entryDate!) : 'N/A', icon: Icons.calendar_month_rounded),
-                                ],
-                              ),
-                            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                _SectionHeader('Documentation & Value', Icons.gavel_rounded),
+                                const Gap(12),
+                                _GlassCard(
+                                  child: Column(
+                                    children: [
+                                      _ModernDetailRow(
+                                        label: 'Declared Value', 
+                                        value: 'LKR ${NumberFormat('#,##0').format(p.declaredValue)}', 
+                                        icon: Icons.payments_rounded, 
+                                        color: context.colors.successGreen,
+                                      ),
+                                      const Gap(12),
+                                      _ModernDetailRow(
+                                        label: 'Weight', 
+                                        value: '${p.weightKg} kg', 
+                                        icon: Icons.scale_rounded,
+                                      ),
+                                      const Gap(12),
+                                      _ModernDetailRow(
+                                        label: 'Entry Date', 
+                                        value: p.entryDate != null ? DateFormat('dd MMM yyyy').format(p.entryDate!) : 'N/A', 
+                                        icon: Icons.calendar_month_rounded,
+                                      ),
+                                    ],
+                                  ),
+                                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+                              ],
+                            ),
                           ),
                         ],
                       ),
-                      const Gap(16),
+                      const Gap(24),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
+                            flex: 1,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _SectionHeader('Package Items', Icons.list_alt_rounded),
-                                const Gap(8),
+                                _SectionHeader('Cargo Content', Icons.inventory_2_outlined),
+                                const Gap(12),
                                 if (p.items.isNotEmpty)
                                   material.Container(
-                                    constraints: const BoxConstraints(maxHeight: 180),
+                                    constraints: const BoxConstraints(maxHeight: 250),
                                     child: ListView.separated(
                                       shrinkWrap: true,
                                       physics: const ClampingScrollPhysics(),
                                       itemCount: p.items.length,
-                                      separatorBuilder: (_, __) => const Gap(6),
+                                      separatorBuilder: (_, __) => const Gap(8),
                                       itemBuilder: (context, index) => _ItemTile(item: p.items[index]).animate().slideY(begin: 0.2, duration: 300.ms, delay: (250 + (index * 50)).ms).fadeIn(),
                                     ),
                                   )
                                 else
-                                  Text('No items specified', style: material.TextStyle(color: context.colors.textMuted, fontSize: 13, fontStyle: FontStyle.italic)),
+                                  _ModernNoteBox(text: 'No detailed items specified for this package.'),
                               ],
                             ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
                           ),
-                          const Gap(20),
+                          const Gap(24),
                           Expanded(
+                            flex: 1,
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _SectionHeader('Tracking Details', Icons.qr_code_rounded),
-                                const Gap(8),
-                                _CompactInfoRow('Cusdec No', p.cusdecNo ?? 'N/A'),
-                                _CompactInfoRow('Cusdec Date', p.cusdecDate ?? 'N/A'),
-                                _CompactInfoRow('Officer', officerDisplay),
-                                if (p.consigneePhone != null && p.consigneePhone!.isNotEmpty) _CompactInfoRow('Contact', p.consigneePhone!),
-                                
+                                _SectionHeader('Internal Tracking', Icons.monitor_heart_rounded),
+                                const Gap(12),
+                                _GlassCard(
+                                  child: Column(
+                                    children: [
+                                      _CompactInfoRow('Cusdec Tracking No', p.cusdecNo ?? 'N/A'),
+                                      _CompactInfoRow('Cusdec Date', p.cusdecDate ?? 'N/A'),
+                                      _CompactInfoRow('Inspecting Officer', officerDisplay),
+                                      if (p.consigneePhone != null && p.consigneePhone!.isNotEmpty) _CompactInfoRow('Consignee Contact', p.consigneePhone!),
+                                    ],
+                                  ),
+                                ),
                                 if (p.warehouseEntries.isNotEmpty) ...[
-                                  const Gap(16),
-                                  _SectionHeader('Warehouse History', Icons.warehouse_rounded),
-                                  const Gap(8),
+                                  const Gap(20),
+                                  _SectionHeader('Storage Information', Icons.warehouse_rounded),
+                                  const Gap(12),
                                   material.Container(
-                                    constraints: const BoxConstraints(maxHeight: 100),
+                                    constraints: const BoxConstraints(maxHeight: 120),
                                     child: ListView(
                                       shrinkWrap: true,
                                       children: p.warehouseEntries.map((we) => _HistorySummaryTile(entry: we, rate: widget.storageRate)).toList()
                                     ),
-                                  )
+                                  ),
                                 ],
                               ],
                             ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
@@ -244,7 +291,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         ],
                       ),
                       if ((p.description != null && p.description!.isNotEmpty) || (p.notes != null && p.notes!.isNotEmpty)) ...[
-                        const Gap(16),
+                        const Gap(24),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -253,20 +300,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _SectionHeader('Description', Icons.description_rounded).animate().fadeIn(delay: 450.ms),
-                                    const Gap(8),
+                                    _SectionHeader('Cargo Description', Icons.description_rounded).animate().fadeIn(delay: 450.ms),
+                                    const Gap(12),
                                     _ModernNoteBox(text: p.description!).animate().slideY(begin: 0.1, delay: 500.ms).fadeIn(),
                                   ],
                                 ),
                               ),
-                            if (p.description != null && p.description!.isNotEmpty && p.notes != null && p.notes!.isNotEmpty) const Gap(16),
+                            if (p.description != null && p.description!.isNotEmpty && p.notes != null && p.notes!.isNotEmpty) const Gap(24),
                             if (p.notes != null && p.notes!.isNotEmpty)
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    _SectionHeader('Officer Notes', Icons.note_alt_rounded).animate().fadeIn(delay: 550.ms),
-                                    const Gap(8),
+                                    _SectionHeader('Customs Officer Notes', Icons.feedback_rounded).animate().fadeIn(delay: 550.ms),
+                                    const Gap(12),
                                     _ModernNoteBox(text: p.notes!, isWarning: true).animate().slideY(begin: 0.1, delay: 600.ms).fadeIn(),
                                   ],
                                 ),
@@ -415,29 +462,81 @@ class _ModernNoteBox extends StatelessWidget {
 }
 
 class _ModernDetailRow extends StatelessWidget {
-  final String label; final String value; final String? subValue; final IconData icon; final Color? color;
-  const _ModernDetailRow({required this.label, required this.value, this.subValue, required this.icon, this.color});
+  final String label; 
+  final String value; 
+  final String? subValue; 
+  final IconData icon; 
+  final Color? color;
+
+  const _ModernDetailRow({
+    required this.label, 
+    required this.value, 
+    this.subValue, 
+    required this.icon, 
+    this.color
+  });
+
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        Icon(icon, size: 16, color: color ?? context.colors.textMuted), const Gap(10),
-        Expanded(child: Row(
-          crossAxisAlignment: CrossAxisAlignment.baseline,
-          textBaseline: TextBaseline.alphabetic,
-          children: [
-            SizedBox(width: 80, child: Text(label, style: material.TextStyle(color: context.colors.textMuted, fontSize: 11, fontWeight: FontWeight.bold))),
-            Expanded(child: Column(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    
+    return material.Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.colors.textPrimary.withOpacity(0.03),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: context.colors.textPrimary.withOpacity(0.05)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          material.Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: (color ?? context.colors.primaryGold).withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: color ?? context.colors.primaryGold),
+          ),
+          const Gap(16),
+          Expanded(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(value, style: material.TextStyle(color: color ?? context.colors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
-                if (subValue != null) Text(subValue!, style: material.TextStyle(color: context.colors.textMuted.withOpacity(0.8), fontSize: 10)),
+                Text(
+                  label.toUpperCase(),
+                  style: material.TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const Gap(2),
+                Text(
+                  value,
+                  style: material.TextStyle(
+                    color: color ?? context.colors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                if (subValue != null) ...[
+                  const Gap(2),
+                  Text(
+                    subValue!,
+                    style: material.TextStyle(
+                      color: context.colors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ],
-            )),
-          ],
-        )),
-      ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -450,6 +549,86 @@ class _CompactInfoRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [ Text(label, style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)), Text(value, style: material.TextStyle(color: context.colors.textPrimary.withOpacity(0.8), fontSize: 11, fontWeight: FontWeight.bold), textAlign: TextAlign.right) ]),
+    );
+  }
+}
+
+class _SectionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
+  final bool isDark;
+
+  const _SectionCard({
+    required this.title,
+    required this.icon,
+    required this.children,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return material.Container(
+      margin: const EdgeInsets.only(bottom: 24),
+      decoration: BoxDecoration(
+        color: isDark ? context.colors.surfaceDark.withOpacity(0.4) : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark 
+              ? context.colors.primaryGold.withOpacity(0.15)
+              : context.colors.customsBlue.withOpacity(0.1),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          material.Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: isDark 
+                  ? context.colors.primaryGold.withOpacity(0.08)
+                  : context.colors.customsBlue.withOpacity(0.05),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(
+                bottom: BorderSide(
+                  color: isDark 
+                      ? context.colors.primaryGold.withOpacity(0.2)
+                      : context.colors.customsBlue.withOpacity(0.1),
+                ),
+              ),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 20, color: isDark ? context.colors.primaryGold : context.colors.customsBlue),
+                const Gap(12),
+                Text(
+                  title.toUpperCase(),
+                  style: material.TextStyle(
+                    color: isDark ? context.colors.primaryGold : context.colors.customsBlue,
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: children,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -502,26 +681,54 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
     if (mounted) setState(() => _isSaving = false);
   }
 
-  Widget _buildSection(String title, IconData icon, List<Widget> children, bool isDark) {
-    return material.Container(
-      margin: const EdgeInsets.only(bottom: 16), padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: context.colors.textPrimary.withOpacity(0.015), borderRadius: BorderRadius.circular(12), border: Border.all(color: context.colors.textPrimary.withOpacity(0.06))),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [ Icon(icon, size: 16, color: context.colors.primaryGold), const Gap(8), Text(title.toUpperCase(), style: material.TextStyle(color: context.colors.primaryGold, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1)) ]),
-        const Gap(16),
-        ...children,
-      ]),
+  Future<void> _selectDate(TextEditingController controller) async {
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: DateTime.now(),
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2050),
     );
+    if (picked != null) {
+      if (mounted) {
+        setState(() {
+          controller.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        });
+      }
+    }
   }
 
-  InputDecoration _getInputDeco(String label) {
+  InputDecoration _getInputDeco({required String label, IconData? icon, VoidCallback? onIconPressed}) {
     return InputDecoration(
-      labelText: label, labelStyle: material.TextStyle(color: context.colors.textMuted, fontSize: 12),
-      filled: true, fillColor: context.colors.textPrimary.withOpacity(0.02),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.colors.borderColor)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.colors.borderColor)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: context.colors.primaryGold, width: 1.5)),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12), isDense: true,
+      labelText: label,
+      labelStyle: material.TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+      filled: true,
+      fillColor: Theme.of(context).brightness == Brightness.dark 
+          ? context.colors.surfaceDark.withOpacity(0.4) 
+          : Colors.grey.shade50,
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: context.colors.borderColor.withOpacity(0.5)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: context.colors.borderColor.withOpacity(0.5)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: context.colors.primaryGold, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: context.colors.dangerRed, width: 1),
+      ),
+      suffixIcon: icon != null 
+          ? IconButton(
+              icon: Icon(icon, color: context.colors.primaryGold, size: 20),
+              onPressed: onIconPressed,
+            )
+          : null,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      isDense: true,
     );
   }
 
@@ -529,126 +736,381 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Dialog(
-      backgroundColor: Colors.transparent, insetPadding: const EdgeInsets.all(24),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
       child: material.Container(
-        width: 1000, constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.95), // Wider layout for columns
-        decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(20), border: Border.all(color: context.colors.primaryGold.withOpacity(0.3))),
+        width: 1000,
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBg,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: context.colors.primaryGold.withOpacity(0.4), width: 1),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.5),
+              blurRadius: 40,
+              offset: const Offset(0, 20),
+            ),
+          ],
+        ),
         child: Column(
           children: [
+            // Header
             material.Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-              decoration: BoxDecoration(border: Border(bottom: BorderSide(color: context.colors.primaryGold.withOpacity(0.2))), color: context.colors.textPrimary.withOpacity(0.02), borderRadius: const BorderRadius.vertical(top: Radius.circular(19))),
-              child: Row(children: [ 
-                material.Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: context.colors.primaryGold.withOpacity(0.15), borderRadius: BorderRadius.circular(6)), child: Icon(Icons.edit_document, color: context.colors.primaryGold, size: 20)).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
-                const Gap(12), Text('Update Package Details', style: material.TextStyle(color: context.colors.textPrimary, fontSize: 18, fontWeight: FontWeight.bold)).animate().fadeIn(delay: 100.ms).slideX(begin: -0.1), const Spacer(),
-                IconButton(onPressed: () => Navigator.pop(context), icon: Icon(Icons.close, color: context.colors.textSecondary, size: 20), splashRadius: 20)
-              ])
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [context.colors.surfaceDark, context.colors.cardDark]
+                      : [context.colors.customsBlue, context.colors.customsBlueDark],
+                ),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(23)),
+                border: Border(bottom: BorderSide(color: context.colors.primaryGold.withOpacity(0.5))),
+              ),
+              child: Row(
+                children: [
+                  material.Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: context.colors.primaryGold.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: context.colors.primaryGold.withOpacity(0.3)),
+                    ),
+                    child: Icon(Icons.edit_document, color: context.colors.primaryGold, size: 24),
+                  ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
+                  const Gap(20),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Edit Package Record', 
+                          style: material.TextStyle(color: context.colors.primaryGold, fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 0.5)
+                        ).animate().fadeIn(delay: 100.ms).slideX(begin: -0.1),
+                        Text('Update information for SR: ${widget.package.srNumber}',
+                          style: material.TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 13)
+                        ).animate().fadeIn(delay: 200.ms),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.7)),
+                    splashRadius: 24,
+                  ),
+                ],
+              ),
             ),
+            
             Expanded(
               child: Form(
-                key: _formKey, 
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // LEFT COLUMN
-                    Expanded(
-                      flex: 1,
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(children: [
-                          _buildSection('Consignee & Declarant', Icons.person_rounded, [
-                            Row(children: [
-                              Expanded(child: TextFormField(controller: _srCtrl, decoration: _getInputDeco('SR Number *'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13), validator: (v) => v!.isEmpty ? 'Required' : null)),
-                              const Gap(12),
-                              Expanded(child: TextFormField(controller: _declarantCtrl, decoration: _getInputDeco('Declarant Name'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13))),
-                            ]),
-                            const Gap(12),
-                            TextFormField(controller: _consigneeCtrl, decoration: _getInputDeco('Consignee Name *'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13), validator: (v) => v!.isEmpty ? 'Required' : null),
-                            const Gap(12),
-                            Row(children: [
-                              Expanded(child: TextFormField(controller: _nicCtrl, decoration: _getInputDeco('Consignee NIC'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13))),
-                              const Gap(12),
-                              Expanded(child: TextFormField(controller: _phoneCtrl, decoration: _getInputDeco('Phone Number'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13), keyboardType: TextInputType.phone)),
-                            ]),
-                          ], isDark).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
-                          
-                          _buildSection('Documentation', Icons.description_rounded, [
-                            Row(children: [
-                              Expanded(child: TextFormField(controller: _cusdecCtrl, decoration: _getInputDeco('Cusdec No'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13))),
-                              const Gap(12),
-                              Expanded(child: TextFormField(controller: _cusdecDateCtrl, decoration: _getInputDeco('Cusdec Date (YYYY-MM-DD)'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13), inputFormatters: [_dateFormatter])),
-                            ]),
-                            const Gap(12),
-                            Row(children: [
-                              Expanded(child: TextFormField(controller: _valueCtrl, decoration: _getInputDeco('Declared Value (LKR)'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13), keyboardType: TextInputType.number)),
-                              const Gap(12),
-                              Expanded(child: TextFormField(controller: _weightCtrl, decoration: _getInputDeco('Weight (kg)'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13), keyboardType: TextInputType.number)),
-                            ]),
-                            const Gap(12),
-                            TextFormField(controller: _originCtrl, decoration: _getInputDeco('Origin Country'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13)),
-                          ], isDark).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+                key: _formKey,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(28),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Form Controls Column
+                      Expanded(
+                        flex: 6,
+                        child: Column(
+                          children: [
+                            _SectionCard(
+                              title: 'Package Identity',
+                              icon: Icons.inventory_2_rounded,
+                              isDark: isDark,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _srCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'SR Number *'),
+                                        validator: (v) => v!.isEmpty ? 'Required' : null,
+                                      ),
+                                    ),
+                                    const Gap(16),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _declarantCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'Declarant Name'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Gap(20),
+                                TextFormField(
+                                  controller: _consigneeCtrl,
+                                  style: material.TextStyle(color: context.colors.textPrimary),
+                                  decoration: _getInputDeco(label: 'Consignee Name *'),
+                                  validator: (v) => v!.isEmpty ? 'Required' : null,
+                                ),
+                                const Gap(20),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _nicCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'Consignee NIC'),
+                                      ),
+                                    ),
+                                    const Gap(16),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _phoneCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'Phone Number'),
+                                        keyboardType: TextInputType.phone,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ).animate().fadeIn(duration: 400.ms).slideY(begin: 0.05),
 
-                          _buildSection('Notes', Icons.notes_rounded, [ 
-                            TextFormField(controller: _notesCtrl, decoration: _getInputDeco('Additional Notes / Warning'), style: material.TextStyle(color: context.colors.textPrimary, fontSize: 13), maxLines: 2), 
-                          ], isDark).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
-                        ]),
+                            _SectionCard(
+                              title: 'Customs & Value',
+                              icon: Icons.gavel_rounded,
+                              isDark: isDark,
+                              children: [
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _cusdecCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'Cusdec No'),
+                                      ),
+                                    ),
+                                    const Gap(16),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _cusdecDateCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(
+                                          label: 'Cusdec Date',
+                                          icon: Icons.calendar_month,
+                                          onIconPressed: () => _selectDate(_cusdecDateCtrl),
+                                        ),
+                                        inputFormatters: [_dateFormatter],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Gap(20),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _valueCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'Declared Value (LKR)'),
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                    ),
+                                    const Gap(16),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _weightCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'Weight (kg)'),
+                                        keyboardType: TextInputType.number,
+                                      ),
+                                    ),
+                                    const Gap(16),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _originCtrl,
+                                        style: material.TextStyle(color: context.colors.textPrimary),
+                                        decoration: _getInputDeco(label: 'Origin Country'),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ).animate().fadeIn(duration: 400.ms, delay: 100.ms).slideY(begin: 0.05),
+
+                            _SectionCard(
+                              title: 'Package Items',
+                              icon: Icons.shopping_bag_rounded,
+                              isDark: isDark,
+                              children: [
+                                ..._items.asMap().entries.map((e) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 12),
+                                  child: _ItemUpdateRowWidget(
+                                    row: e.value,
+                                    index: e.key + 1,
+                                    onRemove: _items.length > 1 ? () => setState(() => _items.removeAt(e.key)) : null,
+                                  ),
+                                )),
+                                const Gap(12),
+                                material.Container(
+                                  width: double.infinity,
+                                  child: ElevatedButton.icon(
+                                    onPressed: () => setState(() => _items.add(_ItemUpdateRow())),
+                                    icon: const Icon(Icons.add_circle_outline, size: 18),
+                                    label: const Text('Add New Item Row', style: material.TextStyle(fontWeight: FontWeight.bold)),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: context.colors.primaryGold.withOpacity(0.1),
+                                      foregroundColor: context.colors.primaryGold,
+                                      elevation: 0,
+                                      padding: const EdgeInsets.symmetric(vertical: 16),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                        side: BorderSide(color: context.colors.primaryGold.withOpacity(0.3)),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ).animate().fadeIn(duration: 400.ms, delay: 150.ms).slideY(begin: 0.05),
+
+                            if (_warehouses.isNotEmpty)
+                              _SectionCard(
+                                title: 'Relocate Warehouse',
+                                icon: Icons.warehouse_rounded,
+                                isDark: isDark,
+                                children: [
+                                  material.Container(
+                                    constraints: const BoxConstraints(maxHeight: 250),
+                                    child: ListView.separated(
+                                      shrinkWrap: true,
+                                      itemCount: _warehouses.length,
+                                      separatorBuilder: (_, __) => const Gap(8),
+                                      itemBuilder: (context, index) {
+                                        final w = _warehouses[index];
+                                        final isSelected = _selectedWarehouse == w;
+                                        final isCurrent = w.id == _currentEntry?.warehouseId;
+                                        
+                                        return InkWell(
+                                          onTap: isCurrent ? null : () => setState(() => _selectedWarehouse = w),
+                                          borderRadius: BorderRadius.circular(12),
+                                          child: AnimatedContainer(
+                                            duration: 200.ms,
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: isCurrent 
+                                                  ? context.colors.textPrimary.withOpacity(0.04) 
+                                                  : (isSelected ? context.colors.primaryGold.withOpacity(0.08) : Colors.transparent),
+                                              borderRadius: BorderRadius.circular(12),
+                                              border: Border.all(
+                                                color: isSelected 
+                                                    ? context.colors.primaryGold 
+                                                    : context.colors.borderColor.withOpacity(0.4),
+                                                width: isSelected ? 1.5 : 1,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  Icons.warehouse_rounded,
+                                                  color: isCurrent ? context.colors.textMuted : (isSelected ? context.colors.primaryGold : context.colors.textSecondary),
+                                                  size: 20,
+                                                ),
+                                                const Gap(16),
+                                                Expanded(
+                                                  child: Column(
+                                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                                    children: [
+                                                      Text(w.name, style: material.TextStyle(
+                                                        color: isCurrent ? context.colors.textMuted : (isSelected ? context.colors.primaryGold : context.colors.textPrimary),
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 14,
+                                                      )),
+                                                      if (w.location != null)
+                                                        Text(w.location!, style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)),
+                                                    ],
+                                                  ),
+                                                ),
+                                                if (isCurrent)
+                                                  material.Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                    decoration: BoxDecoration(color: context.colors.textMuted.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                                                    child: Text('Current', style: material.TextStyle(color: context.colors.textMuted, fontSize: 10, fontWeight: FontWeight.bold)),
+                                                  )
+                                                else if (isSelected)
+                                                  Icon(Icons.check_circle_rounded, color: context.colors.primaryGold, size: 22),
+                                              ],
+                                            ),
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ).animate().fadeIn(duration: 400.ms, delay: 250.ms).slideY(begin: 0.05),
+
+                            _SectionCard(
+                              title: 'Additional Information',
+                              icon: Icons.notes_rounded,
+                              isDark: isDark,
+                              children: [
+                                TextFormField(
+                                  controller: _descCtrl,
+                                  maxLines: 2,
+                                  style: material.TextStyle(color: context.colors.textPrimary),
+                                  decoration: _getInputDeco(label: 'Package Description'),
+                                ),
+                                const Gap(16),
+                                TextFormField(
+                                  controller: _notesCtrl,
+                                  maxLines: 2,
+                                  style: material.TextStyle(color: context.colors.textPrimary),
+                                  decoration: _getInputDeco(label: 'Internal Notes / Warnings'),
+                                ),
+                              ],
+                            ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideY(begin: 0.05),
+                          ],
+                        ),
                       ),
-                    ),
-                    
-                    // Vertical Divider
-                    material.Container(width: 1, color: context.colors.borderColor),
-
-                    // RIGHT COLUMN
-                    Expanded(
-                      flex: 1,
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(children: [
-                          _buildSection('Items', Icons.shopping_bag_rounded, [
-                            ..._items.asMap().entries.map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: _ItemUpdateRowWidget(row: e.value, index: e.key + 1, onRemove: _items.length > 1 ? () => setState(() => _items.removeAt(e.key)) : null))),
-                            const Gap(8),
-                            TextButton.icon(
-                              onPressed: () => setState(() => _items.add(_ItemUpdateRow())), 
-                              icon: const Icon(Icons.add_circle_outline, size: 16), label: const Text('Add Item', style: material.TextStyle(fontSize: 12)),
-                              style: TextButton.styleFrom(foregroundColor: context.colors.primaryGold, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8), side: BorderSide(color: context.colors.primaryGold.withOpacity(0.3)))),
-                            ),
-                          ], isDark).animate().slideY(begin: 0.1, duration: 400.ms, delay: 150.ms).fadeIn(),
-
-                          if (_warehouses.isNotEmpty) _buildSection('Warehouse Location', Icons.warehouse_rounded, [
-                            material.Container(
-                              constraints: const BoxConstraints(maxHeight: 200),
-                              child: Scrollbar(
-                                thumbVisibility: true,
-                                child: ListView(
-                                  shrinkWrap: true,
-                                  children: _warehouses.map((w) {
-                                  final isSelected = _selectedWarehouse == w; final isCurrent = w.id == _currentEntry?.warehouseId;
-                                  return Padding(padding: const EdgeInsets.only(bottom: 6, right: 8), child: InkWell(borderRadius: BorderRadius.circular(8), onTap: isCurrent ? null : () => setState(() => _selectedWarehouse = w), child: AnimatedContainer(duration: const Duration(milliseconds: 200), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), decoration: BoxDecoration(color: isCurrent ? context.colors.textPrimary.withOpacity(0.05) : (isSelected ? context.colors.primaryGold.withOpacity(0.1) : context.colors.textPrimary.withOpacity(0.02)), borderRadius: BorderRadius.circular(8), border: Border.all(color: isCurrent ? context.colors.textPrimary.withOpacity(0.1) : (isSelected ? context.colors.primaryGold : context.colors.borderColor), width: isSelected ? 1.5 : 1),), child: Row(children: [ Icon(Icons.warehouse_rounded, color: isCurrent ? context.colors.textMuted : (isSelected ? context.colors.primaryGold : context.colors.textSecondary), size: 16), const Gap(12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(w.name, style: material.TextStyle(color: isCurrent ? context.colors.textMuted : (isSelected ? context.colors.primaryGold : context.colors.textPrimary), fontWeight: FontWeight.w600, fontSize: 13)), if (w.location != null) Text(w.location!, style: material.TextStyle(color: isCurrent ? context.colors.textMuted.withOpacity(0.6) : context.colors.textSecondary, fontSize: 11)), ])), if (isCurrent) material.Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), decoration: BoxDecoration(color: context.colors.textPrimary.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Text('Current', style: material.TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: context.colors.textMuted))) else if (isSelected) Icon(Icons.check_circle_rounded, color: context.colors.primaryGold, size: 18), ]), ), ), );
-                                }).toList()),
-                              ),
-                            ),
-                          ], isDark).animate().slideY(begin: 0.1, duration: 400.ms, delay: 250.ms).fadeIn(),
-                        ]),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
+
+            // Footer
             material.Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-              decoration: BoxDecoration(border: Border(top: BorderSide(color: context.colors.borderColor)), color: isDark ? Colors.black26 : Colors.grey.shade50, borderRadius: const BorderRadius.vertical(bottom: Radius.circular(19))),
-              child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-                TextButton(onPressed: () => Navigator.pop(context), style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14)), child: Text('Cancel', style: material.TextStyle(color: context.colors.textSecondary, fontWeight: FontWeight.bold, fontSize: 13))),
-                const Gap(12),
-                ElevatedButton(
-                  onPressed: _isSaving ? null : _save, 
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14), backgroundColor: context.colors.primaryGold, foregroundColor: Colors.black87, elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))), 
-                  child: _isSaving 
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87)) 
-                    : Row(mainAxisSize: MainAxisSize.min, children: [ const Icon(Icons.save_rounded, size: 16), const Gap(8), Text('Save Changes', style: material.TextStyle(fontWeight: FontWeight.bold, fontSize: 13)) ])
-                ).animate().scale(delay: 400.ms, duration: 300.ms),
-              ]),
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.black26 : Colors.grey.shade50,
+                border: Border(top: BorderSide(color: context.colors.borderColor)),
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(23)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
+                    child: Text('Discard Changes', style: material.TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold)),
+                  ),
+                  const Gap(16),
+                  ElevatedButton(
+                    onPressed: _isSaving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.colors.primaryGold,
+                      foregroundColor: Colors.black87,
+                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
+                      elevation: 4,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: _isSaving
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
+                        : Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.save_rounded, size: 20),
+                              const Gap(10),
+                              Text('Update Record', style: material.TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
+                            ],
+                          ),
+                  ).animate().scale(delay: 400.ms),
+                ],
+              ),
             ),
           ],
         ),
@@ -705,7 +1167,6 @@ class _ItemUpdateRowWidget extends ConsumerWidget {
               onChanged: (val) { if (val != null) row.categoryCtrl.text = val; },
               decoration: const InputDecoration(border: OutlineInputBorder(borderSide: BorderSide.none), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0)),
               dropdownColor: context.colors.cardDark,
-              hint: Text('Category', style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)),
               icon: Icon(Icons.expand_more_rounded, color: context.colors.textMuted, size: 16),
             ),
           )),
