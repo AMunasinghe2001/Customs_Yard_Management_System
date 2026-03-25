@@ -9,6 +9,7 @@ import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/custom_dropdown.dart';
 import '../../core/supabase_client.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
@@ -41,6 +42,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   bool? _passed;
   List<String> _violations = [];
   String? _savedPackageId;
+  String? _suggestedWarehouseId;
   bool _isUpdate = false;
 
   /// Fetch an existing package by SR number and populate the form
@@ -83,7 +85,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
             row.qtyCtrl.text = item.quantity.toString();
             row.valueCtrl.text = item.unitValue.toString();
             row.categoryCtrl.text = item.category ?? '';
-            row.isProhibited = item.isProhibited;
+
             _items.add(row);
           }
         } else {
@@ -133,7 +135,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         id: '', packageId: '', itemName: r.nameCtrl.text,
         quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
         unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
-        category: r.categoryCtrl.text, isProhibited: r.isProhibited,
+        category: r.categoryCtrl.text,
       )).toList();
 
       final violations = await ref.read(customsRulesServiceProvider).checkPackageAgainstRules(
@@ -165,7 +167,24 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       );
       // Upsert: update if SR exists, insert if new
       final saved = await ref.read(packageServiceProvider).upsertPackage(pkg, items);
-      setState(() { _passed = violations.isEmpty; _violations = violations; _savedPackageId = saved.id; });
+      String? suggestedWh;
+      final cats = ref.read(packageCategoriesProvider).value;
+      if (cats != null) {
+        for (var item in items) {
+          final matched = cats.where((c) => c.name == item.category).firstOrNull;
+          if (matched != null && matched.targetWarehouseId != null) {
+            suggestedWh = matched.targetWarehouseId;
+            break;
+          }
+        }
+      }
+      
+      setState(() { 
+        _passed = violations.isEmpty; 
+        _violations = violations; 
+        _savedPackageId = saved.id; 
+        _suggestedWarehouseId = suggestedWh;
+      });
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
@@ -181,7 +200,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     _consigneeCtrl.clear(); _consigneeNicCtrl.clear(); _consigneePhoneCtrl.clear();
     _declarantCtrl.clear(); _cusdecCtrl.clear(); _cusdecDateCtrl.clear(); _entryDateCtrl.clear();
     _descCtrl.clear(); _reasonCtrlMain.clear(); _notesCtrl.clear();
-    setState(() { _statusValue = 'pending'; _items.clear(); _items.add(_ItemRow()); _passed = null; _violations = []; _savedPackageId = null; });
+    setState(() { _statusValue = 'pending'; _items.clear(); _items.add(_ItemRow()); _passed = null; _violations = []; _savedPackageId = null; _suggestedWarehouseId = null; });
   }
 
   @override
@@ -228,44 +247,38 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                                   style: TextStyle(color: context.colors.primaryGold, fontSize: 13)),
                             ]),
                           ),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 12,
-                          crossAxisAlignment: WrapCrossAlignment.center,
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(minWidth: 160),
-                            child: IntrinsicWidth(child: TextFormField(controller: _srNumberCtrl,
-                                decoration: const InputDecoration(labelText: 'SR Number *', hintText: 'e.g. GL 1/SR/01/2025'),
+                            Expanded(
+                              child: TextFormField(
+                                controller: _srNumberCtrl,
+                                decoration: InputDecoration(
+                                  labelText: 'SR Number *',
+                                  hintText: 'e.g. GL 1/SR/01/2025',
+                                  suffixIcon: IconButton(
+                                    icon: _isLookingUp
+                                      ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryGold))
+                                      : Icon(Icons.search_rounded, color: context.colors.primaryGold),
+                                    onPressed: _isLookingUp ? null : _loadBySrNumber,
+                                  ),
+                                ),
                                 validator: (v) => v!.isEmpty ? 'Required' : null,
-                                onFieldSubmitted: (_) => _loadBySrNumber())),
-                          ),
-                          SizedBox(
-                            height: 52,
-                            child: ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: context.colors.surfaceDark,
-                                foregroundColor: context.colors.accentLightBlue,
-                                side: BorderSide(color: context.colors.borderColor),
+                                onFieldSubmitted: (_) => _loadBySrNumber(),
                               ),
-                              icon: _isLookingUp
-                                  ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.accentLightBlue))
-                                  : const Icon(Icons.search_rounded, size: 18),
-                              label: const Text('Load'),
-                              onPressed: _isLookingUp ? null : _loadBySrNumber,
                             ),
-                          ),
-                          ConstrainedBox(
-                            constraints: const BoxConstraints(minWidth: 160),
-                            child: IntrinsicWidth(child: DropdownButtonFormField<String>(
-                              value: ['pending', 'held', 'cleared', 'confiscated'].contains(_statusValue) ? _statusValue : 'pending',
-                              decoration: const InputDecoration(labelText: 'Status *'),
-                              items: ['pending', 'held', 'cleared', 'confiscated']
-                                  .map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase()))).toList(),
-                              onChanged: (v) => setState(() => _statusValue = v!),
-                            )),
-                          ),
-                          ]),
+                            const Gap(16),
+                            Expanded(
+                              child: DropdownButtonFormField<String>(
+                                value: ['pending', 'held', 'cleared', 'confiscated'].contains(_statusValue) ? _statusValue : 'pending',
+                                decoration: const InputDecoration(labelText: 'Status *'),
+                                items: ['pending', 'held', 'cleared', 'confiscated']
+                                    .map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase()))).toList(),
+                                onChanged: (v) => setState(() => _statusValue = v!),
+                              ),
+                            ),
+                          ],
+                        ),
                         const Gap(16),
                         Row(children: [
                           Expanded(child: TextFormField(controller: _declarantCtrl,
@@ -295,19 +308,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                               ))),
                         ]),
                         const Gap(16),
-                        ref.watch(holdReasonsProvider).when(
-                          loading: () => const LinearProgressIndicator(),
-                          error: (e, _) => Text('Error loading reasons: $e', style: TextStyle(color: context.colors.dangerRed, fontSize: 12)),
-                            data: (list) {
-                              final activeList = list.where((r) => r.isActive || r.reasonText == _reasonCtrlMain.text).toList();
-                              return DropdownButtonFormField<String>(
-                                value: activeList.any((r) => r.reasonText == _reasonCtrlMain.text) ? _reasonCtrlMain.text : null,
-                                decoration: const InputDecoration(labelText: 'Reason (if held)'),
-                                items: activeList.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
-                                onChanged: (v) => setState(() => _reasonCtrlMain.text = v ?? ''),
-                              );
-                            },
-                        ),
+                        if (['held', 'confiscated'].contains(_statusValue))
+                          ref.watch(holdReasonsProvider).when(
+                            loading: () => const LinearProgressIndicator(),
+                            error: (e, _) => Text('Error loading reasons: $e', style: TextStyle(color: context.colors.dangerRed, fontSize: 12)),
+                              data: (list) {
+                                final activeList = list.where((r) => r.isActive || r.reasonText == _reasonCtrlMain.text).toList();
+                                return DropdownButtonFormField<String>(
+                                  value: activeList.any((r) => r.reasonText == _reasonCtrlMain.text) ? _reasonCtrlMain.text : null,
+                                  decoration: const InputDecoration(labelText: 'Reason *'),
+                                  items: activeList.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
+                                  onChanged: (v) => setState(() => _reasonCtrlMain.text = v ?? ''),
+                                  validator: (v) => ['held', 'confiscated'].contains(_statusValue) && (v == null || v.isEmpty) ? 'Reason is required when status is held/confiscated' : null,
+                                );
+                              },
+                          ),
                         const Gap(16),
                         TextFormField(controller: _descCtrl,
                             decoration: const InputDecoration(labelText: 'Package Description'), maxLines: 2),
@@ -393,7 +408,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
             if (_passed != null)
               Expanded(flex: 4, child: _ResultPanel(
                 passed: _passed!, violations: _violations,
-                savedPackageId: _savedPackageId, onReset: _reset,
+                savedPackageId: _savedPackageId, 
+                suggestedWarehouseId: _suggestedWarehouseId,
+                onReset: _reset,
               )),
           ],
         ),
@@ -408,25 +425,39 @@ class _ResultPanel extends ConsumerStatefulWidget {
   final bool passed;
   final List<String> violations;
   final String? savedPackageId;
+  final String? suggestedWarehouseId;
   final VoidCallback onReset;
-  const _ResultPanel({required this.passed, required this.violations, this.savedPackageId, required this.onReset});
+  const _ResultPanel({super.key, required this.passed, required this.violations, this.savedPackageId, this.suggestedWarehouseId, required this.onReset});
   @override
   ConsumerState<_ResultPanel> createState() => _ResultPanelState();
 }
 
 class _ResultPanelState extends ConsumerState<_ResultPanel> {
   String? _selectedWarehouseId;
-  final _reasonCtrl = TextEditingController();
-  final _itemCountCtrl = TextEditingController();
   bool _isSending = false;
 
   @override
-  void dispose() { _reasonCtrl.dispose(); _itemCountCtrl.dispose(); super.dispose(); }
+  void initState() {
+    super.initState();
+    if (widget.suggestedWarehouseId != null) {
+      _selectedWarehouseId = widget.suggestedWarehouseId;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_ResultPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.suggestedWarehouseId != oldWidget.suggestedWarehouseId && widget.suggestedWarehouseId != null) {
+      setState(() {
+        _selectedWarehouseId = widget.suggestedWarehouseId;
+      });
+    }
+  }
 
   Future<void> _sendToWarehouse() async {
-    if (_selectedWarehouseId == null || _reasonCtrl.text.isEmpty) {
+    if (_selectedWarehouseId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select warehouse and enter reason')));
+          const SnackBar(content: Text('Select a warehouse')));
       return;
     }
     setState(() => _isSending = true);
@@ -434,8 +465,8 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       await ref.read(warehouseServiceProvider).addEntry(
         packageId: widget.savedPackageId!,
         warehouseId: _selectedWarehouseId!,
-        holdReason: _reasonCtrl.text,
-        itemCount: int.tryParse(_itemCountCtrl.text) ?? 1,
+        holdReason: 'System Assigned',
+        itemCount: 1, // Or fetched from items if required
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -475,8 +506,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                 ),
               ),
               child: Column(children: [
-                Icon(Icons.check_circle_rounded, color: context.colors.successGreen, size: 56)
-                    .animate().scale(duration: 400.ms),
+                Icon(Icons.check_circle_rounded, color: context.colors.successGreen, size: 56).animate().scale(duration: 400.ms),
                 const Gap(12),
                 Text('ENTRY SAVED SUCCESSFULLY',
                   style: TextStyle(
@@ -492,7 +522,6 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
               ]),
             ),
             const Gap(20),
-            // Always show warehouse assignment section
             Text('Assign to Warehouse', style: Theme.of(context).textTheme.titleMedium),
             const Gap(4),
             Text('Select which warehouse should hold this package.',
@@ -523,59 +552,59 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
               loading: () => const CircularProgressIndicator(),
               error: (e, _) => Text('Error: $e'),
               data: (ws) => Column(
-                children: ws.map((w) => Padding(
+                children: ws.map((w) {
+                  final isSuggested = widget.suggestedWarehouseId == w.id;
+                  final isOther = widget.suggestedWarehouseId != null && !isSuggested;
+                  final isSelected = _selectedWarehouseId == w.id;
+                  
+                  return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: InkWell(
                     borderRadius: BorderRadius.circular(10),
-                    onTap: () => setState(() => _selectedWarehouseId = w.id),
+                    onTap: isOther ? null : () => setState(() => _selectedWarehouseId = w.id),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 200),
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
-                        color: _selectedWarehouseId == w.id ? context.colors.primaryGold.withOpacity(0.15) : context.colors.cardDark,
+                        color: isOther ? context.colors.cardDark.withOpacity(0.5)
+                            : (isSelected ? context.colors.primaryGold.withOpacity(0.15) : context.colors.cardDark),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(
-                          color: _selectedWarehouseId == w.id ? context.colors.primaryGold : context.colors.borderColor,
-                          width: _selectedWarehouseId == w.id ? 2 : 1,
+                          color: isSelected ? context.colors.primaryGold : (isOther ? context.colors.borderColor.withOpacity(0.3) : context.colors.borderColor),
+                          width: isSelected ? 2 : 1,
                         ),
                       ),
                       child: Row(children: [
                         Icon(Icons.warehouse_rounded,
-                            color: _selectedWarehouseId == w.id ? context.colors.primaryGold : context.colors.textMuted, size: 20),
+                            color: isOther ? context.colors.textMuted.withOpacity(0.3)
+                                : (isSelected ? context.colors.primaryGold : context.colors.textMuted), size: 20),
                         const Gap(12),
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(w.name, style: TextStyle(
-                            color: _selectedWarehouseId == w.id ? context.colors.primaryGold : context.colors.textPrimary,
-                            fontWeight: FontWeight.w600)),
+                              color: isOther ? context.colors.textMuted.withOpacity(0.5)
+                                  : (isSelected ? context.colors.primaryGold : context.colors.textPrimary),
+                              fontWeight: FontWeight.w600)),
                           if (w.location != null)
-                            Text(w.location!, style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
+                            Text(w.location!, style: TextStyle(color: isOther ? context.colors.textMuted.withOpacity(0.3) : context.colors.textMuted, fontSize: 12)),
                         ])),
-                        if (_selectedWarehouseId == w.id)
+                        if (isSelected)
                           Icon(Icons.check_circle, color: context.colors.primaryGold, size: 20),
+                        if (isSuggested)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: context.colors.primaryGold.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: context.colors.primaryGold.withOpacity(0.3)),
+                            ),
+                            child: Text('Suggested', style: TextStyle(color: context.colors.primaryGold, fontSize: 10, fontWeight: FontWeight.w600)),
+                          ),
                       ]),
                     ),
                   ),
-                )).toList(),
+                );}).toList(),
               ),
             ),
-            const Gap(16),
-            ref.watch(holdReasonsProvider).when(
-              loading: () => const LinearProgressIndicator(),
-              error: (e, _) => Text('Error: $e', style: TextStyle(color: context.colors.dangerRed)),
-              data: (list) {
-                final activeList = list.where((r) => r.isActive || r.reasonText == _reasonCtrl.text).toList();
-                return DropdownButtonFormField<String>(
-                  value: activeList.any((r) => r.reasonText == _reasonCtrl.text) ? _reasonCtrl.text : null,
-                  decoration: const InputDecoration(labelText: 'Hold Reason *', hintText: 'Select reason...'),
-                  items: activeList.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
-                  onChanged: (v) => setState(() => _reasonCtrl.text = v ?? ''),
-                );
-              },
-            ),
-            const Gap(12),
-            TextFormField(controller: _itemCountCtrl,
-                decoration: const InputDecoration(labelText: 'Number of Items Held'),
-                keyboardType: TextInputType.number),
             const Gap(20),
             SizedBox(
               width: double.infinity, height: 50,
@@ -604,14 +633,13 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
   }
 }
 
-// ── Helper Widgets ──────────────────────────────────────────────
+// ─── Helper Widgets ───
 
 class _ItemRow {
   final nameCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: '1');
   final valueCtrl = TextEditingController(text: '0');
   final categoryCtrl = TextEditingController();
-  bool isProhibited = false;
 }
 
 class _ItemRowWidget extends ConsumerStatefulWidget {
@@ -625,95 +653,94 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
   Widget build(BuildContext context) {
     final categories = ref.watch(packageCategoriesProvider);
     return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: context.colors.surfaceDark, borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.colors.borderColor)),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(color: context.colors.surfaceDark, borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.colors.borderColor), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0,2))]),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
-          Text('Item ${widget.index}', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w600, fontSize: 12)),
+          Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: context.colors.primaryGold.withOpacity(0.2), borderRadius: BorderRadius.circular(6)), child: Text('Item ${widget.index}', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 12))),
           const Spacer(),
           if (widget.onRemove != null)
-            IconButton(icon: Icon(Icons.close, size: 16, color: context.colors.dangerRed),
-                onPressed: widget.onRemove, padding: EdgeInsets.zero, constraints: const BoxConstraints()),
+            IconButton(icon: Icon(Icons.delete_outline_rounded, size: 20, color: context.colors.dangerRed),
+                onPressed: widget.onRemove, padding: EdgeInsets.zero, constraints: const BoxConstraints(), tooltip: 'Remove item'),
         ]),
-        const Gap(8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+        const Gap(12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 200),
-              child: IntrinsicWidth(child: TextField(controller: widget.row.nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Item Name', isDense: true),
-                  onChanged: (_) => widget.onChanged())),
+            Expanded(
+              flex: 3,
+              child: TextFormField(controller: widget.row.nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Item Name *', isDense: true),
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                  onChanged: (_) => widget.onChanged()),
             ),
-            SizedBox(
-              width: 80,
-              child: TextField(controller: widget.row.qtyCtrl,
-                  decoration: const InputDecoration(labelText: 'Qty', isDense: true),
-                  keyboardType: TextInputType.number),
+            const Gap(12),
+            Expanded(
+              flex: 1,
+              child: TextFormField(controller: widget.row.qtyCtrl,
+                  decoration: const InputDecoration(labelText: 'Qty *', isDense: true),
+                  keyboardType: TextInputType.number,
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Required';
+                    if (int.tryParse(v) == null || int.tryParse(v)! <= 0) return 'Invalid';
+                    return null;
+                  },
+              ),
             ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(minWidth: 140),
-              child: IntrinsicWidth(child: categories.when(
+            const Gap(12),
+            Expanded(
+              flex: 2,
+              child: categories.when(
                 loading: () => const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                 error: (e, _) => IconButton(icon: const Icon(Icons.refresh, size: 16, color: Colors.orange),
-                    onPressed: () => ref.refresh(packageCategoriesProvider), tooltip: 'Error loading categories. Click to retry.'),
+                    onPressed: () => ref.refresh(packageCategoriesProvider), tooltip: 'Error loading categories'),
                 data: (list) {
                   final selectedCategory = list.where((c) => c.name == widget.row.categoryCtrl.text).firstOrNull;
                   return DropdownButtonFormField<String>(
                     isDense: true,
                     value: selectedCategory?.name,
                     decoration: const InputDecoration(labelText: 'Category', isDense: true),
-                    items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12)))).toList(),
+                    items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
                     onChanged: (v) {
                       widget.row.categoryCtrl.text = v ?? '';
-                      setState(() {}); // Reflect UI changes immediately
+                      setState(() {}); 
                       widget.onChanged();
                     },
                   );
                 },
-              )),
+              ),
             ),
           ],
         ),
-        if (categories.value != null && categories.value!.any((c) => c.name == widget.row.categoryCtrl.text))
-          Builder(
-            builder: (context) {
-              final cat = categories.value!.firstWhere((c) => c.name == widget.row.categoryCtrl.text);
-              if (cat.targetWarehouseName != null) {
-                return Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: context.colors.primaryGold.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: context.colors.primaryGold.withOpacity(0.3)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.warehouse_rounded, size: 14, color: context.colors.primaryGold),
-                        const Gap(8),
-                        Text(
-                          'Route to: ${cat.targetWarehouseName}${cat.targetZone != null ? ' | Zone: ${cat.targetZone}' : ''}',
-                          style: TextStyle(fontSize: 12, color: context.colors.primaryGold, fontWeight: FontWeight.w600),
-                        ),
-                      ],
-                    ),
+        const Gap(12),
+        Row(children: [
+          categories.when(
+            data: (list) {
+              final cat = list.where((c) => c.name == widget.row.categoryCtrl.text).firstOrNull;
+              if (cat != null && cat.targetWarehouseId != null) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: context.colors.primaryGold.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: context.colors.primaryGold.withOpacity(0.3))
                   ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.route_rounded, size: 14, color: context.colors.primaryGold),
+                    const Gap(6),
+                    Text('Routes to: ${cat.targetWarehouseId ?? ''}', 
+                      style: TextStyle(color: context.colors.primaryGold, fontSize: 11, fontWeight: FontWeight.w600)
+                    )
+                  ]),
                 );
               }
               return const SizedBox.shrink();
             },
+            loading: () => const SizedBox.shrink(),
+            error: (_,__) => const SizedBox.shrink()
           ),
-        const Gap(8),
-        Row(children: [
-          Checkbox(value: widget.row.isProhibited,
-              onChanged: (v) => setState(() => widget.row.isProhibited = v ?? false),
-              activeColor: context.colors.dangerRed),
-          Text('Mark as Prohibited', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+
         ]),
       ]),
     );

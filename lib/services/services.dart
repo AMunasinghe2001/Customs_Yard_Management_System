@@ -399,15 +399,19 @@ class CustomsRulesService {
           break;
         case 'prohibited_category':
           final prohibited = rule.stringValue?.toLowerCase() ?? '';
-          for (final item in items) {
-            if ((item.category?.toLowerCase() ?? '').contains(prohibited) || item.isProhibited) {
-              violations.add('${rule.ruleName}: Item "${item.itemName}" falls under prohibited category');
-              break;
+          if (prohibited.isNotEmpty) {
+            for (final item in items) {
+              if ((item.category?.toLowerCase() ?? '').contains(prohibited)) {
+                if (!violations.any((v) => v.contains(item.itemName) && v.contains(rule.ruleName))) {
+                  violations.add('${rule.ruleName}: Item "${item.itemName}" falls under prohibited category');
+                }
+              }
             }
           }
           break;
       }
     }
+
     return violations;
   }
 
