@@ -21,7 +21,7 @@ void main() async {
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
     minimumSize: Size(1000, 700),
-    title: 'Sri Lanka Customs - Yard Management',
+    title: 'Sri Lanka Customs Inventory Management System',
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();

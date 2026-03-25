@@ -73,7 +73,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       }
       await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;
-      if (mounted) context.go('/dashboard');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('✅ Logged in successfully as ${profile.fullName}'),
+            backgroundColor: context.colors.successGreen,
+          ),
+        );
+        context.go('/dashboard');
+      }
     } catch (e) {
       ref.read(loginErrorProvider.notifier).state = _friendlyError(e.toString());
     } finally { ref.read(loginLoadingProvider.notifier).state = false; }

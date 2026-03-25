@@ -246,6 +246,7 @@ class WarehouseEntryModel {
   final String warehouseId;
   final String warehouseName;
   final String warehouseCode;
+  final String? zone;
   final String holdReason;
   final int itemCount;
   final String? admittedBy;
@@ -269,6 +270,7 @@ class WarehouseEntryModel {
     required this.warehouseId,
     required this.warehouseName,
     required this.warehouseCode,
+    this.zone,
     required this.holdReason,
     required this.itemCount,
     this.admittedBy,
@@ -295,6 +297,7 @@ class WarehouseEntryModel {
       warehouseId: json['warehouse_id'] as String,
       warehouseName: warehouse?['name'] as String? ?? '',
       warehouseCode: warehouse?['code'] as String? ?? '',
+      zone: json['zone'] as String?,
       holdReason: json['hold_reason'] as String,
       itemCount: json['item_count'] as int,
       admittedBy: json['admitted_by'] as String?,
@@ -499,12 +502,18 @@ class PackageCategory {
   final String id;
   final String name;
   final String? description;
+  final String? targetWarehouseId;
+  final String? targetWarehouseName;
+  final String? targetZone;
   final DateTime createdAt;
 
   const PackageCategory({
     required this.id,
     required this.name,
     this.description,
+    this.targetWarehouseId,
+    this.targetWarehouseName,
+    this.targetZone,
     required this.createdAt,
   });
 
@@ -513,6 +522,9 @@ class PackageCategory {
       id: json['id'] as String,
       name: json['name'] as String,
       description: json['description'] as String?,
+      targetWarehouseId: json['target_warehouse_id'] as String?,
+      targetWarehouseName: (json['warehouses'] as Map<String, dynamic>?)?['name'] as String?,
+      targetZone: json['target_zone'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -521,17 +533,23 @@ class PackageCategory {
     return {
       'name': name,
       'description': description,
+      if (targetWarehouseId != null) 'target_warehouse_id': targetWarehouseId,
+      if (targetZone != null) 'target_zone': targetZone,
     };
   }
 }
 class HoldReasonModel {
   final String id;
   final String reasonText;
+  final String? description;
+  final bool isActive;
   final DateTime createdAt;
 
   const HoldReasonModel({
     required this.id,
     required this.reasonText,
+    this.description,
+    this.isActive = true,
     required this.createdAt,
   });
 
@@ -539,6 +557,8 @@ class HoldReasonModel {
     return HoldReasonModel(
       id: json['id'] as String,
       reasonText: json['reason_text'] as String,
+      description: json['description'] as String?,
+      isActive: json['is_active'] as bool? ?? true,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }

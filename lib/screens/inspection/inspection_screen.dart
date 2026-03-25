@@ -298,12 +298,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         ref.watch(holdReasonsProvider).when(
                           loading: () => const LinearProgressIndicator(),
                           error: (e, _) => Text('Error loading reasons: $e', style: TextStyle(color: context.colors.dangerRed, fontSize: 12)),
-                          data: (list) => DropdownButtonFormField<String>(
-                            value: list.any((r) => r.reasonText == _reasonCtrlMain.text) ? _reasonCtrlMain.text : null,
-                            decoration: const InputDecoration(labelText: 'Reason (if held)'),
-                            items: list.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
-                            onChanged: (v) => setState(() => _reasonCtrlMain.text = v ?? ''),
-                          ),
+                            data: (list) {
+                              final activeList = list.where((r) => r.isActive || r.reasonText == _reasonCtrlMain.text).toList();
+                              return DropdownButtonFormField<String>(
+                                value: activeList.any((r) => r.reasonText == _reasonCtrlMain.text) ? _reasonCtrlMain.text : null,
+                                decoration: const InputDecoration(labelText: 'Reason (if held)'),
+                                items: activeList.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
+                                onChanged: (v) => setState(() => _reasonCtrlMain.text = v ?? ''),
+                              );
+                            },
                         ),
                         const Gap(16),
                         TextFormField(controller: _descCtrl,
@@ -559,12 +562,15 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
             ref.watch(holdReasonsProvider).when(
               loading: () => const LinearProgressIndicator(),
               error: (e, _) => Text('Error: $e', style: TextStyle(color: context.colors.dangerRed)),
-              data: (list) => DropdownButtonFormField<String>(
-                value: list.any((r) => r.reasonText == _reasonCtrl.text) ? _reasonCtrl.text : null,
-                decoration: const InputDecoration(labelText: 'Hold Reason *', hintText: 'Select reason...'),
-                items: list.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
-                onChanged: (v) => setState(() => _reasonCtrl.text = v ?? ''),
-              ),
+              data: (list) {
+                final activeList = list.where((r) => r.isActive || r.reasonText == _reasonCtrl.text).toList();
+                return DropdownButtonFormField<String>(
+                  value: activeList.any((r) => r.reasonText == _reasonCtrl.text) ? _reasonCtrl.text : null,
+                  decoration: const InputDecoration(labelText: 'Hold Reason *', hintText: 'Select reason...'),
+                  items: activeList.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText))).toList(),
+                  onChanged: (v) => setState(() => _reasonCtrl.text = v ?? ''),
+                );
+              },
             ),
             const Gap(12),
             TextFormField(controller: _itemCountCtrl,
@@ -653,20 +659,55 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 loading: () => const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                 error: (e, _) => IconButton(icon: const Icon(Icons.refresh, size: 16, color: Colors.orange),
                     onPressed: () => ref.refresh(packageCategoriesProvider), tooltip: 'Error loading categories. Click to retry.'),
-                data: (list) => DropdownButtonFormField<String>(
-                  isDense: true,
-                  value: list.any((c) => c.name == widget.row.categoryCtrl.text) ? widget.row.categoryCtrl.text : null,
-                  decoration: const InputDecoration(labelText: 'Category', isDense: true),
-                  items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12)))).toList(),
-                  onChanged: (v) {
-                    widget.row.categoryCtrl.text = v ?? '';
-                    widget.onChanged();
-                  },
-                ),
+                data: (list) {
+                  final selectedCategory = list.where((c) => c.name == widget.row.categoryCtrl.text).firstOrNull;
+                  return DropdownButtonFormField<String>(
+                    isDense: true,
+                    value: selectedCategory?.name,
+                    decoration: const InputDecoration(labelText: 'Category', isDense: true),
+                    items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12)))).toList(),
+                    onChanged: (v) {
+                      widget.row.categoryCtrl.text = v ?? '';
+                      setState(() {}); // Reflect UI changes immediately
+                      widget.onChanged();
+                    },
+                  );
+                },
               )),
             ),
           ],
         ),
+        if (categories.value != null && categories.value!.any((c) => c.name == widget.row.categoryCtrl.text))
+          Builder(
+            builder: (context) {
+              final cat = categories.value!.firstWhere((c) => c.name == widget.row.categoryCtrl.text);
+              if (cat.targetWarehouseName != null) {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 12),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: context.colors.primaryGold.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: context.colors.primaryGold.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.warehouse_rounded, size: 14, color: context.colors.primaryGold),
+                        const Gap(8),
+                        Text(
+                          'Route to: ${cat.targetWarehouseName}${cat.targetZone != null ? ' | Zone: ${cat.targetZone}' : ''}',
+                          style: TextStyle(fontSize: 12, color: context.colors.primaryGold, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
         const Gap(8),
         Row(children: [
           Checkbox(value: widget.row.isProhibited,

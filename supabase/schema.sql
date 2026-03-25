@@ -259,3 +259,11 @@ SELECT
 FROM packages
 GROUP BY DATE(created_at)
 ORDER BY stat_date DESC;
+
+ALTER TABLE package_categories ADD COLUMN target_warehouse_id UUID REFERENCES warehouses(id);
+ALTER TABLE package_categories ADD COLUMN target_zone TEXT;
+
+ALTER TABLE warehouse_entries ADD COLUMN zone TEXT;
+
+ALTER TABLE hold_reasons ADD COLUMN description TEXT;
+ALTER TABLE hold_reasons ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;

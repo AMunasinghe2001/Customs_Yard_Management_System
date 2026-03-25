@@ -566,30 +566,46 @@ class _CategoriesTab extends ConsumerWidget {
                   columns: [
                     DataColumn2(label: Text('Category Name', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
                     DataColumn2(label: Text('Description', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Warehouse/Zone', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
                     DataColumn2(label: Text('Created At', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M, fixedWidth: 150),
-                    DataColumn2(label: Text('Del', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 80),
+                    DataColumn2(label: Text('Actions', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 120),
                   ],
                   rows: list.map((c) => DataRow(cells: [
                     DataCell(Text(c.name, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 13))),
                     DataCell(Text(c.description ?? '—', style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
+                    DataCell(Text('${c.targetWarehouseName ?? '—'} ${c.targetZone != null ? '(Zone: ${c.targetZone})' : ''}', style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
                     DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(c.createdAt), style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
-                    DataCell(IconButton(
-                      icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 18),
-                      onPressed: () async {
-                        final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
-                          title: const Text('Delete Category'),
-                          content: Text('Delete "${c.name}"?'),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
-                                onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-                          ],
-                        ));
-                        if (ok == true) {
-                          await ref.read(packageCategoryServiceProvider).deleteCategory(c.id);
-                          ref.invalidate(packageCategoriesProvider);
-                        }
-                      },
+                    DataCell(Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.edit_rounded, color: context.colors.primaryGold, size: 22),
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(),
+                          onPressed: () => _showEditCategoryDialog(context, ref, c),
+                        ),
+                        const Gap(16),
+                        IconButton(
+                          icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 22),
+                          padding: const EdgeInsets.all(4),
+                          constraints: const BoxConstraints(),
+                          onPressed: () async {
+                            final ok = await showDialog<bool>(context: context, builder: (_) => AlertDialog(
+                              title: const Text('Delete Category'),
+                              content: Text('Delete "${c.name}"?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                                ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
+                                    onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                              ],
+                            ));
+                            if (ok == true) {
+                              await ref.read(packageCategoryServiceProvider).deleteCategory(c.id);
+                              ref.invalidate(packageCategoriesProvider);
+                            }
+                          },
+                        ),
+                      ],
                     )),
                   ])).toList(),
                 ),
@@ -603,22 +619,185 @@ class _CategoriesTab extends ConsumerWidget {
 
   void _showAddCategoryDialog(BuildContext context, WidgetRef ref) {
     final nameC = TextEditingController(), descC = TextEditingController();
-    showDialog(context: context, builder: (ctx) => AlertDialog(
-      title: const Text('Add Package Category'),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        TextField(controller: nameC, decoration: const InputDecoration(labelText: 'Category Name *')),
-        const Gap(12),
-        TextField(controller: descC, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
-      ]),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-        ElevatedButton(onPressed: () async {
-          if (nameC.text.isEmpty) return;
-          await ref.read(packageCategoryServiceProvider).createCategory(nameC.text.trim(), description: descC.text.trim());
-          ref.invalidate(packageCategoriesProvider);
-          if (ctx.mounted) Navigator.pop(ctx);
-        }, child: const Text('Add Category')),
-      ],
+    String? selectedWarehouseId;
+    String? selectedZone;
+    final List<String> availableZones = List.generate(10, (index) => '${index + 1}');
+
+    showDialog(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        final warehouses = ref.watch(warehousesProvider);
+        return AlertDialog(
+          title: const Text('Add Package Category'),
+          content: SizedBox(
+            width: 600,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(controller: nameC, decoration: const InputDecoration(labelText: 'Category Name *')),
+                const Gap(16),
+                TextField(controller: descC, decoration: const InputDecoration(labelText: 'Description'), maxLines: 3),
+                const Gap(16),
+                warehouses.when(
+                  data: (list) => DropdownButtonFormField<String>(
+                    value: selectedWarehouseId,
+                    decoration: const InputDecoration(labelText: 'Target Warehouse (Auto-assign)', isDense: true),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('None: Do not auto-assign')),
+                      ...list.map((w) => DropdownMenuItem(value: w.id, child: Text(w.name)))
+                    ],
+                    onChanged: (v) => setState(() { 
+                      selectedWarehouseId = v; 
+                      if (v == null) selectedZone = null;
+                    }),
+                  ),
+                  loading: () => const CircularProgressIndicator(),
+                  error: (e, _) => Text('Error: $e'),
+                ),
+                const Gap(16),
+                if (selectedWarehouseId != null)
+                  DropdownButtonFormField<String>(
+                    value: selectedZone,
+                    decoration: const InputDecoration(labelText: 'Target Zone', isDense: true),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('None')),
+                      ...availableZones.map((z) => DropdownMenuItem(value: z, child: Text('Zone $z')))
+                    ],
+                    onChanged: (v) => setState(() => selectedZone = v),
+                  ),
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx), 
+              child: const Text('Cancel', style: TextStyle(fontSize: 16))
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () async {
+                if (nameC.text.isEmpty) return;
+                
+                final existingCategories = ref.read(packageCategoriesProvider).value ?? [];
+                if (selectedWarehouseId != null && selectedZone != null) {
+                  final isOccupied = existingCategories.any((c) => c.targetWarehouseId == selectedWarehouseId && c.targetZone == selectedZone);
+                  if (isOccupied) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('This Zone in the selected Warehouse is already assigned to another Category.'), backgroundColor: Colors.red),
+                    );
+                    return;
+                  }
+                }
+
+                await ref.read(packageCategoryServiceProvider).createCategory(
+                  nameC.text.trim(), 
+                  description: descC.text.trim(),
+                  targetWarehouseId: selectedWarehouseId,
+                  targetZone: selectedZone,
+                );
+                ref.invalidate(packageCategoriesProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+              }, 
+              child: const Text('Add Category', style: TextStyle(fontSize: 16))
+            ),
+          ],
+        );
+      }
+    ));
+  }
+
+  void _showEditCategoryDialog(BuildContext context, WidgetRef ref, PackageCategory category) {
+    final nameC = TextEditingController(text: category.name);
+    final descC = TextEditingController(text: category.description);
+    String? selectedWarehouseId = category.targetWarehouseId;
+    String? selectedZone = category.targetZone?.replaceAll('Zone ', '');
+    final List<String> availableZones = List.generate(10, (index) => '${index + 1}');
+    
+    showDialog(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) {
+        final warehouses = ref.watch(warehousesProvider);
+        return AlertDialog(
+          title: const Text('Edit Package Category'),
+          content: SizedBox(
+            width: 600,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                TextField(controller: nameC, decoration: const InputDecoration(labelText: 'Category Name *')),
+                const Gap(16),
+                TextField(controller: descC, decoration: const InputDecoration(labelText: 'Description'), maxLines: 3),
+                const Gap(16),
+                warehouses.when(
+                  data: (list) => DropdownButtonFormField<String>(
+                    value: list.any((w) => w.id == selectedWarehouseId) ? selectedWarehouseId : null,
+                    decoration: const InputDecoration(labelText: 'Target Warehouse (Auto-assign)', isDense: true),
+                    items: [
+                      const DropdownMenuItem(value: null, child: Text('None: Do not auto-assign')),
+                      ...list.map((w) => DropdownMenuItem(value: w.id, child: Text(w.name)))
+                    ],
+                    onChanged: (v) => setState(() {
+                      selectedWarehouseId = v;
+                      if (v == null) selectedZone = null;
+                    }),
+                  ),
+                  loading: () => const CircularProgressIndicator(),
+                  error: (e, _) => Text('Error: $e'),
+                ),
+                const Gap(16),
+                if (selectedWarehouseId != null)
+                  DropdownButtonFormField<String>(
+                     value: availableZones.contains(selectedZone) ? selectedZone : null,
+                     decoration: const InputDecoration(labelText: 'Target Zone', isDense: true),
+                     items: [
+                       const DropdownMenuItem(value: null, child: Text('None')),
+                       ...availableZones.map((z) => DropdownMenuItem(value: z, child: Text('Zone $z')))
+                     ],
+                     onChanged: (v) => setState(() => selectedZone = v),
+                  ),
+              ]),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx), 
+              child: const Text('Cancel', style: TextStyle(fontSize: 16))
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              ),
+              onPressed: () async {
+                if (nameC.text.isEmpty) return;
+
+                final existingCategories = ref.read(packageCategoriesProvider).value ?? [];
+                if (selectedWarehouseId != null && selectedZone != null) {
+                  final isOccupied = existingCategories.any((c) => 
+                      c.id != category.id && 
+                      c.targetWarehouseId == selectedWarehouseId && 
+                      c.targetZone == selectedZone);
+                  
+                  if (isOccupied) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('This Zone in the selected Warehouse is already assigned to another Category.'), backgroundColor: Colors.red),
+                    );
+                    return;
+                  }
+                }
+
+                await ref.read(packageCategoryServiceProvider).updateCategory(
+                  category.id,
+                  nameC.text.trim(), 
+                  description: descC.text.trim(),
+                  targetWarehouseId: selectedWarehouseId,
+                  targetZone: selectedWarehouseId == null || selectedZone == null ? null : selectedZone,
+                );
+                ref.invalidate(packageCategoriesProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+              }, 
+              child: const Text('Save Changes', style: TextStyle(fontSize: 16))
+            ),
+          ],
+        );
+      }
     ));
   }
 }
@@ -844,30 +1023,50 @@ class _HoldReasonsTab extends ConsumerWidget {
                   columnSpacing: 20,
                   headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                   columns: [
-                    DataColumn2(label: Text('Reason Text', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
-                    DataColumn2(label: Text('Created At', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 120),
-                    DataColumn2(label: Text('Del', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 60, numeric: true),
+                    DataColumn2(label: Text('Reason Text', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.M),
+                    DataColumn2(label: Text('Description', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.L),
+                    DataColumn2(label: Text('Active', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
+                    DataColumn2(label: Text('Actions', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 13)), size: ColumnSize.S, fixedWidth: 100),
                   ],
                   rows: list.map((r) => DataRow(cells: [
                     DataCell(Text(r.reasonText, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w500))),
-                    DataCell(Text(DateFormat('dd/MM/yy HH:mm').format(r.createdAt), style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
-                    DataCell(IconButton(
-                      icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 18),
-                      onPressed: () async {
-                        final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
-                          title: const Text('Delete Reason?'),
-                          content: Text('Delete "${r.reasonText}"?'),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-                            ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
-                                onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-                          ],
-                        ));
-                        if (ok == true) {
-                          await ref.read(holdReasonServiceProvider).deleteReason(r.id);
+                    DataCell(Text(r.description ?? '—', overflow: TextOverflow.ellipsis, maxLines: 1, style: TextStyle(color: context.colors.textMuted, fontSize: 12))),
+                    DataCell(
+                      _StatusToggle(
+                        isActive: r.isActive,
+                        onChanged: (v) async {
+                          await ref.read(holdReasonServiceProvider).toggleReasonActive(r.id, v);
                           ref.invalidate(holdReasonsProvider);
-                        }
-                      },
+                        },
+                        label: 'Reason "${r.reasonText}"',
+                      )
+                    ),
+                    DataCell(Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.edit_rounded, color: context.colors.primaryGold, size: 18),
+                          onPressed: () => _showEditReasonDialog(context, ref, r),
+                        ),
+                        IconButton(
+                          icon: Icon(Icons.delete_outline_rounded, color: context.colors.dangerRed, size: 18),
+                          onPressed: () async {
+                            final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+                              title: const Text('Delete Reason?'),
+                              content: Text('Delete "${r.reasonText}"?'),
+                              actions: [
+                                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
+                                ElevatedButton(style: ElevatedButton.styleFrom(backgroundColor: context.colors.dangerRed, foregroundColor: Colors.white),
+                                    onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
+                              ],
+                            ));
+                            if (ok == true) {
+                              await ref.read(holdReasonServiceProvider).deleteReason(r.id);
+                              ref.invalidate(holdReasonsProvider);
+                            }
+                          },
+                        ),
+                      ],
                     )),
                   ])).toList(),
                 ),
@@ -880,18 +1079,45 @@ class _HoldReasonsTab extends ConsumerWidget {
   }
 
   void _showAddReasonDialog(BuildContext context, WidgetRef ref) {
-    final ctrl = TextEditingController();
+    final nameC = TextEditingController();
+    final descC = TextEditingController();
     showDialog(context: context, builder: (ctx) => AlertDialog(
       title: const Text('Add Hold Reason'),
-      content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Reason Text *')),
+      content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: nameC, decoration: const InputDecoration(labelText: 'Reason Text *')),
+        const Gap(12),
+        TextField(controller: descC, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
+      ])),
       actions: [
         TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
         ElevatedButton(onPressed: () async {
-          if (ctrl.text.isEmpty) return;
-          await ref.read(holdReasonServiceProvider).addReason(ctrl.text.trim());
+          if (nameC.text.trim().isEmpty) return;
+          await ref.read(holdReasonServiceProvider).addReason(nameC.text.trim(), descC.text.trim().isEmpty ? null : descC.text.trim());
           ref.invalidate(holdReasonsProvider);
           if (ctx.mounted) Navigator.pop(ctx);
         }, child: const Text('Add Reason')),
+      ],
+    ));
+  }
+
+  void _showEditReasonDialog(BuildContext context, WidgetRef ref, HoldReasonModel reason) {
+    final nameC = TextEditingController(text: reason.reasonText);
+    final descC = TextEditingController(text: reason.description);
+    showDialog(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('Edit Hold Reason'),
+      content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: nameC, decoration: const InputDecoration(labelText: 'Reason Text *')),
+        const Gap(12),
+        TextField(controller: descC, decoration: const InputDecoration(labelText: 'Description'), maxLines: 2),
+      ])),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+        ElevatedButton(onPressed: () async {
+          if (nameC.text.trim().isEmpty) return;
+          await ref.read(holdReasonServiceProvider).updateReason(reason.id, nameC.text.trim(), descC.text.trim().isEmpty ? null : descC.text.trim());
+          ref.invalidate(holdReasonsProvider);
+          if (ctx.mounted) Navigator.pop(ctx);
+        }, child: const Text('Save Changes')),
       ],
     ));
   }

@@ -253,6 +253,7 @@ class WarehouseService {
   Future<void> addEntry({
     required String packageId,
     required String warehouseId,
+    String? zone,
     required String holdReason,
     required int itemCount,
   }) async {
@@ -261,6 +262,7 @@ class WarehouseService {
     await supabase.from('warehouse_entries').insert({
       'package_id': packageId,
       'warehouse_id': warehouseId,
+      'zone': zone,
       'hold_reason': holdReason,
       'item_count': itemCount,
       'daily_rate': rate,
@@ -590,8 +592,25 @@ class HoldReasonService {
     return (res as List).map((json) => HoldReasonModel.fromJson(json)).toList();
   }
 
-  Future<void> addReason(String reasonText) async {
-    await supabase.from('hold_reasons').insert({'reason_text': reasonText});
+  Future<void> addReason(String reasonText, String? description) async {
+    await supabase.from('hold_reasons').insert({
+      'reason_text': reasonText,
+      'description': description,
+      'is_active': true,
+    });
+  }
+
+  Future<void> updateReason(String id, String reasonText, String? description) async {
+    await supabase.from('hold_reasons').update({
+      'reason_text': reasonText,
+      'description': description,
+    }).eq('id', id);
+  }
+
+  Future<void> toggleReasonActive(String id, bool isActive) async {
+    await supabase.from('hold_reasons').update({
+      'is_active': isActive,
+    }).eq('id', id);
   }
 
   Future<void> deleteReason(String id) async {
@@ -603,14 +622,16 @@ class HoldReasonService {
 
 class PackageCategoryService {
   Future<List<PackageCategory>> getCategories() async {
-    final data = await supabase.from('package_categories').select().order('name');
+    final data = await supabase.from('package_categories').select('*, warehouses(name)').order('name');
     return data.map((e) => PackageCategory.fromJson(e)).toList();
   }
 
-  Future<void> createCategory(String name, {String? description}) async {
+  Future<void> createCategory(String name, {String? description, String? targetWarehouseId, String? targetZone}) async {
     await supabase.from('package_categories').insert({
       'name': name,
       'description': description,
+      'target_warehouse_id': targetWarehouseId,
+      'target_zone': targetZone,
     });
     
     final user = supabase.auth.currentUser;
@@ -620,6 +641,25 @@ class PackageCategoryService {
         action: 'Created package category: $name',
         entityType: 'package_category',
         entityId: 'new',
+      );
+    }
+  }
+
+  Future<void> updateCategory(String id, String name, {String? description, String? targetWarehouseId, String? targetZone}) async {
+    await supabase.from('package_categories').update({
+      'name': name,
+      'description': description,
+      'target_warehouse_id': targetWarehouseId,
+      'target_zone': targetZone,
+    }).eq('id', id);
+    
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Updated package category: $name',
+        entityType: 'package_category',
+        entityId: id,
       );
     }
   }
