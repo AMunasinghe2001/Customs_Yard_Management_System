@@ -85,39 +85,39 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
           );
         },
         child: material.Container(
-          width: 900, // Widened to fit columns
+          width: 900,
           decoration: BoxDecoration(
-            color: context.colors.cardDark,
-            borderRadius: BorderRadius.circular(20),
+            color: context.colors.scaffoldBg,
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 40, offset: const Offset(0, 15)),
-              if (isDark) BoxShadow(color: context.colors.primaryGold.withOpacity(0.1), blurRadius: 20, spreadRadius: -5),
+              BoxShadow(
+                color: Colors.black.withOpacity(0.4),
+                blurRadius: 40,
+                offset: const Offset(0, 15),
+              ),
             ],
-            border: Border.all(color: context.colors.primaryGold.withOpacity(isDark ? 0.3 : 0.6), width: 1.5),
           ),
           child: Column(
-            mainAxisSize: MainAxisSize.min, // Hug content, no scrolling if small
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               material.Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isDark
                         ? [context.colors.surfaceDark, context.colors.cardDark]
                         : [context.colors.customsBlue, context.colors.customsBlueDark],
                   ),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
-                  border: Border(bottom: BorderSide(color: context.colors.primaryGold.withOpacity(0.5))),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(23)),
                 ),
                 child: Row(
                   children: [
                     material.Container(
-                      padding: const EdgeInsets.all(8),
+                      padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: iconBgColor,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: context.colors.primaryGold.withOpacity(0.3)),
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(Icons.inventory_2_rounded, color: context.colors.primaryGold, size: 24),
                     ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
@@ -126,25 +126,33 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Row(
-                            children: [
-                              Text('SR REGISTER ENTRY', style: material.TextStyle(color: context.colors.primaryGold, fontSize: 11, letterSpacing: 1.2, fontWeight: FontWeight.w800)),
-                              const Gap(8),
-                              if (p.status == 'returned')
-                                material.Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(color: context.colors.successGreen.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
-                                  child: Text('RETURNED', style: material.TextStyle(color: context.colors.successGreen, fontSize: 9, fontWeight: FontWeight.bold)),
-                                ),
-                            ],
+                          Text(
+                            'SR REGISTER ENTRY',
+                            style: material.TextStyle(
+                              color: context.colors.primaryGold,
+                              fontSize: 11,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
-                          Text(p.srNumber, style: material.TextStyle(color: headerTextColor, fontSize: 22, letterSpacing: 0.5, fontWeight: FontWeight.bold)).animate().fadeIn(duration: 400.ms, delay: 150.ms).slideX(begin: -0.1),
+                          Text(
+                            p.srNumber,
+                            style: material.TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ).animate().fadeIn(duration: 400.ms, delay: 150.ms).slideX(begin: -0.1),
                         ],
                       ),
                     ),
                     _StatusBadge(status: p.status).animate().fadeIn(duration: 400.ms, delay: 200.ms),
-                    const Gap(16),
-                    IconButton(onPressed: () => Navigator.pop(context), icon: Icon(Icons.close_rounded, color: headerTextColor.withOpacity(0.7)), splashRadius: 20),
+                    const Gap(12),
+                    IconButton(
+                      onPressed: () => Navigator.pop(context),
+                      icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.7)),
+                      splashRadius: 24,
+                    ),
                   ],
                 ),
               ),
@@ -152,200 +160,200 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
                   child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             flex: 3,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: _InfoGroup(
+                              title: 'Recipient & Source',
+                              icon: Icons.person_pin_rounded,
                               children: [
-                                _SectionHeader('Consignee & Declarant', Icons.person_pin_rounded),
-                                const Gap(12),
-                                _GlassCard(
-                                  child: Column(
-                                    children: [
-                                      _ModernDetailRow(
-                                        label: 'Consignee', 
-                                        value: p.consigneeName, 
-                                        subValue: p.consigneeNic != null && p.consigneeNic!.isNotEmpty ? 'NIC: ${p.consigneeNic}' : null, 
-                                        icon: Icons.person_rounded,
-                                      ),
-                                      const Gap(12),
-                                      _ModernDetailRow(
-                                        label: 'Declarant', 
-                                        value: p.declarantName ?? 'N/A', 
-                                        icon: Icons.business_rounded,
-                                      ),
-                                      const Gap(12),
-                                      _ModernDetailRow(
-                                        label: 'Origin', 
-                                        value: p.originCountry, 
-                                        icon: Icons.public_rounded,
-                                      ),
-                                    ],
-                                  ),
-                                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+                                _ModernDetailRow(
+                                  label: 'Consignee',
+                                  value: p.consigneeName,
+                                  subValue: (p.consigneeNic != null && p.consigneeNic!.isNotEmpty) ? 'NIC: ${p.consigneeNic}' : null,
+                                  icon: Icons.person_rounded,
+                                ),
+                                _ModernDetailRow(
+                                  label: 'Declarant',
+                                  value: p.declarantName ?? 'N/A',
+                                  icon: Icons.business_rounded,
+                                ),
+                                _ModernDetailRow(
+                                  label: 'Origin',
+                                  value: p.originCountry,
+                                  icon: Icons.public_rounded,
+                                ),
                               ],
                             ),
                           ),
-                          const Gap(24),
+                          const Gap(20),
                           Expanded(
                             flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: _InfoGroup(
+                              title: 'Valuation & Specs',
+                              icon: Icons.gavel_rounded,
                               children: [
-                                _SectionHeader('Documentation & Value', Icons.gavel_rounded),
-                                const Gap(12),
-                                _GlassCard(
-                                  child: Column(
-                                    children: [
-                                      _ModernDetailRow(
-                                        label: 'Declared Value', 
-                                        value: 'LKR ${NumberFormat('#,##0').format(p.declaredValue)}', 
-                                        icon: Icons.payments_rounded, 
-                                        color: context.colors.successGreen,
-                                      ),
-                                      const Gap(12),
-                                      _ModernDetailRow(
-                                        label: 'Weight', 
-                                        value: '${p.weightKg} kg', 
-                                        icon: Icons.scale_rounded,
-                                      ),
-                                      const Gap(12),
-                                      _ModernDetailRow(
-                                        label: 'Entry Date', 
-                                        value: p.entryDate != null ? DateFormat('dd MMM yyyy').format(p.entryDate!) : 'N/A', 
-                                        icon: Icons.calendar_month_rounded,
-                                      ),
-                                    ],
-                                  ),
-                                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+                                _ModernDetailRow(
+                                  label: 'Declared Value',
+                                  value: 'LKR ${NumberFormat('#,##0').format(p.declaredValue)}',
+                                  icon: Icons.payments_rounded,
+                                  color: context.colors.successGreen,
+                                ),
+                                _ModernDetailRow(
+                                  label: 'Total Weight',
+                                  value: '${p.weightKg} kg',
+                                  icon: Icons.scale_rounded,
+                                ),
+                                _ModernDetailRow(
+                                  label: 'Entry Date',
+                                  value: p.entryDate != null ? DateFormat('dd MMM yyyy').format(p.entryDate!) : 'N/A',
+                                  icon: Icons.calendar_month_rounded,
+                                ),
                               ],
                             ),
                           ),
                         ],
-                      ),
-                      const Gap(24),
+                      ).animate().fadeIn(duration: 400.ms, delay: 100.ms).slideY(begin: 0.05),
+                      const Gap(20),
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            flex: 1,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: _InfoGroup(
+                              title: 'Cargo Contents',
+                              icon: Icons.inventory_2_outlined,
                               children: [
-                                _SectionHeader('Cargo Content', Icons.inventory_2_outlined),
-                                const Gap(12),
                                 if (p.items.isNotEmpty)
-                                  material.Container(
-                                    constraints: const BoxConstraints(maxHeight: 250),
-                                    child: ListView.separated(
-                                      shrinkWrap: true,
-                                      physics: const ClampingScrollPhysics(),
-                                      itemCount: p.items.length,
-                                      separatorBuilder: (_, __) => const Gap(8),
-                                      itemBuilder: (context, index) => _ItemTile(item: p.items[index]).animate().slideY(begin: 0.2, duration: 300.ms, delay: (250 + (index * 50)).ms).fadeIn(),
-                                    ),
-                                  )
+                                  ...p.items.map((item) => _ItemRow(item: item))
                                 else
-                                  _ModernNoteBox(text: 'No detailed items specified for this package.'),
+                                  _ModernNoteBox(text: 'No item breakdown provided.'),
                               ],
-                            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
+                            ),
                           ),
-                          const Gap(24),
+                          const Gap(20),
                           Expanded(
-                            flex: 1,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: _InfoGroup(
+                              title: 'Administration',
+                              icon: Icons.admin_panel_settings_rounded,
                               children: [
-                                _SectionHeader('Internal Tracking', Icons.monitor_heart_rounded),
+                                _CompactInfoRow('Cusdec No', p.cusdecNo ?? 'N/A'),
+                                _CompactInfoRow('Cusdec Date', p.cusdecDate ?? 'N/A'),
+                                if (p.consigneePhone != null && p.consigneePhone!.isNotEmpty)
+                                  _CompactInfoRow('Contact', p.consigneePhone!),
+                                
                                 const Gap(12),
-                                _GlassCard(
+                                material.Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: context.colors.textPrimary.withOpacity(0.03),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: context.colors.borderColor),
+                                  ),
                                   child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      _CompactInfoRow('Cusdec Tracking No', p.cusdecNo ?? 'N/A'),
-                                      _CompactInfoRow('Cusdec Date', p.cusdecDate ?? 'N/A'),
-                                      _CompactInfoRow('Inspecting Officer', officerDisplay),
-                                      if (p.consigneePhone != null && p.consigneePhone!.isNotEmpty) _CompactInfoRow('Consignee Contact', p.consigneePhone!),
+                                      Row(
+                                        children: [
+                                          Icon(Icons.person_outline_rounded, size: 14, color: context.colors.primaryGold),
+                                          const Gap(8),
+                                          Text(
+                                            'SYSTEM ENTRY BY',
+                                            style: material.TextStyle(
+                                              color: context.colors.textMuted,
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w800,
+                                              letterSpacing: 0.5,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const Gap(4),
+                                      Text(
+                                        officerDisplay,
+                                        style: material.TextStyle(
+                                          color: context.colors.textPrimary,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
+
                                 if (p.warehouseEntries.isNotEmpty) ...[
-                                  const Gap(20),
-                                  _SectionHeader('Storage Information', Icons.warehouse_rounded),
-                                  const Gap(12),
-                                  material.Container(
-                                    constraints: const BoxConstraints(maxHeight: 120),
-                                    child: ListView(
-                                      shrinkWrap: true,
-                                      children: p.warehouseEntries.map((we) => _HistorySummaryTile(entry: we, rate: widget.storageRate)).toList()
-                                    ),
+                                  const Divider(height: 24),
+                                  Text('WAREHOUSE HISTORY', 
+                                    style: material.TextStyle(color: context.colors.textMuted, fontSize: 10, fontWeight: FontWeight.bold, letterSpacing: 1)
                                   ),
+                                  const Gap(8),
+                                  ...p.warehouseEntries.map((we) => _HistorySummaryTile(entry: we, rate: widget.storageRate)),
                                 ],
                               ],
-                            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
+                            ),
                           ),
                         ],
-                      ),
+                      ).animate().fadeIn(duration: 400.ms, delay: 250.ms).slideY(begin: 0.05),
                       if ((p.description != null && p.description!.isNotEmpty) || (p.notes != null && p.notes!.isNotEmpty)) ...[
-                        const Gap(24),
+                        const Gap(20),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             if (p.description != null && p.description!.isNotEmpty)
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _SectionHeader('Cargo Description', Icons.description_rounded).animate().fadeIn(delay: 450.ms),
-                                    const Gap(12),
-                                    _ModernNoteBox(text: p.description!).animate().slideY(begin: 0.1, delay: 500.ms).fadeIn(),
-                                  ],
+                                child: _InfoGroup(
+                                  title: 'Description',
+                                  icon: Icons.description_rounded,
+                                  children: [_ModernNoteBox(text: p.description!)],
                                 ),
                               ),
-                            if (p.description != null && p.description!.isNotEmpty && p.notes != null && p.notes!.isNotEmpty) const Gap(24),
+                            if (p.description != null && p.description!.isNotEmpty && p.notes != null && p.notes!.isNotEmpty) const Gap(20),
                             if (p.notes != null && p.notes!.isNotEmpty)
                               Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    _SectionHeader('Customs Officer Notes', Icons.feedback_rounded).animate().fadeIn(delay: 550.ms),
-                                    const Gap(12),
-                                    _ModernNoteBox(text: p.notes!, isWarning: true).animate().slideY(begin: 0.1, delay: 600.ms).fadeIn(),
-                                  ],
+                                child: _InfoGroup(
+                                  title: 'Internal Notes',
+                                  icon: Icons.feedback_rounded,
+                                  children: [_ModernNoteBox(text: p.notes!, isWarning: true)],
                                 ),
                               ),
                           ],
-                        ),
+                        ).animate().fadeIn(duration: 400.ms, delay: 400.ms).slideY(begin: 0.05),
                       ],
                     ],
                   ),
                 ),
               ),
               material.Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 decoration: BoxDecoration(
-                  border: Border(top: BorderSide(color: context.colors.borderColor)),
                   color: isDark ? Colors.black26 : Colors.grey.shade50,
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(19)),
+                  border: Border(top: BorderSide(color: context.colors.borderColor)),
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(23)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
-                    TextButton(onPressed: () => Navigator.pop(context), child: Text('Close', style: material.TextStyle(color: context.colors.textMuted))),
-                    const Gap(12),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Close Window', style: material.TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold)),
+                    ),
+                    const Gap(16),
                     ElevatedButton.icon(
                       onPressed: () async {
                         final result = await showDialog(context: context, builder: (context) => _PackageUpdateDialog(package: p));
                         if (result == true && context.mounted) Navigator.pop(context, true);
                       },
                       icon: const Icon(Icons.edit_rounded, size: 16),
-                      label: const Text('Edit Details', style: material.TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
-                      style: ElevatedButton.styleFrom(backgroundColor: context.colors.primaryGold, foregroundColor: Colors.black87, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
-                    ).animate().scale(delay: 400.ms, duration: 300.ms),
+                      label: const Text('Edit Details', style: material.TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: context.colors.primaryGold,
+                        foregroundColor: Colors.black87,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -405,42 +413,109 @@ class _StatusBadge extends StatelessWidget {
   }
 }
 
-class _SectionHeader extends StatelessWidget {
-  final String title; final IconData icon;
-  const _SectionHeader(this.title, this.icon);
-  @override
-  Widget build(BuildContext context) {
-    return Row(children: [ Icon(icon, size: 16, color: context.colors.primaryGold), const Gap(8), Text(title.toUpperCase(), style: material.TextStyle(color: context.colors.primaryGold, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)) ]);
-  }
-}
+class _InfoGroup extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<Widget> children;
 
-class _GlassCard extends StatelessWidget {
-  final Widget child;
-  const _GlassCard({required this.child});
+  const _InfoGroup({required this.title, required this.icon, required this.children});
+
   @override
   Widget build(BuildContext context) {
     return material.Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(color: context.colors.textPrimary.withOpacity(0.02), borderRadius: BorderRadius.circular(12), border: Border.all(color: context.colors.textPrimary.withOpacity(0.06))),
-      child: child,
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark 
+            ? context.colors.surfaceDark.withOpacity(0.3) 
+            : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          material.Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: context.colors.textPrimary.withOpacity(0.03),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
+              border: Border(bottom: BorderSide(color: context.colors.borderColor)),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: context.colors.primaryGold),
+                const Gap(10),
+                Text(
+                  title.toUpperCase(),
+                  style: material.TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: children.asMap().entries.map((entry) => Padding(
+                padding: EdgeInsets.only(bottom: entry.key == children.length - 1 ? 0 : 12),
+                child: entry.value,
+              )).toList(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _ItemTile extends StatelessWidget {
+class _ItemRow extends StatelessWidget {
   final PackageItem item;
-  const _ItemTile({required this.item});
+  const _ItemRow({required this.item});
+
   @override
   Widget build(BuildContext context) {
     return material.Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: context.colors.textPrimary.withOpacity(0.03), borderRadius: BorderRadius.circular(10), border: Border.all(color: context.colors.borderColor.withOpacity(0.5))),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.colors.textPrimary.withOpacity(0.02),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor.withOpacity(0.5)),
+      ),
       child: Row(
         children: [
-          material.Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: context.colors.primaryGold.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(Icons.shopping_bag_outlined, color: context.colors.primaryGold, size: 16)),
-          const Gap(10),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [ Text(item.itemName, style: material.TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)), if (item.category != null) Text(item.category!, style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)) ])),
-          Text('x${item.quantity}', style: material.TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w900, fontSize: 14)),
+          material.Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: context.colors.primaryGold.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(Icons.shopping_bag_outlined, size: 14, color: context.colors.primaryGold),
+          ),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.itemName,
+                  style: material.TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                if (item.category != null)
+                  Text(item.category!, style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)),
+              ],
+            ),
+          ),
+          Text(
+            'x${item.quantity}',
+            style: material.TextStyle(
+              color: context.colors.primaryGold,
+              fontWeight: FontWeight.w900,
+              fontSize: 14,
+            ),
+          ),
         ],
       ),
     );
@@ -558,12 +633,14 @@ class _SectionCard extends StatelessWidget {
   final IconData icon;
   final List<Widget> children;
   final bool isDark;
+  final Widget? trailing;
 
   const _SectionCard({
     required this.title,
     required this.icon,
     required this.children,
     required this.isDark,
+    this.trailing,
   });
 
   @override
@@ -608,15 +685,18 @@ class _SectionCard extends StatelessWidget {
               children: [
                 Icon(icon, size: 20, color: isDark ? context.colors.primaryGold : context.colors.customsBlue),
                 const Gap(12),
-                Text(
-                  title.toUpperCase(),
-                  style: material.TextStyle(
-                    color: isDark ? context.colors.primaryGold : context.colors.customsBlue,
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 1.2,
+                Expanded(
+                  child: Text(
+                    title.toUpperCase(),
+                    style: material.TextStyle(
+                      color: isDark ? context.colors.primaryGold : context.colors.customsBlue,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.2,
+                    ),
                   ),
                 ),
+                if (trailing != null) trailing!,
               ],
             ),
           ),
@@ -937,6 +1017,32 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                               title: 'Package Items',
                               icon: Icons.shopping_bag_rounded,
                               isDark: isDark,
+                              trailing: material.InkWell(
+                                onTap: () => setState(() => _items.add(_ItemUpdateRow())),
+                                borderRadius: BorderRadius.circular(20),
+                                child: material.Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: context.colors.primaryGold.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.add, size: 14, color: context.colors.primaryGold),
+                                      const Gap(4),
+                                      Text(
+                                        'Add Item',
+                                        style: material.TextStyle(
+                                          color: context.colors.primaryGold,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
                               children: [
                                 ..._items.asMap().entries.map((e) => Padding(
                                   padding: const EdgeInsets.only(bottom: 12),
@@ -946,25 +1052,6 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                                     onRemove: _items.length > 1 ? () => setState(() => _items.removeAt(e.key)) : null,
                                   ),
                                 )),
-                                const Gap(12),
-                                material.Container(
-                                  width: double.infinity,
-                                  child: ElevatedButton.icon(
-                                    onPressed: () => setState(() => _items.add(_ItemUpdateRow())),
-                                    icon: const Icon(Icons.add_circle_outline, size: 18),
-                                    label: const Text('Add New Item Row', style: material.TextStyle(fontWeight: FontWeight.bold)),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: context.colors.primaryGold.withOpacity(0.1),
-                                      foregroundColor: context.colors.primaryGold,
-                                      elevation: 0,
-                                      padding: const EdgeInsets.symmetric(vertical: 16),
-                                      shape: RoundedRectangleBorder(
-                                        borderRadius: BorderRadius.circular(12),
-                                        side: BorderSide(color: context.colors.primaryGold.withOpacity(0.3)),
-                                      ),
-                                    ),
-                                  ),
-                                ),
                               ],
                             ).animate().fadeIn(duration: 400.ms, delay: 150.ms).slideY(begin: 0.05),
 
@@ -1074,7 +1161,7 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
 
             // Footer
             material.Container(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               decoration: BoxDecoration(
                 color: isDark ? Colors.black26 : Colors.grey.shade50,
                 border: Border(top: BorderSide(color: context.colors.borderColor)),
@@ -1085,30 +1172,48 @@ class _PackageUpdateDialogState extends ConsumerState<_PackageUpdateDialog> {
                 children: [
                   TextButton(
                     onPressed: () => Navigator.pop(context),
-                    style: TextButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)),
-                    child: Text('Discard Changes', style: material.TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold)),
-                  ),
-                  const Gap(16),
-                  ElevatedButton(
-                    onPressed: _isSaving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: context.colors.primaryGold,
-                      foregroundColor: Colors.black87,
-                      padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-                      elevation: 4,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
-                    child: _isSaving
-                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
-                        : Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.save_rounded, size: 20),
-                              const Gap(10),
-                              Text('Update Record', style: material.TextStyle(fontWeight: FontWeight.w900, fontSize: 15)),
-                            ],
-                          ),
-                  ).animate().scale(delay: 400.ms),
+                    child: Text('Discard Changes', 
+                      style: material.TextStyle(
+                        color: context.colors.textMuted, 
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      )
+                    ),
+                  ),
+                  const Gap(12),
+                  material.Container(
+                    height: 44,
+                    child: ElevatedButton(
+                      onPressed: _isSaving ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: context.colors.primaryGold,
+                        foregroundColor: Colors.black87,
+                        padding: const EdgeInsets.symmetric(horizontal: 28),
+                        elevation: 1,
+                        shadowColor: context.colors.primaryGold.withOpacity(0.2),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        textStyle: material.TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      child: _isSaving
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black87))
+                          : Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.save_rounded, size: 18),
+                                const Gap(8),
+                                const Text('Update Record'),
+                              ],
+                            ),
+                    ),
+                  ).animate().scale(delay: 400.ms, duration: 300.ms, curve: Curves.easeOutBack),
                 ],
               ),
             ),
@@ -1162,11 +1267,11 @@ class _ItemUpdateRowWidget extends ConsumerWidget {
             height: 38,
             decoration: BoxDecoration(color: context.colors.textPrimary.withOpacity(0.02), borderRadius: BorderRadius.circular(6), border: Border.all(color: context.colors.borderColor)),
             child: DropdownButtonFormField<String>(
-              value: row.categoryCtrl.text.isEmpty ? null : row.categoryCtrl.text,
+              value: categoriesList.contains(row.categoryCtrl.text) ? row.categoryCtrl.text : null,
               items: categoriesList.map((c) => DropdownMenuItem(value: c, child: Text(c, style: material.TextStyle(color: context.colors.textPrimary, fontSize: 12)))).toList(),
               onChanged: (val) { if (val != null) row.categoryCtrl.text = val; },
               decoration: const InputDecoration(border: OutlineInputBorder(borderSide: BorderSide.none), contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0)),
-              dropdownColor: context.colors.cardDark,
+              dropdownColor: Theme.of(context).brightness == Brightness.dark ? context.colors.surfaceDark : Colors.white,
               icon: Icon(Icons.expand_more_rounded, color: context.colors.textMuted, size: 16),
             ),
           )),
