@@ -335,6 +335,9 @@ class ReportService {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
+    // Fix: Add font check for details text
+    final font = await PdfGoogleFonts.notoSansRegular();
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.landscape,
@@ -345,14 +348,19 @@ class ReportService {
           pw.TableHelper.fromTextArray(
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
+            cellAlignment: pw.Alignment.centerLeft,
+            cellStyle: pw.TextStyle(font: font, fontSize: 10),
             headers: ['Timestamp', 'Officer', 'Action', 'Entity', 'Details'],
-            data: logs.map((l) => [
-              DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt),
-              l.userFullName ?? 'System',
-              l.action,
-              '${l.entityType.toUpperCase()} (#${l.entityId.substring(0, 8)})',
-              l.details != null ? l.details.toString() : '-',
-            ]).toList(),
+            data: logs.map((l) {
+              String detailsText = l.details != null ? l.details.toString() : '-';
+              return [
+                DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt),
+                l.userFullName ?? 'System',
+                l.action,
+                '${l.entityType.toUpperCase()} (#${l.entityId.length > 8 ? l.entityId.substring(0, 8) : l.entityId})',
+                detailsText,
+              ];
+            }).toList(),
           ),
           _buildFooter(logs.length, label: 'Total Activity Records:'),
         ],
