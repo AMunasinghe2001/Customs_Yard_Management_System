@@ -27,6 +27,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   DateTime? _startDate;
   DateTime? _endDate;
   String _selectedStatus = 'all';
+  String _selectedWarehouse = 'all';
   
   // Track loading state for each button uniquely
   final Map<String, bool> _loadingStates = {};
@@ -91,6 +92,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Widget _buildFilterSection() {
+    final warehouses = ref.watch(warehousesProvider);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -98,41 +101,82 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.colors.primaryGold.withOpacity(0.35)),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            flex: 2,
-            child: _buildDatePicker('Start Date', _startDate, (date) => setState(() => _startDate = date)),
-          ),
-          const Gap(12),
-          Expanded(
-            flex: 2,
-            child: _buildDatePicker('End Date', _endDate, (date) => setState(() => _endDate = date)),
-          ),
-          const Gap(12),
-          Expanded(
-            flex: 1,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Status', style: TextStyle(color: context.colors.textSecondary, fontSize: 11)),
-                const Gap(4),
-                DropdownButtonFormField<String>(
-                  value: _selectedStatus,
-                  isExpanded: true,
-                  dropdownColor: context.colors.cardDark,
-                  style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  items: ['all', 'pending', 'held', 'cleared'].map((s) => 
-                    DropdownMenuItem(value: s, child: Text(s.toUpperCase(), style: const TextStyle(fontSize: 12)))).toList(),
-                  onChanged: (val) => setState(() => _selectedStatus = val!),
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: _buildDatePicker('Start Date', _startDate, (date) => setState(() => _startDate = date)),
+              ),
+              const Gap(12),
+              Expanded(
+                flex: 2,
+                child: _buildDatePicker('End Date', _endDate, (date) => setState(() => _endDate = date)),
+              ),
+              const Gap(12),
+              Expanded(
+                flex: 1,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Status', style: TextStyle(color: context.colors.textSecondary, fontSize: 11)),
+                    const Gap(4),
+                    DropdownButtonFormField<String>(
+                      value: _selectedStatus,
+                      isExpanded: true,
+                      dropdownColor: context.colors.cardDark,
+                      style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      items: ['all', 'pending', 'held', 'cleared', 'returned', 'seized'].map((s) => 
+                        DropdownMenuItem(value: s, child: Text(s.toUpperCase(), style: const TextStyle(fontSize: 12)))).toList(),
+                      onChanged: (val) => setState(() => _selectedStatus = val!),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
+          ),
+          const Gap(12),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Warehouse Selection', style: TextStyle(color: context.colors.textSecondary, fontSize: 11)),
+                    const Gap(4),
+                    DropdownButtonFormField<String>(
+                      value: _selectedWarehouse,
+                      isExpanded: true,
+                      dropdownColor: context.colors.cardDark,
+                      style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        prefixIcon: Icon(Icons.warehouse_rounded, size: 16, color: context.colors.primaryGold),
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      items: [
+                        const DropdownMenuItem(value: 'all', child: Text('ALL WAREHOUSES', style: TextStyle(fontSize: 12))),
+                        ...warehouses.maybeWhen(
+                          data: (list) => list.map((w) => DropdownMenuItem(
+                            value: w.id, 
+                            child: Text('${w.code} - ${w.name}'.toUpperCase(), style: const TextStyle(fontSize: 12))
+                          )).toList(),
+                          orElse: () => [],
+                        ),
+                      ],
+                      onChanged: (val) => setState(() => _selectedWarehouse = val!),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -204,26 +248,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   childAspectRatio: 2.3,
                   children: [
                     _buildReportCard(
-                      title: 'Warehouse Stock',
-                      description: 'Current stock across network.',
-                      icon: Icons.warehouse_rounded,
-                      color: Colors.blue,
-                      onPdf: _generateWarehouseStockPdf,
-                      onExcel: _exportWarehouseStockExcel,
-                    ),
-                    _buildReportCard(
-                      title: 'Returned Packages',
-                      description: 'Items returned from yard.',
-                      icon: Icons.assignment_return_rounded,
-                      color: Colors.orange,
-                      onPdf: _generateReturnedPdf,
-                      onExcel: _exportReturnedExcel,
-                    ),
-                    _buildReportCard(
-                      title: 'Package Audit',
-                      description: 'Full package audit log.',
-                      icon: Icons.fact_check_rounded,
-                      color: Colors.green,
+                      title: 'Packages Inventory Audit',
+                      description: 'Generates report based on active filters above.',
+                      icon: Icons.inventory_2_rounded,
+                      color: context.colors.primaryGold,
+                      onPdf: _generateAllPackagesPdf,
                       onExcel: _exportExcel,
                     ),
                     if (isAdmin)
@@ -237,10 +266,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       ),
                   ],
                 ),
-                const Gap(16),
-                Text('Periodic Summaries', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                const Gap(24),
+                Text('System Configuration & Logs', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
                 const Gap(8),
-                 GridView.count(
+                GridView.count(
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   crossAxisCount: crossAxisCount,
@@ -248,9 +277,38 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   mainAxisSpacing: 12,
                   childAspectRatio: 2.3,
                   children: [
-                    _buildSummaryCard('Daily Summary', Icons.calendar_view_day_rounded, Colors.purple, 'day'),
-                    _buildSummaryCard('Weekly Summary', Icons.calendar_view_week_rounded, Colors.teal, 'week'),
-                    _buildSummaryCard('Monthly Summary', Icons.calendar_view_month_rounded, Colors.indigo, 'month'),
+                    _buildReportCard(
+                      title: 'Hold Reasons',
+                      description: 'System-wide hold reasons list.',
+                      icon: Icons.gavel_rounded,
+                      color: Colors.orange,
+                      onPdf: _generateHoldReasonsPdf,
+                      onExcel: _exportHoldReasonsExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Item Categories',
+                      description: 'Package classification rules.',
+                      icon: Icons.category_rounded,
+                      color: Colors.teal,
+                      onPdf: _generateCategoriesPdf,
+                      onExcel: _exportCategoriesExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Customs Rules',
+                      description: 'Inspection & value thresholds.',
+                      icon: Icons.rule_rounded,
+                      color: Colors.indigo,
+                      onPdf: _generateRulesPdf,
+                      onExcel: _exportRulesExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Audit Logs',
+                      description: 'Date-filtered system activity.',
+                      icon: Icons.history_rounded,
+                      color: Colors.blueGrey,
+                      onPdf: _generateLogsPdf,
+                      onExcel: _exportLogsExcel,
+                    ),
                   ],
                 ),
               ],
@@ -259,6 +317,106 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       },
     );
+  }
+
+  Widget _buildStatusCard(String title, String status, IconData icon, Color color) {
+    return _buildReportCard(
+      title: title,
+      description: 'Filter-based $status list.',
+      icon: icon,
+      color: color,
+      onPdf: () => _generateStatusReport(status, 'pdf'),
+      onExcel: () => _generateStatusReport(status, 'excel'),
+    );
+  }
+
+  Future<void> _generateStatusReport(String status, String format) async {
+    final key = '${status}_$format';
+    _setLoading(key, true);
+    try {
+      final packages = await ref.read(packageServiceProvider).getAllPackages(status: status);
+      final withDate = _filterByDate(packages);
+      final filtered = _filterByWarehouse(withDate);
+
+      if (filtered.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      if (format == 'pdf') {
+        _showPdfPreview(
+          (format) => ReportService().generatePackagePdf(
+            filtered,
+            title: '${status.toUpperCase()} Packages Report',
+            format: format,
+          ),
+          '${status}_Packages_Report.pdf',
+        );
+      } else {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => ExcelExportDialog(
+              title: 'Export ${status.toUpperCase()} Data',
+              recordCount: filtered.length,
+              fileName: '${status}_Packages_Report.xlsx',
+              onExport: () => ReportService().exportPackagesToExcel(filtered),
+              onSave: (bytes) => _handleFileSave(bytes, '${status}_Packages', 'xlsx'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _generateAllPackagesPdf() async {
+    const key = 'Packages Inventory Audit_pdf';
+    _setLoading(key, true);
+    try {
+      final packages = await ref.read(packageServiceProvider).getAllPackages(
+        status: _selectedStatus == 'all' ? null : _selectedStatus,
+      );
+      final withDate = _filterByDate(packages);
+      final filtered = _filterByWarehouse(withDate);
+      
+      if (filtered.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      final statusTitle = _selectedStatus == 'all' ? 'ALL' : _selectedStatus.toUpperCase();
+      
+      String warehouseTitle = '';
+      if (_selectedWarehouse != 'all') {
+        final warehouses = ref.read(warehousesProvider).asData?.value;
+        final wh = warehouses?.firstWhere((w) => w.id == _selectedWarehouse);
+        if (wh != null) {
+          warehouseTitle = ' - ${wh.code}';
+        }
+      }
+
+      final dateRangeStr = (_startDate != null && _endDate != null) 
+          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+          : 'Full Historical Audit';
+
+      _showPdfPreview(
+        (format) => ReportService().generatePackagePdf(
+          filtered,
+          title: '$statusTitle PACKAGES INVENTORY AUDIT$warehouseTitle',
+          dateRange: dateRangeStr,
+          format: format.copyWith(marginLeft: 20, marginRight: 20, marginTop: 20, marginBottom: 20),
+        ),
+        '${statusTitle.replaceAll(' ', '_')}${warehouseTitle.replaceAll(' ', '_')}_Audit_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
   }
 
   void _showPdfPreview(
@@ -443,7 +601,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     try {
       final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
-      final filtered = _filterWarehouseByDate(entries);
+      final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
       } else {
@@ -469,7 +627,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     try {
       final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
-      final filtered = _filterWarehouseByDate(entries);
+      final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
       } else {
@@ -498,7 +656,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     try {
       final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
-      final filtered = _filterWarehouseByDate(entries);
+      final filtered = _filterByDate(entries);
       _showPdfPreview(
         (format) => ReportService().generateWarehousePdf(
           filtered, 
@@ -520,7 +678,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     try {
       final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
-      final filtered = _filterWarehouseByDate(entries);
+      final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
       } else {
@@ -550,7 +708,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     try {
       final admitted = await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
-      final filtered = _filterWarehouseByDate(admitted);
+      final filtered = _filterByDate(admitted);
       
       if (filtered.isEmpty) {
         _showNoDataMessage();
@@ -633,28 +791,54 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }).toList();
   }
 
+List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
+    if (_selectedWarehouse == 'all') return list;
+    return list.where((p) {
+      if (p.warehouseEntries.isEmpty) return false;
+      return p.warehouseEntries.any((e) => e.warehouseId == _selectedWarehouse);
+    }).toList();
+  }
+
   Future<void> _exportExcel() async {
-    const key = 'Package Audit_excel';
+    const key = 'Packages Inventory Audit_excel';
     _setLoading(key, true);
     try {
       final packages = await ref.read(packageServiceProvider).getAllPackages(
         status: _selectedStatus == 'all' ? null : _selectedStatus,
       );
-      
-      final filtered = _filterByDate(packages);
-      
+
+      final withDate = _filterByDate(packages);
+      final filtered = _filterByWarehouse(withDate);
+
       if (filtered.isEmpty) {
         _showNoDataMessage();
       } else {
+        final statusName = _selectedStatus == 'all' ? 'ALL' : _selectedStatus.toUpperCase();
+        
+        String whSuffix = '';
+        if (_selectedWarehouse != 'all') {
+          final warehouses = ref.read(warehousesProvider).asData?.value;
+          final wh = warehouses?.firstWhere((w) => w.id == _selectedWarehouse);
+          if (wh != null) whSuffix = ' - ${wh.code}';
+        }
+
         if (mounted) {
+          final dateRangeStr = (_startDate != null && _endDate != null) 
+              ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+              : 'Full Historical Audit';
+
           showDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
-              title: 'Export Package Audit',
+              title: 'Export $statusName$whSuffix Inventory Audit',
               recordCount: filtered.length,
-              fileName: 'Package_Audit_Log.xlsx',
-              onExport: () => ReportService().exportPackagesToExcel(filtered),
-              onSave: (bytes) => _handleFileSave(bytes, 'Package_Audit_Log', 'xlsx'),
+              fileName: '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit.xlsx',
+              onExport: () => ReportService().exportPackagesToExcel(
+                filtered,
+                title: '$statusName PACKAGES INVENTORY AUDIT$whSuffix',
+                subTitle: dateRangeStr,
+              ),
+              onSave: (bytes) => _handleFileSave(bytes, '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit', 'xlsx'),
             ),
           );
         }
@@ -664,6 +848,249 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     } finally {
       _setLoading(key, false);
     }
+  }
+
+  Future<void> _generateHoldReasonsPdf() async {
+    const key = 'Hold Reasons_pdf';
+    _setLoading(key, true);
+    try {
+      final reasons = await ref.read(holdReasonServiceProvider).getReasons();
+      if (reasons.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      _showPdfPreview(
+        (format) => ReportService().generateHoldReasonsPdf(reasons),
+        'Hold_Reasons_Audit.pdf',
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _exportHoldReasonsExcel() async {
+    const key = 'Hold Reasons_excel';
+    _setLoading(key, true);
+    try {
+      final reasons = await ref.read(holdReasonServiceProvider).getReasons();
+      if (reasons.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => ExcelExportDialog(
+            title: 'Export Hold Reasons',
+            recordCount: reasons.length,
+            fileName: 'Hold_Reasons_Audit.xlsx',
+            onExport: () => ReportService().exportHoldReasonsToExcel(reasons),
+            onSave: (bytes) => _handleFileSave(bytes, 'Hold_Reasons_Audit', 'xlsx'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _generateCategoriesPdf() async {
+    const key = 'Item Categories_pdf';
+    _setLoading(key, true);
+    try {
+      final cats = await ref.read(packageCategoryServiceProvider).getCategories();
+      if (cats.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      _showPdfPreview(
+        (format) => ReportService().generateCategoriesPdf(cats),
+        'Item_Categories_Audit.pdf',
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _exportCategoriesExcel() async {
+    const key = 'Item Categories_excel';
+    _setLoading(key, true);
+    try {
+      final cats = await ref.read(packageCategoryServiceProvider).getCategories();
+      if (cats.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => ExcelExportDialog(
+            title: 'Export Item Categories',
+            recordCount: cats.length,
+            fileName: 'Item_Categories_Audit.xlsx',
+            onExport: () => ReportService().exportCategoriesToExcel(cats),
+            onSave: (bytes) => _handleFileSave(bytes, 'Item_Categories_Audit', 'xlsx'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _generateRulesPdf() async {
+    const key = 'Customs Rules_pdf';
+    _setLoading(key, true);
+    try {
+      final rules = await ref.read(customsRulesServiceProvider).getAllRules();
+      if (rules.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      _showPdfPreview(
+        (format) => ReportService().generateRulesPdf(rules),
+        'Customs_Rules_Audit.pdf',
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _exportRulesExcel() async {
+    const key = 'Customs Rules_excel';
+    _setLoading(key, true);
+    try {
+      final rules = await ref.read(customsRulesServiceProvider).getAllRules();
+      if (rules.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => ExcelExportDialog(
+            title: 'Export Customs Rules',
+            recordCount: rules.length,
+            fileName: 'Customs_Rules_Audit.xlsx',
+            onExport: () => ReportService().exportRulesToExcel(rules),
+            onSave: (bytes) => _handleFileSave(bytes, 'Customs_Rules_Audit', 'xlsx'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _generateLogsPdf() async {
+    const key = 'Audit Logs_pdf';
+    _setLoading(key, true);
+    try {
+      final allLogs = await ref.read(auditLogServiceProvider).getAllLogs();
+      final filtered = _filterByDate(allLogs);
+      
+      if (filtered.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      final dateRangeStr = (_startDate != null && _endDate != null) 
+          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+          : 'Full Historical Logs';
+
+      _showPdfPreview(
+        (format) => ReportService().generateLogsPdf(filtered, dateRangeStr),
+        'System_Audit_Logs.pdf',
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _exportLogsExcel() async {
+    const key = 'Audit Logs_excel';
+    _setLoading(key, true);
+    try {
+      final allLogs = await ref.read(auditLogServiceProvider).getAllLogs();
+      final filtered = _filterByDate(allLogs);
+
+      if (filtered.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      final dateRangeStr = (_startDate != null && _endDate != null) 
+          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+          : 'Full Historical Logs';
+
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => ExcelExportDialog(
+            title: 'Export Audit Logs',
+            recordCount: filtered.length,
+            fileName: 'System_Audit_Logs.xlsx',
+            onExport: () => ReportService().exportLogsToExcel(filtered, dateRangeStr),
+            onSave: (bytes) => _handleFileSave(bytes, 'System_Audit_Logs', 'xlsx'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  List<T> _filterByDate<T>(List<T> list) {
+    if (_startDate == null && _endDate == null) return list;
+    return list.where((item) {
+      DateTime? dt;
+      if (item is PackageModel) {
+        dt = item.entryDate;
+      } else if (item is AuditLogModel) {
+        dt = item.createdAt;
+      } else if (item is ProfileModel) {
+        dt = item.createdAt;
+      } else if (item is WarehouseEntryModel) {
+        dt = item.admittedAt;
+      } else {
+        return true;
+      }
+
+      if (dt == null) return false;
+
+      // Start date normalization (midnight)
+      if (_startDate != null) {
+        final start = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+        if (dt.isBefore(start)) return false;
+      }
+
+      // End date normalization (end of day)
+      if (_endDate != null) {
+        final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59);
+        if (dt.isAfter(end)) return false;
+      }
+
+      return true;
+    }).toList();
   }
 
   Future<void> _generateStaffPdf() async {
@@ -681,7 +1108,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _setLoading(key, false);
     }
   }
-
 
   Future<void> _exportSummaryExcel(String reportTitle, String periodLabel, List<Map<String, dynamic>> summary) async {
     final key = 'summary_xl';
@@ -732,33 +1158,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     } finally {
       _setLoading(key, false);
     }
-  }
-
-  List<PackageModel> _filterByDate(List<PackageModel> list) {
-    if (_startDate == null && _endDate == null) return list;
-    return list.where((p) {
-      if (p.entryDate == null) return false;
-      bool matches = true;
-      if (_startDate != null) matches &= p.entryDate!.isAfter(_startDate!) || p.entryDate!.isAtSameMomentAs(_startDate!);
-      if (_endDate != null) {
-        final endOfDay = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59);
-        matches &= p.entryDate!.isBefore(endOfDay);
-      }
-      return matches;
-    }).toList();
-  }
-
-  List<WarehouseEntryModel> _filterWarehouseByDate(List<WarehouseEntryModel> list) {
-    if (_startDate == null && _endDate == null) return list;
-    return list.where((e) {
-      bool matches = true;
-      if (_startDate != null) matches &= e.admittedAt.isAfter(_startDate!) || e.admittedAt.isAtSameMomentAs(_startDate!);
-      if (_endDate != null) {
-        final endOfDay = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59);
-        matches &= e.admittedAt.isBefore(endOfDay);
-      }
-      return matches;
-    }).toList();
   }
 
   void _showNoDataMessage() {

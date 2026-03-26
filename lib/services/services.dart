@@ -109,10 +109,11 @@ class AuthService {
 // ── Package Service ──────────────────────────────────────────
 
 class PackageService {
-  Future<List<PackageModel>> getAllPackages({String? status, String? search}) async {
+  Future<List<PackageModel>> getAllPackages({String? status, String? search, DateTime? since}) async {
     var query = supabase.from('packages')
         .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)');
     if (status != null && status != 'all' && status != 'returned') query = query.eq('status', status);
+    if (since != null) query = query.gte('created_at', since.toIso8601String());
     if (search != null && search.isNotEmpty) {
       query = query.or('sr_number.ilike.%$search%,consignee_name.ilike.%$search%');
     }
@@ -223,17 +224,35 @@ class PackageService {
     }
   }
 
-  Future<Map<String, int>> getDashboardStats() async {
+  Future<Map<String, dynamic>> getDashboardStats() async {
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
+    
+    // Get all packages created or updated today
     final all = await supabase.from('packages').select('status')
         .gte('created_at', startOfDay.toIso8601String());
-    int cleared = 0, held = 0;
+        
+    int clearedOrReturned = 0;
+    int held = 0;
+    int seized = 0;
+
     for (final p in all) {
-      if (p['status'] == 'cleared') cleared++;
-      if (p['status'] == 'held') held++;
+      final status = p['status'] as String;
+      // Cleared includes both 'cleared' and 'returned' statuses
+      if (status == 'cleared' || status == 'returned') clearedOrReturned++;
+      if (status == 'held') held++;
+      if (status == 'seized') seized++;
     }
-    return {'total': all.length, 'cleared': cleared, 'held': held};
+
+    // Get current storage rate
+    final storageRate = await CustomsRulesService().getStorageRate();
+
+    return {
+      'seized': seized,
+      'cleared': clearedOrReturned,
+      'held': held,
+      'storageRate': storageRate,
+    };
   }
 }
 

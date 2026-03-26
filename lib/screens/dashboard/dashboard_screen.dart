@@ -13,8 +13,8 @@ import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
 import 'package:data_table_2/data_table_2.dart';
 
-final dashboardStatsProvider = FutureProvider<Map<String, int>>((ref) async {
-  return ref.read(packageServiceProvider).getDashboardStats();
+final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  return await ref.read(packageServiceProvider).getDashboardStats();
 });
 
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {

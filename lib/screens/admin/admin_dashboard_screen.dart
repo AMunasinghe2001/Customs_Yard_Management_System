@@ -14,12 +14,14 @@ import '../../widgets/status_chip.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 // Reuse providers from DashboardScreen
-final dashboardStatsProvider = FutureProvider<Map<String, int>>((ref) async {
-  return ref.read(packageServiceProvider).getDashboardStats();
+final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {   
+  return await ref.read(packageServiceProvider).getDashboardStats();
 });
 
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
-  final all = await ref.read(packageServiceProvider).getAllPackages();
+  final today = DateTime.now();
+  final startOfDay = DateTime(today.year, today.month, today.day);
+  final all = await ref.read(packageServiceProvider).getAllPackages(since: startOfDay);
   return all.take(10).toList();
 });
 
@@ -75,15 +77,15 @@ class AdminDashboardScreen extends ConsumerWidget {
                         Expanded(
                             child: _buildPkgStat(
                                 context,
-                                'Total Today',
-                                "${data['total'] ?? 0}",
-                                Icons.inventory_2_rounded,
-                                context.colors.accentLightBlue)),
+                                'Seized Today',
+                                "${data['seized'] ?? 0}",
+                                Icons.gavel_rounded,
+                                context.colors.dangerRed)),
                         const Gap(12),
                         Expanded(
                             child: _buildPkgStat(
                                 context,
-                                'Cleared',
+                                'Returned (Cleared)',
                                 "${data['cleared'] ?? 0}",
                                 Icons.check_circle_rounded,
                                 context.colors.successGreen)),
@@ -99,15 +101,10 @@ class AdminDashboardScreen extends ConsumerWidget {
                         Expanded(
                             child: _buildPkgStat(
                                 context,
-                                'Active Rules',
-                                rules.maybeWhen(
-                                    data: (d) => d
-                                        .where((r) => r.isActive)
-                                        .length
-                                        .toString(),
-                                    orElse: () => '...'),
-                                Icons.gavel_rounded,
-                                context.colors.warningAmber)),
+                                'Warehouse Charges',
+                                "LKR ${(data['storageRate'] ?? 0.0).toStringAsFixed(2)}",
+                                Icons.account_balance_wallet_rounded,
+                                context.colors.accentLightBlue)),
                       ],
                     ),
                   )
@@ -345,18 +342,22 @@ class AdminDashboardScreen extends ConsumerWidget {
           childAspectRatio: 3.5,
           children: [
             _shortcut(context, 'Officers', Icons.person_add_rounded,
-                () => context.go('/admin/panel?tab=0')),
-            _shortcut(context, 'Rules', Icons.gavel_rounded,
-                () => context.go('/admin/panel?tab=1')),
+                () => context.go('/admin/panel?tab=0'),
+                color: context.colors.primaryGold),
+            _shortcut(context, 'Customs Rules', Icons.gavel_rounded,
+                () => context.go('/admin/panel?tab=1'),
+                color: context.colors.primaryGold),
             _shortcut(context, 'Categories', Icons.category_rounded,
-                () => context.go('/admin/panel?tab=2')),
-            _shortcut(context, 'Logs', Icons.history_rounded,
-                () => context.go('/admin/panel?tab=4')),
-            _shortcut(context, 'Charges', Icons.settings_suggest_rounded,
+                () => context.go('/admin/panel?tab=2'),
+                color: context.colors.primaryGold),
+            _shortcut(context, 'Storage Charges', Icons.payments_rounded,
                 () => context.go('/admin/panel?tab=3'),
                 color: context.colors.primaryGold),
-            _shortcut(context, 'Reports', Icons.summarize_rounded,
-                () => context.go('/reports'),
+            _shortcut(context, 'Hold Reasons', Icons.list_alt_rounded,
+                () => context.go('/admin/panel?tab=4'),
+                color: context.colors.primaryGold),
+            _shortcut(context, 'System Logs', Icons.history_rounded,
+                () => context.go('/admin/panel?tab=5'),
                 color: context.colors.primaryGold),
           ],
         ),
@@ -488,11 +489,13 @@ class _RecentPackagesTable extends StatelessWidget {
                         fontSize: 13)),
                 size: ColumnSize.L),
             DataColumn2(
-                label: Text('Status',
-                    style: TextStyle(
-                        color: context.colors.primaryGold,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13)),
+                label: Center(
+                  child: Text('Status',
+                      style: TextStyle(
+                          color: context.colors.primaryGold,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
+                ),
                 size: ColumnSize.S,
                 fixedWidth: 100),
             DataColumn2(
@@ -513,7 +516,7 @@ class _RecentPackagesTable extends StatelessWidget {
                     DataCell(Text(p.consigneeName,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13))),
-                    DataCell(StatusChip(status: p.status)),
+                    DataCell(Center(child: StatusChip(status: p.status))),
                     DataCell(Text(
                         DateFormat('dd/MM/yy HH:mm').format(p.createdAt),
                         style: TextStyle(
