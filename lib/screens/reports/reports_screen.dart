@@ -255,6 +255,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: _generateAllPackagesPdf,
                       onExcel: _exportExcel,
                     ),
+                    _buildReportCard(
+                      title: 'Category & Zone Summary',
+                      description: 'Inventory distribution by category & warehouse zones.',
+                      icon: Icons.pie_chart_rounded,
+                      color: Colors.purpleAccent,
+                      onPdf: _generateCategoryZonePdf,
+                      onExcel: _exportCategoryZoneExcel,
+                    ),
                     if (isAdmin)
                       _buildReportCard(
                         title: 'Staff Audit',
@@ -368,6 +376,58 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
     } catch (e) {
       _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _generateCategoryZonePdf() async {
+    const key = 'Category & Zone Summary_pdf';
+    _setLoading(key, true);
+    try {
+      final packages = await ref.read(packageServiceProvider).getAllPackages();
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+      
+      final withDatePkgs = _filterByDate(packages);
+      final withDateEntries = _filterByDate(entries);
+
+      if (withDatePkgs.isEmpty && withDateEntries.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      _showPdfPreview(
+        (format) => ReportService().generateCategoryAndZonePdf(withDatePkgs, withDateEntries),
+        'Category_Zone_Summary_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
+      );
+    } catch (e) {
+      _showError('Error generating Category/Zone PDF: $e');
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _exportCategoryZoneExcel() async {
+    const key = 'Category & Zone Summary_excel';
+    _setLoading(key, true);
+    try {
+      final packages = await ref.read(packageServiceProvider).getAllPackages();
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+      
+      final withDatePkgs = _filterByDate(packages);
+      final withDateEntries = _filterByDate(entries);
+
+      if (withDatePkgs.isEmpty && withDateEntries.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      final bytes = await ReportService().exportCategoryAndZoneToExcel(withDatePkgs, withDateEntries);
+      if (bytes != null) {
+        _handleFileSave(bytes, 'Category_Zone_Summary_${DateFormat('yyyyMMdd').format(DateTime.now())}', 'xlsx');
+      }
+    } catch (e) {
+      _showError('Error exporting Category/Zone Excel: $e');
     } finally {
       _setLoading(key, false);
     }

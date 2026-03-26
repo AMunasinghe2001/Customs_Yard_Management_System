@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -43,11 +44,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     type: MaskAutoCompletionType.lazy,
   );
   
+  // Custom SR formatter to handle various formats while maintaining some structure
   final _srMask = MaskTextInputFormatter(
-    mask: '## #/SR/##/####',
+    mask: '********************', // Allow up to 20 generic characters
     filter: {
-      "#": RegExp(r'[0-9]'),
-      "A": RegExp(r'[A-Za-z]'),
+      "*": RegExp(r'[a-zA-Z0-9/ ]'), // Allow alphanumeric, slash, and spaces
     },
     type: MaskAutoCompletionType.lazy,
   );
@@ -294,15 +295,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                               child: TextFormField(
                                 controller: _srNumberCtrl,
                                 inputFormatters: [
-                                  MaskTextInputFormatter(
-                                    mask: 'AA #/SR/##/####', // Expect GL 1/SR/01/2025
-                                    filter: {"#": RegExp(r'[0-9]'), "A": RegExp(r'[A-Za-z]')},
-                                    type: MaskAutoCompletionType.lazy,
-                                  )
+                                  FilteringTextInputFormatter.allow(RegExp(r'[a-zA-Z0-9/ ]')),
+                                  LengthLimitingTextInputFormatter(30),
                                 ],
                                 decoration: InputDecoration(
                                   labelText: 'SR Number *',
-                                  hintText: 'e.g. GL 1/SR/01/2025',
+                                  hintText: 'e.g. GL1/SR/01/2025 or GL1/MISC/187/2025',
                                   suffixIcon: IconButton(
                                     icon: _isLookingUp
                                       ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryGold))
@@ -312,6 +310,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                                 ),
                                 validator: (v) => v!.isEmpty ? 'Required' : null,
                                 onFieldSubmitted: (_) => _loadBySrNumber(),
+                                textCapitalization: TextCapitalization.characters,
                               ),
                             ),
                             const Gap(16),

@@ -13,6 +13,104 @@ class ReportService {
   factory ReportService() => _instance;
   ReportService._internal();
 
+  /// Generates a PDF report for report items with category summary and zone summary
+  Future<Uint8List> generateCategoryAndZonePdf(List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+
+    // Grouping by Category
+    final categoryCounts = <String, int>{};
+    for (var pkg in packages) {
+      for (var item in pkg.items) {
+        final cat = item.category ?? 'Uncategorized';
+        categoryCounts[cat] = (categoryCounts[cat] ?? 0) + item.quantity;
+      }
+    }
+
+    // Grouping by Zone (only for current entries)
+    final zoneCounts = <String, int>{};
+    for (var entry in entries) {
+      if (!entry.isReturned) {
+        final zone = entry.zone ?? 'No Zone';
+        zoneCounts[zone] = (zoneCounts[zone] ?? 0) + 1;
+      }
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          _buildHeader('Packaging & Distribution Audit', dateStr, ''),
+          pw.SizedBox(height: 20),
+          
+          pw.Text('Inventory by Item Category', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
+          pw.SizedBox(height: 10),
+          pw.TableHelper.fromTextArray(
+            headers: ['Category', 'Total Items'],
+            data: categoryCounts.entries.map((e) => [e.key, e.value.toString()]).toList(),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.center},
+          ),
+          
+          pw.SizedBox(height: 30),
+          
+          pw.Text('Active Inventory by Warehouse Zone', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
+          pw.SizedBox(height: 10),
+          pw.TableHelper.fromTextArray(
+            headers: ['Zone', 'Package Count'],
+            data: zoneCounts.entries.map((e) => [e.key, e.value.toString()]).toList(),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.center},
+          ),
+          
+          pw.SizedBox(height: 20),
+          _buildFooter(packages.length),
+        ],
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  /// Exports category and zone data to Excel
+  Future<Uint8List?> exportCategoryAndZoneToExcel(List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
+    var excel = Excel.createExcel();
+    excel.delete('Sheet1');
+
+    // Category Sheet
+    Sheet catSheet = excel['Category Summary'];
+    catSheet.appendRow([TextCellValue('CATEGORY INVENTORY SUMMARY')]);
+    catSheet.appendRow([TextCellValue('Item Category'), TextCellValue('Total Quantity')]);
+    
+    final categoryCounts = <String, int>{};
+    for (var pkg in packages) {
+      for (var item in pkg.items) {
+        final cat = item.category ?? 'Uncategorized';
+        categoryCounts[cat] = (categoryCounts[cat] ?? 0) + item.quantity;
+      }
+    }
+    categoryCounts.forEach((cat, qty) => catSheet.appendRow([TextCellValue(cat), IntCellValue(qty)]));
+
+    // Zone Sheet
+    Sheet zoneSheet = excel['Zone Summary'];
+    zoneSheet.appendRow([TextCellValue('WAREHOUSE ZONE OCCUPANCY')]);
+    zoneSheet.appendRow([TextCellValue('Zone'), TextCellValue('Active Packages')]);
+    
+    final zoneCounts = <String, int>{};
+    for (var entry in entries) {
+      if (!entry.isReturned) {
+        final zone = entry.zone ?? 'No Zone';
+        zoneCounts[zone] = (zoneCounts[zone] ?? 0) + 1;
+      }
+    }
+    zoneCounts.forEach((zone, count) => zoneSheet.appendRow([TextCellValue(zone), IntCellValue(count)]));
+
+    return Uint8List.fromList(excel.encode()!);
+  }
+
   /// Generates a PDF report for a list of packages
   Future<Uint8List> generatePackagePdf(List<PackageModel> packages, {
     String? title, 
