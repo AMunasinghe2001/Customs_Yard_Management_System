@@ -73,6 +73,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         ? p.inspectedByBadge 
         : salaryNumber;
 
+    // Get current user's role to conditionally disable update button
+    final currentProfile = ref.watch(currentProfileProvider);
+    final isOfficer = currentProfile?.role == 'officer';
+
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final headerTextColor = Colors.white;
 
@@ -333,16 +337,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Update Button
-                    ElevatedButton.icon(
-                      icon: const Icon(Icons.edit_rounded, size: 16),
-                      label: const Text('Update'),
-                      onPressed: () {
-                        showDialog(
-                          context: context,
-                          builder: (_) => PackageUpdateDialog(package: p, storageRate: widget.storageRate),
-                        );
-                      },
+                    // Update Button - Disabled for officers
+                    material.Tooltip(
+                      message: isOfficer ? 'Package updates are restricted to administrators only' : '',
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.edit_rounded, size: 16),
+                        label: const Text('Update'),
+                        onPressed: isOfficer ? null : () {
+                          showDialog(
+                            context: context,
+                            builder: (_) => PackageUpdateDialog(package: p, storageRate: widget.storageRate),
+                          );
+                        },
+                      ),
                     ),
                     // Close Window Button
                     TextButton(

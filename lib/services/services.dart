@@ -345,33 +345,95 @@ class WarehouseService {
     return stats;
   }
 
-  Future<Map<String, int>> getZoneStats() async {
-    final entries = await supabase.from('warehouse_entries')
-        .select('zone, is_returned')
-        .eq('is_returned', false);
-    
-    final Map<String, int> stats = {};
-    for (final e in entries) {
-      final zone = e['zone'] as String? ?? 'No Zone';
-      stats[zone] = (stats[zone] ?? 0) + 1;
-    }
-    return stats;
+  Future<Map<String, int>>getZoneStats() async {
+    return {}; // Logic moved to Combined stats
   }
 
   Future<Map<String, int>> getCategoryStats() async {
-    final items = await supabase.from('package_items')
-        .select('category, quantity, packages(status)')
-        .not('packages.status', 'eq', 'returned'); // Only active items
+    return {}; // Logic moved to Combined stats
+  }
+
+  Future<List<Map<String, dynamic>>> getCategoryZoneCombinedSummary() async {
+    final entries = await supabase.from('warehouse_entries')
+        .select('zone, warehouses!inner(code, name), packages!inner(package_items!inner(category, quantity))')
+        .eq('is_returned', false);
     
-    final Map<String, int> stats = {};
-    for (final i in items) {
-      if (i['packages'] != null) {
-        final cat = i['category'] as String? ?? 'Uncategorized';
-        final qty = (i['quantity'] as num?)?.toInt() ?? 0;
-        stats[cat] = (stats[cat] ?? 0) + qty;
+    // Fetch all categories to map their default zones
+    final categoriesData = await supabase.from('package_categories').select('name, target_zone');
+    final Map<String, String> categoryZoneMap = {};
+    final Map<String, String> originalNamesMap = {}; // To format category names nicely
+    
+    for (final cat in (categoriesData as List)) {
+      final cName = cat['name']?.toString();
+      if (cName != null) {
+        final lower = cName.toLowerCase().trim();
+        categoryZoneMap[lower] = cat['target_zone']?.toString() ?? 'N/A';
+        originalNamesMap[lower] = cName;
       }
     }
-    return stats;
+    
+    final Map<String, Map<String, dynamic>> summary = {};
+    
+    for (final e in entries) {
+      final warehouseZone = e['zone']?.toString();
+      final warehouseData = e['warehouses'] as Map?;
+      final warehouseCode = warehouseData?['code']?.toString() ?? 'W/H';
+      
+      final pkg = e['packages'] as Map?;
+      if (pkg != null && pkg['package_items'] != null) {
+        final items = pkg['package_items'] as List;
+        for (final item in items) {
+          final cat = item['category'] as String? ?? 'Uncategorized';
+          final qty = (item['quantity'] as num?)?.toInt() ?? 0;
+          
+          final catLower = cat.toLowerCase().trim();
+          final isKnown = categoryZoneMap.containsKey(catLower);
+          
+          // Group all dummy/unknown data into 'Uncategorized' to clean up the table
+          final finalCat = isKnown ? originalNamesMap[catLower]! : 'Uncategorized';
+          
+          // Logic for Zone: Warehouse Zone -> Category Default -> N/A
+          String zone = 'N/A';
+          if (warehouseZone != null && 
+              warehouseZone.trim().isNotEmpty && 
+              warehouseZone != 'null' && 
+              warehouseZone.trim().toUpperCase() != 'N/A') {
+            zone = warehouseZone.trim();
+          } else if (isKnown) {
+            final targetZone = categoryZoneMap[catLower];
+            if (targetZone != null && targetZone.isNotEmpty && targetZone != 'null') {
+              zone = targetZone;
+            }
+          }
+          
+          final key = '$finalCat|$zone';
+          if (!summary.containsKey(key)) {
+            summary[key] = {
+              'category': finalCat,
+              'warehouses': <String>{},
+              'zone': zone,
+              'count': 0,
+            };
+          }
+          
+          if (warehouseCode != 'W/H') {
+            (summary[key]!['warehouses'] as Set<String>).add(warehouseCode);
+          }
+          summary[key]!['count'] = (summary[key]!['count'] as int) + qty;
+        }
+      }
+    }
+
+    return summary.values.map((v) {
+      final whSet = v['warehouses'] as Set<String>;
+      final whString = whSet.isEmpty ? 'W/H' : whSet.join(',');
+      return {
+        'category': v['category'],
+        'warehouse': whString,
+        'zone': v['zone'],
+        'count': v['count'],
+      };
+    }).toList();
   }
 }
 

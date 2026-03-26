@@ -25,6 +25,10 @@ final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   return all.take(10).toList();
 });
 
+final categoryZoneSummaryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  return ref.read(warehouseServiceProvider).getCategoryZoneCombinedSummary();
+});
+
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
 
@@ -80,7 +84,8 @@ class AdminDashboardScreen extends ConsumerWidget {
                                 'Seized Today',
                                 "${data['seized'] ?? 0}",
                                 Icons.gavel_rounded,
-                                context.colors.dangerRed)),
+                                context.colors.dangerRed,
+                                small: true)),
                         const Gap(12),
                         Expanded(
                             child: _buildPkgStat(
@@ -88,7 +93,8 @@ class AdminDashboardScreen extends ConsumerWidget {
                                 'Returned (Cleared)',
                                 "${data['cleared'] ?? 0}",
                                 Icons.check_circle_rounded,
-                                context.colors.successGreen)),
+                                context.colors.successGreen,
+                                small: true)),
                         const Gap(12),
                         Expanded(
                             child: _buildPkgStat(
@@ -96,7 +102,8 @@ class AdminDashboardScreen extends ConsumerWidget {
                                 'Held in SR',
                                 "${data['held'] ?? 0}",
                                 Icons.report_problem_rounded,
-                                context.colors.heldOrange)),
+                                context.colors.heldOrange,
+                                small: true)),
                         const Gap(12),
                         Expanded(
                             child: _buildPkgStat(
@@ -104,7 +111,8 @@ class AdminDashboardScreen extends ConsumerWidget {
                                 'Warehouse Charges',
                                 "LKR ${(data['storageRate'] ?? 0.0).toStringAsFixed(2)}",
                                 Icons.account_balance_wallet_rounded,
-                                context.colors.accentLightBlue)),
+                                context.colors.accentLightBlue,
+                                small: true)),
                       ],
                     ),
                   )
@@ -125,12 +133,9 @@ class AdminDashboardScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child:
-                                _buildOnlineOfficersList(context, ref, online),
-                          ),
-                          const Gap(16),
                           _buildQuickShortcutsGrid(context),
+                          const Gap(24),
+                          _buildSummaryGrid(context, ref),
                         ],
                       ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
                     ),
@@ -141,6 +146,8 @@ class AdminDashboardScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          _buildOnlineOfficersList(context, ref, online),
+                          const Gap(24),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -226,9 +233,9 @@ class AdminDashboardScreen extends ConsumerWidget {
   }
 
   Widget _buildPkgStat(BuildContext context, String label, String value,
-      IconData icon, Color color) {
+      IconData icon, Color color, {bool small = false}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: small ? 8 : 12),
       decoration: BoxDecoration(
         color: context.colors.cardDark,
         borderRadius: BorderRadius.circular(14),
@@ -237,12 +244,12 @@ class AdminDashboardScreen extends ConsumerWidget {
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(10),
+            padding: EdgeInsets.all(small ? 8 : 10),
             decoration: BoxDecoration(
               color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Icon(icon, color: color, size: 24),
+            child: Icon(icon, color: color, size: small ? 20 : 24),
           ),
           const Gap(12),
           Expanded(
@@ -253,12 +260,12 @@ class AdminDashboardScreen extends ConsumerWidget {
                 Text(value,
                     style: TextStyle(
                         color: context.colors.textPrimary,
-                        fontSize: 24,
+                        fontSize: small ? 20 : 24,
                         fontWeight: FontWeight.bold,
                         height: 1.1)),
                 Text(label,
                     style: TextStyle(
-                        color: context.colors.textSecondary, fontSize: 12)),
+                        color: context.colors.textSecondary, fontSize: small ? 11 : 12)),
               ],
             ),
           ),
@@ -272,36 +279,53 @@ class AdminDashboardScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Officers Currently Logged In',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
-        const Gap(12),
-        Expanded(
-          child: Container(
-            decoration: BoxDecoration(
-              color: context.colors.cardDark,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: context.colors.borderColor),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text('Officers Online',
+                style: Theme.of(context)
+                    .textTheme
+                    .titleSmall
+                    ?.copyWith(fontWeight: FontWeight.w600)),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: context.colors.successGreen.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                online.maybeWhen(data: (d) => d.length.toString(), orElse: () => '0'),
+                style: TextStyle(color: context.colors.successGreen, fontSize: 11, fontWeight: FontWeight.bold),
+              ),
             ),
-            child: online.when(
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(onlineProfilesProvider)),
-              data: (list) => list.isEmpty
-                  ? _buildEmptyOnline(context)
-                  : ListView.separated(
+          ],
+        ),
+        const Gap(8),
+        Container(
+          height: 140, // Reduced height for logs-like feel
+          decoration: BoxDecoration(
+            color: context.colors.cardDark,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: context.colors.borderColor),
+          ),
+          child: online.when(
+            loading: () => const Center(child: CircularProgressIndicator()),
+            error: (e, _) => ErrorView(
+                error: e, onRetry: () => ref.refresh(onlineProfilesProvider)),
+            data: (list) => list.isEmpty
+                ? _buildEmptyOnline(context)
+                : Scrollbar(
+                  child: ListView.separated(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       itemCount: list.length,
                       separatorBuilder: (_, __) => Divider(
                           height: 1,
                           color: context.colors.borderColor,
-                          indent: 60),
+                          indent: 50),
                       itemBuilder: (ctx, i) =>
                           _OnlineMemberTile(profile: list[i]),
                     ),
-            ),
+                ),
           ),
         ),
       ],
@@ -364,7 +388,77 @@ class AdminDashboardScreen extends ConsumerWidget {
       ],
     );
   }
-
+  Widget _buildSummaryGrid(BuildContext context, WidgetRef ref) {
+    return Expanded(
+      child: Column(
+        key: const ValueKey('category_zone_summary_column'),
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Category & Zone Inventory', 
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          const Gap(8),
+          ref.watch(categoryZoneSummaryProvider).when(
+            data: (summary) {
+              if (summary.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No active inventory.')));
+              return Expanded(
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: context.colors.cardDark,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: context.colors.borderColor),
+                  ),
+                  child: Column(
+                    children: [
+                      // Header
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: context.colors.surfaceDark,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+                          border: Border(bottom: BorderSide(color: context.colors.borderColor)),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(flex: 5, child: Text('Category', style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
+                            Expanded(flex: 5, child: Text('W/H - Zone', style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
+                            Expanded(flex: 2, child: Text('Qty', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
+                          ],
+                        ),
+                      ),
+                      // Body
+                      Expanded(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.all(0),
+                          itemCount: summary.length,
+                          separatorBuilder: (context, index) => Divider(color: context.colors.borderColor, height: 1),
+                          itemBuilder: (context, index) {
+                            final s = summary[index];
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                              child: Row(
+                                children: [
+                                  Expanded(flex: 5, child: Text(s['category'], style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
+                                  Expanded(flex: 5, child: Text('${s['warehouse']} - ${s['zone']}', style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
+                                  Expanded(flex: 2, child: Text(s['count'].toString(), textAlign: TextAlign.right, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.colors.accentLightBlue))),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+            loading: () => const LinearProgressIndicator(),
+            error: (e, _) => Text('Error: $e'),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _shortcut(
       BuildContext context, String label, IconData icon, VoidCallback onTap,
       {Color? color}) {
@@ -394,6 +488,56 @@ class AdminDashboardScreen extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _GridSummary extends StatelessWidget {
+  final Map<String, int> stats;
+  final Color color;
+  const _GridSummary({required this.stats, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    if (stats.isEmpty)
+      return const Text('No active inventory.', style: TextStyle(fontSize: 12));
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        children: stats.entries
+            .map((e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(e.key,
+                          style: TextStyle(
+                              color: context.colors.textPrimary, fontSize: 12)),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: color.withOpacity(0.3)),
+                        ),
+                        child: Text(e.value.toString(),
+                            style: TextStyle(
+                                color: color,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                ))
+            .toList(),
       ),
     );
   }

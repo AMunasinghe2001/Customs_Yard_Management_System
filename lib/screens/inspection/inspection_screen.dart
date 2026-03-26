@@ -246,6 +246,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Get current user's role to conditionally disable save button
+    final currentProfile = ref.watch(currentProfileProvider);
+    final isOfficer = currentProfile?.role == 'officer';
+
     return AppShell(
       currentRoute: '/inspection',
       child: Scaffold(
@@ -301,15 +305,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                                 decoration: InputDecoration(
                                   labelText: 'SR Number *',
                                   hintText: 'e.g. GL1/SR/01/2025 or GL1/MISC/187/2025',
-                                  suffixIcon: IconButton(
-                                    icon: _isLookingUp
-                                      ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryGold))
-                                      : Icon(Icons.search_rounded, color: context.colors.primaryGold),
-                                    onPressed: _isLookingUp ? null : _loadBySrNumber,
+                                  suffixIcon: Tooltip(
+                                    message: isOfficer ? 'Loading existing SR entries is restricted to administrators only' : '',
+                                    child: IconButton(
+                                      icon: _isLookingUp
+                                        ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryGold))
+                                        : Icon(Icons.search_rounded, color: isOfficer ? context.colors.textMuted : context.colors.primaryGold),
+                                      onPressed: (isOfficer || _isLookingUp) ? null : _loadBySrNumber,
+                                    ),
                                   ),
                                 ),
                                 validator: (v) => v!.isEmpty ? 'Required' : null,
-                                onFieldSubmitted: (_) => _loadBySrNumber(),
+                                onFieldSubmitted: (_) => isOfficer ? null : _loadBySrNumber(),
                                 textCapitalization: TextCapitalization.characters,
                               ),
                             ),
@@ -469,12 +476,15 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         children: [
                           Expanded(
                             child: SizedBox(height: 52,
-                              child: ElevatedButton.icon(
-                                icon: _isChecking
-                                    ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
-                                    : const Icon(Icons.save_rounded),
-                                label: Text(_isChecking ? 'Saving...' : (_isUpdate ? 'Update SR Entry' : 'Save SR Entry')),
-                                onPressed: _isChecking ? null : _checkPackage,
+                              child: Tooltip(
+                                message: isOfficer ? 'Package entry/updates are restricted to administrators only' : '',
+                                child: ElevatedButton.icon(
+                                  icon: _isChecking
+                                      ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
+                                      : const Icon(Icons.save_rounded),
+                                  label: Text(_isChecking ? 'Saving...' : (_isUpdate ? 'Update SR Entry' : 'Save SR Entry')),
+                                  onPressed: isOfficer ? null : (_isChecking ? null : _checkPackage),
+                                ),
                               ),
                             ),
                           ),

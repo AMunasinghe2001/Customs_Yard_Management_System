@@ -922,12 +922,20 @@ class _CategoriesTab extends ConsumerWidget {
                                 fontSize: 13)),
                         size: ColumnSize.L),
                     DataColumn2(
-                        label: Text('Warehouse/Zone',
+                        label: Text('Warehouse',
                             style: TextStyle(
                                 color: context.colors.primaryGold,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13)),
                         size: ColumnSize.L),
+                    DataColumn2(
+                        label: Text('Zone',
+                            style: TextStyle(
+                                color: context.colors.primaryGold,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13)),
+                        size: ColumnSize.S,
+                        fixedWidth: 100),
                     DataColumn2(
                         label: Text('Created At',
                             style: TextStyle(
@@ -956,8 +964,11 @@ class _CategoriesTab extends ConsumerWidget {
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
-                            DataCell(Text(
-                                '${c.targetWarehouseName ?? '—'} ${c.targetZone != null ? '(Zone: ${c.targetZone})' : ''}',
+                            DataCell(Text(c.targetWarehouseName ?? '—',
+                                style: TextStyle(
+                                    color: context.colors.textMuted,
+                                    fontSize: 12))),
+                            DataCell(Text(c.targetZone ?? '—',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
