@@ -282,13 +282,29 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           ),
                         ),
 
+                      // Reason Section
+                      if (p.reason != null && p.reason!.isNotEmpty)
+                        _DetailSection(
+                          title: 'Reason',
+                          icon: Icons.priority_high_rounded,
+                          delay: 650,
+                          child: _NoteDisplay(
+                            text: p.reason!,
+                            isWarning: true,
+                            icon: Icons.info_outline_rounded,
+                          ),
+                        ),
+
                       // Description Section
                       if (p.description != null && p.description!.isNotEmpty)
                         _DetailSection(
                           title: 'Description',
                           icon: Icons.description_rounded,
                           delay: 700,
-                          child: _NoteDisplay(text: p.description!),
+                          child: _NoteDisplay(
+                            text: p.description!,
+                            icon: Icons.notes_rounded,
+                          ),
                         ),
 
                       // Internal Notes Section
@@ -297,7 +313,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           title: 'Internal Notes',
                           icon: Icons.warning_rounded,
                           delay: 800,
-                          child: _NoteDisplay(text: p.notes!, isWarning: true),
+                          child: _NoteDisplay(
+                            text: p.notes!,
+                            isWarning: true,
+                            icon: Icons.warning_amber_rounded,
+                          ),
                         ),
                     ],
                   ),
@@ -725,32 +745,53 @@ class _SystemEntrySection extends StatelessWidget {
 class _NoteDisplay extends StatelessWidget {
   final String text;
   final bool isWarning;
+  final IconData? icon;
 
-  const _NoteDisplay({required this.text, this.isWarning = false});
+  const _NoteDisplay({required this.text, this.isWarning = false, this.icon});
 
   @override
   Widget build(BuildContext context) {
     return material.Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: isWarning 
+        color: isWarning
             ? context.colors.primaryGold.withOpacity(0.05)
             : context.colors.textPrimary.withOpacity(0.02),
         borderRadius: BorderRadius.circular(12),
-        border: Border(
-          left: BorderSide(
-            color: isWarning ? context.colors.primaryGold : context.colors.textMuted,
-            width: 3,
-          ),
+        border: Border.all(
+          color: (isWarning ? context.colors.primaryGold : context.colors.borderColor).withOpacity(0.3),
         ),
       ),
-      child: Text(
-        text,
-        style: material.TextStyle(
-          color: context.colors.textPrimary,
-          fontSize: 12,
-          height: 1.5,
-        ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (icon != null) ...[
+            material.Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: (isWarning ? context.colors.primaryGold : context.colors.textMuted).withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                size: 14,
+                color: isWarning ? context.colors.primaryGold : context.colors.textMuted,
+              ),
+            ),
+            const Gap(12),
+          ],
+          Expanded(
+            child: Text(
+              text,
+              style: material.TextStyle(
+                color: context.colors.textPrimary,
+                fontSize: 12,
+                height: 1.5,
+                fontWeight: isWarning ? FontWeight.w500 : FontWeight.normal,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
