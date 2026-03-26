@@ -92,6 +92,18 @@ class AuthService {
       print('DEBUG: updateHeartbeat error: $e');
     }
   }
+
+  Future<void> setUserOffline() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+    try {
+      await supabase.from('profiles').update({
+        'is_online': false,
+      }).eq('id', user.id);
+    } catch (e) {
+      print('DEBUG: setUserOffline error: $e');
+    }
+  }
 }
 
 // ── Package Service ──────────────────────────────────────────

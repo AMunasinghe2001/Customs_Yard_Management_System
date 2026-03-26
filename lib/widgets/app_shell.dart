@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
+import 'package:window_manager/window_manager.dart';
 import '../core/theme.dart';
 import '../core/supabase_client.dart';
 import '../core/providers.dart';
@@ -48,6 +49,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void initState() {
     super.initState();
+
     // Start heartbeat: update status every 2 minutes
     _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       if (mounted) {

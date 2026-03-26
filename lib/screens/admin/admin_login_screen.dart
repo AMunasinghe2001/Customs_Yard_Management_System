@@ -123,12 +123,12 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             ),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            // Logo - big, no circle, tinted gold for admin
-            SvgPicture.asset(
-              'Sri_Lanka_Customs_logo.svg',
-              width: 200, height: 200,
-              colorFilter: ColorFilter.mode(context.colors.primaryGold, BlendMode.srcIn),
-            ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
+              // Logo - big, no circle, tinted gold for admin
+              SvgPicture.asset(
+                'Sri_Lanka_Customs_logo.svg',
+                width: 200, height: 200,
+                colorFilter: ColorFilter.mode(context.colors.primaryGold, BlendMode.srcIn),
+            ),
             const Gap(36),
             Text('Sri Lanka Customs',
               style: TextStyle(color: context.colors.primaryGold, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2),

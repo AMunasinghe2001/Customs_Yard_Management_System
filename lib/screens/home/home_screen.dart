@@ -43,7 +43,7 @@ class HomeScreen extends ConsumerWidget {
                 SvgPicture.asset(
                   'Sri_Lanka_Customs_logo.svg', 
                   width: 160, height: 160,
-                ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
+                ),
                 const Gap(20),
                 Text('Sri Lanka Customs',
                   style: TextStyle(color: context.colors.customsBlue, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 1.2),

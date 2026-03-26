@@ -6,6 +6,7 @@ import 'core/supabase_client.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
 import 'core/providers.dart';
+import 'services/services.dart';
 
 class _NoPersistLocalStorage extends LocalStorage {
   @override Future<void> initialize() async {}
@@ -27,6 +28,7 @@ void main() async {
     await windowManager.show();
     await windowManager.focus();
   });
+  await windowManager.setPreventClose(true);
 
   await Supabase.initialize(
     url: supabaseUrl,
@@ -43,11 +45,57 @@ void main() async {
   );
 }
 
-class CustomsApp extends ConsumerWidget {
+class CustomsApp extends ConsumerStatefulWidget {
   const CustomsApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<CustomsApp> createState() => _CustomsAppState();
+}
+
+class _CustomsAppState extends ConsumerState<CustomsApp> with WindowListener {
+  @override
+  void initState() {
+    super.initState();
+    windowManager.addListener(this);
+  }
+
+  @override
+  void dispose() {
+    windowManager.removeListener(this);
+    super.dispose();
+  }
+
+  @override
+  void onWindowClose() async {
+    print('DEBUG: Global window close caught...');
+    
+    // Hide the window immediately so the user feels an instant close
+    await windowManager.hide();
+    
+    try {
+      final user = supabase.auth.currentUser;
+      print('DEBUG: App closing. Current user ID: ${user?.id}');
+      
+      if (user != null) {
+        // Direct database call skipping Riverpod providers entirely
+        await supabase.from('profiles').update({
+          'is_online': false
+        }).eq('id', user.id).timeout(const Duration(seconds: 2));
+        
+        print('DEBUG: Successfully set user offline in Database directly.');
+      } else {
+        print('DEBUG: No logged in user. Taking no DB action.');
+      }
+    } catch (e) {
+      print('DEBUG: Could not set offline on exit: $e');
+    } finally {
+      print('DEBUG: Destroying window process...');
+      await windowManager.destroy();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
     print('DEBUG: CustomsApp building with themeMode: $themeMode');
     final router = ref.watch(routerProvider);

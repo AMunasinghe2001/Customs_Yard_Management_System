@@ -123,7 +123,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
             SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 200, height: 200,
               colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-            ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
+            ),
             const Gap(36),
             const Text('Sri Lanka Customs',
               style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
