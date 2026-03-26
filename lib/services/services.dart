@@ -344,6 +344,35 @@ class WarehouseService {
     }
     return stats;
   }
+
+  Future<Map<String, int>> getZoneStats() async {
+    final entries = await supabase.from('warehouse_entries')
+        .select('zone, is_returned')
+        .eq('is_returned', false);
+    
+    final Map<String, int> stats = {};
+    for (final e in entries) {
+      final zone = e['zone'] as String? ?? 'No Zone';
+      stats[zone] = (stats[zone] ?? 0) + 1;
+    }
+    return stats;
+  }
+
+  Future<Map<String, int>> getCategoryStats() async {
+    final items = await supabase.from('package_items')
+        .select('category, quantity, packages(status)')
+        .not('packages.status', 'eq', 'returned'); // Only active items
+    
+    final Map<String, int> stats = {};
+    for (final i in items) {
+      if (i['packages'] != null) {
+        final cat = i['category'] as String? ?? 'Uncategorized';
+        final qty = (i['quantity'] as num?)?.toInt() ?? 0;
+        stats[cat] = (stats[cat] ?? 0) + qty;
+      }
+    }
+    return stats;
+  }
 }
 
 // ── Customs Rules Service ───────────────────────────────────

@@ -26,6 +26,14 @@ final warehouseStatsProvider = FutureProvider<Map<String, int>>((ref) async {
   return ref.read(warehouseServiceProvider).getWarehouseStats();
 });
 
+final zoneStatsProvider = FutureProvider<Map<String, int>>((ref) async {
+  return ref.read(warehouseServiceProvider).getZoneStats();
+});
+
+final categoryStatsProvider = FutureProvider<Map<String, int>>((ref) async {
+  return ref.read(warehouseServiceProvider).getCategoryStats();
+});
+
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -123,9 +131,87 @@ class DashboardScreen extends ConsumerWidget {
                 error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(recentPackagesProvider)),
                 data: (packages) => _RecentPackagesTable(packages: packages),
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 500.ms).fadeIn(),
+
+              const Gap(32),
+              
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Inventory by Category', style: Theme.of(context).textTheme.titleMedium),
+                        const Gap(12),
+                        ref.watch(categoryStatsProvider).when(
+                          data: (stats) => _GridSummary(stats: stats, color: Colors.teal),
+                          loading: () => const Center(child: LinearProgressIndicator()),
+                          error: (e, _) => Text('Error: $e'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Gap(24),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Zone Occupancy', style: Theme.of(context).textTheme.titleMedium),
+                        const Gap(12),
+                        ref.watch(zoneStatsProvider).when(
+                          data: (stats) => _GridSummary(stats: stats, color: Colors.purple),
+                          loading: () => const Center(child: LinearProgressIndicator()),
+                          error: (e, _) => Text('Error: $e'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ).animate().fadeIn(delay: 600.ms),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _GridSummary extends StatelessWidget {
+  final Map<String, int> stats;
+  final Color color;
+  const _GridSummary({required this.stats, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    if (stats.isEmpty) return const Text('No active inventory data available.');
+    
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        children: stats.entries.map((e) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(e.key, style: TextStyle(color: context.colors.textPrimary, fontSize: 13)),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: color.withOpacity(0.3)),
+                ),
+                child: Text(e.value.toString(), 
+                  style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 12)),
+              ),
+            ],
+          ),
+        )).toList(),
       ),
     );
   }
