@@ -9,7 +9,6 @@ import 'supabase_client.dart';
 final authServiceProvider = Provider((ref) => AuthService());
 final packageServiceProvider = Provider((ref) => PackageService());
 final warehouseServiceProvider = Provider((ref) => WarehouseService());
-final customsRulesServiceProvider = Provider((ref) => CustomsRulesService());
 final adminServiceProvider = Provider((ref) => AdminService());
 final auditLogServiceProvider = Provider((ref) => AuditLogService());
 final packageCategoryServiceProvider = Provider((ref) => PackageCategoryService());
@@ -146,11 +145,11 @@ final warehouseDateRangeProvider = StateProvider.family<DateTimeRange?, String>(
 final warehouseReasonFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
 
 final storageRateProvider = FutureProvider<double>((ref) async {
-  return ref.watch(customsRulesServiceProvider).getStorageRate();
+  return 0.0;
 });
 
 final storageRateHistoryProvider = FutureProvider<List<AuditLogModel>>((ref) async {
-  return ref.read(customsRulesServiceProvider).getStorageRateHistory();
+  return [];
 });
 
 // ── Admin Data Providers ───────────────────────────────────────
@@ -168,10 +167,6 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
     if (p.lastSeenAt == null) return false;
     return now.difference(p.lastSeenAt!).inMinutes < 5;
   }).toList();
-});
-
-final allRulesProvider = FutureProvider<List<CustomsRule>>((ref) async {
-  return ref.read(customsRulesServiceProvider).getAllRules();
 });
 
 final auditLogsChangeTriggerProvider = StreamProvider<int>((ref) async* {

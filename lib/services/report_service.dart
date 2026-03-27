@@ -397,37 +397,6 @@ class ReportService {
     );
     return pdf.save();
   }
-
-  /// Generates a PDF report for customs rules
-  Future<Uint8List> generateRulesPdf(List<CustomsRule> rules) async {
-    final pdf = pw.Document();
-    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
-        build: (context) => [
-          _buildHeader('CUSTOMS INSPECTION RULES AUDIT', dateStr, 'Automated Assessment Rules'),
-          pw.SizedBox(height: 20),
-          pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
-            headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            headers: ['Rule Name', 'Type', 'Threshold/Value', 'Status'],
-            data: rules.map((r) => [
-              r.ruleName,
-              r.ruleType.toUpperCase(),
-              r.thresholdValue != null ? r.thresholdValue.toString() : (r.stringValue ?? '-'),
-              r.isActive ? 'ENABLED' : 'DISABLED',
-            ]).toList(),
-          ),
-          _buildFooter(rules.length, label: 'Total Governance Rules:'),
-        ],
-      ),
-    );
-    return pdf.save();
-  }
-
   /// Generates a PDF report for audit logs
   Future<Uint8List> generateLogsPdf(List<AuditLogModel> logs, String dateRange) async {
     final pdf = pw.Document();
@@ -517,30 +486,6 @@ class ReportService {
     }
     return Uint8List.fromList(excel.encode()!);
   }
-
-  /// Exports customs rules to Excel
-  Future<Uint8List?> exportRulesToExcel(List<CustomsRule> rules) async {
-    var excel = Excel.createExcel();
-    Sheet sheetObject = excel['Rules'];
-    excel.delete('Sheet1');
-
-    sheetObject.appendRow([TextCellValue('CUSTOMS INSPECTION RULES AUDIT')]);
-    sheetObject.appendRow([TextCellValue('')]);
-
-    List<String> headers = ['Rule Name', 'Type', 'Threshold/Value', 'Status'];
-    sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
-    
-    for (var r in rules) {
-      sheetObject.appendRow([
-        TextCellValue(r.ruleName),
-        TextCellValue(r.ruleType),
-        TextCellValue(r.thresholdValue?.toString() ?? r.stringValue ?? ''),
-        TextCellValue(r.isActive ? 'Active' : 'Inactive'),
-      ]);
-    }
-    return Uint8List.fromList(excel.encode()!);
-  }
-
   /// Exports audit logs to Excel
   Future<Uint8List?> exportLogsToExcel(List<AuditLogModel> logs, String subTitle) async {
     var excel = Excel.createExcel();

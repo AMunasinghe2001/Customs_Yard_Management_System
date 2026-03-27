@@ -109,6 +109,37 @@ class AuthService {
 // ── Package Service ──────────────────────────────────────────
 
 class PackageService {
+  Future<String> getNextSrNumber() async {
+    final now = DateTime.now();
+    final year = now.year;
+    final startOfYear = DateTime(year, 1, 1).toIso8601String();
+    
+    // Get the latest SR number for the current year
+    final response = await supabase
+        .from('packages')
+        .select('sr_number')
+        .gte('created_at', startOfYear)
+        .ilike('sr_number', 'GL1/SR/%/$year')
+        .order('created_at', ascending: false)
+        .limit(1);
+
+    int nextNum = 1;
+    if (response != null && (response as List).isNotEmpty) {
+      final lastSr = response[0]['sr_number'] as String;
+      // Extract number from GL1/SR/XX/YYYY
+      final parts = lastSr.split('/');
+      if (parts.length >= 3) {
+        final lastNum = int.tryParse(parts[2]);
+        if (lastNum != null) {
+          nextNum = lastNum + 1;
+        }
+      }
+    }
+
+    final formattedNum = nextNum.toString().padLeft(2, '0');
+    return 'GL1/SR/$formattedNum/$year';
+  }
+
   Future<List<PackageModel>> getAllPackages({String? status, String? search, DateTime? since}) async {
     var query = supabase.from('packages')
         .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)');
@@ -245,7 +276,7 @@ class PackageService {
     }
 
     // Get current storage rate
-    final storageRate = await CustomsRulesService().getStorageRate();
+    final storageRate = 0.0;
 
     return {
       'seized': seized,
@@ -288,7 +319,7 @@ class WarehouseService {
     required String holdReason,
     required int itemCount,
   }) async {
-    final rate = await CustomsRulesService().getStorageRate();
+    final rate = 0.0;
 
     await supabase.from('warehouse_entries').insert({
       'package_id': packageId,
@@ -439,140 +470,7 @@ class WarehouseService {
 
 // ── Customs Rules Service ───────────────────────────────────
 
-class CustomsRulesService {
-  Future<List<CustomsRule>> getActiveRules() async {
-    final data = await supabase.from('customs_rules').select().eq('is_active', true);
-    return data.map((e) => CustomsRule.fromJson(e)).toList();
-  }
-
-  Future<List<CustomsRule>> getAllRules() async {
-    final data = await supabase.from('customs_rules').select().order('rule_type');
-    return data.map((e) => CustomsRule.fromJson(e)).toList();
-  }
-
-  Future<void> createRule(CustomsRule rule) async {
-    final json = rule.toJson();
-    if (rule.id.isEmpty) json.remove('id');
-    await supabase.from('customs_rules').insert({
-      ...json,
-      'created_by': supabase.auth.currentUser?.id,
-    });
-    final user = supabase.auth.currentUser;
-    if (user != null) {
-      await AuditLogService().recordLog(
-        userId: user.id,
-        action: 'Created rule "${rule.ruleName}"',
-        entityType: 'customs_rule',
-        entityId: 'new',
-      );
-    }
-  }
-
-  Future<void> toggleRule(String id, bool isActive) async {
-    await supabase.from('customs_rules').update({'is_active': isActive}).eq('id', id);
-    final user = supabase.auth.currentUser;
-    if (user != null) {
-      await AuditLogService().recordLog(
-        userId: user.id,
-        action: '${isActive ? 'Activated' : 'Deactivated'} rule',
-        entityType: 'customs_rule',
-        entityId: id,
-      );
-    }
-  }
-
-  Future<void> deleteRule(String id) async {
-    await supabase.from('customs_rules').delete().eq('id', id);
-    final user = supabase.auth.currentUser;
-    if (user != null) {
-      await AuditLogService().recordLog(
-        userId: user.id,
-        action: 'Deleted rule',
-        entityType: 'customs_rule',
-        entityId: id,
-      );
-    }
-  }
-
-  Future<List<String>> checkPackageAgainstRules({
-    required double declaredValue,
-    required double weightKg,
-    required int itemCount,
-    required List<PackageItem> items,
-  }) async {
-    final rules = await getActiveRules();
-    final List<String> violations = [];
-    for (final rule in rules) {
-      switch (rule.ruleType) {
-        case 'max_value':
-          if (declaredValue > (rule.thresholdValue ?? 0)) {
-            violations.add('${rule.ruleName}: Declared value LKR ${declaredValue.toStringAsFixed(2)} exceeds limit of LKR ${rule.thresholdValue?.toStringAsFixed(2)}');
-          }
-          break;
-        case 'max_weight':
-          if (weightKg > (rule.thresholdValue ?? 0)) {
-            violations.add('${rule.ruleName}: Weight ${weightKg}kg exceeds limit of ${rule.thresholdValue}kg');
-          }
-          break;
-        case 'max_items':
-          if (itemCount > (rule.thresholdValue ?? 0)) {
-            violations.add('${rule.ruleName}: Item count $itemCount exceeds limit of ${rule.thresholdValue?.toInt()}');
-          }
-          break;
-        case 'prohibited_category':
-          final prohibited = rule.stringValue?.toLowerCase() ?? '';
-          if (prohibited.isNotEmpty) {
-            for (final item in items) {
-              if ((item.category?.toLowerCase() ?? '').contains(prohibited)) {
-                if (!violations.any((v) => v.contains(item.itemName) && v.contains(rule.ruleName))) {
-                  violations.add('${rule.ruleName}: Item "${item.itemName}" falls under prohibited category');
-                }
-              }
-            }
-          }
-          break;
-      }
-    }
-
-    return violations;
-  }
-
-  Future<double> getStorageRate() async {
-    try {
-      final data = await supabase
-          .from('audit_logs')
-          .select('details')
-          .eq('entity_type', 'storage_rate')
-          .order('created_at', ascending: false)
-          .limit(1)
-          .maybeSingle();
-      if (data == null || data['details'] == null) return 0.0;
-      return (data['details']['rate'] as num?)?.toDouble() ?? 0.0;
-    } catch (_) { return 0.0; }
-  }
-
-  Future<void> updateStorageRate(double rate) async {
-    final user = supabase.auth.currentUser;
-    if (user != null) {
-      await AuditLogService().recordLog(
-        userId: user.id,
-        action: 'Updated Daily Storage Rate: $rate LKR',
-        entityType: 'storage_rate',
-        entityId: 'config',
-        details: {'rate': rate},
-      );
-    }
-  }
-
-  Future<List<AuditLogModel>> getStorageRateHistory() async {
-    final data = await supabase
-        .from('audit_logs')
-        .select('*, profiles(full_name)')
-        .eq('entity_type', 'storage_rate')
-        .order('created_at', ascending: false);
-    return data.map((e) => AuditLogModel.fromJson(e)).toList();
-  }
-}
+// Removed per request (Customs Rules logic no longer needed)
 
 // ── Admin Service ────────────────────────────────────────────
 

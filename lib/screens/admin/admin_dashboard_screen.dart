@@ -38,7 +38,6 @@ class AdminDashboardScreen extends ConsumerWidget {
     final recent = ref.watch(recentPackagesProvider);
     final profiles = ref.watch(allProfilesProvider);
     final online = ref.watch(onlineProfilesProvider);
-    final rules = ref.watch(allRulesProvider);
 
     return AppShell(
       currentRoute: '/admin',

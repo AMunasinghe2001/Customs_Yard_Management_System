@@ -302,14 +302,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onExcel: _exportCategoriesExcel,
                     ),
                     _buildReportCard(
-                      title: 'Customs Rules',
-                      description: 'Inspection & value thresholds.',
-                      icon: Icons.rule_rounded,
-                      color: Colors.indigo,
-                      onPdf: _generateRulesPdf,
-                      onExcel: _exportRulesExcel,
-                    ),
-                    _buildReportCard(
                       title: 'Audit Logs',
                       description: 'Date-filtered system activity.',
                       icon: Icons.history_rounded,
@@ -1007,56 +999,6 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
       _setLoading(key, false);
     }
   }
-
-  Future<void> _generateRulesPdf() async {
-    const key = 'Customs Rules_pdf';
-    _setLoading(key, true);
-    try {
-      final rules = await ref.read(customsRulesServiceProvider).getAllRules();
-      if (rules.isEmpty) {
-        _showNoDataMessage();
-        return;
-      }
-      _showPdfPreview(
-        (format) => ReportService().generateRulesPdf(rules),
-        'Customs_Rules_Audit.pdf',
-      );
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      _setLoading(key, false);
-    }
-  }
-
-  Future<void> _exportRulesExcel() async {
-    const key = 'Customs Rules_excel';
-    _setLoading(key, true);
-    try {
-      final rules = await ref.read(customsRulesServiceProvider).getAllRules();
-      if (rules.isEmpty) {
-        _showNoDataMessage();
-        return;
-      }
-
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => ExcelExportDialog(
-            title: 'Export Customs Rules',
-            recordCount: rules.length,
-            fileName: 'Customs_Rules_Audit.xlsx',
-            onExport: () => ReportService().exportRulesToExcel(rules),
-            onSave: (bytes) => _handleFileSave(bytes, 'Customs_Rules_Audit', 'xlsx'),
-          ),
-        );
-      }
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      _setLoading(key, false);
-    }
-  }
-
   Future<void> _generateLogsPdf() async {
     const key = 'Audit Logs_pdf';
     _setLoading(key, true);

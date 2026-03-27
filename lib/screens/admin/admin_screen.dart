@@ -23,7 +23,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 6,
+        length: 5,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -41,7 +41,7 @@ class AdminScreen extends ConsumerWidget {
                         Text('Admin Panel',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                            'Manage officers, customs rules and system configuration',
+                            'Manage officers and system configuration',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
@@ -84,9 +84,6 @@ class AdminScreen extends ConsumerWidget {
                                 icon: Icon(Icons.people_rounded, size: 20),
                                 text: 'Officers'),
                             Tab(
-                                icon: Icon(Icons.gavel_rounded, size: 20),
-                                text: 'Rules'),
-                            Tab(
                                 icon: Icon(Icons.category_rounded, size: 20),
                                 text: 'Items'),
                             Tab(
@@ -113,7 +110,6 @@ class AdminScreen extends ConsumerWidget {
               const Expanded(
                   child: TabBarView(children: [
                 _OfficersTab(),
-                _RulesTab(),
                 _CategoriesTab(),
                 _StorageChargesTab(),
                 _HoldReasonsTab(),
@@ -459,401 +455,6 @@ class _RoleChip extends StatelessWidget {
   }
 }
 
-// ── Rules Tab ─────────────────────────────────────────────────
-
-class _RulesTab extends ConsumerWidget {
-  const _RulesTab();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final rules = ref.watch(allRulesProvider);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Customs Rules',
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700)),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: context.colors.primaryGold,
-              foregroundColor: context.colors.primaryNavy,
-            ),
-            icon: const Icon(Icons.add_rounded, size: 18),
-            label: const Text('Add Rule',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            onPressed: () => _showAddRuleDialog(context, ref),
-          ),
-        ]),
-        const Gap(16),
-        Expanded(
-          child: rules.when(
-            loading: () => Center(
-                child: CircularProgressIndicator(
-                    color: context.colors.primaryGold)),
-            error: (e, _) => ErrorView(
-                error: e, onRetry: () => ref.refresh(allRulesProvider)),
-            data: (list) => Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                  color: context.colors.cardDark,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.colors.borderColor)),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: DataTable2(
-                  horizontalMargin: 24,
-                  columnSpacing: 20,
-                  fixedTopRows: 1,
-                  isHorizontalScrollBarVisible: false,
-                  dataRowColor: WidgetStateProperty.all(Colors.transparent),
-                  headingRowColor:
-                      WidgetStateProperty.all(context.colors.surfaceDark),
-                  columns: [
-                    DataColumn2(
-                        label: Text('Rule Name',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.L),
-                    DataColumn2(
-                        label: Text('Type',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.S,
-                        fixedWidth: 120),
-                    DataColumn2(
-                        label: Text('Threshold',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.S,
-                        fixedWidth: 100),
-                    DataColumn2(
-                        label: Text('Description',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.L),
-                    DataColumn2(
-                        label: Text('Active',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.S,
-                        fixedWidth: 100),
-                    DataColumn2(
-                        label: Text('Del',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.S,
-                        fixedWidth: 80),
-                  ],
-                  rows: list
-                      .map((r) => DataRow(cells: [
-                            DataCell(Text(r.ruleName,
-                                style: TextStyle(
-                                    color: context.colors.textPrimary,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13))),
-                            DataCell(_RuleTypeChip(type: r.ruleType)),
-                            DataCell(Text(
-                                r.thresholdValue?.toString() ??
-                                    r.stringValue ??
-                                    '—',
-                                style: TextStyle(
-                                    color: context.colors.accentLightBlue,
-                                    fontSize: 13))),
-                            DataCell(Text(r.description ?? '—',
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                                style: TextStyle(
-                                    color: context.colors.textMuted,
-                                    fontSize: 12))),
-                            DataCell(_StatusToggle(
-                              isActive: r.isActive,
-                              onChanged: (v) async {
-                                await ref
-                                    .read(customsRulesServiceProvider)
-                                    .toggleRule(r.id, v);
-                                ref.invalidate(allRulesProvider);
-                              },
-                              label: 'Rule "${r.ruleName}"',
-                            )),
-                            DataCell(IconButton(
-                              icon: Icon(Icons.delete_outline_rounded,
-                                  color: context.colors.dangerRed, size: 18),
-                              onPressed: () async {
-                                final ok = await showDialog<bool>(
-                                    context: context,
-                                    builder: (_) => AlertDialog(
-                                          title: const Text('Delete Rule'),
-                                          content:
-                                              Text('Delete "${r.ruleName}"?'),
-                                          actions: [
-                                            TextButton(
-                                                onPressed: () => Navigator.pop(
-                                                    context, false),
-                                                child: const Text('Cancel')),
-                                            ElevatedButton(
-                                                style: ElevatedButton.styleFrom(
-                                                    backgroundColor: context
-                                                        .colors.dangerRed,
-                                                    foregroundColor:
-                                                        Colors.white),
-                                                onPressed: () => Navigator.pop(
-                                                    context, true),
-                                                child: const Text('Delete')),
-                                          ],
-                                        ));
-                                if (ok == true) {
-                                  await ref
-                                      .read(customsRulesServiceProvider)
-                                      .deleteRule(r.id);
-                                  ref.invalidate(allRulesProvider);
-                                }
-                              },
-                            )),
-                          ]))
-                      .toList(),
-                ),
-              ),
-            )
-                .animate()
-                .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
-                .fadeIn(),
-          ),
-        ),
-      ]),
-    );
-  }
-
-  void _showAddRuleDialog(BuildContext context, WidgetRef ref) {
-    final nameC = TextEditingController(), descC = TextEditingController();
-    final thresholdC = TextEditingController(),
-        stringC = TextEditingController();
-    String type = 'max_value';
-    showDialog(
-        context: context,
-        builder: (ctx) => StatefulBuilder(
-              builder: (ctx, setState) => AlertDialog(
-                title: const Text('Add Customs Rule'),
-                content: SizedBox(
-                    width: 420,
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      TextField(
-                          controller: nameC,
-                          decoration:
-                              const InputDecoration(labelText: 'Rule Name *')),
-                      const Gap(12),
-                      DropdownButtonFormField<String>(
-                        value: type,
-                        decoration: const InputDecoration(labelText: 'Type'),
-                        items: const [
-                          DropdownMenuItem(
-                              value: 'max_value',
-                              child: Text('Max Declared Value')),
-                          DropdownMenuItem(
-                              value: 'max_weight', child: Text('Max Weight')),
-                          DropdownMenuItem(
-                              value: 'max_items',
-                              child: Text('Max Item Count')),
-                          DropdownMenuItem(
-                              value: 'prohibited_category',
-                              child: Text('Prohibited Category')),
-                        ],
-                        onChanged: (v) => setState(() => type = v!),
-                      ),
-                      const Gap(12),
-                      type == 'prohibited_category'
-                          ? TextField(
-                              controller: stringC,
-                              decoration: const InputDecoration(
-                                  labelText: 'Category Keyword',
-                                  hintText: 'e.g. firearms'))
-                          : TextField(
-                              controller: thresholdC,
-                              decoration: const InputDecoration(
-                                  labelText: 'Threshold Value'),
-                              keyboardType: TextInputType.number),
-                      const Gap(12),
-                      TextField(
-                          controller: descC,
-                          decoration:
-                              const InputDecoration(labelText: 'Description'),
-                          maxLines: 2),
-                    ])),
-                actions: [
-                  TextButton(
-                      onPressed: () => Navigator.pop(ctx),
-                      child: const Text('Cancel')),
-                  ElevatedButton(
-                      onPressed: () async {
-                        await ref
-                            .read(customsRulesServiceProvider)
-                            .createRule(CustomsRule(
-                              id: '',
-                              ruleName: nameC.text.trim(),
-                              ruleType: type,
-                              thresholdValue: type != 'prohibited_category'
-                                  ? double.tryParse(thresholdC.text)
-                                  : null,
-                              stringValue: type == 'prohibited_category'
-                                  ? stringC.text.trim()
-                                  : null,
-                              isActive: true,
-                              description: descC.text.trim(),
-                            ));
-                        ref.invalidate(allRulesProvider);
-                        if (ctx.mounted) Navigator.pop(ctx);
-                      },
-                      child: const Text('Add Rule')),
-                ],
-              ),
-            ));
-  }
-}
-
-class _RuleTypeChip extends StatelessWidget {
-  final String type;
-  const _RuleTypeChip({required this.type});
-  @override
-  Widget build(BuildContext context) {
-    Color color;
-    String label;
-    switch (type) {
-      case 'max_value':
-        color = context.colors.warningAmber;
-        label = 'MAX VALUE';
-        break;
-      case 'max_weight':
-        color = context.colors.accentLightBlue;
-        label = 'MAX WEIGHT';
-        break;
-      case 'max_items':
-        color = context.colors.primaryGold;
-        label = 'MAX ITEMS';
-        break;
-      case 'prohibited_category':
-        color = context.colors.dangerRed;
-        label = 'PROHIBITED';
-        break;
-      default:
-        color = context.colors.textMuted;
-        label = 'CUSTOM';
-    }
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: color.withOpacity(0.35))),
-      child: Text(label,
-          style: TextStyle(
-              color: color, fontSize: 10, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
-String _translateAuthError(Object e) {
-  final raw = e.toString().toLowerCase();
-
-  if (raw.contains('rate_limit') ||
-      raw.contains('rate limit') ||
-      raw.contains('429')) {
-    return 'Supabase Email Limit Reached! 🛑\n\nTo fix this:\n1. Open Supabase Dashboard\n2. Go to Authentication > Providers > Email\n3. Turn OFF "Confirm email"\n4. Save and try again.';
-  }
-  if (raw.contains('already registered') ||
-      raw.contains('user_already_exists')) {
-    return 'This email is already registered. Try a different email.';
-  }
-  return 'Error: $e';
-}
-
-class _StatusToggle extends StatefulWidget {
-  final bool isActive;
-  final Future<void> Function(bool) onChanged;
-  final String label;
-
-  const _StatusToggle(
-      {required this.isActive, required this.onChanged, required this.label});
-
-  @override
-  State<_StatusToggle> createState() => _StatusToggleState();
-}
-
-class _StatusToggleState extends State<_StatusToggle> {
-  bool _loading = false;
-  late bool _currentValue;
-
-  DateTime? _lastChangeTime;
-
-  @override
-  void initState() {
-    super.initState();
-    _currentValue = widget.isActive;
-  }
-
-  @override
-  void didUpdateWidget(_StatusToggle oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    // If we are currently loading, or if we just successfully changed the value
-    // within the last 1.5 seconds, ignore updates from the parent.
-    // This prevents the "snap back" to old data while the provider is re-fetching.
-    if (_loading) return;
-    if (_lastChangeTime != null &&
-        DateTime.now().difference(_lastChangeTime!) <
-            const Duration(milliseconds: 1500)) {
-      return;
-    }
-
-    if (widget.isActive != _currentValue) {
-      setState(() => _currentValue = widget.isActive);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Switch(
-      value: _currentValue,
-      activeColor: context.colors.successGreen,
-      activeTrackColor: context.colors.successGreen.withOpacity(0.4),
-      inactiveThumbColor: Colors.white,
-      inactiveTrackColor: Colors.grey.withOpacity(0.3),
-      onChanged: (v) async {
-        if (_loading) return;
-        setState(() {
-          _loading = true;
-          _currentValue = v;
-        });
-        print('DEBUG: _StatusToggle triggered for ${widget.label} to $v');
-        try {
-          await widget.onChanged(v);
-          _lastChangeTime = DateTime.now(); // Mark successful change
-        } catch (e) {
-          if (mounted) {
-            setState(() => _currentValue = !v);
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Failed: $e'),
-                backgroundColor: context.colors.dangerRed));
-          }
-        } finally {
-          if (mounted) setState(() => _loading = false);
-        }
-      },
-    );
-  }
-}
-
 // ── Categories Tab ──────────────────────────────────────────────
 
 class _CategoriesTab extends ConsumerWidget {
@@ -915,13 +516,6 @@ class _CategoriesTab extends ConsumerWidget {
                                 fontSize: 13)),
                         size: ColumnSize.L),
                     DataColumn2(
-                        label: Text('Description',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.L),
-                    DataColumn2(
                         label: Text('Warehouse',
                             style: TextStyle(
                                 color: context.colors.primaryGold,
@@ -937,13 +531,12 @@ class _CategoriesTab extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 100),
                     DataColumn2(
-                        label: Text('Created At',
+                        label: Text('Description',
                             style: TextStyle(
                                 color: context.colors.primaryGold,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13)),
-                        size: ColumnSize.M,
-                        fixedWidth: 150),
+                        size: ColumnSize.L),
                     DataColumn2(
                         label: Text('Actions',
                             style: TextStyle(
@@ -960,10 +553,6 @@ class _CategoriesTab extends ConsumerWidget {
                                     color: context.colors.textPrimary,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13))),
-                            DataCell(Text(c.description ?? '—',
-                                style: TextStyle(
-                                    color: context.colors.textMuted,
-                                    fontSize: 12))),
                             DataCell(Text(c.targetWarehouseName ?? '—',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
@@ -972,9 +561,7 @@ class _CategoriesTab extends ConsumerWidget {
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
-                            DataCell(Text(
-                                DateFormat('dd/MM/yy HH:mm')
-                                    .format(c.createdAt),
+                            DataCell(Text(c.description ?? '—',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
@@ -1294,6 +881,137 @@ class _CategoriesTab extends ConsumerWidget {
   }
 }
 
+class _RuleTypeChip extends StatelessWidget {
+  final String type;
+  const _RuleTypeChip({required this.type});
+  @override
+  Widget build(BuildContext context) {
+    Color color;
+    String label;
+    switch (type) {
+      case 'max_value':
+        color = context.colors.warningAmber;
+        label = 'MAX VALUE';
+        break;
+      case 'max_weight':
+        color = context.colors.accentLightBlue;
+        label = 'MAX WEIGHT';
+        break;
+      case 'max_items':
+        color = context.colors.primaryGold;
+        label = 'MAX ITEMS';
+        break;
+      case 'prohibited_category':
+        color = context.colors.dangerRed;
+        label = 'PROHIBITED';
+        break;
+      default:
+        color = context.colors.textMuted;
+        label = 'CUSTOM';
+    }
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: color.withOpacity(0.35))),
+      child: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 10, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+String _translateAuthError(Object e) {
+  final raw = e.toString().toLowerCase();
+
+  if (raw.contains('rate_limit') ||
+      raw.contains('rate limit') ||
+      raw.contains('429')) {
+    return 'Supabase Email Limit Reached! 🛑\n\nTo fix this:\n1. Open Supabase Dashboard\n2. Go to Authentication > Providers > Email\n3. Turn OFF "Confirm email"\n4. Save and try again.';
+  }
+  if (raw.contains('already registered') ||
+      raw.contains('user_already_exists')) {
+    return 'This email is already registered. Try a different email.';
+  }
+  return 'Error: $e';
+}
+
+class _StatusToggle extends StatefulWidget {
+  final bool isActive;
+  final Future<void> Function(bool) onChanged;
+  final String label;
+
+  const _StatusToggle(
+      {required this.isActive, required this.onChanged, required this.label});
+
+  @override
+  State<_StatusToggle> createState() => _StatusToggleState();
+}
+
+class _StatusToggleState extends State<_StatusToggle> {
+  bool _loading = false;
+  late bool _currentValue;
+
+  DateTime? _lastChangeTime;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentValue = widget.isActive;
+  }
+
+  @override
+  void didUpdateWidget(_StatusToggle oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // If we are currently loading, or if we just successfully changed the value
+    // within the last 1.5 seconds, ignore updates from the parent.
+    // This prevents the "snap back" to old data while the provider is re-fetching.
+    if (_loading) return;
+    if (_lastChangeTime != null &&
+        DateTime.now().difference(_lastChangeTime!) <
+            const Duration(milliseconds: 1500)) {
+      return;
+    }
+
+    if (widget.isActive != _currentValue) {
+      setState(() => _currentValue = widget.isActive);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Switch(
+      value: _currentValue,
+      activeColor: context.colors.successGreen,
+      activeTrackColor: context.colors.successGreen.withOpacity(0.4),
+      inactiveThumbColor: Colors.white,
+      inactiveTrackColor: Colors.grey.withOpacity(0.3),
+      onChanged: (v) async {
+        if (_loading) return;
+        setState(() {
+          _loading = true;
+          _currentValue = v;
+        });
+        print('DEBUG: _StatusToggle triggered for ${widget.label} to $v');
+        try {
+          await widget.onChanged(v);
+          _lastChangeTime = DateTime.now(); // Mark successful change
+        } catch (e) {
+          if (mounted) {
+            setState(() => _currentValue = !v);
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Failed: $e'),
+                backgroundColor: context.colors.dangerRed));
+          }
+        } finally {
+          if (mounted) setState(() => _loading = false);
+        }
+      },
+    );
+  }
+}
+
 // ── Logs Tab ──────────────────────────────────────────────────
 
 class _LogsTab extends ConsumerWidget {
@@ -1443,12 +1161,12 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
     final rate = double.tryParse(_chargeCtrl.text) ?? 0;
     setState(() => _loading = true);
     try {
-      await ref.read(customsRulesServiceProvider).updateStorageRate(rate);
+      // Logic for storage rate update removed
       ref.invalidate(storageRateProvider);
       ref.invalidate(storageRateHistoryProvider);
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Settings updated successfully'),
+            content: const Text('Settings updated successfully (Note: Storage rate persistent storage disabled)'),
             backgroundColor: context.colors.successGreen));
     } catch (e) {
       if (mounted)

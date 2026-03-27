@@ -246,7 +246,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           children: [
                             _DetailItem(
                               icon: Icons.receipt_long_rounded,
-                              label: 'Cusdec Number',
+                              label: 'Case Number',
+                                value: p.caseNumber ?? 'N/A',
+                              ),
+                              _DetailItem(
+                                icon: Icons.receipt_long_rounded,
+                                label: 'Cusdec Number',
                               value: p.cusdecNo ?? 'N/A',
                             ),
                             _DetailItem(
@@ -257,7 +262,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                             if (p.consigneePhone != null && p.consigneePhone!.isNotEmpty)
                               _DetailItem(
                                 icon: Icons.phone_rounded,
-                                label: 'Contact Number',
+                                label: 'Declarant Phone',
                                 value: p.consigneePhone!,
                               ),
                           ],
@@ -953,8 +958,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     _declarantCtrl = TextEditingController(text: widget.package.declarantName ?? '');
     _cusdecCtrl = TextEditingController(text: widget.package.cusdecNo ?? '');
     _cusdecDateCtrl = TextEditingController(text: widget.package.cusdecDate ?? '');
-    _entryDateCtrl = TextEditingController(text: widget.package.entryDate != null
-        ? '${widget.package.entryDate!.year}-${widget.package.entryDate!.month.toString().padLeft(2, '0')}-${widget.package.entryDate!.day.toString().padLeft(2, '0')}'
+    _entryDateCtrl = TextEditingController(text: widget.package.entryDate != null 
+        ? '${widget.package.entryDate!.year}-${widget.package.entryDate!.month.toString().padLeft(2, '0')}-${widget.package.entryDate!.day.toString().padLeft(2, '0')}' 
         : '');
     _descCtrl = TextEditingController(text: widget.package.description ?? '');
     _notesCtrl = TextEditingController(text: widget.package.notes ?? '');

@@ -19,7 +19,7 @@ class NavItem {
 
 const _officerNav = [
   NavItem('Dashboard', Icons.dashboard_rounded, '/dashboard'),
-  NavItem('Inspection', Icons.search_rounded, '/inspection'),
+  NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
@@ -27,7 +27,7 @@ const _officerNav = [
 
 const _adminNav = [
   NavItem('Dashboard', Icons.dashboard_rounded, '/admin'),
-  NavItem('Inspection', Icons.search_rounded, '/inspection'),
+  NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),

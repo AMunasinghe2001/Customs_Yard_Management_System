@@ -24,6 +24,7 @@ class InspectionScreen extends ConsumerStatefulWidget {
 class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   final _formKey = GlobalKey<FormState>();
   final _srNumberCtrl = TextEditingController();
+  final _caseNumberCtrl = TextEditingController();
   final _originCtrl = TextEditingController();
   final _valueCtrl = TextEditingController();
   final _weightCtrl = TextEditingController();
@@ -33,7 +34,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   final _declarantCtrl = TextEditingController();
   final _cusdecCtrl = TextEditingController();
   final _cusdecDateCtrl = TextEditingController();
-  final _entryDateCtrl = TextEditingController();
+  final _entryDateCtrl = TextEditingController(text: "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}");
   final _descCtrl = TextEditingController();
   final _reasonCtrlMain = TextEditingController();
   final _notesCtrl = TextEditingController();
@@ -141,6 +142,23 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _generateNextSr();
+  }
+
+  Future<void> _generateNextSr() async {
+    try {
+      final sr = await ref.read(packageServiceProvider).getNextSrNumber();
+      setState(() {
+        _srNumberCtrl.text = sr;
+      });
+    } catch (e) {
+      print('Error generating SR: $e');
+    }
+  }
+
+  @override
   void dispose() {
     _srNumberCtrl.dispose(); _originCtrl.dispose(); _valueCtrl.dispose();
     _weightCtrl.dispose(); _consigneeCtrl.dispose(); _consigneeNicCtrl.dispose();
@@ -157,16 +175,12 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       final items = _items.where((r) => r.nameCtrl.text.isNotEmpty).map((r) => PackageItem(
         id: '', packageId: '', itemName: r.nameCtrl.text,
         quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
+        unitOfMeasure: r.unitOfMeasureCtrl.text,
+        unitOther: r.unitOfMeasureCtrl.text == 'Other' ? r.unitOtherCtrl.text : null,
         unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
         category: r.categoryCtrl.text,
       )).toList();
 
-      final violations = await ref.read(customsRulesServiceProvider).checkPackageAgainstRules(
-        declaredValue: double.tryParse(_valueCtrl.text) ?? 0,
-        weightKg: double.tryParse(_weightCtrl.text) ?? 0,
-        itemCount: items.fold(0, (sum, i) => sum + i.quantity),
-        items: items,
-      );
 
       final pkg = PackageModel(
         id: '', srNumber: _srNumberCtrl.text.trim(),
@@ -205,9 +219,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         }
       }
       
-      setState(() { 
-        _passed = violations.isEmpty; 
-        _violations = violations; 
+      setState(() {
+        _passed = true;
+        _violations = [];
         _suggestedWarehouseId = suggestedWh;
         _savedPackageId = null; // Clear any previous package ID
       });
@@ -224,7 +238,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     _srNumberCtrl.clear();
     _originCtrl.clear(); _valueCtrl.clear(); _weightCtrl.clear();
     _consigneeCtrl.clear(); _consigneeNicCtrl.clear(); _consigneePhoneCtrl.clear();
-    _declarantCtrl.clear(); _cusdecCtrl.clear(); _cusdecDateCtrl.clear(); _entryDateCtrl.clear();
+    _declarantCtrl.clear(); _cusdecCtrl.clear(); _cusdecDateCtrl.clear(); _entryDateCtrl.text = "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}";
     _descCtrl.clear(); _reasonCtrlMain.clear(); _notesCtrl.clear();
     _tempPackageData = null;
     _tempPackageItems = null;
@@ -269,8 +283,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Package Inspection', style: Theme.of(context).textTheme.headlineLarge),
-                          Text('Enter incoming package details for customs clearance check',
+                          Text('Package Registration', style: Theme.of(context).textTheme.headlineLarge),
+                          Text('Enter incoming package details for SR registration',
                               style: TextStyle(color: context.colors.textSecondary)),
                         ],
                       ).animate().fadeIn(),
@@ -334,8 +348,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         ),
                         const Gap(16),
                         Row(children: [
-                          Expanded(child: TextFormField(controller: _declarantCtrl,
-                              decoration: const InputDecoration(labelText: 'Declarant Name *'),
+                          Expanded(child: TextFormField(controller: _cusdecCtrl,
+                              decoration: const InputDecoration(labelText: 'Cusdec No *'),
                               validator: (v) => v!.isEmpty ? 'Required' : null)),
                           const Gap(12),
                           Expanded(child: TextFormField(controller: _entryDateCtrl,
@@ -363,8 +377,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                         ]),
                         const Gap(16),
                         Row(children: [
-                          Expanded(child: TextFormField(controller: _cusdecCtrl,
-                              decoration: const InputDecoration(labelText: 'Cusdec No *'),
+                          Expanded(child: TextFormField(controller: _caseNumberCtrl,
+                              decoration: const InputDecoration(labelText: 'Case Number'),
                               validator: (v) => v!.isEmpty ? 'Required' : null)),
                           const Gap(12),
                           Expanded(child: TextFormField(controller: _cusdecDateCtrl,
@@ -417,19 +431,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                               decoration: const InputDecoration(labelText: 'Consignee Name *'),
                               validator: (v) => v!.isEmpty ? 'Required' : null)),
                           const Gap(12),
-                          Expanded(child: TextFormField(controller: _consigneeNicCtrl,
-                              decoration: const InputDecoration(labelText: 'NIC Number'))),
+                          Expanded(child: TextFormField(controller: _declarantCtrl,
+                              decoration: const InputDecoration(labelText: 'Declarant Name *'),
+                              validator: (v) => v!.isEmpty ? 'Required' : null)),
                         ]),
                         const Gap(16),
-                        TextFormField(controller: _consigneePhoneCtrl,
-                            decoration: const InputDecoration(labelText: 'Phone Number (10 digits)'),
-                            keyboardType: TextInputType.phone,
-                            validator: (v) {
-                              if (v != null && v.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(v)) {
-                                return 'Must be exactly 10 digits';
-                              }
-                              return null;
-                            }),
+                        Row(children: [
+                          Expanded(child: TextFormField(controller: _consigneeNicCtrl,
+                              decoration: const InputDecoration(labelText: 'Declarant Address'))),
+                          const Gap(12),
+                          Expanded(child: TextFormField(controller: _consigneePhoneCtrl,
+                              decoration: const InputDecoration(labelText: 'Declarant Phone Number (10 digits)'),
+                              keyboardType: TextInputType.phone,
+                              validator: (v) {
+                                if (v != null && v.isNotEmpty && !RegExp(r'^\\d{10}$').hasMatch(v)) {
+                                  return 'Must be exactly 10 digits';
+                                }
+                                return null;
+                              })),
+                        ]),
                       ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
                       const Gap(16),
                       _SectionCard(
@@ -449,28 +469,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                       ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
                       const Gap(16),
                       _SectionCard(
-                        title: 'Additional Info (Optional)', icon: Icons.info_outline_rounded,
+                        title: 'Office Notice', 
+                        icon: Icons.note_alt_rounded,
                         children: [
-                          Row(children: [
-                            Expanded(child: TextFormField(controller: _valueCtrl,
-                                decoration: const InputDecoration(labelText: 'Declared Value (LKR)'),
-                                keyboardType: TextInputType.number)),
-                            const Gap(12),
-                            Expanded(child: TextFormField(controller: _weightCtrl,
-                                decoration: const InputDecoration(labelText: 'Weight (kg)'),
-                                keyboardType: TextInputType.number)),
-                            const Gap(12),
-                            Expanded(child: TextFormField(controller: _originCtrl,
-                                decoration: const InputDecoration(labelText: 'Origin Country'))),
-                          ]),
+                          TextFormField(
+                            controller: _notesCtrl,
+                            decoration: const InputDecoration(labelText: 'Officer Remarks / Notes'), 
+                            maxLines: 3,
+                          ),
                         ],
-                      ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
-                      const Gap(16),
-                      _SectionCard(title: 'Officer Notes', icon: Icons.note_rounded, children: [
-                        TextFormField(controller: _notesCtrl,
-                            decoration: const InputDecoration(hintText: 'Additional inspection notes...'),
-                            maxLines: 3),
-                      ]).animate().slideY(begin: 0.1, duration: 400.ms, delay: 500.ms).fadeIn(),
+                      ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 350.ms).fadeIn(),
                       const Gap(24),
                       Row(
                         children: [
@@ -796,6 +804,8 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 class _ItemRow {
   final nameCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: '1');
+  final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
+  final unitOtherCtrl = TextEditingController();
   final valueCtrl = TextEditingController(text: '0');
   final categoryCtrl = TextEditingController();
 }
@@ -837,15 +847,46 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
             Expanded(
               flex: 1,
               child: TextFormField(controller: widget.row.qtyCtrl,
-                  decoration: const InputDecoration(labelText: 'Qty *', isDense: true),
+                  decoration: const InputDecoration(labelText: 'No of Pkgs *', isDense: true),
                   keyboardType: TextInputType.number,
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Required';
                     if (int.tryParse(v) == null || int.tryParse(v)! <= 0) return 'Invalid';
                     return null;
                   },
+                  onChanged: (_) => widget.onChanged(),
               ),
             ),
+            const Gap(12),
+            Expanded(
+              flex: 2,
+              child: DropdownButtonFormField<String>(
+                isDense: true,
+                value: ['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other']
+                    .contains(widget.row.unitOfMeasureCtrl.text) ? widget.row.unitOfMeasureCtrl.text : 'Pieces',
+                decoration: const InputDecoration(labelText: 'Unit *', isDense: true),
+                items: ['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other']
+                    .map((u) => DropdownMenuItem(value: u, child: Text(u, style: const TextStyle(fontSize: 13)))).toList(),
+                onChanged: (v) {
+                  setState(() {
+                    widget.row.unitOfMeasureCtrl.text = v ?? 'Pieces';
+                  });
+                  widget.onChanged();
+                },
+              ),
+            ),
+            if (widget.row.unitOfMeasureCtrl.text == 'Other') ...[
+              const Gap(8),
+              Expanded(
+                flex: 2,
+                child: TextFormField(
+                  controller: widget.row.unitOtherCtrl,
+                  decoration: const InputDecoration(labelText: 'Specify *', isDense: true),
+                  validator: (v) => widget.row.unitOfMeasureCtrl.text == 'Other' && (v == null || v.trim().isEmpty) ? 'Required' : null,
+                  onChanged: (_) => widget.onChanged(),
+                ),
+              ),
+            ],
             const Gap(12),
             Expanded(
               flex: 2,
@@ -885,12 +926,14 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     border: Border.all(color: context.colors.primaryGold.withOpacity(0.3))
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.route_rounded, size: 14, color: context.colors.primaryGold),
-                    const Gap(6),
-                    Text('Routes to: ${cat.targetWarehouseId ?? ''}', 
-                      style: TextStyle(color: context.colors.primaryGold, fontSize: 11, fontWeight: FontWeight.w600)
-                    )
-                  ]),
+                      Icon(Icons.route_rounded, size: 14, color: context.colors.primaryGold),
+                      const Gap(6),
+                      Text(
+                        _formatWarehouseName(cat.targetWarehouseName ?? cat.targetWarehouseId ?? '') +
+                        (cat.targetZone != null ? ' | Zone ${cat.targetZone}' : ''),
+                        style: TextStyle(color: context.colors.primaryGold, fontSize: 11, fontWeight: FontWeight.w600)
+                      )
+                    ]),
                 );
               }
               return const SizedBox.shrink();
@@ -902,6 +945,16 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
         ]),
       ]),
     );
+  }
+
+  String _formatWarehouseName(String name) {
+    if (name.isEmpty) return '';
+    // If it already has the prefix, don't add it again
+    if (name.contains('GL1/SR/')) return name;
+    
+    // Convert "SR Warehouse 02" or similar to "Warehouse 02"
+    String cleanName = name.replaceAll(RegExp(r'^SR\s+', caseSensitive: false), '');
+    return 'GL1/SR/$cleanName';
   }
 }
 

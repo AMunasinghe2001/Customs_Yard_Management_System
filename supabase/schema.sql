@@ -44,6 +44,7 @@ INSERT INTO warehouses (name, code, description, location) VALUES
 CREATE TABLE packages (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   sr_number TEXT NOT NULL UNIQUE,
+  case_number TEXT,
   origin_country TEXT,
   declared_value NUMERIC(12,2) DEFAULT 0,
   weight_kg NUMERIC(8,3) DEFAULT 0,
@@ -75,6 +76,8 @@ CREATE TABLE package_items (
   package_id UUID NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
   item_name TEXT NOT NULL,
   quantity INTEGER NOT NULL DEFAULT 1,
+  unit_of_measure TEXT NOT NULL DEFAULT 'Pieces',
+  unit_other TEXT,
   unit_value NUMERIC(10,2) DEFAULT 0,
   category TEXT,
   is_prohibited BOOLEAN DEFAULT false,

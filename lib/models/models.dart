@@ -1,6 +1,7 @@
 class PackageModel {
   final String id;
   final String srNumber;
+  final String? caseNumber;
   final String originCountry;
   final double declaredValue;
   final double weightKg;
@@ -30,6 +31,7 @@ class PackageModel {
   const PackageModel({
     required this.id,
     required this.srNumber,
+    this.caseNumber,
     this.originCountry = '',
     this.declaredValue = 0,
     this.weightKg = 0,
@@ -115,6 +117,7 @@ class PackageModel {
   Map<String, dynamic> toInsertJson() {
     return {
       'sr_number': srNumber,
+      'case_number': caseNumber,
       'origin_country': originCountry,
       'declared_value': declaredValue,
       'weight_kg': weightKg,
@@ -138,6 +141,7 @@ class PackageModel {
 
   PackageModel copyWith({
     String? srNumber,
+    String? caseNumber,
     String? originCountry,
     double? declaredValue,
     double? weightKg,
@@ -165,6 +169,7 @@ class PackageModel {
     return PackageModel(
       id: id,
       srNumber: srNumber ?? this.srNumber,
+      caseNumber: caseNumber ?? this.caseNumber,
       originCountry: originCountry ?? this.originCountry,
       declaredValue: declaredValue ?? this.declaredValue,
       weightKg: weightKg ?? this.weightKg,
@@ -213,6 +218,8 @@ class PackageItem {
   final String packageId;
   final String itemName;
   final int quantity;
+  final String unitOfMeasure;
+  final String? unitOther;
   final double unitValue;
   final String? category;
   final bool isProhibited;
@@ -223,6 +230,8 @@ class PackageItem {
     required this.packageId,
     required this.itemName,
     required this.quantity,
+    this.unitOfMeasure = 'Pieces',
+    this.unitOther,
     this.unitValue = 0,
     this.category,
     this.isProhibited = false,
@@ -235,6 +244,8 @@ class PackageItem {
       packageId: json['package_id'] as String,
       itemName: json['item_name'] as String,
       quantity: json['quantity'] as int,
+      unitOfMeasure: json['unit_of_measure'] as String? ?? 'Pieces',
+      unitOther: json['unit_other'] as String?,
       unitValue: (json['unit_value'] as num?)?.toDouble() ?? 0,
       category: json['category'] as String?,
       isProhibited: json['is_prohibited'] as bool? ?? false,
@@ -247,6 +258,8 @@ class PackageItem {
       'package_id': pkgId,
       'item_name': itemName,
       'quantity': quantity,
+      'unit_of_measure': unitOfMeasure,
+      'unit_other': unitOther,
       'unit_value': unitValue,
       'category': category,
       'is_prohibited': isProhibited,
@@ -276,6 +289,7 @@ class WarehouseEntryModel {
   final double? accumulatedCharge;
   // From joined packages table
   final String? srNumber;
+  final String? caseNumber;
   final String? consigneeName;
   final String? packageStatus;
 
@@ -299,6 +313,7 @@ class WarehouseEntryModel {
     this.dailyRate,
     this.accumulatedCharge,
     this.srNumber,
+    this.caseNumber,
     this.consigneeName,
     this.packageStatus,
   });
@@ -381,49 +396,6 @@ class WarehouseModel {
       location: json['location'] as String?,
       capacity: json['capacity'] as int? ?? 500,
     );
-  }
-}
-
-class CustomsRule {
-  final String id;
-  final String ruleName;
-  final String ruleType;
-  final double? thresholdValue;
-  final String? stringValue;
-  final bool isActive;
-  final String? description;
-
-  const CustomsRule({
-    required this.id,
-    required this.ruleName,
-    required this.ruleType,
-    this.thresholdValue,
-    this.stringValue,
-    required this.isActive,
-    this.description,
-  });
-
-  factory CustomsRule.fromJson(Map<String, dynamic> json) {
-    return CustomsRule(
-      id: json['id'] as String,
-      ruleName: json['rule_name'] as String,
-      ruleType: json['rule_type'] as String,
-      thresholdValue: (json['threshold_value'] as num?)?.toDouble(),
-      stringValue: json['string_value'] as String?,
-      isActive: json['is_active'] as bool? ?? true,
-      description: json['description'] as String?,
-    );
-  }
-
-  Map<String, dynamic> toJson() {
-    return {
-      'rule_name': ruleName,
-      'rule_type': ruleType,
-      'threshold_value': thresholdValue,
-      'string_value': stringValue,
-      'is_active': isActive,
-      'description': description,
-    };
   }
 }
 
