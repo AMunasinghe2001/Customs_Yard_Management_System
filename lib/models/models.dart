@@ -74,6 +74,7 @@ class PackageModel {
     return PackageModel(
       id: json['id'] as String,
       srNumber: json['sr_number'] as String,
+      caseNumber: json['case_number'] as String?,
       originCountry: json['origin_country'] as String? ?? '',
       declaredValue: (json['declared_value'] as num?)?.toDouble() ?? 0,
       weightKg: (json['weight_kg'] as num?)?.toDouble() ?? 0,
@@ -223,6 +224,8 @@ class PackageItem {
   final double unitValue;
   final String? category;
   final bool isProhibited;
+  final String status; // Added status here
+  final String? reasons;
   final String? notes;
 
   const PackageItem({
@@ -235,6 +238,8 @@ class PackageItem {
     this.unitValue = 0,
     this.category,
     this.isProhibited = false,
+    this.status = 'pending', // Default to pending
+    this.reasons,
     this.notes,
   });
 
@@ -249,12 +254,15 @@ class PackageItem {
       unitValue: (json['unit_value'] as num?)?.toDouble() ?? 0,
       category: json['category'] as String?,
       isProhibited: json['is_prohibited'] as bool? ?? false,
+      status: json['status'] as String? ?? 'pending',
+      reasons: json['reasons'] as String?,
       notes: json['notes'] as String?,
     );
   }
 
   Map<String, dynamic> toInsertJson(String pkgId) {
     return {
+      if (id.isNotEmpty) 'id': id,
       'package_id': pkgId,
       'item_name': itemName,
       'quantity': quantity,
@@ -263,14 +271,47 @@ class PackageItem {
       'unit_value': unitValue,
       'category': category,
       'is_prohibited': isProhibited,
+      'status': status,
+      'reasons': reasons,
       'notes': notes,
     };
+  }
+
+  PackageItem copyWith({
+    String? id,
+    String? packageId,
+    String? itemName,
+    int? quantity,
+    String? unitOfMeasure,
+    String? unitOther,
+    double? unitValue,
+    String? category,
+    bool? isProhibited,
+    String? status,
+    String? reasons,
+    String? notes,
+  }) {
+    return PackageItem(
+      id: id ?? this.id,
+      packageId: packageId ?? this.packageId,
+      itemName: itemName ?? this.itemName,
+      quantity: quantity ?? this.quantity,
+      unitOfMeasure: unitOfMeasure ?? this.unitOfMeasure,
+      unitOther: unitOther ?? this.unitOther,
+      unitValue: unitValue ?? this.unitValue,
+      category: category ?? this.category,
+      isProhibited: isProhibited ?? this.isProhibited,
+      status: status ?? this.status,
+      reasons: reasons ?? this.reasons,
+      notes: notes ?? this.notes,
+    );
   }
 }
 
 class WarehouseEntryModel {
   final String id;
   final String packageId;
+  final String? packageItemId; // Added: Link to specific item
   final String warehouseId;
   final String warehouseName;
   final String warehouseCode;
@@ -296,6 +337,7 @@ class WarehouseEntryModel {
   const WarehouseEntryModel({
     required this.id,
     required this.packageId,
+    this.packageItemId, // Added
     required this.warehouseId,
     required this.warehouseName,
     required this.warehouseCode,
@@ -324,6 +366,7 @@ class WarehouseEntryModel {
     return WarehouseEntryModel(
       id: json['id'] as String,
       packageId: json['package_id'] as String,
+      packageItemId: json['package_item_id'] as String?, // Added
       warehouseId: json['warehouse_id'] as String,
       warehouseName: warehouse?['name'] as String? ?? '',
       warehouseCode: warehouse?['code'] as String? ?? '',
@@ -353,20 +396,49 @@ class WarehouseEntryModel {
   bool get isPackageConfiscated => packageStatus == 'confiscated';
 
   int get storageDays {
-    // Calculate days between admittedAt and (returnedAt or now)
-    // We count the number of midnights passed + 1
     final start = DateTime(admittedAt.year, admittedAt.month, admittedAt.day);
     final endDateTime = returnedAt ?? DateTime.now();
     final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
     
+    // Total days spent in the yard
     return end.difference(start).inDays + 1;
   }
 
-  double calculateCharge(double globalRate) {
+  /// Calculates charge considering historical rate changes across all items in the package
+  double calculatePackageCharge(List<PackageItem> items, Map<DateTime, double> historicalRates) {
     if (isPackageConfiscated) return 0;
-    // Use stored dailyRate if available, otherwise fallback to passed rate
-    final rate = (dailyRate ?? 0) > 0 ? dailyRate! : globalRate;
-    return storageDays * rate;
+    
+    // Multiply total item count (pkgs) by the summed individual item quantity
+    final totalUnits = items.fold(0, (sum, i) => sum + i.quantity);
+    
+    final start = DateTime(admittedAt.year, admittedAt.month, admittedAt.day);
+    final endDateTime = returnedAt ?? DateTime.now();
+    final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
+    
+    double totalCharge = 0;
+    
+    // Loop through each day from entry to exit/today
+    for (int i = 0; i <= end.difference(start).inDays; i++) {
+      final currentDay = start.add(Duration(days: i));
+      final dayAtMidnight = DateTime(currentDay.year, currentDay.month, currentDay.day);
+      
+      // Find the active rate for this specific day
+      // Rates are matched based on the latest effective_from that is NOT AFTER current day
+      double activeRate = 50; // default fallback
+      
+      // Rates are expected to be sorted by date ascending from the provider
+      historicalRates.forEach((effectiveFrom, rate) {
+        final effectiveAtMidnight = DateTime(effectiveFrom.year, effectiveFrom.month, effectiveFrom.day);
+        if (!dayAtMidnight.isBefore(effectiveAtMidnight)) {
+          activeRate = rate;
+        }
+      });
+      
+      // Daily charge = total packages in the SR * that specific day's rate
+      totalCharge += (totalUnits * activeRate);
+    }
+    
+    return totalCharge;
   }
 }
 

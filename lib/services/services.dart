@@ -13,9 +13,13 @@ class AuthService {
         password: password,
       );
       if (response.user == null) return null;
-      final profileData = await supabase.from('profiles').select().eq('id', response.user!.id).single();
+      final profileData = await supabase
+          .from('profiles')
+          .select()
+          .eq('id', response.user!.id)
+          .single();
       final profile = ProfileModel.fromJson(profileData);
-      
+
       if (!profile.isActive) {
         await signOut();
         throw Exception('account_deactivated');
@@ -61,7 +65,9 @@ class AuthService {
         entityId: user.id,
       );
       try {
-        await supabase.from('profiles').update({'is_online': false}).eq('id', user.id);
+        await supabase
+            .from('profiles')
+            .update({'is_online': false}).eq('id', user.id);
       } catch (e) {
         print('DEBUG: AuthService.signOut - Status update failed: $e');
       }
@@ -73,9 +79,12 @@ class AuthService {
     final user = supabase.auth.currentUser;
     if (user == null) return null;
     try {
-      final data = await supabase.from('profiles').select().eq('id', user.id).single();
+      final data =
+          await supabase.from('profiles').select().eq('id', user.id).single();
       return ProfileModel.fromJson(data);
-    } catch (_) { return null; }
+    } catch (_) {
+      return null;
+    }
   }
 
   bool get isLoggedIn => supabase.auth.currentUser != null;
@@ -113,7 +122,7 @@ class PackageService {
     final now = DateTime.now();
     final year = now.year;
     final startOfYear = DateTime(year, 1, 1).toIso8601String();
-    
+
     // Get the latest SR number for the current year
     final response = await supabase
         .from('packages')
@@ -140,50 +149,11 @@ class PackageService {
     return 'GL1/SR/$formattedNum/$year';
   }
 
-  Future<List<PackageModel>> getAllPackages({String? status, String? search, DateTime? since}) async {
-    var query = supabase.from('packages')
-        .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)');
-    if (status != null && status != 'all' && status != 'returned') query = query.eq('status', status);
-    if (since != null) query = query.gte('created_at', since.toIso8601String());
-    if (search != null && search.isNotEmpty) {
-      query = query.or('sr_number.ilike.%$search%,consignee_name.ilike.%$search%');
-    }
-    final data = await query.order('created_at', ascending: false);
-    return data.map((e) => PackageModel.fromJson(e)).toList();
-  }
-
-  Future<PackageModel> createPackage(PackageModel pkg, List<PackageItem> items) async {
-    final user = supabase.auth.currentUser;
-    final data = pkg.toInsertJson();
-    if (data['inspected_by'] == null && user != null) {
-      data['inspected_by'] = user.id;
-      data['inspected_at'] = DateTime.now().toIso8601String();
-    }
-    final pkgData = await supabase.from('packages').insert(data).select().single();
-    final created = PackageModel.fromJson(pkgData);
-    if (items.isNotEmpty) {
-      await supabase.from('package_items').insert(
-        items.map((i) => i.toInsertJson(created.id)).toList(),
-      );
-    }
-    
-    if (user != null) {
-      await AuditLogService().recordLog(
-        userId: user.id,
-        action: 'Created new package SR: ${created.srNumber}',
-        entityType: 'package',
-        entityId: created.id,
-        details: {'consignee': created.consigneeName},
-      );
-    }
-    
-    return created;
-  }
-
   Future<PackageModel?> getPackageBySrNumber(String srNumber) async {
     final data = await supabase
         .from('packages')
-        .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
         .eq('sr_number', srNumber)
         .maybeSingle();
     if (data == null) return null;
@@ -193,27 +163,110 @@ class PackageService {
   Future<PackageModel?> getPackageById(String id) async {
     final data = await supabase
         .from('packages')
-        .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
         .eq('id', id)
         .maybeSingle();
     if (data == null) return null;
     return PackageModel.fromJson(data);
   }
 
-  Future<PackageModel> upsertPackage(PackageModel pkg, List<PackageItem> items) async {
+  Future<List<PackageModel>> getAllPackages(
+      {String? status, String? search, DateTime? since}) async {
+    var query = supabase.from('packages').select(
+        '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)');
+    if (status != null && status != 'all' && status != 'returned')
+      query = query.eq('status', status);
+    if (since != null) query = query.gte('created_at', since.toIso8601String());
+    if (search != null && search.isNotEmpty) {
+      query =
+          query.or('sr_number.ilike.%$search%,consignee_name.ilike.%$search%');
+    }
+    final data = await query.order('created_at', ascending: false);
+    return data.map((e) => PackageModel.fromJson(e)).toList();
+  }
+
+  Future<PackageModel> createPackage(
+      PackageModel pkg, List<PackageItem> items) async {
+    final user = supabase.auth.currentUser;
+    final data = pkg.toInsertJson();
+    if (data['inspected_by'] == null && user != null) {
+      data['inspected_by'] = user.id;
+      data['inspected_at'] = DateTime.now().toIso8601String();
+    }
+    final pkgData =
+        await supabase.from('packages').insert(data).select().single();
+    final createdId = pkgData['id'] as String;
+
+    if (items.isNotEmpty) {
+      await supabase.from('package_items').insert(
+            items.map((i) => i.toInsertJson(createdId)).toList(),
+          );
+    }
+
+    final refreshedData = await supabase
+        .from('packages')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
+        .eq('id', createdId)
+        .single();
+    final created = PackageModel.fromJson(refreshedData);
+
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created new package SR: ${created.srNumber}',
+        entityType: 'package',
+        entityId: created.id,
+        details: {'consignee': created.consigneeName},
+      );
+    }
+
+    return created;
+  }
+
+  Future<PackageModel> upsertPackage(
+      PackageModel pkg, List<PackageItem> items) async {
     final existing = await getPackageBySrNumber(pkg.srNumber);
 
     if (existing != null) {
-      await supabase.from('packages').update(pkg.toInsertJson()).eq('id', existing.id);
-      await supabase.from('package_items').delete().eq('package_id', existing.id);
+      await supabase
+          .from('packages')
+          .update(pkg.toInsertJson())
+          .eq('id', existing.id);
+
       if (items.isNotEmpty) {
-        await supabase.from('package_items').insert(
-          items.map((i) => i.toInsertJson(existing.id)).toList(),
-        );
+        final existingItemsData = await supabase
+            .from('package_items')
+            .select('id')
+            .eq('package_id', existing.id);
+        final existingItemIds = (existingItemsData as List)
+            .map((row) => row['id'].toString())
+            .toSet();
+        final newItemIds =
+            items.map((i) => i.id).where((id) => id.isNotEmpty).toSet();
+        final idsToDelete = existingItemIds.difference(newItemIds).toList();
+
+        if (idsToDelete.isNotEmpty) {
+          await supabase
+              .from('package_items')
+              .delete()
+              .inFilter('id', idsToDelete);
+        }
+        await supabase.from('package_items').upsert(
+            items.map((i) => i.toInsertJson(existing.id)).toList(),
+            onConflict: 'id');
+      } else {
+        await supabase
+            .from('package_items')
+            .delete()
+            .eq('package_id', existing.id);
       }
+
       final refreshed = await supabase
           .from('packages')
-          .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
+          .select(
+              '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
           .eq('id', existing.id)
           .single();
       final resultP = PackageModel.fromJson(refreshed);
@@ -233,16 +286,18 @@ class PackageService {
     }
   }
 
-  Future<void> updatePackageStatus(String id, String status, {String? notes}) async {
+  Future<void> updatePackageStatus(String id, String status,
+      {String? notes}) async {
     final data = <String, dynamic>{
       'status': status,
       if (notes != null) 'notes': notes,
       'inspected_by': supabase.auth.currentUser?.id,
       'inspected_at': DateTime.now().toIso8601String(),
     };
-    if (status == 'cleared') data['cleared_at'] = DateTime.now().toIso8601String();
+    if (status == 'cleared')
+      data['cleared_at'] = DateTime.now().toIso8601String();
     await supabase.from('packages').update(data).eq('id', id);
-    
+
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -258,11 +313,13 @@ class PackageService {
   Future<Map<String, dynamic>> getDashboardStats() async {
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
-    
+
     // Get all packages created or updated today
-    final all = await supabase.from('packages').select('status')
+    final all = await supabase
+        .from('packages')
+        .select('status')
         .gte('created_at', startOfDay.toIso8601String());
-        
+
     int clearedOrReturned = 0;
     int held = 0;
     int seized = 0;
@@ -295,8 +352,10 @@ class WarehouseService {
     return data.map((e) => WarehouseModel.fromJson(e)).toList();
   }
 
-  Future<List<WarehouseEntryModel>> getEntriesByWarehouse(String warehouseId, {bool? isReturned}) async {
-    var query = supabase.from('warehouse_entries')
+  Future<List<WarehouseEntryModel>> getEntriesByWarehouse(String warehouseId,
+      {bool? isReturned}) async {
+    var query = supabase
+        .from('warehouse_entries')
         .select('*, warehouses(*), packages(*)')
         .eq('warehouse_id', warehouseId);
     if (isReturned != null) query = query.eq('is_returned', isReturned);
@@ -304,8 +363,10 @@ class WarehouseService {
     return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
   }
 
-  Future<List<WarehouseEntryModel>> getAllWarehouseEntries({bool? isReturned}) async {
-    var query = supabase.from('warehouse_entries')
+  Future<List<WarehouseEntryModel>> getAllWarehouseEntries(
+      {bool? isReturned}) async {
+    var query = supabase
+        .from('warehouse_entries')
         .select('*, warehouses(*), packages(*)');
     if (isReturned != null) query = query.eq('is_returned', isReturned);
     final data = await query.order('admitted_at', ascending: false);
@@ -314,6 +375,7 @@ class WarehouseService {
 
   Future<void> addEntry({
     required String packageId,
+    String? packageItemId, // Added
     required String warehouseId,
     String? zone,
     required String holdReason,
@@ -323,6 +385,7 @@ class WarehouseService {
 
     await supabase.from('warehouse_entries').insert({
       'package_id': packageId,
+      'package_item_id': packageItemId, // Added
       'warehouse_id': warehouseId,
       'zone': zone,
       'hold_reason': holdReason,
@@ -336,10 +399,14 @@ class WarehouseService {
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
-        action: 'Sent package to warehouse',
+        action: 'Sent item to warehouse',
         entityType: 'warehouse_entry',
         entityId: 'new',
-        details: {'package_id': packageId, 'warehouse_id': warehouseId, 'rate': rate},
+        details: {
+          'package_id': packageId,
+          'package_item_id': packageItemId,
+          'warehouse_id': warehouseId
+        },
       );
     }
   }
@@ -364,7 +431,8 @@ class WarehouseService {
   }
 
   Future<Map<String, int>> getWarehouseStats() async {
-    final entries = await supabase.from('warehouse_entries')
+    final entries = await supabase
+        .from('warehouse_entries')
         .select('warehouse_id, is_returned, warehouses(code)');
     final Map<String, int> stats = {};
     for (final e in entries) {
@@ -376,7 +444,7 @@ class WarehouseService {
     return stats;
   }
 
-  Future<Map<String, int>>getZoneStats() async {
+  Future<Map<String, int>> getZoneStats() async {
     return {}; // Logic moved to Combined stats
   }
 
@@ -385,15 +453,19 @@ class WarehouseService {
   }
 
   Future<List<Map<String, dynamic>>> getCategoryZoneCombinedSummary() async {
-    final entries = await supabase.from('warehouse_entries')
-        .select('zone, warehouses!inner(code, name), packages!inner(package_items!inner(category, quantity))')
+    final entries = await supabase
+        .from('warehouse_entries')
+        .select(
+            'zone, warehouses!inner(code, name), packages!inner(package_items!inner(category, quantity))')
         .eq('is_returned', false);
-    
+
     // Fetch all categories to map their default zones
-    final categoriesData = await supabase.from('package_categories').select('name, target_zone');
+    final categoriesData =
+        await supabase.from('package_categories').select('name, target_zone');
     final Map<String, String> categoryZoneMap = {};
-    final Map<String, String> originalNamesMap = {}; // To format category names nicely
-    
+    final Map<String, String> originalNamesMap =
+        {}; // To format category names nicely
+
     for (final cat in (categoriesData as List)) {
       final cName = cat['name']?.toString();
       if (cName != null) {
@@ -402,41 +474,44 @@ class WarehouseService {
         originalNamesMap[lower] = cName;
       }
     }
-    
+
     final Map<String, Map<String, dynamic>> summary = {};
-    
+
     for (final e in entries) {
       final warehouseZone = e['zone']?.toString();
       final warehouseData = e['warehouses'] as Map?;
       final warehouseCode = warehouseData?['code']?.toString() ?? 'W/H';
-      
+
       final pkg = e['packages'] as Map?;
       if (pkg != null && pkg['package_items'] != null) {
         final items = pkg['package_items'] as List;
         for (final item in items) {
           final cat = item['category'] as String? ?? 'Uncategorized';
           final qty = (item['quantity'] as num?)?.toInt() ?? 0;
-          
+
           final catLower = cat.toLowerCase().trim();
           final isKnown = categoryZoneMap.containsKey(catLower);
-          
+
           // Group all dummy/unknown data into 'Uncategorized' to clean up the table
-          final finalCat = isKnown ? originalNamesMap[catLower]! : 'Uncategorized';
-          
+          final finalCat =
+              isKnown ? originalNamesMap[catLower]! : 'Uncategorized';
+
           // Logic for Zone: Warehouse Zone -> Category Default -> N/A
           String zone = 'N/A';
-          if (warehouseZone != null && 
-              warehouseZone.trim().isNotEmpty && 
-              warehouseZone != 'null' && 
+          if (warehouseZone != null &&
+              warehouseZone.trim().isNotEmpty &&
+              warehouseZone != 'null' &&
               warehouseZone.trim().toUpperCase() != 'N/A') {
             zone = warehouseZone.trim();
           } else if (isKnown) {
             final targetZone = categoryZoneMap[catLower];
-            if (targetZone != null && targetZone.isNotEmpty && targetZone != 'null') {
+            if (targetZone != null &&
+                targetZone.isNotEmpty &&
+                targetZone != 'null') {
               zone = targetZone;
             }
           }
-          
+
           final key = '$finalCat|$zone';
           if (!summary.containsKey(key)) {
             summary[key] = {
@@ -446,7 +521,7 @@ class WarehouseService {
               'count': 0,
             };
           }
-          
+
           if (warehouseCode != 'W/H') {
             (summary[key]!['warehouses'] as Set<String>).add(warehouseCode);
           }
@@ -519,7 +594,9 @@ class AdminService {
   }
 
   Future<void> toggleUserStatus(String profileId, bool isActive) async {
-    await supabase.from('profiles').update({'is_active': isActive}).eq('id', profileId);
+    await supabase
+        .from('profiles')
+        .update({'is_active': isActive}).eq('id', profileId);
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -531,7 +608,8 @@ class AdminService {
     }
   }
 
-  Future<void> updateProfile(String id, {String? fullName, String? badgeNumber, String? role}) async {
+  Future<void> updateProfile(String id,
+      {String? fullName, String? badgeNumber, String? role}) async {
     final updates = <String, dynamic>{};
     if (fullName != null) updates['full_name'] = fullName;
     if (badgeNumber != null) updates['badge_number'] = badgeNumber;
@@ -612,7 +690,10 @@ class AuditLogService {
 
 class HoldReasonService {
   Future<List<HoldReasonModel>> getReasons() async {
-    final res = await supabase.from('hold_reasons').select().order('reason_text', ascending: true);
+    final res = await supabase
+        .from('hold_reasons')
+        .select()
+        .order('reason_text', ascending: true);
     return (res as List).map((json) => HoldReasonModel.fromJson(json)).toList();
   }
 
@@ -624,7 +705,8 @@ class HoldReasonService {
     });
   }
 
-  Future<void> updateReason(String id, String reasonText, String? description) async {
+  Future<void> updateReason(
+      String id, String reasonText, String? description) async {
     await supabase.from('hold_reasons').update({
       'reason_text': reasonText,
       'description': description,
@@ -646,18 +728,24 @@ class HoldReasonService {
 
 class PackageCategoryService {
   Future<List<PackageCategory>> getCategories() async {
-    final data = await supabase.from('package_categories').select('*, warehouses(name)').order('name');
+    final data = await supabase
+        .from('package_categories')
+        .select('*, warehouses(name)')
+        .order('name');
     return data.map((e) => PackageCategory.fromJson(e)).toList();
   }
 
-  Future<void> createCategory(String name, {String? description, String? targetWarehouseId, String? targetZone}) async {
+  Future<void> createCategory(String name,
+      {String? description,
+      String? targetWarehouseId,
+      String? targetZone}) async {
     await supabase.from('package_categories').insert({
       'name': name,
       'description': description,
       'target_warehouse_id': targetWarehouseId,
       'target_zone': targetZone,
     });
-    
+
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -669,14 +757,17 @@ class PackageCategoryService {
     }
   }
 
-  Future<void> updateCategory(String id, String name, {String? description, String? targetWarehouseId, String? targetZone}) async {
+  Future<void> updateCategory(String id, String name,
+      {String? description,
+      String? targetWarehouseId,
+      String? targetZone}) async {
     await supabase.from('package_categories').update({
       'name': name,
       'description': description,
       'target_warehouse_id': targetWarehouseId,
       'target_zone': targetZone,
     }).eq('id', id);
-    
+
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -690,7 +781,7 @@ class PackageCategoryService {
 
   Future<void> deleteCategory(String id) async {
     await supabase.from('package_categories').delete().eq('id', id);
-    
+
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(

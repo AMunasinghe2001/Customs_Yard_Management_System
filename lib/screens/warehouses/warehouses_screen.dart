@@ -13,6 +13,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../core/supabase_client.dart';
 
 
 class WarehousesScreen extends ConsumerWidget {
@@ -168,7 +169,7 @@ class _WarehouseTab extends ConsumerWidget {
         final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
         final reasonFilter = ref.watch(warehouseReasonFilterProvider(warehouse.id));
         final search = ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
-        final storageRate = ref.watch(storageRateProvider).valueOrNull ?? 0.0;
+        final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ?? {DateTime(2020,1,1): 50.0};
 
         final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
         final showReturned = ref.watch(warehouseEntryFilterProvider);
@@ -354,55 +355,86 @@ class _WarehouseTab extends ConsumerWidget {
                           fixedTopRows: 1,
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Items'), size: ColumnSize.S, fixedWidth: 55),
-                            DataColumn2(label: Text('Hold Reason'), size: ColumnSize.M),
-                            DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
-                            DataColumn2(label: Center(child: Text('Date')), size: ColumnSize.M),
+                            DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
+                            DataColumn2(label: Text('No. of Packages'), size: ColumnSize.S, fixedWidth: 100),
                             DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.M),
-                            DataColumn2(label: Center(child: Text('Action')), size: ColumnSize.S, fixedWidth: 100),
-                            DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 55),
+                            DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
+                            DataColumn2(label: Text('Reason'), size: ColumnSize.L),
+                            DataColumn2(label: Center(child: Text('Entry Date')), size: ColumnSize.M),
+                            DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 60),
                           ],
                           rows: filteredList.map((e) => DataRow(cells: [
                             DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
                                 style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                            DataCell(Text(e.consigneeName ?? '—', style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+                            DataCell(Consumer(builder: (context, ref, _) {
+                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                              if (pkg == null) return const Text('—', style: TextStyle(fontSize: 13));
+                              if (e.packageItemId != null) {
+                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                                return Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(item?.itemName ?? '—', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
+                                    if (item?.category != null)
+                                      Text(item!.category!, style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+                                  ],
+                                );
+                              } else {
+                                final names = pkg.items.map((i) => i.itemName).join(', ');
+                                return Text(names.isEmpty ? '—' : names, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis);
+                              }
+                            })),
                             DataCell(Text('${e.itemCount}')),
-                            DataCell(Text(e.holdReason, style: const TextStyle(fontStyle: FontStyle.italic), overflow: TextOverflow.ellipsis)),
-                            DataCell(Center(child: StatusChip(status: e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held')))),
+                            DataCell(Center(child: Consumer(builder: (context, ref, _) {
+                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                              return Text(
+                                pkg == null 
+                                  ? '—' 
+                                  : 'LKR ${NumberFormat('#,##0.00').format(e.calculatePackageCharge(pkg.items, storageRateHistory))}',
+                                style: TextStyle(color: e.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold),
+                              );
+                            }))),
+                            DataCell(Center(child: Consumer(builder: (context, ref, _) {
+                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                              String status = e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held');
+                              if (pkg != null && e.packageItemId != null) {
+                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                                if (item != null && !e.isReturned) {
+                                  status = item.status;
+                                }
+                              }
+                              return StatusChip(status: status);
+                            }))),
+                            DataCell(Consumer(builder: (context, ref, _) {
+                              // If it's linked to an item, use the item's reasons
+                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                              String displayReason = e.holdReason;
+                              if (pkg != null && e.packageItemId != null) {
+                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                                if (item?.reasons != null && item!.reasons!.isNotEmpty) {
+                                  displayReason = item.reasons!;
+                                }
+                              }
+                              return Text(displayReason, 
+                                  style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 12), 
+                                  overflow: TextOverflow.ellipsis);
+                            })),
                             DataCell(Center(child: Text(DateFormat('dd/MM/yy').format(e.admittedAt)))),
-                            DataCell(Center(child: Text('LKR ${NumberFormat('#,##0.00').format(e.calculateCharge(storageRate))}',
-                                style: TextStyle(color: e.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold)))),
-                            DataCell(Center(child: (!e.isReturned && !e.isPackageConfiscated)
-                                ? InkWell(
-                                    onTap: () => _showReturnDialog(context, ref, e),
-                                    borderRadius: BorderRadius.circular(6),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: context.colors.successGreen.withOpacity(0.15),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: context.colors.successGreen.withOpacity(0.4)),
-                                      ),
-                                       child: Row(
-                                         mainAxisSize: MainAxisSize.min,
-                                         children: [
-                                           Icon(Icons.play_circle_fill_rounded, size: 12, color: context.colors.successGreen),
-                                           const Gap(4),
-                                           Text('RELEASE', style: TextStyle(color: context.colors.successGreen, fontSize: 10, fontWeight: FontWeight.bold)),
-                                         ],
-                                       ),
-                                    ),
-                                  )
-                                : Text('—', style: TextStyle(color: context.colors.textMuted)))),
                             DataCell(Center(child: IconButton(
-                              icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 18),
+                              icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 20),
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
                               onPressed: () async {
                                 final pkg = await ref.read(packageServiceProvider).getPackageById(e.packageId);
                                 if (pkg != null && context.mounted) {
                                   showDialog(
                                     context: context,
-                                    builder: (_) => PackageDetailsDialog(package: pkg, storageRate: storageRate),
+                                    builder: (_) => PackageDetailsDialog(
+                                      package: pkg, 
+                                      storageRate: storageRateHistory,
+                                      highlightEntry: e,
+                                    ),
                                   );
                                 }
                               },
@@ -420,60 +452,64 @@ class _WarehouseTab extends ConsumerWidget {
 
   void _showReturnDialog(BuildContext context, WidgetRef ref, WarehouseEntryModel entry) {
     final notesCtrl = TextEditingController();
-    final storageRate = ref.read(storageRateProvider).valueOrNull ?? 0.0;
-    final charge = entry.calculateCharge(storageRate);
-
+    final storageRateHistory = ref.read(storageRateProvider).valueOrNull ?? {DateTime(2020,1,1): 50.0};
+    
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Mark as Returned / Release'),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('SR Number: ${entry.srNumber ?? entry.packageId.substring(0, 8).toUpperCase()}',
-              style: TextStyle(color: context.colors.textSecondary)),
-          Text('Location: ${entry.warehouseName}',
-              style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
-          const Gap(12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: context.colors.surfaceDark, borderRadius: BorderRadius.circular(8)),
-            child: Column(children: [
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('Storage Days:', style: TextStyle(color: context.colors.textMuted)),
-                Text('${entry.storageDays}', style: const TextStyle(fontWeight: FontWeight.bold)),
+      builder: (ctx) => Consumer(builder: (context, ref, _) {
+        final pkg = ref.watch(packageDataProvider(entry.packageId)).valueOrNull;
+        final charge = pkg != null ? entry.calculatePackageCharge(pkg.items, storageRateHistory) : 0.0;
+        
+        return AlertDialog(
+          title: const Text('Mark as Returned / Release'),
+          content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('SR Number: ${entry.srNumber ?? entry.packageId.substring(0, 8).toUpperCase()}',
+                style: TextStyle(color: context.colors.textSecondary)),
+            Text('Location: ${entry.warehouseName}',
+                style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
+            const Gap(12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: context.colors.surfaceDark, borderRadius: BorderRadius.circular(8)),
+              child: Column(children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text('Storage Days:', style: TextStyle(color: context.colors.textMuted)),
+                  Text('${entry.storageDays}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                ]),
+                const Gap(4),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                  Text('Final Charge:', style: TextStyle(color: context.colors.textMuted)),
+                  Text('LKR ${NumberFormat('#,##0.00').format(charge)}',
+                      style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold, fontSize: 16)),
+                ]),
               ]),
-              const Gap(4),
-              Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                Text('Final Charge:', style: TextStyle(color: context.colors.textMuted)),
-                Text('LKR ${NumberFormat('#,##0.00').format(charge)}',
-                    style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold, fontSize: 16)),
-              ]),
-            ]),
-          ),
-          const Gap(16),
-          TextField(controller: notesCtrl,
-              decoration: const InputDecoration(labelText: 'Return / Release Notes (optional)'), maxLines: 2),
-        ]),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: context.colors.successGreen, foregroundColor: Colors.white),
-            onPressed: () async {
-              Navigator.pop(ctx);
-              try {
-                await ref.read(warehouseServiceProvider).markAsReturned(entry.id,
-                    returnNotes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null);
-                ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: const Text('✅ Package marked as returned'), backgroundColor: context.colors.successGreen));
-              } catch (e) {
-                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
-              }
-            },
-            child: const Text('Confirm Return'),
-          ),
-        ],
-      ),
+            ),
+            const Gap(16),
+            TextField(controller: notesCtrl,
+                decoration: const InputDecoration(labelText: 'Return / Release Notes (optional)'), maxLines: 2),
+          ]),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: context.colors.successGreen, foregroundColor: Colors.white),
+              onPressed: () async {
+                Navigator.pop(ctx);
+                try {
+                  await ref.read(warehouseServiceProvider).markAsReturned(entry.id,
+                      returnNotes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null);
+                  ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: const Text('✅ Package marked as returned'), backgroundColor: context.colors.successGreen));
+                } catch (e) {
+                  if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
+                }
+              },
+              child: const Text('Confirm Return'),
+            ),
+          ],
+        );
+      }),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/supabase_client.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -1158,16 +1159,24 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
   }
 
   Future<void> _save() async {
+    if (_chargeCtrl.text.isEmpty) return;
     final rate = double.tryParse(_chargeCtrl.text) ?? 0;
     setState(() => _loading = true);
     try {
-      // Logic for storage rate update removed
+      await supabase.from('storage_rates').insert({
+        'rate': rate,
+        'effective_from': DateTime.now().toIso8601String(),
+      });
+      
       ref.invalidate(storageRateProvider);
       ref.invalidate(storageRateHistoryProvider);
-      if (mounted)
+      
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Settings updated successfully (Note: Storage rate persistent storage disabled)'),
+            content: const Text('Storage rate updated successfully'),
             backgroundColor: context.colors.successGreen));
+        _chargeCtrl.clear();
+      }
     } catch (e) {
       if (mounted)
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1339,11 +1348,16 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
                                                           .colors.textMuted,
                                                       fontSize: 13))),
                                               DataCell(Text(
-                                                  h.userFullName ?? 'System',
+                                                  h.userId == 'system' 
+                                                      ? 'System' 
+                                                      : (h.userFullName ?? 'Admin'),
                                                   style: const TextStyle(
                                                       fontWeight:
                                                           FontWeight.w600))),
-                                              DataCell(Text(h.action,
+                                              DataCell(Text(
+                                                  h.action == 'RATE_UPDATE'
+                                                      ? 'Rate Set: LKR ${NumberFormat('#,##0.00').format(h.details?['rate'] ?? 0)}'
+                                                      : h.action,
                                                   style: TextStyle(
                                                       color: context
                                                           .colors.primaryGold,

@@ -74,7 +74,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   Widget build(BuildContext context) {
     final filter = ref.watch(packageFilterProvider);
     final packages = ref.watch(livePackagesProvider);
-    final storageRate = ref.watch(storageRateProvider).valueOrNull ?? 0.0;
+    final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ?? {DateTime(2020,1,1): 50.0};
 
     return AppShell(
       currentRoute: '/packages',
@@ -463,7 +463,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     onDetails: () => showDialog(
                           context: context,
                           builder: (_) => PackageDetailsDialog(
-                              package: _srResult!, storageRate: storageRate),
+                              package: _srResult!, storageRate: storageRateHistory),
                         )).animate().fadeIn(),
               ],
               const Gap(16),
@@ -582,7 +582,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                         child: Text(
                                             p.warehouseEntries.isEmpty
                                                 ? '—'
-                                                : 'LKR ${NumberFormat('#,##0.00').format(p.warehouseEntries.fold(0.0, (sum, e) => sum + e.calculateCharge(storageRate)))}',
+                                                : 'LKR ${NumberFormat('#,##0.00').format(p.warehouseEntries.fold(0.0, (sum, e) => sum + e.calculatePackageCharge(p.items, storageRateHistory)))}',
                                             style: TextStyle(
                                                 color: p.isConfiscated
                                                     ? context.colors.textMuted
@@ -598,7 +598,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                         context: context,
                                         builder: (_) => PackageDetailsDialog(
                                             package: p,
-                                            storageRate: storageRate),
+                                            storageRate: storageRateHistory),
                                       ),
                                     ))),
                                   ]))

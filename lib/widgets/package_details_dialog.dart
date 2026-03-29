@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart' as material;
-import 'package:flutter/material.dart' show Colors, Icons, Theme, FontWeight, BorderRadius, Radius, BoxConstraints, BoxShadow, Offset, Border, BorderSide, IconButton, ElevatedButton, CircularProgressIndicator, ScaffoldMessenger, SnackBar, showDatePicker, showDialog, BuildContext, Widget, Row, Column, Expanded, Icon, Text, Padding, EdgeInsets, Center, SingleChildScrollView, Form, GlobalKey, FormState, TextFormField, InputDecoration, DropdownButtonFormField, DropdownMenuItem, SizedBox, Brightness, Color, IconData, Dialog, Tween, TweenAnimationBuilder, Transform, Opacity, Curves, MainAxisSize, CrossAxisAlignment, BoxDecoration, StatelessWidget, LinearGradient, Flexible, Navigator, MainAxisAlignment, TextButton, BoxShape, FontStyle, TextStyle, Container, OutlinedButton, TextEditingController, MediaQuery, TextInputType, VoidCallback, Spacer, TextOverflow, StatefulWidget;
+import 'package:flutter/material.dart' show Wrap, LinearProgressIndicator, RoundedRectangleBorder, Colors, Icons, Theme, FontWeight, BorderRadius, Radius, BoxConstraints, BoxShadow, Offset, Border, BorderSide, IconButton, ElevatedButton, CircularProgressIndicator, ScaffoldMessenger, SnackBar, showDatePicker, showDialog, BuildContext, Widget, Row, Column, Expanded, Icon, Text, Padding, EdgeInsets, Center, SingleChildScrollView, Form, GlobalKey, FormState, TextFormField, InputDecoration, DropdownButtonFormField, DropdownMenuItem, SizedBox, Brightness, Color, IconData, Dialog, Tween, TweenAnimationBuilder, Transform, Opacity, Curves, MainAxisSize, CrossAxisAlignment, BoxDecoration, StatelessWidget, LinearGradient, Flexible, Navigator, MainAxisAlignment, TextButton, BoxShape, FontStyle, TextStyle, Container, OutlinedButton, TextEditingController, MediaQuery, TextInputType, VoidCallback, Spacer, TextOverflow, StatefulWidget;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -13,12 +13,14 @@ import '../../services/services.dart';
 
 class PackageDetailsDialog extends ConsumerStatefulWidget {
   final PackageModel package;
-  final double storageRate;
+  final Map<DateTime, double> storageRate;
+  final WarehouseEntryModel? highlightEntry; // Added highlightEntry
 
   const PackageDetailsDialog({
     super.key,
     required this.package,
     required this.storageRate,
+    this.highlightEntry, // Added highlightEntry
   });
 
   @override
@@ -44,6 +46,91 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       if (mounted) setState(() => _creatorFallback = creator);
     } catch (_) {}
     if (mounted) setState(() => _isLoadingCreator = false);
+  }
+
+  Future<bool> _showReleaseConfirmation(BuildContext context, WarehouseEntryModel entry) async {
+    final notesCtrl = TextEditingController();
+    
+    // Find the specific item this entry refers to
+    final specificItem = widget.package.items.firstWhere(
+      (i) => i.id == entry.packageItemId,
+      orElse: () => widget.package.items.first,
+    );
+
+    final charge = entry.calculatePackageCharge([specificItem], widget.storageRate);
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => material.AlertDialog(
+        title: const Text('Release Package Item'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('SR: ${widget.package.srNumber}', style: const material.TextStyle(fontWeight: FontWeight.bold)),
+            Text('Item: ${specificItem.itemName}', style: material.TextStyle(color: context.colors.primaryGold)),
+            Text('Warehouse: ${entry.warehouseName}', style: const material.TextStyle(fontSize: 12)),
+            const Gap(12),
+            material.Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: context.colors.surfaceDark,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Column(
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Quantity:'),
+                      Text('${entry.itemCount}', style: const material.TextStyle(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const Gap(4),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Final Charge:'),
+                      Text('LKR ${NumberFormat('#,##0.00').format(charge)}',
+                          style: material.TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Gap(16),
+            material.TextField(
+              controller: notesCtrl,
+              decoration: const material.InputDecoration(
+                labelText: 'Release Notes',
+                hintText: 'Enter any additional details',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          material.TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: context.colors.successGreen, foregroundColor: Colors.white),
+            onPressed: () async {
+              try {
+                await ref.read(warehouseServiceProvider).markAsReturned(entry.id,
+                    returnNotes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null);
+                ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
+                if (ctx.mounted) Navigator.pop(ctx, true);
+              } catch (e) {
+                if (ctx.mounted) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
+                }
+              }
+            },
+            child: const Text('Confirm Release'),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
   @override
@@ -78,7 +165,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     final isOfficer = currentProfile?.role == 'officer';
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final headerTextColor = Colors.white;
+
+    // Filter to find the highlighted entry's specific item if needed
+    final highlightedItem = widget.highlightEntry != null 
+      ? p.items.firstWhere((i) => i.id == widget.highlightEntry!.packageItemId, orElse: () => p.items.first)
+      : null;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -171,161 +262,243 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
-                      // Recipient & Source Section
+                      // SR Register Information Section
                       _DetailSection(
-                        title: 'Recipient & Source',
-                        icon: Icons.person_pin_rounded,
+                        title: 'SR Register Information',
+                        icon: Icons.assignment_rounded,
                         delay: 100,
                         child: Column(
                           children: [
-                            _DetailItem(
-                              icon: Icons.person_rounded,
-                              label: 'Consignee',
-                              value: p.consigneeName,
-                              subValue: (p.consigneeNic != null && p.consigneeNic!.isNotEmpty) ? 'NIC: ${p.consigneeNic}' : null,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.numbers_rounded,
+                                    label: 'SR Number',
+                                    value: p.srNumber,
+                                  ),
+                                ),
+                                const Gap(12),
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.calendar_today_rounded,
+                                    label: 'Entry Date',
+                                    value: p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : 'N/A',
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.receipt_long_rounded,
+                                    label: 'Cusdec No',
+                                    value: p.cusdecNo ?? 'N/A',
+                                  ),
+                                ),
+                                const Gap(12),
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.calendar_month_rounded,
+                                    label: 'Cusdec Date',
+                                    value: p.cusdecDate ?? 'N/A',
+                                  ),
+                                ),
+                              ],
                             ),
                             _DetailItem(
-                              icon: Icons.business_rounded,
-                              label: 'Declarant',
-                              value: p.declarantName ?? 'N/A',
+                              icon: Icons.gavel_rounded,
+                              label: 'Case Number',
+                              value: p.caseNumber ?? 'N/A',
                             ),
                             _DetailItem(
-                              icon: Icons.public_rounded,
-                              label: 'Origin Country',
-                              value: p.originCountry,
+                              icon: Icons.description_rounded,
+                              label: 'Package Description',
+                              value: p.description ?? 'No description provided',
                             ),
                           ],
                         ),
                       ),
 
-                      // Valuation & Specs Section
+                      // Consignee Information Section
                       _DetailSection(
-                        title: 'Valuation & Specifications',
-                        icon: Icons.gavel_rounded,
+                        title: 'Consignee Information',
+                        icon: Icons.person_pin_rounded,
                         delay: 200,
                         child: Column(
                           children: [
-                            _DetailItem(
-                              icon: Icons.payments_rounded,
-                              label: 'Declared Value',
-                              value: 'LKR ${NumberFormat('#,##0').format(p.declaredValue)}',
-                              valueColor: context.colors.successGreen,
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.person_rounded,
+                                    label: 'Consignee Name',
+                                    value: p.consigneeName,
+                                  ),
+                                ),
+                                const Gap(12),
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.badge_rounded,
+                                    label: 'Declarant Name',
+                                    value: p.declarantName ?? 'N/A',
+                                  ),
+                                ),
+                              ],
                             ),
-                            _DetailItem(
-                              icon: Icons.scale_rounded,
-                              label: 'Total Weight',
-                              value: '${p.weightKg} kg',
-                            ),
-                            _DetailItem(
-                              icon: Icons.calendar_month_rounded,
-                              label: 'Entry Date',
-                              value: p.entryDate != null ? DateFormat('dd MMM yyyy').format(p.entryDate!) : 'N/A',
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.home_rounded,
+                                    label: 'Declarant Address',
+                                    value: p.consigneeAddress ?? 'N/A',
+                                  ),
+                                ),
+                                const Gap(12),
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.phone_rounded,
+                                    label: 'Declarant Phone Number',
+                                    value: p.consigneePhone ?? 'N/A',
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ),
 
-                      // Cargo Contents Section
-                      _DetailSection(
-                        title: 'Cargo Contents',
-                        icon: Icons.shopping_bag_rounded,
-                        delay: 300,
-                        child: Column(
-                          children: p.items.isNotEmpty
-                              ? p.items.asMap().entries.map((e) => _CargoItemTile(item: e.value, index: e.key)).toList()
-                              : [_EmptyState(message: 'No items specified')],
-                        ),
-                      ),
-
-                      // Documentation & Tracking Section
-                      _DetailSection(
-                        title: 'Documentation & Tracking',
-                        icon: Icons.folder_open_rounded,
-                        delay: 400,
-                        child: Column(
-                          children: [
-                            _DetailItem(
-                              icon: Icons.receipt_long_rounded,
-                              label: 'Case Number',
-                                value: p.caseNumber ?? 'N/A',
-                              ),
-                              _DetailItem(
-                                icon: Icons.receipt_long_rounded,
-                                label: 'Cusdec Number',
-                              value: p.cusdecNo ?? 'N/A',
+                      // Package Item Details Section - Specific to the selected item
+                      if (highlightedItem != null)
+                        _DetailSection(
+                          title: 'Package Item Details',
+                          icon: Icons.inventory_2_rounded,
+                          delay: 300,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                              children: [
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.label_important_rounded,
+                                    label: 'Item Name',
+                                    value: highlightedItem.itemName,
+                                  ),
+                                ),
+                                const Gap(12),
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.info_outline_rounded,
+                                    label: 'Status',
+                                    value: highlightedItem.status.toUpperCase(),
+                                    valueColor: highlightedItem.status.toLowerCase().contains('pending') 
+                                        ? context.colors.primaryGold 
+                                        : context.colors.successGreen,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.category_rounded,
+                                    label: 'Category',
+                                    value: highlightedItem.category ?? 'N/A',
+                                  ),
+                                ),
+                                const Gap(12),
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.view_in_ar_rounded,
+                                    label: 'Packages',
+                                    value: '${highlightedItem.quantity}',
+                                  ),
+                                ),
+                              ],
                             ),
                             _DetailItem(
-                              icon: Icons.date_range_rounded,
-                              label: 'Cusdec Date',
-                              value: p.cusdecDate ?? 'N/A',
+                              icon: Icons.straighten_rounded,
+                              label: 'Unit',
+                              value: highlightedItem.unitOfMeasure,
                             ),
-                            if (p.consigneePhone != null && p.consigneePhone!.isNotEmpty)
-                              _DetailItem(
-                                icon: Icons.phone_rounded,
-                                label: 'Declarant Phone',
-                                value: p.consigneePhone!,
-                              ),
-                          ],
+                              if (highlightedItem.reasons != null && highlightedItem.reasons!.isNotEmpty)
+                                ...highlightedItem.reasons!.split(',').map((reason) => material.Container(
+                                  margin: const EdgeInsets.only(top: 8),
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: context.colors.dangerRed.withOpacity(0.05),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: context.colors.dangerRed.withOpacity(0.2)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(Icons.warning_amber_rounded, color: context.colors.dangerRed, size: 18),
+                                      const Gap(12),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Hold Reason', style: material.TextStyle(color: context.colors.dangerRed, fontSize: 10, fontWeight: FontWeight.bold)),
+                                            Text(reason.trim(), style: material.TextStyle(color: context.colors.dangerRed, fontSize: 13, fontWeight: FontWeight.w500)),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                )),
+                            ],
+                          ),
                         ),
-                      ),
 
-                      // System Entry By Section
+                      // Officer Notice Section
+                      if (p.notes != null && p.notes!.isNotEmpty)
+                        _DetailSection(
+                          title: 'Officer Notice',
+                          icon: Icons.notification_important_rounded,
+                          delay: 400,
+                          child: _NoteDisplay(
+                            text: p.notes!,
+                            isWarning: true,
+                            icon: Icons.warning_amber_rounded,
+                          ),
+                        ),
+
+                      // Entry Person Section
                       _SystemEntrySection(
                         officerDisplay: officerDisplay,
                         badgeNumber: displayBadgeNumber,
                         delay: 500,
                       ),
 
-                      // Warehouse History Section
-                      if (p.warehouseEntries.isNotEmpty)
+                      // Returned By Section
+                      if (widget.highlightEntry?.isReturned == true)
+                        _SystemEntrySection(
+                          officerDisplay: widget.highlightEntry?.returnedByName ?? 'Unknown',
+                          badgeNumber: null, // We might not have the returned person's badge here directly
+                          delay: 550,
+                          customTitle: 'Returned By',
+                          customIcon: Icons.keyboard_return_rounded,
+                        ),
+
+                      // Warehouse Charges Section
+                      if (widget.highlightEntry != null)
                         _DetailSection(
-                          title: 'Warehouse History',
-                          icon: Icons.location_on_rounded,
+                          title: 'Warehouse Charges',
+                          icon: Icons.payments_rounded,
                           delay: 600,
                           child: Column(
-                            children: p.warehouseEntries
-                                .asMap()
-                                .entries
-                                .map((e) => _WarehouseHistoryTile(entry: e.value, index: e.key, rate: widget.storageRate))
-                                .toList(),
-                          ),
-                        ),
-
-                      // Reason Section
-                      if (p.reason != null && p.reason!.isNotEmpty)
-                        _DetailSection(
-                          title: 'Reason',
-                          icon: Icons.priority_high_rounded,
-                          delay: 650,
-                          child: _NoteDisplay(
-                            text: p.reason!,
-                            isWarning: true,
-                            icon: Icons.info_outline_rounded,
-                          ),
-                        ),
-
-                      // Description Section
-                      if (p.description != null && p.description!.isNotEmpty)
-                        _DetailSection(
-                          title: 'Description',
-                          icon: Icons.description_rounded,
-                          delay: 700,
-                          child: _NoteDisplay(
-                            text: p.description!,
-                            icon: Icons.notes_rounded,
-                          ),
-                        ),
-
-                      // Internal Notes Section
-                      if (p.notes != null && p.notes!.isNotEmpty)
-                        _DetailSection(
-                          title: 'Internal Notes',
-                          icon: Icons.warning_rounded,
-                          delay: 800,
-                          child: _NoteDisplay(
-                            text: p.notes!,
-                            isWarning: true,
-                            icon: Icons.warning_amber_rounded,
+                            children: [
+                              _DetailItem(
+                                icon: Icons.calculate_rounded,
+                                label: 'Storage Fee (LKR)',
+                                value: 'LKR ${NumberFormat('#,##0.00').format(widget.highlightEntry!.calculatePackageCharge([highlightedItem!], widget.storageRate))}',
+                                valueColor: context.colors.successGreen,
+                              ),
+                            ],
                           ),
                         ),
                     ],
@@ -342,19 +515,50 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    // Update Button - Disabled for officers
-                    material.Tooltip(
-                      message: isOfficer ? 'Package updates are restricted to administrators only' : '',
-                      child: ElevatedButton.icon(
-                        icon: const Icon(Icons.edit_rounded, size: 16),
-                        label: const Text('Update'),
-                        onPressed: isOfficer ? null : () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => PackageUpdateDialog(package: p, storageRate: widget.storageRate),
-                          );
-                        },
-                      ),
+                    Row(
+                      children: [
+                        // Update Form Button
+                        material.Tooltip(
+                          message: isOfficer ? 'Package updates are restricted to administrators only' : '',
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: context.colors.primaryGold,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.edit_rounded, size: 18),
+                            label: const Text('Update'),
+                            onPressed: isOfficer ? null : () {
+                              showDialog(
+                                context: context,
+                                builder: (_) => PackageUpdateDialog(
+                                  package: p, 
+                                  highlightedItem: highlightedItem,
+                                  storageRate: widget.storageRate,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                        const Gap(12),
+                        // Return Button - Show only if not already returned
+                        if (widget.highlightEntry != null && !widget.highlightEntry!.isReturned)
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: context.colors.successGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.assignment_return_rounded, size: 18),
+                            label: const Text('Return Package'),
+                            onPressed: () async {
+                              final success = await _showReleaseConfirmation(context, widget.highlightEntry!);
+                              if (success && mounted) {
+                                Navigator.pop(context);
+                              }
+                            },
+                          ),
+                      ],
                     ),
                     // Close Window Button
                     TextButton(
@@ -582,6 +786,27 @@ class _CargoItemTile extends StatelessWidget {
                   ),
                   if (item.category != null)
                     Text(item.category!, style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)),
+                  if (item.reasons != null && item.reasons!.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Row(
+                        children: [
+                          Icon(Icons.warning_amber_rounded, size: 10, color: context.colors.heldOrange),
+                          const Gap(4),
+                          Expanded(
+                            child: Text(
+                              item.reasons!,
+                              style: material.TextStyle(
+                                color: context.colors.heldOrange,
+                                fontSize: 10,
+                                fontStyle: FontStyle.italic,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -601,11 +826,21 @@ class _CargoItemTile extends StatelessWidget {
 }
 
 class _WarehouseHistoryTile extends StatelessWidget {
+  final PackageModel package;
   final WarehouseEntryModel entry;
   final int index;
-  final double rate;
+  final Map<DateTime, double> rate;
+  final bool isHighlighted;
+  final material.VoidCallback onRelease;
 
-  const _WarehouseHistoryTile({required this.entry, required this.index, required this.rate});
+  const _WarehouseHistoryTile({
+    required this.package, 
+    required this.entry, 
+    required this.index, 
+    required this.rate,
+    required this.isHighlighted,
+    required this.onRelease,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -614,9 +849,16 @@ class _WarehouseHistoryTile extends StatelessWidget {
       child: material.Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: context.colors.textPrimary.withOpacity(0.02),
+          color: isHighlighted 
+              ? context.colors.primaryGold.withOpacity(0.08) 
+              : context.colors.textPrimary.withOpacity(0.02),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.colors.borderColor.withOpacity(0.5)),
+          border: Border.all(
+            color: isHighlighted 
+                ? context.colors.primaryGold.withOpacity(0.5) 
+                : context.colors.borderColor.withOpacity(0.5),
+            width: isHighlighted ? 1.5 : 1,
+          ),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -640,25 +882,74 @@ class _WarehouseHistoryTile extends StatelessWidget {
                         entry.warehouseName,
                         style: material.TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                       ),
-                      Text(entry.holdReason, style: material.TextStyle(color: context.colors.textMuted, fontSize: 10)),
+                      ...entry.holdReason.split(',').map((reason) => Text(
+                        reason.trim(),
+                        style: material.TextStyle(color: context.colors.textMuted, fontSize: 10),
+                      )),
                     ],
                   ),
                 ),
                 if (entry.isReturned)
-                  material.Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: context.colors.successGreen.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(6),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      material.Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: context.colors.successGreen.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text('RELEASED', 
+                            style: material.TextStyle(color: context.colors.successGreen, fontSize: 9, fontWeight: FontWeight.bold)),
+                      ),
+                      if (entry.returnedByName != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'By: ${entry.returnedByName}',
+                            style: material.TextStyle(color: context.colors.textMuted, fontSize: 9),
+                          ),
+                        ),
+                    ],
+                  )
+                else
+                  material.InkWell(
+                    onTap: onRelease,
+                    borderRadius: BorderRadius.circular(6),
+                    child: material.Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: context.colors.successGreen.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: context.colors.successGreen.withOpacity(0.4)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.play_circle_fill_rounded, size: 12, color: context.colors.successGreen),
+                          const Gap(6),
+                          Text('RELEASE', 
+                              style: material.TextStyle(color: context.colors.successGreen, fontSize: 10, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                     ),
-                    child: Text('RELEASED', style: material.TextStyle(color: context.colors.successGreen, fontSize: 9, fontWeight: FontWeight.bold)),
                   ),
               ],
             ),
-            const Gap(2),
-            Text(
-              'In: ${DateFormat('dd MMM').format(entry.admittedAt)}${entry.returnedAt != null ? " � Out: ${DateFormat('dd MMM').format(entry.returnedAt!)}" : ""}',
-              style: material.TextStyle(color: context.colors.textMuted, fontSize: 10),
+            const Gap(6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'In: ${DateFormat('dd MMM yyyy').format(entry.admittedAt)}${entry.returnedAt != null ? "  Out: ${DateFormat('dd MMM yyyy').format(entry.returnedAt!)}" : ""}',
+                  style: material.TextStyle(color: context.colors.textMuted, fontSize: 10),
+                ),
+                if (entry.admittedByName != null)
+                  Text(
+                    'Entry by: ${entry.admittedByName}',
+                    style: material.TextStyle(color: context.colors.textMuted, fontSize: 10),
+                  ),
+              ],
             ),
           ],
         ),
@@ -671,8 +962,16 @@ class _SystemEntrySection extends StatelessWidget {
   final String officerDisplay;
   final String? badgeNumber;
   final int delay;
+  final String? customTitle;
+  final IconData? customIcon;
 
-  const _SystemEntrySection({required this.officerDisplay, this.badgeNumber, required this.delay});
+  const _SystemEntrySection({
+    required this.officerDisplay, 
+    this.badgeNumber, 
+    required this.delay,
+    this.customTitle,
+    this.customIcon,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -700,11 +999,11 @@ class _SystemEntrySection extends StatelessWidget {
                   color: context.colors.primaryGold.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.verified_user_rounded, size: 16, color: context.colors.primaryGold),
+                child: Icon(customIcon ?? Icons.verified_user_rounded, size: 16, color: context.colors.primaryGold),
               ),
               const Gap(10),
               Text(
-                'System Entry By'.toUpperCase(),
+                (customTitle ?? 'System Entry By').toUpperCase(),
                 style: material.TextStyle(
                   color: context.colors.textMuted,
                   fontSize: 11,
@@ -910,11 +1209,13 @@ Widget _InfoChip(String label, String value, IconData icon, BuildContext context
 // ============ PACKAGE UPDATE DIALOG ============
 class PackageUpdateDialog extends ConsumerStatefulWidget {
   final PackageModel package;
-  final double storageRate;
+  final PackageItem? highlightedItem;
+  final Map<DateTime, double> storageRate;
 
   const PackageUpdateDialog({
     super.key,
     required this.package,
+    this.highlightedItem,
     required this.storageRate,
   });
 
@@ -925,8 +1226,12 @@ class PackageUpdateDialog extends ConsumerStatefulWidget {
 class _ItemRow {
   final nameCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: '1');
+  final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
+  final unitOtherCtrl = TextEditingController();
   final valueCtrl = TextEditingController(text: '0');
   final categoryCtrl = TextEditingController();
+  String status = 'pending';
+  final List<String?> selectedReasons = [null];
 }
 
 class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
@@ -938,6 +1243,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
   late final TextEditingController _cusdecCtrl;
   late final TextEditingController _cusdecDateCtrl;
   late final TextEditingController _entryDateCtrl;
+  late final TextEditingController _caseNumberCtrl;
   late final TextEditingController _descCtrl;
   late final TextEditingController _notesCtrl;
   late final TextEditingController _reasonCtrl;
@@ -961,6 +1267,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     _entryDateCtrl = TextEditingController(text: widget.package.entryDate != null 
         ? '${widget.package.entryDate!.year}-${widget.package.entryDate!.month.toString().padLeft(2, '0')}-${widget.package.entryDate!.day.toString().padLeft(2, '0')}' 
         : '');
+    _caseNumberCtrl = TextEditingController(text: widget.package.caseNumber ?? '');
     _descCtrl = TextEditingController(text: widget.package.description ?? '');
     _notesCtrl = TextEditingController(text: widget.package.notes ?? '');
     _reasonCtrl = TextEditingController(text: widget.package.reason ?? '');
@@ -974,13 +1281,53 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
 
     // Initialize items
     _items = [];
-    if (widget.package.items.isNotEmpty) {
+    if (widget.highlightedItem != null) {
+      // Show only the specific highlighted item if provided
+      final row = _ItemRow();
+      row.nameCtrl.text = widget.highlightedItem!.itemName;
+      row.qtyCtrl.text = widget.highlightedItem!.quantity.toString();
+      
+      row.unitOfMeasureCtrl.text = widget.highlightedItem!.unitOfMeasure;
+      if (!['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].contains(row.unitOfMeasureCtrl.text)) {
+        row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
+        row.unitOfMeasureCtrl.text = 'Other';
+      }
+      
+      row.valueCtrl.text = widget.highlightedItem!.unitValue.toString();
+      row.categoryCtrl.text = widget.highlightedItem!.category ?? '';
+      row.status = widget.highlightedItem!.status.isNotEmpty ? widget.highlightedItem!.status : 'pending';
+      if (widget.highlightedItem!.reasons != null && widget.highlightedItem!.reasons!.isNotEmpty) {
+        final rList = widget.highlightedItem!.reasons!.split(', ').map((s) => s.trim()).toList() ;
+        row.selectedReasons.clear();
+        for (int i = 0; i < rList.length && i < 4; i++) {
+          row.selectedReasons.add(rList[i]);
+        }
+        if (row.selectedReasons.isEmpty) row.selectedReasons.add(null);
+      }
+      _items.add(row);
+    } else if (widget.package.items.isNotEmpty) {
       for (final item in widget.package.items) {
         final row = _ItemRow();
         row.nameCtrl.text = item.itemName;
         row.qtyCtrl.text = item.quantity.toString();
+        
+        row.unitOfMeasureCtrl.text = item.unitOfMeasure;
+        if (!['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].contains(row.unitOfMeasureCtrl.text)) {
+          row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
+          row.unitOfMeasureCtrl.text = 'Other';
+        }
+        
         row.valueCtrl.text = item.unitValue.toString();
         row.categoryCtrl.text = item.category ?? '';
+        row.status = item.status.isNotEmpty ? item.status : 'pending';
+        if (item.reasons != null && item.reasons!.isNotEmpty) {
+          final rList = item.reasons!.split(', ').map((s) => s.trim()).toList();
+          row.selectedReasons.clear();
+          for (int i = 0; i < rList.length && i < 4; i++) {
+            row.selectedReasons.add(rList[i]);
+          }
+          if (row.selectedReasons.isEmpty) row.selectedReasons.add(null);
+        }
         _items.add(row);
       }
     } else {
@@ -997,6 +1344,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     _cusdecCtrl.dispose();
     _cusdecDateCtrl.dispose();
     _entryDateCtrl.dispose();
+    _caseNumberCtrl.dispose();
     _descCtrl.dispose();
     _notesCtrl.dispose();
     _reasonCtrl.dispose();
@@ -1006,6 +1354,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     for (final item in _items) {
       item.nameCtrl.dispose();
       item.qtyCtrl.dispose();
+      item.unitOfMeasureCtrl.dispose();
+      item.unitOtherCtrl.dispose();
       item.valueCtrl.dispose();
       item.categoryCtrl.dispose();
     }
@@ -1031,14 +1381,39 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
 
     setState(() => _isUpdating = true);
     try {
-      final items = _items.where((r) => r.nameCtrl.text.isNotEmpty).map((r) => PackageItem(
-        id: '',
-        packageId: '',
-        itemName: r.nameCtrl.text,
-        quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
-        unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
-        category: r.categoryCtrl.text,
-      )).toList();
+      final List<PackageItem> itemsToUpsert;
+      
+      if (widget.highlightedItem != null) {
+        // If we were editing a specific item, update just that one in the list
+        itemsToUpsert = widget.package.items.map<PackageItem>((item) {
+          if (item.id == widget.highlightedItem!.id) {
+            final row = _items.first;
+            return item.copyWith(
+              itemName: row.nameCtrl.text,
+              quantity: int.tryParse(row.qtyCtrl.text) ?? 1,
+              unitValue: double.tryParse(row.valueCtrl.text) ?? 0,
+              category: row.categoryCtrl.text,
+              unitOfMeasure: row.unitOfMeasureCtrl.text == 'Other' ? row.unitOtherCtrl.text : row.unitOfMeasureCtrl.text,
+              status: row.status,
+              reasons: row.selectedReasons.where((res) => res != null).join(', '),
+            );
+          }
+          return item;
+        }).toList();
+      } else {
+        // Otherwise use the bulk items list from the form
+        itemsToUpsert = _items.where((r) => r.nameCtrl.text.isNotEmpty).map((r) => PackageItem(
+          id: '',
+          packageId: '',
+          itemName: r.nameCtrl.text,
+          quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
+          unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
+          category: r.categoryCtrl.text,
+          unitOfMeasure: r.unitOfMeasureCtrl.text == 'Other' ? r.unitOtherCtrl.text : r.unitOfMeasureCtrl.text,
+          status: r.status,
+          reasons: r.selectedReasons.where((res) => res != null).join(', '),
+        )).toList();
+      }
 
       final updatedPackage = widget.package.copyWith(
         consigneeName: _consigneeCtrl.text.trim(),
@@ -1047,6 +1422,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
         declarantName: _declarantCtrl.text.trim(),
         cusdecNo: _cusdecCtrl.text.trim(),
         cusdecDate: _cusdecDateCtrl.text.trim(),
+        caseNumber: _caseNumberCtrl.text.trim().isEmpty ? null : _caseNumberCtrl.text.trim(),
         entryDate: _entryDateCtrl.text.isNotEmpty ? DateTime.tryParse(_entryDateCtrl.text) : null,
         description: _descCtrl.text.trim(),
         reason: _reasonCtrl.text.trim(),
@@ -1057,7 +1433,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
         status: _statusValue,
       );
 
-      await ref.read(packageServiceProvider).upsertPackage(updatedPackage, items);
+      await ref.read(packageServiceProvider).upsertPackage(updatedPackage, itemsToUpsert);
 
       if (mounted) {
         Navigator.pop(context);
@@ -1284,6 +1660,11 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                               ],
                             ),
                             
+                            TextFormField(
+                              controller: _caseNumberCtrl,
+                              decoration: const InputDecoration(labelText: 'Case Number'),
+                            ),
+                            
                             ref.watch(holdReasonsProvider).when(
                               data: (reasons) {
                                 final activeList = reasons.where((r) => r.isActive || r.reasonText == _reasonCtrl.text).toList();
@@ -1363,9 +1744,9 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                         const Gap(16),
                         // Package Items Section
                         _UpdateSectionCard(
-                          title: 'Package Items',
+                          title: widget.highlightedItem != null ? 'Item Details' : 'Package Items',
                           icon: Icons.shopping_bag_rounded,
-                          headerTrailing: TextButton.icon(
+                          headerTrailing: widget.highlightedItem != null ? null : TextButton.icon(
                             icon: const Icon(Icons.add, size: 16),
                             label: const Text('Add Item'),
                             onPressed: () => setState(() => _items.add(_ItemRow())),
@@ -1376,49 +1757,17 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                                 padding: const EdgeInsets.only(bottom: 12),
                                 child: _UpdateItemRowWidget(
                                   row: _items[i],
-                                  index: i + 1,
-                                  onRemove: _items.length > 1 ? () => setState(() => _items.removeAt(i)) : null,
+                                  index: widget.highlightedItem != null ? -1 : i + 1, // -1 means don't show index
+                                  onRemove: widget.highlightedItem != null ? null : (_items.length > 1 ? () => setState(() => _items.removeAt(i)) : null),
                                   onChanged: () => setState(() {}),
                                 ),
                               )),
                             ),
                           ],
                         ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms),
-                        const Gap(16),
                         // Additional Information Section
-                        _UpdateSectionCard(
-                          title: 'Additional Information',
-                          icon: Icons.info_outline_rounded,
-                          children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _valueCtrl,
-                                    decoration: const InputDecoration(labelText: 'Declared Value (LKR)'),
-                                    keyboardType: TextInputType.number,
-                                  ),
-                                ),
-                                const Gap(12),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _weightCtrl,
-                                    decoration: const InputDecoration(labelText: 'Weight (kg)'),
-                                    keyboardType: TextInputType.number,
-                                  ),
-                                ),
-                                const Gap(12),
-                                Expanded(
-                                  child: TextFormField(
-                                    controller: _originCtrl,
-                                    decoration: const InputDecoration(labelText: 'Origin Country'),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms),
-                        const Gap(16),
+                        // Removed section as requested
+                        
                         // Notes Section
                         _UpdateSectionCard(
                           title: 'Officer Notes',
@@ -1511,7 +1860,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   color: context.colors.primaryGold.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text('Item ${widget.index}', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 12)),
+                child: Text('Item ${widget.index == -1 ? "1" : widget.index}', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 12)),
               ),
               const Spacer(),
               if (widget.onRemove != null)
@@ -1542,16 +1891,61 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                 flex: 1,
                 child: TextFormField(
                   controller: widget.row.qtyCtrl,
-                  decoration: const InputDecoration(labelText: 'Qty *', isDense: true),
+                  decoration: const InputDecoration(labelText: 'Pkgs *', isDense: true),
                   keyboardType: TextInputType.number,
                   validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Required';
-                    if (int.tryParse(v) == null || int.tryParse(v)! <= 0) return 'Invalid';
+                    if (v == null || v.trim().isEmpty) return 'Req';
+                    if (int.tryParse(v) == null || int.tryParse(v)! <= 0) return 'Err';
                     return null;
+                  },
+                  onChanged: (_) => widget.onChanged(),
+                ),
+              ),
+              const Gap(10),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<String>(
+                  isDense: true,
+                  value: ['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].contains(widget.row.unitOfMeasureCtrl.text)
+                      ? widget.row.unitOfMeasureCtrl.text
+                      : 'Pieces',
+                  decoration: const InputDecoration(labelText: 'Unit *', isDense: true),
+                  items: ['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].map((u) => DropdownMenuItem(value: u, child: Text(u, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (v) {
+                    setState(() {
+                      widget.row.unitOfMeasureCtrl.text = v ?? 'Pieces';
+                    });
+                    widget.onChanged();
                   },
                 ),
               ),
-              const Gap(12),
+              if (widget.row.unitOfMeasureCtrl.text == 'Other') ...[
+                const Gap(8),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: widget.row.unitOtherCtrl,
+                    decoration: const InputDecoration(labelText: 'Name *', isDense: true),
+                    validator: (v) => widget.row.unitOfMeasureCtrl.text == 'Other' && (v == null || v.trim().isEmpty) ? 'Req' : null,
+                    onChanged: (_) => widget.onChanged(),
+                  ),
+                ),
+              ],
+              const Gap(10),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<String>(
+                  isDense: true,
+                  value: widget.row.status,
+                  decoration: const InputDecoration(labelText: 'Status *', isDense: true),
+                  items: ['pending', 'held', 'cleared', 'confiscated'].map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase(), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                  onChanged: (v) {
+                    setState(() => widget.row.status = v!);
+                    widget.onChanged();
+                  },
+                ),
+              ),
+              const Gap(10),
               Expanded(
                 flex: 2,
                 child: categories.when(
@@ -1567,7 +1961,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                       isDense: true,
                       value: selectedCategory?.name,
                       decoration: const InputDecoration(labelText: 'Category', isDense: true),
-                      items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                      items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
                       onChanged: (v) {
                         widget.row.categoryCtrl.text = v ?? '';
                         setState(() {});
@@ -1579,12 +1973,87 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
               ),
             ],
           ),
+          const Gap(16),
+          Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 18, color: context.colors.heldOrange),
+              const Gap(8),
+              Text('Hold Reasons', style: material.TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.colors.textPrimary)),
+              const Spacer(),
+              if (widget.row.selectedReasons.length < 4)
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() => widget.row.selectedReasons.add(null));
+                    widget.onChanged();
+                  },
+                  icon: const Icon(Icons.add_circle_outline, size: 16),
+                  label: const Text('Add Reason', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  style: TextButton.styleFrom(
+                    foregroundColor: context.colors.primaryGold,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    backgroundColor: context.colors.primaryGold.withOpacity(0.1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+            ],
+          ),
+          const Gap(12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 10,
+            children: List.generate(widget.row.selectedReasons.length, (rIdx) {
+              return SizedBox(
+                width: 380,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: ref.watch(holdReasonsProvider).when(
+                        loading: () => const LinearProgressIndicator(),
+                        error: (e, _) => Text('Error loading reasons', style: TextStyle(color: context.colors.dangerRed, fontSize: 11)),
+                        data: (reasons) => DropdownButtonFormField<String>(
+                          isDense: true,
+                          value: widget.row.selectedReasons[rIdx],
+                          decoration: InputDecoration(
+                            labelText: 'Reason ${rIdx + 1} *',
+                            labelStyle: const TextStyle(fontSize: 12),
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                            filled: true,
+                            fillColor: context.colors.cardDark,
+                          ),
+                          validator: (v) => v == null ? 'Required' : null,
+                          items: reasons.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
+                          onChanged: (v) {
+                            setState(() => widget.row.selectedReasons[rIdx] = v);
+                            widget.onChanged();
+                          },
+                        ),
+                      ),
+                    ),
+                    if (widget.row.selectedReasons.length > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: IconButton(
+                          icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.grey),
+                          onPressed: () {
+                            setState(() => widget.row.selectedReasons.removeAt(rIdx));
+                            widget.onChanged();
+                          },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
+                          tooltip: 'Remove reason',
+                        ),
+                      ),
+                  ],
+                ),
+              );
+            }),
+          ),
         ],
       ),
     );
   }
 }
-
 class _UpdateSectionCard extends StatelessWidget {
   final String title;
   final IconData icon;

@@ -270,3 +270,4 @@ ALTER TABLE warehouse_entries ADD COLUMN zone TEXT;
 
 ALTER TABLE hold_reasons ADD COLUMN description TEXT;
 ALTER TABLE hold_reasons ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE warehouse_entries ADD COLUMN IF NOT EXISTS package_item_id UUID REFERENCES package_items(id) ON DELETE CASCADE;
