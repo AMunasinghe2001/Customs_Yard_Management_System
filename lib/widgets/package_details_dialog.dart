@@ -477,8 +477,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       // Returned By Section
                       if (widget.highlightEntry?.isReturned == true)
                         _SystemEntrySection(
-                          officerDisplay: widget.highlightEntry?.returnedByName ?? 'Unknown',
-                          badgeNumber: null, // We might not have the returned person's badge here directly
+                          officerDisplay: widget.highlightEntry?.returnedByName ?? 'Unknown Officer',
+                          badgeNumber: widget.highlightEntry?.returnedByBadge, 
                           delay: 550,
                           customTitle: 'Returned By',
                           customIcon: Icons.keyboard_return_rounded,
@@ -534,6 +534,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                 builder: (_) => PackageUpdateDialog(
                                   package: p, 
                                   highlightedItem: highlightedItem,
+                                  highlightEntry: widget.highlightEntry, // Pass this to update form
                                   storageRate: widget.storageRate,
                                 ),
                               );
@@ -1210,12 +1211,14 @@ Widget _InfoChip(String label, String value, IconData icon, BuildContext context
 class PackageUpdateDialog extends ConsumerStatefulWidget {
   final PackageModel package;
   final PackageItem? highlightedItem;
+  final WarehouseEntryModel? highlightEntry; // Added this
   final Map<DateTime, double> storageRate;
 
   const PackageUpdateDialog({
     super.key,
     required this.package,
     this.highlightedItem,
+    this.highlightEntry, // Added this
     required this.storageRate,
   });
 
@@ -1296,6 +1299,12 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
       row.valueCtrl.text = widget.highlightedItem!.unitValue.toString();
       row.categoryCtrl.text = widget.highlightedItem!.category ?? '';
       row.status = widget.highlightedItem!.status.isNotEmpty ? widget.highlightedItem!.status : 'pending';
+      
+      // If the entry is returned, override item status to 'returned'
+      if (widget.highlightEntry?.isReturned == true) {
+        row.status = 'returned';
+      }
+
       if (widget.highlightedItem!.reasons != null && widget.highlightedItem!.reasons!.isNotEmpty) {
         final rList = widget.highlightedItem!.reasons!.split(', ').map((s) => s.trim()).toList() ;
         row.selectedReasons.clear();
@@ -1560,36 +1569,18 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                           title: 'SR Register Information',
                           icon: Icons.inventory_2_rounded,
                           children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  child: TextFormField(
-                                    enabled: false,
-                                    initialValue: widget.package.srNumber,
-                                    decoration: const InputDecoration(labelText: 'SR Number'),
-                                  ),
-                                ),
-                                const Gap(12),
-                                Expanded(
-                                  child: DropdownButtonFormField<String>(
-                                    value: _statusValue,
-                                    decoration: const InputDecoration(labelText: 'Status *'),
-                                    items: ['pending', 'held', 'cleared', 'confiscated']
-                                        .map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase())))
-                                        .toList(),
-                                    onChanged: (v) => setState(() => _statusValue = v!),
-                                  ),
-                                ),
-                              ],
+                            TextFormField(
+                              enabled: false,
+                              initialValue: widget.package.srNumber,
+                              decoration: const InputDecoration(labelText: 'SR Number *'),
                             ),
                             
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _declarantCtrl,
-                                    decoration: const InputDecoration(labelText: 'Declarant Name *'),
+                                    controller: _cusdecCtrl,
+                                    decoration: const InputDecoration(labelText: 'Cusdec No *'),
                                     validator: (v) => v!.isEmpty ? 'Required' : null,
                                   ),
                                 ),
@@ -1626,9 +1617,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                               children: [
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _cusdecCtrl,
-                                    decoration: const InputDecoration(labelText: 'Cusdec No *'),
-                                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                                    controller: _caseNumberCtrl,
+                                    decoration: const InputDecoration(labelText: 'Case Number'),
                                   ),
                                 ),
                                 const Gap(12),
@@ -1661,42 +1651,6 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                             ),
                             
                             TextFormField(
-                              controller: _caseNumberCtrl,
-                              decoration: const InputDecoration(labelText: 'Case Number'),
-                            ),
-                            
-                            ref.watch(holdReasonsProvider).when(
-                              data: (reasons) {
-                                final activeList = reasons.where((r) => r.isActive || r.reasonText == _reasonCtrl.text).toList();
-                                String? currentValue = _reasonCtrl.text.isNotEmpty ? _reasonCtrl.text : null;
-                                if (currentValue != null && !activeList.any((r) => r.reasonText == currentValue)) {
-                                  currentValue = null;
-                                }
-                                return DropdownButtonFormField<String>(
-                                  decoration: const InputDecoration(labelText: 'Reason'),
-                                  value: currentValue,
-                                  isExpanded: true,
-                                  items: activeList.map((r) => DropdownMenuItem(
-                                    value: r.reasonText,
-                                    child: Text(r.reasonText, overflow: TextOverflow.ellipsis),
-                                  )).toList(),
-                                  onChanged: (v) {
-                                    if (v != null) {
-                                      setState(() {
-                                        _reasonCtrl.text = v;
-                                      });
-                                    }
-                                  },
-                                );
-                              },
-                              loading: () => const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator())),
-                              error: (_, __) => TextFormField(
-                                controller: _reasonCtrl,
-                                decoration: const InputDecoration(labelText: 'Reason (Manual Entry)'),
-                              ),
-                            ),
-                            
-                            TextFormField(
                               controller: _descCtrl,
                               decoration: const InputDecoration(labelText: 'Package Description'),
                               maxLines: 2,
@@ -1721,30 +1675,45 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                                 const Gap(12),
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _consigneeNicCtrl,
-                                    decoration: const InputDecoration(labelText: 'NIC Number'),
+                                    controller: _declarantCtrl,
+                                    decoration: const InputDecoration(labelText: 'Declarant Name *'),
+                                    validator: (v) => v!.isEmpty ? 'Required' : null,
                                   ),
                                 ),
                               ],
                             ),
                             
-                            TextFormField(
-                              controller: _consigneePhoneCtrl,
-                              decoration: const InputDecoration(labelText: 'Phone Number'),
-                              keyboardType: TextInputType.phone,
-                              validator: (v) {
-                                if (v != null && v.isNotEmpty && !RegExp(r'^\d{10}$').hasMatch(v)) {
-                                  return 'Must be exactly 10 digits';
-                                }
-                                return null;
-                              },
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _descCtrl, // Reusing controller for address if needed, or stick to required fields
+                                    decoration: const InputDecoration(labelText: 'Declarant Address'),
+                                  ),
+                                ),
+                                const Gap(12),
+                                Expanded(
+                                  child: TextFormField(
+                                    controller: _consigneePhoneCtrl,
+                                    decoration: const InputDecoration(labelText: 'Declarant Phone Number (10 digits) *'),
+                                    keyboardType: TextInputType.phone,
+                                    validator: (v) {
+                                      if (v == null || v.isEmpty) return 'Required';
+                                      if (!RegExp(r'^\d{10}$').hasMatch(v)) {
+                                        return 'Must be exactly 10 digits';
+                                      }
+                                      return null;
+                                    },
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms),
                         const Gap(16),
                         // Package Items Section
                         _UpdateSectionCard(
-                          title: widget.highlightedItem != null ? 'Item Details' : 'Package Items',
+                          title: widget.highlightedItem != null ? 'ITEM DETAILS' : 'Package Items',
                           icon: Icons.shopping_bag_rounded,
                           headerTrailing: widget.highlightedItem != null ? null : TextButton.icon(
                             icon: const Icon(Icons.add, size: 16),
@@ -1765,12 +1734,10 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                             ),
                           ],
                         ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms),
-                        // Additional Information Section
-                        // Removed section as requested
-                        
+                        const Gap(16),
                         // Notes Section
                         _UpdateSectionCard(
-                          title: 'Officer Notes',
+                          title: 'OFFICER NOTES',
                           icon: Icons.note_rounded,
                           children: [
                             TextFormField(
@@ -1938,7 +1905,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   isDense: true,
                   value: widget.row.status,
                   decoration: const InputDecoration(labelText: 'Status *', isDense: true),
-                  items: ['pending', 'held', 'cleared', 'confiscated'].map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase(), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                  items: ['pending', 'held', 'cleared', 'confiscated', 'returned'].map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase(), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
                   onChanged: (v) {
                     setState(() => widget.row.status = v!);
                     widget.onChanged();

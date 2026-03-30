@@ -230,45 +230,78 @@ class PackageService {
     final existing = await getPackageBySrNumber(pkg.srNumber);
 
     if (existing != null) {
+      // 1. Update package record
       await supabase
           .from('packages')
           .update(pkg.toInsertJson())
           .eq('id', existing.id);
 
+      // 2. Manage items
       if (items.isNotEmpty) {
         final existingItemsData = await supabase
             .from('package_items')
             .select('id')
             .eq('package_id', existing.id);
+        
         final existingItemIds = (existingItemsData as List)
             .map((row) => row['id'].toString())
             .toSet();
+        
         final newItemIds =
             items.map((i) => i.id).where((id) => id.isNotEmpty).toSet();
+        
         final idsToDelete = existingItemIds.difference(newItemIds).toList();
 
         if (idsToDelete.isNotEmpty) {
-          await supabase
-              .from('package_items')
-              .delete()
-              .inFilter('id', idsToDelete);
+          await supabase.from('package_items').delete().inFilter('id', idsToDelete);
         }
-        await supabase.from('package_items').upsert(
-            items.map((i) => i.toInsertJson(existing.id)).toList(),
-            onConflict: 'id');
+
+        for (final item in items) {
+          if (item.id.isNotEmpty) {
+            // Update existing item
+            await supabase
+                .from('package_items')
+                .update(item.toInsertJson(existing.id))
+                .eq('id', item.id);
+            
+            // Handle logical return if status is set to 'returned' via form
+            if (item.status == 'returned') {
+              final entries = await supabase
+                  .from('warehouse_entries')
+                  .select('id')
+                  .eq('package_item_id', item.id)
+                  .eq('is_returned', false);
+              
+              if (entries != null && (entries as List).isNotEmpty) {
+                final warehouseService = WarehouseService();
+                for (final entry in entries) {
+                  await warehouseService.markAsReturned(entry['id'] as String, returnNotes: 'Marked returned via update form');
+                }
+              }
+            }
+          } else {
+            // Insert new item
+            await supabase
+                .from('package_items')
+                .insert(item.toInsertJson(existing.id));
+          }
+        }
       } else {
+        // If items list is empty, delete all existing items for this package
         await supabase
             .from('package_items')
             .delete()
             .eq('package_id', existing.id);
       }
 
+      // 3. Refresh and return updated package
       final refreshed = await supabase
           .from('packages')
           .select(
               '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
           .eq('id', existing.id)
           .single();
+      
       final resultP = PackageModel.fromJson(refreshed);
 
       final user = supabase.auth.currentUser;
@@ -282,6 +315,7 @@ class PackageService {
       }
       return resultP;
     } else {
+      // Create new package if it doesn't exist
       return createPackage(pkg, items);
     }
   }
@@ -356,7 +390,7 @@ class WarehouseService {
       {bool? isReturned}) async {
     var query = supabase
         .from('warehouse_entries')
-        .select('*, warehouses(*), packages(*)')
+        .select('*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)')
         .eq('warehouse_id', warehouseId);
     if (isReturned != null) query = query.eq('is_returned', isReturned);
     final data = await query.order('admitted_at', ascending: false);
@@ -367,7 +401,7 @@ class WarehouseService {
       {bool? isReturned}) async {
     var query = supabase
         .from('warehouse_entries')
-        .select('*, warehouses(*), packages(*)');
+        .select('*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)');
     if (isReturned != null) query = query.eq('is_returned', isReturned);
     final data = await query.order('admitted_at', ascending: false);
     return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
@@ -412,14 +446,42 @@ class WarehouseService {
   }
 
   Future<void> markAsReturned(String entryId, {String? returnNotes}) async {
-    await supabase.from('warehouse_entries').update({
-      'is_returned': true,
-      'returned_at': DateTime.now().toIso8601String(),
-      'returned_by': supabase.auth.currentUser?.id,
-      if (returnNotes != null) 'return_notes': returnNotes,
-    }).eq('id', entryId);
-
     final user = supabase.auth.currentUser;
+    
+    // Attempt to get name from local providers first to avoid extra DB calls
+    // But since this is a service, we'll try a simpler check
+    
+    try {
+      // 1. Get the entry details to find the package_item_id
+      final entryRes = await supabase
+          .from('warehouse_entries')
+          .select('package_item_id')
+          .eq('id', entryId)
+          .single();
+      
+      final itemId = entryRes['package_item_id'] as String?;
+
+      // 2. Update the entry
+      await supabase.from('warehouse_entries').update({
+        'is_returned': true,
+        'returned_at': DateTime.now().toIso8601String(),
+        'returned_by': user?.id,
+        // We avoid fetching profile separately to reduce potential for 403/404 errors during update
+        if (returnNotes != null) 'return_notes': returnNotes,
+      }).eq('id', entryId);
+
+      // 3. Update the package item status to 'returned'
+      if (itemId != null) {
+        await supabase
+            .from('package_items')
+            .update({'status': 'returned'})
+            .eq('id', itemId);
+      }
+    } catch (e) {
+      // If update fails, rethrow with better context
+      rethrow;
+    }
+
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,

@@ -320,11 +320,13 @@ class WarehouseEntryModel {
   final int itemCount;
   final String? admittedBy;
   final String? admittedByName;
+  final String? admittedByBadge;
   final DateTime admittedAt;
   final bool isReturned;
   final DateTime? returnedAt;
   final String? returnedBy;
   final String? returnedByName;
+  final String? returnedByBadge;
   final String? returnNotes;
   final double? dailyRate;
   final double? accumulatedCharge;
@@ -346,11 +348,13 @@ class WarehouseEntryModel {
     required this.itemCount,
     this.admittedBy,
     this.admittedByName,
+    this.admittedByBadge,
     required this.admittedAt,
     this.isReturned = false,
     this.returnedAt,
     this.returnedBy,
     this.returnedByName,
+    this.returnedByBadge,
     this.returnNotes,
     this.dailyRate,
     this.accumulatedCharge,
@@ -376,6 +380,8 @@ class WarehouseEntryModel {
       admittedBy: json['admitted_by'] as String?,
       admittedByName:
           (json['admitted_profile'] as Map<String, dynamic>?)?['full_name'] as String?,
+      admittedByBadge:
+          (json['admitted_profile'] as Map<String, dynamic>?)?['badge_number'] as String?,
       admittedAt: DateTime.parse(json['admitted_at'] as String),
       isReturned: json['is_returned'] as bool? ?? false,
       returnedAt: json['returned_at'] != null
@@ -384,6 +390,8 @@ class WarehouseEntryModel {
       returnedBy: json['returned_by'] as String?,
       returnedByName:
           (json['returned_profile'] as Map<String, dynamic>?)?['full_name'] as String?,
+      returnedByBadge:
+          (json['returned_profile'] as Map<String, dynamic>?)?['badge_number'] as String?,
       returnNotes: json['return_notes'] as String?,
       dailyRate: (json['daily_rate'] as num?)?.toDouble() ?? 0,
       accumulatedCharge: (json['accumulated_storage_charge'] as num?)?.toDouble() ?? 0,
@@ -404,12 +412,17 @@ class WarehouseEntryModel {
     return end.difference(start).inDays + 1;
   }
 
-  /// Calculates charge considering historical rate changes across all items in the package
+  /// Calculates charge considering historical rate changes across all items in the package (or specific item if tied)
   double calculatePackageCharge(List<PackageItem> items, Map<DateTime, double> historicalRates) {
     if (isPackageConfiscated) return 0;
     
+    // If this entry is tied to a specific item, only consider that item
+    final validItems = packageItemId != null 
+        ? items.where((i) => i.id == packageItemId).toList() 
+        : items;
+    
     // Multiply total item count (pkgs) by the summed individual item quantity
-    final totalUnits = items.fold(0, (sum, i) => sum + i.quantity);
+    final totalUnits = validItems.fold(0, (sum, i) => sum + i.quantity);
     
     final start = DateTime(admittedAt.year, admittedAt.month, admittedAt.day);
     final endDateTime = returnedAt ?? DateTime.now();
