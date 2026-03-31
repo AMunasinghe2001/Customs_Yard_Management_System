@@ -21,15 +21,15 @@ class PrintBarcodeDialog extends StatefulWidget {
 
 class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
   bool _isPrinting = false;
-  String _printMode = 'detailed'; // 'detailed' or 'batch'
+  String _printMode = 'detailed'; // 'detailed' or 'item'
   bool _showPreview = true;
 
   Future<void> _handlePrint() async {
     setState(() => _isPrinting = true);
     try {
-      final doc = _printMode == 'detailed'
-          ? await BarcodeService.createBarcodePDF(widget.packages)
-          : await BarcodeService.createBatchBarcodesPDF(widget.packages);
+          final doc = _printMode == 'detailed'
+            ? await BarcodeService.createBarcodePDF(widget.packages)
+            : await BarcodeService.createItemBarcodePDF(widget.packages);
 
       await BarcodeService.printPDF(doc, 'barcode_${DateTime.now().millisecondsSinceEpoch}.pdf');
 
@@ -59,9 +59,9 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
   Future<void> _handleSave() async {
     setState(() => _isPrinting = true);
     try {
-      final doc = _printMode == 'detailed'
-          ? await BarcodeService.createBarcodePDF(widget.packages)
-          : await BarcodeService.createBatchBarcodesPDF(widget.packages);
+          final doc = _printMode == 'detailed'
+            ? await BarcodeService.createBarcodePDF(widget.packages)
+            : await BarcodeService.createItemBarcodePDF(widget.packages);
 
       await BarcodeService.savePDFToFile(
         doc,
@@ -161,14 +161,14 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
                           Gap(12),
                           _buildModeOption(
                             'Detailed Labels',
-                            'Full package details with barcode',
+                            'Detailed item labels for all quantities',
                             'detailed',
                           ),
                           Gap(12),
                           _buildModeOption(
-                            'Batch Labels',
-                            'Compact labels for quick printing',
-                            'batch',
+                            'Item Labels',
+                            'One barcode per item, repeated by quantity',
+                            'item',
                           ),
                         ],
                       ),

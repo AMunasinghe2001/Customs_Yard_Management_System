@@ -16,12 +16,16 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final PackageModel package;
   final Map<DateTime, double> storageRate;
   final WarehouseEntryModel? highlightEntry; // Added highlightEntry
+  final bool useLegacySummary;
+  final bool useWarehouseSummary;
 
   const PackageDetailsDialog({
     super.key,
     required this.package,
     required this.storageRate,
     this.highlightEntry, // Added highlightEntry
+    this.useLegacySummary = false,
+    this.useWarehouseSummary = false,
   });
 
   @override
@@ -295,6 +299,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       ? p.items.firstWhere((i) => i.id == widget.highlightEntry!.packageItemId, orElse: () => p.items.first)
       : null;
 
+    final legacyItems = (widget.highlightEntry != null && highlightedItem != null)
+      ? [highlightedItem]
+      : p.items;
+    final legacyEntries = (widget.useLegacySummary && widget.highlightEntry != null)
+      ? [widget.highlightEntry!]
+      : (widget.highlightEntry != null && highlightedItem != null)
+        ? p.warehouseEntries
+          .where((e) => e.packageItemId == highlightedItem.id)
+          .toList()
+        : p.warehouseEntries;
+
     int? displayQty;
     if (highlightedItem != null && widget.highlightEntry != null) {
       displayQty = widget.highlightEntry!.itemCount;
@@ -414,7 +429,6 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         ],
                       ),
                     ),
-                    _StatusBadge(status: p.status).animate().fadeIn(duration: 400.ms, delay: 200.ms),
                     const Gap(12),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
@@ -537,214 +551,300 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         ),
                       ),
 
-                      // Package Items Summary (per item)
-                      _DetailSection(
-                        title: 'Package Item Summary',
-                        icon: Icons.inventory_2_rounded,
-                        delay: 300,
-                        child: p.items.isEmpty
-                            ? const _EmptyState(message: 'No package items')
-                            : Column(
-                                children: p.items.map((item) {
-                                  final relatedEntries = p.warehouseEntries
-                                      .where((e) => e.packageItemId == item.id)
-                                      .toList();
-                                  final returnedQty = relatedEntries
-                                      .where((e) => e.isReturned)
-                                      .fold<int>(0, (sum, e) => sum + e.itemCount);
-                                  final heldQty = relatedEntries
-                                      .where((e) => !e.isReturned)
-                                      .fold<int>(0, (sum, e) => sum + e.itemCount);
-
-                                  final currentWarehouses = relatedEntries
-                                      .where((e) => !e.isReturned)
-                                      .map((e) => e.warehouseName)
-                                      .toSet()
-                                      .toList();
-                                  final historyWarehouses = relatedEntries
-                                      .map((e) => e.warehouseName)
-                                      .toSet()
-                                      .toList();
-
-                                  return material.Container(
-                                    margin: const EdgeInsets.only(bottom: 12),
+                      if (widget.useLegacySummary || widget.useWarehouseSummary) ...[
+                        _DetailSection(
+                          title: 'Item Details',
+                          icon: Icons.shopping_bag_rounded,
+                          delay: 300,
+                          child: (widget.highlightEntry == null || highlightedItem == null)
+                              ? const _EmptyState(message: 'No returned item details')
+                              : material.Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: context.colors.surfaceDark,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: context.colors.borderColor),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      _DetailItem(
+                                        icon: Icons.label_important_rounded,
+                                        label: 'Item Name',
+                                        value: highlightedItem.itemName,
+                                      ),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: _DetailItem(
+                                              icon: Icons.view_in_ar_rounded,
+                                              label: 'Total Packages',
+                                              value: '${highlightedItem.quantity}',
+                                            ),
+                                          ),
+                                          const Gap(12),
+                                          Expanded(
+                                            child: _DetailItem(
+                                              icon: widget.useWarehouseSummary
+                                                  ? Icons.inventory_2_rounded
+                                                  : Icons.keyboard_return_rounded,
+                                              label: widget.useWarehouseSummary
+                                                  ? 'Remaining (Current)'
+                                                  : 'Released (This Receipt)',
+                                              value: '${widget.highlightEntry!.itemCount}',
+                                              valueColor: widget.useWarehouseSummary
+                                                  ? context.colors.primaryGold
+                                                  : context.colors.successGreen,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                        ),
+                        if (!widget.useWarehouseSummary)
+                          _DetailSection(
+                            title: 'Warehouse Summary',
+                            icon: Icons.warehouse_rounded,
+                            delay: 350,
+                            child: legacyEntries.isEmpty
+                                ? const _EmptyState(message: 'No warehouse details')
+                                : material.Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
                                       color: context.colors.surfaceDark,
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(
-                                          color: context.colors.borderColor),
+                                      border: Border.all(color: context.colors.borderColor),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Expanded(
-                                              child: _DetailItem(
-                                                icon: Icons.label_important_rounded,
-                                                label: 'Item Name',
-                                                value: item.itemName,
-                                              ),
-                                            ),
-                                            const Gap(12),
-                                            Expanded(
-                                              child: _DetailItem(
-                                                icon: Icons.view_in_ar_rounded,
-                                                label: 'Packages',
-                                                value: '${item.quantity}',
-                                              ),
-                                            ),
-                                          ],
+                                        _DetailItem(
+                                          icon: Icons.warehouse_rounded,
+                                          label: 'Warehouse',
+                                          value: legacyEntries.first.warehouseName,
                                         ),
-                                        Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Expanded(
-                                              child: _DetailItem(
-                                                icon: Icons.category_rounded,
-                                                label: 'Category',
-                                                value: item.category ?? 'N/A',
-                                              ),
-                                            ),
-                                            const Gap(12),
-                                            Expanded(
-                                              child: _DetailItem(
-                                                icon: Icons.straighten_rounded,
-                                                label: 'Unit',
-                                                value: item.unitOfMeasure,
-                                              ),
-                                            ),
-                                          ],
+                                        _DetailItem(
+                                          icon: Icons.location_on_rounded,
+                                          label: 'Zone',
+                                          value: legacyEntries.first.warehouseCode,
                                         ),
-                                        if (item.reasons != null &&
-                                            item.reasons!.isNotEmpty)
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
+                                        _DetailItem(
+                                          icon: Icons.calendar_month_rounded,
+                                          label: 'Date Range',
+                                          value: '${DateFormat('yyyy-MM-dd').format(legacyEntries.first.admittedAt)} to ${legacyEntries.first.returnedAt != null ? DateFormat('yyyy-MM-dd').format(legacyEntries.first.returnedAt!) : '—'}',
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                          ),
+                      ] else
+                        _DetailSection(
+                          title: 'Package Item Summary',
+                          icon: Icons.inventory_2_rounded,
+                          delay: 300,
+                          child: p.items.isEmpty
+                              ? const _EmptyState(message: 'No package items')
+                              : Column(
+                                  children: p.items.map((item) {
+                                    final relatedEntries = p.warehouseEntries
+                                        .where((e) => e.packageItemId == item.id)
+                                        .toList();
+                                    final returnedQty = relatedEntries
+                                        .where((e) => e.isReturned)
+                                        .fold<int>(0, (sum, e) => sum + e.itemCount);
+                                    final heldQty = relatedEntries
+                                        .where((e) => !e.isReturned)
+                                        .fold<int>(0, (sum, e) => sum + e.itemCount);
+
+                                    final currentWarehouses = relatedEntries
+                                        .where((e) => !e.isReturned)
+                                        .map((e) => e.warehouseName)
+                                        .toSet()
+                                        .toList();
+                                    final historyWarehouses = relatedEntries
+                                        .map((e) => e.warehouseName)
+                                        .toSet()
+                                        .toList();
+
+                                    return material.Container(
+                                      margin: const EdgeInsets.only(bottom: 12),
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: context.colors.surfaceDark,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                            color: context.colors.borderColor),
+                                      ),
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
-                                              Row(
-                                                children: [
-                                                  material.Container(
-                                                    padding:
-                                                        const EdgeInsets.all(8),
-                                                    decoration: BoxDecoration(
-                                                      color: context.colors
-                                                          .dangerRed
-                                                          .withOpacity(0.1),
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              10),
-                                                    ),
-                                                    child: Icon(
-                                                      Icons.warning_amber_rounded,
-                                                      size: 16,
-                                                      color: context
-                                                          .colors.dangerRed,
-                                                    ),
-                                                  ),
-                                                  const Gap(12),
-                                                  Text(
-                                                    'Reason',
-                                                    style: material.TextStyle(
-                                                      color:
-                                                          context.colors.textMuted,
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      letterSpacing: 0.5,
-                                                    ),
-                                                  ),
-                                                ],
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.label_important_rounded,
+                                                  label: 'Item Name',
+                                                  value: item.itemName,
+                                                ),
                                               ),
-                                              const Gap(8),
-                                              Padding(
-                                                padding: const EdgeInsets.only(bottom: 12),
-                                                child: Wrap(
-                                                  spacing: 8,
-                                                  runSpacing: 8,
-                                                  children: item.reasons!
-                                                      .split(',')
-                                                      .map((reason) =>
-                                                          material.Container(
-                                                            padding:
-                                                                const EdgeInsets
-                                                                    .symmetric(
-                                                                    horizontal: 12,
-                                                                    vertical: 8),
-                                                            decoration: BoxDecoration(
-                                                              color: context
-                                                                  .colors.dangerRed
-                                                                  .withOpacity(0.05),
-                                                              borderRadius:
-                                                                  BorderRadius
-                                                                      .circular(10),
-                                                              border: Border.all(
-                                                                color: context
-                                                                    .colors.dangerRed
-                                                                    .withOpacity(0.2),
-                                                              ),
-                                                            ),
-                                                            child: Text(
-                                                              reason.trim(),
-                                                              style:
-                                                                  material.TextStyle(
-                                                                color: context
-                                                                    .colors.dangerRed,
-                                                                fontSize: 12,
-                                                                fontWeight:
-                                                                    FontWeight.w600,
-                                                              ),
-                                                            ),
-                                                          ))
-                                                      .toList(),
+                                              const Gap(12),
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.view_in_ar_rounded,
+                                                  label: 'Packages',
+                                                  value: '${item.quantity}',
                                                 ),
                                               ),
                                             ],
                                           ),
-                                        Row(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Expanded(
-                                              child: _DetailItem(
-                                                icon: Icons.keyboard_return_rounded,
-                                                label: 'Returned',
-                                                value: '$returnedQty',
-                                                valueColor: context.colors.successGreen,
+                                          Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.category_rounded,
+                                                  label: 'Category',
+                                                  value: item.category ?? 'N/A',
+                                                ),
                                               ),
-                                            ),
-                                            const Gap(12),
-                                            Expanded(
-                                              child: _DetailItem(
-                                                icon: Icons.pause_circle_filled_rounded,
-                                                label: 'Held',
-                                                value: '$heldQty',
-                                                valueColor: context.colors.primaryGold,
+                                              const Gap(12),
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.straighten_rounded,
+                                                  label: 'Unit',
+                                                  value: item.unitOfMeasure,
+                                                ),
                                               ),
+                                            ],
+                                          ),
+                                          if (item.reasons != null &&
+                                              item.reasons!.isNotEmpty)
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Row(
+                                                  children: [
+                                                    material.Container(
+                                                      padding:
+                                                          const EdgeInsets.all(8),
+                                                      decoration: BoxDecoration(
+                                                        color: context.colors
+                                                            .dangerRed
+                                                            .withOpacity(0.1),
+                                                        borderRadius:
+                                                            BorderRadius.circular(
+                                                                10),
+                                                      ),
+                                                      child: Icon(
+                                                        Icons.warning_amber_rounded,
+                                                        size: 16,
+                                                        color: context
+                                                            .colors.dangerRed,
+                                                      ),
+                                                    ),
+                                                    const Gap(12),
+                                                    Text(
+                                                      'Reason',
+                                                      style: material.TextStyle(
+                                                        color:
+                                                            context.colors.textMuted,
+                                                        fontSize: 10,
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        letterSpacing: 0.5,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                const Gap(8),
+                                                Padding(
+                                                  padding: const EdgeInsets.only(bottom: 12),
+                                                  child: Wrap(
+                                                    spacing: 8,
+                                                    runSpacing: 8,
+                                                    children: item.reasons!
+                                                        .split(',')
+                                                        .map((reason) =>
+                                                            material.Container(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .symmetric(
+                                                                      horizontal: 12,
+                                                                      vertical: 8),
+                                                              decoration: BoxDecoration(
+                                                                color: context
+                                                                    .colors.dangerRed
+                                                                    .withOpacity(0.05),
+                                                                borderRadius:
+                                                                    BorderRadius
+                                                                        .circular(10),
+                                                                border: Border.all(
+                                                                  color: context
+                                                                      .colors.dangerRed
+                                                                      .withOpacity(0.2),
+                                                                ),
+                                                              ),
+                                                              child: Text(
+                                                                reason.trim(),
+                                                                style:
+                                                                    material.TextStyle(
+                                                                  color: context
+                                                                      .colors.dangerRed,
+                                                                  fontSize: 12,
+                                                                  fontWeight:
+                                                                      FontWeight.w600,
+                                                                ),
+                                                              ),
+                                                            ))
+                                                        .toList(),
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                          ],
-                                        ),
-                                        _DetailItem(
-                                          icon: Icons.warehouse_rounded,
-                                          label: 'Current Warehouses',
-                                          value: currentWarehouses.isNotEmpty
-                                              ? currentWarehouses.join(', ')
-                                              : '—',
-                                        ),
-                                        _DetailItem(
-                                          icon: Icons.history_rounded,
-                                          label: 'Warehouse History',
-                                          value: historyWarehouses.isNotEmpty
-                                              ? historyWarehouses.join(', ')
-                                              : '—',
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                      ),
+                                          Row(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.keyboard_return_rounded,
+                                                  label: 'Returned',
+                                                  value: '$returnedQty',
+                                                  valueColor: context.colors.successGreen,
+                                                ),
+                                              ),
+                                              const Gap(12),
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.pause_circle_filled_rounded,
+                                                  label: 'Held',
+                                                  value: '$heldQty',
+                                                  valueColor: context.colors.primaryGold,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                          _DetailItem(
+                                            icon: Icons.warehouse_rounded,
+                                            label: 'Current Warehouses',
+                                            value: currentWarehouses.isNotEmpty
+                                                ? currentWarehouses.join(', ')
+                                                : '—',
+                                          ),
+                                          _DetailItem(
+                                            icon: Icons.history_rounded,
+                                            label: 'Warehouse History',
+                                            value: historyWarehouses.isNotEmpty
+                                                ? historyWarehouses.join(', ')
+                                                : '—',
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                        ),
 
                       // Officer Notice Section
                       if (p.notes != null && p.notes!.isNotEmpty)
@@ -767,7 +867,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       ),
 
                       // Returned By Section
-                      if (widget.highlightEntry?.isReturned == true)
+                      if (!widget.useWarehouseSummary && widget.highlightEntry?.isReturned == true)
                         _SystemEntrySection(
                           officerDisplay: returnedOfficerDisplay,
                           badgeNumber: returnedOfficerBadge,
@@ -776,7 +876,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           customIcon: Icons.keyboard_return_rounded,
                         ),
 
-                      if (widget.highlightEntry?.isReturned == true &&
+                        if (!widget.useWarehouseSummary && widget.highlightEntry?.isReturned == true &&
                           (returnedReceiptNo != null ||
                               returnedReceiptDate != null))
                         _DetailSection(
@@ -829,70 +929,59 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                   ),
                 ),
               ),
-              material.Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.black26 : Colors.grey.shade50,
-                  border: Border(top: BorderSide(color: context.colors.borderColor)),
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(23)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Row(
-                      children: [
-                        // Update Form Button
-                        material.Tooltip(
-                          message: isOfficer ? 'Package updates are restricted to administrators only' : '',
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: context.colors.primaryGold,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            ),
-                            icon: const Icon(Icons.edit_rounded, size: 18),
-                            label: const Text('Update'),
-                            onPressed: isOfficer ? null : () {
-                              showDialog(
-                                context: context,
-                                builder: (_) => PackageUpdateDialog(
-                                  package: p, 
-                                  highlightedItem: highlightedItem,
-                                  highlightEntry: widget.highlightEntry, // Pass this to update form
-                                  storageRate: widget.storageRate,
-                                ),
-                              );
-                            },
+              if (widget.useWarehouseSummary)
+                material.Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : Colors.grey.shade50,
+                    border: Border(top: BorderSide(color: context.colors.borderColor)),
+                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(23)),
+                  ),
+                  child: Row(
+                    children: [
+                      material.Tooltip(
+                        message: isOfficer ? 'Package updates are restricted to administrators only' : '',
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: context.colors.primaryGold,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           ),
+                          icon: const Icon(Icons.edit_rounded, size: 18),
+                          label: const Text('Update'),
+                          onPressed: isOfficer ? null : () {
+                            showDialog(
+                              context: context,
+                              builder: (_) => PackageUpdateDialog(
+                                package: p,
+                                highlightedItem: highlightedItem,
+                                highlightEntry: widget.highlightEntry,
+                                storageRate: widget.storageRate,
+                              ),
+                            );
+                          },
                         ),
-                        const Gap(12),
-                        // Return Button - Show only if not already returned
-                        if (widget.highlightEntry != null && !widget.highlightEntry!.isReturned)
-                          ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: context.colors.successGreen,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                            ),
-                            icon: const Icon(Icons.assignment_return_rounded, size: 18),
-                            label: const Text('Return Package'),
-                            onPressed: () async {
-                              final success = await _showReleaseConfirmation(context, widget.highlightEntry!);
-                              if (success && mounted) {
-                                Navigator.pop(context);
-                              }
-                            },
+                      ),
+                      const Gap(12),
+                      if (widget.highlightEntry != null && !widget.highlightEntry!.isReturned)
+                        ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: context.colors.successGreen,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                           ),
-                      ],
-                    ),
-                    // Close Window Button
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: Text('Close Window', style: material.TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold)),
-                    ),
-                  ],
+                          icon: const Icon(Icons.assignment_return_rounded, size: 18),
+                          label: const Text('Return Package'),
+                          onPressed: () async {
+                            final success = await _showReleaseConfirmation(context, widget.highlightEntry!);
+                            if (success && mounted) {
+                              Navigator.pop(context);
+                            }
+                          },
+                        ),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),

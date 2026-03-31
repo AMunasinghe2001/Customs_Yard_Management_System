@@ -583,6 +583,7 @@ class _ReturnedPackagesScreenState
                                             package: row.package,
                                             storageRate: storageRateHistory,
                                             highlightEntry: row.entry,
+                                            useLegacySummary: true,
                                           ),
                                         );
                                       },

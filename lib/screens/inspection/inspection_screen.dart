@@ -112,6 +112,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
         if (pkg.items != null && pkg.items!.isNotEmpty) {
           for (final item in pkg.items!) {
             final row = _ItemRow();
+            row.itemId = item.id;
             row.nameCtrl.text = item.itemName;
             row.qtyCtrl.text = item.quantity.toString();
             row.valueCtrl.text = item.unitValue.toString();
@@ -212,8 +213,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
     try {
       final items = _items
           .where((r) => r.nameCtrl.text.isNotEmpty)
-          .map((r) => PackageItem(
-                id: const Uuid().v4(),
+              .map((r) => PackageItem(
+                id: r.itemId ?? const Uuid().v4(),
                 packageId: '',
                 itemName: r.nameCtrl.text,
                 quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
@@ -303,6 +304,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       _savedPackageId = null;
       _suggestedWarehouseId = null;
     });
+    _generateNextSr();
   }
 
   String _formatWarehouseName(String name) {
@@ -479,8 +481,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
                                       controller: _caseNumberCtrl,
                                       decoration: const InputDecoration(
                                           labelText: 'Case Number'),
-                                      validator: (v) =>
-                                          v!.isEmpty ? 'Required' : null)),
+                                      validator: (v) => null)),
                               const Gap(12),
                               Expanded(
                                   child: TextFormField(
@@ -763,9 +764,12 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       final cats = ref.read(packageCategoriesProvider).value;
       for (int i = 0; i < widget.tempPackageItems!.length; i++) {
         final tempItem = widget.tempPackageItems![i];
-        final item =
-            saved.items.where((ci) => ci.id == tempItem.id).firstOrNull ??
-                saved.items[i];
+        
+        // Use firstWhereOrNull to avoid "No element" error
+        final item = saved.items.where(
+          (ci) => ci.itemName == tempItem.itemName && ci.quantity == tempItem.quantity
+        ).firstOrNull ?? (saved.items.length > i ? saved.items[i] : saved.items.first);
+        
         final warehouseId = _itemWarehouseSelections[i];
         final cat = cats?.where((c) => c.name == tempItem.category).firstOrNull;
 
@@ -1067,6 +1071,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 // ─── Helper Widgets ───
 
 class _ItemRow {
+  String? itemId;
   final nameCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: '1');
   final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
@@ -1389,13 +1394,35 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                               fillColor: context.colors.cardDark,
                             ),
                             validator: (v) => v == null ? 'Required' : null,
-                            items: reasons
-                                .map((r) => DropdownMenuItem(
-                                    value: r.reasonText,
-                                    child: Text(r.reasonText,
-                                        style: const TextStyle(fontSize: 13),
-                                        overflow: TextOverflow.ellipsis)))
-                                .toList(),
+                            items: reasons.map((r) {
+                              final isSelectedSomewhereElse = widget
+                                  .row.selectedReasons
+                                  .any((res) => res == r.reasonText);
+                              final isCurrentSelection =
+                                  widget.row.selectedReasons[rIdx] ==
+                                      r.reasonText;
+
+                              return DropdownMenuItem(
+                                value: r.reasonText,
+                                enabled:
+                                    !isSelectedSomewhereElse || isCurrentSelection,
+                                child: Text(
+                                  r.reasonText,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: (isSelectedSomewhereElse &&
+                                            !isCurrentSelection)
+                                        ? context.colors.textMuted
+                                        : context.colors.textPrimary,
+                                    decoration: (isSelectedSomewhereElse &&
+                                            !isCurrentSelection)
+                                        ? TextDecoration.lineThrough
+                                        : null,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              );
+                            }).toList(),
                             onChanged: (v) {
                               setState(
                                   () => widget.row.selectedReasons[rIdx] = v);

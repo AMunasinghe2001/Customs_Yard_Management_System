@@ -22,14 +22,17 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
   bool _obscurePass = true, _obscureConfirm = true;
   bool _isLoading = false;
+  bool _otpSent = false;
   String? _error, _success;
 
   @override
   void dispose() {
     _firstNameCtrl.dispose(); _lastNameCtrl.dispose(); _salaryCtrl.dispose();
     _emailCtrl.dispose(); _passwordCtrl.dispose(); _confirmCtrl.dispose();
+    _otpCtrl.dispose();
     super.dispose();
   }
 
@@ -38,31 +41,40 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
     setState(() { _isLoading = true; _error = null; _success = null; });
     try {
       final fullName = '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}';
-      await ref.read(adminServiceProvider).createOfficer(
-        email: _emailCtrl.text.trim(),
-        password: _passwordCtrl.text,
-        fullName: fullName,
-        badgeNumber: _salaryCtrl.text.trim(),
-        role: 'officer',
-      );
-      setState(() {
-        _success = 'Account created successfully! Redirecting to Sign In...';
-        _formKey.currentState?.reset();
-        _firstNameCtrl.clear(); _lastNameCtrl.clear(); _salaryCtrl.clear();
-        _emailCtrl.clear(); _passwordCtrl.clear(); _confirmCtrl.clear();
-      });
-      // Auto-navigate to login after 2 seconds
-      await Future.delayed(const Duration(seconds: 2));
-      if (mounted) context.go('/login');
+      if (!_otpSent) {
+        await ref.read(adminServiceProvider).requestSignupOtp(
+          email: _emailCtrl.text.trim(),
+          fullName: fullName,
+          badgeNumber: _salaryCtrl.text.trim(),
+          role: 'officer',
+        );
+        setState(() {
+          _otpSent = true;
+          _success = 'OTP sent to your email. Please enter the code to verify.';
+        });
+      } else {
+        await ref.read(adminServiceProvider).verifySignupOtp(
+          email: _emailCtrl.text.trim(),
+          otp: _otpCtrl.text.trim(),
+          password: _passwordCtrl.text,
+          fullName: fullName,
+          badgeNumber: _salaryCtrl.text.trim(),
+          role: 'officer',
+        );
+        setState(() {
+          _success = 'Account verified! Redirecting to Sign In...';
+          _formKey.currentState?.reset();
+          _firstNameCtrl.clear(); _lastNameCtrl.clear(); _salaryCtrl.clear();
+          _emailCtrl.clear(); _passwordCtrl.clear(); _confirmCtrl.clear();
+          _otpCtrl.clear();
+          _otpSent = false;
+        });
+        await Future.delayed(const Duration(seconds: 2));
+        if (mounted) context.go('/login');
+      }
     } catch (e) {
       final msg = e.toString();
-      if (msg.contains('email_not_confirmed')) {
-        setState(() => _success = 'Account created! Please confirm your email before signing in.');
-        await Future.delayed(const Duration(seconds: 3));
-        if (mounted) context.go('/login');
-      } else {
-        setState(() => _error = _friendlyError(msg));
-      }
+      setState(() => _error = _friendlyError(msg));
     } finally { setState(() => _isLoading = false); }
   }
 
@@ -70,8 +82,8 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
     if (raw.contains('already_registered') || raw.contains('User already registered') || raw.contains('already been registered')) {
       return 'This email is already registered. Please sign in instead.';
     }
-    if (raw.contains('email_not_confirmed')) {
-      return 'Email not confirmed. Please check your inbox.';
+    if (raw.contains('invalid_otp') || raw.contains('otp') || raw.contains('token')) {
+      return 'Invalid OTP. Please check the code and try again.';
     }
     if (raw.contains('too many requests') || raw.contains('over_email_send_rate_limit')) {
       return 'Too many attempts. Please wait a moment and try again.';
@@ -259,11 +271,27 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 360.ms).fadeIn(),
                 const Gap(28),
 
+                if (_otpSent) ...[
+                  TextFormField(
+                    controller: _otpCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'OTP Code *',
+                      prefixIcon: Icon(Icons.verified_user_rounded, color: context.colors.textMuted),
+                    ),
+                    keyboardType: TextInputType.number,
+                    validator: (v) => v == null || v.isEmpty ? 'OTP required' : null,
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 380.ms).fadeIn(),
+                  const Gap(18),
+                ],
+
                 SizedBox(height: 52, child: ElevatedButton.icon(
                   icon: _isLoading
                       ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
                       : const Icon(Icons.how_to_reg_rounded),
-                  label: Text(_isLoading ? 'Creating...' : 'Create Officer Account',
+                  label: Text(
+                      _isLoading
+                          ? 'Processing...'
+                          : (_otpSent ? 'Verify OTP & Create Account' : 'Send OTP'),
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
                   onPressed: _isLoading ? null : _register,
                 )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),

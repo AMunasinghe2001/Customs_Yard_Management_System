@@ -424,6 +424,7 @@ class _WarehouseTab extends ConsumerWidget {
                                       package: pkg, 
                                       storageRate: storageRateHistory,
                                       highlightEntry: e,
+                                      useWarehouseSummary: true,
                                     ),
                                   );
                                 }

@@ -247,8 +247,10 @@ class PackageService {
             .map((row) => row['id'].toString())
             .toSet();
         
-        final newItemIds =
-            items.map((i) => i.id).where((id) => id.isNotEmpty).toSet();
+        final newItemIds = items
+          .map((i) => i.id)
+          .where((id) => id.isNotEmpty && existingItemIds.contains(id))
+          .toSet();
         
         final idsToDelete = existingItemIds.difference(newItemIds).toList();
 
@@ -257,7 +259,7 @@ class PackageService {
         }
 
         for (final item in items) {
-          if (item.id.isNotEmpty) {
+          if (item.id.isNotEmpty && existingItemIds.contains(item.id)) {
             // Update existing item
             await supabase
                 .from('package_items')
@@ -675,6 +677,66 @@ class AdminService {
   Future<List<ProfileModel>> getAllProfiles() async {
     final data = await supabase.from('profiles').select().order('created_at');
     return data.map((e) => ProfileModel.fromJson(e)).toList();
+  }
+
+  Future<void> requestSignupOtp({
+    required String email,
+    required String fullName,
+    required String badgeNumber,
+    required String role,
+  }) async {
+    await supabase.auth.signInWithOtp(
+      email: email,
+      shouldCreateUser: true,
+      data: {
+        'full_name': fullName,
+        'role': role,
+        'badge_number': badgeNumber,
+      },
+    );
+  }
+
+  Future<void> verifySignupOtp({
+    required String email,
+    required String otp,
+    required String password,
+    required String fullName,
+    required String badgeNumber,
+    required String role,
+  }) async {
+    final response = await supabase.auth.verifyOTP(
+      email: email,
+      token: otp,
+      type: OtpType.signup,
+    );
+
+    final user = response.user ?? supabase.auth.currentUser;
+    if (user == null) {
+      throw Exception('OTP verification failed. Please try again.');
+    }
+
+    await supabase.auth.updateUser(
+      UserAttributes(
+        password: password,
+        data: {
+          'full_name': fullName,
+          'role': role,
+          'badge_number': badgeNumber,
+        },
+      ),
+    );
+
+    try {
+      await supabase.from('profiles').upsert({
+        'id': user.id,
+        'full_name': fullName,
+        'badge_number': badgeNumber,
+        'role': role,
+        'is_active': true,
+      });
+    } catch (_) {}
+
+    await supabase.auth.signOut();
   }
 
   Future<void> createOfficer({
