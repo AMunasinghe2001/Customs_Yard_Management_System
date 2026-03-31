@@ -22,6 +22,7 @@ const _officerNav = [
   NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
+  NavItem('Returned Packages', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
@@ -30,6 +31,7 @@ const _adminNav = [
   NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
+  NavItem('Returned Packages', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];

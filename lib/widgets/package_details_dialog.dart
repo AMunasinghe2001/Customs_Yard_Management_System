@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart' as material;
-import 'package:flutter/material.dart' show Wrap, LinearProgressIndicator, RoundedRectangleBorder, Colors, Icons, Theme, FontWeight, BorderRadius, Radius, BoxConstraints, BoxShadow, Offset, Border, BorderSide, IconButton, ElevatedButton, CircularProgressIndicator, ScaffoldMessenger, SnackBar, showDatePicker, showDialog, BuildContext, Widget, Row, Column, Expanded, Icon, Text, Padding, EdgeInsets, Center, SingleChildScrollView, Form, GlobalKey, FormState, TextFormField, InputDecoration, DropdownButtonFormField, DropdownMenuItem, SizedBox, Brightness, Color, IconData, Dialog, Tween, TweenAnimationBuilder, Transform, Opacity, Curves, MainAxisSize, CrossAxisAlignment, BoxDecoration, StatelessWidget, LinearGradient, Flexible, Navigator, MainAxisAlignment, TextButton, BoxShape, FontStyle, TextStyle, Container, OutlinedButton, TextEditingController, MediaQuery, TextInputType, VoidCallback, Spacer, TextOverflow, StatefulWidget, StatefulBuilder;
+import 'package:flutter/material.dart' show Wrap, LinearProgressIndicator, RoundedRectangleBorder, Colors, Icons, Theme, FontWeight, BorderRadius, Radius, BoxConstraints, BoxShadow, Offset, Border, BorderSide, IconButton, ElevatedButton, CircularProgressIndicator, ScaffoldMessenger, SnackBar, showDatePicker, showDialog, BuildContext, Widget, Row, Column, Expanded, Icon, Text, Padding, EdgeInsets, Center, SingleChildScrollView, Form, GlobalKey, FormState, TextFormField, InputDecoration, DropdownButtonFormField, DropdownMenuItem, SizedBox, Brightness, Color, IconData, Dialog, Tween, TweenAnimationBuilder, Transform, Opacity, Curves, MainAxisSize, CrossAxisAlignment, BoxDecoration, StatelessWidget, LinearGradient, Flexible, Navigator, MainAxisAlignment, TextButton, BoxShape, FontStyle, TextStyle, Container, OutlinedButton, TextEditingController, MediaQuery, TextInputType, VoidCallback, Spacer, TextOverflow, StatefulWidget, StatefulBuilder, ConstrainedBox;
+import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -50,6 +51,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
 
   Future<bool> _showReleaseConfirmation(BuildContext context, WarehouseEntryModel entry) async {
     final notesCtrl = TextEditingController();
+    final receiptCtrl = TextEditingController();
+    final dateCtrl = TextEditingController(text: DateFormat('yyyy-MM-dd').format(DateTime.now()));
     
     // Find the specific item this entry refers to
     final specificItem = widget.package.items.firstWhere(
@@ -92,9 +95,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => material.AlertDialog(
           title: const Text('Release Package Item'),
-          content: Form(
-            key: formKey,
-            child: Column(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 520),
+            child: Form(
+              key: formKey,
+              child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -149,14 +155,55 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                   ),
                 ),
                 const Gap(16),
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: receiptCtrl,
+                        decoration: const material.InputDecoration(
+                          labelText: 'Receipt No. *',
+                          hintText: 'Enter receipt #',
+                        ),
+                        validator: (value) => 
+                            (value == null || value.trim().isEmpty) ? 'Required' : null,
+                      ),
+                    ),
+                    const Gap(12),
+                    Expanded(
+                      flex: 2,
+                      child: TextFormField(
+                        controller: dateCtrl,
+                        readOnly: true,
+                        decoration: const material.InputDecoration(
+                          labelText: 'Receipt Date *',
+                          suffixIcon: Icon(Icons.calendar_today, size: 18),
+                        ),
+                        onTap: () async {
+                          final date = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2100),
+                          );
+                          if (date != null) {
+                            dateCtrl.text = DateFormat('yyyy-MM-dd').format(date);
+                          }
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const Gap(16),
                 material.TextField(
                   controller: notesCtrl,
                   decoration: const material.InputDecoration(
-                    labelText: 'Release Notes',
+                    labelText: 'Release Notes (Optional)',
                     hintText: 'Enter any additional details',
                   ),
                 ),
               ],
+            ),
             ),
           ),
           actions: [
@@ -174,12 +221,25 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                 }
 
                 try {
+                  String finalNotes = "Receipt No: ${receiptCtrl.text.trim()} | Date: ${dateCtrl.text}";
+                  if (notesCtrl.text.trim().isNotEmpty) {
+                    finalNotes += " | Notes: ${notesCtrl.text.trim()}";
+                  }
+
                   await ref.read(warehouseServiceProvider).markAsReturned(
                     entry.id,
-                    returnNotes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null,
+                    returnNotes: finalNotes,
                     returnQty: releaseQty,
                   );
+                  ref
+                      .read(packagesRefreshTriggerProvider.notifier)
+                      .trigger();
+                  ref
+                      .read(warehouseRefreshTriggerProvider.notifier)
+                      .trigger();
                   ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
+                  ref.invalidate(livePackagesProvider);
+                  ref.invalidate(allWarehouseEntriesProvider);
                   if (ctx.mounted) Navigator.pop(ctx, true);
                 } catch (e) {
                   if (ctx.mounted) {
@@ -246,6 +306,37 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         if (displayQty! < 1) displayQty = 1;
       }
     }
+
+    String? returnedReceiptNo;
+    String? returnedReceiptDate;
+    final returnNotes = widget.highlightEntry?.returnNotes;
+    if (returnNotes != null && returnNotes.trim().isNotEmpty) {
+      for (final part in returnNotes.split('|')) {
+        final text = part.trim();
+        if (text.toLowerCase().startsWith('receipt no:')) {
+          final idx = text.indexOf(':');
+          if (idx != -1) returnedReceiptNo = text.substring(idx + 1).trim();
+        } else if (text.toLowerCase().startsWith('date:')) {
+          final idx = text.indexOf(':');
+          if (idx != -1) returnedReceiptDate = text.substring(idx + 1).trim();
+        }
+      }
+    }
+
+      final highlightReturnedById = widget.highlightEntry?.returnedBy;
+      final returnedOfficerDisplay =
+        widget.highlightEntry?.returnedByName ??
+          (highlightReturnedById != null &&
+              highlightReturnedById == currentProfile?.id
+            ? currentProfile?.fullName
+            : null) ??
+          'Unknown Officer';
+      final returnedOfficerBadge =
+        widget.highlightEntry?.returnedByBadge ??
+          (highlightReturnedById != null &&
+              highlightReturnedById == currentProfile?.id
+            ? currentProfile?.badgeNumber
+            : null);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -557,11 +648,43 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       // Returned By Section
                       if (widget.highlightEntry?.isReturned == true)
                         _SystemEntrySection(
-                          officerDisplay: widget.highlightEntry?.returnedByName ?? 'Unknown Officer',
-                          badgeNumber: widget.highlightEntry?.returnedByBadge, 
+                          officerDisplay: returnedOfficerDisplay,
+                          badgeNumber: returnedOfficerBadge,
                           delay: 550,
                           customTitle: 'Returned By',
                           customIcon: Icons.keyboard_return_rounded,
+                        ),
+
+                      if (widget.highlightEntry?.isReturned == true &&
+                          (returnedReceiptNo != null ||
+                              returnedReceiptDate != null))
+                        _DetailSection(
+                          title: 'Receipt Details',
+                          icon: Icons.receipt_long_rounded,
+                          delay: 560,
+                          child: Row(
+                            children: [
+                              if (returnedReceiptNo != null)
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.receipt_rounded,
+                                    label: 'Receipt No',
+                                    value: returnedReceiptNo!,
+                                  ),
+                                ),
+                              if (returnedReceiptNo != null &&
+                                  returnedReceiptDate != null)
+                                const Gap(12),
+                              if (returnedReceiptDate != null)
+                                Expanded(
+                                  child: _DetailItem(
+                                    icon: Icons.event_rounded,
+                                    label: 'Receipt Date',
+                                    value: returnedReceiptDate!,
+                                  ),
+                                ),
+                            ],
+                          ),
                         ),
 
                       // Warehouse Charges Section
@@ -1940,6 +2063,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   controller: widget.row.qtyCtrl,
                   decoration: const InputDecoration(labelText: 'Pkgs *', isDense: true),
                   keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Req';
                     if (int.tryParse(v) == null || int.tryParse(v)! <= 0) return 'Err';

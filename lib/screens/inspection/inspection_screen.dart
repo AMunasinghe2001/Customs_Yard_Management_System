@@ -13,6 +13,7 @@ import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/custom_dropdown.dart';
 import '../../widgets/warehouse_selection_dialog.dart';
+import '../../widgets/print_barcode_dialog.dart';
 import '../../core/supabase_client.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
@@ -696,6 +697,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
   final Map<int, String?> _itemWarehouseSelections = {};
   bool _isSending = false;
   bool _warehouseSent = false;
+  PackageModel? _savedPackage;
 
   @override
   void initState() {
@@ -754,6 +756,9 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
             widget.tempPackageItems!,
           );
 
+      // Store the saved package for later use
+      _savedPackage = saved;
+
       // Then add entries for EACH item to their respective warehouses
       final cats = ref.read(packageCategoriesProvider).value;
       for (int i = 0; i < widget.tempPackageItems!.length; i++) {
@@ -783,11 +788,6 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: const Text('✅ All items sent to respective warehouses'),
             backgroundColor: context.colors.successGreen));
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (mounted) {
-            widget.onReset();
-          }
-        });
       }
     } catch (e) {
       if (mounted)
@@ -843,6 +843,27 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                   )
                       .animate()
                       .slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
+                  const Gap(20),
+                  if (_savedPackage != null)
+                    ElevatedButton.icon(
+                      onPressed: () => showDialog(
+                        context: context,
+                        builder: (_) => PrintBarcodeDialog(
+                          packages: [_savedPackage!],
+                          onPrinted: widget.onReset,
+                        ),
+                      ),
+                      icon: const Icon(Icons.print_rounded),
+                      label: const Text('Print Barcode Label'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: context.colors.primaryGold,
+                        foregroundColor: Colors.black,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
                 ]),
               )
             else
@@ -1130,6 +1151,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 decoration:
                     const InputDecoration(labelText: 'Pkgs *', isDense: true),
                 keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'Req';
                   if (int.tryParse(v) == null || int.tryParse(v)! <= 0)

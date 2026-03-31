@@ -49,6 +49,12 @@ final packagesChangeTriggerProvider = StreamProvider<int>((ref) async* {
       table: 'package_items',
       callback: (_) => ref.read(packagesRefreshTriggerProvider.notifier).trigger(),
     )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'warehouse_entries',
+      callback: (_) => ref.read(packagesRefreshTriggerProvider.notifier).trigger(),
+    )
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
 });

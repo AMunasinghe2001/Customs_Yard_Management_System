@@ -60,29 +60,6 @@ class WarehousesScreen extends ConsumerWidget {
                         Text('Track packages held in SR Unit facilities',
                             style: TextStyle(color: context.colors.textSecondary)),
                       ]),
-                      SizedBox(child: Row(mainAxisSize: MainAxisSize.min, children: [
-                        ref.watch(allWarehouseEntriesProvider).when(
-                          data: (list) {
-                            final packageEntries = <String, List<WarehouseEntryModel>>{};
-                            for (var e in list) {
-                              packageEntries.putIfAbsent(e.packageId, () => []).add(e);
-                            }
-                            final returnedCount = packageEntries.values.where((entries) => 
-                              entries.any((e) => e.isReturned)
-                            ).length;
-                            return Text('$returnedCount Returned',
-                                style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.bold));
-                          },
-                          loading: () => const SizedBox(),
-                    error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(allWarehouseEntriesProvider)),
-                        ),
-                        const Gap(24),
-                        Text('Show Returned', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
-                        const Gap(8),
-                        Switch(value: showReturned,
-                            onChanged: (v) => ref.read(warehouseEntryFilterProvider.notifier).state = v,
-                            activeColor: context.colors.primaryGold),
-                      ])),
                     ],
                   ),
                 ).animate().fadeIn(),
@@ -174,14 +151,10 @@ class _WarehouseTab extends ConsumerWidget {
         final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
         final showReturned = ref.watch(warehouseEntryFilterProvider);
         final filteredList = list.where((e) {
+          if (e.isReturned) return false;
           if (filter != 'all') {
-            if (filter == 'returned') {
-              if (!e.isReturned) return false;
-            } else {
-              if (e.packageStatus != filter) return false;
-            }
+            if (e.packageStatus != filter) return false;
           }
-          if (!showReturned && e.isReturned && filter != 'returned') return false;
           if (reasonFilter != 'all' && e.holdReason != reasonFilter) return false;
           if (dateRange != null) {
             final date = e.admittedAt;
@@ -213,10 +186,9 @@ class _WarehouseTab extends ConsumerWidget {
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                  _MiniStat(label: 'Total', value: '${list.length}', color: context.colors.accentLightBlue),
-                  _MiniStat(label: 'Held', value: '${list.where((e) => !e.isReturned).length}', color: context.colors.heldOrange),
-                  _MiniStat(label: 'Confiscated', value: '${list.where((e) => e.isPackageConfiscated).length}', color: context.colors.dangerRed),
-                  _MiniStat(label: 'Returned', value: '${list.where((e) => e.isReturned).length}', color: context.colors.successGreen),
+                  _MiniStat(label: 'Total', value: '${list.where((e) => !e.isReturned).length}', color: context.colors.accentLightBlue),
+                  _MiniStat(label: 'Held', value: '${list.where((e) => !e.isReturned && e.packageStatus == 'held').length}', color: context.colors.heldOrange),
+                  _MiniStat(label: 'Confiscated', value: '${list.where((e) => !e.isReturned && e.isPackageConfiscated).length}', color: context.colors.dangerRed),
                 ]).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
                 const Gap(20),
 
@@ -250,7 +222,7 @@ class _WarehouseTab extends ConsumerWidget {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        ...['all', 'pending', 'held', 'cleared', 'confiscated', 'returned'].map((s) => FilterChip(
+                        ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => FilterChip(
                           label: Text(s.toUpperCase()),
                           selected: filter == s,
                           onSelected: (_) => ref.read(warehouseStatusFilterProvider(warehouse.id).notifier).state = s,

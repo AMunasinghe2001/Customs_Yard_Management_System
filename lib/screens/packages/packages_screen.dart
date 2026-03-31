@@ -103,34 +103,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      packages.when(
-                          data: (list) {
-                            final total = list.length;
-                            final returned =
-                                list.where((p) => p.isReturned).length;
-                            return Text('$returned Returned',
-                                style: TextStyle(
-                                    color: context.colors.textMuted,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.bold));
-                          },
-                          loading: () => const SizedBox(),
-                          error: (_, __) => const SizedBox()),
-                      const Gap(24),
-                      Text('Show Returned',
-                          style: TextStyle(
-                              color: context.colors.textSecondary,
-                              fontSize: 13)),
-                      const Gap(8),
-                      Switch(
-                        value: ref.watch(packageShowReturnedProvider),
-                        onChanged: (v) => ref
-                            .read(packageShowReturnedProvider.notifier)
-                            .state = v,
-                        activeColor: context.colors.primaryGold,
-                      ),
-                    ]),
+                    const SizedBox.shrink(),
                   ],
                 ),
               ).animate().fadeIn(),
@@ -290,31 +263,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        ...[
-                          'all',
-                          'pending',
-                          'held',
-                          'cleared',
-                          'confiscated',
-                          'returned'
-                        ].map((s) => FilterChip(
-                              label: Text(s.toUpperCase()),
-                              selected: filter == s,
-                              onSelected: (_) => ref
-                                  .read(packageFilterProvider.notifier)
-                                  .state = s,
-                              selectedColor:
-                                  context.colors.primaryGold.withOpacity(0.2),
-                              checkmarkColor: context.colors.primaryGold,
-                              labelStyle: TextStyle(
-                                  color: filter == s
-                                      ? context.colors.primaryGold
-                                      : context.colors.textSecondary,
-                                  fontSize: 12,
-                                  fontWeight: filter == s
-                                      ? FontWeight.w700
-                                      : FontWeight.w400),
-                            )),
                         Consumer(builder: (context, ref, _) {
                           final dateRange = ref.watch(packageDateRangeProvider);
                           return Row(
@@ -381,69 +329,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                   constraints: const BoxConstraints(),
                                 ),
                               ],
-                              const Gap(8),
-                              ref.watch(holdReasonsProvider).when(
-                                    loading: () => const SizedBox(
-                                        width: 14,
-                                        height: 14,
-                                        child: CircularProgressIndicator(
-                                            strokeWidth: 2)),
-                                    error: (_, __) => const SizedBox.shrink(),
-                                    data: (reasons) {
-                                      final items = [
-                                        'all',
-                                        ...reasons.map((r) => r.reasonText)
-                                      ];
-                                      final currentReason = ref
-                                          .watch(packageReasonFilterProvider);
-                                      return Container(
-                                        height: 32,
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10),
-                                        decoration: BoxDecoration(
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          border: Border.all(
-                                              color:
-                                                  context.colors.borderColor),
-                                        ),
-                                        child: DropdownButtonHideUnderline(
-                                          child: DropdownButton<String>(
-                                            value: items.contains(currentReason)
-                                                ? currentReason
-                                                : 'all',
-                                            isDense: true,
-                                            dropdownColor:
-                                                context.colors.surfaceDark,
-                                            icon: Icon(Icons.arrow_drop_down,
-                                                color:
-                                                    context.colors.primaryGold,
-                                                size: 16),
-                                            style: TextStyle(
-                                                color:
-                                                    context.colors.textPrimary,
-                                                fontSize: 12),
-                                            onChanged: (v) {
-                                              if (v != null)
-                                                ref
-                                                    .read(
-                                                        packageReasonFilterProvider
-                                                            .notifier)
-                                                    .state = v;
-                                            },
-                                            items: items
-                                                .map((s) => DropdownMenuItem(
-                                                      value: s,
-                                                      child: Text(s == 'all'
-                                                          ? 'All Reasons'
-                                                          : s),
-                                                    ))
-                                                .toList(),
-                                          ),
-                                        ),
-                                      );
-                                    },
-                                  ),
                             ],
                           );
                         }),
@@ -476,20 +361,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       error: e,
                       onRetry: () => ref.refresh(livePackagesProvider)),
                   data: (list) {
-                    final showReturned = ref.watch(packageShowReturnedProvider);
                     final dateRange = ref.watch(packageDateRangeProvider);
-                    final rFilter = ref.watch(packageReasonFilterProvider);
                     final filteredList = list.where((p) {
-                      if (filter != 'all') {
-                        if (filter == 'returned') {
-                          if (!p.isReturned) return false;
-                        } else {
-                          if (p.status != filter) return false;
-                        }
-                      }
-                      if (!showReturned && p.isReturned && filter != 'returned')
-                        return false;
-                      if (rFilter != 'all' && p.reason != rFilter) return false;
                       if (dateRange != null) {
                         final date = p.entryDate ?? p.createdAt;
                         final startOfDay = DateTime(dateRange.start.year,
@@ -525,31 +398,28 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           fixedTopRows: 1,
                           isVerticalScrollBarVisible: true,
                           isHorizontalScrollBarVisible: false,
-                          columns: const [
+                            columns: const [
                             DataColumn2(
-                                label: Text('SR Number'), size: ColumnSize.M),
+                              label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Consignee'), size: ColumnSize.M),
+                              label: Text('Cusdec No'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Items'),
-                                size: ColumnSize.S,
-                                fixedWidth: 55),
+                              label: Text('Cusdec Date'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Hold Reason'), size: ColumnSize.M),
+                              label: Center(child: Text('Entry Date')),
+                              size: ColumnSize.M),
                             DataColumn2(
-                                label: Center(child: Text('Status')),
-                                size: ColumnSize.M),
+                              label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Center(child: Text('Date')),
-                                size: ColumnSize.M),
+                              label: Text('Declarant'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Center(child: Text('Charge')),
-                                size: ColumnSize.M),
+                              label: Text('Declarant Phone'),
+                              size: ColumnSize.M),
                             DataColumn2(
-                                label: Center(child: Text('Details')),
-                                size: ColumnSize.S,
-                                fixedWidth: 55),
-                          ],
+                              label: Center(child: Text('Details')),
+                              size: ColumnSize.S,
+                              fixedWidth: 55),
+                            ],
                           rows: filteredList
                               .map((p) => DataRow(cells: [
                                     DataCell(Text(p.srNumber,
@@ -557,38 +427,22 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                    DataCell(Text(p.consigneeName,
-                                        overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text('${p.totalItemCount}')),
-                                    DataCell(Text(
-                                        p.reason?.isNotEmpty == true
-                                            ? p.reason!
-                                            : '—',
-                                        style: const TextStyle(
-                                            fontStyle: FontStyle.italic),
-                                        overflow: TextOverflow.ellipsis)),
-                                    DataCell(Center(
-                                        child: StatusChip(
-                                            status: p.isReturned
-                                                ? 'returned'
-                                                : p.status))),
-                                    DataCell(Center(
-                                        child: Text(p.entryDate != null
-                                            ? DateFormat('dd/MM/yy')
-                                                .format(p.entryDate!)
-                                            : DateFormat('dd/MM/yy')
-                                                .format(p.createdAt)))),
-                                    DataCell(Center(
-                                        child: Text(
-                                            p.warehouseEntries.isEmpty
-                                                ? '—'
-                                                : 'LKR ${NumberFormat('#,##0.00').format(p.warehouseEntries.fold(0.0, (sum, e) => sum + e.calculatePackageCharge(p.items, storageRateHistory)))}',
-                                            style: TextStyle(
-                                                color: p.isConfiscated
-                                                    ? context.colors.textMuted
-                                                    : context
-                                                        .colors.primaryGold,
-                                                fontWeight: FontWeight.bold)))),
+                                DataCell(Text(p.cusdecNo ?? '—',
+                                  overflow: TextOverflow.ellipsis)),
+                                DataCell(Text(p.cusdecDate ?? '—',
+                                  overflow: TextOverflow.ellipsis)),
+                                DataCell(Center(
+                                  child: Text(p.entryDate != null
+                                    ? DateFormat('yyyy-MM-dd')
+                                      .format(p.entryDate!)
+                                    : DateFormat('yyyy-MM-dd')
+                                      .format(p.createdAt)))),
+                                DataCell(Text(p.consigneeName,
+                                  overflow: TextOverflow.ellipsis)),
+                                DataCell(Text(p.declarantName ?? '—',
+                                  overflow: TextOverflow.ellipsis)),
+                                DataCell(Text(p.consigneePhone ?? '—',
+                                  overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
