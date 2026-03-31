@@ -537,93 +537,214 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         ),
                       ),
 
-                      // Package Item Details Section - Specific to the selected item
-                      if (highlightedItem != null)
-                        _DetailSection(
-                          title: 'Package Item Details',
-                          icon: Icons.inventory_2_rounded,
-                          delay: 300,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                              children: [
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.label_important_rounded,
-                                    label: 'Item Name',
-                                    value: highlightedItem.itemName,
-                                  ),
-                                ),
-                                const Gap(12),
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.info_outline_rounded,
-                                    label: 'Status',
-                                    value: widget.highlightEntry != null 
-                                        ? (widget.highlightEntry!.isReturned ? 'RETURNED' : (widget.highlightEntry!.isPackageConfiscated ? 'CONFISCATED' : 'HELD')) 
-                                        : highlightedItem.status.toUpperCase(),
-                                    valueColor: widget.highlightEntry != null 
-                                        ? (widget.highlightEntry!.isReturned ? context.colors.successGreen : context.colors.primaryGold)
-                                        : (highlightedItem.status.toLowerCase().contains('pending')
-                                            ? context.colors.primaryGold
-                                            : context.colors.successGreen),
-                                  ),
-                                ),
-                              ],
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.category_rounded,
-                                    label: 'Category',
-                                    value: highlightedItem.category ?? 'N/A',
-                                  ),
-                                ),
-                                const Gap(12),
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.view_in_ar_rounded,
-                                    label: 'Packages',
-                                    value: '${displayQty ?? highlightedItem.quantity}',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _DetailItem(
-                              icon: Icons.straighten_rounded,
-                              label: 'Unit',
-                              value: highlightedItem.unitOfMeasure,
-                            ),
-                              if (highlightedItem.reasons != null && highlightedItem.reasons!.isNotEmpty)
-                                ...highlightedItem.reasons!.split(',').map((reason) => material.Container(
-                                  margin: const EdgeInsets.only(top: 8),
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: context.colors.dangerRed.withOpacity(0.05),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: context.colors.dangerRed.withOpacity(0.2)),
-                                  ),
-                                  child: Row(
-                                    children: [
-                                      Icon(Icons.warning_amber_rounded, color: context.colors.dangerRed, size: 18),
-                                      const Gap(12),
-                                      Expanded(
-                                        child: Column(
+                      // Package Items Summary (per item)
+                      _DetailSection(
+                        title: 'Package Item Summary',
+                        icon: Icons.inventory_2_rounded,
+                        delay: 300,
+                        child: p.items.isEmpty
+                            ? const _EmptyState(message: 'No package items')
+                            : Column(
+                                children: p.items.map((item) {
+                                  final relatedEntries = p.warehouseEntries
+                                      .where((e) => e.packageItemId == item.id)
+                                      .toList();
+                                  final returnedQty = relatedEntries
+                                      .where((e) => e.isReturned)
+                                      .fold<int>(0, (sum, e) => sum + e.itemCount);
+                                  final heldQty = relatedEntries
+                                      .where((e) => !e.isReturned)
+                                      .fold<int>(0, (sum, e) => sum + e.itemCount);
+
+                                  final currentWarehouses = relatedEntries
+                                      .where((e) => !e.isReturned)
+                                      .map((e) => e.warehouseName)
+                                      .toSet()
+                                      .toList();
+                                  final historyWarehouses = relatedEntries
+                                      .map((e) => e.warehouseName)
+                                      .toSet()
+                                      .toList();
+
+                                  return material.Container(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: context.colors.surfaceDark,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                          color: context.colors.borderColor),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
                                           crossAxisAlignment: CrossAxisAlignment.start,
                                           children: [
-                                            Text('Hold Reason', style: material.TextStyle(color: context.colors.dangerRed, fontSize: 10, fontWeight: FontWeight.bold)),
-                                            Text(reason.trim(), style: material.TextStyle(color: context.colors.dangerRed, fontSize: 13, fontWeight: FontWeight.w500)),
+                                            Expanded(
+                                              child: _DetailItem(
+                                                icon: Icons.label_important_rounded,
+                                                label: 'Item Name',
+                                                value: item.itemName,
+                                              ),
+                                            ),
+                                            const Gap(12),
+                                            Expanded(
+                                              child: _DetailItem(
+                                                icon: Icons.view_in_ar_rounded,
+                                                label: 'Packages',
+                                                value: '${item.quantity}',
+                                              ),
+                                            ),
                                           ],
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                )),
-                            ],
-                          ),
-                        ),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: _DetailItem(
+                                                icon: Icons.category_rounded,
+                                                label: 'Category',
+                                                value: item.category ?? 'N/A',
+                                              ),
+                                            ),
+                                            const Gap(12),
+                                            Expanded(
+                                              child: _DetailItem(
+                                                icon: Icons.straighten_rounded,
+                                                label: 'Unit',
+                                                value: item.unitOfMeasure,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        if (item.reasons != null &&
+                                            item.reasons!.isNotEmpty)
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  material.Container(
+                                                    padding:
+                                                        const EdgeInsets.all(8),
+                                                    decoration: BoxDecoration(
+                                                      color: context.colors
+                                                          .dangerRed
+                                                          .withOpacity(0.1),
+                                                      borderRadius:
+                                                          BorderRadius.circular(
+                                                              10),
+                                                    ),
+                                                    child: Icon(
+                                                      Icons.warning_amber_rounded,
+                                                      size: 16,
+                                                      color: context
+                                                          .colors.dangerRed,
+                                                    ),
+                                                  ),
+                                                  const Gap(12),
+                                                  Text(
+                                                    'Reason',
+                                                    style: material.TextStyle(
+                                                      color:
+                                                          context.colors.textMuted,
+                                                      fontSize: 10,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const Gap(8),
+                                              Padding(
+                                                padding: const EdgeInsets.only(bottom: 12),
+                                                child: Wrap(
+                                                  spacing: 8,
+                                                  runSpacing: 8,
+                                                  children: item.reasons!
+                                                      .split(',')
+                                                      .map((reason) =>
+                                                          material.Container(
+                                                            padding:
+                                                                const EdgeInsets
+                                                                    .symmetric(
+                                                                    horizontal: 12,
+                                                                    vertical: 8),
+                                                            decoration: BoxDecoration(
+                                                              color: context
+                                                                  .colors.dangerRed
+                                                                  .withOpacity(0.05),
+                                                              borderRadius:
+                                                                  BorderRadius
+                                                                      .circular(10),
+                                                              border: Border.all(
+                                                                color: context
+                                                                    .colors.dangerRed
+                                                                    .withOpacity(0.2),
+                                                              ),
+                                                            ),
+                                                            child: Text(
+                                                              reason.trim(),
+                                                              style:
+                                                                  material.TextStyle(
+                                                                color: context
+                                                                    .colors.dangerRed,
+                                                                fontSize: 12,
+                                                                fontWeight:
+                                                                    FontWeight.w600,
+                                                              ),
+                                                            ),
+                                                          ))
+                                                      .toList(),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        Row(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Expanded(
+                                              child: _DetailItem(
+                                                icon: Icons.keyboard_return_rounded,
+                                                label: 'Returned',
+                                                value: '$returnedQty',
+                                                valueColor: context.colors.successGreen,
+                                              ),
+                                            ),
+                                            const Gap(12),
+                                            Expanded(
+                                              child: _DetailItem(
+                                                icon: Icons.pause_circle_filled_rounded,
+                                                label: 'Held',
+                                                value: '$heldQty',
+                                                valueColor: context.colors.primaryGold,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        _DetailItem(
+                                          icon: Icons.warehouse_rounded,
+                                          label: 'Current Warehouses',
+                                          value: currentWarehouses.isNotEmpty
+                                              ? currentWarehouses.join(', ')
+                                              : '—',
+                                        ),
+                                        _DetailItem(
+                                          icon: Icons.history_rounded,
+                                          label: 'Warehouse History',
+                                          value: historyWarehouses.isNotEmpty
+                                              ? historyWarehouses.join(', ')
+                                              : '—',
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                              ),
+                      ),
 
                       // Officer Notice Section
                       if (p.notes != null && p.notes!.isNotEmpty)
