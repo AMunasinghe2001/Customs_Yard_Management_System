@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart' as material;
-import 'package:flutter/material.dart' show Wrap, LinearProgressIndicator, RoundedRectangleBorder, Colors, Icons, Theme, FontWeight, BorderRadius, Radius, BoxConstraints, BoxShadow, Offset, Border, BorderSide, IconButton, ElevatedButton, CircularProgressIndicator, ScaffoldMessenger, SnackBar, showDatePicker, showDialog, BuildContext, Widget, Row, Column, Expanded, Icon, Text, Padding, EdgeInsets, Center, SingleChildScrollView, Form, GlobalKey, FormState, TextFormField, InputDecoration, DropdownButtonFormField, DropdownMenuItem, SizedBox, Brightness, Color, IconData, Dialog, Tween, TweenAnimationBuilder, Transform, Opacity, Curves, MainAxisSize, CrossAxisAlignment, BoxDecoration, StatelessWidget, LinearGradient, Flexible, Navigator, MainAxisAlignment, TextButton, BoxShape, FontStyle, TextStyle, Container, OutlinedButton, TextEditingController, MediaQuery, TextInputType, VoidCallback, Spacer, TextOverflow, StatefulWidget;
+import 'package:flutter/material.dart' show Wrap, LinearProgressIndicator, RoundedRectangleBorder, Colors, Icons, Theme, FontWeight, BorderRadius, Radius, BoxConstraints, BoxShadow, Offset, Border, BorderSide, IconButton, ElevatedButton, CircularProgressIndicator, ScaffoldMessenger, SnackBar, showDatePicker, showDialog, BuildContext, Widget, Row, Column, Expanded, Icon, Text, Padding, EdgeInsets, Center, SingleChildScrollView, Form, GlobalKey, FormState, TextFormField, InputDecoration, DropdownButtonFormField, DropdownMenuItem, SizedBox, Brightness, Color, IconData, Dialog, Tween, TweenAnimationBuilder, Transform, Opacity, Curves, MainAxisSize, CrossAxisAlignment, BoxDecoration, StatelessWidget, LinearGradient, Flexible, Navigator, MainAxisAlignment, TextButton, BoxShape, FontStyle, TextStyle, Container, OutlinedButton, TextEditingController, MediaQuery, TextInputType, VoidCallback, Spacer, TextOverflow, StatefulWidget, StatefulBuilder;
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -57,77 +57,141 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       orElse: () => widget.package.items.first,
     );
 
-    final charge = entry.calculatePackageCharge([specificItem], widget.storageRate);
+    // Auto-repair display logic for old entries that saved 1 as itemCount
+    int displayCount = entry.itemCount;
+    if (displayCount == 1 && specificItem.quantity > 1 && !entry.isReturned) {
+      final returnedSum = widget.package.warehouseEntries
+          .where((e) => e.packageItemId == specificItem.id && e.isReturned)
+          .fold(0, (sum, e) => sum + e.itemCount);
+      displayCount = specificItem.quantity - returnedSum;
+      if (displayCount < 1) displayCount = 1; // Fallback
+    }
+
+    final qtyCtrl = TextEditingController(text: displayCount.toString());
+    final formKey = GlobalKey<FormState>();
+
+    double getCharge(int count) {
+      // Create a temporary entry with the specified count to calculate charge accurately
+      final tempEntry = WarehouseEntryModel(
+        id: entry.id,
+        packageId: entry.packageId,
+        packageItemId: entry.packageItemId,
+        warehouseId: entry.warehouseId,
+        warehouseName: entry.warehouseName,
+        warehouseCode: entry.warehouseCode,
+        holdReason: entry.holdReason,
+        itemCount: count,
+        admittedAt: entry.admittedAt,
+        dailyRate: entry.dailyRate,
+      );
+      return tempEntry.calculatePackageCharge([specificItem], widget.storageRate);
+    }
 
     final result = await showDialog<bool>(
       context: context,
-      builder: (ctx) => material.AlertDialog(
-        title: const Text('Release Package Item'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('SR: ${widget.package.srNumber}', style: const material.TextStyle(fontWeight: FontWeight.bold)),
-            Text('Item: ${specificItem.itemName}', style: material.TextStyle(color: context.colors.primaryGold)),
-            Text('Warehouse: ${entry.warehouseName}', style: const material.TextStyle(fontSize: 12)),
-            const Gap(12),
-            material.Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.colors.surfaceDark,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) => material.AlertDialog(
+          title: const Text('Release Package Item'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('SR: ${widget.package.srNumber}', style: const material.TextStyle(fontWeight: FontWeight.bold)),
+                Text('Item: ${specificItem.itemName}', style: material.TextStyle(color: context.colors.primaryGold)),
+                Text('Warehouse: ${entry.warehouseName}', style: const material.TextStyle(fontSize: 12)),
+                const Gap(16),
+                material.Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: context.colors.surfaceDark,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
                     children: [
-                      const Text('Quantity:'),
-                      Text('${entry.itemCount}', style: const material.TextStyle(fontWeight: FontWeight.bold)),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Total in Warehouse:'),
+                          Text('$displayCount', style: const material.TextStyle(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const Gap(12),
+                      TextFormField(
+                        controller: qtyCtrl,
+                        decoration: const material.InputDecoration(
+                          labelText: 'Quantity to Release',
+                          isDense: true,
+                        ),
+                        keyboardType: TextInputType.number,
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) return 'Enter quantity';
+                          final val = int.tryParse(value);
+                          if (val == null || val <= 0) return 'Enter valid quantity';
+                          if (val > displayCount) return 'Cannot exceed $displayCount packages';
+                          return null;
+                        },
+                        onChanged: (val) {
+                          setDialogState(() {});
+                        },
+                      ),
+                      const Gap(8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Release Charge:'),
+                          Text('LKR ${NumberFormat('#,##0.00').format(getCharge(int.tryParse(qtyCtrl.text) ?? 0))}',
+                              style: material.TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)),
+                        ],
+                      ),
                     ],
                   ),
-                  const Gap(4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Final Charge:'),
-                      Text('LKR ${NumberFormat('#,##0.00').format(charge)}',
-                          style: material.TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)),
-                    ],
+                ),
+                const Gap(16),
+                material.TextField(
+                  controller: notesCtrl,
+                  decoration: const material.InputDecoration(
+                    labelText: 'Release Notes',
+                    hintText: 'Enter any additional details',
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            const Gap(16),
-            material.TextField(
-              controller: notesCtrl,
-              decoration: const material.InputDecoration(
-                labelText: 'Release Notes',
-                hintText: 'Enter any additional details',
-              ),
+          ),
+          actions: [
+            material.TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: context.colors.successGreen, foregroundColor: Colors.white),
+              onPressed: () async {
+                if (!(formKey.currentState?.validate() ?? false)) return;
+                
+                final releaseQty = int.tryParse(qtyCtrl.text) ?? 0;
+                if (releaseQty <= 0 || releaseQty > entry.itemCount) {
+                  ScaffoldMessenger.of(ctx).showSnackBar(
+                    const SnackBar(content: Text('Invalid quantity to release'), backgroundColor: Colors.red));
+                  return;
+                }
+
+                try {
+                  await ref.read(warehouseServiceProvider).markAsReturned(
+                    entry.id,
+                    returnNotes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null,
+                    returnQty: releaseQty,
+                  );
+                  ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                } catch (e) {
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
+                  }
+                }
+              },
+              child: const Text('Confirm Release'),
             ),
           ],
         ),
-        actions: [
-          material.TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: context.colors.successGreen, foregroundColor: Colors.white),
-            onPressed: () async {
-              try {
-                await ref.read(warehouseServiceProvider).markAsReturned(entry.id,
-                    returnNotes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null);
-                ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
-                if (ctx.mounted) Navigator.pop(ctx, true);
-              } catch (e) {
-                if (ctx.mounted) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
-                }
-              }
-            },
-            child: const Text('Confirm Release'),
-          ),
-        ],
       ),
     );
     return result ?? false;
@@ -167,9 +231,21 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // Filter to find the highlighted entry's specific item if needed
-    final highlightedItem = widget.highlightEntry != null 
+    final highlightedItem = widget.highlightEntry != null
       ? p.items.firstWhere((i) => i.id == widget.highlightEntry!.packageItemId, orElse: () => p.items.first)
       : null;
+
+    int? displayQty;
+    if (highlightedItem != null && widget.highlightEntry != null) {
+      displayQty = widget.highlightEntry!.itemCount;
+      if (displayQty == 1 && highlightedItem.quantity > 1 && !widget.highlightEntry!.isReturned) {
+        final returnedSum = widget.package.warehouseEntries
+            .where((e) => e.packageItemId == highlightedItem.id && e.isReturned)
+            .fold(0, (sum, e) => sum + e.itemCount);
+        displayQty = highlightedItem.quantity - returnedSum;
+        if (displayQty! < 1) displayQty = 1;
+      }
+    }
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -393,10 +469,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                   child: _DetailItem(
                                     icon: Icons.info_outline_rounded,
                                     label: 'Status',
-                                    value: highlightedItem.status.toUpperCase(),
-                                    valueColor: highlightedItem.status.toLowerCase().contains('pending') 
-                                        ? context.colors.primaryGold 
-                                        : context.colors.successGreen,
+                                    value: widget.highlightEntry != null 
+                                        ? (widget.highlightEntry!.isReturned ? 'RETURNED' : (widget.highlightEntry!.isPackageConfiscated ? 'CONFISCATED' : 'HELD')) 
+                                        : highlightedItem.status.toUpperCase(),
+                                    valueColor: widget.highlightEntry != null 
+                                        ? (widget.highlightEntry!.isReturned ? context.colors.successGreen : context.colors.primaryGold)
+                                        : (highlightedItem.status.toLowerCase().contains('pending')
+                                            ? context.colors.primaryGold
+                                            : context.colors.successGreen),
                                   ),
                                 ),
                               ],
@@ -415,7 +495,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                   child: _DetailItem(
                                     icon: Icons.view_in_ar_rounded,
                                     label: 'Packages',
-                                    value: '${highlightedItem.quantity}',
+                                    value: '${displayQty ?? highlightedItem.quantity}',
                                   ),
                                 ),
                               ],

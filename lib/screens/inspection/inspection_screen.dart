@@ -246,7 +246,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
             ? DateTime.tryParse(_entryDateCtrl.text)
             : null,
         reason: _reasonCtrlMain.text.trim(),
-        status: 'inspected', // General status for package
+        status: 'pending', // General status for package
         notes: _notesCtrl.text,
         inspectedBy: supabase.auth.currentUser?.id,
         inspectedAt: DateTime.now(),
@@ -750,7 +750,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     try {
       // First save the package to database
       final saved = await ref.read(packageServiceProvider).upsertPackage(
-            widget.tempPackageData!.copyWith(status: 'inspected'), // Set a general status
+            widget.tempPackageData!.copyWith(status: 'held'), // Set a general status
             widget.tempPackageItems!,
           );
 
@@ -1144,6 +1144,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               flex: 2,
               child: DropdownButtonFormField<String>(
                 isDense: true,
+                isExpanded: true,
                 value: [
                   'Pieces',
                   'Cartons',
@@ -1204,6 +1205,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               flex: 2,
               child: DropdownButtonFormField<String>(
                 isDense: true,
+                isExpanded: true,
                 value: widget.row.status,
                 decoration:
                     const InputDecoration(labelText: 'Status *', isDense: true),
@@ -1239,6 +1241,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                       .firstOrNull;
                   return DropdownButtonFormField<String>(
                     isDense: true,
+                    isExpanded: true,
                     value: selectedCategory?.name,
                     decoration: const InputDecoration(
                         labelText: 'Category', isDense: true),
@@ -1352,6 +1355,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                                   fontSize: 11)),
                           data: (reasons) => DropdownButtonFormField<String>(
                             isDense: true,
+                            isExpanded: true,
                             value: widget.row.selectedReasons[rIdx],
                             decoration: InputDecoration(
                               labelText: 'Reason ${rIdx + 1} *',

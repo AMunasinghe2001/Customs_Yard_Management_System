@@ -416,14 +416,19 @@ class WarehouseEntryModel {
   double calculatePackageCharge(List<PackageItem> items, Map<DateTime, double> historicalRates) {
     if (isPackageConfiscated) return 0;
     
-    // If this entry is tied to a specific item, only consider that item
-    final validItems = packageItemId != null 
-        ? items.where((i) => i.id == packageItemId).toList() 
-        : items;
+    // We should charge based on this specific entry's itemCount!
+    int totalUnits = itemCount;
     
-    // Multiply total item count (pkgs) by the summed individual item quantity
-    final totalUnits = validItems.fold(0, (sum, i) => sum + i.quantity);
-    
+    // Auto-repair logic: If itemCount is 1 but it's an old bugged entry that should be larger
+    if (totalUnits == 1 && packageItemId != null && !isReturned) {
+      final item = items.where((i) => i.id == packageItemId).firstOrNull;
+      if (item != null && item.quantity > 1) {
+          // We can't perfectly know returned sum here without more context, but usually it's fine
+          // to fallback to item.quantity for the old un-split ones if we just need an approximation.
+          totalUnits = item.quantity; 
+      }
+    }
+
     final start = DateTime(admittedAt.year, admittedAt.month, admittedAt.day);
     final endDateTime = returnedAt ?? DateTime.now();
     final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);

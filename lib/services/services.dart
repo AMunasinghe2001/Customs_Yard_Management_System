@@ -264,6 +264,13 @@ class PackageService {
                 .update(item.toInsertJson(existing.id))
                 .eq('id', item.id);
             
+            // Sync quantity to warehouse entries if they exist
+            await supabase
+                .from('warehouse_entries')
+                .update({'item_count': item.quantity})
+                .eq('package_item_id', item.id)
+                .eq('is_returned', false);
+            
             // Handle logical return if status is set to 'returned' via form
             if (item.status == 'returned') {
               final entries = await supabase
@@ -445,37 +452,136 @@ class WarehouseService {
     }
   }
 
-  Future<void> markAsReturned(String entryId, {String? returnNotes}) async {
+  Future<void> markAsReturned(String entryId, {String? returnNotes, int? returnQty}) async {
     final user = supabase.auth.currentUser;
     
     // Attempt to get name from local providers first to avoid extra DB calls
     // But since this is a service, we'll try a simpler check
     
     try {
-      // 1. Get the entry details to find the package_item_id
+      // 1. Get the entry details
       final entryRes = await supabase
           .from('warehouse_entries')
-          .select('package_item_id')
+          .select('package_item_id, item_count, package_id, warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate, is_returned')
           .eq('id', entryId)
           .single();
       
       final itemId = entryRes['package_item_id'] as String?;
+      int currentTotal = entryRes['item_count'] as int;
+      
+      // AUTO-REPAIR OLD DATA (where item_count was saved as 1 due to bug)
+      if (itemId != null && currentTotal == 1 && entryRes['is_returned'] == false) {
+         final itemRes = await supabase.from('package_items').select('quantity').eq('id', itemId).single();
+         int trueQty = itemRes['quantity'] as int;
+         if (trueQty > 1) {
+            // Find if there are already returned entries
+            final returnedRes = await supabase.from('warehouse_entries').select('item_count').eq('package_item_id', itemId).eq('is_returned', true);
+            int returnedSum = (returnedRes as List).fold(0, (sum, e) => sum + (e['item_count'] as int));
+            if (returnedSum < trueQty) {
+                currentTotal = trueQty - returnedSum;
+                await supabase.from('warehouse_entries').update({'item_count': currentTotal}).eq('id', entryId);
+            }
+         }
+      }
 
-      // 2. Update the entry
-      await supabase.from('warehouse_entries').update({
-        'is_returned': true,
-        'returned_at': DateTime.now().toIso8601String(),
-        'returned_by': user?.id,
-        // We avoid fetching profile separately to reduce potential for 403/404 errors during update
-        if (returnNotes != null) 'return_notes': returnNotes,
-      }).eq('id', entryId);
+      final releaseQty = returnQty ?? currentTotal;
 
-      // 3. Update the package item status to 'returned'
+      // Check if there is already a returned entry for this specific item in this warehouse
+      Map<String, dynamic>? existingReturnedEntry;
       if (itemId != null) {
-        await supabase
-            .from('package_items')
-            .update({'status': 'returned'})
-            .eq('id', itemId);
+        final existingReturnedEntries = await supabase
+            .from('warehouse_entries')
+            .select('id, item_count, return_notes')
+            .eq('package_item_id', itemId)
+            .eq('warehouse_id', entryRes['warehouse_id'])
+            .eq('is_returned', true)
+            .limit(1);
+        
+        if (existingReturnedEntries != null && (existingReturnedEntries as List).isNotEmpty) {
+          existingReturnedEntry = existingReturnedEntries[0];
+        }
+      }
+
+      if (releaseQty >= currentTotal) {
+        // Full return of the remaining held portion
+        if (existingReturnedEntry != null) {
+          // Merge with existing returned entry
+          final returnedId = existingReturnedEntry['id'];
+          final currentlyReturnedQty = existingReturnedEntry['item_count'] as int;
+          
+          final existingNotes = existingReturnedEntry['return_notes'] as String?;
+          final combinedNotes = [existingNotes, returnNotes]
+              .where((n) => n != null && n.trim().isNotEmpty)
+              .join(' | ');
+
+          await supabase.from('warehouse_entries').update({
+            'item_count': currentlyReturnedQty + currentTotal,
+            'returned_at': DateTime.now().toIso8601String(),
+            'returned_by': user?.id,
+            'return_notes': combinedNotes.isEmpty ? null : combinedNotes,
+          }).eq('id', returnedId);
+
+          // Delete the held entry since it's fully merged
+          await supabase.from('warehouse_entries').delete().eq('id', entryId);
+        } else {
+          // No existing, just update this one to returned
+          await supabase.from('warehouse_entries').update({
+            'is_returned': true,
+            'item_count': currentTotal,
+            'returned_at': DateTime.now().toIso8601String(),
+            'returned_by': user?.id,
+            'return_notes': returnNotes,
+          }).eq('id', entryId);
+        }
+
+        // Update the package item status to 'returned' since full quantity is now returned
+        if (itemId != null) {
+          await supabase
+              .from('package_items')
+              .update({'status': 'returned'})
+              .eq('id', itemId);
+        }
+      } else {
+        // Partial return
+        if (existingReturnedEntry != null) {
+          // Merge releaseQty into existing returned entry
+          final returnedId = existingReturnedEntry['id'];
+          final currentlyReturnedQty = existingReturnedEntry['item_count'] as int;
+          
+          final existingNotes = existingReturnedEntry['return_notes'] as String?;
+          final combinedNotes = [existingNotes, returnNotes]
+              .where((n) => n != null && n.trim().isNotEmpty)
+              .join(' | ');
+
+          await supabase.from('warehouse_entries').update({
+            'item_count': currentlyReturnedQty + releaseQty,
+            'returned_at': DateTime.now().toIso8601String(),
+            'returned_by': user?.id,
+            'return_notes': combinedNotes.isEmpty ? null : combinedNotes,
+          }).eq('id', returnedId);
+        } else {
+          // Create a NEW entry for the returned portion
+          await supabase.from('warehouse_entries').insert({
+            'package_id': entryRes['package_id'],
+            'package_item_id': itemId,
+            'warehouse_id': entryRes['warehouse_id'],
+            'zone': entryRes['zone'],
+            'hold_reason': entryRes['hold_reason'],
+            'item_count': releaseQty,
+            'admitted_by': entryRes['admitted_by'],
+            'admitted_at': entryRes['admitted_at'],
+            'daily_rate': entryRes['daily_rate'],
+            'is_returned': true,
+            'returned_at': DateTime.now().toIso8601String(),
+            'returned_by': user?.id,
+            'return_notes': returnNotes,
+          });
+        }
+
+        // Update the existing held entry with remaining quantity
+        await supabase.from('warehouse_entries').update({
+          'item_count': currentTotal - releaseQty,
+        }).eq('id', entryId);
       }
     } catch (e) {
       // If update fails, rethrow with better context
@@ -485,7 +591,7 @@ class WarehouseService {
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
-        action: 'Marked warehouse entry as returned',
+        action: 'Marked warehouse entry as returned (Qty: ${returnQty ?? "Full"})',
         entityType: 'warehouse_entry',
         entityId: entryId,
       );

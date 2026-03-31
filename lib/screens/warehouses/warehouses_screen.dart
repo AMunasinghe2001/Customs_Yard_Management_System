@@ -385,7 +385,25 @@ class _WarehouseTab extends ConsumerWidget {
                                 return Text(names.isEmpty ? '—' : names, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis);
                               }
                             })),
-                            DataCell(Text('${e.itemCount}')),
+                            DataCell(Consumer(builder: (context, ref, _) {
+                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                              int displayCount = e.itemCount;
+                              
+                              // Auto-repair display logic for old entries that saved 1 as itemCount
+                              if (pkg != null && e.packageItemId != null && displayCount == 1 && !e.isReturned) {
+                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                                if (item != null && item.quantity > 1) {
+                                  // Find sum of returned items to show correct held sum
+                                  final returnedSum = pkg.warehouseEntries
+                                      .where((we) => we.packageItemId == item.id && we.isReturned)
+                                      .fold(0, (sum, we) => sum + we.itemCount);
+                                  displayCount = item.quantity - returnedSum;
+                                  if (displayCount < 1) displayCount = 1;
+                                }
+                              }
+                              
+                              return Text('$displayCount');
+                            })),
                             DataCell(Center(child: Consumer(builder: (context, ref, _) {
                               final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
                               return Text(
