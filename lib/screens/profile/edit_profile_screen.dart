@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
@@ -135,143 +136,169 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
 
     showDialog(
       context: context,
+      barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDlgState) => AlertDialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
+          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
           title: const Text('Edit Profile'),
-          content: SizedBox(
-            width: 460,
-            child: Form(
-              key: _formKey,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Center(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(60),
-                      onTap: () async {
-                        final picked = await _pickProfileImage();
-                        if (picked != null) {
-                          setDlgState(() => _profileImageCtrl!.text = picked);
-                        }
-                      },
-                      child: Stack(
-                        alignment: Alignment.bottomRight,
-                        children: [
-                          Container(
-                            height: 96,
-                            width: 96,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: context.colors.primaryGold.withOpacity(0.15),
-                              border: Border.all(
-                                  color: context.colors.primaryGold
-                                      .withOpacity(0.4)),
-                            ),
-                            child: ClipOval(
-                              child: _profileImageCtrl!.text.isNotEmpty
-                                  ? Image.file(
-                                      File(_profileImageCtrl!.text),
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) => Icon(
-                                          Icons.person_rounded,
+          content: Container(
+            width: 620,
+            constraints: const BoxConstraints(minHeight: 520, maxHeight: 680),
+            child: SingleChildScrollView(
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                      Center(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(60),
+                          onTap: () async {
+                            final picked = await _pickProfileImage();
+                            if (picked != null) {
+                              setDlgState(() => _profileImageCtrl!.text = picked);
+                            }
+                          },
+                          child: Stack(
+                            alignment: Alignment.bottomRight,
+                            children: [
+                              Container(
+                                height: 96,
+                                width: 96,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: context.colors.primaryGold.withOpacity(0.15),
+                                  border: Border.all(
+                                      color: context.colors.primaryGold
+                                          .withOpacity(0.4)),
+                                ),
+                                child: ClipOval(
+                                  child: _profileImageCtrl!.text.isNotEmpty
+                                      ? Image.file(
+                                          File(_profileImageCtrl!.text),
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, __, ___) => Icon(
+                                              Icons.person_rounded,
+                                              color: context.colors.primaryGold,
+                                              size: 36),
+                                        )
+                                      : Icon(Icons.person_rounded,
                                           color: context.colors.primaryGold,
                                           size: 36),
-                                    )
-                                  : Icon(Icons.person_rounded,
-                                      color: context.colors.primaryGold,
-                                      size: 36),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: context.colors.primaryGold,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.camera_alt_rounded,
+                                    size: 14, color: context.colors.primaryNavy),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (_profileImageCtrl!.text.isNotEmpty) ...[
+                        const Gap(8),
+                        TextButton.icon(
+                          onPressed: () => setDlgState(() => _profileImageCtrl!.text = ''),
+                          icon: Icon(Icons.delete_outline_rounded, 
+                            size: 16, color: context.colors.dangerRed),
+                          label: Text('Remove Photo', 
+                            style: TextStyle(color: context.colors.dangerRed, fontSize: 13)),
+                        ),
+                      ],
+                      const Gap(16),
+                      TextFormField(
+                        controller: _nameCtrl!,
+                        style: TextStyle(color: context.colors.textPrimary),
+                        decoration: const InputDecoration(
+                          labelText: 'Full Name *',
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        ),
+                        validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                      ),
+                      const Gap(10),
+                      TextFormField(
+                        controller: _salaryCtrl!,
+                        style: TextStyle(color: context.colors.textPrimary),
+                        decoration: const InputDecoration(
+                          labelText: 'Salary Number',
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        ),
+                      ),
+                      const Gap(10),
+                      TextFormField(
+                        controller: _mobileCtrl!,
+                        style: TextStyle(color: context.colors.textPrimary),
+                        decoration: const InputDecoration(
+                          labelText: 'Mobile Number',
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        ),
+                        keyboardType: TextInputType.phone,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                          LengthLimitingTextInputFormatter(10),
+                        ],
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return null;
+                          if (v.length != 10) {
+                            return 'Enter exactly 10 digits';
+                          }
+                          return null;
+                        },
+                      ),
+                      const Gap(10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextFormField(
+                              controller: _jobRoleCtrl!,
+                              style: TextStyle(color: context.colors.textPrimary),
+                              decoration: const InputDecoration(
+                                labelText: 'Job Role',
+                                contentPadding:
+                                    EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                              ),
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.all(6),
-                            decoration: BoxDecoration(
-                              color: context.colors.primaryGold,
-                              shape: BoxShape.circle,
+                          const Gap(10),
+                          Expanded(
+                            child: TextFormField(
+                              controller: _departmentCtrl!,
+                              style: TextStyle(color: context.colors.textPrimary),
+                              decoration: const InputDecoration(
+                                labelText: 'Department',
+                                contentPadding:
+                                    EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                              ),
                             ),
-                            child: Icon(Icons.camera_alt_rounded,
-                                size: 14, color: context.colors.primaryNavy),
                           ),
                         ],
                       ),
-                    ),
-                  ),
-                  if (_profileImageCtrl!.text.isNotEmpty) ...[
-                    const Gap(8),
-                    TextButton.icon(
-                      onPressed: () => setDlgState(() => _profileImageCtrl!.text = ''),
-                      icon: Icon(Icons.delete_outline_rounded, 
-                        size: 16, color: context.colors.dangerRed),
-                      label: Text('Remove Photo', 
-                        style: TextStyle(color: context.colors.dangerRed, fontSize: 13)),
-                    ),
+                      const Gap(10),
+                      TextFormField(
+                        initialValue: supabase.auth.currentUser?.email ?? '',
+                        readOnly: true,
+                        style: TextStyle(color: context.colors.textMuted),
+                        decoration: InputDecoration(
+                          labelText: 'Email Address',
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          filled: true,
+                          fillColor: context.colors.borderColor.withOpacity(0.3),
+                        ),
+                      ),
                   ],
-                  const Gap(20),
-                  TextFormField(
-                    controller: _nameCtrl!,
-                    style: TextStyle(color: context.colors.textPrimary),
-                    decoration: const InputDecoration(labelText: 'Full Name *'),
-                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                  ),
-                  const Gap(16),
-                  TextFormField(
-                    controller: _salaryCtrl!,
-                    style: TextStyle(color: context.colors.textPrimary),
-                    decoration:
-                        const InputDecoration(labelText: 'Salary Number'),
-                  ),
-                  const Gap(16),
-                  TextFormField(
-                    controller: _mobileCtrl!,
-                    style: TextStyle(color: context.colors.textPrimary),
-                    decoration:
-                        const InputDecoration(labelText: 'Mobile Number'),
-                    keyboardType: TextInputType.phone,
-                    inputFormatters: [
-                      FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(10),
-                    ],
-                    validator: (v) {
-                      if (v == null || v.isEmpty) return null;
-                      if (v.length != 10) {
-                        return 'Enter exactly 10 digits';
-                      }
-                      return null;
-                    },
-                  ),
-                  const Gap(16),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: TextFormField(
-                          controller: _jobRoleCtrl!,
-                          style: TextStyle(color: context.colors.textPrimary),
-                          decoration:
-                              const InputDecoration(labelText: 'Job Role'),
-                        ),
-                      ),
-                      const Gap(12),
-                      Expanded(
-                        child: TextFormField(
-                          controller: _departmentCtrl!,
-                          style: TextStyle(color: context.colors.textPrimary),
-                          decoration:
-                              const InputDecoration(labelText: 'Department'),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Gap(16),
-                  TextFormField(
-                    initialValue: supabase.auth.currentUser?.email ?? '',
-                    readOnly: true,
-                    style: TextStyle(color: context.colors.textMuted),
-                    decoration: InputDecoration(
-                      labelText: 'Email Address',
-                      filled: true,
-                      fillColor: context.colors.borderColor.withOpacity(0.3),
-                    ),
-                  ),
-                ],
+                ),
               ),
             ),
           ),
@@ -291,7 +318,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2, color: context.colors.primaryNavy))
+                          strokeWidth: 2,
+                          color: context.colors.primaryNavy))
                   : const Text('Save Changes'),
             ),
           ],
@@ -324,7 +352,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(28, 28, 28, 28),
+          padding: const EdgeInsets.all(28),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -339,7 +367,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                       Text('View your account information and preferences.',
                           style: TextStyle(color: context.colors.textSecondary)),
                     ],
-                  ),
+                  ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
                       backgroundColor: context.colors.primaryGold,
@@ -349,10 +377,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                     label: const Text('Edit Profile',
                         style: TextStyle(fontWeight: FontWeight.w600)),
                     onPressed: () => _openEditDialog(context),
-                  ),
+                  ).animate().fadeIn(duration: 400.ms).scale(),
                 ],
               ),
-              const Gap(20),
+              const Gap(24),
               _ProfileHeroCard(
                 name: profile.fullName,
                 role: profile.role,
@@ -363,8 +391,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 department: profile.department,
                 profileImageUrl: profile.profileImageUrl,
                 initials: _initials(profile.fullName),
-              ),
-              const Gap(20),
+              ).animate().fadeIn(duration: 400.ms, delay: 100.ms).slideY(begin: 0.1),
+              const Gap(24),
               _ProfileDetailsCard(
                 fullName: profile.fullName,
                 badge: profile.badgeNumber,
@@ -374,7 +402,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
                 department: profile.department,
-              ),
+              ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideY(begin: 0.1),
             ],
           ),
         ),
@@ -419,7 +447,7 @@ class _ProfileHeroCard extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: context.colors.borderColor),
@@ -437,14 +465,14 @@ class _ProfileHeroCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            height: 92,
-            width: 92,
+            height: 110,
+            width: 110,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: context.colors.primaryGold.withOpacity(0.2),
               border: Border.all(
                   color: context.colors.primaryGold.withOpacity(0.35),
-                  width: 2),
+                  width: 3),
             ),
             child: ClipOval(
               child: hasImage
@@ -457,7 +485,7 @@ class _ProfileHeroCard extends StatelessWidget {
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w800,
-                                    fontSize: 24)),
+                                    fontSize: 32)),
                           ),
                         )
                       : Image.file(
@@ -468,7 +496,7 @@ class _ProfileHeroCard extends StatelessWidget {
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w800,
-                                    fontSize: 24)),
+                                    fontSize: 32)),
                           ),
                         ))
                   : Center(
@@ -476,71 +504,36 @@ class _ProfileHeroCard extends StatelessWidget {
                           style: TextStyle(
                               color: context.colors.primaryGold,
                               fontWeight: FontWeight.w800,
-                              fontSize: 24)),
+                              fontSize: 32)),
                     ),
             ),
           ),
-          const Gap(20),
+          const Gap(24),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(name,
                     style: TextStyle(
                         color: context.colors.textPrimary,
-                        fontSize: 22,
+                        fontSize: 24,
                         fontWeight: FontWeight.w800)),
-                const Gap(6),
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 10,
-                  runSpacing: 6,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color:
-                            context.colors.accentLightBlue.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(999),
-                        border: Border.all(
-                          color:
-                              context.colors.accentLightBlue.withOpacity(0.4),
-                        ),
-                      ),
-                      child: Text(role.toUpperCase(),
-                          style: TextStyle(
-                              color: context.colors.accentLightBlue,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700)),
+                const Gap(8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: context.colors.accentLightBlue.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: context.colors.accentLightBlue.withOpacity(0.4),
                     ),
-                    Text(email,
-                        style: TextStyle(
-                            color: context.colors.textSecondary, fontSize: 13)),
-                  ],
-                ),
-                if (meta.isNotEmpty) ...[
-                  const Gap(10),
-                  Text(meta.join(' • '),
+                  ),
+                  child: Text(role.toUpperCase(),
                       style: TextStyle(
-                          color: context.colors.textSecondary, fontSize: 13)),
-                ],
-                const Gap(14),
-                Wrap(
-                  spacing: 18,
-                  runSpacing: 8,
-                  children: [
-                    Text(
-                      'Salary: ${badge?.isNotEmpty == true ? badge! : '—'}',
-                      style: TextStyle(
-                          color: context.colors.textSecondary, fontSize: 13),
-                    ),
-                    Text(
-                      'Mobile: ${mobile?.isNotEmpty == true ? mobile! : '—'}',
-                      style: TextStyle(
-                          color: context.colors.textSecondary, fontSize: 13),
-                    ),
-                  ],
+                          color: context.colors.accentLightBlue,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700)),
                 ),
               ],
             ),
@@ -586,32 +579,47 @@ class _ProfileDetailsCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text('Profile Details',
               style: TextStyle(
                   color: context.colors.textPrimary,
                   fontSize: 18,
                   fontWeight: FontWeight.w700)),
-          const Gap(16),
-          _InfoRow(label: 'Full Name', value: fullName),
+          const Gap(20),
+          _InfoRow(
+              label: 'Full Name',
+              value: fullName,
+              icon: Icons.person_outline_rounded),
           _InfoRow(
               label: 'Salary Number',
-              value: badge?.isNotEmpty == true ? badge! : '—'),
+              value: badge?.isNotEmpty == true ? badge! : '—',
+              icon: Icons.badge_outlined),
           _InfoRow(
               label: 'Mobile Number',
-              value: mobile?.isNotEmpty == true ? mobile! : '—'),
-          _InfoRow(label: 'Email Address', value: email),
-          _InfoRow(label: 'Role', value: role.toUpperCase()),
+              value: mobile?.isNotEmpty == true ? mobile! : '—',
+              icon: Icons.phone_android_rounded),
+          _InfoRow(
+              label: 'Email Address',
+              value: email,
+              icon: Icons.email_outlined),
+          _InfoRow(
+              label: 'Role',
+              value: role.toUpperCase(),
+              icon: Icons.admin_panel_settings_outlined),
           _InfoRow(
               label: 'Job Role',
-              value: jobRole?.isNotEmpty == true ? jobRole! : '—'),
+              value: jobRole?.isNotEmpty == true ? jobRole! : '—',
+              icon: Icons.work_outline_rounded),
           _InfoRow(
               label: 'Department',
-              value: department?.isNotEmpty == true ? department! : '—'),
+              value: department?.isNotEmpty == true ? department! : '—',
+              icon: Icons.business_rounded),
           _InfoRow(
             label: 'Status',
             value: isActive ? 'ACTIVE' : 'INACTIVE',
             valueColor: statusColor,
+            icon: Icons.verified_user_outlined,
           ),
         ],
       ),
@@ -623,40 +631,53 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   final Color? valueColor;
+  final IconData? icon;
 
   const _InfoRow({
     required this.label,
     required this.value,
     this.valueColor,
+    this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: context.colors.surfaceDark,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.colors.borderColor),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Text(label,
-              style: TextStyle(
-                  color: context.colors.textSecondary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
-          const Gap(6),
-          Text(value,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: valueColor ?? context.colors.textPrimary,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700)),
+          if (icon != null) ...[
+            Icon(icon, color: context.colors.primaryGold, size: 20),
+            const Gap(14),
+          ],
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(label,
+                    style: TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+                const Gap(4),
+                Text(value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: valueColor ?? context.colors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
         ],
       ),
     );
