@@ -77,6 +77,12 @@ class _CustomsAppState extends ConsumerState<CustomsApp> with WindowListener {
       print('DEBUG: App closing. Current user ID: ${user?.id}');
       
       if (user != null) {
+        await AuditLogService().recordLog(
+          userId: user.id,
+          action: 'Signed Out (App Closed)',
+          entityType: 'auth',
+          entityId: user.id,
+        );
         // Direct database call skipping Riverpod providers entirely
         await supabase.from('profiles').update({
           'is_online': false

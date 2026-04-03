@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -561,16 +562,37 @@ class _OnlineMemberTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = profile.profileImageUrl != null && profile.profileImageUrl!.isNotEmpty;
+    final isRemote = hasImage && profile.profileImageUrl!.startsWith('http');
+
     return ListTile(
       visualDensity: VisualDensity.compact,
-      leading: CircleAvatar(
-        radius: 16,
-        backgroundColor: context.colors.primaryGold.withOpacity(0.1),
-        child: Text(profile.fullName[0].toUpperCase(),
-            style: TextStyle(
-                color: context.colors.primaryGold,
-                fontWeight: FontWeight.bold,
-                fontSize: 12)),
+      leading: Container(
+        height: 32,
+        width: 32,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: context.colors.primaryGold.withOpacity(0.1),
+          border: Border.all(
+            color: context.colors.primaryGold.withOpacity(0.2),
+            width: 1,
+          ),
+        ),
+        child: ClipOval(
+          child: hasImage
+              ? (isRemote
+                  ? Image.network(
+                      profile.profileImageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildInitials(context),
+                    )
+                  : Image.file(
+                      File(profile.profileImageUrl!),
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => _buildInitials(context),
+                    ))
+              : _buildInitials(context),
+        ),
       ),
       title: Text(profile.fullName,
           style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
@@ -584,6 +606,19 @@ class _OnlineMemberTile extends StatelessWidget {
         height: 8,
         decoration: BoxDecoration(
             color: context.colors.successGreen, shape: BoxShape.circle),
+      ),
+    );
+  }
+
+  Widget _buildInitials(BuildContext context) {
+    return Center(
+      child: Text(
+        profile.fullName.isNotEmpty ? profile.fullName[0].toUpperCase() : 'U',
+        style: TextStyle(
+          color: context.colors.primaryGold,
+          fontWeight: FontWeight.bold,
+          fontSize: 12,
+        ),
       ),
     );
   }

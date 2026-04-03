@@ -1017,6 +1017,49 @@ class _StatusToggleState extends State<_StatusToggle> {
 
 class _LogsTab extends ConsumerWidget {
   const _LogsTab();
+
+  String _formatEntity(String entityType) {
+    if (entityType.isEmpty) return '—';
+    return entityType
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((w) => w.isEmpty
+            ? w
+            : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+        .join(' ');
+  }
+
+  String _formatAction(AuditLogModel log) {
+    if (log.entityType == 'storage_rate' && log.action == 'Updated storage rate') {
+      return 'Storage rate updated';
+    }
+    return log.action;
+  }
+
+  String _formatDetails(AuditLogModel log) {
+    final details = log.details;
+    if (details == null || details.isEmpty) return '—';
+
+    if (log.entityType == 'storage_rate') {
+      final oldRate = details['old_rate'] as num?;
+      final newRate = details['new_rate'] as num?;
+      if (oldRate != null || newRate != null) {
+        final oldText = oldRate != null
+            ? NumberFormat('#,##0.00').format(oldRate)
+            : '—';
+        final newText = newRate != null
+            ? NumberFormat('#,##0.00').format(newRate)
+            : '—';
+        return 'LKR $oldText -> LKR $newText';
+      }
+    }
+
+    final pairs = details.entries
+        .map((e) => '${e.key}: ${e.value}')
+        .toList();
+    return pairs.join(', ');
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final logs = ref.watch(allLogsProvider);
@@ -1094,7 +1137,7 @@ class _LogsTab extends ConsumerWidget {
                   ],
                   rows: list.map((l) {
                     final timeStr =
-                        '${l.createdAt.hour}:${l.createdAt.minute.toString().padLeft(2, '0')} ${l.createdAt.day}/${l.createdAt.month}';
+                      DateFormat('dd MMM yyyy, HH:mm').format(l.createdAt);
                     return DataRow(cells: [
                       DataCell(Text(timeStr,
                           style: TextStyle(
@@ -1103,15 +1146,15 @@ class _LogsTab extends ConsumerWidget {
                           style: TextStyle(
                               color: context.colors.textPrimary,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(l.action,
+                      DataCell(Text(_formatAction(l),
                           style: TextStyle(
                               color: context.colors.accentLightBlue))),
-                      DataCell(Text(l.entityType.toUpperCase(),
+                      DataCell(Text(_formatEntity(l.entityType),
                           style: TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
                               fontWeight: FontWeight.w700))),
-                      DataCell(Text(l.details?.toString() ?? '—',
+                      DataCell(Text(_formatDetails(l),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
                           style: TextStyle(
@@ -1172,18 +1215,37 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
     final rate = double.tryParse(_chargeCtrl.text) ?? 0;
     setState(() => _loading = true);
     try {
-      await supabase.from('storage_rates').insert({
+      final previousRate = _latestRate(
+        ref.read(storageRateProvider).valueOrNull,
+      );
+      final insertRes = await supabase.from('storage_rates').insert({
         'rate': rate,
         'effective_from': DateTime.now().toIso8601String(),
-      });
+      }).select('id').single();
+
+      final user = supabase.auth.currentUser;
+      if (user != null) {
+        await AuditLogService().recordLog(
+          userId: user.id,
+          action: 'Updated storage rate',
+          entityType: 'storage_rate',
+          entityId: insertRes['id'].toString(),
+          details: {
+            'old_rate': previousRate,
+            'new_rate': rate,
+          },
+        );
+      }
       
       ref.invalidate(storageRateProvider);
       ref.invalidate(storageRateHistoryProvider);
+      ref.invalidate(allLogsProvider);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: const Text('Storage rate updated successfully'),
             backgroundColor: context.colors.successGreen));
+        Navigator.pop(context);
         _chargeCtrl.clear();
       }
     } catch (e) {
@@ -1198,190 +1260,168 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
 
   @override
   Widget build(BuildContext context) {
+    final history = ref.watch(storageRateHistoryProvider);
+
     return Padding(
-      padding: const EdgeInsets.all(28),
-      child: Row(
+      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Left side - Form
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Storage Rates & Charges',
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w700)),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: context.colors.primaryGold,
+                  foregroundColor: context.colors.primaryNavy,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                ),
+                icon: const Icon(Icons.edit_rounded, size: 18),
+                label: const Text('Change Charges',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                onPressed: () => _showUpdateDialog(context),
+              ),
+            ],
+          ),
+          const Gap(16),
           Expanded(
-            flex: 2,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Storage Rates & Charges',
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 24,
-                        fontWeight: FontWeight.w700)),
-                const Gap(24),
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                      color: context.colors.cardDark,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: context.colors.borderColor)),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Icon(Icons.warehouse_rounded,
-                              color: context.colors.primaryGold, size: 20),
-                          const Gap(10),
-                          Text('Warehouse Storage Charges',
+            child: history.when(
+              loading: () => Center(
+                  child: CircularProgressIndicator(
+                      color: context.colors.primaryGold)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () => ref.refresh(storageRateHistoryProvider)),
+              data: (list) => Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                    color: context.colors.cardDark,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: context.colors.borderColor)),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: DataTable2(
+                    horizontalMargin: 24,
+                    columnSpacing: 20,
+                    fixedTopRows: 1,
+                    isHorizontalScrollBarVisible: false,
+                    dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                    headingRowColor:
+                        WidgetStateProperty.all(context.colors.surfaceDark),
+                    columns: [
+                      DataColumn2(
+                          label: Text('Date & Time',
                               style: TextStyle(
                                   color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 16)),
-                        ]),
-                        const Gap(12),
-                        Text(
-                            'Set the daily storage fee per package. This rate is used to calculate the total cost for held items (excluding confiscated goods).',
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 13)),
-                        const Gap(24),
-                        TextField(
-                          controller: _chargeCtrl,
-                          keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true),
-                          style: TextStyle(color: context.colors.textPrimary),
-                          decoration: InputDecoration(
-                            labelText: 'Daily Charge Rate (LKR)',
-                            prefixText: 'LKR ',
-                            helperText: 'e.g. 150.00',
-                            filled: true,
-                            fillColor:
-                                context.colors.surfaceDark.withOpacity(0.5),
-                          ),
-                        ),
-                        const Gap(32),
-                        ElevatedButton(
-                          onPressed: _loading ? null : _save,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: context.colors.primaryGold,
-                            foregroundColor: context.colors.primaryNavy,
-                            minimumSize: const Size(double.infinity, 54),
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(10)),
-                          ),
-                          child: _loading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2, color: Colors.black))
-                              : const Text('Save Settings',
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13)),
+                          size: ColumnSize.M),
+                      DataColumn2(
+                          label: Text('Officer/Admin',
+                              style: TextStyle(
+                                  color: context.colors.primaryGold,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13)),
+                          size: ColumnSize.L),
+                      DataColumn2(
+                          label: Text('Action / Value Change',
+                              style: TextStyle(
+                                  color: context.colors.primaryGold,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13)),
+                          size: ColumnSize.L),
+                    ],
+                    rows: list
+                        .map((h) => DataRow(cells: [
+                              DataCell(Text(
+                                  DateFormat('dd MMM yyyy, HH:mm')
+                                      .format(h.createdAt),
                                   style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 15)),
-                        ),
-                      ]),
+                                      color: context.colors.textMuted,
+                                      fontSize: 13))),
+                              DataCell(Text(
+                                  h.userId == 'system'
+                                      ? 'System'
+                                      : (h.userFullName ?? 'Admin'),
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600))),
+                              DataCell(Text(
+                                  h.action == 'RATE_UPDATE'
+                                      ? 'Rate Set: LKR ${NumberFormat('#,##0.00').format(h.details?['rate'] ?? 0)}'
+                                      : h.action,
+                                  style: TextStyle(
+                                      color: context.colors.primaryGold,
+                                      fontSize: 13))),
+                            ]))
+                        .toList(),
+                  ),
                 ),
-              ],
-            ),
-          ),
-          const Gap(40),
-          // Right side - History
-          Expanded(
-            flex: 3,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Charge Rate History',
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700)),
-                const Gap(16),
-                Expanded(
-                  child: ref.watch(storageRateHistoryProvider).when(
-                        loading: () => Center(
-                            child: CircularProgressIndicator(
-                                color: context.colors.primaryGold)),
-                        error: (e, _) => ErrorView(
-                            error: e,
-                            onRetry: () =>
-                                ref.refresh(storageRateHistoryProvider)),
-                        data: (history) => history.isEmpty
-                            ? Center(
-                                child: Text('No charge history found',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted)))
-                            : Container(
-                                width: double.infinity,
-                                decoration: BoxDecoration(
-                                    color: context.colors.cardDark,
-                                    borderRadius: BorderRadius.circular(14),
-                                    border: Border.all(
-                                        color: context.colors.borderColor)),
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: DataTable2(
-                                    headingRowColor: WidgetStateProperty.all(
-                                        context.colors.surfaceDark),
-                                    columns: [
-                                      DataColumn2(
-                                          label: Text('Date & Time',
-                                              style: TextStyle(
-                                                  color: context
-                                                      .colors.primaryGold,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 13)),
-                                          size: ColumnSize.M),
-                                      DataColumn2(
-                                          label: Text('Officer/Admin',
-                                              style: TextStyle(
-                                                  color: context
-                                                      .colors.primaryGold,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 13)),
-                                          size: ColumnSize.L),
-                                      DataColumn2(
-                                          label: Text('Action / Value Change',
-                                              style: TextStyle(
-                                                  color: context
-                                                      .colors.primaryGold,
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 13)),
-                                          size: ColumnSize.L),
-                                    ],
-                                    rows: history
-                                        .map((h) => DataRow(cells: [
-                                              DataCell(Text(
-                                                  DateFormat(
-                                                          'dd MMM yyyy, HH:mm')
-                                                      .format(h.createdAt),
-                                                  style: TextStyle(
-                                                      color: context
-                                                          .colors.textMuted,
-                                                      fontSize: 13))),
-                                              DataCell(Text(
-                                                  h.userId == 'system' 
-                                                      ? 'System' 
-                                                      : (h.userFullName ?? 'Admin'),
-                                                  style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.w600))),
-                                              DataCell(Text(
-                                                  h.action == 'RATE_UPDATE'
-                                                      ? 'Rate Set: LKR ${NumberFormat('#,##0.00').format(h.details?['rate'] ?? 0)}'
-                                                      : h.action,
-                                                  style: TextStyle(
-                                                      color: context
-                                                          .colors.primaryGold,
-                                                      fontSize: 13))),
-                                            ]))
-                                        .toList(),
-                                  ),
-                                ),
-                              ),
-                      ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showUpdateDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDlgState) => AlertDialog(
+          title: const Text('Update Storage Charges'),
+          content: SizedBox(
+            width: 400,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Set the daily storage fee per package. This rate is used to calculate the total cost for held items.',
+                  style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
+                ),
+                const Gap(24),
+                TextField(
+                  controller: _chargeCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  autofocus: true,
+                  style: TextStyle(color: context.colors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Daily Charge Rate (LKR)',
+                    prefixText: 'LKR ',
+                    helperText: 'e.g. 150.00',
+                    filled: true,
+                    fillColor: context.colors.surfaceDark.withOpacity(0.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: _loading ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.primaryGold,
+                foregroundColor: context.colors.primaryNavy,
+              ),
+              child: _loading
+                  ? const SizedBox(
+                      height: 18,
+                      width: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                  : const Text('Update Rate'),
+            ),
+          ],
+        ),
       ),
     );
   }

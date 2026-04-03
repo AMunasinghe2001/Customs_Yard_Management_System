@@ -692,6 +692,10 @@ class AdminService {
     required String fullName,
     required String badgeNumber,
     required String role,
+    String? mobileNumber,
+    String? jobRole,
+    String? department,
+    String? profileImageUrl,
   }) async {
     await supabase.auth.signInWithOtp(
       email: email,
@@ -700,6 +704,10 @@ class AdminService {
         'full_name': fullName,
         'role': role,
         'badge_number': badgeNumber,
+        if (mobileNumber != null) 'mobile_number': mobileNumber,
+        if (jobRole != null) 'job_role': jobRole,
+        if (department != null) 'department': department,
+        if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
       },
     );
   }
@@ -711,6 +719,10 @@ class AdminService {
     required String fullName,
     required String badgeNumber,
     required String role,
+    String? mobileNumber,
+    String? jobRole,
+    String? department,
+    String? profileImageUrl,
   }) async {
     final response = await supabase.auth.verifyOTP(
       email: email,
@@ -730,6 +742,10 @@ class AdminService {
           'full_name': fullName,
           'role': role,
           'badge_number': badgeNumber,
+          if (mobileNumber != null) 'mobile_number': mobileNumber,
+          if (jobRole != null) 'job_role': jobRole,
+          if (department != null) 'department': department,
+          if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
         },
       ),
     );
@@ -741,6 +757,10 @@ class AdminService {
         'badge_number': badgeNumber,
         'role': role,
         'is_active': true,
+        if (mobileNumber != null) 'mobile_number': mobileNumber,
+        if (jobRole != null) 'job_role': jobRole,
+        if (department != null) 'department': department,
+        if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
       });
     } catch (_) {}
 
@@ -753,6 +773,10 @@ class AdminService {
     required String fullName,
     required String badgeNumber,
     required String role,
+    String? mobileNumber,
+    String? jobRole,
+    String? department,
+    String? profileImageUrl,
   }) async {
     final response = await supabase.auth.signUp(
       email: email,
@@ -768,6 +792,10 @@ class AdminService {
           'badge_number': badgeNumber,
           'role': role,
           'is_active': true,
+          if (mobileNumber != null) 'mobile_number': mobileNumber,
+          if (jobRole != null) 'job_role': jobRole,
+          if (department != null) 'department': department,
+          if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
         });
       } catch (_) {}
     } else {
@@ -801,11 +829,21 @@ class AdminService {
   }
 
   Future<void> updateProfile(String id,
-      {String? fullName, String? badgeNumber, String? role}) async {
+      {String? fullName,
+      String? badgeNumber,
+      String? role,
+      String? mobileNumber,
+      String? jobRole,
+      String? department,
+      String? profileImageUrl}) async {
     final updates = <String, dynamic>{};
     if (fullName != null) updates['full_name'] = fullName;
     if (badgeNumber != null) updates['badge_number'] = badgeNumber;
     if (role != null) updates['role'] = role;
+    if (mobileNumber != null) updates['mobile_number'] = mobileNumber;
+    if (jobRole != null) updates['job_role'] = jobRole;
+    if (department != null) updates['department'] = department;
+    if (profileImageUrl != null) updates['profile_image_url'] = profileImageUrl;
     if (updates.isNotEmpty) {
       await supabase.from('profiles').update(updates).eq('id', id);
       final admin = supabase.auth.currentUser;
@@ -895,6 +933,20 @@ class HoldReasonService {
       'description': description,
       'is_active': true,
     });
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Added hold reason',
+        entityType: 'hold_reason',
+        entityId: 'new',
+        details: {
+          'reason_text': reasonText,
+          'description': description,
+        },
+      );
+    }
   }
 
   Future<void> updateReason(
@@ -903,16 +955,53 @@ class HoldReasonService {
       'reason_text': reasonText,
       'description': description,
     }).eq('id', id);
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Updated hold reason',
+        entityType: 'hold_reason',
+        entityId: id,
+        details: {
+          'reason_text': reasonText,
+          'description': description,
+        },
+      );
+    }
   }
 
   Future<void> toggleReasonActive(String id, bool isActive) async {
     await supabase.from('hold_reasons').update({
       'is_active': isActive,
     }).eq('id', id);
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: isActive ? 'Activated hold reason' : 'Deactivated hold reason',
+        entityType: 'hold_reason',
+        entityId: id,
+        details: {
+          'is_active': isActive,
+        },
+      );
+    }
   }
 
   Future<void> deleteReason(String id) async {
     await supabase.from('hold_reasons').delete().eq('id', id);
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Deleted hold reason',
+        entityType: 'hold_reason',
+        entityId: id,
+      );
+    }
   }
 }
 

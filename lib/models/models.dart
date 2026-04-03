@@ -493,6 +493,10 @@ class ProfileModel {
   final String id;
   final String fullName;
   final String? badgeNumber;
+  final String? mobileNumber;
+  final String? jobRole;
+  final String? department;
+  final String? profileImageUrl;
   final String role;
   final bool isActive;
   final bool isOnline;
@@ -503,6 +507,10 @@ class ProfileModel {
     required this.id,
     required this.fullName,
     this.badgeNumber,
+    this.mobileNumber,
+    this.jobRole,
+    this.department,
+    this.profileImageUrl,
     required this.role,
     required this.isActive,
     this.isOnline = false,
@@ -515,6 +523,10 @@ class ProfileModel {
       id: json['id'] as String,
       fullName: json['full_name'] as String,
       badgeNumber: json['badge_number'] as String?,
+      mobileNumber: json['mobile_number'] as String?,
+      jobRole: json['job_role'] as String?,
+      department: json['department'] as String?,
+      profileImageUrl: json['profile_image_url'] as String?,
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
       isOnline: json['is_online'] as bool? ?? false,
@@ -530,6 +542,10 @@ class ProfileModel {
       id: id,
       fullName: fullName,
       badgeNumber: badgeNumber,
+      mobileNumber: mobileNumber,
+      jobRole: jobRole,
+      department: department,
+      profileImageUrl: profileImageUrl,
       role: role,
       isActive: isActive,
       isOnline: online,
