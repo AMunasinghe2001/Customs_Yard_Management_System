@@ -1143,12 +1143,21 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
   final _chargeCtrl = TextEditingController();
   bool _loading = false;
 
+  double? _latestRate(Map<DateTime, double>? rates) {
+    if (rates == null || rates.isEmpty) return null;
+    final latestEntry = rates.entries.reduce(
+      (a, b) => a.key.isAfter(b.key) ? a : b,
+    );
+    return latestEntry.value;
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final rate = ref.read(storageRateProvider).valueOrNull ?? 0;
-      _chargeCtrl.text = rate.toString();
+      final rates = ref.read(storageRateProvider).valueOrNull;
+      final rate = _latestRate(rates);
+      _chargeCtrl.text = rate?.toStringAsFixed(2) ?? '';
     });
   }
 

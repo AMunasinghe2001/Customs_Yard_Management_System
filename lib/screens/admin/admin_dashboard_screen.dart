@@ -29,6 +29,14 @@ final categoryZoneSummaryProvider = FutureProvider<List<Map<String, dynamic>>>((
   return ref.read(warehouseServiceProvider).getCategoryZoneCombinedSummary();
 });
 
+double? _latestStorageRate(Map<DateTime, double>? rates) {
+  if (rates == null || rates.isEmpty) return null;
+  final latestEntry = rates.entries.reduce(
+    (a, b) => a.key.isAfter(b.key) ? a : b,
+  );
+  return latestEntry.value;
+}
+
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
 
@@ -38,6 +46,9 @@ class AdminDashboardScreen extends ConsumerWidget {
     final recent = ref.watch(recentPackagesProvider);
     final profiles = ref.watch(allProfilesProvider);
     final online = ref.watch(onlineProfilesProvider);
+    final storageRate = _latestStorageRate(
+      ref.watch(storageRateProvider).valueOrNull,
+    );
 
     return AppShell(
       currentRoute: '/admin',
@@ -108,7 +119,9 @@ class AdminDashboardScreen extends ConsumerWidget {
                             child: _buildPkgStat(
                                 context,
                                 'Warehouse Charges',
-                                "LKR ${(data['storageRate'] ?? 0.0).toStringAsFixed(2)}",
+                            storageRate != null
+                              ? "LKR ${storageRate.toStringAsFixed(2)}"
+                              : 'LKR 0.00',
                                 Icons.account_balance_wallet_rounded,
                                 context.colors.accentLightBlue,
                                 small: true)),

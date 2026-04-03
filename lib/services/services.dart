@@ -375,8 +375,16 @@ class PackageService {
       if (status == 'seized') seized++;
     }
 
-    // Get current storage rate
-    final storageRate = 0.0;
+    // Get current storage rate (latest effective_from)
+    final latestRate = await supabase
+      .from('storage_rates')
+      .select('rate, effective_from')
+      .order('effective_from', ascending: false)
+      .limit(1);
+
+    final storageRate = latestRate.isNotEmpty
+      ? (latestRate.first['rate'] as num).toDouble()
+      : 0.0;
 
     return {
       'seized': seized,

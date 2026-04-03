@@ -530,14 +530,14 @@ class _ReturnedPackagesScreenState
                               DataColumn2(
                                 label: Text('Returned Qty'),
                                 size: ColumnSize.S,
-                                fixedWidth: 90),
+                                fixedWidth: 120),
                               DataColumn2(
-                                label: Center(child: Text('Charge')),
+                                label: Text('Charge'),
                                 size: ColumnSize.M),
                               DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.M),
                               DataColumn2(
-                                label: Center(child: Text('Receipt Date')),
+                                label: Text('Receipt Date'),
                                 size: ColumnSize.M),
                               DataColumn2(
                                 label: Center(child: Text('Details')),
@@ -552,25 +552,26 @@ class _ReturnedPackagesScreenState
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
                                     DataCell(Text(row.itemName,
-                                  overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text('${row.entry.itemCount}')),
-                                DataCell(Center(
-                                  child: Text((() {
+                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(Center(
+                                        child: Text(
+                                            '${row.entry.itemCount}'))),
+                                    DataCell(Text((() {
                                       return 'LKR ${NumberFormat('#,##0.00').format(row.entry.calculatePackageCharge(row.package.items, storageRateHistory))}';
-                                })(),
-                                  style: TextStyle(
-                                    color: context.colors.primaryGold,
-                                    fontWeight: FontWeight.bold)))),
-                                    DataCell(Text(row.receiptNo ?? '—')),
-                                DataCell(Center(
-                                  child: Text((() {
+                                    })(),
+                                        style: TextStyle(
+                                            color: context.colors.primaryGold,
+                                            fontWeight: FontWeight.bold))),
+                                    DataCell(Text(row.receiptNo ?? '—',
+                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(Text((() {
                                       if (row.receiptDate != null)
                                         return row.receiptDate!;
                                       return row.entry.returnedAt != null
                                           ? DateFormat('yyyy-MM-dd')
                                               .format(row.entry.returnedAt!)
                                           : '—';
-                                })()))),
+                                    })())),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,

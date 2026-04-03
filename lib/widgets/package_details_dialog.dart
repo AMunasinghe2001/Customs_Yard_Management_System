@@ -633,6 +633,16 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                           label: 'Date Range',
                                           value: '${DateFormat('yyyy-MM-dd').format(legacyEntries.first.admittedAt)} to ${legacyEntries.first.returnedAt != null ? DateFormat('yyyy-MM-dd').format(legacyEntries.first.returnedAt!) : '—'}',
                                         ),
+                                        _DetailItem(
+                                          icon: Icons.receipt_long_rounded,
+                                          label: 'Receipt No',
+                                          value: returnedReceiptNo ?? '—',
+                                        ),
+                                        _DetailItem(
+                                          icon: Icons.event_rounded,
+                                          label: 'Receipt Date',
+                                          value: returnedReceiptDate ?? '—',
+                                        ),
                                       ],
                                     ),
                                   ),

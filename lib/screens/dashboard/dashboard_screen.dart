@@ -34,6 +34,14 @@ final categoryStatsProvider = FutureProvider<Map<String, int>>((ref) async {
   return ref.read(warehouseServiceProvider).getCategoryStats();
 });
 
+double? _latestStorageRate(Map<DateTime, double>? rates) {
+  if (rates == null || rates.isEmpty) return null;
+  final latestEntry = rates.entries.reduce(
+    (a, b) => a.key.isAfter(b.key) ? a : b,
+  );
+  return latestEntry.value;
+}
+
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -58,6 +66,9 @@ class DashboardScreen extends ConsumerWidget {
     AsyncValue<Map<String, dynamic>> stats,
     AsyncValue<List<PackageModel>> recent,
   ) {
+    final storageRate = _latestStorageRate(
+      ref.watch(storageRateProvider).valueOrNull,
+    );
     return AppShell(
       currentRoute: '/dashboard',
       child: Scaffold(
@@ -134,8 +145,8 @@ class DashboardScreen extends ConsumerWidget {
                         Expanded(
                           child: _StatCard(
                             label: 'Warehouse Charges',
-                            value: data['storageRate'] != null
-                                ? 'LKR ${(data['storageRate'] as num).toStringAsFixed(2)}'
+                            value: storageRate != null
+                                ? 'LKR ${storageRate.toStringAsFixed(2)}'
                                 : 'LKR 0.00',
                             icon: Icons.payment_rounded,
                             color: context.colors.accentLightBlue,
@@ -220,6 +231,9 @@ class DashboardScreen extends ConsumerWidget {
     AsyncValue<Map<String, dynamic>> stats,
     AsyncValue<List<PackageModel>> recent,
   ) {
+    final storageRate = _latestStorageRate(
+      ref.watch(storageRateProvider).valueOrNull,
+    );
     return AppShell(
       currentRoute: '/dashboard',
       child: Scaffold(
@@ -277,8 +291,8 @@ class DashboardScreen extends ConsumerWidget {
                     ConstrainedBox(
                       constraints: const BoxConstraints(minWidth: 180),
                       child: _StatCard(label: 'Warehouse Charges', 
-                        value: data['storageRate'] != null
-                            ? 'LKR ${(data['storageRate'] as num).toStringAsFixed(2)}'
+                        value: storageRate != null
+                            ? 'LKR ${storageRate.toStringAsFixed(2)}'
                             : 'LKR 0.00',
                         icon: Icons.payment_rounded, color: context.colors.accentLightBlue)
                         .animate().slideY(begin: 0.3, duration: 400.ms, delay: 300.ms).fadeIn(),
