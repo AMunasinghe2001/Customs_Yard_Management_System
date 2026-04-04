@@ -237,7 +237,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     padding: const EdgeInsets.only(bottom: 20),
                     child: ErrorView(error: snapshot.error!, onRetry: () => setState(() {})),
                   ),
-                Text('Standard Reports', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+
+                // ── Section 1: Standard Reports ──
+                _buildSectionHeader('Standard Reports', Icons.article_rounded),
                 const Gap(8),
                 GridView.count(
                   shrinkWrap: true,
@@ -263,6 +265,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: _generateCategoryZonePdf,
                       onExcel: _exportCategoryZoneExcel,
                     ),
+                    _buildReportCard(
+                      title: 'Confiscated Items',
+                      description: 'All items seized/confiscated by customs.',
+                      icon: Icons.gavel_rounded,
+                      color: const Color(0xFFD32F2F),
+                      onPdf: _generateConfiscatedPdf,
+                      onExcel: _exportConfiscatedExcel,
+                    ),
                     if (isAdmin)
                       _buildReportCard(
                         title: 'Staff Audit',
@@ -274,8 +284,104 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       ),
                   ],
                 ),
+
+                // ── Section 2: Warehouse & Movement Reports ──
                 const Gap(24),
-                Text('System Configuration & Logs', style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+                _buildSectionHeader('Warehouse & Movement Reports', Icons.warehouse_rounded),
+                const Gap(8),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 2.3,
+                  children: [
+                    _buildReportCard(
+                      title: 'Warehouse Stock',
+                      description: 'Currently held items in warehouses.',
+                      icon: Icons.warehouse_rounded,
+                      color: const Color(0xFF1565C0),
+                      onPdf: _generateWarehouseStockPdf,
+                      onExcel: _exportWarehouseStockExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Returned Packages',
+                      description: 'All released/returned package entries.',
+                      icon: Icons.keyboard_return_rounded,
+                      color: const Color(0xFF2E7D32),
+                      onPdf: _generateReturnedPdf,
+                      onExcel: _exportReturnedExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Warehouses List',
+                      description: 'Registered warehouses & current occupancy.',
+                      icon: Icons.domain_rounded,
+                      color: const Color(0xFF6A1B9A),
+                      onPdf: _generateWarehousesListPdf,
+                      onExcel: _exportWarehousesListExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Daily Summary',
+                      description: 'Package movement by day.',
+                      icon: Icons.today_rounded,
+                      color: const Color(0xFF00838F),
+                      onPdf: () => _generateSummaryReport('day', 'pdf'),
+                      onExcel: () => _generateSummaryReport('day', 'excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Weekly Summary',
+                      description: 'Package movement by week.',
+                      icon: Icons.date_range_rounded,
+                      color: const Color(0xFF4527A0),
+                      onPdf: () => _generateSummaryReport('week', 'pdf'),
+                      onExcel: () => _generateSummaryReport('week', 'excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Monthly Summary',
+                      description: 'Package movement by month.',
+                      icon: Icons.calendar_month_rounded,
+                      color: const Color(0xFFEF6C00),
+                      onPdf: () => _generateSummaryReport('month', 'pdf'),
+                      onExcel: () => _generateSummaryReport('month', 'excel'),
+                    ),
+                  ],
+                ),
+
+                // ── Section 3: Financial Reports ──
+                const Gap(24),
+                _buildSectionHeader('Financial Reports', Icons.payments_rounded),
+                const Gap(8),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 2.3,
+                  children: [
+                    _buildReportCard(
+                      title: 'Storage Charges',
+                      description: 'Outstanding storage charges for held items.',
+                      icon: Icons.account_balance_wallet_rounded,
+                      color: const Color(0xFFC62828),
+                      onPdf: _generateStorageChargesPdf,
+                      onExcel: _exportStorageChargesExcel,
+                    ),
+                    _buildReportCard(
+                      title: 'Released Revenue',
+                      description: 'Storage charges collected on returned items.',
+                      icon: Icons.receipt_long_rounded,
+                      color: const Color(0xFF388E3C),
+                      onPdf: _generateReleasedRevenuePdf,
+                      onExcel: _exportReleasedRevenueExcel,
+                    ),
+                  ],
+                ),
+
+                // ── Section 4: System Configuration & Logs ──
+                const Gap(24),
+                _buildSectionHeader('System Configuration & Logs', Icons.settings_rounded),
                 const Gap(8),
                 GridView.count(
                   shrinkWrap: true,
@@ -288,7 +394,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     _buildReportCard(
                       title: 'Hold Reasons',
                       description: 'System-wide hold reasons list.',
-                      icon: Icons.gavel_rounded,
+                      icon: Icons.rule_rounded,
                       color: Colors.orange,
                       onPdf: _generateHoldReasonsPdf,
                       onExcel: _exportHoldReasonsExcel,
@@ -316,6 +422,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: context.colors.primaryGold),
+        const Gap(8),
+        Text(title, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+      ],
     );
   }
 
@@ -1060,6 +1176,175 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
       _setLoading(key, false);
     }
   }
+
+  // ── New Report Handlers ──
+
+  Future<void> _generateConfiscatedPdf() async {
+    await _generateStatusReport('confiscated', 'pdf');
+  }
+
+  Future<void> _exportConfiscatedExcel() async {
+    await _generateStatusReport('confiscated', 'excel');
+  }
+
+  Future<void> _generateWarehousesListPdf() async {
+    const key = 'Warehouses List_pdf';
+    _setLoading(key, true);
+    try {
+      final warehouses = await ref.read(warehouseServiceProvider).getWarehouses();
+      final stats = await ref.read(warehouseServiceProvider).getWarehouseStats();
+      if (warehouses.isEmpty) {
+        _showNoDataMessage();
+      } else {
+        _showPdfPreview(
+          (format) => ReportService().generateWarehousesListPdf(warehouses, stats),
+          'Warehouses_List_Audit.pdf',
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _exportWarehousesListExcel() async {
+    const key = 'Warehouses List_excel';
+    _setLoading(key, true);
+    try {
+      final warehouses = await ref.read(warehouseServiceProvider).getWarehouses();
+      final stats = await ref.read(warehouseServiceProvider).getWarehouseStats();
+      if (warehouses.isEmpty) {
+        _showNoDataMessage();
+      } else {
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => ExcelExportDialog(
+              title: 'Export Warehouses List',
+              recordCount: warehouses.length,
+              fileName: 'Warehouses_List_Audit.xlsx',
+              onExport: () => ReportService().exportWarehousesListToExcel(warehouses, stats),
+              onSave: (bytes) => _handleFileSave(bytes, 'Warehouses_List_Audit', 'xlsx'),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _generateStorageChargesPdf() async {
+     const key = 'Storage Charges_pdf';
+      _setLoading(key, true);
+      try {
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
+        final filteredEntries = _filterByDate(entries);
+        if (filteredEntries.isEmpty) {
+          _showNoDataMessage();
+        } else {
+          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final rates = await ref.read(storageRateProvider.future);
+          _showPdfPreview(
+            (format) => ReportService().generateFinancialPdf(filteredEntries, packages, rates, isRevenue: false),
+            'Storage_Charges_Report.pdf',
+          );
+        }
+      } catch (e) {
+        _showError(e.toString());
+      } finally {
+        _setLoading(key, false);
+      }
+  }
+
+  Future<void> _exportStorageChargesExcel() async {
+     const key = 'Storage Charges_excel';
+      _setLoading(key, true);
+      try {
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
+        final filteredEntries = _filterByDate(entries);
+        if (filteredEntries.isEmpty) {
+          _showNoDataMessage();
+        } else {
+          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final rates = await ref.read(storageRateProvider.future);
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (ctx) => ExcelExportDialog(
+                title: 'Export Storage Charges',
+                recordCount: filteredEntries.length,
+                fileName: 'Storage_Charges_Report.xlsx',
+                onExport: () => ReportService().exportFinancialToExcel(filteredEntries, packages, rates, isRevenue: false),
+                onSave: (bytes) => _handleFileSave(bytes, 'Storage_Charges_Report', 'xlsx'),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        _showError(e.toString());
+      } finally {
+        _setLoading(key, false);
+      }
+  }
+
+  Future<void> _generateReleasedRevenuePdf() async {
+      const key = 'Released Revenue_pdf';
+      _setLoading(key, true);
+      try {
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
+        final filteredEntries = _filterByDate(entries);
+        if (filteredEntries.isEmpty) {
+          _showNoDataMessage();
+        } else {
+          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final rates = await ref.read(storageRateProvider.future);
+          _showPdfPreview(
+            (format) => ReportService().generateFinancialPdf(filteredEntries, packages, rates, isRevenue: true),
+            'Released_Revenue_Report.pdf',
+          );
+        }
+      } catch (e) {
+        _showError(e.toString());
+      } finally {
+        _setLoading(key, false);
+      }
+  }
+
+  Future<void> _exportReleasedRevenueExcel() async {
+     const key = 'Released Revenue_excel';
+      _setLoading(key, true);
+      try {
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
+        final filteredEntries = _filterByDate(entries);
+        if (filteredEntries.isEmpty) {
+          _showNoDataMessage();
+        } else {
+          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final rates = await ref.read(storageRateProvider.future);
+          if (mounted) {
+            showDialog(
+              context: context,
+              builder: (ctx) => ExcelExportDialog(
+                title: 'Export Released Revenue',
+                recordCount: filteredEntries.length,
+                fileName: 'Released_Revenue_Report.xlsx',
+                onExport: () => ReportService().exportFinancialToExcel(filteredEntries, packages, rates, isRevenue: true),
+                onSave: (bytes) => _handleFileSave(bytes, 'Released_Revenue_Report', 'xlsx'),
+              ),
+            );
+          }
+        }
+      } catch (e) {
+        _showError(e.toString());
+      } finally {
+        _setLoading(key, false);
+      }
+  }
+
 
   List<T> _filterByDate<T>(List<T> list) {
     if (_startDate == null && _endDate == null) return list;

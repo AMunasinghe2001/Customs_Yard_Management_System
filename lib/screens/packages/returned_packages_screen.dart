@@ -8,6 +8,7 @@ import '../../core/providers.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/empty_table_state.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
@@ -499,14 +500,6 @@ class _ReturnedPackagesScreenState
                       return true;
                     }).toList();
 
-                    if (rows.isEmpty) {
-                      return Center(
-                          child: Text('No returned packages found',
-                              style: TextStyle(
-                                  color: context.colors.textMuted,
-                                  fontSize: 16)));
-                    }
-
                     return Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
@@ -520,6 +513,7 @@ class _ReturnedPackagesScreenState
                           columnSpacing: 12,
                           horizontalMargin: 12,
                           fixedTopRows: 1,
+                          empty: const EmptyTableState(message: 'No returned packages found'),
                           isVerticalScrollBarVisible: true,
                           isHorizontalScrollBarVisible: false,
                             columns: const [

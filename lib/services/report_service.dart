@@ -13,6 +13,17 @@ class ReportService {
   factory ReportService() => _instance;
   ReportService._internal();
 
+  pw.Font? _font;
+  pw.Font? _fontBold;
+  pw.Font? _fontSinhala;
+
+  Future<void> _ensureFontsLoaded() async {
+    if (_font != null && _fontBold != null && _fontSinhala != null) return;
+    _font = await PdfGoogleFonts.notoSansRegular();
+    _fontBold = await PdfGoogleFonts.notoSansBold();
+    _fontSinhala = await PdfGoogleFonts.notoSansSinhalaRegular();
+  }
+
   /// Generates a PDF report for report items with category summary and zone summary
   Future<Uint8List> generateCategoryAndZonePdf(List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
     final pdf = pw.Document();
@@ -399,11 +410,15 @@ class ReportService {
   }
   /// Generates a PDF report for audit logs
   Future<Uint8List> generateLogsPdf(List<AuditLogModel> logs, String dateRange) async {
-    final pdf = pw.Document();
+    await _ensureFontsLoaded();
+    final pdf = pw.Document(
+      theme: pw.ThemeData.withFont(
+        base: _font, 
+        bold: _fontBold,
+        fontFallback: [_fontSinhala!],
+      ),
+    );
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
-
-    // Fix: Add font check for details text
-    final font = await PdfGoogleFonts.notoSansRegular();
 
     pdf.addPage(
       pw.MultiPage(
@@ -413,13 +428,15 @@ class ReportService {
           _buildHeader('SYSTEM ACTIVITY LOG AUDIT', dateStr, dateRange),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, font: _fontBold),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
             cellAlignment: pw.Alignment.centerLeft,
-            cellStyle: pw.TextStyle(font: font, fontSize: 10),
+            cellStyle: pw.TextStyle(fontSize: 8, font: _font),
             headers: ['Timestamp', 'Officer', 'Action', 'Entity', 'Details'],
             data: logs.map((l) {
               String detailsText = l.details != null ? l.details.toString() : '-';
+              if (detailsText.length > 200) detailsText = '${detailsText.substring(0, 197)}...';
+              
               return [
                 DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt),
                 l.userFullName ?? 'System',
@@ -429,6 +446,7 @@ class ReportService {
               ];
             }).toList(),
           ),
+          pw.SizedBox(height: 20),
           _buildFooter(logs.length, label: 'Total Activity Records:'),
         ],
       ),
@@ -573,6 +591,164 @@ class ReportService {
       ]);
     }
 
+    return Uint8List.fromList(excel.encode()!);
+  }
+
+  // ── New Financial & Warehouse Reports ──
+
+  /// Generates a PDF report for Warehouses List
+  Future<Uint8List> generateWarehousesListPdf(List<WarehouseModel> warehouses, Map<String, int> stats) async {
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          _buildHeader('REGISTERED WAREHOUSES AUDIT', dateStr, 'Warehouse Occupancy & Status'),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
+            headers: ['Code', 'Name', 'Location', 'Capacity', 'Active Held Items'],
+            data: warehouses.map((w) {
+              final activeCount = stats[w.code] ?? 0;
+              return [
+                w.code,
+                w.name,
+                w.location ?? 'General',
+                w.capacity?.toString() ?? 'N/A',
+                activeCount.toString(),
+              ];
+            }).toList(),
+            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.centerLeft, 3: pw.Alignment.center, 4: pw.Alignment.center},
+          ),
+          _buildFooter(warehouses.length, label: 'Total Warehouses:'),
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  /// Exports Warehouses List to Excel
+  Future<Uint8List?> exportWarehousesListToExcel(List<WarehouseModel> warehouses, Map<String, int> stats) async {
+    var excel = Excel.createExcel();
+    Sheet sheetObject = excel['Warehouses'];
+    excel.delete('Sheet1');
+
+    sheetObject.appendRow([TextCellValue('REGISTERED WAREHOUSES AUDIT')]);
+    sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
+    sheetObject.appendRow([TextCellValue('')]);
+
+    List<String> headers = ['Code', 'Name', 'Location', 'Capacity', 'Active Held Items'];
+    sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
+    
+    var headerRow = sheetObject.row(3);
+    for (var cell in headerRow) {
+      if (cell != null) cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
+    }
+
+    for (var w in warehouses) {
+      sheetObject.appendRow([
+        TextCellValue(w.code),
+        TextCellValue(w.name),
+        TextCellValue(w.location ?? 'General'),
+        TextCellValue(w.capacity?.toString() ?? 'N/A'),
+        IntCellValue(stats[w.code] ?? 0),
+      ]);
+    }
+    return Uint8List.fromList(excel.encode()!);
+  }
+
+  /// Generates a PDF report for Storage Charges (Financial)
+  Future<Uint8List> generateFinancialPdf(List<WarehouseEntryModel> entries, List<PackageModel> packages, Map<DateTime, double> rates, {required bool isRevenue}) async {
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    
+    double totalCharge = 0;
+    final rowData = <List<String>>[];
+    
+    for (var entry in entries) {
+      final package = packages.firstWhere((p) => p.id == entry.packageId, orElse: () => packages.first);
+      final charge = entry.calculatePackageCharge(package.items, rates);
+      totalCharge += charge;
+      
+      rowData.add([
+        entry.srNumber ?? '-',
+        entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : '-') : 'Active',
+        entry.itemCount.toString(),
+        entry.storageDays.toString(),
+        NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2).format(charge),
+      ]);
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          _buildHeader(isRevenue ? 'RELEASED REVENUE REPORT' : 'OUTSTANDING STORAGE CHARGES REPORT', dateStr, 'Financial Audit'),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
+            headers: ['SR Number', 'Return Date', 'Items', 'Days', 'Calculated Charge'],
+            data: rowData,
+            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.center, 4: pw.Alignment.centerRight},
+          ),
+          pw.SizedBox(height: 10),
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.end,
+            children: [
+              pw.Text('Total: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+              pw.Text(NumberFormat.currency(symbol: 'LKR ', decimalDigits: 2).format(totalCharge), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, color: PdfColors.blue900)),
+            ]
+          ),
+          pw.SizedBox(height: 10),
+          _buildFooter(entries.length, label: 'Total Entries:'),
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  /// Exports Financial Data to Excel
+  Future<Uint8List?> exportFinancialToExcel(List<WarehouseEntryModel> entries, List<PackageModel> packages, Map<DateTime, double> rates, {required bool isRevenue}) async {
+    var excel = Excel.createExcel();
+    Sheet sheetObject = excel['Financial'];
+    excel.delete('Sheet1');
+
+    sheetObject.appendRow([TextCellValue(isRevenue ? 'RELEASED REVENUE REPORT' : 'OUTSTANDING STORAGE CHARGES REPORT')]);
+    sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
+    sheetObject.appendRow([TextCellValue('')]);
+
+    List<String> headers = ['SR Number', 'Return Date', 'Items', 'Days', 'Calculated Charge (LKR)'];
+    sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
+    
+    var headerRow = sheetObject.row(3);
+    for (var cell in headerRow) {
+      if (cell != null) cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
+    }
+
+    double totalCharge = 0;
+    for (var entry in entries) {
+      final package = packages.firstWhere((p) => p.id == entry.packageId, orElse: () => packages.first);
+      final charge = entry.calculatePackageCharge(package.items, rates);
+      totalCharge += charge;
+      
+      sheetObject.appendRow([
+        TextCellValue(entry.srNumber ?? '-'),
+        TextCellValue(entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : '-') : 'Active'),
+        IntCellValue(entry.itemCount),
+        IntCellValue(entry.storageDays),
+        DoubleCellValue(charge),
+      ]);
+    }
+    
+    sheetObject.appendRow([TextCellValue('')]);
+    sheetObject.appendRow([TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue('Total:'), DoubleCellValue(totalCharge)]);
+    
     return Uint8List.fromList(excel.encode()!);
   }
 

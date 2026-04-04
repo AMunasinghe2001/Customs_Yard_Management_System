@@ -12,6 +12,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 
@@ -650,6 +651,7 @@ class _RecentPackagesTable extends StatelessWidget {
           columnSpacing: 12,
           horizontalMargin: 12,
           fixedTopRows: 1,
+          empty: const EmptyTableState(message: 'No inspections recorded today'),
           headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
           dataRowColor: WidgetStateProperty.all(Colors.transparent),
           columns: [
@@ -693,7 +695,7 @@ class _RecentPackagesTable extends StatelessWidget {
                         fontSize: 13)),
                 size: ColumnSize.M),
           ],
-          rows: packages.expand((p) {
+          rows: packages.isEmpty ? [] : packages.expand((p) {
             if (p.items.isEmpty) {
               return [
                 DataRow(cells: [

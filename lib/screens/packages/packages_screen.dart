@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import 'package:data_table_2/data_table_2.dart';
@@ -376,14 +377,6 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       return true;
                     }).toList();
 
-                    if (filteredList.isEmpty) {
-                      return Center(
-                          child: Text('No packages found',
-                              style: TextStyle(
-                                  color: context.colors.textMuted,
-                                  fontSize: 16)));
-                    }
-
                     return Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
@@ -397,6 +390,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           columnSpacing: 12,
                           horizontalMargin: 12,
                           fixedTopRows: 1,
+                          empty: const EmptyTableState(message: 'No packages found'),
                           isVerticalScrollBarVisible: true,
                           isHorizontalScrollBarVisible: false,
                             columns: const [

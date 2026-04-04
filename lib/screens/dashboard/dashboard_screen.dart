@@ -11,6 +11,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
@@ -19,7 +20,14 @@ final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async 
 
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   final all = await ref.read(packageServiceProvider).getAllPackages();
-  return all.take(10).toList();
+  final now = DateTime.now();
+  final todayStart = DateTime(now.year, now.month, now.day);
+  final tomorrowStart = todayStart.add(const Duration(days: 1));
+  
+  return all.where((p) {
+    return (p.createdAt.isAfter(todayStart) || p.createdAt.isAtSameMomentAs(todayStart)) && 
+           p.createdAt.isBefore(tomorrowStart);
+  }).toList();
 });
 
 final warehouseStatsProvider = FutureProvider<Map<String, int>>((ref) async {
@@ -167,16 +175,16 @@ class DashboardScreen extends ConsumerWidget {
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // LEFT COLUMN: Quick Actions
+                    // LEFT COLUMN: Quick Actions & Inventory
                     Expanded(
-                      flex: 1,
-                      child: SingleChildScrollView(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _buildOfficerQuickActions(context),
-                          ],
-                        ),
+                      flex: 2,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildOfficerQuickActions(context),
+                          const Gap(20),
+                          Expanded(child: _buildCategoryZoneSummary(context, ref)),
+                        ],
                       ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
                     ),
                     const Gap(24),
@@ -198,18 +206,7 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           const Gap(8),
                           Expanded(
-                            child: recent.when(
-                              loading: () => const Center(
-                                  child: Padding(
-                                      padding: EdgeInsets.all(40),
-                                      child: CircularProgressIndicator())),
-                              error: (e, _) => ErrorView(
-                                  error: e,
-                                  onRetry: () =>
-                                      ref.refresh(recentPackagesProvider)),
-                              data: (packages) =>
-                                  _RecentPackagesTable(packages: packages),
-                            ),
+                            child: _RecentPackagesTable(recent: recent),
                           ),
                         ],
                       ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
@@ -310,13 +307,9 @@ class DashboardScreen extends ConsumerWidget {
                 ],
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
               const Gap(12),
-              recent.when(
-                loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-                error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(recentPackagesProvider)),
-                data: (packages) => SizedBox(
-                  height: 400,
-                  child: _RecentPackagesTable(packages: packages),
-                ),
+              SizedBox(
+                height: 400,
+                child: _RecentPackagesTable(recent: recent),
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 500.ms).fadeIn(),
 
               const Gap(32),
@@ -393,6 +386,76 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
+  // ───── CATEGORY & ZONE INVENTORY ─────
+  Widget _buildCategoryZoneSummary(BuildContext context, WidgetRef ref) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Category & Zone Inventory', 
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+        const Gap(12),
+        Expanded(
+          child: ref.watch(categoryZoneSummaryProvider).when(
+            data: (summary) {
+              if (summary.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No active inventory.')));
+              return Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: context.colors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.colors.borderColor),
+                ),
+                child: Column(
+                  children: [
+                    // Fixed Header
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: context.colors.surfaceDark,
+                        borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
+                        border: Border(bottom: BorderSide(color: context.colors.borderColor)),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(flex: 5, child: Text('Category', style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 5, child: Text('W/H - Zone', style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
+                          Expanded(flex: 2, child: Text('Qty', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
+                        ],
+                      ),
+                    ),
+                    // Scrollable Body
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.all(0),
+                        itemCount: summary.length,
+                        separatorBuilder: (context, index) => Divider(color: context.colors.borderColor, height: 1),
+                        itemBuilder: (context, index) {
+                          final s = summary[index];
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                            child: Row(
+                              children: [
+                                Expanded(flex: 5, child: Text(s['category'], style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
+                                Expanded(flex: 5, child: Text('${s['warehouse']} - ${s['zone']}', style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
+                                Expanded(flex: 2, child: Text(s['count'].toString(), textAlign: TextAlign.right, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.colors.accentLightBlue))),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+            loading: () => const Center(child: LinearProgressIndicator()),
+            error: (e, _) => Text('Error: $e'),
+          ),
+        ),
+      ],
+    );
+  }
+
   // ───── ACTION CARD WIDGET ─────
   Widget _actionCard(BuildContext context, String label, IconData icon,
       VoidCallback onTap,
@@ -403,7 +466,7 @@ class DashboardScreen extends ConsumerWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           decoration: BoxDecoration(
             color: context.colors.cardDark,
             borderRadius: BorderRadius.circular(12),
@@ -538,58 +601,148 @@ class _StatsLoadingRow extends StatelessWidget {
   }
 }
 
-class _RecentPackagesTable extends StatelessWidget {
-  final List<PackageModel> packages;
-  const _RecentPackagesTable({required this.packages});
+class _RecentPackagesTable extends ConsumerWidget {
+  final AsyncValue<List<PackageModel>> recent;
+  const _RecentPackagesTable({required this.recent});
 
   @override
-  Widget build(BuildContext context) {
-    if (packages.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(40),
-        decoration: BoxDecoration(
-          color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: context.colors.borderColor),
-        ),
-        child: Center(child: Text('No packages inspected yet today',
-            style: TextStyle(color: context.colors.textMuted))),
-      );
-    }
+  Widget build(BuildContext context, WidgetRef ref) {
     return Container(
-      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: context.colors.borderColor),
       ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
         child: DataTable2(
-          columnSpacing: 12,
-          horizontalMargin: 12,
-          minWidth: 600,
+          columnSpacing: 8,
+          horizontalMargin: 8,
           fixedTopRows: 1,
+          empty: const EmptyTableState(message: 'No inspections recorded today'),
           isVerticalScrollBarVisible: true,
           isHorizontalScrollBarVisible: false,
           dataRowColor: WidgetStateProperty.all(Colors.transparent),
-          headingRowColor: WidgetStateProperty.all(Colors.transparent),
+          headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
           columns: [
-            DataColumn2(label: Text('SR Number', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)), size: ColumnSize.M),
-            DataColumn2(label: Text('Declarant', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)), size: ColumnSize.L),
-            DataColumn2(label: Text('Item Name', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)), size: ColumnSize.L),
-            DataColumn2(label: Text('Cusdec No', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)), size: ColumnSize.M),
-            DataColumn2(label: Center(child: Text('Status', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold))), size: ColumnSize.S, fixedWidth: 100),
-            DataColumn2(label: Text('Warehouse', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)), size: ColumnSize.M),
-            DataColumn2(label: Center(child: Text('Date', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold))), size: ColumnSize.S, fixedWidth: 100),
+            DataColumn2(
+                label: Text('SR Number',
+                    style: TextStyle(
+                        color: context.colors.primaryGold,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+                size: ColumnSize.M),
+            DataColumn2(
+                label: Text('Item Name',
+                    style: TextStyle(
+                        color: context.colors.primaryGold,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+                size: ColumnSize.L),
+            DataColumn2(
+                label: Text('Qty',
+                    style: TextStyle(
+                        color: context.colors.primaryGold,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+                size: ColumnSize.S,
+                fixedWidth: 60),
+            DataColumn2(
+                label: Center(
+                  child: Text('Status',
+                      style: TextStyle(
+                          color: context.colors.primaryGold,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
+                ),
+                size: ColumnSize.S,
+                fixedWidth: 100),
+            DataColumn2(
+                label: Text('Date',
+                    style: TextStyle(
+                        color: context.colors.primaryGold,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+                size: ColumnSize.M),
           ],
-          rows: packages.map((p) => DataRow(cells: [
-            DataCell(Text(p.srNumber,
-                style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-            DataCell(Text(p.declarantName ?? '-', overflow: TextOverflow.ellipsis)),
-            DataCell(Text(p.items.isNotEmpty ? p.items.first.itemName : p.description ?? '-', overflow: TextOverflow.ellipsis)),
-            DataCell(Text(p.cusdecNo ?? '-', overflow: TextOverflow.ellipsis)),
-            DataCell(Center(child: StatusChip(status: p.status))),
-            DataCell(Text(p.warehouseEntries.isNotEmpty ? p.warehouseEntries.first.warehouseCode : '-')),
-            DataCell(Center(child: Text(DateFormat('dd/MM/yy').format(p.createdAt)))),
-          ])).toList(),
+          rows: recent.when(
+            data: (packages) {
+              if (packages.isEmpty) {
+                return [];
+              }
+              return packages.expand((p) {
+                if (p.items.isEmpty) {
+                  return [
+                    DataRow(cells: [
+                      DataCell(Text(p.srNumber,
+                          style: TextStyle(
+                              color: context.colors.accentLightBlue,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13))),
+                      const DataCell(
+                          Text('No items', style: TextStyle(fontSize: 13))),
+                      const DataCell(Text('0',
+                          style: TextStyle(
+                              fontSize: 13, fontWeight: FontWeight.bold))),
+                      DataCell(Center(child: StatusChip(status: p.status))),
+                      DataCell(Text(
+                          DateFormat('dd/MM HH:mm').format(p.updatedAt),
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 13))),
+                    ])
+                  ];
+                }
+
+                return p.items.map((item) {
+                  String effectiveStatus =
+                      (item.status != null && item.status != 'pending')
+                          ? item.status!
+                          : p.status;
+
+                  return DataRow(cells: [
+                    DataCell(Text(p.srNumber,
+                        style: TextStyle(
+                            color: context.colors.accentLightBlue,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13))),
+                    DataCell(Text(item.itemName,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 13))),
+                    DataCell(Text(item.quantity.toString(),
+                        style: const TextStyle(
+                            fontSize: 13, fontWeight: FontWeight.bold))),
+                    DataCell(Center(child: StatusChip(status: effectiveStatus))),
+                    DataCell(Text(DateFormat('dd/MM HH:mm').format(p.updatedAt),
+                        style: TextStyle(
+                            color: context.colors.textMuted, fontSize: 13))),
+                  ]);
+                });
+              }).toList();
+            },
+            loading: () => [
+              const DataRow(cells: [
+                DataCell(Text('')),
+                DataCell(SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2))),
+                DataCell(Text('')),
+                DataCell(Text('')),
+                DataCell(Text('')),
+              ])
+            ],
+            error: (e, _) => [
+              DataRow(cells: [
+                const DataCell(Text('Error')),
+                DataCell(Text(e.toString())),
+                const DataCell(Text('')),
+                const DataCell(Text('')),
+                const DataCell(Text('')),
+              ])
+            ],
+          ),
         ),
+      ),
     );
   }
 }
