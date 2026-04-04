@@ -414,7 +414,14 @@ class WarehouseEntryModel {
 
   /// Calculates charge considering historical rate changes across all items in the package (or specific item if tied)
   double calculatePackageCharge(List<PackageItem> items, Map<DateTime, double> historicalRates) {
+    // If the whole package is confiscated, no charge
     if (isPackageConfiscated) return 0;
+    
+    // If this specific entry references an item, check if that item is confiscated
+    if (packageItemId != null) {
+      final item = items.where((i) => i.id == packageItemId).firstOrNull;
+      if (item?.status == 'confiscated') return 0;
+    }
     
     // We should charge based on this specific entry's itemCount!
     int totalUnits = itemCount;

@@ -766,18 +766,28 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 
       // Then add entries for EACH item to their respective warehouses
       final cats = ref.read(packageCategoriesProvider).value;
+      final warehouseService = ref.read(warehouseServiceProvider);
+      
+      // Get existing entries to avoid duplicates on retry
+      final existingEntries = await warehouseService.getAllWarehouseEntries();
+      final pkgExistingEntries = existingEntries.where((e) => e.packageId == saved.id).toList();
+
       for (int i = 0; i < widget.tempPackageItems!.length; i++) {
         final tempItem = widget.tempPackageItems![i];
         
         // Use firstWhereOrNull to avoid "No element" error
         final item = saved.items.where(
           (ci) => ci.itemName == tempItem.itemName && ci.quantity == tempItem.quantity
-        ).firstOrNull ?? (saved.items.length > i ? saved.items[i] : saved.items.first);
+        ).firstOrNull ?? (saved.items.length > i ? saved.items[i] : (saved.items.isNotEmpty ? saved.items.first : tempItem));
         
+        // CHECK: If this item already has a warehouse entry, skip it to avoid duplicates
+        final alreadySent = pkgExistingEntries.any((e) => e.packageItemId == item.id);
+        if (alreadySent) continue;
+
         final warehouseId = _itemWarehouseSelections[i];
         final cat = cats?.where((c) => c.name == tempItem.category).firstOrNull;
 
-        await ref.read(warehouseServiceProvider).addEntry(
+        await warehouseService.addEntry(
               packageId: saved.id,
               packageItemId:
                   item.id.isNotEmpty ? item.id : tempItem.id, // Fallback safely
@@ -798,10 +808,29 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
             backgroundColor: context.colors.successGreen));
       }
     } catch (e) {
-      if (mounted)
+      String userMessage = 'Error: $e';
+      
+      // Friendly error mapping
+      final errStr = e.toString().toLowerCase();
+      if (errStr.contains('socketexception') || errStr.contains('timeout') || errStr.contains('semaphore')) {
+        userMessage = 'Network Signal Error: Please check your internet connection and try again.';
+      } else if (errStr.contains('clientexception')) {
+        userMessage = 'Connection Lost: Check your network signal and try again.';
+      } else if (errStr.contains('null check operator')) {
+        userMessage = 'Please ensure all items have a warehouse selected.';
+      }
+
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
+            content: Text(userMessage),
+            duration: const Duration(seconds: 5),
+            action: SnackBarAction(
+              label: 'RETRY',
+              textColor: Colors.white,
+              onPressed: _sendToWarehouse,
+            ),
             backgroundColor: context.colors.dangerRed));
+      }
     } finally {
       if (mounted) setState(() => _isSending = false);
     }

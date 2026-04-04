@@ -347,11 +347,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
             : null) ??
           'Unknown Officer';
       final returnedOfficerBadge =
-        widget.highlightEntry?.returnedByBadge ??
-          (highlightReturnedById != null &&
-              highlightReturnedById == currentProfile?.id
+        widget.highlightEntry?.returnedByBadge ?? 
+          (highlightReturnedById != null && highlightReturnedById == currentProfile?.id
             ? currentProfile?.badgeNumber
             : null);
+            
+      final isConfiscated = highlightedItem?.status == 'confiscated' || widget.highlightEntry?.isPackageConfiscated == true;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -676,54 +677,101 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                         .toSet()
                                         .toList();
 
+                                    final isItemConfiscated = item.status == 'confiscated';
+                                    
                                     return material.Container(
                                       margin: const EdgeInsets.only(bottom: 12),
-                                      padding: const EdgeInsets.all(12),
+                                      padding: const EdgeInsets.all(16),
                                       decoration: BoxDecoration(
-                                        color: context.colors.surfaceDark,
-                                        borderRadius: BorderRadius.circular(12),
+                                        color: isItemConfiscated 
+                                            ? context.colors.cardDark.withOpacity(0.4) 
+                                            : context.colors.surfaceDark,
+                                        borderRadius: BorderRadius.circular(16),
                                         border: Border.all(
-                                            color: context.colors.borderColor),
+                                            color: isItemConfiscated 
+                                                ? context.colors.dangerRed.withOpacity(0.3) 
+                                                : context.colors.borderColor),
                                       ),
                                       child: Column(
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment: CrossAxisAlignment.center,
                                             children: [
                                               Expanded(
-                                                child: _DetailItem(
-                                                  icon: Icons.label_important_rounded,
-                                                  label: 'Item Name',
-                                                  value: item.itemName,
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.label_important_rounded, 
+                                                        size: 16, 
+                                                        color: isItemConfiscated ? context.colors.dangerRed : context.colors.primaryGold),
+                                                    const Gap(12),
+                                                    Expanded(
+                                                      child: Column(
+                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        children: [
+                                                          Text(
+                                                            item.itemName,
+                                                            style: material.TextStyle(
+                                                              fontWeight: FontWeight.bold,
+                                                              fontSize: 14,
+                                                              color: isItemConfiscated ? context.colors.textMuted : null,
+                                                            ),
+                                                          ),
+                                                          if (item.category != null)
+                                                            Text(item.category!, 
+                                                                style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
                                               ),
+                                              if (isItemConfiscated)
+                                                material.Container(
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: context.colors.dangerRed.withOpacity(0.15),
+                                                    borderRadius: BorderRadius.circular(20),
+                                                    border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+                                                  ),
+                                                  child: Text(
+                                                    'CONFISCATED',
+                                                    style: material.TextStyle(
+                                                      color: context.colors.dangerRed,
+                                                      fontSize: 10,
+                                                      fontWeight: FontWeight.w900,
+                                                      letterSpacing: 0.5,
+                                                    ),
+                                                  ),
+                                                ),
                                               const Gap(12),
-                                              Expanded(
-                                                child: _DetailItem(
-                                                  icon: Icons.view_in_ar_rounded,
-                                                  label: 'Packages',
-                                                  value: '${item.quantity}',
+                                              Text(
+                                                'x${item.quantity}',
+                                                style: material.TextStyle(
+                                                  color: isItemConfiscated ? context.colors.textMuted : context.colors.primaryGold,
+                                                  fontWeight: FontWeight.w900,
+                                                  fontSize: 16,
                                                 ),
                                               ),
                                             ],
                                           ),
+                                          const Gap(12),
                                           Row(
                                             crossAxisAlignment: CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
                                                 child: _DetailItem(
-                                                  icon: Icons.category_rounded,
-                                                  label: 'Category',
-                                                  value: item.category ?? 'N/A',
+                                                  icon: Icons.straighten_rounded,
+                                                  label: 'Unit',
+                                                  value: item.unitOfMeasure,
                                                 ),
                                               ),
                                               const Gap(12),
                                               Expanded(
                                                 child: _DetailItem(
-                                                  icon: Icons.straighten_rounded,
-                                                  label: 'Unit',
-                                                  value: item.unitOfMeasure,
+                                                  icon: Icons.payments_rounded,
+                                                  label: 'Unit Value',
+                                                  value: 'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
                                                 ),
                                               ),
                                             ],
@@ -974,20 +1022,23 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       ),
                       const Gap(12),
                       if (widget.highlightEntry != null && !widget.highlightEntry!.isReturned)
-                        ElevatedButton.icon(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: context.colors.successGreen,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                        material.Tooltip(
+                          message: isConfiscated ? 'Confiscated packages cannot be returned/released' : '',
+                          child: ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isConfiscated ? Colors.grey : context.colors.successGreen,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            ),
+                            icon: const Icon(Icons.assignment_return_rounded, size: 18),
+                            label: const Text('Return Package'),
+                            onPressed: isConfiscated ? null : () async {
+                              final success = await _showReleaseConfirmation(context, widget.highlightEntry!);
+                              if (success && mounted) {
+                                Navigator.pop(context);
+                              }
+                            },
                           ),
-                          icon: const Icon(Icons.assignment_return_rounded, size: 18),
-                          label: const Text('Return Package'),
-                          onPressed: () async {
-                            final success = await _showReleaseConfirmation(context, widget.highlightEntry!);
-                            if (success && mounted) {
-                              Navigator.pop(context);
-                            }
-                          },
                         ),
                     ],
                   ),
@@ -1338,22 +1389,35 @@ class _WarehouseHistoryTile extends StatelessWidget {
                   )
                 else
                   material.InkWell(
-                    onTap: onRelease,
+                    onTap: () {
+                      final item = package.items.where((i) => i.id == entry.packageItemId).firstOrNull;
+                      final isConfiscated = item?.status == 'confiscated' || entry.isPackageConfiscated;
+                      if (isConfiscated) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Confiscated items cannot be released'), backgroundColor: Colors.red));
+                        return;
+                      }
+                      onRelease();
+                    },
                     borderRadius: BorderRadius.circular(6),
                     child: material.Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: context.colors.successGreen.withOpacity(0.15),
+                        color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated) 
+                            ? Colors.grey.withOpacity(0.15) 
+                            : context.colors.successGreen.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: context.colors.successGreen.withOpacity(0.4)),
+                        border: Border.all(color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated)
+                            ? Colors.grey.withOpacity(0.4)
+                            : context.colors.successGreen.withOpacity(0.4)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.play_circle_fill_rounded, size: 12, color: context.colors.successGreen),
+                          Icon(Icons.play_circle_fill_rounded, size: 12, color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated) ? Colors.grey : context.colors.successGreen),
                           const Gap(6),
                           Text('RELEASE', 
-                              style: material.TextStyle(color: context.colors.successGreen, fontSize: 10, fontWeight: FontWeight.bold)),
+                              style: material.TextStyle(color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated) ? Colors.grey : context.colors.successGreen, fontSize: 10, fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),

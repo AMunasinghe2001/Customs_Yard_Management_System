@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/providers.dart';
@@ -476,7 +477,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
 
 // ── SR Search Result Card ──────────────────────────────────────
 
-class _SrResultCard extends StatelessWidget {
+class _SrResultCard extends ConsumerWidget {
   final PackageModel package;
   final VoidCallback onDetails;
   const _SrResultCard({required this.package, required this.onDetails});
@@ -494,7 +495,7 @@ class _SrResultCard extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final activeEntries =
         package.warehouseEntries.where((e) => !e.isReturned).toList();
     return Container(
@@ -528,14 +529,65 @@ class _SrResultCard extends StatelessWidget {
                   TextStyle(color: context.colors.textSecondary, fontSize: 13)),
         const Gap(12),
         if (activeEntries.isEmpty)
-          Row(children: [
-            Icon(Icons.check_circle_outline,
-                color: context.colors.successGreen, size: 16),
-            const Gap(6),
-            Text('Not currently held in any warehouse.',
-                style: TextStyle(
-                    color: context.colors.successGreen, fontSize: 13)),
-          ])
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: package.status == 'held' 
+                ? context.colors.dangerRed.withOpacity(0.1)
+                : context.colors.successGreen.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: package.status == 'held'
+                  ? context.colors.dangerRed.withOpacity(0.3)
+                  : context.colors.successGreen.withOpacity(0.3)
+              ),
+            ),
+            child: Row(children: [
+              Icon(
+                package.status == 'held' ? Icons.error_outline_rounded : Icons.check_circle_outline,
+                color: package.status == 'held' ? context.colors.dangerRed : context.colors.successGreen, 
+                size: 18
+              ),
+              const Gap(10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      package.status == 'held' 
+                        ? 'INCOMPLETE ALLOCATION' 
+                        : 'Not currently held in any warehouse.',
+                      style: TextStyle(
+                        color: package.status == 'held' ? context.colors.dangerRed : context.colors.successGreen, 
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13
+                      )
+                    ),
+                    if (package.status == 'held')
+                      Text(
+                        'This package was registered but never assigned to a warehouse (possibly due to a network error).',
+                        style: TextStyle(color: context.colors.textSecondary, fontSize: 11)
+                      ),
+                  ],
+                ),
+              ),
+              if (package.status == 'held')
+                ElevatedButton(
+                  onPressed: () {
+                    // Navigate to registration and trigger lookup
+                    ref.read(packageSearchProvider.notifier).state = package.srNumber;
+                    context.push('/inspection');
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: context.colors.dangerRed,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    minimumSize: const Size(0, 36)
+                  ),
+                  child: const Text('FIX NOW', style: TextStyle(fontSize: 11)),
+                ),
+            ]),
+          )
         else ...[
           Text('Current Warehouse Location:',
               style: TextStyle(color: context.colors.textMuted, fontSize: 12)),

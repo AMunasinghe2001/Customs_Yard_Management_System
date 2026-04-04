@@ -37,38 +37,38 @@ class WarehousesScreen extends ConsumerWidget {
     final warehouses = ref.watch(warehousesProvider);
     final showReturned = ref.watch(warehouseEntryFilterProvider);
 
-    return AppShell(
-      currentRoute: '/warehouses',
-      child: DefaultTabController(
-        length: 3,
-        child: Scaffold(
-          backgroundColor: context.colors.scaffoldBg,
-          body: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: Wrap(
-                    alignment: WrapAlignment.spaceBetween,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    runSpacing: 8,
-                    children: [
-                      Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('SR Unit Warehouses', style: Theme.of(context).textTheme.headlineLarge),
-                        Text('Track packages held in SR Unit facilities',
-                            style: TextStyle(color: context.colors.textSecondary)),
-                      ]),
-                    ],
-                  ),
-                ).animate().fadeIn(),
-              ),
-              const Gap(20),
-              warehouses.when(
-                loading: () => const TabBar(tabs: [Tab(text: 'Warehouse 01'), Tab(text: 'Warehouse 02'), Tab(text: 'Warehouse 03')]),
-                error: (e, _) => Text('Error: $e'),
-                data: (ws) => Container(
+    return warehouses.when(
+      loading: () => _buildLoadingState(context),
+      error: (e, _) => AppShell(currentRoute: '/warehouses', child: ErrorView(error: e, onRetry: () => ref.refresh(warehousesProvider))),
+      data: (ws) => DefaultTabController(
+        length: ws.length,
+        child: AppShell(
+          currentRoute: '/warehouses',
+          child: Scaffold(
+            backgroundColor: context.colors.scaffoldBg,
+            body: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      runSpacing: 8,
+                      children: [
+                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text('SR Unit Warehouses', style: Theme.of(context).textTheme.headlineLarge),
+                          Text('Track packages held in SR Unit facilities',
+                              style: TextStyle(color: context.colors.textSecondary)),
+                        ]),
+                      ],
+                    ),
+                  ).animate().fadeIn(),
+                ),
+                const Gap(20),
+                Container(
                   height: 56,
                   margin: const EdgeInsets.symmetric(horizontal: 28),
                   decoration: BoxDecoration(
@@ -103,18 +103,24 @@ class WarehousesScreen extends ConsumerWidget {
                     ),
                   ),
                 ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
-              ),
-              const Gap(16),
-              Expanded(
-                child: warehouses.when(
-                  loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-                  error: (e, _) => ErrorView(error: e, onRetry: () => ref.refresh(warehousesProvider)),
-                  data: (ws) => TabBarView(children: ws.map((w) => _WarehouseTab(warehouse: w)).toList()),
+                const Gap(16),
+                Expanded(
+                  child: TabBarView(children: ws.map((w) => _WarehouseTab(warehouse: w)).toList()),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingState(BuildContext context) {
+    return AppShell(
+      currentRoute: '/warehouses',
+      child: Scaffold(
+        backgroundColor: context.colors.scaffoldBg,
+        body: Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
       ),
     );
   }
@@ -187,8 +193,28 @@ class _WarehouseTab extends ConsumerWidget {
                   runSpacing: 12,
                   children: [
                   _MiniStat(label: 'Total', value: '${list.where((e) => !e.isReturned).length}', color: context.colors.accentLightBlue),
-                  _MiniStat(label: 'Held', value: '${list.where((e) => !e.isReturned && e.packageStatus == 'held').length}', color: context.colors.heldOrange),
-                  _MiniStat(label: 'Confiscated', value: '${list.where((e) => !e.isReturned && e.isPackageConfiscated).length}', color: context.colors.dangerRed),
+                  _MiniStat(label: 'Held', value: '${list.where((e) {
+                    if (e.isReturned) return false;
+                    if (e.isPackageConfiscated) return false;
+                    // Check item level status if present
+                    if (e.packageItemId != null) {
+                      final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                      final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                      return item?.status != 'confiscated';
+                    }
+                    return true;
+                  }).length}', color: context.colors.heldOrange),
+                  _MiniStat(label: 'Confiscated', value: '${list.where((e) {
+                    if (e.isReturned) return false;
+                    if (e.isPackageConfiscated) return true;
+                    // Check item level status if present
+                    if (e.packageItemId != null) {
+                      final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                      final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                      return item?.status == 'confiscated';
+                    }
+                    return false;
+                  }).length}', color: context.colors.dangerRed),
                 ]).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
                 const Gap(20),
 
@@ -335,102 +361,91 @@ class _WarehouseTab extends ConsumerWidget {
                             DataColumn2(label: Center(child: Text('Entry Date')), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 60),
                           ],
-                          rows: filteredList.map((e) => DataRow(cells: [
-                            DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
-                                style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600))),
-                            DataCell(Consumer(builder: (context, ref, _) {
-                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                              if (pkg == null) return const Text('—', style: TextStyle(fontSize: 13));
-                              if (e.packageItemId != null) {
-                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                                return Column(
+                          rows: filteredList.map((e) {
+                            final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                            String status = e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held');
+                            if (pkg != null && e.packageItemId != null) {
+                              final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                              if (item != null && !e.isReturned) {
+                                status = item.status;
+                              }
+                            }
+                            final isItemConfiscated = status == 'confiscated';
+                            
+                            final charge = pkg == null ? 0.0 : e.calculatePackageCharge(pkg.items, storageRateHistory);
+                            final isFree = charge <= 0;
+
+                            return DataRow(
+                              color: WidgetStateProperty.resolveWith<Color?>((states) {
+                                if (isItemConfiscated) return Colors.grey.withOpacity(0.08);
+                                return null;
+                              }),
+                              cells: [
+                                DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
+                                    style: TextStyle(
+                                      color: isItemConfiscated ? context.colors.textMuted : context.colors.accentLightBlue, 
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 13
+                                    ))),
+                                DataCell(Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(item?.itemName ?? '—', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis),
-                                    if (item?.category != null)
-                                      Text(item!.category!, style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+                                    if (pkg == null) const Text('—', style: TextStyle(fontSize: 13))
+                                    else if (e.packageItemId != null) ...[
+                                      Text(pkg.items.where((i) => i.id == e.packageItemId).firstOrNull?.itemName ?? '—', 
+                                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: isItemConfiscated ? context.colors.textMuted : null), 
+                                          overflow: TextOverflow.ellipsis),
+                                      if (pkg.items.where((i) => i.id == e.packageItemId).firstOrNull?.category != null)
+                                        Text(pkg.items.where((i) => i.id == e.packageItemId).firstOrNull!.category!, 
+                                            style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+                                    ] else ...[
+                                      Text(pkg.items.map((i) => i.itemName).join(', '), 
+                                          style: TextStyle(fontSize: 13, color: isItemConfiscated ? context.colors.textMuted : null), 
+                                          overflow: TextOverflow.ellipsis)
+                                    ]
                                   ],
-                                );
-                              } else {
-                                final names = pkg.items.map((i) => i.itemName).join(', ');
-                                return Text(names.isEmpty ? '—' : names, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis);
-                              }
-                            })),
-                            DataCell(Consumer(builder: (context, ref, _) {
-                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                              int displayCount = e.itemCount;
-                              
-                              // Auto-repair display logic for old entries that saved 1 as itemCount
-                              if (pkg != null && e.packageItemId != null && displayCount == 1 && !e.isReturned) {
-                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                                if (item != null && item.quantity > 1) {
-                                  // Find sum of returned items to show correct held sum
-                                  final returnedSum = pkg.warehouseEntries
-                                      .where((we) => we.packageItemId == item.id && we.isReturned)
-                                      .fold(0, (sum, we) => sum + we.itemCount);
-                                  displayCount = item.quantity - returnedSum;
-                                  if (displayCount < 1) displayCount = 1;
-                                }
-                              }
-                              
-                              return Text('$displayCount');
-                            })),
-                            DataCell(Center(child: Consumer(builder: (context, ref, _) {
-                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                              return Text(
-                                pkg == null 
-                                  ? '—' 
-                                  : 'LKR ${NumberFormat('#,##0.00').format(e.calculatePackageCharge(pkg.items, storageRateHistory))}',
-                                style: TextStyle(color: e.isPackageConfiscated ? context.colors.textMuted : context.colors.primaryGold, fontWeight: FontWeight.bold),
-                              );
-                            }))),
-                            DataCell(Center(child: Consumer(builder: (context, ref, _) {
-                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                              String status = e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held');
-                              if (pkg != null && e.packageItemId != null) {
-                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                                if (item != null && !e.isReturned) {
-                                  status = item.status;
-                                }
-                              }
-                              return StatusChip(status: status);
-                            }))),
-                            DataCell(Consumer(builder: (context, ref, _) {
-                              // If it's linked to an item, use the item's reasons
-                              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                              String displayReason = e.holdReason;
-                              if (pkg != null && e.packageItemId != null) {
-                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                                if (item?.reasons != null && item!.reasons!.isNotEmpty) {
-                                  displayReason = item.reasons!;
-                                }
-                              }
-                              return Text(displayReason, 
-                                  style: const TextStyle(fontStyle: FontStyle.italic, fontSize: 12), 
-                                  overflow: TextOverflow.ellipsis);
-                            })),
-                            DataCell(Center(child: Text(DateFormat('dd/MM/yy').format(e.admittedAt)))),
-                            DataCell(Center(child: IconButton(
-                              icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 20),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () async {
-                                final pkg = await ref.read(packageServiceProvider).getPackageById(e.packageId);
-                                if (pkg != null && context.mounted) {
-                                  showDialog(
-                                    context: context,
-                                    builder: (_) => PackageDetailsDialog(
-                                      package: pkg, 
-                                      storageRate: storageRateHistory,
-                                      highlightEntry: e,
-                                      useWarehouseSummary: true,
-                                    ),
-                                  );
-                                }
-                              },
-                            ))),
-                          ])).toList(),
+                                )),
+                                DataCell(Text('${e.itemCount}', style: TextStyle(color: isItemConfiscated ? context.colors.textMuted : null))),
+                                DataCell(Center(child: Text(
+                                  pkg == null ? '—' : (isFree ? '—' : 'LKR ${NumberFormat('#,##0.00').format(charge)}'),
+                                  style: TextStyle(
+                                    color: isFree ? context.colors.textMuted : context.colors.primaryGold, 
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 13
+                                  ),
+                                ))),
+                                DataCell(Center(child: StatusChip(status: status))),
+                                DataCell(Text(e.holdReason, 
+                                    style: TextStyle(
+                                      fontStyle: FontStyle.italic, 
+                                      fontSize: 12,
+                                      color: isItemConfiscated ? context.colors.textMuted : null
+                                    ), 
+                                    overflow: TextOverflow.ellipsis)),
+                                DataCell(Center(child: Text(DateFormat('dd/MM/yy').format(e.admittedAt),
+                                    style: TextStyle(color: isItemConfiscated ? context.colors.textMuted : null)))),
+                                DataCell(Center(child: IconButton(
+                                  icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 20),
+                                  padding: const EdgeInsets.all(4),
+                                  onPressed: () async {
+                                    final pkgFull = await ref.read(packageDataProvider(e.packageId).future);
+                                    if (pkgFull != null && context.mounted) {
+                                      showDialog(
+                                        context: context,
+                                        builder: (_) => PackageDetailsDialog(
+                                          package: pkgFull, 
+                                          storageRate: storageRateHistory,
+                                          highlightEntry: e,
+                                          useWarehouseSummary: true,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                ))),
+                              ],
+                            );
+                          }).toList(),
                         ),
                     ),
                   ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
