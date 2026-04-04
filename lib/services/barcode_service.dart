@@ -36,7 +36,7 @@ class BarcodeService {
           .map((label) => _buildDetailedItemLabel(label))
           .toList(),
       labelPerRow: 2,
-      labelHeight: 140,
+      labelHeight: 180,
     );
 
     return doc;
@@ -111,7 +111,7 @@ class BarcodeService {
       doc,
       labels.map((label) => _buildCompactItemLabel(label)).toList(),
       labelPerRow: labelPerRow,
-      labelHeight: 110,
+      labelHeight: 160,
     );
 
     return doc;
@@ -177,11 +177,16 @@ class BarcodeService {
 
   static List<_ItemLabel> _buildItemLabels(List<PackageModel> packages) {
     final labels = <_ItemLabel>[];
+    final formatter = DateFormat('yyyy-MM-dd');
+
     for (final package in packages) {
       for (int i = 0; i < package.items.length; i++) {
         final item = package.items[i];
         final count = item.quantity;
         for (int n = 1; n <= count; n++) {
+          final whEntry = package.warehouseEntries.firstWhereOrNull((e) => e.packageItemId == item.id) ?? package.warehouseEntries.firstOrNull;
+          final whZone = whEntry != null ? '${whEntry.warehouseName} | Zone: ${whEntry.zone ?? 'N/A'}' : 'N/A';
+
           labels.add(_ItemLabel(
             srNumber: package.srNumber,
             itemName: item.itemName,
@@ -191,9 +196,16 @@ class BarcodeService {
             index: n,
             total: count,
             consigneeName: package.consigneeName,
-            originCountry: package.originCountry ?? 'N/A',
+            originCountry: package.originCountry,
             status: package.status,
             caseNumber: package.caseNumber ?? 'N/A',
+            cusdecNo: package.cusdecNo ?? 'N/A',
+            cusdecDate: package.cusdecDate ?? 'N/A',
+            entryDate: package.entryDate != null ? formatter.format(package.entryDate!) : 'N/A',
+            category: item.category ?? 'N/A',
+            unitOfMeasure: item.unitOfMeasure,
+            warehouseAndZone: whZone,
+            consigneePhone: package.consigneePhone ?? 'N/A',
           ));
         }
       }
@@ -265,93 +277,118 @@ class BarcodeService {
     }
   }
 
-  static pw.Widget _buildCompactItemLabel(_ItemLabel label) {
-    final bc = Barcode.code128();
-    final svgString = bc.toSvg(label.itemId, width: 200, height: 60);
-
-    return pw.Container(
-      padding: const pw.EdgeInsets.all(8),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.black),
-      ),
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.center,
-        mainAxisSize: pw.MainAxisSize.min,
+  static pw.Widget _detailRow(String label, String value, {double fontSize = 7, double labelWidth = 45}) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(bottom: 2),
+      child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
-          pw.Text(label.srNumber,
-              style:
-                  pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
-          pw.SizedBox(height: 4),
-          pw.Text(label.itemName,
-              style: pw.TextStyle(fontSize: 8),
-              textAlign: pw.TextAlign.center,
-              maxLines: 2),
-          pw.SizedBox(height: 4),
-          pw.SvgImage(svg: svgString),
-          pw.SizedBox(height: 3),
-          pw.Text(label.itemId, style: pw.TextStyle(fontSize: 6)),
-          pw.SizedBox(height: 2),
-          pw.Text('${label.index}/${label.total}',
-              style: pw.TextStyle(fontSize: 7)),
+          pw.SizedBox(
+            width: labelWidth,
+            child: pw.Text('$label:',
+                style: pw.TextStyle(
+                    fontSize: fontSize,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.grey800)),
+          ),
+          pw.Expanded(
+            child: pw.Text(value,
+                style: pw.TextStyle(fontSize: fontSize),
+                maxLines: 2,
+                overflow: pw.TextOverflow.clip),
+          ),
         ],
       ),
     );
   }
 
+  static pw.Widget _buildCompactItemLabel(_ItemLabel label) {
+    return _buildLabelCard(label, isCompact: true);
+  }
+
   static pw.Widget _buildDetailedItemLabel(_ItemLabel label) {
-    final bc = Barcode.code128();
-    final svgString = bc.toSvg(label.itemId, width: 220, height: 60);
+    return _buildLabelCard(label, isCompact: false);
+  }
+
+  static pw.Widget _buildLabelCard(_ItemLabel label, {required bool isCompact}) {
+    final qrCode = Barcode.qrCode(
+      errorCorrectLevel: BarcodeQRCorrectionLevel.low,
+    );
+    final qrContent = [
+      '--- SL CUSTOMS ---',
+      'SR No: ${label.srNumber}',
+      'Item Name: ${label.itemName}',
+      'Category: ${label.category}',
+      'Quantity: ${label.index} of ${label.total} ${label.unitOfMeasure}',
+      'Package # : ${label.index} / ${label.total}',
+      'Cusdec No: ${label.cusdecNo}',
+      'Cusdec Date: ${label.cusdecDate}',
+      'Entry Date: ${label.entryDate}',
+      'Case No: ${label.caseNumber}',
+      'WH & Zone: ${label.warehouseAndZone}',
+      'Consignee: ${label.consigneeName}',
+      'Phone: ${label.consigneePhone}',
+    ].join('\r\n\r\n'); // Use double CRLF for clear blank lines on all scanners
+    final svgString = qrCode.toSvg(qrContent, width: 75, height: 75);
 
     return pw.Container(
-      padding: const pw.EdgeInsets.all(8),
+      padding: const pw.EdgeInsets.all(6),
       decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: PdfColors.black),
+        border: pw.Border.all(color: PdfColors.black, width: 0.8),
+        borderRadius: const pw.BorderRadius.all(pw.Radius.circular(4)),
       ),
       child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
         mainAxisSize: pw.MainAxisSize.min,
         children: [
+          // Header
           pw.Row(
             mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
             children: [
               pw.Text(label.srNumber,
-                  style: pw.TextStyle(
-                      fontSize: 9, fontWeight: pw.FontWeight.bold)),
-              pw.Text('${label.index}/${label.total}',
-                  style: pw.TextStyle(fontSize: 7)),
+                  style: pw.TextStyle(fontSize: 10, fontWeight: pw.FontWeight.bold)),
+              pw.Text('${label.index} / ${label.total}',
+                  style: pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold)),
             ],
           ),
-          pw.SizedBox(height: 3),
-          pw.Text(label.itemName,
-              style: pw.TextStyle(fontSize: 8), maxLines: 1),
-          pw.SizedBox(height: 4),
-          pw.Center(child: pw.SvgImage(svg: svgString)),
-          pw.SizedBox(height: 3),
-          pw.Text(label.itemId, style: pw.TextStyle(fontSize: 6)),
-          pw.SizedBox(height: 4),
-          pw.Row(children: [
-            pw.Text('Consignee: ',
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-            pw.Expanded(
-                child: pw.Text(label.consigneeName,
-                    style: pw.TextStyle(fontSize: 7), maxLines: 1)),
-          ]),
-          pw.Row(children: [
-            pw.Text('Origin: ',
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-            pw.Text(label.originCountry, style: pw.TextStyle(fontSize: 7)),
-          ]),
-          pw.Row(children: [
-            pw.Text('Status: ',
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-            pw.Text(label.status.toUpperCase(),
-                style: pw.TextStyle(fontSize: 7)),
-          ]),
-          pw.Row(children: [
-            pw.Text('Case #: ',
-                style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-            pw.Text(label.caseNumber, style: pw.TextStyle(fontSize: 7)),
-          ]),
+          pw.SizedBox(height: 1),
+          pw.Divider(thickness: 0.5, color: PdfColors.grey),
+          pw.SizedBox(height: 2),
+
+          // Body: text on left, QR on right
+          pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Expanded(
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _detailRow('Item', label.itemName, fontSize: 8),
+                    _detailRow('Category', label.category ?? 'N/A', fontSize: 7),
+                    _detailRow('Unit', label.unitOfMeasure ?? 'Pieces', fontSize: 7),
+                    _detailRow('Cusdec', label.cusdecNo ?? 'N/A', fontSize: 7),
+                    _detailRow('Case #', label.caseNumber, fontSize: 7),
+                    _detailRow('Entry Dt', label.entryDate ?? 'N/A', fontSize: 7),
+                  ],
+                ),
+              ),
+              pw.SizedBox(width: 4),
+              // Right side: QR code
+              pw.Column(
+                 crossAxisAlignment: pw.CrossAxisAlignment.center,
+                 children: [
+                    pw.SvgImage(svg: svgString, width: 75, height: 75),
+                    pw.SizedBox(height: 2),
+                    pw.Text('Scan for Info', style: pw.TextStyle(fontSize: 5, fontStyle: pw.FontStyle.italic, color: PdfColors.grey600)),
+                 ]
+              ),
+            ],
+          ),
+          pw.SizedBox(height: 2),
+          // Footer
+          _detailRow('Location', label.warehouseAndZone ?? 'N/A', fontSize: 8),
+          _detailRow('Consignee', label.consigneeName, fontSize: 8),
+          _detailRow('Phone', label.consigneePhone ?? 'N/A', fontSize: 8),
         ],
       ),
     );
@@ -368,6 +405,13 @@ class _ItemLabel {
   final String originCountry;
   final String status;
   final String caseNumber;
+  final String? cusdecNo;
+  final String? cusdecDate;
+  final String? entryDate;
+  final String? category;
+  final String? unitOfMeasure;
+  final String? warehouseAndZone;
+  final String? consigneePhone;
 
   _ItemLabel({
     required this.srNumber,
@@ -379,5 +423,12 @@ class _ItemLabel {
     required this.originCountry,
     required this.status,
     required this.caseNumber,
+    this.cusdecNo,
+    this.cusdecDate,
+    this.entryDate,
+    this.category,
+    this.unitOfMeasure,
+    this.warehouseAndZone,
+    this.consigneePhone,
   });
 }

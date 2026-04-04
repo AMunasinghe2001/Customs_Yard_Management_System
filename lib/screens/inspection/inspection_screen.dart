@@ -864,7 +864,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                             ),
                           ),
                           icon: const Icon(Icons.print_rounded),
-                          label: const Text('Print Barcode Label'),
+                          label: const Text('Print QR Code Label'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: context.colors.primaryGold,
                             foregroundColor: Colors.black,

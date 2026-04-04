@@ -31,7 +31,7 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
             ? await BarcodeService.createBarcodePDF(widget.packages)
             : await BarcodeService.createItemBarcodePDF(widget.packages);
 
-      await BarcodeService.printPDF(doc, 'barcode_${DateTime.now().millisecondsSinceEpoch}.pdf');
+      await BarcodeService.printPDF(doc, 'qr_code_${DateTime.now().millisecondsSinceEpoch}.pdf');
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -65,7 +65,7 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
 
       final saved = await BarcodeService.savePDFToFile(
         doc,
-        'barcode_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        'qr_code_${DateTime.now().millisecondsSinceEpoch}.pdf',
       );
       
       if (saved && mounted) {
@@ -115,7 +115,7 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Package Barcode Printing',
+                        'Package QR Code Printing',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                       Gap(8),
@@ -160,14 +160,14 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
                           ),
                           Gap(12),
                           _buildModeOption(
-                            'Detailed Labels',
+                            'Detailed QR Code Labels',
                             'Detailed item labels for all quantities',
                             'detailed',
                           ),
                           Gap(12),
                           _buildModeOption(
-                            'Item Labels',
-                            'One barcode per item, repeated by quantity',
+                            'Item QR Code Labels',
+                            'One QR code per item, repeated by quantity',
                             'item',
                           ),
                         ],
