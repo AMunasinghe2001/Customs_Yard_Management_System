@@ -63,12 +63,12 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
             ? await BarcodeService.createBarcodePDF(widget.packages)
             : await BarcodeService.createItemBarcodePDF(widget.packages);
 
-      await BarcodeService.savePDFToFile(
+      final saved = await BarcodeService.savePDFToFile(
         doc,
         'barcode_${DateTime.now().millisecondsSinceEpoch}.pdf',
       );
-
-      if (mounted) {
+      
+      if (saved && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
             content: Text('✅ PDF saved successfully'),

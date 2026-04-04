@@ -1,3 +1,5 @@
+import 'dart:io';
+import 'package:file_picker/file_picker.dart';
 import 'package:barcode/barcode.dart';
 import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
@@ -129,14 +131,27 @@ class BarcodeService {
     }
   }
 
-  /// Save PDF to file
-  static Future<void> savePDFToFile(pw.Document doc, String filename) async {
+  /// Save PDF to file with location picker
+  static Future<bool> savePDFToFile(pw.Document doc, String filename) async {
     try {
       final bytes = await doc.save();
-      await Printing.sharePdf(
-        bytes: bytes,
-        filename: filename,
+      
+      // Open file picker to save
+      String? outputFile = await FilePicker.platform.saveFile(
+        dialogTitle: 'Please select where to save the Barcode PDF',
+        fileName: filename,
+        type: FileType.custom,
+        allowedExtensions: ['pdf'],
       );
+
+      if (outputFile == null) {
+        // User cancelled the picker
+        return false;
+      }
+
+      final file = File(outputFile);
+      await file.writeAsBytes(bytes);
+      return true;
     } catch (e) {
       print('Error saving PDF: $e');
       rethrow;

@@ -177,7 +177,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          icon: const Icon(Icons.edit_rounded, size: 16),
+                          icon: const Icon(Icons.person_rounded, size: 16),
                           label: const Text('Profile', style: TextStyle(fontSize: 13)),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: context.colors.textPrimary,

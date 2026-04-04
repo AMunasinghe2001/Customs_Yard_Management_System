@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:uuid/uuid.dart';
@@ -71,6 +72,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
   // Temporary storage for package data before warehouse confirmation
   PackageModel? _tempPackageData;
   List<PackageItem>? _tempPackageItems;
+  Key _resultPanelKey = UniqueKey();
 
   /// Fetch an existing package by SR number and populate the form
   Future<void> _loadBySrNumber() async {
@@ -263,6 +265,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
       setState(() {
         _passed = true;
         _violations = [];
+        _resultPanelKey = UniqueKey(); // Force result panel to reset its state (like _warehouseSent)
         _suggestedWarehouseId = null; // No longer needed for single warehouse
         _savedPackageId = null; // Clear any previous package ID
       });
@@ -659,6 +662,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen> {
               Expanded(
                   flex: 4,
                   child: _ResultPanel(
+                    key: _resultPanelKey,
                     passed: _passed!,
                     violations: _violations,
                     suggestedWarehouseId: _suggestedWarehouseId,
@@ -849,24 +853,28 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                       .slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
                   const Gap(20),
                   if (_savedPackage != null)
-                    ElevatedButton.icon(
-                      onPressed: () => showDialog(
-                        context: context,
-                        builder: (_) => PrintBarcodeDialog(
-                          packages: [_savedPackage!],
-                          onPrinted: widget.onReset,
+                    Column(
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () => showDialog(
+                            context: context,
+                            builder: (_) => PrintBarcodeDialog(
+                              packages: [_savedPackage!],
+                              onPrinted: widget.onReset,
+                            ),
+                          ),
+                          icon: const Icon(Icons.print_rounded),
+                          label: const Text('Print Barcode Label'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: context.colors.primaryGold,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
+                          ),
                         ),
-                      ),
-                      icon: const Icon(Icons.print_rounded),
-                      label: const Text('Print Barcode Label'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: context.colors.primaryGold,
-                        foregroundColor: Colors.black,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 12,
-                        ),
-                      ),
+                      ],
                     ),
                 ]),
               )
