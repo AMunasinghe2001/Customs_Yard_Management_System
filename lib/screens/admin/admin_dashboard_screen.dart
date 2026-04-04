@@ -14,29 +14,9 @@ import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
 import 'package:data_table_2/data_table_2.dart';
 
-// Reuse providers from DashboardScreen
-final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {   
-  return await ref.read(packageServiceProvider).getDashboardStats();
-});
 
-final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
-  final today = DateTime.now();
-  final startOfDay = DateTime(today.year, today.month, today.day);
-  // Fetch packages and sort by latest update FIRST
-  final all = await ref.read(packageServiceProvider).getAllPackages();
-  final todayActivity = all.where((p) => 
-    p.updatedAt.isAfter(startOfDay) || p.createdAt.isAfter(startOfDay)
-  ).toList();
-  
-  // Sort by updatedAt descending
-  todayActivity.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
-  
-  return todayActivity.take(20).toList();
-});
+// Dashboard providers now moved to lib/core/providers.dart for shared access
 
-final categoryZoneSummaryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
-  return ref.read(warehouseServiceProvider).getCategoryZoneCombinedSummary();
-});
 
 double? _latestStorageRate(Map<DateTime, double>? rates) {
   if (rates == null || rates.isEmpty) return null;

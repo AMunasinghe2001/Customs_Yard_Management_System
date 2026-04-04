@@ -237,3 +237,27 @@ final packageCategoriesProvider = FutureProvider<List<PackageCategory>>((ref) as
 final holdReasonsProvider = FutureProvider<List<HoldReasonModel>>((ref) async {
   return ref.read(holdReasonServiceProvider).getReasons();
 });
+
+// ── Admin Dashboard Providers ──────────────────────────────────
+final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider); // Refresh stats on package changes
+  return await ref.read(packageServiceProvider).getDashboardStats();
+});
+
+final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider); // Refresh list on package changes
+  final today = DateTime.now();
+  final startOfDay = DateTime(today.year, today.month, today.day);
+  final all = await ref.read(packageServiceProvider).getAllPackages();
+  final todayActivity = all.where((p) => 
+    p.updatedAt.isAfter(startOfDay) || p.createdAt.isAfter(startOfDay)
+  ).toList();
+  
+  todayActivity.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  return todayActivity.take(20).toList();
+});
+
+final categoryZoneSummaryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider); // Refresh inventory on package changes
+  return ref.read(warehouseServiceProvider).getCategoryZoneCombinedSummary();
+});

@@ -1931,6 +1931,15 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
 
       await ref.read(packageServiceProvider).upsertPackage(updatedPackage, itemsToUpsert);
 
+      // Trigger refreshes for all related dashboard and list providers
+      ref.read(packagesRefreshTriggerProvider.notifier).trigger();
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      ref.invalidate(livePackagesProvider);
+      ref.invalidate(dashboardStatsProvider); // Dashboard stats refresh
+      ref.invalidate(recentPackagesProvider); // Recent inspections refresh
+      ref.invalidate(allWarehouseEntriesProvider);
+      ref.invalidate(categoryZoneSummaryProvider); // Inventory table refresh
+
       if (mounted) {
         Navigator.pop(context);
         Navigator.pop(context);
