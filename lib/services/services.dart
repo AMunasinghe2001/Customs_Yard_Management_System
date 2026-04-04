@@ -225,23 +225,23 @@ class PackageService {
     return created;
   }
 
-  Future<PackageModel> upsertPackage(
-      PackageModel pkg, List<PackageItem> items) async {
-    final existing = await getPackageBySrNumber(pkg.srNumber);
-
-    if (existing != null) {
-      // 1. Update package record
+  Future<PackageModel> upsertPackage(PackageModel pkg, List<PackageItem> items) async {
+    // If an ID is provided, it's an explicit update to an existing record
+    if (pkg.id.isNotEmpty) {
       await supabase
           .from('packages')
-          .update(pkg.toInsertJson())
-          .eq('id', existing.id);
-
-      // 2. Manage items
+          .update({
+            ...pkg.toInsertJson(),
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', pkg.id);
+      
+      // Manage items for the existing record
       if (items.isNotEmpty) {
         final existingItemsData = await supabase
             .from('package_items')
             .select('id')
-            .eq('package_id', existing.id);
+            .eq('package_id', pkg.id);
         
         final existingItemIds = (existingItemsData as List)
             .map((row) => row['id'].toString())
@@ -253,78 +253,29 @@ class PackageService {
           .toSet();
         
         final idsToDelete = existingItemIds.difference(newItemIds).toList();
-
         if (idsToDelete.isNotEmpty) {
           await supabase.from('package_items').delete().inFilter('id', idsToDelete);
         }
 
         for (final item in items) {
           if (item.id.isNotEmpty && existingItemIds.contains(item.id)) {
-            // Update existing item
-            await supabase
-                .from('package_items')
-                .update(item.toInsertJson(existing.id))
-                .eq('id', item.id);
-            
-            // Sync quantity to warehouse entries if they exist
-            await supabase
-                .from('warehouse_entries')
-                .update({'item_count': item.quantity})
-                .eq('package_item_id', item.id)
-                .eq('is_returned', false);
-            
-            // Handle logical return if status is set to 'returned' via form
-            if (item.status == 'returned') {
-              final entries = await supabase
-                  .from('warehouse_entries')
-                  .select('id')
-                  .eq('package_item_id', item.id)
-                  .eq('is_returned', false);
-              
-              if (entries != null && (entries as List).isNotEmpty) {
-                final warehouseService = WarehouseService();
-                for (final entry in entries) {
-                  await warehouseService.markAsReturned(entry['id'] as String, returnNotes: 'Marked returned via update form');
-                }
-              }
-            }
+            await supabase.from('package_items').update(item.toInsertJson(pkg.id)).eq('id', item.id);
           } else {
-            // Insert new item
-            await supabase
-                .from('package_items')
-                .insert(item.toInsertJson(existing.id));
+            await supabase.from('package_items').insert(item.toInsertJson(pkg.id));
           }
         }
-      } else {
-        // If items list is empty, delete all existing items for this package
-        await supabase
-            .from('package_items')
-            .delete()
-            .eq('package_id', existing.id);
       }
 
-      // 3. Refresh and return updated package
       final refreshed = await supabase
           .from('packages')
-          .select(
-              '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
-          .eq('id', existing.id)
+          .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
+          .eq('id', pkg.id)
           .single();
       
-      final resultP = PackageModel.fromJson(refreshed);
-
-      final user = supabase.auth.currentUser;
-      if (user != null) {
-        await AuditLogService().recordLog(
-          userId: user.id,
-          action: 'Updated package SR: ${resultP.srNumber}',
-          entityType: 'package',
-          entityId: resultP.id,
-        );
-      }
-      return resultP;
+      return PackageModel.fromJson(refreshed);
     } else {
-      // Create new package if it doesn't exist
+      // If no ID is provided, create a new record even if sr_number exists 
+      // (This requires that the UNIQUE constraint on sr_number is removed from the DB)
       return createPackage(pkg, items);
     }
   }
@@ -358,21 +309,28 @@ class PackageService {
     final startOfDay = DateTime(today.year, today.month, today.day);
 
     // Get all packages created or updated today
-    final all = await supabase
+    final allRes = await supabase
         .from('packages')
-        .select('status')
-        .gte('created_at', startOfDay.toIso8601String());
+        .select('id, status, package_items(status)')
+        .or('created_at.gte.${startOfDay.toIso8601String()},updated_at.gte.${startOfDay.toIso8601String()}');
 
     int clearedOrReturned = 0;
     int held = 0;
     int seized = 0;
 
-    for (final p in all) {
+    for (final p in (allRes as List)) {
       final status = p['status'] as String;
-      // Cleared includes both 'cleared' and 'returned' statuses
-      if (status == 'cleared' || status == 'returned') clearedOrReturned++;
-      if (status == 'held') held++;
-      if (status == 'seized') seized++;
+      final items = p['package_items'] as List? ?? [];
+      final hasConfiscatedItem = items.any((i) => i['status'] == 'confiscated');
+
+      // Priority: Seized/Confiscated > Cleared/Returned > Held
+      if (status == 'seized' || status == 'forfeited' || hasConfiscatedItem) {
+        seized++;
+      } else if (status == 'cleared' || status == 'returned') {
+        clearedOrReturned++;
+      } else if (status == 'held') {
+        held++;
+      }
     }
 
     // Get current storage rate (latest effective_from)
@@ -585,19 +543,11 @@ class WarehouseService {
   }
 
   Future<List<Map<String, dynamic>>> getCategoryZoneCombinedSummary() async {
-    final entries = await supabase
-        .from('warehouse_entries')
-        .select(
-            'zone, warehouses!inner(code, name), packages!inner(package_items!inner(category, quantity))')
-        .eq('is_returned', false);
-
-    // Fetch all categories to map their default zones
-    final categoriesData =
-        await supabase.from('package_categories').select('name, target_zone');
+    // 1. Fetch Categories mapping
+    final categoriesData = await supabase.from('package_categories').select('name, target_zone');
     final Map<String, String> categoryZoneMap = {};
-    final Map<String, String> originalNamesMap =
-        {}; // To format category names nicely
-
+    final Map<String, String> originalNamesMap = {};
+    
     for (final cat in (categoriesData as List)) {
       final cName = cat['name']?.toString();
       if (cName != null) {
@@ -607,70 +557,93 @@ class WarehouseService {
       }
     }
 
+    // 2. Fetch all package_items with related package and warehouse entries
+    final response = await supabase
+        .from('package_items')
+        .select('*, packages(*), warehouse_entries(*, warehouses(*))');
+
     final Map<String, Map<String, dynamic>> summary = {};
 
-    for (final e in entries) {
-      final warehouseZone = e['zone']?.toString();
-      final warehouseData = e['warehouses'] as Map?;
-      final warehouseCode = warehouseData?['code']?.toString() ?? 'W/H';
+    for (final row in (response as List)) {
+      final pkg = row['packages'] as Map?;
+      if (pkg == null) continue;
+      
+      final pkgStatus = pkg['status'] as String?;
+      final itemStatus = row['status'] as String?;
+      
+      // Skip returned/cleared items unless it's confiscated
+      if (itemStatus == 'returned') continue;
+      if ((pkgStatus == 'cleared' || pkgStatus == 'returned') && itemStatus != 'confiscated') {
+        continue;
+      }
+      
+      String cat = row['category']?.toString() ?? 'Uncategorized';
+      if (cat.trim().isEmpty) cat = 'Uncategorized';
+      
+      final catLower = cat.toLowerCase().trim();
+      final finalCat = categoryZoneMap.containsKey(catLower) ? originalNamesMap[catLower]! : 'Uncategorized';
+      
+      if (!summary.containsKey(finalCat)) {
+         summary[finalCat] = {
+            'category': finalCat,
+            'warehouses': <String>{},
+            'zones': <String>{},
+            'count': 0,
+         };
+      }
 
-      final pkg = e['packages'] as Map?;
-      if (pkg != null && pkg['package_items'] != null) {
-        final items = pkg['package_items'] as List;
-        for (final item in items) {
-          final cat = item['category'] as String? ?? 'Uncategorized';
-          final qty = (item['quantity'] as num?)?.toInt() ?? 0;
-
-          final catLower = cat.toLowerCase().trim();
-          final isKnown = categoryZoneMap.containsKey(catLower);
-
-          // Group all dummy/unknown data into 'Uncategorized' to clean up the table
-          final finalCat =
-              isKnown ? originalNamesMap[catLower]! : 'Uncategorized';
-
-          // Logic for Zone: Warehouse Zone -> Category Default -> N/A
-          String zone = 'N/A';
-          if (warehouseZone != null &&
-              warehouseZone.trim().isNotEmpty &&
-              warehouseZone != 'null' &&
-              warehouseZone.trim().toUpperCase() != 'N/A') {
-            zone = warehouseZone.trim();
-          } else if (isKnown) {
-            final targetZone = categoryZoneMap[catLower];
-            if (targetZone != null &&
-                targetZone.isNotEmpty &&
-                targetZone != 'null') {
-              zone = targetZone;
-            }
-          }
-
-          final key = '$finalCat|$zone';
-          if (!summary.containsKey(key)) {
-            summary[key] = {
-              'category': finalCat,
-              'warehouses': <String>{},
-              'zone': zone,
-              'count': 0,
-            };
-          }
-
-          if (warehouseCode != 'W/H') {
-            (summary[key]!['warehouses'] as Set<String>).add(warehouseCode);
-          }
-          summary[key]!['count'] = (summary[key]!['count'] as int) + qty;
+      final entries = row['warehouse_entries'] as List? ?? [];
+      final activeEntries = entries.where((e) => e['is_returned'] == false).toList();
+      
+      int itemActiveQty = 0;
+      
+      if (activeEntries.isEmpty) {
+        // e.g. pending or confiscated without a warehouse entry
+        itemActiveQty = (row['quantity'] as num?)?.toInt() ?? 0;
+        
+        // Add default targeted zone if available and not already held somewhere
+        if (categoryZoneMap.containsKey(catLower)) {
+           final defaultZone = categoryZoneMap[catLower];
+           if (defaultZone != null && defaultZone.isNotEmpty && defaultZone != 'null' && defaultZone != 'N/A') {
+              (summary[finalCat]!['zones'] as Set<String>).add(defaultZone);
+           }
         }
+      } else {
+        // It has warehouse entries, sum the active counts
+        for (final e in activeEntries) {
+           itemActiveQty += (e['item_count'] as num?)?.toInt() ?? 0;
+           
+           final wh = e['warehouses'] as Map?;
+           if (wh != null && wh['code'] != null) {
+              (summary[finalCat]!['warehouses'] as Set<String>).add(wh['code'].toString());
+           }
+           if (e['zone'] != null && e['zone'].toString().isNotEmpty && e['zone'].toString().toUpperCase() != 'N/A') {
+              (summary[finalCat]!['zones'] as Set<String>).add(e['zone'].toString());
+           }
+        }
+      }
+      
+      if (itemActiveQty > 0) {
+        summary[finalCat]!['count'] = (summary[finalCat]!['count'] as int) + itemActiveQty;
       }
     }
 
-    return summary.values.map((v) {
-      final whSet = v['warehouses'] as Set<String>;
-      final whString = whSet.isEmpty ? 'W/H' : whSet.join(',');
-      return {
-        'category': v['category'],
-        'warehouse': whString,
-        'zone': v['zone'],
-        'count': v['count'],
-      };
+    // Return mapped values, excluding zero-count aggregations to keep table clean
+    return summary.values
+      .where((v) => (v['count'] as int) > 0)
+      .map((v) {
+        final whSet = v['warehouses'] as Set<String>;
+        final zoneSet = v['zones'] as Set<String>;
+        
+        final whString = whSet.isEmpty ? 'Pending' : whSet.join(',');
+        final zoneString = zoneSet.isEmpty ? 'N/A' : zoneSet.join(',');
+        
+        return {
+          'category': v['category'],
+          'warehouse': whString,
+          'zone': zoneString,
+          'count': v['count'],
+        };
     }).toList();
   }
 }

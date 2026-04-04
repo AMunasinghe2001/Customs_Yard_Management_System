@@ -22,8 +22,16 @@ final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async 
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   final today = DateTime.now();
   final startOfDay = DateTime(today.year, today.month, today.day);
-  final all = await ref.read(packageServiceProvider).getAllPackages(since: startOfDay);
-  return all.take(10).toList();
+  // Fetch packages and sort by latest update FIRST
+  final all = await ref.read(packageServiceProvider).getAllPackages();
+  final todayActivity = all.where((p) => 
+    p.updatedAt.isAfter(startOfDay) || p.createdAt.isAfter(startOfDay)
+  ).toList();
+  
+  // Sort by updatedAt descending
+  todayActivity.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  
+  return todayActivity.take(20).toList();
 });
 
 final categoryZoneSummaryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
@@ -673,12 +681,20 @@ class _RecentPackagesTable extends StatelessWidget {
                         fontSize: 13)),
                 size: ColumnSize.M),
             DataColumn2(
-                label: Text('Consignee',
+                label: Text('Item Name',
                     style: TextStyle(
                         color: context.colors.primaryGold,
                         fontWeight: FontWeight.w700,
                         fontSize: 13)),
                 size: ColumnSize.L),
+            DataColumn2(
+                label: Text('Qty',
+                    style: TextStyle(
+                        color: context.colors.primaryGold,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13)),
+                size: ColumnSize.S,
+                fixedWidth: 60),
             DataColumn2(
                 label: Center(
                   child: Text('Status',
@@ -697,23 +713,50 @@ class _RecentPackagesTable extends StatelessWidget {
                         fontSize: 13)),
                 size: ColumnSize.M),
           ],
-          rows: packages
-              .map((p) => DataRow(cells: [
-                    DataCell(Text(p.srNumber,
-                        style: TextStyle(
-                            color: context.colors.accentLightBlue,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13))),
-                    DataCell(Text(p.consigneeName,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13))),
-                    DataCell(Center(child: StatusChip(status: p.status))),
-                    DataCell(Text(
-                        DateFormat('dd/MM/yy HH:mm').format(p.createdAt),
-                        style: TextStyle(
-                            color: context.colors.textMuted, fontSize: 13))),
-                  ]))
-              .toList(),
+          rows: packages.expand((p) {
+            if (p.items.isEmpty) {
+              return [
+                DataRow(cells: [
+                  DataCell(Text(p.srNumber,
+                      style: TextStyle(
+                          color: context.colors.accentLightBlue,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13))),
+                  const DataCell(Text('No items', style: TextStyle(fontSize: 13))),
+                  const DataCell(Text('0',
+                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold))),
+                  DataCell(Center(child: StatusChip(status: p.status))),
+                  DataCell(Text(DateFormat('dd/MM HH:mm').format(p.updatedAt),
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 13))),
+                ])
+              ];
+            }
+
+            return p.items.map((item) {
+              // Priority: Item specific status (e.g. confiscated) > Package status
+              String effectiveStatus = (item.status != null && item.status != 'pending') 
+                  ? item.status! 
+                  : p.status;
+
+              return DataRow(cells: [
+                DataCell(Text(p.srNumber,
+                    style: TextStyle(
+                        color: context.colors.accentLightBlue,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13))),
+                DataCell(Text(item.itemName,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 13))),
+                DataCell(Text(item.quantity.toString(),
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold))),
+                DataCell(Center(child: StatusChip(status: effectiveStatus))),
+                DataCell(Text(DateFormat('dd/MM HH:mm').format(p.updatedAt),
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 13))),
+              ]);
+            });
+          }).toList(),
         ),
       ),
     );
