@@ -715,8 +715,10 @@ class AdminService {
     String? department,
     String? profileImageUrl,
   }) async {
+    final cleanEmail = email.trim();
+    print('DEBUG: Requesting OTP for clean email: "$cleanEmail"');
     await supabase.auth.signInWithOtp(
-      email: email,
+      email: cleanEmail,
       shouldCreateUser: true,
       data: {
         'full_name': fullName,

@@ -261,7 +261,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 const Gap(24),
                 SizedBox(height: 54, child: OutlinedButton.icon(
                   onPressed: isLoading ? null : _signInWithGoogle,
-                  icon: SvgPicture.asset('google_logo.svg', width: 20),
+                  icon: const Icon(Icons.g_mobiledata, size: 30), // Placeholder using a built-in icon
                   label: const Text('Sign in with Google', style: TextStyle(fontSize: 16)),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: context.colors.borderColor),

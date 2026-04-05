@@ -181,21 +181,19 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Row(children: [
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: context.colors.primaryGold.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(Icons.admin_panel_settings_rounded, color: context.colors.primaryGold, size: 22),
+                  IconButton(
+                    icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
+                    onPressed: () => context.go('/'),
                   ),
-                  const Gap(14),
+                  const Gap(8),
                   Text('Admin Sign In', style: Theme.of(context).textTheme.headlineMedium),
                 ]).animate().fadeIn(duration: 400.ms),
                 const Gap(8),
-                Text('Restricted to administrators only',
-                    style: TextStyle(color: context.colors.textSecondary, fontSize: 14))
-                    .animate().fadeIn(delay: 100.ms),
+                Padding(
+                  padding: const EdgeInsets.only(left: 48),
+                  child: Text('Restricted to administrators only',
+                      style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
+                ).animate().fadeIn(delay: 100.ms),
                 const Gap(40),
                 if (_error != null) ...[
                   Container(
@@ -252,14 +250,10 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                 ]).animate().fadeIn(delay: 350.ms),
                 const Gap(24),
                 SizedBox(height: 54, child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: context.colors.primaryGold,
-                    foregroundColor: context.colors.primaryNavy,
-                  ),
                   onPressed: _isLoading ? null : _signIn,
                   child: _isLoading
                       ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
-                      : const Text('Sign In as Admin', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                      : const Text('Sign In', style: TextStyle(fontSize: 16)),
                 )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
                 const Gap(24),
                 Row(children: [
@@ -273,7 +267,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                 const Gap(24),
                 SizedBox(height: 54, child: OutlinedButton.icon(
                   onPressed: _isLoading ? null : _signInWithGoogle,
-                  icon: SvgPicture.asset('google_logo.svg', width: 20),
+                  icon: const Icon(Icons.g_mobiledata, size: 30), // Placeholder using a built-in icon
                   label: const Text('Sign in with Google', style: TextStyle(fontSize: 16)),
                   style: OutlinedButton.styleFrom(
                     side: BorderSide(color: context.colors.borderColor),
@@ -282,17 +276,11 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                 )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 500.ms).fadeIn(),
                 const Gap(24),
                 Divider(color: context.colors.borderColor.withOpacity(0.5)),
-                const Gap(16),
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-                  TextButton.icon(
-                    icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                    label: const Text('Officer Login'),
-                    onPressed: () => context.go('/'),
-                    style: TextButton.styleFrom(foregroundColor: context.colors.textMuted),
-                  ),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Text("Don't have an account?", style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
                   TextButton(
                     onPressed: () => context.go('/admin/signup'),
-                    child: Text('Create Admin',
+                    child: Text('Create Account',
                         style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w600)),
                   ),
                 ]).animate().fadeIn(delay: 600.ms),
@@ -301,6 +289,18 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
           ),
         )),
       ]),
+      Positioned(top: 24, left: 24,
+        child: TextButton.icon(
+          icon: const Icon(Icons.arrow_back_rounded, size: 18),
+          label: const Text('Officer Login', style: TextStyle(fontWeight: FontWeight.w600)),
+          onPressed: () => context.go('/'),
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.white,
+            backgroundColor: Colors.white.withOpacity(0.1),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          ),
+        ),
+      ),
       Positioned(top: 24, right: 24,
         child: IconButton(
           icon: Icon(ref.watch(themeModeProvider) == ThemeMode.dark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, 

@@ -140,16 +140,6 @@ class _OfficersTab extends ConsumerWidget {
                   color: context.colors.textPrimary,
                   fontSize: 24,
                   fontWeight: FontWeight.w700)),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: context.colors.primaryGold,
-              foregroundColor: context.colors.primaryNavy,
-            ),
-            icon: const Icon(Icons.person_add_rounded, size: 18),
-            label: const Text('Add Officer',
-                style: TextStyle(fontWeight: FontWeight.w600)),
-            onPressed: () => _showAddDialog(context, ref),
-          ),
         ]),
         const Gap(16),
         Expanded(
@@ -206,14 +196,6 @@ class _OfficersTab extends ConsumerWidget {
                                 fontSize: 13)),
                         size: ColumnSize.S,
                         fixedWidth: 100),
-                    DataColumn2(
-                        label: Text('Actions',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.S,
-                        fixedWidth: 80),
                   ],
                   rows: list
                       .map((p) => DataRow(cells: [
@@ -249,12 +231,6 @@ class _OfficersTab extends ConsumerWidget {
                                 ref.invalidate(allProfilesProvider);
                               },
                               label: p.fullName,
-                            )),
-                            DataCell(IconButton(
-                              icon: Icon(Icons.edit_outlined,
-                                  color: context.colors.accentLightBlue,
-                                  size: 18),
-                              onPressed: () => _showEditDialog(context, ref, p),
                             )),
                           ]))
                       .toList(),
