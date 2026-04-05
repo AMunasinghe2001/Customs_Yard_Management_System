@@ -5,6 +5,51 @@ import '../models/models.dart';
 // ── Auth Service ──────────────────────────────────────────────
 
 class AuthService {
+  Future<ProfileModel?> signInWithGoogle() async {
+    try {
+      await supabase.auth.signInWithOAuth(
+        OAuthProvider.google,
+        redirectTo: 'com.example.cusyardmanagement://login-callback/',
+      );
+      return null; // The auth state change will be handled by Supabase listener
+    } catch (e) {
+      print('DEBUG: AuthService.signInWithGoogle error: $e');
+      rethrow;
+    }
+  }
+
+  Future<void> verifyUserSession() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    // 1. Check email confirmation
+    if (user.emailConfirmedAt == null) {
+      await signOut();
+      throw Exception('email_not_confirmed');
+    }
+
+    // 2. Check profile and role
+    final profileData = await supabase
+        .from('profiles')
+        .select()
+        .eq('id', user.id)
+        .maybeSingle();
+    
+    if (profileData == null) {
+      // If profile doesn't exist yet (first time login), it might need creation via trigger
+      // But for security, we sign out if not found in our roles table
+      await signOut();
+      throw Exception('profile_not_found');
+    }
+
+    final profile = ProfileModel.fromJson(profileData);
+
+    if (!profile.isActive) {
+      await signOut();
+      throw Exception('account_deactivated');
+    }
+  }
+
   Future<ProfileModel?> signIn(String email, String password) async {
     try {
       print('DEBUG: AuthService.signIn attempting for: "$email"');

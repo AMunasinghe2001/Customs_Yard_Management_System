@@ -17,14 +17,28 @@ import '../screens/profile/edit_profile_screen.dart';
 import '../screens/reports/reports_screen.dart';
 import '../widgets/app_shell.dart';
 import '../core/supabase_client.dart';
+import '../core/providers.dart';
+import '../services/services.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
     initialLocation: '/',
-    redirect: (context, state) {
-      final isLoggedIn = supabase.auth.currentUser != null;
+    redirect: (context, state) async {
+      final user = supabase.auth.currentUser;
+      final isLoggedIn = user != null;
       final publicRoutes = ['/', '/login', '/signup', '/admin/login', '/admin/signup'];
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
+      
+      if (isLoggedIn) {
+        // Run deep verification (email confirmed, active status)
+        try {
+          await ref.read(authServiceProvider).verifyUserSession();
+        } catch (e) {
+          // If verification fails (e.g. email not confirmed), redirect to home/login
+          return '/';
+        }
+      }
+
       if (!isLoggedIn && !isPublicPage) return '/';
       if (isLoggedIn && (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
         return '/dashboard';
