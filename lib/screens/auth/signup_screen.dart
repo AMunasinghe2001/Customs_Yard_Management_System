@@ -101,7 +101,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                   ).animate().slideY(begin: 0.5, duration: 500.ms).fadeIn(),
                   const Gap(8),
                   const Text(
-                    'Inventory Management System - Grey Line 1',
+                    'SR Management System - Grey Line 1',
                     textAlign: TextAlign.center,
                     style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 15, height: 1.2),
                   ).animate().slideY(begin: 0.5, duration: 500.ms, delay: 100.ms).fadeIn(),

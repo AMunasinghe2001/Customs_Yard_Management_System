@@ -22,7 +22,7 @@ const _officerNav = [
   NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
-  NavItem('Returned Packages', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem('Released Packages', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
@@ -31,7 +31,7 @@ const _adminNav = [
   NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
-  NavItem('Returned Packages', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem('Released Packages', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];
@@ -122,7 +122,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                           children: [
                             Text('SL Customs',
                                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
-                            Text('Inventory Management\nGrey Line 1',
+                            Text('SR Management System\nGrey Line 1',
                                 style: TextStyle(color: Colors.white54, fontSize: 10, height: 1.2)),
                           ],
                         ),

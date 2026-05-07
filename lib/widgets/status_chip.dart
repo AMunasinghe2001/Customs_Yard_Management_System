@@ -11,9 +11,12 @@ class StatusChip extends StatelessWidget {
     String label;
     switch (status) {
       case 'cleared':
+        color = context.colors.successGreen;
+        label = 'CLEARED';
+        break;
       case 'returned':
         color = context.colors.successGreen;
-        label = status.toUpperCase();
+        label = 'RELEASED';
         break;
       case 'held':
       case 'detained':

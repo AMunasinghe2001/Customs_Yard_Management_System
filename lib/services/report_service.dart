@@ -162,7 +162,7 @@ class ReportService {
         pageFormat: format ?? PdfPageFormat.a4.landscape, 
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader(title ?? (isReturnedReport ? 'Returned Packages Report' : 'Warehouse Status Report'), dateStr, ''),
+          _buildHeader(title ?? (isReturnedReport ? 'Released Packages Report' : 'Warehouse Status Report'), dateStr, ''),
           pw.SizedBox(height: 20),
           _buildWarehouseTable(entries, isReturnedReport: isReturnedReport),
           pw.SizedBox(height: 20),
@@ -192,7 +192,7 @@ class ReportService {
           _buildHeader(title, dateStr, ''),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headers: [periodLabel, 'Admitted', 'Returned', 'Net Change'],
+            headers: [periodLabel, 'Admitted', 'Released', 'Net Change'],
             data: summaryData.map((d) => [
               d['period'],
               d['admitted'].toString(),
@@ -221,7 +221,7 @@ class ReportService {
   /// Exports warehouse data to Excel bytes
   Future<Uint8List?> exportWarehouseToExcel(List<WarehouseEntryModel> entries, {bool isReturned = false}) async {
     var excel = Excel.createExcel();
-    Sheet sheetObject = excel[isReturned ? 'Returned' : 'In_Warehouse'];
+    Sheet sheetObject = excel[isReturned ? 'Released' : 'In_Warehouse'];
     excel.delete('Sheet1');
 
     // Add Headers
@@ -229,7 +229,7 @@ class ReportService {
       'SR Number', 'Consignee', 'Warehouse', 'Admitted At', 'Reason', 'Items'
     ];
     if (isReturned) {
-      headers.addAll(['Returned At', 'Return Notes']);
+      headers.addAll(['Released At', 'Release Notes']);
     }
     
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
@@ -273,7 +273,7 @@ class ReportService {
     sheetObject.appendRow([
       TextCellValue(periodLabel),
       TextCellValue('Admitted'),
-      TextCellValue('Returned'),
+      TextCellValue('Released'),
       TextCellValue('Net Change')
     ]);
 
@@ -693,7 +693,7 @@ class ReportService {
           pw.TableHelper.fromTextArray(
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            headers: ['SR Number', 'Return Date', 'Items', 'Days', 'Calculated Charge'],
+            headers: ['SR Number', 'Release Date', 'Items', 'Days', 'Calculated Charge'],
             data: rowData,
             cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.center, 4: pw.Alignment.centerRight},
           ),
@@ -723,7 +723,7 @@ class ReportService {
     sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
     sheetObject.appendRow([TextCellValue('')]);
 
-    List<String> headers = ['SR Number', 'Return Date', 'Items', 'Days', 'Calculated Charge (LKR)'];
+    List<String> headers = ['SR Number', 'Release Date', 'Items', 'Days', 'Calculated Charge (LKR)'];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
     
     var headerRow = sheetObject.row(3);
@@ -783,7 +783,7 @@ class ReportService {
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    'Sri Lanka Customs - Inventory Management System', 
+                    'Sri Lanka Customs - SR Management System', 
                     style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
                   ),
                 ],
@@ -858,7 +858,7 @@ class ReportService {
       'SR No', 'Consignee', 'Warehouse', 'Reason', 'Admitted', 'Items'
     ];
     if (isReturnedReport) {
-      headers.add('Returned');
+      headers.add('Released');
     }
 
     return pw.TableHelper.fromTextArray(
@@ -901,7 +901,7 @@ class ReportService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Report validated by Inventory Management System (Grey Line 1)', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
+            pw.Text('Report validated by SR Management System (Grey Line 1)', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
             pw.Text('$label $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColor.fromInt(0xFF0D47A1))),
           ],
         ),

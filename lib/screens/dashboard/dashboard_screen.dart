@@ -132,7 +132,7 @@ class DashboardScreen extends ConsumerWidget {
                         const Gap(12),
                         Expanded(
                           child: _StatCard(
-                            label: 'Returned (Cleared)',
+                            label: 'Released (Cleared)',
                             value: "${data['cleared'] ?? 0}",
                             icon: Icons.check_circle_rounded,
                             color: context.colors.successGreen,
@@ -275,7 +275,7 @@ class DashboardScreen extends ConsumerWidget {
                     ),
                     ConstrainedBox(
                       constraints: const BoxConstraints(minWidth: 180),
-                      child: _StatCard(label: 'Returned (Cleared)', value: "${data['cleared'] ?? 0}",
+                      child: _StatCard(label: 'Released (Cleared)', value: "${data['cleared'] ?? 0}",
                         icon: Icons.check_circle_rounded, color: context.colors.successGreen)
                         .animate().slideY(begin: 0.3, duration: 400.ms, delay: 100.ms).fadeIn(),
                     ),

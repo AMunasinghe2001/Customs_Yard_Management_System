@@ -132,8 +132,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      items: ['all', 'pending', 'held', 'cleared', 'returned', 'seized'].map((s) => 
-                        DropdownMenuItem(value: s, child: Text(s.toUpperCase(), style: const TextStyle(fontSize: 12)))).toList(),
+                      items: ['all', 'pending', 'held', 'cleared', 'returned', 'seized'].map((s) {
+                        final label = s == 'returned' ? 'released' : s;
+                        return DropdownMenuItem(
+                          value: s,
+                          child: Text(label.toUpperCase(), style: const TextStyle(fontSize: 12)),
+                        );
+                      }).toList(),
                       onChanged: (val) => setState(() => _selectedStatus = val!),
                     ),
                   ],
@@ -306,8 +311,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onExcel: _exportWarehouseStockExcel,
                     ),
                     _buildReportCard(
-                      title: 'Returned Packages',
-                      description: 'All released/returned package entries.',
+                      title: 'Released Packages',
+                      description: 'All released package entries.',
                       icon: Icons.keyboard_return_rounded,
                       color: const Color(0xFF2E7D32),
                       onPdf: _generateReturnedPdf,
@@ -370,7 +375,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     ),
                     _buildReportCard(
                       title: 'Released Revenue',
-                      description: 'Storage charges collected on returned items.',
+                      description: 'Storage charges collected on released items.',
                       icon: Icons.receipt_long_rounded,
                       color: const Color(0xFF388E3C),
                       onPdf: _generateReleasedRevenuePdf,
@@ -820,7 +825,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Future<void> _generateReturnedPdf() async {
-    const key = 'Returned Packages_pdf';
+    const key = 'Released Packages_pdf';
     _setLoading(key, true);
     try {
       final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
@@ -828,11 +833,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _showPdfPreview(
         (format) => ReportService().generateWarehousePdf(
           filtered, 
-          title: 'Returned Packages Report',
+          title: 'Released Packages Report',
           isReturnedReport: true,
           format: format,
         ),
-        'Returned_Packages_Report.pdf',
+        'Released_Packages_Report.pdf',
       );
     } catch (e) {
       _showError(e.toString());
@@ -842,7 +847,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Future<void> _exportReturnedExcel() async {
-    const key = 'Returned Packages_excel';
+    const key = 'Released Packages_excel';
     _setLoading(key, true);
     try {
       final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
@@ -854,11 +859,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           showDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
-              title: 'Export Returned Data',
+              title: 'Export Released Data',
               recordCount: filtered.length,
-              fileName: 'Returned_Packages_Report.xlsx',
+              fileName: 'Released_Packages_Report.xlsx',
               onExport: () => ReportService().exportWarehouseToExcel(filtered, isReturned: true),
-              onSave: (bytes) => _handleFileSave(bytes, 'Returned_Packages', 'xlsx'),
+              onSave: (bytes) => _handleFileSave(bytes, 'Released_Packages', 'xlsx'),
             ),
           );
         }
@@ -1493,7 +1498,7 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
     super.initState();
     // Start with Landscape if it looks like a wide report (like Warehouse)
     _isLandscape = widget.fileName.toLowerCase().contains('warehouse') || 
-                   widget.fileName.toLowerCase().contains('returned');
+             widget.fileName.toLowerCase().contains('released');
     _generatePdf();
   }
 

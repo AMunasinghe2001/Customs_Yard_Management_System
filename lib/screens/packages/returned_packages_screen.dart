@@ -143,10 +143,10 @@ class _ReturnedPackagesScreenState
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Returned Packages',
+                        Text('Released Packages',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                            'View and search all packages that have been returned',
+                          'View and search all packages that have been released',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
@@ -160,7 +160,7 @@ class _ReturnedPackagesScreenState
                             return pkgs.when(
                               data: (list) {
                                 final count = _buildReturnedRows(list).length;
-                                return Text('$count Returned',
+                                return Text('$count Released',
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 13,
@@ -513,7 +513,7 @@ class _ReturnedPackagesScreenState
                           columnSpacing: 12,
                           horizontalMargin: 12,
                           fixedTopRows: 1,
-                          empty: const EmptyTableState(message: 'No returned packages found'),
+                          empty: const EmptyTableState(message: 'No released packages found'),
                           isVerticalScrollBarVisible: true,
                           isHorizontalScrollBarVisible: false,
                             columns: const [
@@ -522,7 +522,7 @@ class _ReturnedPackagesScreenState
                               DataColumn2(
                                 label: Text('Item Name'), size: ColumnSize.M),
                               DataColumn2(
-                                label: Text('Returned Qty'),
+                                label: Text('Released Qty'),
                                 size: ColumnSize.S,
                                 fixedWidth: 120),
                               DataColumn2(

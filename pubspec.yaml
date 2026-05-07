@@ -47,3 +47,4 @@ flutter:
   uses-material-design: true
   assets:
     - Sri_Lanka_Customs_logo.svg
+    - Sri_Lanka_Customs_logo_tinted.svg

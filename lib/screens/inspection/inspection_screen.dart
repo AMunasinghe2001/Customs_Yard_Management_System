@@ -1115,7 +1115,7 @@ class _ItemRow {
   final unitOtherCtrl = TextEditingController();
   final valueCtrl = TextEditingController(text: '0');
   final categoryCtrl = TextEditingController();
-  String status = 'pending'; // Added status field
+  String status = 'Pending Approved of OGA'; // Added status field
   final List<String?> selectedReasons = [null]; // Start with 1 mandatory reason
 }
 
@@ -1270,13 +1270,25 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: DropdownButtonFormField<String>(
                 isDense: true,
                 isExpanded: true,
-                value: widget.row.status,
+                value: [
+                  'Pending Approved of OGA',
+                  'Forfiet',
+                  'Destruction',
+                  'Re Export'
+                ].contains(widget.row.status)
+                    ? widget.row.status
+                    : 'Pending Approved of OGA',
                 decoration:
                     const InputDecoration(labelText: 'Status *', isDense: true),
-                items: ['pending', 'held', 'cleared', 'confiscated']
+                items: [
+                  'Pending Approved of OGA',
+                  'Forfiet',
+                  'Destruction',
+                  'Re Export'
+                ]
                     .map((s) => DropdownMenuItem(
                         value: s,
-                        child: Text(s.toUpperCase(),
+                        child: Text(s,
                             style: const TextStyle(fontSize: 12),
                             overflow: TextOverflow.ellipsis)))
                     .toList(),

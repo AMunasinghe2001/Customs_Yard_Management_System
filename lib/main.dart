@@ -22,7 +22,7 @@ void main() async {
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
     minimumSize: Size(1000, 700),
-    title: 'Sri Lanka Customs Inventory Management System',
+    title: 'Sri Lanka Customs SR Management System',
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
     await windowManager.show();
@@ -106,7 +106,7 @@ class _CustomsAppState extends ConsumerState<CustomsApp> with WindowListener {
     print('DEBUG: CustomsApp building with themeMode: $themeMode');
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
-      title: 'Sri Lanka Customs Inventory Management System',
+      title: 'Sri Lanka Customs SR Management System',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,

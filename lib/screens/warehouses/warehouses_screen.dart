@@ -467,7 +467,7 @@ class _WarehouseTab extends ConsumerWidget {
         final charge = pkg != null ? entry.calculatePackageCharge(pkg.items, storageRateHistory) : 0.0;
         
         return AlertDialog(
-          title: const Text('Mark as Returned / Release'),
+          title: const Text('Mark as Released'),
           content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('SR Number: ${entry.srNumber ?? entry.packageId.substring(0, 8).toUpperCase()}',
                 style: TextStyle(color: context.colors.textSecondary)),
@@ -492,7 +492,7 @@ class _WarehouseTab extends ConsumerWidget {
             ),
             const Gap(16),
             TextField(controller: notesCtrl,
-                decoration: const InputDecoration(labelText: 'Return / Release Notes (optional)'), maxLines: 2),
+              decoration: const InputDecoration(labelText: 'Release Notes (optional)'), maxLines: 2),
           ]),
           actions: [
             TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -505,13 +505,13 @@ class _WarehouseTab extends ConsumerWidget {
                       returnNotes: notesCtrl.text.isNotEmpty ? notesCtrl.text : null);
                   ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: const Text('✅ Package marked as returned'), backgroundColor: context.colors.successGreen));
+                    SnackBar(content: const Text('✅ Package marked as released'), backgroundColor: context.colors.successGreen));
                 } catch (e) {
                   if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
                 }
               },
-              child: const Text('Confirm Return'),
+              child: const Text('Confirm Release'),
             ),
           ],
         );

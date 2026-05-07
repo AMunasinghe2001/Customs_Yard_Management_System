@@ -558,7 +558,7 @@ class WarehouseService {
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
-        action: 'Marked warehouse entry as returned (Qty: ${returnQty ?? "Full"})',
+        action: 'Marked warehouse entry as released (Qty: ${returnQty ?? "Full"})',
         entityType: 'warehouse_entry',
         entityId: entryId,
       );

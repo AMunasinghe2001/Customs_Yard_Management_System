@@ -558,7 +558,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           icon: Icons.shopping_bag_rounded,
                           delay: 300,
                           child: (widget.highlightEntry == null || highlightedItem == null)
-                              ? const _EmptyState(message: 'No returned item details')
+                              ? const _EmptyState(message: 'No released item details')
                               : material.Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
@@ -867,7 +867,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                               Expanded(
                                                 child: _DetailItem(
                                                   icon: Icons.keyboard_return_rounded,
-                                                  label: 'Returned',
+                                                  label: 'Released',
                                                   value: '$returnedQty',
                                                   valueColor: context.colors.successGreen,
                                                 ),
@@ -930,7 +930,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           officerDisplay: returnedOfficerDisplay,
                           badgeNumber: returnedOfficerBadge,
                           delay: 550,
-                          customTitle: 'Returned By',
+                          customTitle: 'Released By',
                           customIcon: Icons.keyboard_return_rounded,
                         ),
 
@@ -1023,7 +1023,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       const Gap(12),
                       if (widget.highlightEntry != null && !widget.highlightEntry!.isReturned)
                         material.Tooltip(
-                          message: isConfiscated ? 'Confiscated packages cannot be returned/released' : '',
+                          message: isConfiscated ? 'Confiscated packages cannot be released' : '',
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: isConfiscated ? Colors.grey : context.colors.successGreen,
@@ -1031,7 +1031,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                             ),
                             icon: const Icon(Icons.assignment_return_rounded, size: 18),
-                            label: const Text('Return Package'),
+                            label: const Text('Release Package'),
                             onPressed: isConfiscated ? null : () async {
                               final success = await _showReleaseConfirmation(context, widget.highlightEntry!);
                               if (success && mounted) {
@@ -2402,7 +2402,13 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   isDense: true,
                   value: widget.row.status,
                   decoration: const InputDecoration(labelText: 'Status *', isDense: true),
-                  items: ['pending', 'held', 'cleared', 'confiscated', 'returned'].map((s) => DropdownMenuItem(value: s, child: Text(s.toUpperCase(), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                  items: ['pending', 'held', 'cleared', 'confiscated', 'returned'].map((s) {
+                    final label = s == 'returned' ? 'released' : s;
+                    return DropdownMenuItem(
+                      value: s,
+                      child: Text(label.toUpperCase(), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                    );
+                  }).toList(),
                   onChanged: (v) {
                     setState(() => widget.row.status = v!);
                     widget.onChanged();

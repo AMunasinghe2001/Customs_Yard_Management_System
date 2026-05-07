@@ -128,6 +128,23 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
       body: Stack(children: [
+        Positioned(
+          top: 24,
+          right: 24,
+          child: IconButton(
+            icon: Icon(
+              ref.watch(themeModeProvider) == ThemeMode.dark
+                  ? Icons.light_mode_rounded
+                  : Icons.dark_mode_rounded,
+              color: context.colors.textPrimary,
+            ),
+            onPressed: () {
+              final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
+              ref.read(themeModeProvider.notifier).state =
+                  isDark ? ThemeMode.light : ThemeMode.dark;
+            },
+          ),
+        ),
         Row(children: [
         // Left – branding
         Expanded(flex: 5, child: Container(
@@ -138,14 +155,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 200, height: 200,
-              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+            SvgPicture.asset(
+              'Sri_Lanka_Customs_logo_tinted.svg',
+              width: 200,
+              height: 200,
+              theme: const SvgTheme(currentColor: Colors.white),
             ),
             const Gap(36),
             const Text('Sri Lanka Customs',
               style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
             const Gap(8),
-            const Text('Inventory Management System\nGrey Line 1',
+            const Text('SR Management System\nGrey Line 1',
               textAlign: TextAlign.center,
               style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
             const Gap(28),
@@ -167,120 +187,122 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         )),
         // Right – login form
         Expanded(flex: 4, child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 460),
-            padding: const EdgeInsets.all(52),
-            child: Form(key: _formKey, child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
-                    onPressed: () => context.go('/'),
-                  ),
+          child: SingleChildScrollView(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 460),
+              padding: const EdgeInsets.all(52),
+              child: Form(key: _formKey, child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    IconButton(
+                      icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
+                      onPressed: () => context.go('/'),
+                    ),
+                    const Gap(8),
+                    Text('Officer Sign In', style: Theme.of(context).textTheme.headlineMedium),
+                  ]).animate().fadeIn(duration: 400.ms),
                   const Gap(8),
-                  Text('Officer Sign In', style: Theme.of(context).textTheme.headlineMedium),
-                ]).animate().fadeIn(duration: 400.ms),
-                const Gap(8),
-                Padding(
-                  padding: const EdgeInsets.only(left: 48),
-                  child: Text('Enter your credentials to access the system',
-                      style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
-                ).animate().fadeIn(delay: 100.ms),
-                const Gap(40),
-                if (error != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.colors.dangerRed.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
-                    ),
-                    child: Row(children: [
-                      Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
-                      const Gap(10),
-                      Expanded(child: Text(error, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
-                    ]),
-                  ),
-                  const Gap(20),
-                ],
-                TextFormField(
-                  controller: _emailCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Email',
-                    prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) => v == null || v.isEmpty ? 'Email required' : null,
-                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
-                const Gap(16),
-                TextFormField(
-                  controller: _passwordCtrl,
-                  decoration: InputDecoration(
-                    labelText: 'Password',
-                    prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: context.colors.textMuted),
-                      onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
-                    ),
-                  ),
-                  obscureText: _obscurePassword,
-                  validator: (v) => v == null || v.isEmpty ? 'Password required' : null,
-                  onFieldSubmitted: (_) => _signIn(),
-                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
-                const Gap(12),
-                Row(children: [
-                  SizedBox(
-                    width: 24, height: 24,
-                    child: Checkbox(
-                      value: _rememberMe,
-                      activeColor: context.colors.accentLightBlue,
-                      onChanged: (v) => setState(() => _rememberMe = v ?? false),
-                    ),
-                  ),
-                  const Gap(8),
-                  Text('Remember me', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
-                ]).animate().fadeIn(delay: 350.ms),
-                const Gap(24),
-                SizedBox(height: 54, child: ElevatedButton(
-                  onPressed: isLoading ? null : _signIn,
-                  child: isLoading
-                      ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
-                      : const Text('Sign In', style: TextStyle(fontSize: 16)),
-                )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
-                const Gap(24),
-                Row(children: [
-                  Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
                   Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Text('OR', style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
-                  ),
-                  Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
-                ]).animate().fadeIn(delay: 450.ms),
-                const Gap(24),
-                SizedBox(height: 54, child: OutlinedButton.icon(
-                  onPressed: isLoading ? null : _signInWithGoogle,
-                  icon: const Icon(Icons.g_mobiledata, size: 30), // Placeholder using a built-in icon
-                  label: const Text('Sign in with Google', style: TextStyle(fontSize: 16)),
-                  style: OutlinedButton.styleFrom(
-                    side: BorderSide(color: context.colors.borderColor),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 500.ms).fadeIn(),
-                const Gap(24),
-                Divider(color: context.colors.borderColor.withOpacity(0.5)),
-                const Gap(16),
-                Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text("Don't have an account?", style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
-                  TextButton(
-                    onPressed: () => context.go('/signup'),
-                    child: Text('Create Account',
-                        style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600)),
-                  ),
-                ])).animate().fadeIn(delay: 600.ms),
-              ],
-            )),
+                    padding: const EdgeInsets.only(left: 48),
+                    child: Text('Enter your credentials to access the system',
+                        style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
+                  ).animate().fadeIn(delay: 100.ms),
+                  const Gap(40),
+                  if (error != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: context.colors.dangerRed.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
+                        const Gap(10),
+                        Expanded(child: Text(error, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
+                      ]),
+                    ),
+                    const Gap(20),
+                  ],
+                  TextFormField(
+                    controller: _emailCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Email',
+                      prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) => v == null || v.isEmpty ? 'Email required' : null,
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+                  const Gap(16),
+                  TextFormField(
+                    controller: _passwordCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: context.colors.textMuted),
+                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                      ),
+                    ),
+                    obscureText: _obscurePassword,
+                    validator: (v) => v == null || v.isEmpty ? 'Password required' : null,
+                    onFieldSubmitted: (_) => _signIn(),
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
+                  const Gap(12),
+                  Row(children: [
+                    SizedBox(
+                      width: 24, height: 24,
+                      child: Checkbox(
+                        value: _rememberMe,
+                        activeColor: context.colors.accentLightBlue,
+                        onChanged: (v) => setState(() => _rememberMe = v ?? false),
+                      ),
+                    ),
+                    const Gap(8),
+                    Text('Remember me', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+                  ]).animate().fadeIn(delay: 350.ms),
+                  const Gap(24),
+                  SizedBox(height: 54, child: ElevatedButton(
+                    onPressed: isLoading ? null : _signIn,
+                    child: isLoading
+                        ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
+                        : const Text('Sign In', style: TextStyle(fontSize: 16)),
+                  )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
+                  const Gap(24),
+                  Row(children: [
+                    Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Text('OR', style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
+                    ),
+                    Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
+                  ]).animate().fadeIn(delay: 450.ms),
+                  const Gap(24),
+                  SizedBox(height: 54, child: OutlinedButton.icon(
+                    onPressed: isLoading ? null : _signInWithGoogle,
+                    icon: const Icon(Icons.g_mobiledata, size: 30), // Placeholder using a built-in icon
+                    label: const Text('Sign in with Google', style: TextStyle(fontSize: 16)),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(color: context.colors.borderColor),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                  )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 500.ms).fadeIn(),
+                  const Gap(24),
+                  Divider(color: context.colors.borderColor.withOpacity(0.5)),
+                  const Gap(16),
+                  Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Text("Don't have an account?", style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
+                    TextButton(
+                      onPressed: () => context.go('/signup'),
+                      child: Text('Create Account',
+                          style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600)),
+                    ),
+                  ])).animate().fadeIn(delay: 600.ms),
+                ],
+              )),
+            ),
           ),
         )),
         ]),

@@ -90,7 +90,7 @@ class AdminDashboardScreen extends ConsumerWidget {
                         Expanded(
                             child: _buildPkgStat(
                                 context,
-                                'Returned (Cleared)',
+                                'Released (Cleared)',
                                 "${data['cleared'] ?? 0}",
                                 Icons.check_circle_rounded,
                                 context.colors.successGreen,
