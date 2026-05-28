@@ -23,6 +23,8 @@ const _officerNav = [
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
   NavItem('Released Packages', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem('Forfeited Packages', Icons.gavel_rounded, '/forfeited-packages'),
+  NavItem('Tender Disposals', Icons.assignment_ind_rounded, '/tender-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
@@ -32,6 +34,8 @@ const _adminNav = [
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
   NavItem('Released Packages', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem('Forfeited Packages', Icons.gavel_rounded, '/forfeited-packages'),
+  NavItem('Tender Disposals', Icons.assignment_ind_rounded, '/tender-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];

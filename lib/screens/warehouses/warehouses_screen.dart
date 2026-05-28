@@ -49,24 +49,7 @@ class WarehousesScreen extends ConsumerWidget {
             body: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      runSpacing: 8,
-                      children: [
-                        Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                          Text('SR Unit Warehouses', style: Theme.of(context).textTheme.headlineLarge),
-                          Text('Track packages held in SR Unit facilities',
-                              style: TextStyle(color: context.colors.textSecondary)),
-                        ]),
-                      ],
-                    ),
-                  ).animate().fadeIn(),
-                ),
+                _WarehousesHeaderWithStats(ws),
                 const Gap(20),
                 Container(
                   height: 56,
@@ -188,35 +171,7 @@ class _WarehouseTab extends ConsumerWidget {
         return Padding(
               padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Wrap(
-                  spacing: 12,
-                  runSpacing: 12,
-                  children: [
-                  _MiniStat(label: 'Total', value: '${list.where((e) => !e.isReturned).length}', color: context.colors.accentLightBlue),
-                  _MiniStat(label: 'Held', value: '${list.where((e) {
-                    if (e.isReturned) return false;
-                    if (e.isPackageConfiscated) return false;
-                    // Check item level status if present
-                    if (e.packageItemId != null) {
-                      final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                      final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                      return item?.status != 'confiscated';
-                    }
-                    return true;
-                  }).length}', color: context.colors.heldOrange),
-                  _MiniStat(label: 'Confiscated', value: '${list.where((e) {
-                    if (e.isReturned) return false;
-                    if (e.isPackageConfiscated) return true;
-                    // Check item level status if present
-                    if (e.packageItemId != null) {
-                      final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                      final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                      return item?.status == 'confiscated';
-                    }
-                    return false;
-                  }).length}', color: context.colors.dangerRed),
-                ]).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
-                const Gap(20),
+                
 
                 // ── Unified Search & Filter Bar ──────────────────────
                 Container(
@@ -534,6 +489,106 @@ class _MiniStat extends StatelessWidget {
         const Gap(10),
         Text(label, style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
       ]),
+    );
+  }
+}
+
+
+class _StatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _StatChip({required this.label, required this.value, required this.color});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold, height: 1.1)),
+          Text(label, style: TextStyle(color: context.colors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+        ],
+      ),
+    );
+  }
+}
+
+class _WarehousesHeaderWithStats extends ConsumerWidget {
+  final List<WarehouseModel> warehouses;
+  const _WarehousesHeaderWithStats(this.warehouses);
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Builder(
+      builder: (context) {
+        final tabController = DefaultTabController.of(context);
+        return AnimatedBuilder(
+          animation: tabController,
+          builder: (context, _) {
+            final activeTab = tabController.index;
+            final warehouse = warehouses[activeTab];
+            final entries = ref.watch(liveWarehouseEntriesProvider(warehouse.id)).valueOrNull ?? [];
+
+            int total = entries.where((e) => !e.isReturned).length;
+            int held = entries.where((e) {
+              if (e.isReturned) return false;
+              if (e.isPackageConfiscated) return false;
+              if (e.packageItemId != null) {
+                final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
+                final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                return item?.status != 'confiscated';
+              }
+              return true;
+            }).length;
+            int confiscated = entries.where((e) {
+              if (e.isReturned) return false;
+              if (e.isPackageConfiscated) return true;
+              if (e.packageItemId != null) {
+                final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
+                final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                return item?.status == 'confiscated';
+              }
+              return false;
+            }).length;
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
+              child: SizedBox(
+                width: double.infinity,
+                child: Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  runSpacing: 16,
+                  children: [
+                    Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text('SR Unit Warehouses', style: Theme.of(context).textTheme.headlineLarge),
+                      const Gap(4),
+                      Text('Track packages held in SR Unit facilities',
+                          style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
+                    ]),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _StatChip(label: 'Total', value: total.toString(), color: context.colors.accentLightBlue).animate().fadeIn(delay: 100.ms).scale(),
+                        const Gap(8),
+                        _StatChip(label: 'Held', value: held.toString(), color: context.colors.heldOrange).animate().fadeIn(delay: 200.ms).scale(),
+                        const Gap(8),
+                        _StatChip(label: 'Confiscated', value: confiscated.toString(), color: context.colors.dangerRed).animate().fadeIn(delay: 300.ms).scale(),
+                      ],
+                    ),
+                  ],
+                ),
+              ).animate().fadeIn(),
+            );
+          },
+        );
+      }
     );
   }
 }

@@ -172,6 +172,11 @@ CREATE POLICY "Officers can manage package items" ON package_items
 CREATE POLICY "All can view warehouses" ON warehouses
   FOR SELECT USING (auth.role() = 'authenticated');
 
+CREATE POLICY "Admins can manage warehouses" ON warehouses
+  FOR ALL USING (
+    EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin')
+  );
+
 -- Warehouse entries - all officers
 CREATE POLICY "Officers can manage warehouse entries" ON warehouse_entries
   FOR ALL USING (auth.role() = 'authenticated');

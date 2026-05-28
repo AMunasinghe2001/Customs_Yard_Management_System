@@ -908,4 +908,147 @@ class ReportService {
       ],
     );
   }
+
+  // ── Tender Packages PDF Report ────────────────────────────────
+
+  /// Generates a PDF report for packages selected for a tender
+  Future<Uint8List> generateTenderPackagesPdf(
+    List<ForfeitedPackageModel> packages, {
+    required String tenderNumber,
+    required DateTime tenderDate,
+  }) async {
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    final tenderDateStr = DateFormat('yyyy-MM-dd').format(tenderDate);
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          _buildHeader(
+            'TENDER PACKAGES REPORT',
+            dateStr,
+            'Tender No: $tenderNumber  |  Tender Date: $tenderDateStr',
+          ),
+          pw.SizedBox(height: 20),
+          pw.Text(
+            'Packages with Expired Appeal Period (>30 Days)',
+            style: pw.TextStyle(
+              fontSize: 13,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfColor.fromInt(0xFFC62828),
+            ),
+          ),
+          pw.SizedBox(height: 10),
+          pw.TableHelper.fromTextArray(
+            headers: [
+              'SR Number',
+              'Consignee',
+              'Forfeited Date',
+              'Appeal Deadline',
+              'Days Overdue',
+              'Reason',
+            ],
+            data: packages.map((p) {
+              final overdue = DateTime.now().difference(p.appealDeadline).inDays;
+              return [
+                p.srNumber,
+                p.consigneeName,
+                DateFormat('yyyy-MM-dd').format(p.forfeitedAt),
+                DateFormat('yyyy-MM-dd').format(p.appealDeadline),
+                overdue > 0 ? '+$overdue days' : '${overdue.abs()} days',
+                p.reason.isNotEmpty ? p.reason : '-',
+              ];
+            }).toList(),
+            headerStyle: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 9,
+              color: PdfColors.white,
+            ),
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            headerDecoration: const pw.BoxDecoration(
+              color: PdfColor.fromInt(0xFFC62828),
+            ),
+            rowDecoration: const pw.BoxDecoration(
+              border: pw.Border(
+                bottom: pw.BorderSide(color: PdfColors.grey200),
+              ),
+            ),
+            cellHeight: 22,
+            cellAlignments: {
+              0: pw.Alignment.centerLeft,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.center,
+              3: pw.Alignment.center,
+              4: pw.Alignment.center,
+              5: pw.Alignment.centerLeft,
+            },
+          ),
+          pw.SizedBox(height: 20),
+          _buildFooter(packages.length, label: 'Total Packages for Tender:'),
+        ],
+      ),
+    );
+
+    return pdf.save();
+  }
+
+  /// Exports tender packages to Excel
+  Future<Uint8List?> exportTenderPackagesToExcel(
+    List<ForfeitedPackageModel> packages, {
+    required String tenderNumber,
+    required DateTime tenderDate,
+  }) async {
+    var excel = Excel.createExcel();
+    Sheet sheetObject = excel['Tender Packages'];
+    excel.delete('Sheet1');
+
+    sheetObject.appendRow([TextCellValue('TENDER PACKAGES REPORT')]);
+    sheetObject.appendRow([TextCellValue('Tender No: $tenderNumber')]);
+    sheetObject.appendRow([
+      TextCellValue(
+          'Tender Date: ${DateFormat('yyyy-MM-dd').format(tenderDate)}')
+    ]);
+    sheetObject.appendRow([
+      TextCellValue(
+          'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
+    ]);
+    sheetObject.appendRow([TextCellValue('')]);
+
+    final headers = [
+      'SR Number',
+      'Consignee',
+      'Forfeited Date',
+      'Appeal Deadline',
+      'Days Overdue',
+      'Reason',
+    ];
+    sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
+
+    final headerRow = sheetObject.row(5);
+    for (var cell in headerRow) {
+      if (cell != null) {
+        cell.cellStyle = CellStyle(
+          bold: true,
+          backgroundColorHex: ExcelColor.fromHexString('#FFCDD2'),
+        );
+      }
+    }
+
+    for (var p in packages) {
+      final overdue =
+          DateTime.now().difference(p.appealDeadline).inDays;
+      sheetObject.appendRow([
+        TextCellValue(p.srNumber),
+        TextCellValue(p.consigneeName),
+        TextCellValue(DateFormat('yyyy-MM-dd').format(p.forfeitedAt)),
+        TextCellValue(DateFormat('yyyy-MM-dd').format(p.appealDeadline)),
+        TextCellValue(overdue > 0 ? '+$overdue days' : '${overdue.abs()} days'),
+        TextCellValue(p.reason),
+      ]);
+    }
+
+    return Uint8List.fromList(excel.encode()!);
+  }
 }

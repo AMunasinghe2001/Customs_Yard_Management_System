@@ -13,6 +13,8 @@ final adminServiceProvider = Provider((ref) => AdminService());
 final auditLogServiceProvider = Provider((ref) => AuditLogService());
 final packageCategoryServiceProvider = Provider((ref) => PackageCategoryService());
 final holdReasonServiceProvider = Provider((ref) => HoldReasonService());
+final forfeitedPackageServiceProvider = Provider((ref) => ForfeitedPackageService());
+final tendersServiceProvider = Provider((ref) => TendersService());
 
 // ── Shared Auth State ──────────────────────────────────────────
 final currentProfileProvider = StateProvider<ProfileModel?>((ref) => null);
@@ -109,8 +111,17 @@ final categoryChangeTriggerProvider = StreamProvider<int>((ref) async* {
 
 // ── Shared Data Providers ──────────────────────────────────────
 final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
+  ref.watch(warehouseRefreshTriggerProvider);
   return ref.read(warehouseServiceProvider).getWarehouses();
 });
+
+// ── Warehouse Admin Management Providers ────────────────────────
+final warehouseEditingProvider = StateProvider<WarehouseModel?>((ref) => null);
+final warehouseNameInputProvider = StateProvider<String>((ref) => '');
+final warehouseCodeInputProvider = StateProvider<String>((ref) => '');
+final warehouseDescriptionInputProvider = StateProvider<String>((ref) => '');
+final warehouseLocationInputProvider = StateProvider<String>((ref) => '');
+final warehouseCapacityInputProvider = StateProvider<String>((ref) => '500');
 
 // ── Live Packages Provider ─────────────────────────────────────
 final packageFilterProvider = StateProvider<String>((ref) => 'all');
@@ -237,6 +248,42 @@ final packageCategoriesProvider = FutureProvider<List<PackageCategory>>((ref) as
 final holdReasonsProvider = FutureProvider<List<HoldReasonModel>>((ref) async {
   return ref.read(holdReasonServiceProvider).getReasons();
 });
+
+// ── Forfeited Packages & Tenders Providers ──────────────────
+final forfeitedRefreshTriggerProvider = StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+final forfeitedPackagesChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  final trigger = ref.watch(forfeitedRefreshTriggerProvider);
+  yield trigger;
+  final channel = supabase.channel('forfeited-packages-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'forfeited_packages',
+      callback: (_) => ref.read(forfeitedRefreshTriggerProvider.notifier).trigger(),
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
+final forfeitedPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getForfeitedPackages();
+});
+
+final expiredAppealPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getExpiredAppealPackages();
+});
+
+final tendersProvider = FutureProvider<List<TenderModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(tendersServiceProvider).getTenders();
+});
+
+// ── Tender Form State Providers ──────────────────────────────
+final tenderNumberInputProvider = StateProvider<String>((ref) => '');
+final tenderDateInputProvider = StateProvider<DateTime?>((ref) => DateTime.now());
+final selectedTenderPackagesProvider = StateProvider<Set<String>>((ref) => {});
 
 // ── Admin Dashboard Providers ──────────────────────────────────
 final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {

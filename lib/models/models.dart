@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class PackageModel {
   final String id;
   final String srNumber;
@@ -597,6 +599,127 @@ class AuditLogModel {
     );
   }
 }
+
+// ── Forfeited Packages ───────────────────────────────────────
+
+class ForfeitedPackageModel {
+  final String id;
+  final String packageId;
+  final String srNumber;
+  final String consigneeName;
+  final DateTime forfeitedAt;
+  final DateTime appealDeadline;
+  final String reason;
+  final PackageModel? packageDetails;
+
+  const ForfeitedPackageModel({
+    required this.id,
+    required this.packageId,
+    required this.srNumber,
+    required this.consigneeName,
+    required this.forfeitedAt,
+    required this.appealDeadline,
+    required this.reason,
+    this.packageDetails,
+  });
+
+  bool get isAppealExpired => DateTime.now().isAfter(appealDeadline);
+  int get daysUntilDeadline => appealDeadline.difference(DateTime.now()).inDays;
+
+  factory ForfeitedPackageModel.fromJson(Map<String, dynamic> json) {
+    return ForfeitedPackageModel(
+      id: json['id'] as String,
+      packageId: json['package_id'] as String,
+      srNumber: json['sr_number'] as String,
+      consigneeName: json['consignee_name'] as String,
+      forfeitedAt: DateTime.parse(json['forfeited_at'] as String),
+      appealDeadline: DateTime.parse(json['appeal_deadline'] as String),
+      reason: json['reason'] as String? ?? '',
+      packageDetails: json['packages'] != null
+          ? PackageModel.fromJson(json['packages'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+}
+
+// ── Tender Model ────────────────────────────────────────────
+
+class TenderModel {
+  final String id;
+  final String tenderNumber;
+  final DateTime tenderDate;
+  final List<String> forfeitedPackageIds;
+  final DateTime createdAt;
+  final String? createdByName;
+
+  const TenderModel({
+    required this.id,
+    required this.tenderNumber,
+    required this.tenderDate,
+    required this.forfeitedPackageIds,
+    required this.createdAt,
+    this.createdByName,
+  });
+
+  factory TenderModel.fromJson(Map<String, dynamic> json) {
+    final idsJson = json['forfeited_package_ids'];
+    List<String> ids = [];
+    if (idsJson != null) {
+      if (idsJson is List) {
+        ids = List<String>.from(idsJson);
+      } else if (idsJson is String) {
+        ids = (jsonDecode(idsJson) as List).cast<String>();
+      }
+    }
+
+    return TenderModel(
+      id: json['id'] as String,
+      tenderNumber: json['tender_number'] as String,
+      tenderDate: DateTime.parse(json['tender_date'] as String),
+      forfeitedPackageIds: ids,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      createdByName: (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+    );
+  }
+}
+
+// ── Tender Disposal Outcome Model ────────────────────────────
+
+class TenderDisposalModel {
+  final String id;
+  final String tenderPackageId;
+  final String forfeitedPackageId;
+  final String disposalType; // sold, re_export, govt_use, destroy, other
+  final String? receiptNumber; // For 'sold'
+  final String? otherDetails; // For 'other'
+  final DateTime disposedAt;
+  final String? disposedByName;
+
+  const TenderDisposalModel({
+    required this.id,
+    required this.tenderPackageId,
+    required this.forfeitedPackageId,
+    required this.disposalType,
+    this.receiptNumber,
+    this.otherDetails,
+    required this.disposedAt,
+    this.disposedByName,
+  });
+
+  factory TenderDisposalModel.fromJson(Map<String, dynamic> json) {
+    return TenderDisposalModel(
+      id: json['id'] as String,
+      tenderPackageId: json['tender_package_id'] as String,
+      forfeitedPackageId: json['forfeited_package_id'] as String,
+      disposalType: json['disposal_type'] as String,
+      receiptNumber: json['receipt_number'] as String?,
+      otherDetails: json['other_details'] as String?,
+      disposedAt: DateTime.parse(json['disposed_at'] as String),
+      disposedByName: (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+    );
+  }
+}
+
 
 class PackageCategory {
   final String id;

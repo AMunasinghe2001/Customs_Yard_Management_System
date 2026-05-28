@@ -15,6 +15,8 @@ import '../screens/admin/admin_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/profile/edit_profile_screen.dart';
 import '../screens/reports/reports_screen.dart';
+import '../screens/forfeited_packages/forfeited_packages_screen.dart';
+import '../screens/forfeited_packages/tender_disposal_screen.dart';
 import '../widgets/app_shell.dart';
 import '../core/supabase_client.dart';
 import '../core/providers.dart';
@@ -56,6 +58,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),
       GoRoute(path: '/packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const PackagesScreen())),
       GoRoute(path: '/returned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ReturnedPackagesScreen())),
+      GoRoute(path: '/forfeited-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ForfeitedPackagesScreen())),
+      GoRoute(path: '/tender-disposals', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const TenderDisposalScreen())),
       GoRoute(path: '/admin', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminDashboardScreen())),
       GoRoute(path: '/admin/panel', pageBuilder: (_, state) {
         final tabStr = state.uri.queryParameters['tab'];

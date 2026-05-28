@@ -24,7 +24,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 5,
+        length: 6,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -85,6 +85,9 @@ class AdminScreen extends ConsumerWidget {
                                 icon: Icon(Icons.people_rounded, size: 20),
                                 text: 'Officers'),
                             Tab(
+                                icon: Icon(Icons.warehouse_rounded, size: 20),
+                                text: 'Warehouses'),
+                            Tab(
                                 icon: Icon(Icons.category_rounded, size: 20),
                                 text: 'Items'),
                             Tab(
@@ -111,6 +114,7 @@ class AdminScreen extends ConsumerWidget {
               const Expanded(
                   child: TabBarView(children: [
                 _OfficersTab(),
+                _WarehousesTab(),
                 _CategoriesTab(),
                 _StorageChargesTab(),
                 _HoldReasonsTab(),
@@ -428,6 +432,526 @@ class _RoleChip extends StatelessWidget {
                   : context.colors.accentLightBlue,
               fontSize: 11,
               fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+// ── Warehouses Tab ──────────────────────────────────────────────
+
+class _WarehousesTab extends ConsumerWidget {
+  const _WarehousesTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final warehouses = ref.watch(warehousesProvider);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Warehouses',
+                style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: context.colors.primaryGold,
+                  foregroundColor: context.colors.primaryNavy,
+                ),
+                icon: const Icon(Icons.add_rounded, size: 18),
+                label: const Text(
+                  'Add Warehouse',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+                onPressed: () => _showAddWarehouseDialog(context, ref),
+              ),
+            ],
+          ),
+          const Gap(16),
+          Expanded(
+            child: warehouses.when(
+              loading: () => Center(
+                child: CircularProgressIndicator(
+                  color: context.colors.primaryGold,
+                ),
+              ),
+              error: (e, _) => ErrorView(
+                error: e,
+                onRetry: () => ref.refresh(warehousesProvider),
+              ),
+              data: (list) => Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: context.colors.cardDark,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: context.colors.borderColor),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(14),
+                  child: DataTable2(
+                    horizontalMargin: 24,
+                    columnSpacing: 20,
+                    fixedTopRows: 1,
+                    isHorizontalScrollBarVisible: false,
+                    dataRowColor: WidgetStateProperty.all(Colors.transparent),
+                    headingRowColor:
+                        WidgetStateProperty.all(context.colors.surfaceDark),
+                    columns: [
+                      DataColumn2(
+                        label: Text(
+                          'Name',
+                          style: TextStyle(
+                            color: context.colors.primaryGold,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        size: ColumnSize.L,
+                      ),
+                      DataColumn2(
+                        label: Text(
+                          'Code',
+                          style: TextStyle(
+                            color: context.colors.primaryGold,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        size: ColumnSize.M,
+                      ),
+                      DataColumn2(
+                        label: Text(
+                          'Location',
+                          style: TextStyle(
+                            color: context.colors.primaryGold,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        size: ColumnSize.L,
+                      ),
+                      DataColumn2(
+                        label: Text(
+                          'Capacity',
+                          style: TextStyle(
+                            color: context.colors.primaryGold,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        size: ColumnSize.S,
+                        fixedWidth: 80,
+                      ),
+                      DataColumn2(
+                        label: Text(
+                          'Actions',
+                          style: TextStyle(
+                            color: context.colors.primaryGold,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13,
+                          ),
+                        ),
+                        size: ColumnSize.S,
+                        fixedWidth: 120,
+                      ),
+                    ],
+                    rows: list
+                        .map(
+                          (w) => DataRow(
+                            cells: [
+                              DataCell(
+                                Text(
+                                  w.name,
+                                  style: TextStyle(
+                                    color: context.colors.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  w.code,
+                                  style: TextStyle(
+                                    color: context.colors.textMuted,
+                                    fontFamily: 'monospace',
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  w.location ?? '—',
+                                  style: TextStyle(
+                                    color: context.colors.textMuted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Text(
+                                  w.capacity.toString(),
+                                  style: TextStyle(
+                                    color: context.colors.textMuted,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ),
+                              DataCell(
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.edit_rounded,
+                                        size: 16,
+                                        color: context.colors.accentLightBlue,
+                                      ),
+                                      onPressed: () =>
+                                          _showEditWarehouseDialog(
+                                        context,
+                                        ref,
+                                        w,
+                                      ),
+                                      tooltip: 'Edit',
+                                    ),
+                                    IconButton(
+                                      icon: Icon(
+                                        Icons.delete_rounded,
+                                        size: 16,
+                                        color: context.colors.dangerRed,
+                                      ),
+                                      onPressed: () =>
+                                          _showDeleteConfirmation(
+                                        context,
+                                        ref,
+                                        w,
+                                      ),
+                                      tooltip: 'Delete',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAddWarehouseDialog(BuildContext context, WidgetRef ref) {
+    final nameC = TextEditingController();
+    final codeC = TextEditingController();
+    final descC = TextEditingController();
+    final locC = TextEditingController();
+    final capC = TextEditingController(text: '500');
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: const Text('Add New Warehouse'),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameC,
+                    decoration:
+                        const InputDecoration(labelText: 'Warehouse Name *'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: codeC,
+                    decoration: const InputDecoration(
+                        labelText: 'Code (e.g., SR-W01) *'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: descC,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: locC,
+                    decoration: const InputDecoration(labelText: 'Location'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: capC,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        const InputDecoration(labelText: 'Capacity (items)'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      final name = nameC.text.trim();
+                      final code = codeC.text.trim().toUpperCase();
+
+                      if (name.isEmpty || code.isEmpty) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Name and Code are required'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                        return;
+                      }
+
+                      setState(() => loading = true);
+                      try {
+                        await ref.read(warehouseServiceProvider).addWarehouse(
+                          name: name,
+                          code: code,
+                          description:
+                              descC.text.isEmpty ? null : descC.text.trim(),
+                          location: locC.text.isEmpty ? null : locC.text.trim(),
+                          capacity: int.tryParse(capC.text) ?? 500,
+                        );
+                        ref.refresh(warehousesProvider);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Warehouse added successfully'),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: ${e.toString()}'),
+                              backgroundColor: Colors.red,
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                        }
+                      } finally {
+                        setState(() => loading = false);
+                      }
+                    },
+              child: loading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Create'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditWarehouseDialog(
+    BuildContext context,
+    WidgetRef ref,
+    WarehouseModel warehouse,
+  ) {
+    final nameC = TextEditingController(text: warehouse.name);
+    final codeC = TextEditingController(text: warehouse.code);
+    final descC = TextEditingController(text: warehouse.description ?? '');
+    final locC = TextEditingController(text: warehouse.location ?? '');
+    final capC = TextEditingController(text: warehouse.capacity.toString());
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) => AlertDialog(
+          title: Text('Edit: ${warehouse.name}'),
+          content: SizedBox(
+            width: 400,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameC,
+                    decoration:
+                        const InputDecoration(labelText: 'Warehouse Name'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: codeC,
+                    decoration: const InputDecoration(labelText: 'Code'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: descC,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: locC,
+                    decoration: const InputDecoration(labelText: 'Location'),
+                  ),
+                  const Gap(12),
+                  TextField(
+                    controller: capC,
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        const InputDecoration(labelText: 'Capacity (items)'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      setState(() => loading = true);
+                      try {
+                        await ref.read(warehouseServiceProvider).updateWarehouse(
+                          id: warehouse.id,
+                          name: nameC.text.isEmpty ? null : nameC.text.trim(),
+                          code: codeC.text.isEmpty
+                              ? null
+                              : codeC.text.trim().toUpperCase(),
+                          description: descC.text.isEmpty
+                              ? null
+                              : descC.text.trim(),
+                          location:
+                              locC.text.isEmpty ? null : locC.text.trim(),
+                          capacity: int.tryParse(capC.text),
+                        );
+                        ref.refresh(warehousesProvider);
+                        if (ctx.mounted) Navigator.pop(ctx);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Warehouse updated successfully'),
+                              backgroundColor: Colors.green,
+                              duration: Duration(seconds: 2),
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text('Error: ${e.toString()}'),
+                              backgroundColor: Colors.red,
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
+                        }
+                      } finally {
+                        setState(() => loading = false);
+                      }
+                    },
+              child: loading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDeleteConfirmation(
+    BuildContext context,
+    WidgetRef ref,
+    WarehouseModel warehouse,
+  ) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete Warehouse?'),
+        content: Text(
+          'Are you sure you want to delete "${warehouse.name}"? This action cannot be undone. The warehouse must have no active entries.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+            ),
+            onPressed: () async {
+              try {
+                await ref.read(warehouseServiceProvider).deleteWarehouse(
+                      warehouse.id,
+                    );
+                ref.refresh(warehousesProvider);
+                if (ctx.mounted) Navigator.pop(ctx);
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Warehouse deleted successfully'),
+                      backgroundColor: Colors.green,
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error: ${e.toString()}'),
+                      backgroundColor: Colors.red,
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -691,6 +691,128 @@ class WarehouseService {
         };
     }).toList();
   }
+
+  // ── Warehouse Management (CRUD) ────────────────────────────
+
+  /// Add a new warehouse
+  Future<WarehouseModel> addWarehouse({
+    required String name,
+    required String code,
+    String? description,
+    String? location,
+    int capacity = 500,
+  }) async {
+    final data = await supabase.from('warehouses').insert({
+      'name': name,
+      'code': code,
+      'description': description,
+      'location': location,
+      'capacity': capacity,
+    }).select().single();
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Added warehouse',
+        entityType: 'warehouse',
+        entityId: data['id'],
+        details: {'name': name, 'code': code},
+      );
+    }
+
+    return WarehouseModel.fromJson(data);
+  }
+
+  /// Update an existing warehouse
+  Future<WarehouseModel> updateWarehouse({
+    required String id,
+    String? name,
+    String? code,
+    String? description,
+    String? location,
+    int? capacity,
+  }) async {
+    final updates = <String, dynamic>{};
+    if (name != null) updates['name'] = name;
+    if (code != null) updates['code'] = code;
+    if (description != null) updates['description'] = description;
+    if (location != null) updates['location'] = location;
+    if (capacity != null) updates['capacity'] = capacity;
+
+    final data = await supabase
+        .from('warehouses')
+        .update(updates)
+        .eq('id', id)
+        .select()
+        .single();
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Updated warehouse',
+        entityType: 'warehouse',
+        entityId: id,
+        details: updates,
+      );
+    }
+
+    return WarehouseModel.fromJson(data);
+  }
+
+  /// Delete a warehouse (only if it has no active entries)
+  Future<void> deleteWarehouse(String id) async {
+    // Check if warehouse has any entries
+    final entries = await supabase
+        .from('warehouse_entries')
+        .select('id')
+        .eq('warehouse_id', id)
+        .eq('is_returned', false);
+
+    if (entries.isNotEmpty) {
+      throw Exception('Cannot delete warehouse with active entries');
+    }
+
+    await supabase.from('warehouses').delete().eq('id', id);
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Deleted warehouse',
+        entityType: 'warehouse',
+        entityId: id,
+      );
+    }
+  }
+
+  /// Get detailed warehouse statistics (for a specific warehouse)
+  Future<Map<String, dynamic>> getWarehouseDetailedStats(String warehouseId) async {
+    final warehouse = await supabase
+        .from('warehouses')
+        .select()
+        .eq('id', warehouseId)
+        .single();
+
+    final activeEntries = await supabase
+        .from('warehouse_entries')
+        .select('item_count')
+        .eq('warehouse_id', warehouseId)
+        .eq('is_returned', false);
+
+    final totalItems = activeEntries.fold<int>(
+      0,
+      (sum, entry) => sum + (entry['item_count'] as int),
+    );
+
+    return {
+      'warehouse': WarehouseModel.fromJson(warehouse),
+      'activeEntries': activeEntries.length,
+      'totalItemsHeld': totalItems,
+      'capacityUtilization': ((totalItems / warehouse['capacity']) * 100).toStringAsFixed(1),
+    };
+  }
 }
 
 // ── Customs Rules Service ───────────────────────────────────
@@ -1094,3 +1216,183 @@ class PackageCategoryService {
     }
   }
 }
+
+// ── Forfeited Packages Service ──────────────────────────────
+
+class ForfeitedPackageService {
+  /// Get all forfeited packages
+  Future<List<ForfeitedPackageModel>> getForfeitedPackages() async {
+    final data = await supabase
+        .from('forfeited_packages')
+        .select('*, packages(*)')
+        .order('appeal_deadline', ascending: true);
+    return data.map((e) => ForfeitedPackageModel.fromJson(e)).toList();
+  }
+
+  /// Get forfeited packages where appeal has expired (> 30 days)
+  Future<List<ForfeitedPackageModel>> getExpiredAppealPackages() async {
+    final data = await supabase
+        .from('forfeited_packages')
+        .select('*, packages(*)')
+        .lt('appeal_deadline', DateTime.now().toIso8601String())
+        .order('appeal_deadline', ascending: true);
+    return data.map((e) => ForfeitedPackageModel.fromJson(e)).toList();
+  }
+
+  /// Create a forfeited package record
+  Future<ForfeitedPackageModel> createForfeitedPackage({
+    required String packageId,
+    required String srNumber,
+    required String consigneeName,
+    required String reason,
+  }) async {
+    final appealDeadline = DateTime.now().add(const Duration(days: 30));
+    final data = await supabase
+        .from('forfeited_packages')
+        .insert({
+          'package_id': packageId,
+          'sr_number': srNumber,
+          'consignee_name': consigneeName,
+          'forfeited_at': DateTime.now().toIso8601String(),
+          'appeal_deadline': appealDeadline.toIso8601String(),
+          'reason': reason,
+        })
+        .select('*, packages(*)')
+        .single();
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created forfeited package record',
+        entityType: 'forfeited_package',
+        entityId: data['id'],
+        details: {'sr_number': srNumber},
+      );
+    }
+
+    return ForfeitedPackageModel.fromJson(data);
+  }
+
+  /// Delete forfeited packages by ID
+  Future<void> deleteForfeitedPackages(List<String> packageIds) async {
+    if (packageIds.isEmpty) return;
+    
+    await supabase
+        .from('forfeited_packages')
+        .delete()
+        .inFilter('id', packageIds);
+    
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Deleted forfeited packages',
+        entityType: 'forfeited_package',
+        entityId: packageIds.first,
+        details: {'deleted_count': packageIds.length},
+      );
+    }
+  }
+}
+
+// ── Tenders Service ────────────────────────────────────────────
+
+class TendersService {
+  /// Get all tenders
+  Future<List<TenderModel>> getTenders() async {
+    final data = await supabase
+        .from('tenders')
+        .select('*, profiles(full_name)')
+        .order('tender_date', ascending: false);
+    return data.map((e) => TenderModel.fromJson(e)).toList();
+  }
+
+  /// Create a new tender and delete associated forfeited packages
+  Future<TenderModel> createTender({
+    required String tenderNumber,
+    required DateTime tenderDate,
+    required List<String> forfeitedPackageIds,
+  }) async {
+    // Create tender record
+    final data = await supabase
+        .from('tenders')
+        .insert({
+          'tender_number': tenderNumber,
+          'tender_date': tenderDate.toIso8601String(),
+          'forfeited_package_ids': forfeitedPackageIds,
+          'created_by': supabase.auth.currentUser?.id,
+        })
+        .select('*, profiles(full_name)')
+        .single();
+
+    // Delete the forfeited packages that are now in tender
+    await ForfeitedPackageService().deleteForfeitedPackages(forfeitedPackageIds);
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created tender',
+        entityType: 'tender',
+        entityId: data['id'],
+        details: {
+          'tender_number': tenderNumber,
+          'packages_count': forfeitedPackageIds.length,
+        },
+      );
+    }
+
+    return TenderModel.fromJson(data);
+  }
+
+  /// Record disposal outcome for a package in a tender
+  Future<TenderDisposalModel> recordDisposal({
+    required String tenderPackageId,
+    required String forfeitedPackageId,
+    required String disposalType, // sold, re_export, govt_use, destroy, other
+    String? receiptNumber,
+    String? otherDetails,
+  }) async {
+    final data = await supabase
+        .from('tender_disposals')
+        .insert({
+          'tender_package_id': tenderPackageId,
+          'forfeited_package_id': forfeitedPackageId,
+          'disposal_type': disposalType,
+          'receipt_number': receiptNumber,
+          'other_details': otherDetails,
+          'disposed_by': supabase.auth.currentUser?.id,
+          'disposed_at': DateTime.now().toIso8601String(),
+        })
+        .select('*, profiles(full_name)')
+        .single();
+
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Recorded tender disposal',
+        entityType: 'tender_disposal',
+        entityId: data['id'],
+        details: {
+          'disposal_type': disposalType,
+          'receipt_number': receiptNumber,
+        },
+      );
+    }
+
+    return TenderDisposalModel.fromJson(data);
+  }
+
+  /// Get disposals for a tender
+  Future<List<TenderDisposalModel>> getDisposalsForTender(String tenderPackageId) async {
+    final data = await supabase
+        .from('tender_disposals')
+        .select('*, profiles(full_name)')
+        .eq('tender_package_id', tenderPackageId)
+        .order('disposed_at', ascending: false);
+    return data.map((e) => TenderDisposalModel.fromJson(e)).toList();
+  }
+}
+

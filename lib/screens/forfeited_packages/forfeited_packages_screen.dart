@@ -1,0 +1,248 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:intl/intl.dart';
+import 'package:gap/gap.dart';
+import 'package:data_table_2/data_table_2.dart';
+import '../../core/providers.dart';
+import '../../core/theme.dart';
+import '../../models/models.dart';
+import '../../widgets/app_shell.dart';
+import '../../widgets/empty_table_state.dart';
+import '../../widgets/error_view.dart';
+import 'tender_placement_dialog.dart';
+
+class _StatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _StatChip({required this.label, required this.value, required this.color});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold, height: 1.1)),
+          Text(label, style: TextStyle(color: context.colors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+        ],
+      ),
+    );
+  }
+}
+
+class ForfeitedPackagesScreen extends ConsumerStatefulWidget {
+  const ForfeitedPackagesScreen({super.key});
+
+  @override
+  ConsumerState<ForfeitedPackagesScreen> createState() => _ForfeitedPackagesScreenState();
+}
+
+class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScreen> {
+  String _searchQuery = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final forfeitedAsync = ref.watch(forfeitedPackagesProvider);
+
+    return AppShell(
+      currentRoute: '/forfeited-packages',
+      child: Scaffold(
+        backgroundColor: context.colors.scaffoldBg,
+        body: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Header ──────────────────────────────────────────
+              forfeitedAsync.when(
+                data: (packages) {
+                  final totalCount = packages.length;
+                  final appealingCount = packages.where((p) => !p.isAppealExpired).length;
+                  final expiredCount = packages.where((p) => p.isAppealExpired).length;
+
+                  return SizedBox(
+                    width: double.infinity,
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      runSpacing: 16,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Forfeited Packages', style: Theme.of(context).textTheme.headlineLarge),
+                            const Gap(4),
+                            Text(
+                              'Manage forfeited packages and their 30-day appeal periods',
+                              style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
+                            ),
+                          ],
+                        ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.2),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _StatChip(label: 'Total', value: totalCount.toString(), color: context.colors.accentLightBlue).animate().fadeIn(delay: 100.ms).scale(),
+                            const Gap(8),
+                            _StatChip(label: 'In Appeal', value: appealingCount.toString(), color: context.colors.successGreen).animate().fadeIn(delay: 200.ms).scale(),
+                            const Gap(8),
+                            _StatChip(label: 'Expired', value: expiredCount.toString(), color: context.colors.dangerRed).animate().fadeIn(delay: 300.ms).scale(),
+                            const Gap(16),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.gavel_rounded, size: 16),
+                              label: const Text('Place Tender'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: expiredCount > 0 ? context.colors.primaryGold : Colors.grey,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                              onPressed: expiredCount > 0
+                                  ? () => showDialog(
+                                        context: context,
+                                        builder: (ctx) => TenderPlacementDialog(
+                                          ref: ref,
+                                          onTenderCreated: () => ref.invalidate(forfeitedPackagesProvider),
+                                        ),
+                                      )
+                                  : null,
+                            ).animate().fadeIn(delay: 400.ms).scale(),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                loading: () => const SizedBox(),
+                error: (_, __) => const SizedBox(),
+              ),
+              const Gap(24),
+
+              // ── Search Bar ──────────────────────────────────────
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.colors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
+                ),
+                child: TextField(
+                  style: TextStyle(color: context.colors.textPrimary),
+                  decoration: InputDecoration(
+                    hintText: 'Search by SR Number or Consignee...',
+                    prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
+                    isDense: true,
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+                ),
+              ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+
+              const Gap(16),
+
+              // ── Data Table ──────────────────────────────────────
+              Expanded(
+                child: forfeitedAsync.when(
+                  loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
+                  error: (error, stackTrace) => ErrorView(
+                    error: error.toString(),
+                    onRetry: () => ref.refresh(forfeitedPackagesProvider),
+                  ),
+                  data: (packages) {
+                    final filtered = packages.where((pkg) {
+                      final srMatch = pkg.srNumber.toLowerCase().contains(_searchQuery);
+                      final consigneeMatch = pkg.consigneeName.toLowerCase().contains(_searchQuery);
+                      return srMatch || consigneeMatch;
+                    }).toList();
+
+                    if (filtered.isEmpty) {
+                      return const EmptyTableState(message: 'No forfeited packages found').animate().fadeIn();
+                    }
+
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: context.colors.cardDark,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: context.colors.borderColor),
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: DataTable2(
+                          columnSpacing: 10,
+                          horizontalMargin: 16,
+                          fixedTopRows: 1,
+                          columns: const [
+                            DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Forfeited Date'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Days Remaining'), size: ColumnSize.M),
+                            DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
+                          ],
+                          rows: filtered.map((pkg) {
+                            final isExpired = pkg.isAppealExpired;
+                            final daysRemaining = pkg.appealDeadline.difference(DateTime.now()).inDays;
+                            
+                            return DataRow(
+                              color: WidgetStateProperty.resolveWith<Color?>((states) {
+                                if (isExpired) return context.colors.dangerRed.withOpacity(0.04);
+                                return null;
+                              }),
+                              cells: [
+                                DataCell(Text(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
+                                DataCell(Text(pkg.consigneeName)),
+                                DataCell(Text(DateFormat('yyyy-MM-dd').format(pkg.forfeitedAt))),
+                                DataCell(Text(
+                                  DateFormat('yyyy-MM-dd').format(pkg.appealDeadline),
+                                  style: TextStyle(
+                                    color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
+                                    fontWeight: isExpired ? FontWeight.bold : FontWeight.normal
+                                  ),
+                                )),
+                                DataCell(Text(
+                                  isExpired ? '${-daysRemaining} overdue' : '$daysRemaining',
+                                  style: TextStyle(
+                                    color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
+                                    fontWeight: FontWeight.bold
+                                  ),
+                                )),
+                                DataCell(Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
+                                    ),
+                                    child: Text(
+                                      isExpired ? 'Appeal Expired' : 'Appealing',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                )),
+                              ],
+                            );
+                          }).toList(),
+                        ),
+                      ),
+                    ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn();
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
