@@ -20,9 +20,21 @@ class StatusChip extends StatelessWidget {
         break;
       case 'held':
       case 'detained':
-      case 'forfeited':
         color = context.colors.heldOrange;
         label = 'HELD';
+        break;
+      case 'Detain':
+        color = context.colors.heldOrange;
+        label = 'DETAIN';
+        break;
+      case 'Forfeit':
+      case 'forfeited':
+        color = context.colors.dangerRed;
+        label = 'FORFEIT';
+        break;
+      case 'Abandoned':
+        color = const Color(0xFF9E9E9E);
+        label = 'ABANDONED';
         break;
       case 'inspecting':
         color = context.colors.warningAmber;
@@ -34,7 +46,7 @@ class StatusChip extends StatelessWidget {
         break;
       default:
         color = context.colors.textMuted;
-        label = 'PENDING';
+        label = status.isNotEmpty ? status.toUpperCase() : 'PENDING';
     }
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

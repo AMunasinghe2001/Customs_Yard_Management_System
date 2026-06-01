@@ -9,6 +9,7 @@ class PackageModel {
   final double weightKg;
   final int totalItemCount;
   final String? description;
+  final String? containerNumber;
   final String consigneeName;
   final String? consigneeNic;
   final String? consigneeAddress;
@@ -39,6 +40,7 @@ class PackageModel {
     this.weightKg = 0,
     this.totalItemCount = 1,
     this.description,
+    this.containerNumber,
     required this.consigneeName,
     this.consigneeNic,
     this.consigneeAddress,
@@ -82,6 +84,7 @@ class PackageModel {
       weightKg: (json['weight_kg'] as num?)?.toDouble() ?? 0,
       totalItemCount: json['total_item_count'] as int? ?? 1,
       description: json['description'] as String?,
+      containerNumber: json['container_number'] as String?,
       consigneeName: json['consignee_name'] as String,
       consigneeNic: json['consignee_nic'] as String?,
       consigneeAddress: json['consignee_address'] as String?,
@@ -89,14 +92,18 @@ class PackageModel {
       declarantName: json['declarant_name'] as String?,
       cusdecNo: json['cusdec_no'] as String?,
       cusdecDate: json['cusdec_date'] as String?,
-      entryDate: json['entry_date'] != null 
-          ? DateTime.parse(json['entry_date'] as String) 
+      entryDate: json['entry_date'] != null
+          ? DateTime.parse(json['entry_date'] as String)
           : null,
       reason: json['reason'] as String?,
       status: json['status'] as String? ?? 'pending',
       inspectedBy: json['inspected_by'] as String?,
-      inspectedByName: json['profiles'] != null ? json['profiles']['full_name'] as String? : null,
-      inspectedByBadge: json['profiles'] != null ? json['profiles']['badge_number'] as String? : null,
+      inspectedByName: json['profiles'] != null
+          ? json['profiles']['full_name'] as String?
+          : null,
+      inspectedByBadge: json['profiles'] != null
+          ? json['profiles']['badge_number'] as String?
+          : null,
       inspectedAt: json['inspected_at'] != null
           ? DateTime.parse(json['inspected_at'] as String)
           : null,
@@ -111,7 +118,8 @@ class PackageModel {
               .toList() ??
           [],
       warehouseEntries: (json['warehouse_entries'] as List<dynamic>?)
-              ?.map((e) => WarehouseEntryModel.fromJson(e as Map<String, dynamic>))
+              ?.map((e) =>
+                  WarehouseEntryModel.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
     );
@@ -126,6 +134,7 @@ class PackageModel {
       'weight_kg': weightKg,
       'total_item_count': totalItemCount,
       'description': description,
+      'container_number': containerNumber,
       'consignee_name': consigneeName,
       'consignee_nic': consigneeNic,
       'consignee_address': consigneeAddress,
@@ -150,6 +159,7 @@ class PackageModel {
     double? weightKg,
     int? totalItemCount,
     String? description,
+    String? containerNumber,
     String? consigneeName,
     String? consigneeNic,
     String? consigneeAddress,
@@ -178,6 +188,7 @@ class PackageModel {
       weightKg: weightKg ?? this.weightKg,
       totalItemCount: totalItemCount ?? this.totalItemCount,
       description: description ?? this.description,
+      containerNumber: containerNumber ?? this.containerNumber,
       consigneeName: consigneeName ?? this.consigneeName,
       consigneeNic: consigneeNic ?? this.consigneeNic,
       consigneeAddress: consigneeAddress ?? this.consigneeAddress,
@@ -206,13 +217,18 @@ class PackageModel {
   bool get isPending => status == 'pending';
   bool get isConfiscated => status == 'confiscated';
 
-  bool get isReturned => warehouseEntries.isNotEmpty && warehouseEntries.any((e) => e.isReturned);
+  bool get isReturned =>
+      warehouseEntries.isNotEmpty && warehouseEntries.any((e) => e.isReturned);
 
   DateTime? get returnedAt {
     if (warehouseEntries.isEmpty) return null;
-    final returnedEntries = warehouseEntries.where((e) => e.isReturned && e.returnedAt != null).toList();
+    final returnedEntries = warehouseEntries
+        .where((e) => e.isReturned && e.returnedAt != null)
+        .toList();
     if (returnedEntries.isEmpty) return null;
-    return returnedEntries.map((e) => e.returnedAt!).reduce((a, b) => a.isAfter(b) ? a : b);
+    return returnedEntries
+        .map((e) => e.returnedAt!)
+        .reduce((a, b) => a.isAfter(b) ? a : b);
   }
 }
 
@@ -220,6 +236,7 @@ class PackageItem {
   final String id;
   final String packageId;
   final String itemName;
+  final String? goodsDescription;
   final int quantity;
   final String unitOfMeasure;
   final String? unitOther;
@@ -234,6 +251,7 @@ class PackageItem {
     required this.id,
     required this.packageId,
     required this.itemName,
+    this.goodsDescription,
     required this.quantity,
     this.unitOfMeasure = 'Pieces',
     this.unitOther,
@@ -250,6 +268,7 @@ class PackageItem {
       id: json['id'] as String,
       packageId: json['package_id'] as String,
       itemName: json['item_name'] as String,
+      goodsDescription: json['goods_description'] as String?,
       quantity: json['quantity'] as int,
       unitOfMeasure: json['unit_of_measure'] as String? ?? 'Pieces',
       unitOther: json['unit_other'] as String?,
@@ -267,6 +286,7 @@ class PackageItem {
       if (id.isNotEmpty) 'id': id,
       'package_id': pkgId,
       'item_name': itemName,
+      'goods_description': goodsDescription,
       'quantity': quantity,
       'unit_of_measure': unitOfMeasure,
       'unit_other': unitOther,
@@ -283,6 +303,7 @@ class PackageItem {
     String? id,
     String? packageId,
     String? itemName,
+    String? goodsDescription,
     int? quantity,
     String? unitOfMeasure,
     String? unitOther,
@@ -297,6 +318,7 @@ class PackageItem {
       id: id ?? this.id,
       packageId: packageId ?? this.packageId,
       itemName: itemName ?? this.itemName,
+      goodsDescription: goodsDescription ?? this.goodsDescription,
       quantity: quantity ?? this.quantity,
       unitOfMeasure: unitOfMeasure ?? this.unitOfMeasure,
       unitOther: unitOther ?? this.unitOther,
@@ -380,23 +402,24 @@ class WarehouseEntryModel {
       holdReason: json['hold_reason'] as String,
       itemCount: json['item_count'] as int,
       admittedBy: json['admitted_by'] as String?,
-      admittedByName:
-          (json['admitted_profile'] as Map<String, dynamic>?)?['full_name'] as String?,
-      admittedByBadge:
-          (json['admitted_profile'] as Map<String, dynamic>?)?['badge_number'] as String?,
+      admittedByName: (json['admitted_profile']
+          as Map<String, dynamic>?)?['full_name'] as String?,
+      admittedByBadge: (json['admitted_profile']
+          as Map<String, dynamic>?)?['badge_number'] as String?,
       admittedAt: DateTime.parse(json['admitted_at'] as String),
       isReturned: json['is_returned'] as bool? ?? false,
       returnedAt: json['returned_at'] != null
           ? DateTime.parse(json['returned_at'] as String)
           : null,
       returnedBy: json['returned_by'] as String?,
-      returnedByName:
-          (json['returned_profile'] as Map<String, dynamic>?)?['full_name'] as String?,
-      returnedByBadge:
-          (json['returned_profile'] as Map<String, dynamic>?)?['badge_number'] as String?,
+      returnedByName: (json['returned_profile']
+          as Map<String, dynamic>?)?['full_name'] as String?,
+      returnedByBadge: (json['returned_profile']
+          as Map<String, dynamic>?)?['badge_number'] as String?,
       returnNotes: json['return_notes'] as String?,
       dailyRate: (json['daily_rate'] as num?)?.toDouble() ?? 0,
-      accumulatedCharge: (json['accumulated_storage_charge'] as num?)?.toDouble() ?? 0,
+      accumulatedCharge:
+          (json['accumulated_storage_charge'] as num?)?.toDouble() ?? 0,
       srNumber: package?['sr_number'] as String?,
       consigneeName: package?['consignee_name'] as String?,
       packageStatus: package?['status'] as String?,
@@ -409,62 +432,65 @@ class WarehouseEntryModel {
     final start = DateTime(admittedAt.year, admittedAt.month, admittedAt.day);
     final endDateTime = returnedAt ?? DateTime.now();
     final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
-    
+
     // Total days spent in the yard
     return end.difference(start).inDays + 1;
   }
 
   /// Calculates charge considering historical rate changes across all items in the package (or specific item if tied)
-  double calculatePackageCharge(List<PackageItem> items, Map<DateTime, double> historicalRates) {
+  double calculatePackageCharge(
+      List<PackageItem> items, Map<DateTime, double> historicalRates) {
     // If the whole package is confiscated, no charge
     if (isPackageConfiscated) return 0;
-    
-    // If this specific entry references an item, check if that item is confiscated
+
+    // If this specific entry references an item, check if that item is confiscated or forfeited
     if (packageItemId != null) {
       final item = items.where((i) => i.id == packageItemId).firstOrNull;
-      if (item?.status == 'confiscated') return 0;
+      if (item?.status == 'confiscated' || item?.status == 'Forfeit') return 0;
     }
-    
+
     // We should charge based on this specific entry's itemCount!
     int totalUnits = itemCount;
-    
+
     // Auto-repair logic: If itemCount is 1 but it's an old bugged entry that should be larger
     if (totalUnits == 1 && packageItemId != null && !isReturned) {
       final item = items.where((i) => i.id == packageItemId).firstOrNull;
       if (item != null && item.quantity > 1) {
-          // We can't perfectly know returned sum here without more context, but usually it's fine
-          // to fallback to item.quantity for the old un-split ones if we just need an approximation.
-          totalUnits = item.quantity; 
+        // We can't perfectly know returned sum here without more context, but usually it's fine
+        // to fallback to item.quantity for the old un-split ones if we just need an approximation.
+        totalUnits = item.quantity;
       }
     }
 
     final start = DateTime(admittedAt.year, admittedAt.month, admittedAt.day);
     final endDateTime = returnedAt ?? DateTime.now();
     final end = DateTime(endDateTime.year, endDateTime.month, endDateTime.day);
-    
+
     double totalCharge = 0;
-    
+
     // Loop through each day from entry to exit/today
     for (int i = 0; i <= end.difference(start).inDays; i++) {
       final currentDay = start.add(Duration(days: i));
-      final dayAtMidnight = DateTime(currentDay.year, currentDay.month, currentDay.day);
-      
+      final dayAtMidnight =
+          DateTime(currentDay.year, currentDay.month, currentDay.day);
+
       // Find the active rate for this specific day
       // Rates are matched based on the latest effective_from that is NOT AFTER current day
       double activeRate = 50; // default fallback
-      
+
       // Rates are expected to be sorted by date ascending from the provider
       historicalRates.forEach((effectiveFrom, rate) {
-        final effectiveAtMidnight = DateTime(effectiveFrom.year, effectiveFrom.month, effectiveFrom.day);
+        final effectiveAtMidnight = DateTime(
+            effectiveFrom.year, effectiveFrom.month, effectiveFrom.day);
         if (!dayAtMidnight.isBefore(effectiveAtMidnight)) {
           activeRate = rate;
         }
       });
-      
+
       // Daily charge = total packages in the SR * that specific day's rate
       totalCharge += (totalUnits * activeRate);
     }
-    
+
     return totalCharge;
   }
 }
@@ -539,7 +565,9 @@ class ProfileModel {
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
       isOnline: json['is_online'] as bool? ?? false,
-      lastSeenAt: json['last_seen_at'] != null ? DateTime.tryParse(json['last_seen_at'].toString()) : null,
+      lastSeenAt: json['last_seen_at'] != null
+          ? DateTime.tryParse(json['last_seen_at'].toString())
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
@@ -595,7 +623,8 @@ class AuditLogModel {
       entityId: json['entity_id'] as String,
       details: json['details'] as Map<String, dynamic>?,
       createdAt: DateTime.parse(json['created_at'] as String),
-      userFullName: (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      userFullName:
+          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
   }
 }
@@ -678,7 +707,8 @@ class TenderModel {
       tenderDate: DateTime.parse(json['tender_date'] as String),
       forfeitedPackageIds: ids,
       createdAt: DateTime.parse(json['created_at'] as String),
-      createdByName: (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      createdByName:
+          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
   }
 }
@@ -715,11 +745,11 @@ class TenderDisposalModel {
       receiptNumber: json['receipt_number'] as String?,
       otherDetails: json['other_details'] as String?,
       disposedAt: DateTime.parse(json['disposed_at'] as String),
-      disposedByName: (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      disposedByName:
+          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
   }
 }
-
 
 class PackageCategory {
   final String id;
@@ -746,7 +776,8 @@ class PackageCategory {
       name: json['name'] as String,
       description: json['description'] as String?,
       targetWarehouseId: json['target_warehouse_id'] as String?,
-      targetWarehouseName: (json['warehouses'] as Map<String, dynamic>?)?['name'] as String?,
+      targetWarehouseName:
+          (json['warehouses'] as Map<String, dynamic>?)?['name'] as String?,
       targetZone: json['target_zone'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
@@ -761,6 +792,7 @@ class PackageCategory {
     };
   }
 }
+
 class HoldReasonModel {
   final String id;
   final String reasonText;

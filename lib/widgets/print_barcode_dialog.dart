@@ -21,32 +21,29 @@ class PrintBarcodeDialog extends StatefulWidget {
 
 class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
   bool _isPrinting = false;
+  bool _isSaving = false;
   String _printMode = 'detailed'; // 'detailed' or 'item'
-  bool _showPreview = true;
 
   Future<void> _handlePrint() async {
     setState(() => _isPrinting = true);
     try {
-          final doc = _printMode == 'detailed'
-            ? await BarcodeService.createBarcodePDF(widget.packages)
-            : await BarcodeService.createItemBarcodePDF(widget.packages);
+      final doc = _printMode == 'detailed'
+          ? await BarcodeService.createBarcodePDF(widget.packages)
+          : await BarcodeService.createItemBarcodePDF(widget.packages);
 
-      await BarcodeService.printPDF(doc, 'qr_code_${DateTime.now().millisecondsSinceEpoch}.pdf');
+      await Printing.layoutPdf(
+        onLayout: (_) async => doc.save(),
+        name: 'qr_code_labels.pdf',
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('✅ Print job sent to printer'),
-            backgroundColor: Colors.green,
-          ),
-        );
         widget.onPrinted?.call();
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Print error: $e'),
             backgroundColor: Colors.red,
           ),
         );
@@ -57,17 +54,17 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
   }
 
   Future<void> _handleSave() async {
-    setState(() => _isPrinting = true);
+    setState(() => _isSaving = true);
     try {
-          final doc = _printMode == 'detailed'
-            ? await BarcodeService.createBarcodePDF(widget.packages)
-            : await BarcodeService.createItemBarcodePDF(widget.packages);
+      final doc = _printMode == 'detailed'
+          ? await BarcodeService.createBarcodePDF(widget.packages)
+          : await BarcodeService.createItemBarcodePDF(widget.packages);
 
       final saved = await BarcodeService.savePDFToFile(
         doc,
-        'qr_code_${DateTime.now().millisecondsSinceEpoch}.pdf',
+        'qr_code_labels.pdf',
       );
-      
+
       if (saved && mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -80,13 +77,13 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Error: $e'),
+            content: Text('Save error: $e'),
             backgroundColor: Colors.red,
           ),
         );
       }
     } finally {
-      if (mounted) setState(() => _isPrinting = false);
+      if (mounted) setState(() => _isSaving = false);
     }
   }
 
@@ -300,15 +297,25 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
                   TextButton(
-                    onPressed: _isPrinting ? null : () => Navigator.of(context).pop(),
+                    onPressed: (_isPrinting || _isSaving)
+                        ? null
+                        : () => Navigator.of(context).pop(),
                     child: Text('Cancel',
                         style: TextStyle(color: context.colors.textMuted)),
                   ),
                   Gap(12),
                   ElevatedButton.icon(
-                    onPressed: _isPrinting ? null : _handleSave,
-                    icon: const Icon(Icons.save),
-                    label: const Text('Save PDF'),
+                    onPressed: (_isSaving || _isPrinting) ? null : _handleSave,
+                    icon: _isSaving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Icon(Icons.save),
+                    label: Text(_isSaving ? 'Saving...' : 'Save PDF'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: context.colors.accentLightBlue.withOpacity(0.2),
                       foregroundColor: context.colors.accentLightBlue,
@@ -316,9 +323,9 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
                   ),
                   Gap(12),
                   ElevatedButton.icon(
-                    onPressed: _isPrinting ? null : _handlePrint,
+                    onPressed: (_isPrinting || _isSaving) ? null : _handlePrint,
                     icon: _isPrinting
-                        ? SizedBox(
+                        ? const SizedBox(
                             width: 16,
                             height: 16,
                             child: CircularProgressIndicator(
@@ -328,7 +335,7 @@ class _PrintBarcodeDialogState extends State<PrintBarcodeDialog> {
                             ),
                           )
                         : const Icon(Icons.print),
-                    label: Text(_isPrinting ? 'Printing...' : 'Print Now'),
+                    label: Text(_isPrinting ? 'Opening...' : 'Print Now'),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: context.colors.primaryGold,
                       foregroundColor: Colors.black,

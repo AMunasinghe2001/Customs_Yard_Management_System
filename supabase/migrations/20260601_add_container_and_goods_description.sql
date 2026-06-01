@@ -1,0 +1,7 @@
+ALTER TABLE packages
+  ADD COLUMN IF NOT EXISTS container_number TEXT;
+
+ALTER TABLE package_items
+  ADD COLUMN IF NOT EXISTS goods_description TEXT,
+  ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'Detain',
+  ADD COLUMN IF NOT EXISTS reasons TEXT;

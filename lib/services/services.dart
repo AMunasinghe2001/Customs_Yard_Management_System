@@ -2,6 +2,12 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase_client.dart';
 import '../models/models.dart';
 
+bool _isForfeitStatus(String? status) {
+  if (status == null) return false;
+  final normalized = status.trim().toLowerCase();
+  return normalized == 'forfiet' || normalized == 'forfeit' || normalized == 'forfeited';
+}
+
 // ── Auth Service ──────────────────────────────────────────────
 
 class AuthService {
@@ -259,9 +265,8 @@ class PackageService {
     final created = PackageModel.fromJson(refreshedData ?? {});
 
     // Sync to Forfeited Packages if applicable
-    final hasForfeit = items.any((i) =>
-        i.status.toLowerCase() == 'forfiet' ||
-        i.status.toLowerCase() == 'forfeited');
+    final hasForfeit = _isForfeitStatus(pkg.status) ||
+      items.any((i) => _isForfeitStatus(i.status));
     if (hasForfeit) {
       final existingForfeited = await supabase
           .from('forfeited_packages')
@@ -342,9 +347,8 @@ class PackageService {
       final result = PackageModel.fromJson(refreshed);
 
       // Sync to Forfeited Packages if applicable
-      final hasForfeit = items.any((i) =>
-          i.status.toLowerCase() == 'forfiet' ||
-          i.status.toLowerCase() == 'forfeited');
+        final hasForfeit = _isForfeitStatus(pkg.status) ||
+          items.any((i) => _isForfeitStatus(i.status));
       if (hasForfeit) {
         final existingForfeited = await supabase
             .from('forfeited_packages')
@@ -385,7 +389,7 @@ class PackageService {
     await supabase.from('packages').update(data).eq('id', id);
 
     // Sync to Forfeited Packages if applicable
-    final isForfeited = status.toLowerCase() == 'forfiet' || status.toLowerCase() == 'forfeited';
+    final isForfeited = _isForfeitStatus(status);
     
     if (isForfeited) {
       final pkgData = await supabase

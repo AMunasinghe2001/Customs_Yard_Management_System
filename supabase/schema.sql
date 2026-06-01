@@ -50,6 +50,7 @@ CREATE TABLE packages (
   weight_kg NUMERIC(8,3) DEFAULT 0,
   total_item_count INTEGER DEFAULT 1,
   description TEXT,
+  container_number TEXT,
   consignee_name TEXT NOT NULL,
   consignee_nic TEXT,
   consignee_address TEXT,
@@ -75,12 +76,15 @@ CREATE TABLE package_items (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   package_id UUID NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
   item_name TEXT NOT NULL,
+  goods_description TEXT,
   quantity INTEGER NOT NULL DEFAULT 1,
   unit_of_measure TEXT NOT NULL DEFAULT 'Pieces',
   unit_other TEXT,
   unit_value NUMERIC(10,2) DEFAULT 0,
   category TEXT,
   is_prohibited BOOLEAN DEFAULT false,
+  status TEXT NOT NULL DEFAULT 'Detain',
+  reasons TEXT,
   notes TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

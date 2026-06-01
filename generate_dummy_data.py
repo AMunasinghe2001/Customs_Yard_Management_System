@@ -15,16 +15,35 @@ headers = {
 }
 
 def main():
-    # 1. Fetch some packages
-    print("Fetching packages...")
-    res = requests.get(f"{URL}/rest/v1/packages?select=id,sr_number,consignee_name&limit=30", headers=headers)
-    if res.status_code != 200:
-        print(f"Error fetching packages: {res.text}")
-        return
+    # 0. Create dummy packages if none exist
+    print("Checking packages...")
+    res = requests.get(f"{URL}/rest/v1/packages?select=id", headers=headers)
     packages = res.json()
+    
     if not packages:
-        print("No packages found to forfeit.")
-        return
+        print("No packages found. Creating 30 dummy packages...")
+        pkg_data = []
+        for i in range(30):
+            pkg_data.append({
+                "sr_number": f"SR/2026/{1000 + i}",
+                "case_number": f"CASE/{2026}/{500 + i}",
+                "consignee_name": f"Consignee {i+1}",
+                "consignee_nic": f"{random.randint(100000000, 999999999)}V",
+                "origin_country": random.choice(["China", "India", "Dubai", "Singapore", "Japan"]),
+                "status": "forfeited" if i < 20 else "held",
+                "entry_date": (datetime.now() - timedelta(days=random.randint(60, 100))).isoformat()
+            })
+        res = requests.post(f"{URL}/rest/v1/packages", headers=headers, json=pkg_data)
+        if res.status_code not in [200, 201]:
+            print(f"Error creating packages: {res.text}")
+            return
+        packages = res.json()
+        print(f"Created {len(packages)} packages.")
+
+    # 1. Re-fetch packages to get IDs
+    res = requests.get(f"{URL}/rest/v1/packages?select=id,sr_number,consignee_name&limit=30", headers=headers)
+    packages = res.json()
+
 
     # 2. Create Forfeited Packages
     print(f"Creating forfeited packages using {len(packages)} packages...")

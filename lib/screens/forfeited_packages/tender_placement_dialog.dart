@@ -27,6 +27,12 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
   DateTime? _selectedDate;
   bool _isLoading = false;
 
+  bool _isForfeitStatus(String? status) {
+    if (status == null) return false;
+    final normalized = status.trim().toLowerCase();
+    return normalized == 'forfiet' || normalized == 'forfeit' || normalized == 'forfeited';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -334,7 +340,7 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                                       DataColumn(label: Text('Deadline', style: TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold))),
                                     ],
                                     rows: packages.expand((pkg) {
-                                      final forfeitedItems = pkg.packageDetails?.items.where((i) => i.status.toLowerCase() == 'forfiet' || i.status.toLowerCase() == 'forfeited').toList() ?? [];
+                                      final forfeitedItems = pkg.packageDetails?.items.where((i) => _isForfeitStatus(i.status)).toList() ?? [];
                                       final itemsToShow = forfeitedItems.isEmpty ? [null] : forfeitedItems;
                                       
                                       return itemsToShow.map((item) {

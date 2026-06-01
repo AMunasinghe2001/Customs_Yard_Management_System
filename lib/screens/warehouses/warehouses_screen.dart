@@ -142,7 +142,20 @@ class _WarehouseTab extends ConsumerWidget {
         final filteredList = list.where((e) {
           if (e.isReturned) return false;
           if (filter != 'all') {
-            if (e.packageStatus != filter) return false;
+            if (filter == 'confiscated') {
+              if (!e.isPackageConfiscated) return false;
+            } else {
+              // Filter by item-level status (Detain / Forfeit / Abandoned / etc.)
+              final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
+              if (pkg != null) {
+                final item = e.packageItemId != null
+                    ? pkg.items.where((i) => i.id == e.packageItemId).firstOrNull
+                    : null;
+                final itemStatus = item?.status ?? '';
+                if (itemStatus != filter) return false;
+              }
+              // If pkg not cached yet, include entry (will re-filter on next build)
+            }
           }
           if (reasonFilter != 'all' && e.holdReason != reasonFilter) return false;
           if (dateRange != null) {
@@ -203,8 +216,8 @@ class _WarehouseTab extends ConsumerWidget {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        ...['all', 'pending', 'held', 'cleared', 'confiscated'].map((s) => FilterChip(
-                          label: Text(s.toUpperCase()),
+                        ...['all', 'Detain', 'Forfeit', 'Abandoned', 'confiscated'].map((s) => FilterChip(
+                          label: Text(s == 'all' ? 'ALL' : s.toUpperCase()),
                           selected: filter == s,
                           onSelected: (_) => ref.read(warehouseStatusFilterProvider(warehouse.id).notifier).state = s,
                           selectedColor: context.colors.primaryGold.withOpacity(0.2),
@@ -325,7 +338,7 @@ class _WarehouseTab extends ConsumerWidget {
                                 status = item.status;
                               }
                             }
-                            final isItemConfiscated = status == 'confiscated';
+                            final isItemConfiscated = status == 'confiscated' || status == 'Forfeit';
                             
                             final charge = pkg == null ? 0.0 : e.calculatePackageCharge(pkg.items, storageRateHistory);
                             final isFree = charge <= 0;
@@ -542,7 +555,8 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
               if (e.packageItemId != null) {
                 final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
                 final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                return item?.status != 'confiscated';
+                final s = item?.status;
+                return s != 'confiscated' && s != 'Forfeit';
               }
               return true;
             }).length;
@@ -552,7 +566,8 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
               if (e.packageItemId != null) {
                 final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
                 final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                return item?.status == 'confiscated';
+                final s = item?.status;
+                return s == 'confiscated' || s == 'Forfeit';
               }
               return false;
             }).length;

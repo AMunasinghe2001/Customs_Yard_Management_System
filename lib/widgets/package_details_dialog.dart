@@ -1,5 +1,78 @@
 import 'package:flutter/material.dart' as material;
-import 'package:flutter/material.dart' show Wrap, LinearProgressIndicator, RoundedRectangleBorder, Colors, Icons, Theme, FontWeight, BorderRadius, Radius, BoxConstraints, BoxShadow, Offset, Border, BorderSide, IconButton, ElevatedButton, CircularProgressIndicator, ScaffoldMessenger, SnackBar, showDatePicker, showDialog, BuildContext, Widget, Row, Column, Expanded, Icon, Text, Padding, EdgeInsets, Center, SingleChildScrollView, Form, GlobalKey, FormState, TextFormField, InputDecoration, DropdownButtonFormField, DropdownMenuItem, SizedBox, Brightness, Color, IconData, Dialog, Tween, TweenAnimationBuilder, Transform, Opacity, Curves, MainAxisSize, CrossAxisAlignment, BoxDecoration, StatelessWidget, LinearGradient, Flexible, Navigator, MainAxisAlignment, TextButton, BoxShape, FontStyle, TextStyle, Container, OutlinedButton, TextEditingController, MediaQuery, TextInputType, VoidCallback, Spacer, TextOverflow, StatefulWidget, StatefulBuilder, ConstrainedBox;
+import 'package:flutter/material.dart'
+    show
+        Wrap,
+        LinearProgressIndicator,
+        RoundedRectangleBorder,
+        Colors,
+        Icons,
+        Theme,
+        FontWeight,
+        BorderRadius,
+        Radius,
+        BoxConstraints,
+        BoxShadow,
+        Offset,
+        Border,
+        BorderSide,
+        IconButton,
+        ElevatedButton,
+        CircularProgressIndicator,
+        ScaffoldMessenger,
+        SnackBar,
+        showDatePicker,
+        showDialog,
+        BuildContext,
+        Widget,
+        Row,
+        Column,
+        Expanded,
+        Icon,
+        Text,
+        Padding,
+        EdgeInsets,
+        Center,
+        SingleChildScrollView,
+        Form,
+        GlobalKey,
+        FormState,
+        TextFormField,
+        InputDecoration,
+        DropdownButtonFormField,
+        DropdownMenuItem,
+        SizedBox,
+        Brightness,
+        Color,
+        IconData,
+        Dialog,
+        Tween,
+        TweenAnimationBuilder,
+        Transform,
+        Opacity,
+        Curves,
+        MainAxisSize,
+        CrossAxisAlignment,
+        BoxDecoration,
+        StatelessWidget,
+        LinearGradient,
+        Flexible,
+        Navigator,
+        MainAxisAlignment,
+        TextButton,
+        BoxShape,
+        FontStyle,
+        TextStyle,
+        Container,
+        OutlinedButton,
+        TextEditingController,
+        MediaQuery,
+        TextInputType,
+        VoidCallback,
+        Spacer,
+        TextOverflow,
+        StatefulWidget,
+        StatefulBuilder,
+        ConstrainedBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
@@ -29,7 +102,8 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<PackageDetailsDialog> createState() => _PackageDetailsDialogState();
+  ConsumerState<PackageDetailsDialog> createState() =>
+      _PackageDetailsDialogState();
 }
 
 class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
@@ -47,17 +121,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
   Future<void> _lookupCreator() async {
     setState(() => _isLoadingCreator = true);
     try {
-      final creator = await AuditLogService().getPackageCreator(widget.package.id);
+      final creator =
+          await AuditLogService().getPackageCreator(widget.package.id);
       if (mounted) setState(() => _creatorFallback = creator);
     } catch (_) {}
     if (mounted) setState(() => _isLoadingCreator = false);
   }
 
-  Future<bool> _showReleaseConfirmation(BuildContext context, WarehouseEntryModel entry) async {
+  Future<bool> _showReleaseConfirmation(
+      BuildContext context, WarehouseEntryModel entry) async {
     final notesCtrl = TextEditingController();
     final receiptCtrl = TextEditingController();
-    final dateCtrl = TextEditingController(text: DateFormat('yyyy-MM-dd').format(DateTime.now()));
-    
+    final dateCtrl = TextEditingController(
+        text: DateFormat('yyyy-MM-dd').format(DateTime.now()));
+
     // Find the specific item this entry refers to
     final specificItem = widget.package.items.firstWhere(
       (i) => i.id == entry.packageItemId,
@@ -91,7 +168,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         admittedAt: entry.admittedAt,
         dailyRate: entry.dailyRate,
       );
-      return tempEntry.calculatePackageCharge([specificItem], widget.storageRate);
+      return tempEntry
+          .calculatePackageCharge([specificItem], widget.storageRate);
     }
 
     final result = await showDialog<bool>(
@@ -99,156 +177,177 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) => material.AlertDialog(
           title: const Text('Release Package Item'),
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
           content: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 520),
             child: Form(
               key: formKey,
               child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('SR: ${widget.package.srNumber}', style: const material.TextStyle(fontWeight: FontWeight.bold)),
-                Text('Item: ${specificItem.itemName}', style: material.TextStyle(color: context.colors.primaryGold)),
-                Text('Warehouse: ${entry.warehouseName}', style: const material.TextStyle(fontSize: 12)),
-                const Gap(16),
-                material.Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: context.colors.surfaceDark,
-                    borderRadius: BorderRadius.circular(8),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('SR: ${widget.package.srNumber}',
+                      style: const material.TextStyle(
+                          fontWeight: FontWeight.bold)),
+                  Text('Item: ${specificItem.itemName}',
+                      style: material.TextStyle(
+                          color: context.colors.primaryGold)),
+                  Text('Warehouse: ${entry.warehouseName}',
+                      style: const material.TextStyle(fontSize: 12)),
+                  const Gap(16),
+                  material.Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: context.colors.surfaceDark,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Total in Warehouse:'),
+                            Text('$displayCount',
+                                style: const material.TextStyle(
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        const Gap(12),
+                        TextFormField(
+                          controller: qtyCtrl,
+                          decoration: const material.InputDecoration(
+                            labelText: 'Quantity to Release',
+                            isDense: true,
+                          ),
+                          keyboardType: TextInputType.number,
+                          validator: (value) {
+                            if (value == null || value.trim().isEmpty)
+                              return 'Enter quantity';
+                            final val = int.tryParse(value);
+                            if (val == null || val <= 0)
+                              return 'Enter valid quantity';
+                            if (val > displayCount)
+                              return 'Cannot exceed $displayCount packages';
+                            return null;
+                          },
+                          onChanged: (val) {
+                            setDialogState(() {});
+                          },
+                        ),
+                        const Gap(8),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            const Text('Release Charge:'),
+                            Text(
+                                'LKR ${NumberFormat('#,##0.00').format(getCharge(int.tryParse(qtyCtrl.text) ?? 0))}',
+                                style: material.TextStyle(
+                                    color: context.colors.primaryGold,
+                                    fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                  child: Column(
+                  const Gap(16),
+                  Row(
                     children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Total in Warehouse:'),
-                          Text('$displayCount', style: const material.TextStyle(fontWeight: FontWeight.bold)),
-                        ],
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: receiptCtrl,
+                          decoration: const material.InputDecoration(
+                            labelText: 'Receipt No. *',
+                            hintText: 'Enter receipt #',
+                          ),
+                          validator: (value) =>
+                              (value == null || value.trim().isEmpty)
+                                  ? 'Required'
+                                  : null,
+                        ),
                       ),
                       const Gap(12),
-                      TextFormField(
-                        controller: qtyCtrl,
-                        decoration: const material.InputDecoration(
-                          labelText: 'Quantity to Release',
-                          isDense: true,
+                      Expanded(
+                        flex: 2,
+                        child: TextFormField(
+                          controller: dateCtrl,
+                          readOnly: true,
+                          decoration: const material.InputDecoration(
+                            labelText: 'Receipt Date *',
+                            suffixIcon: Icon(Icons.calendar_today, size: 18),
+                          ),
+                          onTap: () async {
+                            final date = await showDatePicker(
+                              context: context,
+                              initialDate: DateTime.now(),
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime(2100),
+                            );
+                            if (date != null) {
+                              dateCtrl.text =
+                                  DateFormat('yyyy-MM-dd').format(date);
+                            }
+                          },
                         ),
-                        keyboardType: TextInputType.number,
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) return 'Enter quantity';
-                          final val = int.tryParse(value);
-                          if (val == null || val <= 0) return 'Enter valid quantity';
-                          if (val > displayCount) return 'Cannot exceed $displayCount packages';
-                          return null;
-                        },
-                        onChanged: (val) {
-                          setDialogState(() {});
-                        },
-                      ),
-                      const Gap(8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text('Release Charge:'),
-                          Text('LKR ${NumberFormat('#,##0.00').format(getCharge(int.tryParse(qtyCtrl.text) ?? 0))}',
-                              style: material.TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.bold)),
-                        ],
                       ),
                     ],
                   ),
-                ),
-                const Gap(16),
-                Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: TextFormField(
-                        controller: receiptCtrl,
-                        decoration: const material.InputDecoration(
-                          labelText: 'Receipt No. *',
-                          hintText: 'Enter receipt #',
-                        ),
-                        validator: (value) => 
-                            (value == null || value.trim().isEmpty) ? 'Required' : null,
-                      ),
+                  const Gap(16),
+                  material.TextField(
+                    controller: notesCtrl,
+                    decoration: const material.InputDecoration(
+                      labelText: 'Release Notes (Optional)',
+                      hintText: 'Enter any additional details',
                     ),
-                    const Gap(12),
-                    Expanded(
-                      flex: 2,
-                      child: TextFormField(
-                        controller: dateCtrl,
-                        readOnly: true,
-                        decoration: const material.InputDecoration(
-                          labelText: 'Receipt Date *',
-                          suffixIcon: Icon(Icons.calendar_today, size: 18),
-                        ),
-                        onTap: () async {
-                          final date = await showDatePicker(
-                            context: context,
-                            initialDate: DateTime.now(),
-                            firstDate: DateTime(2020),
-                            lastDate: DateTime(2100),
-                          );
-                          if (date != null) {
-                            dateCtrl.text = DateFormat('yyyy-MM-dd').format(date);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const Gap(16),
-                material.TextField(
-                  controller: notesCtrl,
-                  decoration: const material.InputDecoration(
-                    labelText: 'Release Notes (Optional)',
-                    hintText: 'Enter any additional details',
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
             ),
           ),
           actions: [
-            material.TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+            material.TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancel')),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: context.colors.successGreen, foregroundColor: Colors.white),
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: context.colors.successGreen,
+                  foregroundColor: Colors.white),
               onPressed: () async {
                 if (!(formKey.currentState?.validate() ?? false)) return;
-                
+
                 final releaseQty = int.tryParse(qtyCtrl.text) ?? 0;
                 if (releaseQty <= 0 || releaseQty > entry.itemCount) {
-                  ScaffoldMessenger.of(ctx).showSnackBar(
-                    const SnackBar(content: Text('Invalid quantity to release'), backgroundColor: Colors.red));
+                  ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(
+                      content: Text('Invalid quantity to release'),
+                      backgroundColor: Colors.red));
                   return;
                 }
 
                 try {
-                  String finalNotes = "Receipt No: ${receiptCtrl.text.trim()} | Date: ${dateCtrl.text}";
+                  String finalNotes =
+                      "Receipt No: ${receiptCtrl.text.trim()} | Date: ${dateCtrl.text}";
                   if (notesCtrl.text.trim().isNotEmpty) {
                     finalNotes += " | Notes: ${notesCtrl.text.trim()}";
                   }
 
                   await ref.read(warehouseServiceProvider).markAsReturned(
-                    entry.id,
-                    returnNotes: finalNotes,
-                    returnQty: releaseQty,
-                  );
-                  ref
-                      .read(packagesRefreshTriggerProvider.notifier)
-                      .trigger();
-                  ref
-                      .read(warehouseRefreshTriggerProvider.notifier)
-                      .trigger();
-                  ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
+                        entry.id,
+                        returnNotes: finalNotes,
+                        returnQty: releaseQty,
+                      );
+                  ref.read(packagesRefreshTriggerProvider.notifier).trigger();
+                  ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+                  ref.invalidate(
+                      liveWarehouseEntriesProvider(entry.warehouseId));
                   ref.invalidate(livePackagesProvider);
                   ref.invalidate(allWarehouseEntriesProvider);
                   if (ctx.mounted) Navigator.pop(ctx, true);
                 } catch (e) {
                   if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      SnackBar(content: Text('Error: $e'), backgroundColor: context.colors.dangerRed));
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                        content: Text('Error: $e'),
+                        backgroundColor: context.colors.dangerRed));
                   }
                 }
               },
@@ -269,12 +368,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
 
     if (p.inspectedByName != null) {
       // Extract salary number if it's in the name format "(Salary No: XXXXX)"
-      final match = RegExp(r'\(Salary No:\s*(\d+)\)').firstMatch(p.inspectedByName!);
+      final match =
+          RegExp(r'\(Salary No:\s*(\d+)\)').firstMatch(p.inspectedByName!);
       if (match != null) {
         salaryNumber = match.group(1);
       }
       // Clean up officer name - remove salary number if included
-      officerDisplay = p.inspectedByName!.replaceAll(RegExp(r'\s*\(Salary No:.*?\)'), '');
+      officerDisplay =
+          p.inspectedByName!.replaceAll(RegExp(r'\s*\(Salary No:.*?\)'), '');
     } else if (p.inspectedBy != null) {
       officerDisplay = 'ID: ${p.inspectedBy}';
     } else if (_isLoadingCreator) {
@@ -284,9 +385,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     }
 
     // Use badge number if available, otherwise use extracted salary number
-    final displayBadgeNumber = (p.inspectedByBadge != null && p.inspectedByBadge!.isNotEmpty) 
-        ? p.inspectedByBadge 
-        : salaryNumber;
+    final displayBadgeNumber =
+        (p.inspectedByBadge != null && p.inspectedByBadge!.isNotEmpty)
+            ? p.inspectedByBadge
+            : salaryNumber;
 
     // Get current user's role to conditionally disable update button
     final currentProfile = ref.watch(currentProfileProvider);
@@ -296,24 +398,30 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
 
     // Filter to find the highlighted entry's specific item if needed
     final highlightedItem = widget.highlightEntry != null
-      ? p.items.firstWhere((i) => i.id == widget.highlightEntry!.packageItemId, orElse: () => p.items.first)
-      : null;
+        ? p.items.firstWhere(
+            (i) => i.id == widget.highlightEntry!.packageItemId,
+            orElse: () => p.items.first)
+        : null;
 
-    final legacyItems = (widget.highlightEntry != null && highlightedItem != null)
-      ? [highlightedItem]
-      : p.items;
-    final legacyEntries = (widget.useLegacySummary && widget.highlightEntry != null)
-      ? [widget.highlightEntry!]
-      : (widget.highlightEntry != null && highlightedItem != null)
-        ? p.warehouseEntries
-          .where((e) => e.packageItemId == highlightedItem.id)
-          .toList()
-        : p.warehouseEntries;
+    final legacyItems =
+        (widget.highlightEntry != null && highlightedItem != null)
+            ? [highlightedItem]
+            : p.items;
+    final legacyEntries =
+        (widget.useLegacySummary && widget.highlightEntry != null)
+            ? [widget.highlightEntry!]
+            : (widget.highlightEntry != null && highlightedItem != null)
+                ? p.warehouseEntries
+                    .where((e) => e.packageItemId == highlightedItem.id)
+                    .toList()
+                : p.warehouseEntries;
 
     int? displayQty;
     if (highlightedItem != null && widget.highlightEntry != null) {
       displayQty = widget.highlightEntry!.itemCount;
-      if (displayQty == 1 && highlightedItem.quantity > 1 && !widget.highlightEntry!.isReturned) {
+      if (displayQty == 1 &&
+          highlightedItem.quantity > 1 &&
+          !widget.highlightEntry!.isReturned) {
         final returnedSum = widget.package.warehouseEntries
             .where((e) => e.packageItemId == highlightedItem.id && e.isReturned)
             .fold(0, (sum, e) => sum + e.itemCount);
@@ -338,21 +446,22 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       }
     }
 
-      final highlightReturnedById = widget.highlightEntry?.returnedBy;
-      final returnedOfficerDisplay =
-        widget.highlightEntry?.returnedByName ??
-          (highlightReturnedById != null &&
-              highlightReturnedById == currentProfile?.id
+    final highlightReturnedById = widget.highlightEntry?.returnedBy;
+    final returnedOfficerDisplay = widget.highlightEntry?.returnedByName ??
+        (highlightReturnedById != null &&
+                highlightReturnedById == currentProfile?.id
             ? currentProfile?.fullName
             : null) ??
-          'Unknown Officer';
-      final returnedOfficerBadge =
-        widget.highlightEntry?.returnedByBadge ?? 
-          (highlightReturnedById != null && highlightReturnedById == currentProfile?.id
+        'Unknown Officer';
+    final returnedOfficerBadge = widget.highlightEntry?.returnedByBadge ??
+        (highlightReturnedById != null &&
+                highlightReturnedById == currentProfile?.id
             ? currentProfile?.badgeNumber
             : null);
-            
-      final isConfiscated = highlightedItem?.status == 'confiscated' || widget.highlightEntry?.isPackageConfiscated == true;
+
+    final isConfiscated = highlightedItem?.status == 'confiscated' ||
+        highlightedItem?.status == 'Forfeit' ||
+        widget.highlightEntry?.isPackageConfiscated == true;
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -386,14 +495,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               material.Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isDark
                         ? [context.colors.surfaceDark, context.colors.cardDark]
-                        : [context.colors.customsBlue, context.colors.customsBlueDark],
+                        : [
+                            context.colors.customsBlue,
+                            context.colors.customsBlueDark
+                          ],
                   ),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(23)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(23)),
                 ),
                 child: Row(
                   children: [
@@ -403,8 +517,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(Icons.inventory_2_rounded, color: context.colors.primaryGold, size: 24),
-                    ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
+                      child: Icon(Icons.inventory_2_rounded,
+                          color: context.colors.primaryGold, size: 24),
+                    )
+                        .animate()
+                        .scale(duration: 400.ms, curve: Curves.easeOutBack),
                     const Gap(16),
                     Expanded(
                       child: Column(
@@ -426,14 +543,18 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
                             ),
-                          ).animate().fadeIn(duration: 400.ms, delay: 150.ms).slideX(begin: -0.1),
+                          )
+                              .animate()
+                              .fadeIn(duration: 400.ms, delay: 150.ms)
+                              .slideX(begin: -0.1),
                         ],
                       ),
                     ),
                     const Gap(12),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.7)),
+                      icon: Icon(Icons.close_rounded,
+                          color: Colors.white.withOpacity(0.7)),
                       splashRadius: 24,
                     ),
                   ],
@@ -465,7 +586,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                   child: _DetailItem(
                                     icon: Icons.calendar_today_rounded,
                                     label: 'Entry Date',
-                                    value: p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : 'N/A',
+                                    value: p.entryDate != null
+                                        ? DateFormat('yyyy-MM-dd')
+                                            .format(p.entryDate!)
+                                        : 'N/A',
                                   ),
                                 ),
                               ],
@@ -493,6 +617,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                               icon: Icons.gavel_rounded,
                               label: 'Case Number',
                               value: p.caseNumber ?? 'N/A',
+                            ),
+                            _DetailItem(
+                              icon: Icons.local_shipping_rounded,
+                              label: 'Container Number',
+                              value: p.containerNumber ?? 'N/A',
                             ),
                             _DetailItem(
                               icon: Icons.description_rounded,
@@ -552,19 +681,23 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         ),
                       ),
 
-                      if (widget.useLegacySummary || widget.useWarehouseSummary) ...[
+                      if (widget.useLegacySummary ||
+                          widget.useWarehouseSummary) ...[
                         _DetailSection(
                           title: 'Item Details',
                           icon: Icons.shopping_bag_rounded,
                           delay: 300,
-                          child: (widget.highlightEntry == null || highlightedItem == null)
-                              ? const _EmptyState(message: 'No released item details')
+                          child: (widget.highlightEntry == null ||
+                                  highlightedItem == null)
+                              ? const _EmptyState(
+                                  message: 'No released item details')
                               : material.Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: context.colors.surfaceDark,
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: context.colors.borderColor),
+                                    border: Border.all(
+                                        color: context.colors.borderColor),
                                   ),
                                   child: Column(
                                     children: [
@@ -579,7 +712,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                             child: _DetailItem(
                                               icon: Icons.view_in_ar_rounded,
                                               label: 'Total Packages',
-                                              value: '${highlightedItem.quantity}',
+                                              value:
+                                                  '${highlightedItem.quantity}',
                                             ),
                                           ),
                                           const Gap(12),
@@ -587,12 +721,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                             child: _DetailItem(
                                               icon: widget.useWarehouseSummary
                                                   ? Icons.inventory_2_rounded
-                                                  : Icons.keyboard_return_rounded,
+                                                  : Icons
+                                                      .keyboard_return_rounded,
                                               label: widget.useWarehouseSummary
                                                   ? 'Remaining (Current)'
                                                   : 'Released (This Receipt)',
-                                              value: '${widget.highlightEntry!.itemCount}',
-                                              valueColor: widget.useWarehouseSummary
+                                              value:
+                                                  '${widget.highlightEntry!.itemCount}',
+                                              valueColor: widget
+                                                      .useWarehouseSummary
                                                   ? context.colors.primaryGold
                                                   : context.colors.successGreen,
                                             ),
@@ -609,30 +746,35 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                             icon: Icons.warehouse_rounded,
                             delay: 350,
                             child: legacyEntries.isEmpty
-                                ? const _EmptyState(message: 'No warehouse details')
+                                ? const _EmptyState(
+                                    message: 'No warehouse details')
                                 : material.Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
                                       color: context.colors.surfaceDark,
                                       borderRadius: BorderRadius.circular(12),
-                                      border: Border.all(color: context.colors.borderColor),
+                                      border: Border.all(
+                                          color: context.colors.borderColor),
                                     ),
                                     child: Column(
                                       children: [
                                         _DetailItem(
                                           icon: Icons.warehouse_rounded,
                                           label: 'Warehouse',
-                                          value: legacyEntries.first.warehouseName,
+                                          value:
+                                              legacyEntries.first.warehouseName,
                                         ),
                                         _DetailItem(
                                           icon: Icons.location_on_rounded,
                                           label: 'Zone',
-                                          value: legacyEntries.first.warehouseCode,
+                                          value:
+                                              legacyEntries.first.warehouseCode,
                                         ),
                                         _DetailItem(
                                           icon: Icons.calendar_month_rounded,
                                           label: 'Date Range',
-                                          value: '${DateFormat('yyyy-MM-dd').format(legacyEntries.first.admittedAt)} to ${legacyEntries.first.returnedAt != null ? DateFormat('yyyy-MM-dd').format(legacyEntries.first.returnedAt!) : '—'}',
+                                          value:
+                                              '${DateFormat('yyyy-MM-dd').format(legacyEntries.first.admittedAt)} to ${legacyEntries.first.returnedAt != null ? DateFormat('yyyy-MM-dd').format(legacyEntries.first.returnedAt!) : '—'}',
                                         ),
                                         _DetailItem(
                                           icon: Icons.receipt_long_rounded,
@@ -658,14 +800,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                               : Column(
                                   children: p.items.map((item) {
                                     final relatedEntries = p.warehouseEntries
-                                        .where((e) => e.packageItemId == item.id)
+                                        .where(
+                                            (e) => e.packageItemId == item.id)
                                         .toList();
                                     final returnedQty = relatedEntries
                                         .where((e) => e.isReturned)
-                                        .fold<int>(0, (sum, e) => sum + e.itemCount);
+                                        .fold<int>(
+                                            0, (sum, e) => sum + e.itemCount);
                                     final heldQty = relatedEntries
                                         .where((e) => !e.isReturned)
-                                        .fold<int>(0, (sum, e) => sum + e.itemCount);
+                                        .fold<int>(
+                                            0, (sum, e) => sum + e.itemCount);
 
                                     final currentWarehouses = relatedEntries
                                         .where((e) => !e.isReturned)
@@ -677,49 +822,100 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                         .toSet()
                                         .toList();
 
-                                    final isItemConfiscated = item.status == 'confiscated';
-                                    
+                                    final isItemConfiscated =
+                                        item.status == 'confiscated';
+
                                     return material.Container(
                                       margin: const EdgeInsets.only(bottom: 12),
                                       padding: const EdgeInsets.all(16),
                                       decoration: BoxDecoration(
-                                        color: isItemConfiscated 
-                                            ? context.colors.cardDark.withOpacity(0.4) 
+                                        color: isItemConfiscated
+                                            ? context.colors.cardDark
+                                                .withOpacity(0.4)
                                             : context.colors.surfaceDark,
                                         borderRadius: BorderRadius.circular(16),
                                         border: Border.all(
-                                            color: isItemConfiscated 
-                                                ? context.colors.dangerRed.withOpacity(0.3) 
+                                            color: isItemConfiscated
+                                                ? context.colors.dangerRed
+                                                    .withOpacity(0.3)
                                                 : context.colors.borderColor),
                                       ),
                                       child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
                                         children: [
                                           Row(
-                                            crossAxisAlignment: CrossAxisAlignment.center,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.center,
                                             children: [
                                               Expanded(
                                                 child: Row(
                                                   children: [
-                                                    Icon(Icons.label_important_rounded, 
-                                                        size: 16, 
-                                                        color: isItemConfiscated ? context.colors.dangerRed : context.colors.primaryGold),
+                                                    Icon(
+                                                        Icons
+                                                            .label_important_rounded,
+                                                        size: 16,
+                                                        color: isItemConfiscated
+                                                            ? context.colors
+                                                                .dangerRed
+                                                            : context.colors
+                                                                .primaryGold),
                                                     const Gap(12),
                                                     Expanded(
                                                       child: Column(
-                                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                                        crossAxisAlignment:
+                                                            CrossAxisAlignment
+                                                                .start,
                                                         children: [
                                                           Text(
                                                             item.itemName,
-                                                            style: material.TextStyle(
-                                                              fontWeight: FontWeight.bold,
+                                                            style: material
+                                                                .TextStyle(
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .bold,
                                                               fontSize: 14,
-                                                              color: isItemConfiscated ? context.colors.textMuted : null,
+                                                              color: isItemConfiscated
+                                                                  ? context
+                                                                      .colors
+                                                                      .textMuted
+                                                                  : null,
                                                             ),
                                                           ),
-                                                          if (item.category != null)
-                                                            Text(item.category!, 
-                                                                style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)),
+                                                          if (item.category !=
+                                                              null)
+                                                            Text(item.category!,
+                                                                style: material.TextStyle(
+                                                                    color: context
+                                                                        .colors
+                                                                        .textMuted,
+                                                                    fontSize:
+                                                                        11)),
+                                                          if (item.goodsDescription !=
+                                                                  null &&
+                                                              item.goodsDescription!
+                                                                  .trim()
+                                                                  .isNotEmpty)
+                                                            Padding(
+                                                              padding:
+                                                                  const EdgeInsets
+                                                                      .only(
+                                                                      top: 3),
+                                                              child: Text(
+                                                                item.goodsDescription!,
+                                                                style: material
+                                                                    .TextStyle(
+                                                                  color: context
+                                                                      .colors
+                                                                      .textSecondary,
+                                                                  fontSize: 12,
+                                                                ),
+                                                                maxLines: 2,
+                                                                overflow:
+                                                                    TextOverflow
+                                                                        .ellipsis,
+                                                              ),
+                                                            ),
                                                         ],
                                                       ),
                                                     ),
@@ -728,18 +924,30 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                               ),
                                               if (isItemConfiscated)
                                                 material.Container(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 10,
+                                                      vertical: 4),
                                                   decoration: BoxDecoration(
-                                                    color: context.colors.dangerRed.withOpacity(0.15),
-                                                    borderRadius: BorderRadius.circular(20),
-                                                    border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+                                                    color: context
+                                                        .colors.dangerRed
+                                                        .withOpacity(0.15),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            20),
+                                                    border: Border.all(
+                                                        color: context
+                                                            .colors.dangerRed
+                                                            .withOpacity(0.4)),
                                                   ),
                                                   child: Text(
                                                     'CONFISCATED',
                                                     style: material.TextStyle(
-                                                      color: context.colors.dangerRed,
+                                                      color: context
+                                                          .colors.dangerRed,
                                                       fontSize: 10,
-                                                      fontWeight: FontWeight.w900,
+                                                      fontWeight:
+                                                          FontWeight.w900,
                                                       letterSpacing: 0.5,
                                                     ),
                                                   ),
@@ -748,7 +956,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                               Text(
                                                 'x${item.quantity}',
                                                 style: material.TextStyle(
-                                                  color: isItemConfiscated ? context.colors.textMuted : context.colors.primaryGold,
+                                                  color: isItemConfiscated
+                                                      ? context.colors.textMuted
+                                                      : context
+                                                          .colors.primaryGold,
                                                   fontWeight: FontWeight.w900,
                                                   fontSize: 16,
                                                 ),
@@ -757,11 +968,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                           ),
                                           const Gap(12),
                                           Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
                                                 child: _DetailItem(
-                                                  icon: Icons.straighten_rounded,
+                                                  icon:
+                                                      Icons.straighten_rounded,
                                                   label: 'Unit',
                                                   value: item.unitOfMeasure,
                                                 ),
@@ -771,7 +984,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                 child: _DetailItem(
                                                   icon: Icons.payments_rounded,
                                                   label: 'Unit Value',
-                                                  value: 'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                                                  value:
+                                                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
                                                 ),
                                               ),
                                             ],
@@ -786,17 +1000,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                   children: [
                                                     material.Container(
                                                       padding:
-                                                          const EdgeInsets.all(8),
+                                                          const EdgeInsets.all(
+                                                              8),
                                                       decoration: BoxDecoration(
-                                                        color: context.colors
-                                                            .dangerRed
+                                                        color: context
+                                                            .colors.dangerRed
                                                             .withOpacity(0.1),
                                                         borderRadius:
-                                                            BorderRadius.circular(
-                                                                10),
+                                                            BorderRadius
+                                                                .circular(10),
                                                       ),
                                                       child: Icon(
-                                                        Icons.warning_amber_rounded,
+                                                        Icons
+                                                            .warning_amber_rounded,
                                                         size: 16,
                                                         color: context
                                                             .colors.dangerRed,
@@ -806,8 +1022,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                     Text(
                                                       'Reason',
                                                       style: material.TextStyle(
-                                                        color:
-                                                            context.colors.textMuted,
+                                                        color: context
+                                                            .colors.textMuted,
                                                         fontSize: 10,
                                                         fontWeight:
                                                             FontWeight.w700,
@@ -818,7 +1034,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                 ),
                                                 const Gap(8),
                                                 Padding(
-                                                  padding: const EdgeInsets.only(bottom: 12),
+                                                  padding:
+                                                      const EdgeInsets.only(
+                                                          bottom: 12),
                                                   child: Wrap(
                                                     spacing: 8,
                                                     runSpacing: 8,
@@ -829,30 +1047,41 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                               padding:
                                                                   const EdgeInsets
                                                                       .symmetric(
-                                                                      horizontal: 12,
-                                                                      vertical: 8),
-                                                              decoration: BoxDecoration(
+                                                                      horizontal:
+                                                                          12,
+                                                                      vertical:
+                                                                          8),
+                                                              decoration:
+                                                                  BoxDecoration(
                                                                 color: context
-                                                                    .colors.dangerRed
-                                                                    .withOpacity(0.05),
+                                                                    .colors
+                                                                    .dangerRed
+                                                                    .withOpacity(
+                                                                        0.05),
                                                                 borderRadius:
                                                                     BorderRadius
-                                                                        .circular(10),
-                                                                border: Border.all(
+                                                                        .circular(
+                                                                            10),
+                                                                border:
+                                                                    Border.all(
                                                                   color: context
-                                                                      .colors.dangerRed
-                                                                      .withOpacity(0.2),
+                                                                      .colors
+                                                                      .dangerRed
+                                                                      .withOpacity(
+                                                                          0.2),
                                                                 ),
                                                               ),
                                                               child: Text(
                                                                 reason.trim(),
-                                                                style:
-                                                                    material.TextStyle(
+                                                                style: material
+                                                                    .TextStyle(
                                                                   color: context
-                                                                      .colors.dangerRed,
+                                                                      .colors
+                                                                      .dangerRed,
                                                                   fontSize: 12,
                                                                   fontWeight:
-                                                                      FontWeight.w600,
+                                                                      FontWeight
+                                                                          .w600,
                                                                 ),
                                                               ),
                                                             ))
@@ -862,23 +1091,28 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                               ],
                                             ),
                                           Row(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
                                                 child: _DetailItem(
-                                                  icon: Icons.keyboard_return_rounded,
+                                                  icon: Icons
+                                                      .keyboard_return_rounded,
                                                   label: 'Released',
                                                   value: '$returnedQty',
-                                                  valueColor: context.colors.successGreen,
+                                                  valueColor: context
+                                                      .colors.successGreen,
                                                 ),
                                               ),
                                               const Gap(12),
                                               Expanded(
                                                 child: _DetailItem(
-                                                  icon: Icons.pause_circle_filled_rounded,
+                                                  icon: Icons
+                                                      .pause_circle_filled_rounded,
                                                   label: 'Held',
                                                   value: '$heldQty',
-                                                  valueColor: context.colors.primaryGold,
+                                                  valueColor: context
+                                                      .colors.primaryGold,
                                                 ),
                                               ),
                                             ],
@@ -925,7 +1159,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       ),
 
                       // Returned By Section
-                      if (!widget.useWarehouseSummary && widget.highlightEntry?.isReturned == true)
+                      if (!widget.useWarehouseSummary &&
+                          widget.highlightEntry?.isReturned == true)
                         _SystemEntrySection(
                           officerDisplay: returnedOfficerDisplay,
                           badgeNumber: returnedOfficerBadge,
@@ -934,7 +1169,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           customIcon: Icons.keyboard_return_rounded,
                         ),
 
-                        if (!widget.useWarehouseSummary && widget.highlightEntry?.isReturned == true &&
+                      if (!widget.useWarehouseSummary &&
+                          widget.highlightEntry?.isReturned == true &&
                           (returnedReceiptNo != null ||
                               returnedReceiptDate != null))
                         _DetailSection(
@@ -977,7 +1213,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                               _DetailItem(
                                 icon: Icons.calculate_rounded,
                                 label: 'Storage Fee (LKR)',
-                                value: 'LKR ${NumberFormat('#,##0.00').format(widget.highlightEntry!.calculatePackageCharge([highlightedItem!], widget.storageRate))}',
+                                value:
+                                    'LKR ${NumberFormat('#,##0.00').format(widget.highlightEntry!.calculatePackageCharge([
+                                      highlightedItem!
+                                    ], widget.storageRate))}',
                                 valueColor: context.colors.successGreen,
                               ),
                             ],
@@ -989,55 +1228,74 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
               ),
               if (widget.useWarehouseSummary)
                 material.Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   decoration: BoxDecoration(
                     color: isDark ? Colors.black26 : Colors.grey.shade50,
-                    border: Border(top: BorderSide(color: context.colors.borderColor)),
-                    borderRadius: const BorderRadius.vertical(bottom: Radius.circular(23)),
+                    border: Border(
+                        top: BorderSide(color: context.colors.borderColor)),
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(23)),
                   ),
                   child: Row(
                     children: [
                       material.Tooltip(
-                        message: isOfficer ? 'Package updates are restricted to administrators only' : '',
+                        message: isOfficer
+                            ? 'Package updates are restricted to administrators only'
+                            : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: context.colors.primaryGold,
                             foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
                           ),
                           icon: const Icon(Icons.edit_rounded, size: 18),
                           label: const Text('Update'),
-                          onPressed: isOfficer ? null : () {
-                            showDialog(
-                              context: context,
-                              builder: (_) => PackageUpdateDialog(
-                                package: p,
-                                highlightedItem: highlightedItem,
-                                highlightEntry: widget.highlightEntry,
-                                storageRate: widget.storageRate,
-                              ),
-                            );
-                          },
+                          onPressed: isOfficer
+                              ? null
+                              : () {
+                                  showDialog(
+                                    context: context,
+                                    builder: (_) => PackageUpdateDialog(
+                                      package: p,
+                                      highlightedItem: highlightedItem,
+                                      highlightEntry: widget.highlightEntry,
+                                      storageRate: widget.storageRate,
+                                    ),
+                                  );
+                                },
                         ),
                       ),
                       const Gap(12),
-                      if (widget.highlightEntry != null && !widget.highlightEntry!.isReturned)
+                      if (widget.highlightEntry != null &&
+                          !widget.highlightEntry!.isReturned)
                         material.Tooltip(
-                          message: isConfiscated ? 'Confiscated packages cannot be released' : '',
+                          message: isConfiscated
+                              ? 'Confiscated / Forfeited packages cannot be released'
+                              : '',
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: isConfiscated ? Colors.grey : context.colors.successGreen,
+                              backgroundColor: isConfiscated
+                                  ? Colors.grey
+                                  : context.colors.successGreen,
                               foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 12),
                             ),
-                            icon: const Icon(Icons.assignment_return_rounded, size: 18),
+                            icon: const Icon(Icons.assignment_return_rounded,
+                                size: 18),
                             label: const Text('Release Package'),
-                            onPressed: isConfiscated ? null : () async {
-                              final success = await _showReleaseConfirmation(context, widget.highlightEntry!);
-                              if (success && mounted) {
-                                Navigator.pop(context);
-                              }
-                            },
+                            onPressed: isConfiscated
+                                ? null
+                                : () async {
+                                    final success =
+                                        await _showReleaseConfirmation(
+                                            context, widget.highlightEntry!);
+                                    if (success && mounted) {
+                                      Navigator.pop(context);
+                                    }
+                                  },
                           ),
                         ),
                     ],
@@ -1059,15 +1317,29 @@ class _StatusBadge extends StatelessWidget {
     final s = status.toLowerCase();
     final isPending = s.contains('pending');
     final isInspected = s.contains('inspected');
-    final color = isPending ? context.colors.primaryGold : (isInspected ? context.colors.successGreen : Colors.blue);
+    final color = isPending
+        ? context.colors.primaryGold
+        : (isInspected ? context.colors.successGreen : Colors.blue);
     return material.Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(20), border: Border.all(color: color.withOpacity(0.3))),
+      decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withOpacity(0.3))),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          material.Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)), const Gap(6),
-          Text(status.toUpperCase(), style: material.TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 0.5)),
+          material.Container(
+              width: 6,
+              height: 6,
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          const Gap(6),
+          Text(status.toUpperCase(),
+              style: material.TextStyle(
+                  color: color,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.5)),
         ],
       ),
     );
@@ -1092,8 +1364,8 @@ class _DetailSection extends StatelessWidget {
     return material.Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Theme.of(context).brightness == Brightness.dark 
-            ? context.colors.surfaceDark.withOpacity(0.5) 
+        color: Theme.of(context).brightness == Brightness.dark
+            ? context.colors.surfaceDark.withOpacity(0.5)
             : Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.colors.borderColor),
@@ -1105,8 +1377,10 @@ class _DetailSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: context.colors.textPrimary.withOpacity(0.03),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-              border: Border(bottom: BorderSide(color: context.colors.borderColor)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(15)),
+              border:
+                  Border(bottom: BorderSide(color: context.colors.borderColor)),
             ),
             child: Row(
               children: [
@@ -1123,11 +1397,15 @@ class _DetailSection extends StatelessWidget {
                 ),
               ],
             ),
-          ).animate().slideX(delay: Duration(milliseconds: delay), duration: 300.ms, begin: -0.2),
+          ).animate().slideX(
+              delay: Duration(milliseconds: delay),
+              duration: 300.ms,
+              begin: -0.2),
           Padding(
             padding: const EdgeInsets.all(16),
             child: child,
-          ).animate().fadeIn(delay: Duration(milliseconds: delay + 100), duration: 400.ms),
+          ).animate().fadeIn(
+              delay: Duration(milliseconds: delay + 100), duration: 400.ms),
         ],
       ),
     );
@@ -1158,7 +1436,8 @@ class _DetailItem extends StatelessWidget {
         decoration: BoxDecoration(
           color: context.colors.textPrimary.withOpacity(0.02),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.colors.borderColor.withOpacity(0.5)),
+          border:
+              Border.all(color: context.colors.borderColor.withOpacity(0.5)),
         ),
         child: Row(
           children: [
@@ -1228,7 +1507,8 @@ class _CargoItemTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: context.colors.primaryGold.withOpacity(0.05),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.colors.primaryGold.withOpacity(0.2)),
+          border:
+              Border.all(color: context.colors.primaryGold.withOpacity(0.2)),
         ),
         child: Row(
           children: [
@@ -1257,16 +1537,20 @@ class _CargoItemTile extends StatelessWidget {
                 children: [
                   Text(
                     item.itemName,
-                    style: material.TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: material.TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                   if (item.category != null)
-                    Text(item.category!, style: material.TextStyle(color: context.colors.textMuted, fontSize: 11)),
+                    Text(item.category!,
+                        style: material.TextStyle(
+                            color: context.colors.textMuted, fontSize: 11)),
                   if (item.reasons != null && item.reasons!.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Row(
                         children: [
-                          Icon(Icons.warning_amber_rounded, size: 10, color: context.colors.heldOrange),
+                          Icon(Icons.warning_amber_rounded,
+                              size: 10, color: context.colors.heldOrange),
                           const Gap(4),
                           Expanded(
                             child: Text(
@@ -1309,9 +1593,9 @@ class _WarehouseHistoryTile extends StatelessWidget {
   final material.VoidCallback onRelease;
 
   const _WarehouseHistoryTile({
-    required this.package, 
-    required this.entry, 
-    required this.index, 
+    required this.package,
+    required this.entry,
+    required this.index,
     required this.rate,
     required this.isHighlighted,
     required this.onRelease,
@@ -1324,13 +1608,13 @@ class _WarehouseHistoryTile extends StatelessWidget {
       child: material.Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isHighlighted 
-              ? context.colors.primaryGold.withOpacity(0.08) 
+          color: isHighlighted
+              ? context.colors.primaryGold.withOpacity(0.08)
               : context.colors.textPrimary.withOpacity(0.02),
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
-            color: isHighlighted 
-                ? context.colors.primaryGold.withOpacity(0.5) 
+            color: isHighlighted
+                ? context.colors.primaryGold.withOpacity(0.5)
                 : context.colors.borderColor.withOpacity(0.5),
             width: isHighlighted ? 1.5 : 1,
           ),
@@ -1346,7 +1630,8 @@ class _WarehouseHistoryTile extends StatelessWidget {
                     color: context.colors.primaryGold.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Icon(Icons.warehouse_rounded, size: 14, color: context.colors.primaryGold),
+                  child: Icon(Icons.warehouse_rounded,
+                      size: 14, color: context.colors.primaryGold),
                 ),
                 const Gap(10),
                 Expanded(
@@ -1355,12 +1640,14 @@ class _WarehouseHistoryTile extends StatelessWidget {
                     children: [
                       Text(
                         entry.warehouseName,
-                        style: material.TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        style: material.TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 12),
                       ),
                       ...entry.holdReason.split(',').map((reason) => Text(
-                        reason.trim(),
-                        style: material.TextStyle(color: context.colors.textMuted, fontSize: 10),
-                      )),
+                            reason.trim(),
+                            style: material.TextStyle(
+                                color: context.colors.textMuted, fontSize: 10),
+                          )),
                     ],
                   ),
                 ),
@@ -1369,20 +1656,25 @@ class _WarehouseHistoryTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       material.Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
                           color: context.colors.successGreen.withOpacity(0.2),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text('RELEASED', 
-                            style: material.TextStyle(color: context.colors.successGreen, fontSize: 9, fontWeight: FontWeight.bold)),
+                        child: Text('RELEASED',
+                            style: material.TextStyle(
+                                color: context.colors.successGreen,
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold)),
                       ),
                       if (entry.returnedByName != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             'By: ${entry.returnedByName}',
-                            style: material.TextStyle(color: context.colors.textMuted, fontSize: 9),
+                            style: material.TextStyle(
+                                color: context.colors.textMuted, fontSize: 9),
                           ),
                         ),
                     ],
@@ -1390,34 +1682,76 @@ class _WarehouseHistoryTile extends StatelessWidget {
                 else
                   material.InkWell(
                     onTap: () {
-                      final item = package.items.where((i) => i.id == entry.packageItemId).firstOrNull;
-                      final isConfiscated = item?.status == 'confiscated' || entry.isPackageConfiscated;
+                      final item = package.items
+                          .where((i) => i.id == entry.packageItemId)
+                          .firstOrNull;
+                      final isConfiscated = item?.status == 'confiscated' ||
+                          entry.isPackageConfiscated;
                       if (isConfiscated) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Confiscated items cannot be released'), backgroundColor: Colors.red));
+                            const SnackBar(
+                                content: Text(
+                                    'Confiscated items cannot be released'),
+                                backgroundColor: Colors.red));
                         return;
                       }
                       onRelease();
                     },
                     borderRadius: BorderRadius.circular(6),
                     child: material.Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated) 
-                            ? Colors.grey.withOpacity(0.15) 
+                        color: (package.items
+                                        .where(
+                                            (i) => i.id == entry.packageItemId)
+                                        .firstOrNull
+                                        ?.status ==
+                                    'confiscated' ||
+                                entry.isPackageConfiscated)
+                            ? Colors.grey.withOpacity(0.15)
                             : context.colors.successGreen.withOpacity(0.15),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated)
-                            ? Colors.grey.withOpacity(0.4)
-                            : context.colors.successGreen.withOpacity(0.4)),
+                        border: Border.all(
+                            color: (package.items
+                                            .where((i) =>
+                                                i.id == entry.packageItemId)
+                                            .firstOrNull
+                                            ?.status ==
+                                        'confiscated' ||
+                                    entry.isPackageConfiscated)
+                                ? Colors.grey.withOpacity(0.4)
+                                : context.colors.successGreen.withOpacity(0.4)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.play_circle_fill_rounded, size: 12, color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated) ? Colors.grey : context.colors.successGreen),
+                          Icon(Icons.play_circle_fill_rounded,
+                              size: 12,
+                              color: (package.items
+                                              .where((i) =>
+                                                  i.id == entry.packageItemId)
+                                              .firstOrNull
+                                              ?.status ==
+                                          'confiscated' ||
+                                      entry.isPackageConfiscated)
+                                  ? Colors.grey
+                                  : context.colors.successGreen),
                           const Gap(6),
-                          Text('RELEASE', 
-                              style: material.TextStyle(color: (package.items.where((i) => i.id == entry.packageItemId).firstOrNull?.status == 'confiscated' || entry.isPackageConfiscated) ? Colors.grey : context.colors.successGreen, fontSize: 10, fontWeight: FontWeight.bold)),
+                          Text('RELEASE',
+                              style: material.TextStyle(
+                                  color: (package.items
+                                                  .where((i) =>
+                                                      i.id ==
+                                                      entry.packageItemId)
+                                                  .firstOrNull
+                                                  ?.status ==
+                                              'confiscated' ||
+                                          entry.isPackageConfiscated)
+                                      ? Colors.grey
+                                      : context.colors.successGreen,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold)),
                         ],
                       ),
                     ),
@@ -1430,12 +1764,14 @@ class _WarehouseHistoryTile extends StatelessWidget {
               children: [
                 Text(
                   'In: ${DateFormat('dd MMM yyyy').format(entry.admittedAt)}${entry.returnedAt != null ? "  Out: ${DateFormat('dd MMM yyyy').format(entry.returnedAt!)}" : ""}',
-                  style: material.TextStyle(color: context.colors.textMuted, fontSize: 10),
+                  style: material.TextStyle(
+                      color: context.colors.textMuted, fontSize: 10),
                 ),
                 if (entry.admittedByName != null)
                   Text(
                     'Entry by: ${entry.admittedByName}',
-                    style: material.TextStyle(color: context.colors.textMuted, fontSize: 10),
+                    style: material.TextStyle(
+                        color: context.colors.textMuted, fontSize: 10),
                   ),
               ],
             ),
@@ -1454,8 +1790,8 @@ class _SystemEntrySection extends StatelessWidget {
   final IconData? customIcon;
 
   const _SystemEntrySection({
-    required this.officerDisplay, 
-    this.badgeNumber, 
+    required this.officerDisplay,
+    this.badgeNumber,
     required this.delay,
     this.customTitle,
     this.customIcon,
@@ -1487,7 +1823,8 @@ class _SystemEntrySection extends StatelessWidget {
                   color: context.colors.primaryGold.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(customIcon ?? Icons.verified_user_rounded, size: 16, color: context.colors.primaryGold),
+                child: Icon(customIcon ?? Icons.verified_user_rounded,
+                    size: 16, color: context.colors.primaryGold),
               ),
               const Gap(10),
               Text(
@@ -1518,11 +1855,13 @@ class _SystemEntrySection extends StatelessWidget {
               ),
               if (badgeNumber != null && badgeNumber!.isNotEmpty)
                 material.Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: context.colors.primaryGold.withOpacity(0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: context.colors.primaryGold.withOpacity(0.4)),
+                    border: Border.all(
+                        color: context.colors.primaryGold.withOpacity(0.4)),
                   ),
                   child: Text(
                     'Salary No: $badgeNumber',
@@ -1537,7 +1876,8 @@ class _SystemEntrySection extends StatelessWidget {
           ),
         ],
       ),
-    ).animate().slideY(delay: Duration(milliseconds: delay), duration: 300.ms, begin: 0.1);
+    ).animate().slideY(
+        delay: Duration(milliseconds: delay), duration: 300.ms, begin: 0.1);
   }
 }
 
@@ -1558,7 +1898,10 @@ class _NoteDisplay extends StatelessWidget {
             : context.colors.textPrimary.withOpacity(0.02),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: (isWarning ? context.colors.primaryGold : context.colors.borderColor).withOpacity(0.3),
+          color: (isWarning
+                  ? context.colors.primaryGold
+                  : context.colors.borderColor)
+              .withOpacity(0.3),
         ),
       ),
       child: Row(
@@ -1568,13 +1911,18 @@ class _NoteDisplay extends StatelessWidget {
             material.Container(
               padding: const EdgeInsets.all(6),
               decoration: BoxDecoration(
-                color: (isWarning ? context.colors.primaryGold : context.colors.textMuted).withOpacity(0.1),
+                color: (isWarning
+                        ? context.colors.primaryGold
+                        : context.colors.textMuted)
+                    .withOpacity(0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(
                 icon,
                 size: 14,
-                color: isWarning ? context.colors.primaryGold : context.colors.textMuted,
+                color: isWarning
+                    ? context.colors.primaryGold
+                    : context.colors.textMuted,
               ),
             ),
             const Gap(12),
@@ -1609,11 +1957,15 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_rounded, size: 32, color: context.colors.textMuted.withOpacity(0.4)),
+            Icon(Icons.inbox_rounded,
+                size: 32, color: context.colors.textMuted.withOpacity(0.4)),
             const Gap(2),
             Text(
               message,
-              style: material.TextStyle(color: context.colors.textMuted, fontSize: 12, fontStyle: FontStyle.italic),
+              style: material.TextStyle(
+                  color: context.colors.textMuted,
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic),
             ),
           ],
         ),
@@ -1639,11 +1991,16 @@ class _DetailColumn extends StatelessWidget {
           children: [
             Icon(icon, size: 14, color: context.colors.textMuted),
             const Gap(6),
-            Text(label, style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
+            Text(label,
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 12)),
           ],
         ),
-        
-        Text(value, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+        Text(value,
+            style: TextStyle(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 14)),
       ],
     );
   }
@@ -1663,17 +2020,23 @@ class _HistoryRow extends StatelessWidget {
       children: [
         SizedBox(
           width: 70,
-          child: Text(label, style: TextStyle(color: ctx.colors.textMuted, fontSize: 12)),
+          child: Text(label,
+              style: TextStyle(color: ctx.colors.textMuted, fontSize: 12)),
         ),
         Expanded(
-          child: Text(value, style: TextStyle(color: ctx.colors.textPrimary, fontSize: 13, fontWeight: FontWeight.w500)),
+          child: Text(value,
+              style: TextStyle(
+                  color: ctx.colors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500)),
         ),
       ],
     );
   }
 }
 
-Widget _InfoChip(String label, String value, IconData icon, BuildContext context) {
+Widget _InfoChip(
+    String label, String value, IconData icon, BuildContext context) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
@@ -1687,8 +2050,13 @@ Widget _InfoChip(String label, String value, IconData icon, BuildContext context
       children: [
         Icon(icon, size: 14, color: context.colors.textMuted),
         const Gap(6),
-        Text('$label: ', style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
-        Text(value, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 12)),
+        Text('$label: ',
+            style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
+        Text(value,
+            style: TextStyle(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w600,
+                fontSize: 12)),
       ],
     ),
   );
@@ -1710,17 +2078,20 @@ class PackageUpdateDialog extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<PackageUpdateDialog> createState() => _PackageUpdateDialogState();
+  ConsumerState<PackageUpdateDialog> createState() =>
+      _PackageUpdateDialogState();
 }
 
 class _ItemRow {
   final nameCtrl = TextEditingController();
+  final goodsDescriptionCtrl = TextEditingController();
   final qtyCtrl = TextEditingController(text: '1');
   final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
   final unitOtherCtrl = TextEditingController();
   final valueCtrl = TextEditingController(text: '0');
   final categoryCtrl = TextEditingController();
-  String status = 'pending';
+  String status = 'Detain';
+  final otherStatusCtrl = TextEditingController();
   final List<String?> selectedReasons = [null];
 }
 
@@ -1734,6 +2105,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
   late final TextEditingController _cusdecDateCtrl;
   late final TextEditingController _entryDateCtrl;
   late final TextEditingController _caseNumberCtrl;
+  late final TextEditingController _containerNumberCtrl;
   late final TextEditingController _descCtrl;
   late final TextEditingController _notesCtrl;
   late final TextEditingController _reasonCtrl;
@@ -1749,24 +2121,36 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
   void initState() {
     super.initState();
     _consigneeCtrl = TextEditingController(text: widget.package.consigneeName);
-    _consigneeNicCtrl = TextEditingController(text: widget.package.consigneeNic ?? '');
-    _consigneePhoneCtrl = TextEditingController(text: widget.package.consigneePhone ?? '');
-    _declarantCtrl = TextEditingController(text: widget.package.declarantName ?? '');
+    _consigneeNicCtrl =
+        TextEditingController(text: widget.package.consigneeNic ?? '');
+    _consigneePhoneCtrl =
+        TextEditingController(text: widget.package.consigneePhone ?? '');
+    _declarantCtrl =
+        TextEditingController(text: widget.package.declarantName ?? '');
     _cusdecCtrl = TextEditingController(text: widget.package.cusdecNo ?? '');
-    _cusdecDateCtrl = TextEditingController(text: widget.package.cusdecDate ?? '');
-    _entryDateCtrl = TextEditingController(text: widget.package.entryDate != null 
-        ? '${widget.package.entryDate!.year}-${widget.package.entryDate!.month.toString().padLeft(2, '0')}-${widget.package.entryDate!.day.toString().padLeft(2, '0')}' 
-        : '');
-    _caseNumberCtrl = TextEditingController(text: widget.package.caseNumber ?? '');
+    _cusdecDateCtrl =
+        TextEditingController(text: widget.package.cusdecDate ?? '');
+    _entryDateCtrl = TextEditingController(
+        text: widget.package.entryDate != null
+            ? '${widget.package.entryDate!.year}-${widget.package.entryDate!.month.toString().padLeft(2, '0')}-${widget.package.entryDate!.day.toString().padLeft(2, '0')}'
+            : '');
+    _caseNumberCtrl =
+        TextEditingController(text: widget.package.caseNumber ?? '');
+    _containerNumberCtrl =
+        TextEditingController(text: widget.package.containerNumber ?? '');
     _descCtrl = TextEditingController(text: widget.package.description ?? '');
     _notesCtrl = TextEditingController(text: widget.package.notes ?? '');
     _reasonCtrl = TextEditingController(text: widget.package.reason ?? '');
-    _valueCtrl = TextEditingController(text: widget.package.declaredValue?.toString() ?? '');
-    _weightCtrl = TextEditingController(text: widget.package.weightKg?.toString() ?? '');
-    _originCtrl = TextEditingController(text: widget.package.originCountry ?? '');
-    
-    _statusValue = (widget.package.status == 'detained' || widget.package.status == 'forfeited') 
-        ? 'held' 
+    _valueCtrl = TextEditingController(
+        text: widget.package.declaredValue?.toString() ?? '');
+    _weightCtrl =
+        TextEditingController(text: widget.package.weightKg?.toString() ?? '');
+    _originCtrl =
+        TextEditingController(text: widget.package.originCountry ?? '');
+
+    _statusValue = (widget.package.status == 'detained' ||
+            widget.package.status == 'forfeited')
+        ? 'held'
         : widget.package.status;
 
     // Initialize items
@@ -1775,25 +2159,41 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
       // Show only the specific highlighted item if provided
       final row = _ItemRow();
       row.nameCtrl.text = widget.highlightedItem!.itemName;
+      row.goodsDescriptionCtrl.text =
+          widget.highlightedItem!.goodsDescription ?? '';
       row.qtyCtrl.text = widget.highlightedItem!.quantity.toString();
-      
+
       row.unitOfMeasureCtrl.text = widget.highlightedItem!.unitOfMeasure;
-      if (!['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].contains(row.unitOfMeasureCtrl.text)) {
+      if (![
+        'Pieces',
+        'Cartons',
+        'Boxes',
+        'Bags',
+        'Pallets',
+        'KG',
+        'Meters',
+        'Other'
+      ].contains(row.unitOfMeasureCtrl.text)) {
         row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
         row.unitOfMeasureCtrl.text = 'Other';
       }
-      
+
       row.valueCtrl.text = widget.highlightedItem!.unitValue.toString();
       row.categoryCtrl.text = widget.highlightedItem!.category ?? '';
-      row.status = widget.highlightedItem!.status.isNotEmpty ? widget.highlightedItem!.status : 'pending';
-      
+      _applyStatusToRow(row, widget.highlightedItem!.status);
+
       // If the entry is returned, override item status to 'returned'
       if (widget.highlightEntry?.isReturned == true) {
-        row.status = 'returned';
+        row.status = 'Other';
+        row.otherStatusCtrl.text = 'returned';
       }
 
-      if (widget.highlightedItem!.reasons != null && widget.highlightedItem!.reasons!.isNotEmpty) {
-        final rList = widget.highlightedItem!.reasons!.split(', ').map((s) => s.trim()).toList() ;
+      if (widget.highlightedItem!.reasons != null &&
+          widget.highlightedItem!.reasons!.isNotEmpty) {
+        final rList = widget.highlightedItem!.reasons!
+            .split(', ')
+            .map((s) => s.trim())
+            .toList();
         row.selectedReasons.clear();
         for (int i = 0; i < rList.length && i < 4; i++) {
           row.selectedReasons.add(rList[i]);
@@ -1805,17 +2205,27 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
       for (final item in widget.package.items) {
         final row = _ItemRow();
         row.nameCtrl.text = item.itemName;
+        row.goodsDescriptionCtrl.text = item.goodsDescription ?? '';
         row.qtyCtrl.text = item.quantity.toString();
-        
+
         row.unitOfMeasureCtrl.text = item.unitOfMeasure;
-        if (!['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].contains(row.unitOfMeasureCtrl.text)) {
+        if (![
+          'Pieces',
+          'Cartons',
+          'Boxes',
+          'Bags',
+          'Pallets',
+          'KG',
+          'Meters',
+          'Other'
+        ].contains(row.unitOfMeasureCtrl.text)) {
           row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
           row.unitOfMeasureCtrl.text = 'Other';
         }
-        
+
         row.valueCtrl.text = item.unitValue.toString();
         row.categoryCtrl.text = item.category ?? '';
-        row.status = item.status.isNotEmpty ? item.status : 'pending';
+        _applyStatusToRow(row, item.status);
         if (item.reasons != null && item.reasons!.isNotEmpty) {
           final rList = item.reasons!.split(', ').map((s) => s.trim()).toList();
           row.selectedReasons.clear();
@@ -1841,6 +2251,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     _cusdecDateCtrl.dispose();
     _entryDateCtrl.dispose();
     _caseNumberCtrl.dispose();
+    _containerNumberCtrl.dispose();
     _descCtrl.dispose();
     _notesCtrl.dispose();
     _reasonCtrl.dispose();
@@ -1849,11 +2260,13 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     _originCtrl.dispose();
     for (final item in _items) {
       item.nameCtrl.dispose();
+      item.goodsDescriptionCtrl.dispose();
       item.qtyCtrl.dispose();
       item.unitOfMeasureCtrl.dispose();
       item.unitOtherCtrl.dispose();
       item.valueCtrl.dispose();
       item.categoryCtrl.dispose();
+      item.otherStatusCtrl.dispose();
     }
     super.dispose();
   }
@@ -1867,9 +2280,25 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     );
     if (picked != null) {
       setState(() {
-        controller.text = "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
+        controller.text =
+            "${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}";
       });
     }
+  }
+
+  void _applyStatusToRow(_ItemRow row, String status) {
+    const statuses = ['Detain', 'Forfeit', 'Abandoned', 'Other'];
+    if (statuses.contains(status)) {
+      row.status = status;
+      row.otherStatusCtrl.clear();
+    } else {
+      row.status = 'Other';
+      row.otherStatusCtrl.text = status.isEmpty ? 'Detain' : status;
+    }
+  }
+
+  String _rowStatus(_ItemRow row) {
+    return row.status == 'Other' ? row.otherStatusCtrl.text.trim() : row.status;
   }
 
   Future<void> _updatePackage() async {
@@ -1878,7 +2307,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     setState(() => _isUpdating = true);
     try {
       final List<PackageItem> itemsToUpsert;
-      
+
       if (widget.highlightedItem != null) {
         // If we were editing a specific item, update just that one in the list
         itemsToUpsert = widget.package.items.map<PackageItem>((item) {
@@ -1886,29 +2315,44 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
             final row = _items.first;
             return item.copyWith(
               itemName: row.nameCtrl.text,
+              goodsDescription: row.goodsDescriptionCtrl.text.trim().isEmpty
+                  ? null
+                  : row.goodsDescriptionCtrl.text.trim(),
               quantity: int.tryParse(row.qtyCtrl.text) ?? 1,
               unitValue: double.tryParse(row.valueCtrl.text) ?? 0,
               category: row.categoryCtrl.text,
-              unitOfMeasure: row.unitOfMeasureCtrl.text == 'Other' ? row.unitOtherCtrl.text : row.unitOfMeasureCtrl.text,
-              status: row.status,
-              reasons: row.selectedReasons.where((res) => res != null).join(', '),
+              unitOfMeasure: row.unitOfMeasureCtrl.text == 'Other'
+                  ? row.unitOtherCtrl.text
+                  : row.unitOfMeasureCtrl.text,
+              status: _rowStatus(row),
+              reasons:
+                  row.selectedReasons.where((res) => res != null).join(', '),
             );
           }
           return item;
         }).toList();
       } else {
         // Otherwise use the bulk items list from the form
-        itemsToUpsert = _items.where((r) => r.nameCtrl.text.isNotEmpty).map((r) => PackageItem(
-          id: '',
-          packageId: '',
-          itemName: r.nameCtrl.text,
-          quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
-          unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
-          category: r.categoryCtrl.text,
-          unitOfMeasure: r.unitOfMeasureCtrl.text == 'Other' ? r.unitOtherCtrl.text : r.unitOfMeasureCtrl.text,
-          status: r.status,
-          reasons: r.selectedReasons.where((res) => res != null).join(', '),
-        )).toList();
+        itemsToUpsert = _items
+            .where((r) => r.nameCtrl.text.isNotEmpty)
+            .map((r) => PackageItem(
+                  id: '',
+                  packageId: '',
+                  itemName: r.nameCtrl.text,
+                  goodsDescription: r.goodsDescriptionCtrl.text.trim().isEmpty
+                      ? null
+                      : r.goodsDescriptionCtrl.text.trim(),
+                  quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
+                  unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
+                  category: r.categoryCtrl.text,
+                  unitOfMeasure: r.unitOfMeasureCtrl.text == 'Other'
+                      ? r.unitOtherCtrl.text
+                      : r.unitOfMeasureCtrl.text,
+                  status: _rowStatus(r),
+                  reasons:
+                      r.selectedReasons.where((res) => res != null).join(', '),
+                ))
+            .toList();
       }
 
       final updatedPackage = widget.package.copyWith(
@@ -1918,8 +2362,15 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
         declarantName: _declarantCtrl.text.trim(),
         cusdecNo: _cusdecCtrl.text.trim(),
         cusdecDate: _cusdecDateCtrl.text.trim(),
-        caseNumber: _caseNumberCtrl.text.trim().isEmpty ? null : _caseNumberCtrl.text.trim(),
-        entryDate: _entryDateCtrl.text.isNotEmpty ? DateTime.tryParse(_entryDateCtrl.text) : null,
+        caseNumber: _caseNumberCtrl.text.trim().isEmpty
+            ? null
+            : _caseNumberCtrl.text.trim(),
+        containerNumber: _containerNumberCtrl.text.trim().isEmpty
+            ? null
+            : _containerNumberCtrl.text.trim(),
+        entryDate: _entryDateCtrl.text.isNotEmpty
+            ? DateTime.tryParse(_entryDateCtrl.text)
+            : null,
         description: _descCtrl.text.trim(),
         reason: _reasonCtrl.text.trim(),
         notes: _notesCtrl.text.trim(),
@@ -1929,7 +2380,9 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
         status: _statusValue,
       );
 
-      await ref.read(packageServiceProvider).upsertPackage(updatedPackage, itemsToUpsert);
+      await ref
+          .read(packageServiceProvider)
+          .upsertPackage(updatedPackage, itemsToUpsert);
 
       // Trigger refreshes for all related dashboard and list providers
       ref.read(packagesRefreshTriggerProvider.notifier).trigger();
@@ -1945,7 +2398,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Package "${widget.package.srNumber}" updated successfully!'),
+            content: Text(
+                'Package "${widget.package.srNumber}" updated successfully!'),
             backgroundColor: context.colors.successGreen,
           ),
         );
@@ -1953,7 +2407,9 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error updating package: $e'), backgroundColor: context.colors.dangerRed),
+          SnackBar(
+              content: Text('Error updating package: $e'),
+              backgroundColor: context.colors.dangerRed),
         );
       }
     } finally {
@@ -1981,7 +2437,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
         },
         child: material.Container(
           width: 1000,
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+          constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.9),
           decoration: BoxDecoration(
             color: context.colors.scaffoldBg,
             borderRadius: BorderRadius.circular(24),
@@ -1999,14 +2456,19 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
             children: [
               // Header
               material.Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isDark
                         ? [context.colors.surfaceDark, context.colors.cardDark]
-                        : [context.colors.customsBlue, context.colors.customsBlueDark],
+                        : [
+                            context.colors.customsBlue,
+                            context.colors.customsBlueDark
+                          ],
                   ),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(23)),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(23)),
                 ),
                 child: Row(
                   children: [
@@ -2016,7 +2478,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                         color: Colors.white.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Icon(Icons.edit_document, color: context.colors.primaryGold, size: 24),
+                      child: Icon(Icons.edit_document,
+                          color: context.colors.primaryGold, size: 24),
                     ),
                     const Gap(16),
                     Expanded(
@@ -2045,7 +2508,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                     ),
                     IconButton(
                       onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.7)),
+                      icon: Icon(Icons.close_rounded,
+                          color: Colors.white.withOpacity(0.7)),
                       splashRadius: 24,
                     ),
                   ],
@@ -2068,16 +2532,18 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                             TextFormField(
                               enabled: false,
                               initialValue: widget.package.srNumber,
-                              decoration: const InputDecoration(labelText: 'SR Number *'),
+                              decoration: const InputDecoration(
+                                  labelText: 'SR Number *'),
                             ),
-                            
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
                                     controller: _cusdecCtrl,
-                                    decoration: const InputDecoration(labelText: 'Cusdec No *'),
-                                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Cusdec No *'),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Required' : null,
                                   ),
                                 ),
                                 const Gap(12),
@@ -2095,26 +2561,30 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                                       labelText: 'Entry Date *',
                                       hintText: 'YYYY-MM-DD',
                                       suffixIcon: IconButton(
-                                        icon: Icon(Icons.calendar_month, color: context.colors.primaryGold),
-                                        onPressed: () => _selectDate(_entryDateCtrl),
+                                        icon: Icon(Icons.calendar_month,
+                                            color: context.colors.primaryGold),
+                                        onPressed: () =>
+                                            _selectDate(_entryDateCtrl),
                                       ),
                                     ),
                                     validator: (v) {
-                                      if (v == null || v.isEmpty) return 'Required';
-                                      if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(v)) return 'Use YYYY-MM-DD';
+                                      if (v == null || v.isEmpty)
+                                        return 'Required';
+                                      if (!RegExp(r'^\d{4}-\d{2}-\d{2}$')
+                                          .hasMatch(v)) return 'Use YYYY-MM-DD';
                                       return null;
                                     },
                                   ),
                                 ),
                               ],
                             ),
-                            
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
                                     controller: _caseNumberCtrl,
-                                    decoration: const InputDecoration(labelText: 'Case Number'),
+                                    decoration: const InputDecoration(
+                                        labelText: 'Case Number'),
                                   ),
                                 ),
                                 const Gap(12),
@@ -2132,23 +2602,33 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                                       labelText: 'Cusdec Date *',
                                       hintText: 'YYYY-MM-DD',
                                       suffixIcon: IconButton(
-                                        icon: Icon(Icons.calendar_month, color: context.colors.primaryGold),
-                                        onPressed: () => _selectDate(_cusdecDateCtrl),
+                                        icon: Icon(Icons.calendar_month,
+                                            color: context.colors.primaryGold),
+                                        onPressed: () =>
+                                            _selectDate(_cusdecDateCtrl),
                                       ),
                                     ),
                                     validator: (v) {
-                                      if (v == null || v.isEmpty) return 'Required';
-                                      if (!RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(v)) return 'Use YYYY-MM-DD';
+                                      if (v == null || v.isEmpty)
+                                        return 'Required';
+                                      if (!RegExp(r'^\d{4}-\d{2}-\d{2}$')
+                                          .hasMatch(v)) return 'Use YYYY-MM-DD';
                                       return null;
                                     },
                                   ),
                                 ),
                               ],
                             ),
-                            
+                            TextFormField(
+                              controller: _containerNumberCtrl,
+                              decoration: const InputDecoration(
+                                  labelText: 'Container Number'),
+                              textCapitalization: TextCapitalization.characters,
+                            ),
                             TextFormField(
                               controller: _descCtrl,
-                              decoration: const InputDecoration(labelText: 'Package Description'),
+                              decoration: const InputDecoration(
+                                  labelText: 'Package Description'),
                               maxLines: 2,
                             ),
                           ],
@@ -2164,37 +2644,45 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                                 Expanded(
                                   child: TextFormField(
                                     controller: _consigneeCtrl,
-                                    decoration: const InputDecoration(labelText: 'Consignee Name *'),
-                                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Consignee Name *'),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Required' : null,
                                   ),
                                 ),
                                 const Gap(12),
                                 Expanded(
                                   child: TextFormField(
                                     controller: _declarantCtrl,
-                                    decoration: const InputDecoration(labelText: 'Declarant Name *'),
-                                    validator: (v) => v!.isEmpty ? 'Required' : null,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Declarant Name *'),
+                                    validator: (v) =>
+                                        v!.isEmpty ? 'Required' : null,
                                   ),
                                 ),
                               ],
                             ),
-                            
                             Row(
                               children: [
                                 Expanded(
                                   child: TextFormField(
-                                    controller: _descCtrl, // Reusing controller for address if needed, or stick to required fields
-                                    decoration: const InputDecoration(labelText: 'Declarant Address'),
+                                    controller:
+                                        _descCtrl, // Reusing controller for address if needed, or stick to required fields
+                                    decoration: const InputDecoration(
+                                        labelText: 'Declarant Address'),
                                   ),
                                 ),
                                 const Gap(12),
                                 Expanded(
                                   child: TextFormField(
                                     controller: _consigneePhoneCtrl,
-                                    decoration: const InputDecoration(labelText: 'Declarant Phone Number (10 digits) *'),
+                                    decoration: const InputDecoration(
+                                        labelText:
+                                            'Declarant Phone Number (10 digits) *'),
                                     keyboardType: TextInputType.phone,
                                     validator: (v) {
-                                      if (v == null || v.isEmpty) return 'Required';
+                                      if (v == null || v.isEmpty)
+                                        return 'Required';
                                       if (!RegExp(r'^\d{10}$').hasMatch(v)) {
                                         return 'Must be exactly 10 digits';
                                       }
@@ -2205,31 +2693,50 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                               ],
                             ),
                           ],
-                        ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms),
+                        ).animate().slideY(
+                            begin: 0.1, duration: 400.ms, delay: 200.ms),
                         const Gap(16),
                         // Package Items Section
                         _UpdateSectionCard(
-                          title: widget.highlightedItem != null ? 'ITEM DETAILS' : 'Package Items',
+                          title: widget.highlightedItem != null
+                              ? 'ITEM DETAILS'
+                              : 'Package Items',
                           icon: Icons.shopping_bag_rounded,
-                          headerTrailing: widget.highlightedItem != null ? null : TextButton.icon(
-                            icon: const Icon(Icons.add, size: 16),
-                            label: const Text('Add Item'),
-                            onPressed: () => setState(() => _items.add(_ItemRow())),
-                          ),
+                          headerTrailing: widget.highlightedItem != null
+                              ? null
+                              : TextButton.icon(
+                                  icon: const Icon(Icons.add, size: 16),
+                                  label: const Text('Add Item'),
+                                  onPressed: () =>
+                                      setState(() => _items.add(_ItemRow())),
+                                ),
                           children: [
                             Column(
-                              children: List.generate(_items.length, (i) => Padding(
-                                padding: const EdgeInsets.only(bottom: 12),
-                                child: _UpdateItemRowWidget(
-                                  row: _items[i],
-                                  index: widget.highlightedItem != null ? -1 : i + 1, // -1 means don't show index
-                                  onRemove: widget.highlightedItem != null ? null : (_items.length > 1 ? () => setState(() => _items.removeAt(i)) : null),
-                                  onChanged: () => setState(() {}),
-                                ),
-                              )),
+                              children: List.generate(
+                                  _items.length,
+                                  (i) => Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 12),
+                                        child: _UpdateItemRowWidget(
+                                          row: _items[i],
+                                          index: widget.highlightedItem != null
+                                              ? -1
+                                              : i +
+                                                  1, // -1 means don't show index
+                                          onRemove: widget.highlightedItem !=
+                                                  null
+                                              ? null
+                                              : (_items.length > 1
+                                                  ? () => setState(
+                                                      () => _items.removeAt(i))
+                                                  : null),
+                                          onChanged: () => setState(() {}),
+                                        ),
+                                      )),
                             ),
                           ],
-                        ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms),
+                        ).animate().slideY(
+                            begin: 0.1, duration: 400.ms, delay: 300.ms),
                         const Gap(16),
                         // Notes Section
                         _UpdateSectionCard(
@@ -2238,11 +2745,13 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                           children: [
                             TextFormField(
                               controller: _notesCtrl,
-                              decoration: const InputDecoration(hintText: 'Additional inspection notes...'),
+                              decoration: const InputDecoration(
+                                  hintText: 'Additional inspection notes...'),
                               maxLines: 3,
                             ),
                           ],
-                        ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 500.ms),
+                        ).animate().slideY(
+                            begin: 0.1, duration: 400.ms, delay: 500.ms),
                       ],
                     ),
                   ),
@@ -2250,11 +2759,14 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
               ),
               // Footer Buttons
               material.Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                 decoration: BoxDecoration(
                   color: isDark ? Colors.black26 : Colors.grey.shade50,
-                  border: Border(top: BorderSide(color: context.colors.borderColor)),
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(23)),
+                  border: Border(
+                      top: BorderSide(color: context.colors.borderColor)),
+                  borderRadius:
+                      const BorderRadius.vertical(bottom: Radius.circular(23)),
                 ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
@@ -2266,7 +2778,12 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                     const Gap(12),
                     ElevatedButton.icon(
                       icon: _isUpdating
-                          ? SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: context.colors.primaryNavy))
                           : const Icon(Icons.save_rounded),
                       label: Text(_isUpdating ? 'Updating...' : 'Update Entry'),
                       onPressed: _isUpdating ? null : _updatePackage,
@@ -2297,7 +2814,8 @@ class _UpdateItemRowWidget extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<_UpdateItemRowWidget> createState() => _UpdateItemRowWidgetState();
+  ConsumerState<_UpdateItemRowWidget> createState() =>
+      _UpdateItemRowWidgetState();
 }
 
 class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
@@ -2310,7 +2828,12 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
         color: context.colors.surfaceDark,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: context.colors.borderColor),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 4,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2323,12 +2846,17 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   color: context.colors.primaryGold.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text('Item ${widget.index == -1 ? "1" : widget.index}', style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w700, fontSize: 12)),
+                child: Text('Item ${widget.index == -1 ? "1" : widget.index}',
+                    style: TextStyle(
+                        color: context.colors.primaryGold,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12)),
               ),
               const Spacer(),
               if (widget.onRemove != null)
                 IconButton(
-                  icon: Icon(Icons.delete_outline_rounded, size: 20, color: context.colors.dangerRed),
+                  icon: Icon(Icons.delete_outline_rounded,
+                      size: 20, color: context.colors.dangerRed),
                   onPressed: widget.onRemove,
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
@@ -2344,8 +2872,10 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                 flex: 3,
                 child: TextFormField(
                   controller: widget.row.nameCtrl,
-                  decoration: const InputDecoration(labelText: 'Item Name *', isDense: true),
-                  validator: (v) => v == null || v.trim().isEmpty ? 'Required' : null,
+                  decoration: const InputDecoration(
+                      labelText: 'Item Name *', isDense: true),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? 'Required' : null,
                   onChanged: (_) => widget.onChanged(),
                 ),
               ),
@@ -2354,12 +2884,14 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                 flex: 1,
                 child: TextFormField(
                   controller: widget.row.qtyCtrl,
-                  decoration: const InputDecoration(labelText: 'Pkgs *', isDense: true),
+                  decoration:
+                      const InputDecoration(labelText: 'Pkgs *', isDense: true),
                   keyboardType: TextInputType.number,
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
                   validator: (v) {
                     if (v == null || v.trim().isEmpty) return 'Req';
-                    if (int.tryParse(v) == null || int.tryParse(v)! <= 0) return 'Err';
+                    if (int.tryParse(v) == null || int.tryParse(v)! <= 0)
+                      return 'Err';
                     return null;
                   },
                   onChanged: (_) => widget.onChanged(),
@@ -2370,11 +2902,36 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                 flex: 2,
                 child: DropdownButtonFormField<String>(
                   isDense: true,
-                  value: ['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].contains(widget.row.unitOfMeasureCtrl.text)
+                  value: [
+                    'Pieces',
+                    'Cartons',
+                    'Boxes',
+                    'Bags',
+                    'Pallets',
+                    'KG',
+                    'Meters',
+                    'Other'
+                  ].contains(widget.row.unitOfMeasureCtrl.text)
                       ? widget.row.unitOfMeasureCtrl.text
                       : 'Pieces',
-                  decoration: const InputDecoration(labelText: 'Unit *', isDense: true),
-                  items: ['Pieces', 'Cartons', 'Boxes', 'Bags', 'Pallets', 'KG', 'Meters', 'Other'].map((u) => DropdownMenuItem(value: u, child: Text(u, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                  decoration:
+                      const InputDecoration(labelText: 'Unit *', isDense: true),
+                  items: [
+                    'Pieces',
+                    'Cartons',
+                    'Boxes',
+                    'Bags',
+                    'Pallets',
+                    'KG',
+                    'Meters',
+                    'Other'
+                  ]
+                      .map((u) => DropdownMenuItem(
+                          value: u,
+                          child: Text(u,
+                              style: const TextStyle(fontSize: 12),
+                              overflow: TextOverflow.ellipsis)))
+                      .toList(),
                   onChanged: (v) {
                     setState(() {
                       widget.row.unitOfMeasureCtrl.text = v ?? 'Pieces';
@@ -2389,8 +2946,13 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   flex: 2,
                   child: TextFormField(
                     controller: widget.row.unitOtherCtrl,
-                    decoration: const InputDecoration(labelText: 'Name *', isDense: true),
-                    validator: (v) => widget.row.unitOfMeasureCtrl.text == 'Other' && (v == null || v.trim().isEmpty) ? 'Req' : null,
+                    decoration: const InputDecoration(
+                        labelText: 'Name *', isDense: true),
+                    validator: (v) =>
+                        widget.row.unitOfMeasureCtrl.text == 'Other' &&
+                                (v == null || v.trim().isEmpty)
+                            ? 'Req'
+                            : null,
                     onChanged: (_) => widget.onChanged(),
                   ),
                 ),
@@ -2400,38 +2962,72 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                 flex: 2,
                 child: DropdownButtonFormField<String>(
                   isDense: true,
-                  value: widget.row.status,
-                  decoration: const InputDecoration(labelText: 'Status *', isDense: true),
-                  items: ['pending', 'held', 'cleared', 'confiscated', 'returned'].map((s) {
-                    final label = s == 'returned' ? 'released' : s;
-                    return DropdownMenuItem(
-                      value: s,
-                      child: Text(label.toUpperCase(), style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
-                    );
-                  }).toList(),
+                  value: ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                          .contains(widget.row.status)
+                      ? widget.row.status
+                      : 'Other',
+                  decoration: const InputDecoration(
+                      labelText: 'Status *', isDense: true),
+                  items: ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                      .map((s) => DropdownMenuItem(
+                            value: s,
+                            child: Text(s,
+                                style: const TextStyle(fontSize: 12),
+                                overflow: TextOverflow.ellipsis),
+                          ))
+                      .toList(),
                   onChanged: (v) {
                     setState(() => widget.row.status = v!);
                     widget.onChanged();
                   },
                 ),
               ),
+              if (widget.row.status == 'Other') ...[
+                const Gap(10),
+                Expanded(
+                  flex: 2,
+                  child: TextFormField(
+                    controller: widget.row.otherStatusCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Other Status *', isDense: true),
+                    validator: (v) => widget.row.status == 'Other' &&
+                            (v == null || v.trim().isEmpty)
+                        ? 'Required'
+                        : null,
+                    onChanged: (_) => widget.onChanged(),
+                  ),
+                ),
+              ],
               const Gap(10),
               Expanded(
                 flex: 2,
                 child: categories.when(
-                  loading: () => const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                  loading: () => const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2)),
                   error: (e, _) => IconButton(
-                    icon: const Icon(Icons.refresh, size: 16, color: Colors.orange),
+                    icon: const Icon(Icons.refresh,
+                        size: 16, color: Colors.orange),
                     onPressed: () => ref.refresh(packageCategoriesProvider),
                     tooltip: 'Error loading categories',
                   ),
                   data: (list) {
-                    final selectedCategory = list.where((c) => c.name == widget.row.categoryCtrl.text).firstOrNull;
+                    final selectedCategory = list
+                        .where((c) => c.name == widget.row.categoryCtrl.text)
+                        .firstOrNull;
                     return DropdownButtonFormField<String>(
                       isDense: true,
                       value: selectedCategory?.name,
-                      decoration: const InputDecoration(labelText: 'Category', isDense: true),
-                      items: list.map((c) => DropdownMenuItem(value: c.name, child: Text(c.name, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis))).toList(),
+                      decoration: const InputDecoration(
+                          labelText: 'Category', isDense: true),
+                      items: list
+                          .map((c) => DropdownMenuItem(
+                              value: c.name,
+                              child: Text(c.name,
+                                  style: const TextStyle(fontSize: 12),
+                                  overflow: TextOverflow.ellipsis)))
+                          .toList(),
                       onChanged: (v) {
                         widget.row.categoryCtrl.text = v ?? '';
                         setState(() {});
@@ -2446,9 +3042,14 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
           const Gap(16),
           Row(
             children: [
-              Icon(Icons.warning_amber_rounded, size: 18, color: context.colors.heldOrange),
+              Icon(Icons.warning_amber_rounded,
+                  size: 18, color: context.colors.heldOrange),
               const Gap(8),
-              Text('Hold Reasons', style: material.TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: context.colors.textPrimary)),
+              Text('Hold Reasons',
+                  style: material.TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: context.colors.textPrimary)),
               const Spacer(),
               if (widget.row.selectedReasons.length < 4)
                 TextButton.icon(
@@ -2457,12 +3058,17 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     widget.onChanged();
                   },
                   icon: const Icon(Icons.add_circle_outline, size: 16),
-                  label: const Text('Add Reason', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                  label: const Text('Add Reason',
+                      style:
+                          TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   style: TextButton.styleFrom(
                     foregroundColor: context.colors.primaryGold,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    backgroundColor: context.colors.primaryGold.withOpacity(0.1),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    backgroundColor:
+                        context.colors.primaryGold.withOpacity(0.1),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
             ],
@@ -2478,35 +3084,48 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   children: [
                     Expanded(
                       child: ref.watch(holdReasonsProvider).when(
-                        loading: () => const LinearProgressIndicator(),
-                        error: (e, _) => Text('Error loading reasons', style: TextStyle(color: context.colors.dangerRed, fontSize: 11)),
-                        data: (reasons) => DropdownButtonFormField<String>(
-                          isDense: true,
-                          value: widget.row.selectedReasons[rIdx],
-                          decoration: InputDecoration(
-                            labelText: 'Reason ${rIdx + 1} *',
-                            labelStyle: const TextStyle(fontSize: 12),
-                            isDense: true,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                            filled: true,
-                            fillColor: context.colors.cardDark,
+                            loading: () => const LinearProgressIndicator(),
+                            error: (e, _) => Text('Error loading reasons',
+                                style: TextStyle(
+                                    color: context.colors.dangerRed,
+                                    fontSize: 11)),
+                            data: (reasons) => DropdownButtonFormField<String>(
+                              isDense: true,
+                              value: widget.row.selectedReasons[rIdx],
+                              decoration: InputDecoration(
+                                labelText: 'Reason ${rIdx + 1} *',
+                                labelStyle: const TextStyle(fontSize: 12),
+                                isDense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 12),
+                                filled: true,
+                                fillColor: context.colors.cardDark,
+                              ),
+                              validator: (v) => v == null ? 'Required' : null,
+                              items: reasons
+                                  .map((r) => DropdownMenuItem(
+                                      value: r.reasonText,
+                                      child: Text(r.reasonText,
+                                          style: const TextStyle(fontSize: 13),
+                                          overflow: TextOverflow.ellipsis)))
+                                  .toList(),
+                              onChanged: (v) {
+                                setState(
+                                    () => widget.row.selectedReasons[rIdx] = v);
+                                widget.onChanged();
+                              },
+                            ),
                           ),
-                          validator: (v) => v == null ? 'Required' : null,
-                          items: reasons.map((r) => DropdownMenuItem(value: r.reasonText, child: Text(r.reasonText, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis))).toList(),
-                          onChanged: (v) {
-                            setState(() => widget.row.selectedReasons[rIdx] = v);
-                            widget.onChanged();
-                          },
-                        ),
-                      ),
                     ),
                     if (widget.row.selectedReasons.length > 1)
                       Padding(
                         padding: const EdgeInsets.only(left: 8),
                         child: IconButton(
-                          icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.grey),
+                          icon: const Icon(Icons.remove_circle_outline,
+                              size: 20, color: Colors.grey),
                           onPressed: () {
-                            setState(() => widget.row.selectedReasons.removeAt(rIdx));
+                            setState(() =>
+                                widget.row.selectedReasons.removeAt(rIdx));
                             widget.onChanged();
                           },
                           padding: EdgeInsets.zero,
@@ -2519,11 +3138,20 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
               );
             }),
           ),
+          const Gap(12),
+          TextFormField(
+            controller: widget.row.goodsDescriptionCtrl,
+            decoration: const InputDecoration(
+                labelText: 'Goods Description', isDense: true, helperText: ' '),
+            maxLines: 2,
+            onChanged: (_) => widget.onChanged(),
+          ),
         ],
       ),
     );
   }
 }
+
 class _UpdateSectionCard extends StatelessWidget {
   final String title;
   final IconData icon;

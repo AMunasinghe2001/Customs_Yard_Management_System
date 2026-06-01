@@ -47,6 +47,12 @@ class ForfeitedPackagesScreen extends ConsumerStatefulWidget {
 class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScreen> {
   String _searchQuery = '';
 
+  bool _isForfeitStatus(String? status) {
+    if (status == null) return false;
+    final normalized = status.trim().toLowerCase();
+    return normalized == 'forfiet' || normalized == 'forfeit' || normalized == 'forfeited';
+  }
+
   @override
   Widget build(BuildContext context) {
     final forfeitedAsync = ref.watch(forfeitedPackagesProvider);
@@ -188,7 +194,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
                           ],
                           rows: filtered.expand((pkg) {
-                            final forfeitedItems = pkg.packageDetails?.items.where((i) => i.status.toLowerCase() == 'forfiet' || i.status.toLowerCase() == 'forfeited').toList() ?? [];
+                            final forfeitedItems = pkg.packageDetails?.items.where((i) => _isForfeitStatus(i.status)).toList() ?? [];
                             // If no items are explicitly marked, just show one row for the package
                             final itemsToShow = forfeitedItems.isEmpty ? [null] : forfeitedItems;
                             
