@@ -126,12 +126,12 @@ class _TenderDisposalScreenState
                                 _StatChip(
                                     label: 'Tenders',
                                     value: '${tenders.length}',
-                                    color: context.colors.primaryGold),
+                                    color: context.colors.primaryGold).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                                 const Gap(8),
                                 _StatChip(
                                     label: 'Packages',
                                     value: '$totalPkgs',
-                                    color: context.colors.accentLightBlue),
+                                    color: context.colors.accentLightBlue).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
                                 const Gap(16),
                               ],
                             );
@@ -139,25 +139,56 @@ class _TenderDisposalScreenState
                           loading: () => const SizedBox(),
                           error: (_, __) => const SizedBox(),
                         ),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.add_rounded, size: 16),
-                          label: const Text('Place New Tender'),
-                          onPressed: () => showDialog(
-                            context: context,
-                            builder: (ctx) => TenderPlacementDialog(
-                              ref: ref,
-                              onTenderCreated: () {
-                                ref.invalidate(tendersProvider);
-                                ref.invalidate(forfeitedPackagesProvider);
-                              },
-                            ),
-                          ),
+                        forfeitedAsync.when(
+                          data: (packages) {
+                            final expiredCount =
+                                packages.where((p) => p.isAppealExpired).length;
+                            return Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                _StatChip(
+                                    label: 'Expired',
+                                    value: '$expiredCount',
+                                    color: context.colors.dangerRed).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
+                                const Gap(16),
+                                ElevatedButton.icon(
+                                  icon: const Icon(Icons.gavel_rounded, size: 16),
+                                label: const Text('Place Tender'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: expiredCount > 0
+                                        ? context.colors.primaryGold
+                                        : context.colors.textMuted.withOpacity(0.1),
+                                    foregroundColor: expiredCount > 0
+                                        ? Colors.white
+                                        : context.colors.textMuted,
+                                    elevation: expiredCount > 0 ? 2 : 0,
+                                  ),
+                                  onPressed: expiredCount > 0
+                                      ? () => showDialog(
+                                            context: context,
+                                            builder: (ctx) =>
+                                                TenderPlacementDialog(
+                                              ref: ref,
+                                              onTenderCreated: () {
+                                                ref.invalidate(tendersProvider);
+                                                ref.invalidate(
+                                                    forfeitedPackagesProvider);
+                                              },
+                                            ),
+                                          )
+                                      : null,
+                                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
+                              ],
+                            );
+                          },
+                          loading: () => const SizedBox(),
+                          error: (_, __) => const SizedBox(),
                         ),
                       ],
                     ),
                   ],
                 ),
-              ).animate().fadeIn(),
+              ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
               const Gap(20),
 
               // ── Search Bar ──────────────────────────────────────
@@ -623,7 +654,7 @@ class _DisposalTypeBadge extends StatelessWidget {
       _ => (type, context.colors.textSecondary),
     };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(6),
@@ -631,7 +662,7 @@ class _DisposalTypeBadge extends StatelessWidget {
       ),
       child: Text(label,
           style: TextStyle(
-              color: color, fontWeight: FontWeight.w600, fontSize: 11)),
+              color: color, fontWeight: FontWeight.bold, fontSize: 11)),
     );
   }
 }
@@ -804,7 +835,7 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(Icons.gavel_rounded, color: context.colors.primaryGold, size: 24),
-                    ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
+                    ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
                     const Gap(16),
                     Expanded(
                       child: Column(
@@ -818,7 +849,7 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
                               letterSpacing: 1.2,
                               fontWeight: FontWeight.w800,
                             ),
-                          ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
+                          ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                           if (forfeited != null)
                             Text(
                               forfeited.srNumber,
@@ -827,7 +858,7 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
                                 fontSize: 22,
                                 fontWeight: FontWeight.bold,
                               ),
-                            ).animate().fadeIn(duration: 400.ms, delay: 150.ms).slideX(begin: -0.1),
+                            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 150.ms).fadeIn(),
                         ],
                       ),
                     ),
@@ -1223,10 +1254,10 @@ class _StatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Column(
@@ -1234,12 +1265,16 @@ class _StatChip extends StatelessWidget {
         children: [
           Text(value,
               style: TextStyle(
-                  color: color, fontWeight: FontWeight.w800, fontSize: 16)),
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  height: 1.1)),
           Text(label,
               style: TextStyle(
-                  color: context.colors.textMuted,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w500)),
+                  color: context.colors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5)),
         ],
       ),
     );

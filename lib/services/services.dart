@@ -34,7 +34,7 @@ class AuthService {
         .select()
         .eq('id', user.id)
         .maybeSingle();
-    
+
     if (profileData == null) {
       // If profile doesn't exist yet (first time login), it might need creation via trigger
       // But for security, we sign out if not found in our roles table
@@ -196,9 +196,9 @@ class PackageService {
 
   Future<PackageModel?> getPackageBySrNumber(String srNumber) async {
     final data = await supabase
-      .from('packages')
-      .select(
-        '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)')
+        .from('packages')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)')
         .eq('sr_number', srNumber)
         .maybeSingle();
     if (data == null) return null;
@@ -207,9 +207,9 @@ class PackageService {
 
   Future<PackageModel?> getPackageById(String id) async {
     final data = await supabase
-      .from('packages')
-      .select(
-        '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)')
+        .from('packages')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)')
         .eq('id', id)
         .maybeSingle();
     if (data == null) return null;
@@ -219,7 +219,7 @@ class PackageService {
   Future<List<PackageModel>> getAllPackages(
       {String? status, String? search, DateTime? since}) async {
     var query = supabase.from('packages').select(
-      '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)');
+        '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)');
     if (status != null && status != 'all' && status != 'returned')
       query = query.eq('status', status);
     if (since != null) query = query.gte('created_at', since.toIso8601String());
@@ -244,7 +244,7 @@ class PackageService {
     final createdId = pkgData['id'] as String;
 
     if (items.isNotEmpty) {
-      await supabase.from('package_items').insert(
+      await supabase.from('package_items').upsert(
             items.map((i) => i.toInsertJson(createdId)).toList(),
           );
     }
@@ -254,8 +254,29 @@ class PackageService {
         .select(
             '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
         .eq('id', createdId)
-        .single();
-    final created = PackageModel.fromJson(refreshedData);
+        .limit(1)
+        .maybeSingle();
+    final created = PackageModel.fromJson(refreshedData ?? {});
+
+    // Sync to Forfeited Packages if applicable
+    final hasForfeit = items.any((i) =>
+        i.status.toLowerCase() == 'forfiet' ||
+        i.status.toLowerCase() == 'forfeited');
+    if (hasForfeit) {
+      final existingForfeited = await supabase
+          .from('forfeited_packages')
+          .select('id')
+          .eq('package_id', created.id)
+          .maybeSingle();
+      if (existingForfeited == null) {
+        await ForfeitedPackageService().createForfeitedPackage(
+          packageId: created.id,
+          srNumber: created.srNumber,
+          consigneeName: created.consigneeName,
+          reason: created.reason ?? 'Forfeited item added',
+        );
+      }
+    }
 
     if (user != null) {
       await AuditLogService().recordLog(
@@ -270,56 +291,82 @@ class PackageService {
     return created;
   }
 
-  Future<PackageModel> upsertPackage(PackageModel pkg, List<PackageItem> items) async {
+  Future<PackageModel> upsertPackage(
+      PackageModel pkg, List<PackageItem> items) async {
     // If an ID is provided, it's an explicit update to an existing record
     if (pkg.id.isNotEmpty) {
-      await supabase
-          .from('packages')
-          .update({
-            ...pkg.toInsertJson(),
-            'updated_at': DateTime.now().toIso8601String(),
-          })
-          .eq('id', pkg.id);
-      
+      await supabase.from('packages').update({
+        ...pkg.toInsertJson(),
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', pkg.id);
+
       // Manage items for the existing record
       if (items.isNotEmpty) {
         final existingItemsData = await supabase
             .from('package_items')
             .select('id')
             .eq('package_id', pkg.id);
-        
+
         final existingItemIds = (existingItemsData as List)
             .map((row) => row['id'].toString())
             .toSet();
-        
+
         final newItemIds = items
-          .map((i) => i.id)
-          .where((id) => id.isNotEmpty && existingItemIds.contains(id))
-          .toSet();
-        
+            .map((i) => i.id)
+            .where((id) => id.isNotEmpty && existingItemIds.contains(id))
+            .toSet();
+
         final idsToDelete = existingItemIds.difference(newItemIds).toList();
         if (idsToDelete.isNotEmpty) {
-          await supabase.from('package_items').delete().inFilter('id', idsToDelete);
+          await supabase
+              .from('package_items')
+              .delete()
+              .inFilter('id', idsToDelete);
         }
 
-        for (final item in items) {
-          if (item.id.isNotEmpty && existingItemIds.contains(item.id)) {
-            await supabase.from('package_items').update(item.toInsertJson(pkg.id)).eq('id', item.id);
-          } else {
-            await supabase.from('package_items').insert(item.toInsertJson(pkg.id));
-          }
-        }
+        // Use upsert to handle both updates and inserts efficiently
+        await supabase.from('package_items').upsert(
+              items.map((item) => item.toInsertJson(pkg.id)).toList(),
+            );
       }
 
       final refreshed = await supabase
           .from('packages')
-          .select('*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
+          .select(
+              '*, package_items(*), warehouse_entries(*, warehouses(*)), profiles(*)')
           .eq('id', pkg.id)
-          .single();
-      
-      return PackageModel.fromJson(refreshed);
+          .limit(1)
+          .maybeSingle();
+
+      if (refreshed == null) return PackageModel.fromJson({}); // Fallback or handle null
+      final result = PackageModel.fromJson(refreshed);
+
+      // Sync to Forfeited Packages if applicable
+      final hasForfeit = items.any((i) =>
+          i.status.toLowerCase() == 'forfiet' ||
+          i.status.toLowerCase() == 'forfeited');
+      if (hasForfeit) {
+        final existingForfeited = await supabase
+            .from('forfeited_packages')
+            .select('id')
+            .eq('package_id', result.id)
+            .maybeSingle();
+        if (existingForfeited == null) {
+          await ForfeitedPackageService().createForfeitedPackage(
+            packageId: result.id,
+            srNumber: result.srNumber,
+            consigneeName: result.consigneeName,
+            reason: result.reason ?? 'Item marked as forfeited',
+          );
+        }
+      } else {
+        // Remove if no items are forfeited anymore
+        await supabase.from('forfeited_packages').delete().eq('package_id', result.id);
+      }
+
+      return result;
     } else {
-      // If no ID is provided, create a new record even if sr_number exists 
+      // If no ID is provided, create a new record even if sr_number exists
       // (This requires that the UNIQUE constraint on sr_number is removed from the DB)
       return createPackage(pkg, items);
     }
@@ -336,6 +383,33 @@ class PackageService {
     if (status == 'cleared')
       data['cleared_at'] = DateTime.now().toIso8601String();
     await supabase.from('packages').update(data).eq('id', id);
+
+    // Sync to Forfeited Packages if applicable
+    final isForfeited = status.toLowerCase() == 'forfiet' || status.toLowerCase() == 'forfeited';
+    
+    if (isForfeited) {
+      final pkgData = await supabase
+          .from('packages')
+          .select('sr_number, consignee_name, reason')
+          .eq('id', id)
+          .single();
+      final existingForfeited = await supabase
+          .from('forfeited_packages')
+          .select('id')
+          .eq('package_id', id)
+          .maybeSingle();
+      if (existingForfeited == null) {
+        await ForfeitedPackageService().createForfeitedPackage(
+          packageId: id,
+          srNumber: pkgData['sr_number'] as String,
+          consigneeName: pkgData['consignee_name'] as String,
+          reason: pkgData['reason'] as String? ?? 'Status updated to forfeited',
+        );
+      }
+    } else {
+      // If status is no longer forfeited, remove from forfeited_packages
+      await supabase.from('forfeited_packages').delete().eq('package_id', id);
+    }
 
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -380,14 +454,14 @@ class PackageService {
 
     // Get current storage rate (latest effective_from)
     final latestRate = await supabase
-      .from('storage_rates')
-      .select('rate, effective_from')
-      .order('effective_from', ascending: false)
-      .limit(1);
+        .from('storage_rates')
+        .select('rate, effective_from')
+        .order('effective_from', ascending: false)
+        .limit(1);
 
     final storageRate = latestRate.isNotEmpty
-      ? (latestRate.first['rate'] as num).toDouble()
-      : 0.0;
+        ? (latestRate.first['rate'] as num).toDouble()
+        : 0.0;
 
     return {
       'seized': seized,
@@ -410,7 +484,8 @@ class WarehouseService {
       {bool? isReturned}) async {
     var query = supabase
         .from('warehouse_entries')
-        .select('*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)')
+        .select(
+            '*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)')
         .eq('warehouse_id', warehouseId);
     if (isReturned != null) query = query.eq('is_returned', isReturned);
     final data = await query.order('admitted_at', ascending: false);
@@ -419,9 +494,8 @@ class WarehouseService {
 
   Future<List<WarehouseEntryModel>> getAllWarehouseEntries(
       {bool? isReturned}) async {
-    var query = supabase
-        .from('warehouse_entries')
-        .select('*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)');
+    var query = supabase.from('warehouse_entries').select(
+        '*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)');
     if (isReturned != null) query = query.eq('is_returned', isReturned);
     final data = await query.order('admitted_at', ascending: false);
     return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
@@ -465,36 +539,51 @@ class WarehouseService {
     }
   }
 
-  Future<void> markAsReturned(String entryId, {String? returnNotes, int? returnQty}) async {
+  Future<void> markAsReturned(String entryId,
+      {String? returnNotes, int? returnQty}) async {
     final user = supabase.auth.currentUser;
-    
+
     // Attempt to get name from local providers first to avoid extra DB calls
     // But since this is a service, we'll try a simpler check
-    
+
     try {
       // 1. Get the entry details
       final entryRes = await supabase
           .from('warehouse_entries')
-          .select('package_item_id, item_count, package_id, warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate, is_returned')
+          .select(
+              'package_item_id, item_count, package_id, warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate, is_returned')
           .eq('id', entryId)
           .single();
-      
+
       final itemId = entryRes['package_item_id'] as String?;
       int currentTotal = entryRes['item_count'] as int;
-      
+
       // AUTO-REPAIR OLD DATA (where item_count was saved as 1 due to bug)
-      if (itemId != null && currentTotal == 1 && entryRes['is_returned'] == false) {
-         final itemRes = await supabase.from('package_items').select('quantity').eq('id', itemId).single();
-         int trueQty = itemRes['quantity'] as int;
-         if (trueQty > 1) {
-            // Find if there are already returned entries
-            final returnedRes = await supabase.from('warehouse_entries').select('item_count').eq('package_item_id', itemId).eq('is_returned', true);
-            int returnedSum = (returnedRes as List).fold(0, (sum, e) => sum + (e['item_count'] as int));
-            if (returnedSum < trueQty) {
-                currentTotal = trueQty - returnedSum;
-                await supabase.from('warehouse_entries').update({'item_count': currentTotal}).eq('id', entryId);
-            }
-         }
+      if (itemId != null &&
+          currentTotal == 1 &&
+          entryRes['is_returned'] == false) {
+        final itemRes = await supabase
+            .from('package_items')
+            .select('quantity')
+            .eq('id', itemId)
+            .single();
+        int trueQty = itemRes['quantity'] as int;
+        if (trueQty > 1) {
+          // Find if there are already returned entries
+          final returnedRes = await supabase
+              .from('warehouse_entries')
+              .select('item_count')
+              .eq('package_item_id', itemId)
+              .eq('is_returned', true);
+          int returnedSum = (returnedRes as List)
+              .fold(0, (sum, e) => sum + (e['item_count'] as int));
+          if (returnedSum < trueQty) {
+            currentTotal = trueQty - returnedSum;
+            await supabase
+                .from('warehouse_entries')
+                .update({'item_count': currentTotal}).eq('id', entryId);
+          }
+        }
       }
 
       final releaseQty = returnQty ?? currentTotal;
@@ -524,8 +613,7 @@ class WarehouseService {
         if (itemId != null) {
           await supabase
               .from('package_items')
-              .update({'status': 'returned'})
-              .eq('id', itemId);
+              .update({'status': 'returned'}).eq('id', itemId);
         }
       } else {
         // Partial return - always create a new returned entry (no merge)
@@ -558,7 +646,8 @@ class WarehouseService {
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
-        action: 'Marked warehouse entry as released (Qty: ${returnQty ?? "Full"})',
+        action:
+            'Marked warehouse entry as released (Qty: ${returnQty ?? "Full"})',
         entityType: 'warehouse_entry',
         entityId: entryId,
       );
@@ -589,10 +678,11 @@ class WarehouseService {
 
   Future<List<Map<String, dynamic>>> getCategoryZoneCombinedSummary() async {
     // 1. Fetch Categories mapping
-    final categoriesData = await supabase.from('package_categories').select('name, target_zone');
+    final categoriesData =
+        await supabase.from('package_categories').select('name, target_zone');
     final Map<String, String> categoryZoneMap = {};
     final Map<String, String> originalNamesMap = {};
-    
+
     for (final cat in (categoriesData as List)) {
       final cName = cat['name']?.toString();
       if (cName != null) {
@@ -612,83 +702,93 @@ class WarehouseService {
     for (final row in (response as List)) {
       final pkg = row['packages'] as Map?;
       if (pkg == null) continue;
-      
+
       final pkgStatus = pkg['status'] as String?;
       final itemStatus = row['status'] as String?;
-      
+
       // Skip returned/cleared items unless it's confiscated
       if (itemStatus == 'returned') continue;
-      if ((pkgStatus == 'cleared' || pkgStatus == 'returned') && itemStatus != 'confiscated') {
+      if ((pkgStatus == 'cleared' || pkgStatus == 'returned') &&
+          itemStatus != 'confiscated') {
         continue;
       }
-      
+
       String cat = row['category']?.toString() ?? 'Uncategorized';
       if (cat.trim().isEmpty) cat = 'Uncategorized';
-      
+
       final catLower = cat.toLowerCase().trim();
-      final finalCat = categoryZoneMap.containsKey(catLower) ? originalNamesMap[catLower]! : 'Uncategorized';
-      
+      final finalCat = categoryZoneMap.containsKey(catLower)
+          ? originalNamesMap[catLower]!
+          : 'Uncategorized';
+
       if (!summary.containsKey(finalCat)) {
-         summary[finalCat] = {
-            'category': finalCat,
-            'warehouses': <String>{},
-            'zones': <String>{},
-            'count': 0,
-         };
+        summary[finalCat] = {
+          'category': finalCat,
+          'warehouses': <String>{},
+          'zones': <String>{},
+          'count': 0,
+        };
       }
 
       final entries = row['warehouse_entries'] as List? ?? [];
-      final activeEntries = entries.where((e) => e['is_returned'] == false).toList();
-      
+      final activeEntries =
+          entries.where((e) => e['is_returned'] == false).toList();
+
       int itemActiveQty = 0;
-      
+
       if (activeEntries.isEmpty) {
         // e.g. pending or confiscated without a warehouse entry
         itemActiveQty = (row['quantity'] as num?)?.toInt() ?? 0;
-        
+
         // Add default targeted zone if available and not already held somewhere
         if (categoryZoneMap.containsKey(catLower)) {
-           final defaultZone = categoryZoneMap[catLower];
-           if (defaultZone != null && defaultZone.isNotEmpty && defaultZone != 'null' && defaultZone != 'N/A') {
-              (summary[finalCat]!['zones'] as Set<String>).add(defaultZone);
-           }
+          final defaultZone = categoryZoneMap[catLower];
+          if (defaultZone != null &&
+              defaultZone.isNotEmpty &&
+              defaultZone != 'null' &&
+              defaultZone != 'N/A') {
+            (summary[finalCat]!['zones'] as Set<String>).add(defaultZone);
+          }
         }
       } else {
         // It has warehouse entries, sum the active counts
         for (final e in activeEntries) {
-           itemActiveQty += (e['item_count'] as num?)?.toInt() ?? 0;
-           
-           final wh = e['warehouses'] as Map?;
-           if (wh != null && wh['code'] != null) {
-              (summary[finalCat]!['warehouses'] as Set<String>).add(wh['code'].toString());
-           }
-           if (e['zone'] != null && e['zone'].toString().isNotEmpty && e['zone'].toString().toUpperCase() != 'N/A') {
-              (summary[finalCat]!['zones'] as Set<String>).add(e['zone'].toString());
-           }
+          itemActiveQty += (e['item_count'] as num?)?.toInt() ?? 0;
+
+          final wh = e['warehouses'] as Map?;
+          if (wh != null && wh['code'] != null) {
+            (summary[finalCat]!['warehouses'] as Set<String>)
+                .add(wh['code'].toString());
+          }
+          if (e['zone'] != null &&
+              e['zone'].toString().isNotEmpty &&
+              e['zone'].toString().toUpperCase() != 'N/A') {
+            (summary[finalCat]!['zones'] as Set<String>)
+                .add(e['zone'].toString());
+          }
         }
       }
-      
+
       if (itemActiveQty > 0) {
-        summary[finalCat]!['count'] = (summary[finalCat]!['count'] as int) + itemActiveQty;
+        summary[finalCat]!['count'] =
+            (summary[finalCat]!['count'] as int) + itemActiveQty;
       }
     }
 
     // Return mapped values, excluding zero-count aggregations to keep table clean
-    return summary.values
-      .where((v) => (v['count'] as int) > 0)
-      .map((v) {
-        final whSet = v['warehouses'] as Set<String>;
-        final zoneSet = v['zones'] as Set<String>;
-        
-        final whString = whSet.isEmpty ? 'Pending' : whSet.join(',');
-        final zoneString = zoneSet.isEmpty ? 'N/A' : zoneSet.join(',');
-        
-        return {
-          'category': v['category'],
-          'warehouse': whString,
-          'zone': zoneString,
-          'count': v['count'],
-        };
+    return summary.values.where((v) => (v['count'] as int) > 0).map((v) {
+      final whSet = v['warehouses'] as Set<String>;
+      final zoneSet = v['zones'] as Set<String>;
+
+      final whString = whSet.isEmpty ? 'Pending' : whSet.join(',');
+      final zoneString = zoneSet.isEmpty ? 'N/A' : zoneSet.join(',');
+
+      return {
+        'category': v['category'],
+        'warehouse': whString,
+        'zone': zoneString,
+        'count': v['count'],
+      };
     }).toList();
   }
 
@@ -702,13 +802,17 @@ class WarehouseService {
     String? location,
     int capacity = 500,
   }) async {
-    final data = await supabase.from('warehouses').insert({
-      'name': name,
-      'code': code,
-      'description': description,
-      'location': location,
-      'capacity': capacity,
-    }).select().single();
+    final data = await supabase
+        .from('warehouses')
+        .insert({
+          'name': name,
+          'code': code,
+          'description': description,
+          'location': location,
+          'capacity': capacity,
+        })
+        .select()
+        .single();
 
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -788,7 +892,8 @@ class WarehouseService {
   }
 
   /// Get detailed warehouse statistics (for a specific warehouse)
-  Future<Map<String, dynamic>> getWarehouseDetailedStats(String warehouseId) async {
+  Future<Map<String, dynamic>> getWarehouseDetailedStats(
+      String warehouseId) async {
     final warehouse = await supabase
         .from('warehouses')
         .select()
@@ -810,7 +915,8 @@ class WarehouseService {
       'warehouse': WarehouseModel.fromJson(warehouse),
       'activeEntries': activeEntries.length,
       'totalItemsHeld': totalItems,
-      'capacityUtilization': ((totalItems / warehouse['capacity']) * 100).toStringAsFixed(1),
+      'capacityUtilization':
+          ((totalItems / warehouse['capacity']) * 100).toStringAsFixed(1),
     };
   }
 }
@@ -1221,22 +1327,49 @@ class PackageCategoryService {
 
 class ForfeitedPackageService {
   /// Get all forfeited packages
+  /// Get all forfeited packages (that are not yet in a tender)
   Future<List<ForfeitedPackageModel>> getForfeitedPackages() async {
+    // 1. Get IDs of packages already in a tender
+    final tendersData = await supabase.from('tenders').select('forfeited_package_ids');
+    final tenderedIds = (tendersData as List)
+        .expand((t) => (t['forfeited_package_ids'] as List))
+        .map((e) => e.toString())
+        .toSet();
+
+    // 2. Fetch forfeited packages
     final data = await supabase
         .from('forfeited_packages')
-        .select('*, packages(*)')
+        .select('*, packages(*, package_items(*))')
         .order('appeal_deadline', ascending: true);
-    return data.map((e) => ForfeitedPackageModel.fromJson(e)).toList();
+
+    // 3. Filter out tendered and map to models
+    return (data as List)
+        .where((e) => !tenderedIds.contains(e['id']))
+        .map((e) => ForfeitedPackageModel.fromJson(e))
+        .toList();
   }
 
-  /// Get forfeited packages where appeal has expired (> 30 days)
+  /// Get forfeited packages where appeal has expired (> 30 days) and not tendered
   Future<List<ForfeitedPackageModel>> getExpiredAppealPackages() async {
+    // 1. Get IDs of packages already in a tender
+    final tendersData = await supabase.from('tenders').select('forfeited_package_ids');
+    final tenderedIds = (tendersData as List)
+        .expand((t) => (t['forfeited_package_ids'] as List))
+        .map((e) => e.toString())
+        .toSet();
+
+    // 2. Fetch expired packages
     final data = await supabase
         .from('forfeited_packages')
-        .select('*, packages(*)')
+        .select('*, packages(*, package_items(*))')
         .lt('appeal_deadline', DateTime.now().toIso8601String())
         .order('appeal_deadline', ascending: true);
-    return data.map((e) => ForfeitedPackageModel.fromJson(e)).toList();
+
+    // 3. Filter out tendered and map to models
+    return (data as List)
+        .where((e) => !tenderedIds.contains(e['id']))
+        .map((e) => ForfeitedPackageModel.fromJson(e))
+        .toList();
   }
 
   /// Create a forfeited package record
@@ -1257,11 +1390,12 @@ class ForfeitedPackageService {
           'appeal_deadline': appealDeadline.toIso8601String(),
           'reason': reason,
         })
-        .select('*, packages(*)')
-        .single();
+        .select('*, packages(*, package_items(*))')
+        .limit(1)
+        .maybeSingle();
 
     final user = supabase.auth.currentUser;
-    if (user != null) {
+    if (user != null && data != null) {
       await AuditLogService().recordLog(
         userId: user.id,
         action: 'Created forfeited package record',
@@ -1271,18 +1405,18 @@ class ForfeitedPackageService {
       );
     }
 
-    return ForfeitedPackageModel.fromJson(data);
+    return ForfeitedPackageModel.fromJson(data ?? {});
   }
 
   /// Delete forfeited packages by ID
   Future<void> deleteForfeitedPackages(List<String> packageIds) async {
     if (packageIds.isEmpty) return;
-    
+
     await supabase
         .from('forfeited_packages')
         .delete()
         .inFilter('id', packageIds);
-    
+
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -1326,8 +1460,9 @@ class TendersService {
         .select('*, profiles(full_name)')
         .single();
 
-    // Delete the forfeited packages that are now in tender
-    await ForfeitedPackageService().deleteForfeitedPackages(forfeitedPackageIds);
+    // Note: We no longer delete forfeited packages because tender_disposals
+    // needs to reference them via FK. They are filtered in UI.
+    // await ForfeitedPackageService().deleteForfeitedPackages(forfeitedPackageIds);
 
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -1386,7 +1521,8 @@ class TendersService {
   }
 
   /// Get disposals for a tender
-  Future<List<TenderDisposalModel>> getDisposalsForTender(String tenderPackageId) async {
+  Future<List<TenderDisposalModel>> getDisposalsForTender(
+      String tenderPackageId) async {
     final data = await supabase
         .from('tender_disposals')
         .select('*, profiles(full_name)')
@@ -1395,4 +1531,3 @@ class TendersService {
     return data.map((e) => TenderDisposalModel.fromJson(e)).toList();
   }
 }
-

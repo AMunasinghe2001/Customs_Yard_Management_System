@@ -74,7 +74,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                       crossAxisAlignment: WrapCrossAlignment.center,
                       runSpacing: 16,
                       children: [
-                        Column(
+                            Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('Forfeited Packages', style: Theme.of(context).textTheme.headlineLarge),
@@ -84,24 +84,25 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                               style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
                             ),
                           ],
-                        ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.2),
+                        ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _StatChip(label: 'Total', value: totalCount.toString(), color: context.colors.accentLightBlue).animate().fadeIn(delay: 100.ms).scale(),
+                            _StatChip(label: 'Total', value: totalCount.toString(), color: context.colors.accentLightBlue).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                             const Gap(8),
-                            _StatChip(label: 'In Appeal', value: appealingCount.toString(), color: context.colors.successGreen).animate().fadeIn(delay: 200.ms).scale(),
+                            _StatChip(label: 'In Appeal', value: appealingCount.toString(), color: context.colors.successGreen).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
                             const Gap(8),
-                            _StatChip(label: 'Expired', value: expiredCount.toString(), color: context.colors.dangerRed).animate().fadeIn(delay: 300.ms).scale(),
+                            _StatChip(label: 'Expired', value: expiredCount.toString(), color: context.colors.dangerRed).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
                             const Gap(16),
                             ElevatedButton.icon(
                               icon: const Icon(Icons.gavel_rounded, size: 16),
                               label: const Text('Place Tender'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: expiredCount > 0 ? context.colors.primaryGold : Colors.grey,
-                                foregroundColor: Colors.white,
+                                backgroundColor: expiredCount > 0 ? context.colors.primaryGold : context.colors.textMuted.withOpacity(0.2),
+                                foregroundColor: expiredCount > 0 ? Colors.white : context.colors.textMuted,
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                elevation: expiredCount > 0 ? 2 : 0,
                               ),
                               onPressed: expiredCount > 0
                                   ? () => showDialog(
@@ -112,7 +113,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                         ),
                                       )
                                   : null,
-                            ).animate().fadeIn(delay: 400.ms).scale(),
+                            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
                           ],
                         ),
                       ],
@@ -179,59 +180,67 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           fixedTopRows: 1,
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
                             DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
                             DataColumn2(label: Text('Forfeited Date'), size: ColumnSize.M),
                             DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Days Remaining'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Days Remaining'), size: ColumnSize.S),
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
                           ],
-                          rows: filtered.map((pkg) {
-                            final isExpired = pkg.isAppealExpired;
-                            final daysRemaining = pkg.appealDeadline.difference(DateTime.now()).inDays;
+                          rows: filtered.expand((pkg) {
+                            final forfeitedItems = pkg.packageDetails?.items.where((i) => i.status.toLowerCase() == 'forfiet' || i.status.toLowerCase() == 'forfeited').toList() ?? [];
+                            // If no items are explicitly marked, just show one row for the package
+                            final itemsToShow = forfeitedItems.isEmpty ? [null] : forfeitedItems;
                             
-                            return DataRow(
-                              color: WidgetStateProperty.resolveWith<Color?>((states) {
-                                if (isExpired) return context.colors.dangerRed.withOpacity(0.04);
-                                return null;
-                              }),
-                              cells: [
-                                DataCell(Text(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
-                                DataCell(Text(pkg.consigneeName)),
-                                DataCell(Text(DateFormat('yyyy-MM-dd').format(pkg.forfeitedAt))),
-                                DataCell(Text(
-                                  DateFormat('yyyy-MM-dd').format(pkg.appealDeadline),
-                                  style: TextStyle(
-                                    color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
-                                    fontWeight: isExpired ? FontWeight.bold : FontWeight.normal
-                                  ),
-                                )),
-                                DataCell(Text(
-                                  isExpired ? '${-daysRemaining} overdue' : '$daysRemaining',
-                                  style: TextStyle(
-                                    color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
-                                    fontWeight: FontWeight.bold
-                                  ),
-                                )),
-                                DataCell(Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
+                            return itemsToShow.map((item) {
+                              final isExpired = pkg.isAppealExpired;
+                              final daysRemaining = pkg.appealDeadline.difference(DateTime.now()).inDays;
+                              
+                              return DataRow(
+                                color: WidgetStateProperty.resolveWith<Color?>((states) {
+                                  if (isExpired) return context.colors.dangerRed.withOpacity(0.04);
+                                  return null;
+                                }),
+                                cells: [
+                                  DataCell(Text(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
+                                  DataCell(Text(item?.itemName ?? 'Multiple/Unspecified', style: const TextStyle(fontWeight: FontWeight.w500))),
+                                  DataCell(Text(pkg.consigneeName)),
+                                  DataCell(Text(DateFormat('yyyy-MM-dd').format(pkg.forfeitedAt))),
+                                  DataCell(Text(
+                                    DateFormat('yyyy-MM-dd').format(pkg.appealDeadline),
+                                    style: TextStyle(
+                                      color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
+                                      fontWeight: isExpired ? FontWeight.bold : FontWeight.normal
                                     ),
-                                    child: Text(
-                                      isExpired ? 'Appeal Expired' : 'Appealing',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
-                                        fontWeight: FontWeight.bold,
+                                  )),
+                                  DataCell(Text(
+                                    isExpired ? ' overdue' : '',
+                                    style: TextStyle(
+                                      color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
+                                      fontWeight: FontWeight.bold
+                                    ),
+                                  )),
+                                  DataCell(Center(
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
+                                      ),
+                                      child: Text(
+                                        isExpired ? 'Appeal Expired' : 'Appealing',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
                                     ),
-                                  ),
-                                )),
-                              ],
-                            );
+                                  )),
+                                ],
+                              );
+                            });
                           }).toList(),
                         ),
                       ),

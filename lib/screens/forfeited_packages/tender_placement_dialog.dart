@@ -87,6 +87,9 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
       );
 
       widget.onTenderCreated();
+      if (mounted) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: ')),
@@ -274,7 +277,7 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
 
                       // Packages Section
                       _SectionContainer(
-                        title: 'Select Packages ( selected)',
+                        title: 'Select Packages (${selectedPackages.length} selected)',
                         icon: Icons.inventory_2_rounded,
                         delay: 200,
                         child: expiredAsync.when(
@@ -326,65 +329,77 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                                     columns: [
                                       DataColumn(label: Text('Select', style: TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold))),
                                       DataColumn(label: Text('SR Number', style: TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold))),
+                                      DataColumn(label: Text('Item Name', style: TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold))),
                                       DataColumn(label: Text('Consignee', style: TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold))),
                                       DataColumn(label: Text('Deadline', style: TextStyle(color: context.colors.textMuted, fontWeight: FontWeight.bold))),
                                     ],
-                                    rows: packages.map((pkg) {
-                                      final isSelected = selectedPackages.contains(pkg.id);
-                                      return DataRow(
-                                        selected: isSelected,
-                                        color: MaterialStateProperty.resolveWith<Color?>((states) {
-                                          if (states.contains(MaterialState.selected)) {
-                                            return context.colors.primaryGold.withOpacity(0.1);
-                                          }
-                                          return null;
-                                        }),
-                                        cells: [
-                                          DataCell(
-                                            Checkbox(
-                                              activeColor: context.colors.primaryGold,
-                                              value: isSelected,
-                                              onChanged: (_) {
-                                                ref.read(selectedTenderPackagesProvider.notifier).update(
-                                                  (state) {
-                                                    final newState = Set<String>.from(state);
-                                                    if (isSelected) {
-                                                      newState.remove(pkg.id);
-                                                    } else {
-                                                      newState.add(pkg.id);
-                                                    }
-                                                    return newState;
-                                                  },
-                                                );
-                                              },
-                                            ),
-                                          ),
-                                          DataCell(
-                                            Text(
-                                              pkg.srNumber,
-                                              style: TextStyle(fontWeight: FontWeight.w700, color: context.colors.textPrimary),
-                                            ),
-                                          ),
-                                          DataCell(Text(pkg.consigneeName, style: TextStyle(color: context.colors.textSecondary))),
-                                          DataCell(
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                              decoration: BoxDecoration(
-                                                color: context.colors.dangerRed.withOpacity(0.1),
-                                                borderRadius: BorderRadius.circular(6),
+                                    rows: packages.expand((pkg) {
+                                      final forfeitedItems = pkg.packageDetails?.items.where((i) => i.status.toLowerCase() == 'forfiet' || i.status.toLowerCase() == 'forfeited').toList() ?? [];
+                                      final itemsToShow = forfeitedItems.isEmpty ? [null] : forfeitedItems;
+                                      
+                                      return itemsToShow.map((item) {
+                                        final isSelected = selectedPackages.contains(pkg.id);
+                                        return DataRow(
+                                          selected: isSelected,
+                                          color: MaterialStateProperty.resolveWith<Color?>((states) {
+                                            if (states.contains(MaterialState.selected)) {
+                                              return context.colors.primaryGold.withOpacity(0.1);
+                                            }
+                                            return null;
+                                          }),
+                                          cells: [
+                                            DataCell(
+                                              Checkbox(
+                                                activeColor: context.colors.primaryGold,
+                                                value: isSelected,
+                                                onChanged: (_) {
+                                                  ref.read(selectedTenderPackagesProvider.notifier).update(
+                                                    (state) {
+                                                      final newState = Set<String>.from(state);
+                                                      if (isSelected) {
+                                                        newState.remove(pkg.id);
+                                                      } else {
+                                                        newState.add(pkg.id);
+                                                      }
+                                                      return newState;
+                                                    },
+                                                  );
+                                                },
                                               ),
-                                              child: Text(
-                                                DateFormat('MM/dd').format(pkg.appealDeadline),
-                                                style: TextStyle(
-                                                  color: context.colors.dangerRed,
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                pkg.srNumber,
+                                                style: TextStyle(fontWeight: FontWeight.w700, color: context.colors.textPrimary),
+                                              ),
+                                            ),
+                                            DataCell(
+                                              Text(
+                                                item?.itemName ?? 'Multiple/Unspecified',
+                                                style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w500),
+                                              ),
+                                            ),
+                                            DataCell(Text(pkg.consigneeName, style: TextStyle(color: context.colors.textSecondary))),
+                                            DataCell(
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: context.colors.dangerRed.withOpacity(0.1),
+                                                  borderRadius: BorderRadius.circular(6),
+                                                ),
+                                                child: Text(
+                                                  DateFormat('MM/dd').format(pkg.appealDeadline),
+                                                  style: TextStyle(
+                                                    color: context.colors.dangerRed,
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ],
-                                      );
+                                          ],
+                                        );
+                                      });
                                     }).toList(),
                                   ),
                                 ),
