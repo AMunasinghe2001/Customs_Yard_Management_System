@@ -28,13 +28,27 @@ class StatusChip extends StatelessWidget {
         label = 'DETAIN';
         break;
       case 'Forfeit':
+      case 'Forfiet': // typo variant in older data
+      case 'forfeit':
+      case 'forfiet':
       case 'forfeited':
         color = context.colors.dangerRed;
         label = 'FORFEIT';
         break;
       case 'Abandoned':
+      case 'abandoned':
         color = const Color(0xFF9E9E9E);
         label = 'ABANDONED';
+        break;
+      case 'Re-export':
+      case 're-export':
+        color = const Color(0xFF00ACC1); // teal
+        label = 'RE-EXPORT';
+        break;
+      case 'Destroy':
+      case 'destroy':
+        color = const Color(0xFFE64A19); // deep orange
+        label = 'DESTROY';
         break;
       case 'inspecting':
         color = context.colors.warningAmber;

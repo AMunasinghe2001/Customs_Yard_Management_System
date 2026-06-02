@@ -72,7 +72,9 @@ import 'package:flutter/material.dart'
         TextOverflow,
         StatefulWidget,
         StatefulBuilder,
-        ConstrainedBox;
+        ConstrainedBox,
+        State,
+        InkWell;
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
@@ -360,6 +362,119 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     return result ?? false;
   }
 
+  Future<bool> _showDispositionDialog(
+      BuildContext context, WarehouseEntryModel entry, String dispositionType) async {
+    final notesCtrl = TextEditingController();
+
+    final Map<String, _DispositionMeta> meta = {
+      'Forfeit': _DispositionMeta(
+        icon: Icons.gavel_rounded,
+        color: const Color(0xFFE53935),
+        label: 'Forfeit',
+        description: 'Package is forfeited to the state. No further charges apply.',
+      ),
+      'Abandoned': _DispositionMeta(
+        icon: Icons.inbox_rounded,
+        color: const Color(0xFF9E9E9E),
+        label: 'Abandoned',
+        description: 'Package is declared abandoned. No further charges apply.',
+      ),
+      'Re-export': _DispositionMeta(
+        icon: Icons.flight_takeoff_rounded,
+        color: const Color(0xFF00ACC1),
+        label: 'Re-export',
+        description: 'Package is sent back to the country of origin.',
+      ),
+      'Destroy': _DispositionMeta(
+        icon: Icons.delete_forever_rounded,
+        color: const Color(0xFFE64A19),
+        label: 'Destroy',
+        description: 'Package is destroyed. No further charges apply.',
+      ),
+    };
+    final m = meta[dispositionType]!;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => material.AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(children: [
+          Icon(m.icon, color: m.color, size: 22),
+          const Gap(10),
+          Text('${m.label} Package Item'),
+        ]),
+        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: m.color.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: m.color.withOpacity(0.3)),
+            ),
+            child: Text(m.description, style: TextStyle(color: m.color, fontSize: 13)),
+          ),
+          const Gap(16),
+          TextFormField(
+            controller: notesCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Notes / Remarks (optional)',
+              isDense: true,
+            ),
+            maxLines: 2,
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          ElevatedButton.icon(
+            icon: Icon(m.icon, size: 16),
+            label: Text('Confirm ${m.label}'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: m.color,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return false;
+
+    await ref.read(warehouseServiceProvider).disposeWarehouseItem(
+          entry.id,
+          dispositionStatus: dispositionType,
+          notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
+        );
+    return true;
+  }
+
+  void _showActionsDialog(
+    BuildContext ctx,
+    WarehouseEntryModel entry, {
+    PackageItem? highlightedItem,
+  }) {
+    final isDetain =
+        highlightedItem?.status?.toLowerCase() == 'detain';
+
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => _PackageActionsDialog(
+        entry: entry,
+        isDetain: isDetain,
+        onRelease: () async {
+          Navigator.pop(dialogCtx);
+          final ok = await _showReleaseConfirmation(ctx, entry);
+          if (ok && mounted) Navigator.pop(ctx);
+        },
+        onDispose: (String type) async {
+          Navigator.pop(dialogCtx);
+          final ok = await _showDispositionDialog(ctx, entry, type);
+          if (ok && mounted) Navigator.pop(ctx);
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.package;
@@ -459,8 +574,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
             ? currentProfile?.badgeNumber
             : null);
 
-    final isConfiscated = highlightedItem?.status == 'confiscated' ||
-        highlightedItem?.status == 'Forfeit' ||
+    final _hs = highlightedItem?.status?.toLowerCase() ?? '';
+    final isConfiscated = _hs == 'confiscated' ||
+        _hs == 'forfeit' ||
+        _hs == 'forfiet' ||
         widget.highlightEntry?.isPackageConfiscated == true;
 
     return Dialog(
@@ -1272,30 +1389,24 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
                           message: isConfiscated
-                              ? 'Confiscated / Forfeited packages cannot be released'
+                              ? 'Confiscated / Forfeited packages cannot be actioned'
                               : '',
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
                               backgroundColor: isConfiscated
                                   ? Colors.grey
-                                  : context.colors.successGreen,
+                                  : const Color(0xFF5C6BC0),
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 20, vertical: 12),
                             ),
-                            icon: const Icon(Icons.assignment_return_rounded,
-                                size: 18),
-                            label: const Text('Release Package'),
+                            icon: const Icon(Icons.bolt_rounded, size: 18),
+                            label: const Text('Actions'),
                             onPressed: isConfiscated
                                 ? null
-                                : () async {
-                                    final success =
-                                        await _showReleaseConfirmation(
-                                            context, widget.highlightEntry!);
-                                    if (success && mounted) {
-                                      Navigator.pop(context);
-                                    }
-                                  },
+                                : () => _showActionsDialog(
+                                    context, widget.highlightEntry!,
+                                    highlightedItem: highlightedItem),
                           ),
                         ),
                     ],
@@ -3209,6 +3320,275 @@ class _UpdateSectionCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Package Actions Dialog ────────────────────────────────────────────────────
+
+class _PackageActionsDialog extends StatefulWidget {
+  final WarehouseEntryModel entry;
+  final bool isDetain;
+  final VoidCallback onRelease;
+  final Future<void> Function(String type) onDispose;
+
+  const _PackageActionsDialog({
+    required this.entry,
+    required this.isDetain,
+    required this.onRelease,
+    required this.onDispose,
+  });
+
+  @override
+  State<_PackageActionsDialog> createState() => _PackageActionsDialogState();
+}
+
+class _PackageActionsDialogState extends State<_PackageActionsDialog> {
+  bool _otherExpanded = false;
+  final _otherCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _otherCtrl.dispose();
+    super.dispose();
+  }
+
+  static const _actions = [
+    _ActionDef(
+      key: 'Release',
+      icon: Icons.assignment_return_rounded,
+      label: 'Release Package',
+      description: 'Package returned to the owner. Storage charge applies.',
+      color: Color(0xFF43A047),
+    ),
+    _ActionDef(
+      key: 'Forfeit',
+      icon: Icons.gavel_rounded,
+      label: 'Forfeit',
+      description: 'Package forfeited to the state. No further charges.',
+      color: Color(0xFFE53935),
+    ),
+    _ActionDef(
+      key: 'Abandoned',
+      icon: Icons.inbox_rounded,
+      label: 'Abandoned',
+      description: 'Package declared abandoned. No further charges.',
+      color: Color(0xFF9E9E9E),
+    ),
+    _ActionDef(
+      key: 'Re-export',
+      icon: Icons.flight_takeoff_rounded,
+      label: 'Re-export',
+      description: 'Package sent back to country of origin. Charge applies.',
+      color: Color(0xFF00ACC1),
+    ),
+    _ActionDef(
+      key: 'Destroy',
+      icon: Icons.delete_forever_rounded,
+      label: 'Destroy',
+      description: 'Package destroyed. No further charges.',
+      color: Color(0xFFE64A19),
+    ),
+    _ActionDef(
+      key: 'Other',
+      icon: Icons.more_horiz_rounded,
+      label: 'Other',
+      description: 'Enter a custom disposition type.',
+      color: Color(0xFF7E57C2),
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return material.AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [
+        Icon(Icons.bolt_rounded, color: context.colors.primaryGold, size: 22),
+        const Gap(10),
+        const Text('Package Actions'),
+      ]),
+      content: SizedBox(
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Show all actions; Release only if isDetain (Detain can be released)
+            ..._actions.where((a) => a.key != 'Release' || widget.isDetain).map((a) {
+              final isOther = a.key == 'Other';
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  material.Card(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      side: BorderSide(
+                        color: (isOther && _otherExpanded)
+                            ? a.color.withOpacity(0.6)
+                            : a.color.withOpacity(0.2),
+                        width: (isOther && _otherExpanded) ? 1.5 : 1,
+                      ),
+                    ),
+                    color: a.color.withOpacity(0.04),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        if (isOther) {
+                          setState(() => _otherExpanded = !_otherExpanded);
+                        } else if (a.key == 'Release') {
+                          widget.onRelease();
+                        } else {
+                          widget.onDispose(a.key);
+                        }
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        child: Row(children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: a.color.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(a.icon, color: a.color, size: 20),
+                          ),
+                          const Gap(14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(a.label,
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 14,
+                                        color: a.color)),
+                                const Gap(2),
+                                Text(a.description,
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color:
+                                            context.colors.textMuted)),
+                              ],
+                            ),
+                          ),
+                          Icon(
+                            isOther
+                                ? (_otherExpanded
+                                    ? Icons.expand_less_rounded
+                                    : Icons.expand_more_rounded)
+                                : Icons.chevron_right_rounded,
+                            color: a.color.withOpacity(0.6),
+                            size: 20,
+                          ),
+                        ]),
+                      ),
+                    ),
+                  ),
+                  // Inline "Other" text field
+                  if (isOther && _otherExpanded)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextFormField(
+                            controller: _otherCtrl,
+                            autofocus: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Disposition Type *',
+                              hintText: 'e.g. Transferred, Seized for Analysis...',
+                              isDense: true,
+                            ),
+                          ),
+                          const Gap(10),
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.check_rounded, size: 16),
+                            label: const Text('Confirm Other Disposition'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF7E57C2),
+                              foregroundColor: Colors.white,
+                            ),
+                            onPressed: () {
+                              final t = _otherCtrl.text.trim();
+                              if (t.isEmpty) return;
+                              widget.onDispose(t);
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            }),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel',
+              style: TextStyle(color: context.colors.textMuted)),
+        ),
+      ],
+    );
+  }
+}
+
+class _ActionDef {
+  final String key;
+  final IconData icon;
+  final String label;
+  final String description;
+  final Color color;
+  const _ActionDef({
+    required this.key,
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.color,
+  });
+}
+
+class _DispositionMeta {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String description;
+  const _DispositionMeta({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.description,
+  });
+}
+
+class _DispositionButton extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onPressed;
+
+  const _DispositionButton({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return OutlinedButton.icon(
+      icon: Icon(icon, size: 14, color: color),
+      label: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(color: color.withOpacity(0.5)),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        backgroundColor: color.withOpacity(0.05),
+      ),
+      onPressed: onPressed,
     );
   }
 }

@@ -658,6 +658,63 @@ class WarehouseService {
     }
   }
 
+  /// Dispose a warehouse item with a specific status (Forfeit, Abandoned, Re-export, Destroy).
+  /// Closes the active warehouse entry and updates the item's status.
+  Future<void> disposeWarehouseItem(
+    String entryId, {
+    required String dispositionStatus,
+    String? notes,
+  }) async {
+    final user = supabase.auth.currentUser;
+
+    final entryRes = await supabase
+        .from('warehouse_entries')
+        .select(
+            'package_item_id, item_count, package_id, warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate')
+        .eq('id', entryId)
+        .single();
+
+    final itemId = entryRes['package_item_id'] as String?;
+    final currentTotal = entryRes['item_count'] as int;
+
+    // Create a closed/disposed warehouse entry for history
+    await supabase.from('warehouse_entries').insert({
+      'package_id': entryRes['package_id'],
+      'package_item_id': itemId,
+      'warehouse_id': entryRes['warehouse_id'],
+      'zone': entryRes['zone'],
+      'hold_reason': entryRes['hold_reason'],
+      'item_count': currentTotal,
+      'admitted_by': entryRes['admitted_by'],
+      'admitted_at': entryRes['admitted_at'],
+      'daily_rate': entryRes['daily_rate'],
+      'is_returned': true,
+      'returned_at': DateTime.now().toIso8601String(),
+      'returned_by': user?.id,
+      'return_notes':
+          '[${dispositionStatus.toUpperCase()}]${notes != null && notes.isNotEmpty ? ' — $notes' : ''}',
+    });
+
+    // Remove the active held entry
+    await supabase.from('warehouse_entries').delete().eq('id', entryId);
+
+    // Update item status in package_items
+    if (itemId != null) {
+      await supabase
+          .from('package_items')
+          .update({'status': dispositionStatus}).eq('id', itemId);
+    }
+
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Package item disposed: $dispositionStatus (entry: $entryId)',
+        entityType: 'warehouse_entry',
+        entityId: entryId,
+      );
+    }
+  }
+
   Future<Map<String, int>> getWarehouseStats() async {
     final entries = await supabase
         .from('warehouse_entries')

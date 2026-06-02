@@ -437,16 +437,29 @@ class WarehouseEntryModel {
     return end.difference(start).inDays + 1;
   }
 
+  static bool isNoChargeStatus(String s) =>
+      s == 'confiscated' ||
+      s == 'forfeit' ||
+      s == 'forfiet' ||
+      s == 'abandoned' ||
+      s == 'destroy';
+
   /// Calculates charge considering historical rate changes across all items in the package (or specific item if tied)
   double calculatePackageCharge(
       List<PackageItem> items, Map<DateTime, double> historicalRates) {
     // If the whole package is confiscated, no charge
     if (isPackageConfiscated) return 0;
 
-    // If this specific entry references an item, check if that item is confiscated or forfeited
+    // If this specific entry references an item, check if it is confiscated or forfeited
     if (packageItemId != null) {
       final item = items.where((i) => i.id == packageItemId).firstOrNull;
-      if (item?.status == 'confiscated' || item?.status == 'Forfeit') return 0;
+      final s = item?.status?.toLowerCase() ?? '';
+      if (isNoChargeStatus(s)) return 0;
+    }
+    // Fallback: if no packageItemId but ALL items are seized/disposed, no charge
+    if (packageItemId == null && items.isNotEmpty) {
+      final allSeized = items.every((i) => isNoChargeStatus(i.status.toLowerCase()));
+      if (allSeized) return 0;
     }
 
     // We should charge based on this specific entry's itemCount!

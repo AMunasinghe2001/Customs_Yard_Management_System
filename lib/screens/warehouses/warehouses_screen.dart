@@ -145,14 +145,16 @@ class _WarehouseTab extends ConsumerWidget {
             if (filter == 'confiscated') {
               if (!e.isPackageConfiscated) return false;
             } else {
-              // Filter by item-level status (Detain / Forfeit / Abandoned / etc.)
-              final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
+              // ref.watch so the filter reacts when package data loads in any warehouse tab
+              final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
               if (pkg != null) {
                 final item = e.packageItemId != null
                     ? pkg.items.where((i) => i.id == e.packageItemId).firstOrNull
                     : null;
-                final itemStatus = item?.status ?? '';
-                if (itemStatus != filter) return false;
+                final rawStatus = item?.status ?? '';
+                // Normalise: treat 'Forfiet' (typo) same as 'Forfeit'
+                final normStatus = rawStatus.toLowerCase() == 'forfiet' ? 'Forfeit' : rawStatus;
+                if (normStatus != filter) return false;
               }
               // If pkg not cached yet, include entry (will re-filter on next build)
             }
@@ -338,7 +340,8 @@ class _WarehouseTab extends ConsumerWidget {
                                 status = item.status;
                               }
                             }
-                            final isItemConfiscated = status == 'confiscated' || status == 'Forfeit';
+                            final isItemConfiscated =
+                                WarehouseEntryModel.isNoChargeStatus(status.toLowerCase());
                             
                             final charge = pkg == null ? 0.0 : e.calculatePackageCharge(pkg.items, storageRateHistory);
                             final isFree = charge <= 0;
@@ -549,14 +552,15 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
             final entries = ref.watch(liveWarehouseEntriesProvider(warehouse.id)).valueOrNull ?? [];
 
             int total = entries.where((e) => !e.isReturned).length;
+            // ref.watch so header stats rebuild when package data loads for any warehouse
             int held = entries.where((e) {
               if (e.isReturned) return false;
               if (e.isPackageConfiscated) return false;
               if (e.packageItemId != null) {
-                final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
+                final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
                 final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                final s = item?.status;
-                return s != 'confiscated' && s != 'Forfeit';
+                final s = item?.status?.toLowerCase() ?? '';
+                return !WarehouseEntryModel.isNoChargeStatus(s);
               }
               return true;
             }).length;
@@ -564,10 +568,10 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
               if (e.isReturned) return false;
               if (e.isPackageConfiscated) return true;
               if (e.packageItemId != null) {
-                final pkg = ref.read(packageDataProvider(e.packageId)).valueOrNull;
+                final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
                 final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                final s = item?.status;
-                return s == 'confiscated' || s == 'Forfeit';
+                final s = item?.status?.toLowerCase() ?? '';
+                return WarehouseEntryModel.isNoChargeStatus(s);
               }
               return false;
             }).length;
