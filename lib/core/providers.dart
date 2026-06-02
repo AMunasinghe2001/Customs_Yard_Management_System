@@ -129,6 +129,7 @@ final packageSearchProvider = StateProvider<String>((ref) => '');
 final packageShowReturnedProvider = StateProvider<bool>((ref) => true);
 final packageDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 final packageReasonFilterProvider = StateProvider<String>((ref) => 'all');
+final packageYearFilterProvider = StateProvider<String?>((ref) => null);
 
 final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   ref.watch(packagesChangeTriggerProvider);
@@ -153,6 +154,7 @@ final liveWarehouseEntriesProvider =
 
 final allWarehouseEntriesProvider = FutureProvider<List<WarehouseEntryModel>>((ref) async {
   ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(packagesChangeTriggerProvider);
   return ref.read(warehouseServiceProvider).getAllWarehouseEntries();
 });
 
@@ -200,6 +202,7 @@ final storageRateHistoryProvider = FutureProvider<List<AuditLogModel>>((ref) asy
 });
 
 final packageDataProvider = FutureProvider.family<PackageModel?, String>((ref, id) async {
+  ref.watch(packagesChangeTriggerProvider);
   return ref.read(packageServiceProvider).getPackageById(id);
 });
 

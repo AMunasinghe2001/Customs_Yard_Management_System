@@ -56,7 +56,7 @@ class StatusChip extends StatelessWidget {
         break;
       case 'confiscated':
         color = context.colors.dangerRed;
-        label = 'CONFISCATED';
+        label = 'FORFEITED';
         break;
       default:
         color = context.colors.textMuted;

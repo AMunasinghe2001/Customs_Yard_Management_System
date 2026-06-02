@@ -334,12 +334,13 @@ class _WarehouseTab extends ConsumerWidget {
                           rows: filteredList.map((e) {
                             final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
                             String status = e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held');
-                            if (pkg != null && e.packageItemId != null) {
-                              final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                              if (item != null && !e.isReturned) {
-                                status = item.status;
+                              if (pkg != null && e.packageItemId != null) {
+                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull ?? 
+                                             (pkg.items.length == 1 ? pkg.items.first : null);
+                                if (item != null && !e.isReturned) {
+                                  status = item.status;
+                                }
                               }
-                            }
                             final isItemConfiscated =
                                 WarehouseEntryModel.isNoChargeStatus(status.toLowerCase());
                             

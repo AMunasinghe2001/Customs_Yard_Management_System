@@ -660,10 +660,12 @@ class WarehouseService {
 
   /// Dispose a warehouse item with a specific status (Forfeit, Abandoned, Re-export, Destroy).
   /// Closes the active warehouse entry and updates the item's status.
+  /// If [qty] is provided and less than full entry count, performs a partial disposal.
   Future<void> disposeWarehouseItem(
     String entryId, {
     required String dispositionStatus,
     String? notes,
+    int? qty,
   }) async {
     final user = supabase.auth.currentUser;
 
@@ -676,44 +678,72 @@ class WarehouseService {
 
     final itemId = entryRes['package_item_id'] as String?;
     final currentTotal = entryRes['item_count'] as int;
+    final disposeQty = (qty != null && qty > 0 && qty < currentTotal)
+        ? qty
+        : currentTotal;
+    final returnNotes =
+        '[${dispositionStatus.toUpperCase()}]${notes != null && notes.isNotEmpty ? ' — $notes' : ''}';
 
-    // Create a closed/disposed warehouse entry for history
-    await supabase.from('warehouse_entries').insert({
-      'package_id': entryRes['package_id'],
-      'package_item_id': itemId,
-      'warehouse_id': entryRes['warehouse_id'],
-      'zone': entryRes['zone'],
-      'hold_reason': entryRes['hold_reason'],
-      'item_count': currentTotal,
-      'admitted_by': entryRes['admitted_by'],
-      'admitted_at': entryRes['admitted_at'],
-      'daily_rate': entryRes['daily_rate'],
-      'is_returned': true,
-      'returned_at': DateTime.now().toIso8601String(),
-      'returned_by': user?.id,
-      'return_notes':
-          '[${dispositionStatus.toUpperCase()}]${notes != null && notes.isNotEmpty ? ' — $notes' : ''}',
-    });
+    if (disposeQty >= currentTotal) {
+      // Full disposal — create closed history entry, delete held entry, update item status
+      await supabase.from('warehouse_entries').insert({
+        'package_id': entryRes['package_id'],
+        'package_item_id': itemId,
+        'warehouse_id': entryRes['warehouse_id'],
+        'zone': entryRes['zone'],
+        'hold_reason': entryRes['hold_reason'],
+        'item_count': currentTotal,
+        'admitted_by': entryRes['admitted_by'],
+        'admitted_at': entryRes['admitted_at'],
+        'daily_rate': entryRes['daily_rate'],
+        'is_returned': true,
+        'returned_at': DateTime.now().toIso8601String(),
+        'returned_by': user?.id,
+        'return_notes': returnNotes,
+      });
 
-    // Remove the active held entry
-    await supabase.from('warehouse_entries').delete().eq('id', entryId);
+      await supabase.from('warehouse_entries').delete().eq('id', entryId);
 
-    // Update item status in package_items
-    if (itemId != null) {
-      await supabase
-          .from('package_items')
-          .update({'status': dispositionStatus}).eq('id', itemId);
+      if (itemId != null) {
+        await supabase
+            .from('package_items')
+            .update({'status': dispositionStatus}).eq('id', itemId);
+      }
+    } else {
+      // Partial disposal — create disposed history entry for selected qty,
+      // reduce the remaining held entry count (item status stays unchanged)
+      await supabase.from('warehouse_entries').insert({
+        'package_id': entryRes['package_id'],
+        'package_item_id': itemId,
+        'warehouse_id': entryRes['warehouse_id'],
+        'zone': entryRes['zone'],
+        'hold_reason': entryRes['hold_reason'],
+        'item_count': disposeQty,
+        'admitted_by': entryRes['admitted_by'],
+        'admitted_at': entryRes['admitted_at'],
+        'daily_rate': entryRes['daily_rate'],
+        'is_returned': true,
+        'returned_at': DateTime.now().toIso8601String(),
+        'returned_by': user?.id,
+        'return_notes': returnNotes,
+      });
+
+      await supabase.from('warehouse_entries').update({
+        'item_count': currentTotal - disposeQty,
+      }).eq('id', entryId);
     }
 
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
-        action: 'Package item disposed: $dispositionStatus (entry: $entryId)',
+        action:
+            'Package item disposed: $dispositionStatus (qty: $disposeQty/$currentTotal, entry: $entryId)',
         entityType: 'warehouse_entry',
         entityId: entryId,
       );
     }
   }
+
 
   Future<Map<String, int>> getWarehouseStats() async {
     final entries = await supabase

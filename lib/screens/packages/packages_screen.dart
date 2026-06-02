@@ -334,6 +334,102 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                             ],
                           );
                         }),
+                        // Year Filter Dropdown
+                        Consumer(builder: (context, ref, _) {
+                          final selectedYear = ref.watch(packageYearFilterProvider);
+                          final allPackages = ref.watch(livePackagesProvider).valueOrNull ?? [];
+                          // Extract unique years from SR numbers
+                          final yearRegex = RegExp(r'/(\d{4})$');
+                          final years = allPackages
+                              .map((p) {
+                                final match = yearRegex.firstMatch(p.srNumber);
+                                return match?.group(1);
+                              })
+                              .whereType<String>()
+                              .toSet()
+                              .toList()
+                            ..sort((a, b) => b.compareTo(a)); // newest first
+                          return Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(
+                                    color: selectedYear != null
+                                        ? context.colors.primaryGold
+                                        : context.colors.borderColor,
+                                  ),
+                                ),
+                                child: DropdownButtonHideUnderline(
+                                  child: DropdownButton<String?>(
+                                    value: selectedYear,
+                                    hint: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.calendar_today_rounded,
+                                            size: 14,
+                                            color: context.colors.textSecondary),
+                                        const Gap(6),
+                                        Text('Year',
+                                            style: TextStyle(
+                                                color: context.colors.textSecondary,
+                                                fontSize: 12)),
+                                      ],
+                                    ),
+                                    icon: Icon(Icons.arrow_drop_down_rounded,
+                                        color: selectedYear != null
+                                            ? context.colors.primaryGold
+                                            : context.colors.textSecondary,
+                                        size: 20),
+                                    isDense: true,
+                                    dropdownColor: context.colors.surfaceDark,
+                                    style: TextStyle(
+                                        color: context.colors.primaryGold,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold),
+                                    items: [
+                                      DropdownMenuItem<String?>(
+                                        value: null,
+                                        child: Text('All Years',
+                                            style: TextStyle(
+                                                color: context.colors.textSecondary,
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.normal)),
+                                      ),
+                                      ...years.map((y) => DropdownMenuItem<String?>(
+                                            value: y,
+                                            child: Text(y,
+                                                style: TextStyle(
+                                                    color: context.colors.primaryGold,
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.bold)),
+                                          )),
+                                    ],
+                                    onChanged: (val) => ref
+                                        .read(packageYearFilterProvider.notifier)
+                                        .state = val,
+                                  ),
+                                ),
+                              ),
+                              if (selectedYear != null) ...[
+                                const Gap(8),
+                                IconButton(
+                                  icon: Icon(Icons.clear_rounded,
+                                      size: 16,
+                                      color: context.colors.dangerRed),
+                                  onPressed: () => ref
+                                      .read(packageYearFilterProvider.notifier)
+                                      .state = null,
+                                  tooltip: 'Clear Year Filter',
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(),
+                                ),
+                              ],
+                            ],
+                          );
+                        }),
                       ],
                     ),
                   ],
@@ -364,7 +460,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                       onRetry: () => ref.refresh(livePackagesProvider)),
                   data: (list) {
                     final dateRange = ref.watch(packageDateRangeProvider);
+                    final yearFilter = ref.watch(packageYearFilterProvider);
                     final filteredList = list.where((p) {
+                      // Date range filter
                       if (dateRange != null) {
                         final date = p.entryDate ?? p.createdAt;
                         final startOfDay = DateTime(dateRange.start.year,
@@ -373,6 +471,14 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                             dateRange.end.month, dateRange.end.day, 23, 59, 59);
                         if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
                           return false;
+                      }
+                      // Year filter from SR number suffix
+                      if (yearFilter != null) {
+                        final yearRegex = RegExp(r'/(\d{4})$');
+                        final match = yearRegex.firstMatch(p.srNumber);
+                        if (match == null || match.group(1) != yearFilter) {
+                          return false;
+                        }
                       }
                       return true;
                     }).toList();
