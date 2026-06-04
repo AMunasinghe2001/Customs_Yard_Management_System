@@ -966,10 +966,6 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                         .where(
                                             (e) => e.packageItemId == item.id)
                                         .toList();
-                                    final returnedQty = relatedEntries
-                                        .where((e) => e.isReturned)
-                                        .fold<int>(
-                                            0, (sum, e) => sum + e.itemCount);
                                     final heldQty = relatedEntries
                                         .where((e) => !e.isReturned)
                                         .fold<int>(
@@ -980,10 +976,44 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                         .map((e) => e.warehouseName)
                                         .toSet()
                                         .toList();
-                                    final historyWarehouses = relatedEntries
-                                        .map((e) => e.warehouseName)
-                                        .toSet()
+
+                                    // ── Categorize returned entries by disposition ──
+                                    // Releases carry no [STATUS] prefix in returnNotes;
+                                    // dispositions are tagged e.g. [FORFEIT], [RE-EXPORT].
+                                    final _returnedEntries = relatedEntries
+                                        .where((e) => e.isReturned)
                                         .toList();
+                                    int _releasedQty = 0;
+                                    String? _releasedOfficer;
+                                    double _releasedChargesPaid = 0;
+                                    final Map<String, int> _dispoCounts = {};
+                                    final Map<String, String?> _dispoOfficers =
+                                        {};
+                                    final Map<String, String> _dispoRawLabel =
+                                        {};
+                                    for (final e in _returnedEntries) {
+                                      final notes =
+                                          (e.returnNotes ?? '').trim();
+                                      final m = RegExp(r'^\[([^\]]+)\]')
+                                          .firstMatch(notes);
+                                      final officer = e.returnedByName ??
+                                          e.returnedByBadge;
+                                      if (m == null) {
+                                        _releasedQty += e.itemCount;
+                                        _releasedOfficer ??= officer;
+                                        _releasedChargesPaid +=
+                                            e.calculatePackageCharge(
+                                                [item], widget.storageRate);
+                                      } else {
+                                        final raw = m.group(1)!.trim();
+                                        final key = raw.toUpperCase();
+                                        _dispoCounts[key] =
+                                            (_dispoCounts[key] ?? 0) +
+                                                e.itemCount;
+                                        _dispoOfficers[key] ??= officer;
+                                        _dispoRawLabel[key] = raw;
+                                      }
+                                    }
 
                                     final _itemStatus =
                                         item.status?.toLowerCase() ?? '';
@@ -1028,15 +1058,6 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                       if (isItemReexport) return 'RE-EXPORT';
                                       if (isItemDestroy) return 'DESTROYED';
                                       return '';
-                                    }
-
-                                    IconData _statusIcon() {
-                                      if (isItemForfeited) return Icons.gavel_rounded;
-                                      if (isItemAbandoned) return Icons.report_problem_rounded;
-                                      if (isItemDetained) return Icons.lock_rounded;
-                                      if (isItemReexport) return Icons.outbound_rounded;
-                                      if (isItemDestroy) return Icons.delete_forever_rounded;
-                                      return Icons.info_outline_rounded;
                                     }
 
                                     return material.Container(
@@ -1188,15 +1209,35 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                   value: item.unitOfMeasure,
                                                 ),
                                               ),
-                                              const Gap(12),
-                                              Expanded(
-                                                child: _DetailItem(
-                                                  icon: Icons.payments_rounded,
-                                                  label: 'Unit Value',
-                                                  value:
-                                                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                                              // Detain → show storage charges paid for
+                                              // released portion. Forfeit/Abandoned →
+                                              // hide value box (no charge). Else → Unit Value.
+                                              if (isItemDetained) ...[
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .price_check_rounded,
+                                                    label: 'Charges Paid',
+                                                    value:
+                                                        'LKR ${NumberFormat('#,##0.00').format(_releasedChargesPaid)}',
+                                                    valueColor: context
+                                                        .colors.successGreen,
+                                                  ),
                                                 ),
-                                              ),
+                                              ] else if (!isItemForfeited &&
+                                                  !isItemAbandoned) ...[
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon:
+                                                        Icons.payments_rounded,
+                                                    label: 'Unit Value',
+                                                    value:
+                                                        'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                                                  ),
+                                                ),
+                                              ],
                                             ],
                                           ),
                                           if (item.reasons != null &&
@@ -1299,108 +1340,98 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                 ),
                                               ],
                                             ),
-                                          if (isItemTerminal)
+                                          if (currentWarehouses.isNotEmpty)
+                                            _DetailItem(
+                                              icon: Icons.warehouse_rounded,
+                                              label: 'Current Warehouse',
+                                              value: currentWarehouses.first,
+                                            ),
+                                          if (isItemDetained) ...[
+                                            const Gap(16),
                                             material.Container(
-                                              padding: const EdgeInsets.all(12),
+                                              padding:
+                                                  const EdgeInsets.all(12),
                                               decoration: BoxDecoration(
-                                                color: itemStatusColor
-                                                    .withOpacity(0.08),
+                                                color: context.colors.cardDark,
                                                 borderRadius:
                                                     BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: itemStatusColor
-                                                      .withOpacity(0.3),
+                                                  color: context.colors
+                                                      .borderColor,
                                                 ),
                                               ),
-                                              child: Row(
+                                              child: Column(
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.start,
                                                 children: [
-                                                  Icon(
-                                                    _statusIcon(),
-                                                    size: 18,
-                                                    color: itemStatusColor,
-                                                  ),
-                                                  const Gap(10),
-                                                  Expanded(
-                                                    child: material.Text.rich(
-                                                      material.TextSpan(
-                                                        text:
-                                                            'This item has been ',
-                                                        style: material
-                                                            .TextStyle(
-                                                          color: context.colors
-                                                              .textSecondary,
-                                                          fontSize: 12,
-                                                        ),
-                                                        children: [
-                                                          material.TextSpan(
-                                                            text: _statusLabel(),
-                                                            style: material
-                                                                .TextStyle(
-                                                              color:
-                                                                  itemStatusColor,
-                                                              fontWeight:
-                                                                  FontWeight
-                                                                      .bold,
-                                                            ),
-                                                          ),
-                                                        ],
-                                                      ),
+                                                  material.Text(
+                                                    'Disposition Breakdown',
+                                                    style: material.TextStyle(
+                                                      fontSize: 13,
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      color: context.colors
+                                                          .textPrimary,
                                                     ),
                                                   ),
+                                                  const Gap(12),
+                                                  _DispositionRow(
+                                                    label: 'Currently Held',
+                                                    count: heldQty,
+                                                    color: context.colors
+                                                        .primaryGold,
+                                                    officer: null,
+                                                  ),
+                                                  if (_releasedQty > 0) ...[
+                                                    const Gap(12),
+                                                    _DispositionRow(
+                                                      label: 'Released',
+                                                      count: _releasedQty,
+                                                      color: context.colors
+                                                          .successGreen,
+                                                      officer:
+                                                          _releasedOfficer ??
+                                                              'Unknown Officer',
+                                                    ),
+                                                  ],
+                                                  // Each disposition type parsed from
+                                                  // returnNotes (Forfeit, Re-export,
+                                                  // Abandoned, Destroy, Other custom)
+                                                  ..._dispoCounts.entries
+                                                      .map((entry) {
+                                                    return Padding(
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              top: 12),
+                                                      child: _DispositionRow(
+                                                        label: _dispoLabel(
+                                                            entry.key,
+                                                            _dispoRawLabel[
+                                                                    entry.key] ??
+                                                                entry.key),
+                                                        count: entry.value,
+                                                        color: _dispoColor(
+                                                            entry.key),
+                                                        officer: _dispoOfficers[
+                                                                entry.key] ??
+                                                            'Unknown Officer',
+                                                      ),
+                                                    );
+                                                  }),
                                                 ],
                                               ),
-                                            )
-                                          else
-                                            Row(
-                                              crossAxisAlignment:
-                                                  CrossAxisAlignment.start,
-                                              children: [
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .keyboard_return_rounded,
-                                                    label: 'Released',
-                                                    value: '$returnedQty',
-                                                    valueColor: context
-                                                        .colors.successGreen,
-                                                  ),
-                                                ),
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .pause_circle_filled_rounded,
-                                                    label: 'Held',
-                                                    value: '$heldQty',
-                                                    valueColor: context
-                                                        .colors.primaryGold,
-                                                  ),
-                                                ),
-                                              ],
                                             ),
-                                          _DetailItem(
-                                            icon: Icons.warehouse_rounded,
-                                            label: 'Current Warehouses',
-                                            value: currentWarehouses.isNotEmpty
-                                                ? currentWarehouses.join(', ')
-                                                : '—',
-                                          ),
-                                          _DetailItem(
-                                            icon: Icons.history_rounded,
-                                            label: 'Warehouse History',
-                                            value: historyWarehouses.isNotEmpty
-                                                ? historyWarehouses.join(', ')
-                                                : '—',
-                                          ),
+                                          ],
                                         ],
                                       ),
                                     );
                                   }).toList(),
                                 ),
                         ),
+                      const Gap(16),
 
                       // Officer Notice Section
-                      if (p.notes != null && p.notes!.isNotEmpty)
+                      if (p.notes != null && p.notes!.isNotEmpty) ...[
                         _DetailSection(
                           title: 'Officer Notice',
                           icon: Icons.notification_important_rounded,
@@ -1411,6 +1442,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                             icon: Icons.warning_amber_rounded,
                           ),
                         ),
+                        const Gap(16),
+                      ],
 
                       // Entry Person Section
                       _SystemEntrySection(
@@ -1418,10 +1451,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         badgeNumber: displayBadgeNumber,
                         delay: 500,
                       ),
+                      const Gap(16),
 
                       // Returned By Section
                       if (!widget.useWarehouseSummary &&
-                          widget.highlightEntry?.isReturned == true)
+                          widget.highlightEntry?.isReturned == true) ...[
                         _SystemEntrySection(
                           officerDisplay: returnedOfficerDisplay,
                           badgeNumber: returnedOfficerBadge,
@@ -1429,11 +1463,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           customTitle: 'Released By',
                           customIcon: Icons.keyboard_return_rounded,
                         ),
+                        const Gap(16),
+                      ],
 
                       if (!widget.useWarehouseSummary &&
                           widget.highlightEntry?.isReturned == true &&
                           (returnedReceiptNo != null ||
-                              returnedReceiptDate != null))
+                              returnedReceiptDate != null)) ...[
                         _DetailSection(
                           title: 'Receipt Details',
                           icon: Icons.receipt_long_rounded,
@@ -1462,6 +1498,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                             ],
                           ),
                         ),
+                        const Gap(16),
+                      ],
 
                       // Warehouse Charges Section
                       if (widget.highlightEntry != null)
@@ -3726,6 +3764,120 @@ class _ActionDef {
     required this.description,
     required this.color,
   });
+}
+
+// ── Disposition meta resolvers (by normalized returnNotes key) ────────────────
+
+Color _dispoColor(String key) {
+  switch (key) {
+    case 'FORFEIT':
+    case 'FORFEITED':
+    case 'FORFIET':
+    case 'CONFISCATED':
+      return const Color(0xFFE53935);
+    case 'RE-EXPORT':
+    case 'REEXPORT':
+      return const Color(0xFF00ACC1);
+    case 'ABANDONED':
+      return const Color(0xFF9E9E9E);
+    case 'DESTROY':
+    case 'DESTROYED':
+      return const Color(0xFFE64A19);
+    default:
+      return const Color(0xFF7E57C2); // Other / custom
+  }
+}
+
+String _dispoLabel(String key, String raw) {
+  switch (key) {
+    case 'FORFEIT':
+    case 'FORFEITED':
+    case 'FORFIET':
+    case 'CONFISCATED':
+      return 'Forfeited';
+    case 'RE-EXPORT':
+    case 'REEXPORT':
+      return 'Re-export';
+    case 'ABANDONED':
+      return 'Abandoned';
+    case 'DESTROY':
+    case 'DESTROYED':
+      return 'Destroy';
+    default:
+      // Title-case the custom "Other" type
+      return raw
+          .split(' ')
+          .map((w) => w.isEmpty
+              ? w
+              : '${w[0].toUpperCase()}${w.substring(1).toLowerCase()}')
+          .join(' ');
+  }
+}
+
+// ── Disposition Row (shows status breakdown) ──────────────────────────────────
+
+class _DispositionRow extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  final String? officer;
+
+  const _DispositionRow({
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.officer,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 40,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const Gap(12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: material.TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: context.colors.textPrimary,
+                ),
+              ),
+              if (officer != null) ...[
+                const Gap(2),
+                Text(
+                  officer!,
+                  style: material.TextStyle(
+                    fontSize: 11,
+                    color: context.colors.textMuted,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        Text(
+          'x$count',
+          style: material.TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _DispositionMeta {
