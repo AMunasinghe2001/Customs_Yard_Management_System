@@ -44,6 +44,24 @@ class ForfeitedPackagesScreen extends ConsumerStatefulWidget {
   ConsumerState<ForfeitedPackagesScreen> createState() => _ForfeitedPackagesScreenState();
 }
 
+/// One forfeiture line — a single item (or disposition event) within a
+/// forfeited package. The same SR can yield several rows.
+class _ForfeitRow {
+  final ForfeitedPackageModel forfeited;
+  final String itemName;
+  final int qty;
+  final DateTime forfeitedDate;
+  final String officer;
+
+  const _ForfeitRow({
+    required this.forfeited,
+    required this.itemName,
+    required this.qty,
+    required this.forfeitedDate,
+    required this.officer,
+  });
+}
+
 class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScreen> {
   String _searchQuery = '';
 
@@ -51,6 +69,78 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
     if (status == null) return false;
     final normalized = status.trim().toLowerCase();
     return normalized == 'forfiet' || normalized == 'forfeit' || normalized == 'forfeited';
+  }
+
+  /// A warehouse entry tagged as a FORFEIT disposition event in returnNotes.
+  bool _isForfeitEntry(WarehouseEntryModel e) {
+    if (!e.isReturned) return false;
+    final notes = (e.returnNotes ?? '').trim().toUpperCase();
+    return notes.startsWith('[FORFEIT') || notes.startsWith('[CONFISCATED');
+  }
+
+  /// True if the item has moved on to a final disposition — it should no
+  /// longer appear in the Forfeit table.
+  bool _itemHasFinalDisposition(PackageModel p, String itemId) {
+    return p.warehouseEntries.any((e) =>
+        e.packageItemId == itemId &&
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+  }
+
+  /// Builds one row per forfeited item / per forfeit disposition event.
+  /// A single SR can appear on multiple lines.
+  List<_ForfeitRow> _buildForfeitRows(List<ForfeitedPackageModel> packages) {
+    final rows = <_ForfeitRow>[];
+    for (final fp in packages) {
+      final pkg = fp.packageDetails;
+      final items = pkg?.items ?? [];
+      bool addedAny = false;
+
+      for (final item in items) {
+        // Skip items that have moved to a final disposition.
+        if (pkg != null && _itemHasFinalDisposition(pkg, item.id)) continue;
+
+        final itemEntries = pkg!.warehouseEntries
+            .where((e) => e.packageItemId == item.id)
+            .toList();
+
+        // 1. Forfeit disposition events (detain → forfeit, partial/full)
+        final forfeitEntries = itemEntries.where(_isForfeitEntry).toList();
+        for (final entry in forfeitEntries) {
+          rows.add(_ForfeitRow(
+            forfeited: fp,
+            itemName: item.itemName,
+            qty: entry.itemCount,
+            forfeitedDate: entry.returnedAt ?? fp.forfeitedAt,
+            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
+          ));
+          addedAny = true;
+        }
+
+        // 2. Form-level forfeit (item.status forfeit) with no disposition event
+        if (_isForfeitStatus(item.status) && forfeitEntries.isEmpty) {
+          rows.add(_ForfeitRow(
+            forfeited: fp,
+            itemName: item.itemName,
+            qty: item.quantity,
+            forfeitedDate: fp.forfeitedAt,
+            officer: '—',
+          ));
+          addedAny = true;
+        }
+      }
+
+      // 3. Legacy / no item detail — show a single summary row
+      if (!addedAny) {
+        rows.add(_ForfeitRow(
+          forfeited: fp,
+          itemName: 'Multiple/Unspecified',
+          qty: items.fold<int>(0, (s, i) => s + i.quantity),
+          forfeitedDate: fp.forfeitedAt,
+          officer: '—',
+        ));
+      }
+    }
+    return rows;
   }
 
   @override
@@ -168,7 +258,9 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                       return srMatch || consigneeMatch;
                     }).toList();
 
-                    if (filtered.isEmpty) {
+                    final rows = _buildForfeitRows(filtered);
+
+                    if (rows.isEmpty) {
                       return const EmptyTableState(message: 'No forfeited packages found').animate().fadeIn();
                     }
 
@@ -187,66 +279,62 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
-                            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 70),
+                            DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(label: Text('Forfeited Date'), size: ColumnSize.M),
                             DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.M),
                             DataColumn2(label: Text('Days Remaining'), size: ColumnSize.S),
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
                           ],
-                          rows: filtered.expand((pkg) {
-                            final forfeitedItems = pkg.packageDetails?.items.where((i) => _isForfeitStatus(i.status)).toList() ?? [];
-                            // If no items are explicitly marked, just show one row for the package
-                            final itemsToShow = forfeitedItems.isEmpty ? [null] : forfeitedItems;
-                            
-                            return itemsToShow.map((item) {
-                              final isExpired = pkg.isAppealExpired;
-                              final daysRemaining = pkg.appealDeadline.difference(DateTime.now()).inDays;
-                              
-                              return DataRow(
-                                color: WidgetStateProperty.resolveWith<Color?>((states) {
-                                  if (isExpired) return context.colors.dangerRed.withOpacity(0.04);
-                                  return null;
-                                }),
-                                cells: [
-                                  DataCell(Text(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
-                                  DataCell(Text(item?.itemName ?? 'Multiple/Unspecified', style: const TextStyle(fontWeight: FontWeight.w500))),
-                                  DataCell(Text(pkg.consigneeName)),
-                                  DataCell(Text(DateFormat('yyyy-MM-dd').format(pkg.forfeitedAt))),
-                                  DataCell(Text(
-                                    DateFormat('yyyy-MM-dd').format(pkg.appealDeadline),
-                                    style: TextStyle(
-                                      color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
-                                      fontWeight: isExpired ? FontWeight.bold : FontWeight.normal
+                          rows: rows.map((row) {
+                            final pkg = row.forfeited;
+                            final isExpired = pkg.isAppealExpired;
+
+                            return DataRow(
+                              color: WidgetStateProperty.resolveWith<Color?>((states) {
+                                if (isExpired) return context.colors.dangerRed.withOpacity(0.04);
+                                return null;
+                              }),
+                              cells: [
+                                DataCell(Text(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
+                                DataCell(Text(row.itemName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500))),
+                                DataCell(Text('${row.qty}')),
+                                DataCell(Text(pkg.consigneeName, overflow: TextOverflow.ellipsis)),
+                                DataCell(Text(DateFormat('yyyy-MM-dd').format(row.forfeitedDate))),
+                                DataCell(Text(
+                                  DateFormat('yyyy-MM-dd').format(pkg.appealDeadline),
+                                  style: TextStyle(
+                                    color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
+                                    fontWeight: isExpired ? FontWeight.bold : FontWeight.normal
+                                  ),
+                                )),
+                                DataCell(Text(
+                                  isExpired ? ' overdue' : '',
+                                  style: TextStyle(
+                                    color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
+                                    fontWeight: FontWeight.bold
+                                  ),
+                                )),
+                                DataCell(Center(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
                                     ),
-                                  )),
-                                  DataCell(Text(
-                                    isExpired ? ' overdue' : '',
-                                    style: TextStyle(
-                                      color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
-                                      fontWeight: FontWeight.bold
-                                    ),
-                                  )),
-                                  DataCell(Center(
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                      decoration: BoxDecoration(
-                                        color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
-                                      ),
-                                      child: Text(
-                                        isExpired ? 'Appeal Expired' : 'Appealing',
-                                        style: TextStyle(
-                                          fontSize: 11,
-                                          color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
-                                          fontWeight: FontWeight.bold,
-                                        ),
+                                    child: Text(
+                                      isExpired ? 'Appeal Expired' : 'Appealing',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                  )),
-                                ],
-                              );
-                            });
+                                  ),
+                                )),
+                              ],
+                            );
                           }).toList(),
                         ),
                       ),

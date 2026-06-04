@@ -12,6 +12,7 @@ import '../screens/warehouses/warehouses_screen.dart';
 import '../screens/packages/packages_screen.dart';
 import '../screens/packages/returned_packages_screen.dart';
 import '../screens/packages/abandoned_packages_screen.dart';
+import '../screens/packages/disposition_category_screen.dart';
 import '../screens/admin/admin_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/profile/edit_profile_screen.dart';
@@ -61,6 +62,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/returned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ReturnedPackagesScreen())),
       GoRoute(path: '/abandoned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AbandonedPackagesScreen())),
       GoRoute(path: '/forfeited-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ForfeitedPackagesScreen())),
+      GoRoute(path: '/sold-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/sold-packages', title: 'Sold Packages', subtitle: 'Goods disposed by sale', countLabel: 'Sold', finalTag: 'SOLD'))),
+      GoRoute(path: '/destroyed-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/destroyed-packages', title: 'Destroyed Packages', subtitle: 'Goods that have been destroyed', countLabel: 'Destroyed', finalTag: 'DESTROYED'))),
+      GoRoute(path: '/reexported-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/reexported-packages', title: 'Re-exported Packages', subtitle: 'Goods sent back to country of origin', countLabel: 'Re-exported', finalTag: 'RE-EXPORTED'))),
+      GoRoute(path: '/other-dispositions', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/other-dispositions', title: 'Other Dispositions', subtitle: 'Goods with a custom final outcome', countLabel: 'Other', finalTag: 'OTHER'))),
       GoRoute(path: '/tender-disposals', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const TenderDisposalScreen())),
       GoRoute(path: '/admin', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminDashboardScreen())),
       GoRoute(path: '/admin/panel', pageBuilder: (_, state) {

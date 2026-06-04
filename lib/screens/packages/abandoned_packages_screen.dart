@@ -33,6 +33,15 @@ bool _isAbandonedEntry(WarehouseEntryModel e) {
 bool _statusIsAbandoned(String? s) =>
     (s ?? '').trim().toLowerCase() == 'abandoned';
 
+/// True if the item has been moved on to a final disposition
+/// (Released/Sold/Destroyed/Re-exported/Other) — it should no longer appear
+/// in the Abandoned table.
+bool _itemHasFinalDisposition(PackageModel p, String itemId) {
+  return p.warehouseEntries.any((e) =>
+      e.packageItemId == itemId &&
+      (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+}
+
 /// True if a package has any abandoned item — either a form-level abandoned
 /// item, or a partial/full abandonment disposition event.
 bool _packageHasAbandoned(PackageModel p) {
@@ -66,6 +75,9 @@ class _AbandonedPackagesScreenState
     final rows = <_AbandonedRow>[];
     for (final package in packages) {
       for (final item in package.items) {
+        // Skip items that have already moved to a final disposition.
+        if (_itemHasFinalDisposition(package, item.id)) continue;
+
         final itemEntries = package.warehouseEntries
             .where((e) => e.packageItemId == item.id)
             .toList();

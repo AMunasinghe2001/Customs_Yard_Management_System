@@ -733,6 +733,35 @@ class WarehouseService {
       }).eq('id', entryId);
     }
 
+    // If this disposition is a forfeit, register the package into the
+    // forfeited-packages flow (appeal period + tender eligibility).
+    // Idempotent: only one forfeited_packages record per package.
+    if (_isForfeitStatus(dispositionStatus)) {
+      final pkgId = entryRes['package_id'] as String;
+      final existing = await supabase
+          .from('forfeited_packages')
+          .select('id')
+          .eq('package_id', pkgId)
+          .maybeSingle();
+      if (existing == null) {
+        final pkgRow = await supabase
+            .from('packages')
+            .select('sr_number, consignee_name, reason')
+            .eq('id', pkgId)
+            .maybeSingle();
+        if (pkgRow != null) {
+          await ForfeitedPackageService().createForfeitedPackage(
+            packageId: pkgId,
+            srNumber: pkgRow['sr_number'] as String? ?? '',
+            consigneeName: pkgRow['consignee_name'] as String? ?? '',
+            reason: (notes != null && notes.isNotEmpty)
+                ? notes
+                : (pkgRow['reason'] as String? ?? 'Forfeited via disposition'),
+          );
+        }
+      }
+    }
+
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
@@ -740,6 +769,73 @@ class WarehouseService {
             'Package item disposed: $dispositionStatus (qty: $disposeQty/$currentTotal, entry: $entryId)',
         entityType: 'warehouse_entry',
         entityId: entryId,
+      );
+    }
+  }
+
+  /// Records a FINAL disposition for an already abandoned/forfeited item —
+  /// Released, Sale, Destroy, Re-export, or Other. Creates a closed warehouse
+  /// entry tagged "[FINAL:<TYPE>]" and updates the item's status so it moves
+  /// out of the Abandoned/Forfeit tables into the matching category table.
+  Future<void> recordFinalDisposition({
+    required String packageItemId,
+    required String dispositionType, // RELEASED, SOLD, DESTROYED, RE-EXPORTED, OTHER
+    required int qty,
+    String? notes,
+  }) async {
+    final user = supabase.auth.currentUser;
+
+    // Copy package/warehouse context from the item's most recent entry.
+    final refEntry = await supabase
+        .from('warehouse_entries')
+        .select(
+            'package_id, warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate')
+        .eq('package_item_id', packageItemId)
+        .order('admitted_at', ascending: false)
+        .limit(1)
+        .maybeSingle();
+    if (refEntry == null) {
+      throw Exception('No warehouse record found for this item');
+    }
+
+    final tag = dispositionType.toUpperCase();
+    final returnNotes =
+        '[FINAL:$tag]${notes != null && notes.isNotEmpty ? ' — $notes' : ''}';
+
+    await supabase.from('warehouse_entries').insert({
+      'package_id': refEntry['package_id'],
+      'package_item_id': packageItemId,
+      'warehouse_id': refEntry['warehouse_id'],
+      'zone': refEntry['zone'],
+      'hold_reason': refEntry['hold_reason'],
+      'item_count': qty,
+      'admitted_by': refEntry['admitted_by'],
+      'admitted_at': refEntry['admitted_at'],
+      'daily_rate': refEntry['daily_rate'],
+      'is_returned': true,
+      'returned_at': DateTime.now().toIso8601String(),
+      'returned_by': user?.id,
+      'return_notes': returnNotes,
+    });
+
+    const statusMap = {
+      'RELEASED': 'released',
+      'SOLD': 'sold',
+      'DESTROYED': 'destroyed',
+      'RE-EXPORTED': 're-exported',
+      'OTHER': 'other',
+    };
+    final newStatus = statusMap[tag] ?? dispositionType.toLowerCase();
+    await supabase
+        .from('package_items')
+        .update({'status': newStatus}).eq('id', packageItemId);
+
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Final disposition: $dispositionType (item: $packageItemId, qty: $qty)',
+        entityType: 'package_item',
+        entityId: packageItemId,
       );
     }
   }
@@ -1430,7 +1526,8 @@ class ForfeitedPackageService {
     // 2. Fetch forfeited packages
     final data = await supabase
         .from('forfeited_packages')
-        .select('*, packages(*, package_items(*))')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .order('appeal_deadline', ascending: true);
 
     // 3. Filter out tendered and map to models
@@ -1452,7 +1549,8 @@ class ForfeitedPackageService {
     // 2. Fetch expired packages
     final data = await supabase
         .from('forfeited_packages')
-        .select('*, packages(*, package_items(*))')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .lt('appeal_deadline', DateTime.now().toIso8601String())
         .order('appeal_deadline', ascending: true);
 
@@ -1481,7 +1579,8 @@ class ForfeitedPackageService {
           'appeal_deadline': appealDeadline.toIso8601String(),
           'reason': reason,
         })
-        .select('*, packages(*, package_items(*))')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .limit(1)
         .maybeSingle();
 

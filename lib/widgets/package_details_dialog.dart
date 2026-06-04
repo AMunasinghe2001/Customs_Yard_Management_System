@@ -521,6 +521,54 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     );
   }
 
+  /// Opens the final-disposition picker for an abandoned/forfeit item.
+  /// Release / Re-export / Other are admin-only (hidden for officers).
+  void _showFinalDispositionDialog(
+    BuildContext ctx, {
+    required PackageItem item,
+    required WarehouseEntryModel? entry,
+    required bool isOfficer,
+  }) {
+    final qty = entry?.itemCount ?? item.quantity;
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => _FinalDispositionDialog(
+        item: item,
+        qty: qty,
+        isOfficer: isOfficer,
+        onConfirm: (String type, String? notes) async {
+          Navigator.pop(dialogCtx);
+          try {
+            await ref.read(warehouseServiceProvider).recordFinalDisposition(
+                  packageItemId: item.id,
+                  dispositionType: type,
+                  qty: qty,
+                  notes: notes,
+                );
+            if (mounted) {
+              material.ScaffoldMessenger.of(ctx).showSnackBar(
+                material.SnackBar(
+                  content: Text('Final disposition recorded: $type'),
+                  backgroundColor: context.colors.successGreen,
+                ),
+              );
+              Navigator.pop(ctx);
+            }
+          } catch (e) {
+            if (mounted) {
+              material.ScaffoldMessenger.of(ctx).showSnackBar(
+                material.SnackBar(
+                  content: Text('Failed: $e'),
+                  backgroundColor: context.colors.dangerRed,
+                ),
+              );
+            }
+          }
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final p = widget.package;
@@ -1591,6 +1639,50 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                     highlightedItem: highlightedItem),
                           ),
                         ),
+                    ],
+                  ),
+                ),
+              // ── Final Disposition footer (abandoned / forfeit items) ──
+              if (widget.useLegacySummary &&
+                  highlightedItem != null &&
+                  (_isAbandonedOrForfeitStatus(highlightedItem.status) ||
+                      _isAbandonOrForfeitEntry(widget.highlightEntry)) &&
+                  !_hasFinalDisposition(p, highlightedItem.id))
+                material.Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : Colors.grey.shade50,
+                    border: Border(
+                        top: BorderSide(color: context.colors.borderColor)),
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(23)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Record the final outcome for these goods',
+                          style: material.TextStyle(
+                              color: context.colors.textMuted, fontSize: 12),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5C6BC0),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                        ),
+                        icon: const Icon(Icons.outbound_rounded, size: 18),
+                        label: const Text('Final Disposition'),
+                        onPressed: () => _showFinalDispositionDialog(
+                          context,
+                          item: highlightedItem,
+                          entry: widget.highlightEntry,
+                          isOfficer: isOfficer,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -3764,6 +3856,302 @@ class _ActionDef {
     required this.description,
     required this.color,
   });
+}
+
+// ── Final-disposition helpers ─────────────────────────────────────────────────
+
+bool _isAbandonedOrForfeitStatus(String? s) {
+  final v = (s ?? '').trim().toLowerCase();
+  return v == 'abandoned' ||
+      v == 'forfeit' ||
+      v == 'forfeited' ||
+      v == 'forfiet' ||
+      v == 'confiscated';
+}
+
+bool _hasFinalDisposition(PackageModel pkg, String itemId) {
+  return pkg.warehouseEntries.any((e) =>
+      e.packageItemId == itemId &&
+      (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+}
+
+/// True if the highlighted entry is itself an abandon/forfeit disposition —
+/// used so partial abandon/forfeit rows (item status still 'detain') can
+/// still receive a final disposition.
+bool _isAbandonOrForfeitEntry(WarehouseEntryModel? e) {
+  if (e == null || !e.isReturned) return false;
+  final notes = (e.returnNotes ?? '').trim().toUpperCase();
+  return notes.startsWith('[ABANDONED') ||
+      notes.startsWith('[FORFEIT') ||
+      notes.startsWith('[CONFISCATED');
+}
+
+// ── Final Disposition Dialog ──────────────────────────────────────────────────
+
+class _FinalActionDef {
+  final String type; // RELEASED, SOLD, DESTROYED, RE-EXPORTED, OTHER
+  final IconData icon;
+  final String label;
+  final String description;
+  final Color color;
+  final bool adminOnly;
+  const _FinalActionDef({
+    required this.type,
+    required this.icon,
+    required this.label,
+    required this.description,
+    required this.color,
+    required this.adminOnly,
+  });
+}
+
+class _FinalDispositionDialog extends StatefulWidget {
+  final PackageItem item;
+  final int qty;
+  final bool isOfficer;
+  final Future<void> Function(String type, String? notes) onConfirm;
+
+  const _FinalDispositionDialog({
+    required this.item,
+    required this.qty,
+    required this.isOfficer,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_FinalDispositionDialog> createState() =>
+      _FinalDispositionDialogState();
+}
+
+class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
+  bool _otherExpanded = false;
+  final _otherCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _otherCtrl.dispose();
+    super.dispose();
+  }
+
+  static const _actions = [
+    _FinalActionDef(
+      type: 'RELEASED',
+      icon: Icons.assignment_return_rounded,
+      label: 'Release',
+      description: 'Return the goods to the owner. Admin approval required.',
+      color: Color(0xFF43A047),
+      adminOnly: true,
+    ),
+    _FinalActionDef(
+      type: 'SOLD',
+      icon: Icons.sell_rounded,
+      label: 'Sale',
+      description: 'Goods sold / disposed by sale.',
+      color: Color(0xFFE8A826),
+      adminOnly: false,
+    ),
+    _FinalActionDef(
+      type: 'DESTROYED',
+      icon: Icons.delete_forever_rounded,
+      label: 'Destroy',
+      description: 'Goods destroyed.',
+      color: Color(0xFFE64A19),
+      adminOnly: false,
+    ),
+    _FinalActionDef(
+      type: 'RE-EXPORTED',
+      icon: Icons.flight_takeoff_rounded,
+      label: 'Re-export',
+      description: 'Goods sent back to origin. Admin approval required.',
+      color: Color(0xFF00ACC1),
+      adminOnly: true,
+    ),
+    _FinalActionDef(
+      type: 'OTHER',
+      icon: Icons.more_horiz_rounded,
+      label: 'Other',
+      description: 'Custom outcome. Admin approval required.',
+      color: Color(0xFF7E57C2),
+      adminOnly: true,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    // Officers cannot see admin-only actions
+    final visible = _actions
+        .where((a) => !(a.adminOnly && widget.isOfficer))
+        .toList();
+
+    return material.AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Row(children: [
+        Icon(Icons.outbound_rounded,
+            color: context.colors.primaryGold, size: 22),
+        const Gap(10),
+        const Expanded(child: Text('Final Disposition')),
+      ]),
+      content: SizedBox(
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${widget.item.itemName} · ${widget.qty} unit(s)',
+                style: material.TextStyle(
+                    color: context.colors.textMuted, fontSize: 12),
+              ),
+              if (widget.isOfficer) ...[
+                const Gap(4),
+                Text(
+                  'Release, Re-export and Other require an administrator.',
+                  style: material.TextStyle(
+                      color: context.colors.textMuted,
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic),
+                ),
+              ],
+              const Gap(12),
+              ...visible.map((a) {
+                final isOther = a.type == 'OTHER';
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    material.Card(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        side: BorderSide(
+                          color: (isOther && _otherExpanded)
+                              ? a.color.withOpacity(0.6)
+                              : a.color.withOpacity(0.2),
+                          width: (isOther && _otherExpanded) ? 1.5 : 1,
+                        ),
+                      ),
+                      color: a.color.withOpacity(0.04),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          if (isOther) {
+                            setState(() => _otherExpanded = !_otherExpanded);
+                          } else {
+                            widget.onConfirm(a.type, null);
+                          }
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          child: Row(children: [
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: a.color.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Icon(a.icon, color: a.color, size: 20),
+                            ),
+                            const Gap(14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(children: [
+                                    Text(a.label,
+                                        style: material.TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                            color: a.color)),
+                                    if (a.adminOnly) ...[
+                                      const Gap(6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: a.color.withOpacity(0.12),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: Text('ADMIN',
+                                            style: material.TextStyle(
+                                                fontSize: 8,
+                                                fontWeight: FontWeight.w800,
+                                                color: a.color,
+                                                letterSpacing: 0.5)),
+                                      ),
+                                    ],
+                                  ]),
+                                  const Gap(2),
+                                  Text(a.description,
+                                      style: material.TextStyle(
+                                          fontSize: 12,
+                                          color: context.colors.textMuted)),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              isOther
+                                  ? (_otherExpanded
+                                      ? Icons.expand_less_rounded
+                                      : Icons.expand_more_rounded)
+                                  : Icons.chevron_right_rounded,
+                              color: a.color.withOpacity(0.6),
+                              size: 20,
+                            ),
+                          ]),
+                        ),
+                      ),
+                    ),
+                    if (isOther && _otherExpanded)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            TextFormField(
+                              controller: _otherCtrl,
+                              autofocus: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Outcome detail *',
+                                hintText: 'e.g. Donated, Transferred...',
+                                isDense: true,
+                              ),
+                            ),
+                            const Gap(10),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.check_rounded, size: 16),
+                              label: const Text('Confirm Other'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF7E57C2),
+                                foregroundColor: Colors.white,
+                              ),
+                              onPressed: () {
+                                final t = _otherCtrl.text.trim();
+                                if (t.isEmpty) return;
+                                widget.onConfirm('OTHER', t);
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text('Cancel',
+              style: TextStyle(color: context.colors.textMuted)),
+        ),
+      ],
+    );
+  }
 }
 
 // ── Disposition meta resolvers (by normalized returnNotes key) ────────────────

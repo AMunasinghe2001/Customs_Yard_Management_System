@@ -43,11 +43,22 @@ class _ReturnedPackagesScreenState
     return entries.first;
   }
 
+  /// A returned entry that represents an actual RELEASE — not a forfeit,
+  /// abandonment or other disposition. Plain/untagged returns are releases;
+  /// final releases are tagged "[FINAL:RELEASED]" or "[RELEASE...]".
+  bool _isReleaseEntry(WarehouseEntryModel e) {
+    if (!e.isReturned) return false;
+    final notes = (e.returnNotes ?? '').trim().toUpperCase();
+    if (notes.isEmpty) return true;
+    if (!notes.startsWith('[')) return true; // free-text receipt note
+    return notes.startsWith('[FINAL:RELEASED]') || notes.startsWith('[RELEASE');
+  }
+
   List<_ReturnedRow> _buildReturnedRows(List<PackageModel> packages) {
     final rows = <_ReturnedRow>[];
     for (final package in packages) {
       for (final entry in package.warehouseEntries) {
-        if (!entry.isReturned) continue;
+        if (!_isReleaseEntry(entry)) continue;
         rows.add(_ReturnedRow(
           package: package,
           entry: entry,
