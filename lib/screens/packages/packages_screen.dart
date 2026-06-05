@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +13,7 @@ import '../../widgets/status_chip.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/styled_dropdown.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
@@ -111,7 +112,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               ).animate().fadeIn(),
               const Gap(20),
 
-              // ── Unified Search & Filter Bar ──────────────────────
+              // â”€â”€ Unified Search & Filter Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -352,66 +353,18 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           return Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: selectedYear != null
-                                        ? context.colors.primaryGold
-                                        : context.colors.borderColor,
-                                  ),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String?>(
-                                    value: selectedYear,
-                                    hint: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Icon(Icons.calendar_today_rounded,
-                                            size: 14,
-                                            color: context.colors.textSecondary),
-                                        const Gap(6),
-                                        Text('Year',
-                                            style: TextStyle(
-                                                color: context.colors.textSecondary,
-                                                fontSize: 12)),
-                                      ],
-                                    ),
-                                    icon: Icon(Icons.arrow_drop_down_rounded,
-                                        color: selectedYear != null
-                                            ? context.colors.primaryGold
-                                            : context.colors.textSecondary,
-                                        size: 20),
-                                    isDense: true,
-                                    dropdownColor: context.colors.surfaceDark,
-                                    style: TextStyle(
-                                        color: context.colors.primaryGold,
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold),
-                                    items: [
-                                      DropdownMenuItem<String?>(
-                                        value: null,
-                                        child: Text('All Years',
-                                            style: TextStyle(
-                                                color: context.colors.textSecondary,
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.normal)),
-                                      ),
-                                      ...years.map((y) => DropdownMenuItem<String?>(
-                                            value: y,
-                                            child: Text(y,
-                                                style: TextStyle(
-                                                    color: context.colors.primaryGold,
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.bold)),
-                                          )),
-                                    ],
-                                    onChanged: (val) => ref
-                                        .read(packageYearFilterProvider.notifier)
-                                        .state = val,
-                                  ),
-                                ),
+                              StyledDropdownButton<String>(
+                                value: selectedYear,
+                                allLabel: 'All Years',
+                                icon: Icons.calendar_today_rounded,
+                                columns: 2,
+                                options: years
+                                    .map((y) =>
+                                        StyledDropdownOption(y, y))
+                                    .toList(),
+                                onChanged: (val) => ref
+                                    .read(packageYearFilterProvider.notifier)
+                                    .state = val,
                               ),
                               if (selectedYear != null) ...[
                                 const Gap(8),
@@ -528,9 +481,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                DataCell(Text(p.cusdecNo ?? '—',
+                                DataCell(Text(p.cusdecNo ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.cusdecDate ?? '—',
+                                DataCell(Text(p.cusdecDate ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
                                 DataCell(Center(
                                   child: Text(p.entryDate != null
@@ -540,9 +493,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                       .format(p.createdAt)))),
                                 DataCell(Text(p.consigneeName,
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.declarantName ?? '—',
+                                DataCell(Text(p.declarantName ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.consigneePhone ?? '—',
+                                DataCell(Text(p.consigneePhone ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: IconButton(
@@ -575,7 +528,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   }
 }
 
-// ── SR Search Result Card ──────────────────────────────────────
+// â”€â”€ SR Search Result Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _SrResultCard extends ConsumerWidget {
   final PackageModel package;
@@ -749,7 +702,7 @@ class _SrResultCard extends ConsumerWidget {
   }
 }
 
-// ── Warehouse Pill (for table) ──────────────────────────────────
+// â”€â”€ Warehouse Pill (for table) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 class _WarehousePill extends StatelessWidget {
   final List<WarehouseEntryModel> warehouseEntries;
@@ -772,7 +725,7 @@ class _WarehousePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = warehouseEntries.where((e) => !e.isReturned).toList();
     if (active.isEmpty)
-      return Text('—', style: TextStyle(color: context.colors.textMuted));
+      return Text('â€”', style: TextStyle(color: context.colors.textMuted));
     return Wrap(
         spacing: 4,
         children: active

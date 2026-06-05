@@ -14,6 +14,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/custom_dropdown.dart';
+import '../../widgets/styled_dropdown.dart';
 import '../../widgets/warehouse_selection_dialog.dart';
 import '../../widgets/print_barcode_dialog.dart';
 import '../../core/supabase_client.dart';
@@ -1844,10 +1845,11 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
             const Gap(10),
             Expanded(
               flex: 2,
-              child: DropdownButtonFormField<String>(
-                isDense: true,
-                isExpanded: true,
-                value: [
+              child: StyledDropdownFormField<String>(
+                label: 'Unit *',
+                menuWidth: 220,
+                columns: 2,
+                value: const [
                   'Pieces',
                   'Cartons',
                   'Boxes',
@@ -1859,9 +1861,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 ].contains(widget.row.unitOfMeasureCtrl.text)
                     ? widget.row.unitOfMeasureCtrl.text
                     : 'Pieces',
-                decoration: const InputDecoration(
-                    labelText: 'Unit *', isDense: true, helperText: ' '),
-                items: [
+                options: const [
                   'Pieces',
                   'Cartons',
                   'Boxes',
@@ -1870,13 +1870,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   'KG',
                   'Meters',
                   'Other'
-                ]
-                    .map((u) => DropdownMenuItem(
-                        value: u,
-                        child: Text(u,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis)))
-                    .toList(),
+                ].map((u) => StyledDropdownOption(u, u)).toList(),
                 onChanged: (v) {
                   setState(() {
                     widget.row.unitOfMeasureCtrl.text = v ?? 'Pieces';
@@ -1905,21 +1899,15 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
             const Gap(10),
             Expanded(
               flex: 2,
-              child: DropdownButtonFormField<String>(
-                isDense: true,
-                isExpanded: true,
-                value: ['Detain', 'Forfeit', 'Abandoned', 'Other']
+              child: StyledDropdownFormField<String>(
+                label: 'Status *',
+                menuWidth: 200,
+                value: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
                         .contains(widget.row.status)
                     ? widget.row.status
                     : 'Other',
-                decoration: const InputDecoration(
-                    labelText: 'Status *', isDense: true, helperText: ' '),
-                items: ['Detain', 'Forfeit', 'Abandoned', 'Other']
-                    .map((s) => DropdownMenuItem(
-                        value: s,
-                        child: Text(s,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis)))
+                options: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                    .map((s) => StyledDropdownOption(s, s))
                     .toList(),
                 onChanged: (v) {
                   setState(() => widget.row.status = v!);
@@ -1964,18 +1952,12 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   final selectedCategory = list
                       .where((c) => c.name == widget.row.categoryCtrl.text)
                       .firstOrNull;
-                  return DropdownButtonFormField<String>(
-                    isDense: true,
-                    isExpanded: true,
+                  return StyledDropdownFormField<String>(
+                    label: 'Category',
+                    menuWidth: 240,
                     value: selectedCategory?.name,
-                    decoration: const InputDecoration(
-                        labelText: 'Category', isDense: true, helperText: ' '),
-                    items: list
-                        .map((c) => DropdownMenuItem(
-                            value: c.name,
-                            child: Text(c.name,
-                                style: const TextStyle(fontSize: 12),
-                                overflow: TextOverflow.ellipsis)))
+                    options: list
+                        .map((c) => StyledDropdownOption(c.name, c.name))
                         .toList(),
                     onChanged: (v) {
                       widget.row.categoryCtrl.text = v ?? '';
@@ -2078,51 +2060,27 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                               style: TextStyle(
                                   color: context.colors.dangerRed,
                                   fontSize: 11)),
-                          data: (reasons) => DropdownButtonFormField<String>(
-                            isDense: true,
-                            isExpanded: true,
+                          data: (reasons) => StyledDropdownFormField<String>(
+                            label: 'Reason ${rIdx + 1} *',
+                            menuWidth: 300,
+                            fillColor: context.colors.cardDark,
                             value: widget.row.selectedReasons[rIdx],
-                            decoration: InputDecoration(
-                              labelText: 'Reason ${rIdx + 1} *',
-                              labelStyle: const TextStyle(fontSize: 12),
-                              isDense: true,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 12),
-                              filled: true,
-                              fillColor: context.colors.cardDark,
-                              helperText: ' ',
-                            ),
                             validator: (v) =>
                                 widget.showValidationErrors && v == null
                                     ? 'Required'
                                     : null,
-                            items: reasons.map((r) {
+                            options: reasons.map((r) {
                               final isSelectedSomewhereElse = widget
                                   .row.selectedReasons
                                   .any((res) => res == r.reasonText);
                               final isCurrentSelection =
                                   widget.row.selectedReasons[rIdx] ==
                                       r.reasonText;
-
-                              return DropdownMenuItem(
-                                value: r.reasonText,
+                              return StyledDropdownOption(
+                                r.reasonText,
+                                r.reasonText,
                                 enabled: !isSelectedSomewhereElse ||
                                     isCurrentSelection,
-                                child: Text(
-                                  r.reasonText,
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    color: (isSelectedSomewhereElse &&
-                                            !isCurrentSelection)
-                                        ? context.colors.textMuted
-                                        : context.colors.textPrimary,
-                                    decoration: (isSelectedSomewhereElse &&
-                                            !isCurrentSelection)
-                                        ? TextDecoration.lineThrough
-                                        : null,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
                               );
                             }).toList(),
                             onChanged: (v) {

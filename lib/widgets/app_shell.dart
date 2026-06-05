@@ -137,7 +137,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                             Text('SL Customs',
                                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
                             Text('SR Management System\nGrey Line 1',
-                                style: TextStyle(color: Colors.white54, fontSize: 10, height: 1.2)),
+                                style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.2)),
                           ],
                         ),
                       ),
@@ -164,12 +164,12 @@ class _AppShellState extends ConsumerState<AppShell> {
                     children: [
                       if (profile != null) ...[
                         Text(profile.fullName,
-                            style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.w600, fontSize: 13),
+                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                             overflow: TextOverflow.ellipsis),
                         Text(profile.role.toUpperCase(),
                             style: TextStyle(color: context.colors.primaryGold, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1)),
                           Text('Salary No: ${profile.badgeNumber}',
-                              style: TextStyle(color: context.colors.textMuted, fontSize: 11)),
+                              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11)),
                         const SizedBox(height: 12),
                       ],
                       SizedBox(
@@ -178,8 +178,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                           icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, size: 16),
                           label: Text(isDark ? 'Light Mode' : 'Dark Mode', style: const TextStyle(fontSize: 13)),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: context.colors.textPrimary,
-                            side: BorderSide(color: context.colors.borderColor),
+                            foregroundColor: Colors.white,
+                            side: BorderSide(color: Colors.white.withOpacity(0.25)),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () {
@@ -194,8 +194,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                           icon: const Icon(Icons.person_rounded, size: 16),
                           label: const Text('Profile', style: TextStyle(fontSize: 13)),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: context.colors.textPrimary,
-                            side: BorderSide(color: context.colors.borderColor),
+                            foregroundColor: Colors.white,
+                            side: BorderSide(color: Colors.white.withOpacity(0.25)),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () => context.go('/profile'),
@@ -257,16 +257,23 @@ class _NavTile extends StatelessWidget {
             ),
             child: Row(
               children: [
+                // Sidebar is always dark navy — use light colors for contrast
+                // in both light and dark themes.
                 Icon(item.icon,
-                    color: isActive ? context.colors.primaryGold : context.colors.textSecondary, size: 20),
+                    color: isActive
+                        ? context.colors.primaryGold
+                        : Colors.white.withOpacity(0.85),
+                    size: 20),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(item.label,
                       overflow: TextOverflow.ellipsis,
                       softWrap: false,
                       style: TextStyle(
-                        color: isActive ? context.colors.primaryGold : context.colors.textSecondary,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
+                        color: isActive
+                            ? context.colors.primaryGold
+                            : Colors.white.withOpacity(0.85),
+                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
                         fontSize: 14,
                       )),
                 ),

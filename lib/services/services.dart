@@ -544,8 +544,14 @@ class WarehouseService {
   }
 
   Future<void> markAsReturned(String entryId,
-      {String? returnNotes, int? returnQty}) async {
+      {String? returnNotes, int? returnQty, List<int>? packageNumbers}) async {
     final user = supabase.auth.currentUser;
+    // Append the specific released package numbers for accurate tracking.
+    if (packageNumbers != null && packageNumbers.isNotEmpty) {
+      final tag = 'pkgs:${packageNumbers.join(',')}';
+      returnNotes =
+          (returnNotes == null || returnNotes.isEmpty) ? tag : '$returnNotes | $tag';
+    }
 
     // Attempt to get name from local providers first to avoid extra DB calls
     // But since this is a service, we'll try a simpler check
@@ -666,6 +672,7 @@ class WarehouseService {
     required String dispositionStatus,
     String? notes,
     int? qty,
+    List<int>? packageNumbers,
   }) async {
     final user = supabase.auth.currentUser;
 
@@ -681,8 +688,13 @@ class WarehouseService {
     final disposeQty = (qty != null && qty > 0 && qty < currentTotal)
         ? qty
         : currentTotal;
+    // Record the specific package numbers chosen so they (not just a count)
+    // are tracked as processed: "pkgs:2,5,17".
+    final pkgTag = (packageNumbers != null && packageNumbers.isNotEmpty)
+        ? ' pkgs:${packageNumbers.join(',')}'
+        : '';
     final returnNotes =
-        '[${dispositionStatus.toUpperCase()}]${notes != null && notes.isNotEmpty ? ' — $notes' : ''}';
+        '[${dispositionStatus.toUpperCase()}]$pkgTag${notes != null && notes.isNotEmpty ? ' — $notes' : ''}';
 
     if (disposeQty >= currentTotal) {
       // Full disposal — create closed history entry, delete held entry, update item status
@@ -829,6 +841,15 @@ class WarehouseService {
     await supabase
         .from('package_items')
         .update({'status': newStatus}).eq('id', packageItemId);
+
+    // Goods have left the yard — remove any remaining held (non-returned)
+    // warehouse entry for this item so it no longer appears in / is charged
+    // by the Warehouses view.
+    await supabase
+        .from('warehouse_entries')
+        .delete()
+        .eq('package_item_id', packageItemId)
+        .eq('is_returned', false);
 
     if (user != null) {
       await AuditLogService().recordLog(

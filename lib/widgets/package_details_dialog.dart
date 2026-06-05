@@ -83,6 +83,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import '../core/providers.dart';
+import 'styled_dropdown.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
@@ -132,7 +133,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
 
   Future<bool> _showReleaseConfirmation(
       BuildContext context, WarehouseEntryModel entry,
-      {int? preselectedQty}) async {
+      {int? preselectedQty, List<int>? packageNumbers}) async {
     final notesCtrl = TextEditingController();
     final receiptCtrl = TextEditingController();
     final dateCtrl = TextEditingController(
@@ -339,6 +340,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         entry.id,
                         returnNotes: finalNotes,
                         returnQty: releaseQty,
+                        packageNumbers: packageNumbers,
                       );
                   ref.read(packagesRefreshTriggerProvider.notifier).trigger();
                   ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
@@ -346,6 +348,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       liveWarehouseEntriesProvider(entry.warehouseId));
                   ref.invalidate(livePackagesProvider);
                   ref.invalidate(allWarehouseEntriesProvider);
+                  ref.invalidate(packageDataProvider(entry.packageId));
                   if (ctx.mounted) Navigator.pop(ctx, true);
                 } catch (e) {
                   if (ctx.mounted) {
@@ -366,7 +369,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
 
   Future<bool> _showDispositionDialog(
       BuildContext context, WarehouseEntryModel entry, String dispositionType,
-      {int? preselectedQty}) async {
+      {int? preselectedQty, List<int>? packageNumbers}) async {
     final notesCtrl = TextEditingController();
 
     final Map<String, _DispositionMeta> meta = {
@@ -473,7 +476,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
           dispositionStatus: dispositionType,
           notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
           qty: preselectedQty,
+          packageNumbers: packageNumbers,
         );
+    // Refresh so the (still open) actions dialog recomputes processed slots.
+    ref.read(packagesRefreshTriggerProvider.notifier).trigger();
+    ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+    ref.invalidate(packageDataProvider(entry.packageId));
+    ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
+    ref.invalidate(livePackagesProvider);
     return true;
   }
 
@@ -482,40 +492,27 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     WarehouseEntryModel entry, {
     PackageItem? highlightedItem,
   }) {
-    // Compute package quantities for selection
     final specificItem = highlightedItem ??
         widget.package.items.firstWhere(
           (i) => i.id == entry.packageItemId,
           orElse: () => widget.package.items.first,
         );
-    final totalQty = specificItem.quantity;
-
-    int heldQty = entry.itemCount;
-    if (heldQty == 1 && specificItem.quantity > 1 && !entry.isReturned) {
-      final returnedSum = widget.package.warehouseEntries
-          .where((e) => e.packageItemId == specificItem.id && e.isReturned)
-          .fold(0, (sum, e) => sum + e.itemCount);
-      heldQty = specificItem.quantity - returnedSum;
-      if (heldQty < 1) heldQty = 1;
-    }
 
     showDialog(
       context: ctx,
       builder: (dialogCtx) => _PackageActionsDialog(
-        entry: entry,
-        totalQty: totalQty,
-        heldQty: heldQty,
-        onRelease: (int qty) async {
-          Navigator.pop(dialogCtx);
-          final ok = await _showReleaseConfirmation(ctx, entry,
-              preselectedQty: qty);
-          if (ok && mounted) Navigator.pop(ctx);
+        packageId: entry.packageId,
+        itemId: specificItem.id,
+        fallbackEntry: entry,
+        // The actions dialog stays open and self-refreshes — we do NOT pop the
+        // details dialog, so the page never jumps back to the warehouse top.
+        onRelease: (held, slots) async {
+          return await _showReleaseConfirmation(ctx, held,
+              preselectedQty: slots.length, packageNumbers: slots);
         },
-        onDispose: (String type, int qty) async {
-          Navigator.pop(dialogCtx);
-          final ok = await _showDispositionDialog(ctx, entry, type,
-              preselectedQty: qty);
-          if (ok && mounted) Navigator.pop(ctx);
+        onDispose: (held, type, slots) async {
+          return await _showDispositionDialog(ctx, held, type,
+              preselectedQty: slots.length, packageNumbers: slots);
         },
       ),
     );
@@ -673,6 +670,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         _hs == 'forfeit' ||
         _hs == 'forfiet' ||
         widget.highlightEntry?.isPackageConfiscated == true;
+
+    // No-charge context: abandoned / forfeit / destroy. These items carry no
+    // storage fee and no release receipt — so we show registration-form item
+    // details instead of charge/receipt fields.
+    final isNoChargeContext =
+        WarehouseEntryModel.isNoChargeStatus(_hs) ||
+            _isAbandonOrForfeitEntry(widget.highlightEntry);
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -910,45 +914,141 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                     border: Border.all(
                                         color: context.colors.borderColor),
                                   ),
-                                  child: Column(
-                                    children: [
-                                      _DetailItem(
-                                        icon: Icons.label_important_rounded,
-                                        label: 'Item Name',
-                                        value: highlightedItem.itemName,
-                                      ),
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: _DetailItem(
-                                              icon: Icons.view_in_ar_rounded,
-                                              label: 'Total Packages',
-                                              value:
-                                                  '${highlightedItem.quantity}',
+                                  child: isNoChargeContext
+                                      ? Column(
+                                          children: [
+                                            _DetailItem(
+                                              icon: Icons
+                                                  .label_important_rounded,
+                                              label: 'Item Name',
+                                              value: highlightedItem.itemName,
                                             ),
-                                          ),
-                                          const Gap(12),
-                                          Expanded(
-                                            child: _DetailItem(
-                                              icon: widget.useWarehouseSummary
-                                                  ? Icons.inventory_2_rounded
-                                                  : Icons
-                                                      .keyboard_return_rounded,
-                                              label: widget.useWarehouseSummary
-                                                  ? 'Remaining (Current)'
-                                                  : 'Released (This Receipt)',
-                                              value:
-                                                  '${widget.highlightEntry!.itemCount}',
-                                              valueColor: widget
-                                                      .useWarehouseSummary
-                                                  ? context.colors.primaryGold
-                                                  : context.colors.successGreen,
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .view_in_ar_rounded,
+                                                    label: 'Quantity',
+                                                    value:
+                                                        '${highlightedItem.quantity}',
+                                                  ),
+                                                ),
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .straighten_rounded,
+                                                    label: 'Unit',
+                                                    value: highlightedItem
+                                                                .unitOfMeasure ==
+                                                            'Other'
+                                                        ? (highlightedItem
+                                                                .unitOther ??
+                                                            'Other')
+                                                        : highlightedItem
+                                                            .unitOfMeasure,
+                                                  ),
+                                                ),
+                                              ],
                                             ),
-                                          ),
-                                        ],
-                                      ),
-                                    ],
-                                  ),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .category_rounded,
+                                                    label: 'Category',
+                                                    value: (highlightedItem
+                                                                .category
+                                                                ?.isNotEmpty ==
+                                                            true)
+                                                        ? highlightedItem
+                                                            .category!
+                                                        : '—',
+                                                  ),
+                                                ),
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon:
+                                                        Icons.payments_rounded,
+                                                    label: 'Unit Value',
+                                                    value:
+                                                        'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            if (highlightedItem
+                                                    .goodsDescription
+                                                    ?.isNotEmpty ==
+                                                true)
+                                              _DetailItem(
+                                                icon:
+                                                    Icons.description_rounded,
+                                                label: 'Goods Description',
+                                                value: highlightedItem
+                                                    .goodsDescription!,
+                                              ),
+                                            if (highlightedItem
+                                                    .reasons?.isNotEmpty ==
+                                                true)
+                                              _DetailItem(
+                                                icon: Icons
+                                                    .warning_amber_rounded,
+                                                label: 'Hold Reasons',
+                                                value: highlightedItem
+                                                    .reasons!,
+                                              ),
+                                          ],
+                                        )
+                                      : Column(
+                                          children: [
+                                            _DetailItem(
+                                              icon: Icons
+                                                  .label_important_rounded,
+                                              label: 'Item Name',
+                                              value: highlightedItem.itemName,
+                                            ),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .view_in_ar_rounded,
+                                                    label: 'Total Packages',
+                                                    value:
+                                                        '${highlightedItem.quantity}',
+                                                  ),
+                                                ),
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: widget
+                                                            .useWarehouseSummary
+                                                        ? Icons
+                                                            .inventory_2_rounded
+                                                        : Icons
+                                                            .keyboard_return_rounded,
+                                                    label: widget
+                                                            .useWarehouseSummary
+                                                        ? 'Remaining (Current)'
+                                                        : 'Released (This Receipt)',
+                                                    value:
+                                                        '${widget.highlightEntry!.itemCount}',
+                                                    valueColor: widget
+                                                            .useWarehouseSummary
+                                                        ? context
+                                                            .colors.primaryGold
+                                                        : context.colors
+                                                            .successGreen,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
                                 ),
                         ),
                         if (!widget.useWarehouseSummary)
@@ -987,16 +1087,18 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                           value:
                                               '${DateFormat('yyyy-MM-dd').format(legacyEntries.first.admittedAt)} to ${legacyEntries.first.returnedAt != null ? DateFormat('yyyy-MM-dd').format(legacyEntries.first.returnedAt!) : '—'}',
                                         ),
-                                        _DetailItem(
-                                          icon: Icons.receipt_long_rounded,
-                                          label: 'Receipt No',
-                                          value: returnedReceiptNo ?? '—',
-                                        ),
-                                        _DetailItem(
-                                          icon: Icons.event_rounded,
-                                          label: 'Receipt Date',
-                                          value: returnedReceiptDate ?? '—',
-                                        ),
+                                        if (!isNoChargeContext) ...[
+                                          _DetailItem(
+                                            icon: Icons.receipt_long_rounded,
+                                            label: 'Receipt No',
+                                            value: returnedReceiptNo ?? '—',
+                                          ),
+                                          _DetailItem(
+                                            icon: Icons.event_rounded,
+                                            label: 'Receipt Date',
+                                            value: returnedReceiptDate ?? '—',
+                                          ),
+                                        ],
                                       ],
                                     ),
                                   ),
@@ -1549,8 +1651,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         const Gap(16),
                       ],
 
-                      // Warehouse Charges Section
-                      if (widget.highlightEntry != null)
+                      // Warehouse Charges Section — hidden for no-charge
+                      // (abandoned / forfeit / destroy) items.
+                      if (widget.highlightEntry != null && !isNoChargeContext)
                         _DetailSection(
                           title: 'Warehouse Charges',
                           icon: Icons.payments_rounded,
@@ -3288,9 +3391,11 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
               const Gap(10),
               Expanded(
                 flex: 2,
-                child: DropdownButtonFormField<String>(
-                  isDense: true,
-                  value: [
+                child: StyledDropdownFormField<String>(
+                  label: 'Unit *',
+                  menuWidth: 220,
+                  columns: 2,
+                  value: const [
                     'Pieces',
                     'Cartons',
                     'Boxes',
@@ -3302,9 +3407,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   ].contains(widget.row.unitOfMeasureCtrl.text)
                       ? widget.row.unitOfMeasureCtrl.text
                       : 'Pieces',
-                  decoration:
-                      const InputDecoration(labelText: 'Unit *', isDense: true),
-                  items: [
+                  options: const [
                     'Pieces',
                     'Cartons',
                     'Boxes',
@@ -3313,13 +3416,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     'KG',
                     'Meters',
                     'Other'
-                  ]
-                      .map((u) => DropdownMenuItem(
-                          value: u,
-                          child: Text(u,
-                              style: const TextStyle(fontSize: 12),
-                              overflow: TextOverflow.ellipsis)))
-                      .toList(),
+                  ].map((u) => StyledDropdownOption(u, u)).toList(),
                   onChanged: (v) {
                     setState(() {
                       widget.row.unitOfMeasureCtrl.text = v ?? 'Pieces';
@@ -3348,21 +3445,15 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
               const Gap(10),
               Expanded(
                 flex: 2,
-                child: DropdownButtonFormField<String>(
-                  isDense: true,
-                  value: ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                child: StyledDropdownFormField<String>(
+                  label: 'Status *',
+                  menuWidth: 200,
+                  value: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
                           .contains(widget.row.status)
                       ? widget.row.status
                       : 'Other',
-                  decoration: const InputDecoration(
-                      labelText: 'Status *', isDense: true),
-                  items: ['Detain', 'Forfeit', 'Abandoned', 'Other']
-                      .map((s) => DropdownMenuItem(
-                            value: s,
-                            child: Text(s,
-                                style: const TextStyle(fontSize: 12),
-                                overflow: TextOverflow.ellipsis),
-                          ))
+                  options: const ['Detain', 'Forfeit', 'Abandoned', 'Other']
+                      .map((s) => StyledDropdownOption(s, s))
                       .toList(),
                   onChanged: (v) {
                     setState(() => widget.row.status = v!);
@@ -3404,17 +3495,12 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     final selectedCategory = list
                         .where((c) => c.name == widget.row.categoryCtrl.text)
                         .firstOrNull;
-                    return DropdownButtonFormField<String>(
-                      isDense: true,
+                    return StyledDropdownFormField<String>(
+                      label: 'Category',
+                      menuWidth: 240,
                       value: selectedCategory?.name,
-                      decoration: const InputDecoration(
-                          labelText: 'Category', isDense: true),
-                      items: list
-                          .map((c) => DropdownMenuItem(
-                              value: c.name,
-                              child: Text(c.name,
-                                  style: const TextStyle(fontSize: 12),
-                                  overflow: TextOverflow.ellipsis)))
+                      options: list
+                          .map((c) => StyledDropdownOption(c.name, c.name))
                           .toList(),
                       onChanged: (v) {
                         widget.row.categoryCtrl.text = v ?? '';
@@ -3477,25 +3563,15 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                                 style: TextStyle(
                                     color: context.colors.dangerRed,
                                     fontSize: 11)),
-                            data: (reasons) => DropdownButtonFormField<String>(
-                              isDense: true,
+                            data: (reasons) => StyledDropdownFormField<String>(
+                              label: 'Reason ${rIdx + 1} *',
+                              menuWidth: 300,
+                              fillColor: context.colors.cardDark,
                               value: widget.row.selectedReasons[rIdx],
-                              decoration: InputDecoration(
-                                labelText: 'Reason ${rIdx + 1} *',
-                                labelStyle: const TextStyle(fontSize: 12),
-                                isDense: true,
-                                contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 12),
-                                filled: true,
-                                fillColor: context.colors.cardDark,
-                              ),
                               validator: (v) => v == null ? 'Required' : null,
-                              items: reasons
-                                  .map((r) => DropdownMenuItem(
-                                      value: r.reasonText,
-                                      child: Text(r.reasonText,
-                                          style: const TextStyle(fontSize: 13),
-                                          overflow: TextOverflow.ellipsis)))
+                              options: reasons
+                                  .map((r) => StyledDropdownOption(
+                                      r.reasonText, r.reasonText))
                                   .toList(),
                               onChanged: (v) {
                                 setState(
@@ -3603,26 +3679,30 @@ class _UpdateSectionCard extends StatelessWidget {
 
 // ── Package Actions Dialog ────────────────────────────────────────────────────
 
-class _PackageActionsDialog extends StatefulWidget {
-  final WarehouseEntryModel entry;
-  final int totalQty;
-  final int heldQty;
-  final Function(int qty) onRelease;
-  final Function(String type, int qty) onDispose;
+class _PackageActionsDialog extends ConsumerStatefulWidget {
+  final String packageId;
+  final String itemId;
+  final WarehouseEntryModel fallbackEntry;
+  // Return true when the action was applied. The dialog stays open and refreshes.
+  final Future<bool> Function(WarehouseEntryModel held, List<int> slots)
+      onRelease;
+  final Future<bool> Function(
+      WarehouseEntryModel held, String type, List<int> slots) onDispose;
 
   const _PackageActionsDialog({
-    required this.entry,
-    required this.totalQty,
-    required this.heldQty,
+    required this.packageId,
+    required this.itemId,
+    required this.fallbackEntry,
     required this.onRelease,
     required this.onDispose,
   });
 
   @override
-  State<_PackageActionsDialog> createState() => _PackageActionsDialogState();
+  ConsumerState<_PackageActionsDialog> createState() =>
+      _PackageActionsDialogState();
 }
 
-class _PackageActionsDialogState extends State<_PackageActionsDialog> {
+class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
   bool _otherExpanded = false;
   final _otherCtrl = TextEditingController();
 
@@ -3679,6 +3759,20 @@ class _PackageActionsDialogState extends State<_PackageActionsDialog> {
 
   @override
   Widget build(BuildContext context) {
+    // Live data: recompute held / processed slots whenever package data changes,
+    // so the dialog stays correct after an action without closing.
+    final pkg = ref.watch(packageDataProvider(widget.packageId)).valueOrNull;
+    final entries = pkg?.warehouseEntries ?? [widget.fallbackEntry];
+    final item =
+        pkg?.items.where((i) => i.id == widget.itemId).firstOrNull;
+    final total = item?.quantity ?? widget.fallbackEntry.itemCount;
+    final processed = _computeProcessedSlots(widget.itemId, total, entries);
+    final heldEntry = entries
+            .where((e) => e.packageItemId == widget.itemId && !e.isReturned)
+            .firstOrNull ??
+        widget.fallbackEntry;
+    final heldCount = (total - processed.length).clamp(0, total);
+
     return material.AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
       title: Row(children: [
@@ -3692,6 +3786,39 @@ class _PackageActionsDialogState extends State<_PackageActionsDialog> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (heldCount <= 0)
+                material.Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: context.colors.successGreen.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                        color: context.colors.successGreen.withOpacity(0.3)),
+                  ),
+                  child: Row(children: [
+                    Icon(Icons.check_circle_rounded,
+                        color: context.colors.successGreen, size: 18),
+                    const Gap(10),
+                    Expanded(
+                      child: Text(
+                          'All $total packages have been processed.',
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12)),
+                    ),
+                  ]),
+                )
+              else
+                material.Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: material.Align(
+                    alignment: material.Alignment.centerLeft,
+                    child: Text('$heldCount of $total packages remaining',
+                        style: TextStyle(
+                            color: context.colors.textMuted, fontSize: 12)),
+                  ),
+                ),
               // Show all actions
             ..._actions.map((a) {
               final isOther = a.key == 'Other';
@@ -3713,25 +3840,28 @@ class _PackageActionsDialogState extends State<_PackageActionsDialog> {
                     color: a.color.withOpacity(0.04),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
-                      onTap: () async {
+                      onTap: heldCount <= 0
+                          ? null
+                          : () async {
                         if (isOther) {
                           setState(() => _otherExpanded = !_otherExpanded);
                         } else {
-                          // Show selection dialog
-                          final qty = await showDialog<int>(
+                          // Show selection dialog with live processed slots
+                          final slots = await showDialog<Set<int>>(
                             context: context,
                             builder: (ctx) => _PackageSelectionDialog(
                               actionColor: a.color,
                               actionName: a.key == 'Release' ? 'Release' : a.key,
-                              totalQty: widget.totalQty,
-                              heldQty: widget.heldQty,
+                              totalQty: total,
+                              processedSlots: processed,
                             ),
                           );
-                          if (qty != null && qty > 0) {
+                          if (slots != null && slots.isNotEmpty) {
+                            final list = slots.toList()..sort();
                             if (a.key == 'Release') {
-                              widget.onRelease(qty);
+                              await widget.onRelease(heldEntry, list);
                             } else {
-                              widget.onDispose(a.key, qty);
+                              await widget.onDispose(heldEntry, a.key, list);
                             }
                           }
                         }
@@ -3807,18 +3937,19 @@ class _PackageActionsDialogState extends State<_PackageActionsDialog> {
                             onPressed: () async {
                               final t = _otherCtrl.text.trim();
                               if (t.isEmpty) return;
-                              
-                              final qty = await showDialog<int>(
+
+                              final slots = await showDialog<Set<int>>(
                                 context: context,
                                 builder: (ctx) => _PackageSelectionDialog(
                                   actionColor: const Color(0xFF7E57C2),
                                   actionName: t,
-                                  totalQty: widget.totalQty,
-                                  heldQty: widget.heldQty,
+                                  totalQty: total,
+                                  processedSlots: processed,
                                 ),
                               );
-                              if (qty != null && qty > 0) {
-                                widget.onDispose(t, qty);
+                              if (slots != null && slots.isNotEmpty) {
+                                final list = slots.toList()..sort();
+                                await widget.onDispose(heldEntry, t, list);
                               }
                             },
                           ),
@@ -3884,6 +4015,49 @@ bool _isAbandonOrForfeitEntry(WarehouseEntryModel? e) {
   return notes.startsWith('[ABANDONED') ||
       notes.startsWith('[FORFEIT') ||
       notes.startsWith('[CONFISCATED');
+}
+
+// ── Per-package-number slot tracking ──────────────────────────────────────────
+
+/// Parses the explicit package numbers encoded in a returnNotes string
+/// ("... pkgs:2,5,17 ...").
+Set<int> _parsePkgNums(String? notes) {
+  if (notes == null) return {};
+  final m = RegExp(r'pkgs:([\d,]+)').firstMatch(notes);
+  if (m == null) return {};
+  return m
+      .group(1)!
+      .split(',')
+      .map((s) => int.tryParse(s.trim()))
+      .whereType<int>()
+      .toSet();
+}
+
+/// The set of package slot numbers (1..totalQty) that have already been
+/// processed (released / disposed) for an item. Entries that recorded explicit
+/// numbers are honoured exactly; legacy count-only entries fall back to the
+/// lowest still-available slots.
+Set<int> _computeProcessedSlots(
+    String itemId, int totalQty, List<WarehouseEntryModel> entries) {
+  final explicit = <int>{};
+  int legacy = 0;
+  for (final e in entries) {
+    if (e.packageItemId != itemId || !e.isReturned) continue;
+    final nums = _parsePkgNums(e.returnNotes);
+    if (nums.isNotEmpty) {
+      explicit.addAll(nums);
+    } else {
+      legacy += e.itemCount;
+    }
+  }
+  final result = <int>{...explicit};
+  for (int n = 1; n <= totalQty && legacy > 0; n++) {
+    if (!result.contains(n)) {
+      result.add(n);
+      legacy--;
+    }
+  }
+  return result;
 }
 
 // ── Final Disposition Dialog ──────────────────────────────────────────────────
@@ -3982,39 +4156,140 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
     final visible = _actions
         .where((a) => !(a.adminOnly && widget.isOfficer))
         .toList();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return material.AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(children: [
-        Icon(Icons.outbound_rounded,
-            color: context.colors.primaryGold, size: 22),
-        const Gap(10),
-        const Expanded(child: Text('Final Disposition')),
-      ]),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 400),
+      tween: Tween(begin: 0.0, end: 1.0),
+      curve: Curves.easeOutBack,
+      builder: (context, value, child) {
+        return Transform.scale(
+          scale: value,
+          child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+        );
+      },
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: 520,
+          constraints: const BoxConstraints(maxHeight: 700),
+          decoration: BoxDecoration(
+            color: context.colors.scaffoldBg,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.4),
+                blurRadius: 40,
+                offset: const Offset(0, 15),
+              ),
+            ],
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                '${widget.item.itemName} · ${widget.qty} unit(s)',
-                style: material.TextStyle(
-                    color: context.colors.textMuted, fontSize: 12),
-              ),
-              if (widget.isOfficer) ...[
-                const Gap(4),
-                Text(
-                  'Release, Re-export and Other require an administrator.',
-                  style: material.TextStyle(
-                      color: context.colors.textMuted,
-                      fontSize: 11,
-                      fontStyle: FontStyle.italic),
+              // ── Header ──
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: isDark
+                        ? [
+                            context.colors.surfaceDark,
+                            context.colors.cardDark
+                          ]
+                        : [
+                            context.colors.customsBlue,
+                            context.colors.customsBlueDark
+                          ],
+                  ),
+                  borderRadius:
+                      const BorderRadius.vertical(top: Radius.circular(16)),
                 ),
-              ],
-              const Gap(12),
-              ...visible.map((a) {
+                child: Row(
+                  children: [
+                    material.Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(Icons.outbound_rounded,
+                          color: context.colors.primaryGold, size: 24),
+                    ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
+                    const Gap(16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('FINAL DISPOSITION',
+                                  style: material.TextStyle(
+                                      color: context.colors.primaryGold,
+                                      fontSize: 11,
+                                      letterSpacing: 1.2,
+                                      fontWeight: FontWeight.w800))
+                              .animate()
+                              .slideY(begin: 0.1, duration: 400.ms, delay: 100.ms)
+                              .fadeIn(),
+                          Text(
+                            '${widget.item.itemName} · ${widget.qty} unit(s)',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const material.TextStyle(
+                                color: Colors.white,
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold),
+                          )
+                              .animate()
+                              .slideY(begin: 0.1, duration: 400.ms, delay: 150.ms)
+                              .fadeIn(),
+                        ],
+                      ),
+                    ),
+                    const Gap(12),
+                    IconButton(
+                      icon: Icon(Icons.close_rounded,
+                          color: Colors.white.withOpacity(0.7)),
+                      splashRadius: 24,
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── Body ──
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(children: [
+                        Icon(Icons.assignment_ind_rounded,
+                            size: 16, color: context.colors.primaryGold),
+                        const Gap(8),
+                        Text('Disposal Method',
+                            style: material.TextStyle(
+                                color: context.colors.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.3)),
+                      ]).animate().fadeIn(delay: 200.ms),
+                      if (widget.isOfficer) ...[
+                        const Gap(6),
+                        Text(
+                          'Release, Re-export and Other require an administrator.',
+                          style: material.TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic),
+                        ),
+                      ],
+                      const Gap(16),
+                      ...visible.map((a) {
                 final isOther = a.type == 'OTHER';
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -4137,19 +4412,44 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                         ),
                       ),
                   ],
-                );
+                ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.05);
               }),
+                    ],
+                  ),
+                ),
+              ),
+
+              // ── Footer ──
+              material.Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceDark,
+                  borderRadius:
+                      const BorderRadius.vertical(bottom: Radius.circular(16)),
+                  border: Border(
+                      top: BorderSide(color: context.colors.borderColor)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        foregroundColor: context.colors.textSecondary,
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 20, vertical: 14),
+                      ),
+                      child: const Text('Cancel',
+                          style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Cancel',
-              style: TextStyle(color: context.colors.textMuted)),
-        ),
-      ],
     );
   }
 }
@@ -4314,13 +4614,13 @@ class _PackageSelectionDialog extends StatefulWidget {
   final Color actionColor;
   final String actionName;
   final int totalQty;
-  final int heldQty;
+  final Set<int> processedSlots;
 
   const _PackageSelectionDialog({
     required this.actionColor,
     required this.actionName,
     required this.totalQty,
-    required this.heldQty,
+    required this.processedSlots,
   });
 
   @override
@@ -4330,18 +4630,17 @@ class _PackageSelectionDialog extends StatefulWidget {
 
 class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
   late Set<int> _selectedSlots;
-  late int _processedCount;
+  late final List<int> _heldSlots;
 
   @override
   void initState() {
     super.initState();
-    _processedCount = widget.totalQty - widget.heldQty;
-    if (_processedCount < 0) _processedCount = 0;
-    // By default, select all available held slots
-    _selectedSlots = List.generate(
-      widget.heldQty,
-      (i) => _processedCount + i + 1,
-    ).toSet();
+    _heldSlots = [
+      for (int n = 1; n <= widget.totalQty; n++)
+        if (!widget.processedSlots.contains(n)) n
+    ];
+    // By default, select all available (held) slots.
+    _selectedSlots = _heldSlots.toSet();
   }
 
   void _toggleSlot(int slot) {
@@ -4354,20 +4653,8 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
     });
   }
 
-  void _selectAll() {
-    setState(() {
-      _selectedSlots = List.generate(
-        widget.heldQty,
-        (i) => _processedCount + i + 1,
-      ).toSet();
-    });
-  }
-
-  void _clearAll() {
-    setState(() {
-      _selectedSlots.clear();
-    });
-  }
+  void _selectAll() => setState(() => _selectedSlots = _heldSlots.toSet());
+  void _clearAll() => setState(() => _selectedSlots.clear());
 
   @override
   Widget build(BuildContext context) {
@@ -4392,7 +4679,7 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
-                  '${_selectedSlots.length} of ${widget.heldQty} selected',
+                  '${_selectedSlots.length} of ${_heldSlots.length} selected',
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
                 Row(
@@ -4431,7 +4718,8 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
               runSpacing: 8,
               children: List.generate(widget.totalQty, (index) {
                 final slotNumber = index + 1;
-                final isProcessed = slotNumber <= _processedCount;
+                final isProcessed =
+                    widget.processedSlots.contains(slotNumber);
                 final isSelected = _selectedSlots.contains(slotNumber);
 
                 return _PackageSlotChip(
@@ -4455,7 +4743,7 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
         ),
         ElevatedButton(
           onPressed: canProceed
-              ? () => Navigator.pop(context, _selectedSlots.length)
+              ? () => Navigator.pop(context, _selectedSlots)
               : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: widget.actionColor,

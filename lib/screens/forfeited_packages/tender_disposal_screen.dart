@@ -48,6 +48,22 @@ final forfeitedPackageByIdProvider =
   return ForfeitedPackageModel.fromJson(data as Map<String, dynamic>);
 });
 
+// All forfeited packages (INCLUDING ones already placed in a tender), with
+// their package items — used by the tender table so tendered packages still
+// resolve to a real SR number / consignee / item list.
+final allForfeitedMapProvider =
+    FutureProvider<Map<String, ForfeitedPackageModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  final data = await supabase
+      .from('forfeited_packages')
+      .select('*, packages(*, package_items(*))');
+  return {
+    for (final e in (data as List))
+      (e['id'] as String):
+          ForfeitedPackageModel.fromJson(e as Map<String, dynamic>)
+  };
+});
+
 // ── Screen ─────────────────────────────────────────────────────
 
 class TenderDisposalScreen extends ConsumerStatefulWidget {
@@ -81,6 +97,7 @@ class _TenderDisposalScreenState
     final tendersAsync = ref.watch(tendersProvider);
     final disposalsMapAsync = ref.watch(tenderDisposalsMapProvider);
     final forfeitedAsync = ref.watch(forfeitedPackagesProvider);
+    final allForfeitedMapAsync = ref.watch(allForfeitedMapProvider);
     final search = ref.watch(tenderSearchProvider);
 
     return AppShell(
@@ -300,20 +317,15 @@ class _TenderDisposalScreenState
                           onRetry: () =>
                               ref.refresh(tenderDisposalsMapProvider)),
                       data: (disposalsMap) {
-                        return forfeitedAsync.when(
+                        return allForfeitedMapAsync.when(
                           loading: () => Center(
                               child: CircularProgressIndicator(
                                   color: context.colors.primaryGold)),
                           error: (e, _) => ErrorView(
                               error: e,
                               onRetry: () =>
-                                  ref.refresh(forfeitedPackagesProvider)),
-                          data: (allForfeited) {
-                            // Build lookup map: forfeited_package_id -> ForfeitedPackageModel
-                            final forfeitedMap = {
-                              for (final f in allForfeited) f.id: f
-                            };
-
+                                  ref.refresh(allForfeitedMapProvider)),
+                          data: (forfeitedMap) {
                             return ListView.builder(
                               itemCount: filtered.length,
                               itemBuilder: (context, i) {
@@ -507,17 +519,45 @@ class _TenderPackagesTable extends ConsumerWidget {
     required this.forfeitedMap,
   });
 
+  /// True if an item's status is a forfeit variant.
+  bool _isForfeitItem(String? s) {
+    final v = (s ?? '').trim().toLowerCase();
+    return v == 'forfeit' || v == 'forfeited' || v == 'forfiet' || v == 'confiscated';
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final rows = tender.forfeitedPackageIds.map((pkgId) {
+    // Break each tendered package into per-item rows so the same SR can be
+    // shown once per forfeited item (matching the Abandoned / Forfeit tables).
+    final rows = <_PackageRow>[];
+    for (final pkgId in tender.forfeitedPackageIds) {
       final forfeited = forfeitedMap[pkgId];
       final disposal = disposalsMap[pkgId];
-      return _PackageRow(
-        forfeitedPackageId: pkgId,
-        forfeited: forfeited,
-        disposal: disposal,
-      );
-    }).toList();
+      final items = forfeited?.packageDetails?.items ?? [];
+      final forfeitItems =
+          items.where((i) => _isForfeitItem(i.status)).toList();
+      final shown = forfeitItems.isNotEmpty
+          ? forfeitItems
+          : (items.isNotEmpty ? items : <PackageItem>[]);
+
+      if (shown.isEmpty) {
+        rows.add(_PackageRow(
+          forfeitedPackageId: pkgId,
+          forfeited: forfeited,
+          disposal: disposal,
+          item: null,
+        ));
+      } else {
+        for (final item in shown) {
+          rows.add(_PackageRow(
+            forfeitedPackageId: pkgId,
+            forfeited: forfeited,
+            disposal: disposal,
+            item: item,
+          ));
+        }
+      }
+    }
 
     return Container(
       height: (rows.length * 52.0 + 56).clamp(100, 340),
@@ -535,7 +575,8 @@ class _TenderPackagesTable extends ConsumerWidget {
           empty: const EmptyTableState(message: 'No packages in this tender'),
           columns: const [
             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-            DataColumn2(label: Text('Consignee'), size: ColumnSize.L),
+            DataColumn2(label: Text('Item Name'), size: ColumnSize.M),
+            DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
             DataColumn2(label: Text('Disposal Type'), size: ColumnSize.M),
             DataColumn2(label: Text('Receipt / Details'), size: ColumnSize.M),
             DataColumn2(label: Text('Disposed By'), size: ColumnSize.M),
@@ -553,6 +594,11 @@ class _TenderPackagesTable extends ConsumerWidget {
                   color: context.colors.accentLightBlue,
                   fontWeight: FontWeight.w600,
                 ),
+              )),
+              DataCell(Text(
+                row.item?.itemName ?? 'Multiple/Unspecified',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.w500),
               )),
               DataCell(Text(
                 row.forfeited?.consigneeName ?? '—',
@@ -629,11 +675,13 @@ class _PackageRow {
   final String forfeitedPackageId;
   final ForfeitedPackageModel? forfeited;
   final TenderDisposalModel? disposal;
+  final PackageItem? item; // null = package-level summary row
 
   _PackageRow({
     required this.forfeitedPackageId,
     this.forfeited,
     this.disposal,
+    this.item,
   });
 }
 
@@ -693,12 +741,16 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
   late TextEditingController _otherDetailsController;
   bool _isLoading = false;
 
-  final List<(String, String, IconData)> _disposalTypes = const [
-    ('sold', 'Sold', Icons.sell_rounded),
-    ('re_export', 'Re-export', Icons.flight_takeoff_rounded),
-    ('govt_use', 'Government Use', Icons.account_balance_rounded),
-    ('destroy', 'Destroy', Icons.delete_forever_rounded),
-    ('other', 'Other', Icons.more_horiz_rounded),
+  final List<(String, String, IconData, String)> _disposalTypes = const [
+    ('sold', 'Sold', Icons.sell_rounded, 'Goods sold / disposed by sale.'),
+    ('re_export', 'Re-export', Icons.flight_takeoff_rounded,
+        'Goods sent back to country of origin.'),
+    ('govt_use', 'Government Use', Icons.account_balance_rounded,
+        'Goods transferred for government use.'),
+    ('destroy', 'Destroy', Icons.delete_forever_rounded,
+        'Goods destroyed.'),
+    ('other', 'Other', Icons.more_horiz_rounded,
+        'Custom disposal outcome.'),
   ];
 
   @override
@@ -910,59 +962,78 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
                         _DisposalTypeBadge(
                             type: widget.existingDisposal!.disposalType)
                       else
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 12,
+                        Column(
                           children: _disposalTypes.map((entry) {
-                            final (value, label, icon) = entry;
+                            final (value, label, icon, description) = entry;
                             final isSelected = _selectedDisposalType == value;
                             final color = _disposalTypeColor(context, value);
-                            return GestureDetector(
-                              onTap: () => setState(
-                                  () => _selectedDisposalType = value),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 150),
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
-                                decoration: BoxDecoration(
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
                                   color: isSelected
-                                      ? color.withOpacity(0.12)
-                                      : context.colors.textPrimary.withOpacity(0.02),
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                    color: isSelected
-                                        ? color
-                                        : context.colors.borderColor.withOpacity(0.5),
-                                    width: isSelected ? 2 : 1,
-                                  ),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(icon,
-                                        color: isSelected
-                                            ? color
-                                            : context.colors.textMuted,
-                                        size: 18),
-                                    const Gap(8),
-                                    Text(
-                                      label,
-                                      style: TextStyle(
-                                        color: isSelected
-                                            ? color
-                                            : context.colors.textSecondary,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w700
-                                            : FontWeight.w600,
-                                        fontSize: 14,
-                                      ),
-                                    ),
-                                  ],
+                                      ? color.withOpacity(0.6)
+                                      : color.withOpacity(0.2),
+                                  width: isSelected ? 1.5 : 1,
                                 ),
                               ),
-                            );
+                              color: isSelected
+                                  ? color.withOpacity(0.1)
+                                  : color.withOpacity(0.04),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: () => setState(
+                                    () => _selectedDisposalType = value),
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 12),
+                                  child: Row(children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(8),
+                                      decoration: BoxDecoration(
+                                        color: color.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child:
+                                          Icon(icon, color: color, size: 20),
+                                    ),
+                                    const Gap(14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(label,
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 14,
+                                                  color: color)),
+                                          const Gap(2),
+                                          Text(description,
+                                              style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: context
+                                                      .colors.textMuted)),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      isSelected
+                                          ? Icons.check_circle_rounded
+                                          : Icons.chevron_right_rounded,
+                                      color: isSelected
+                                          ? color
+                                          : color.withOpacity(0.6),
+                                      size: 20,
+                                    ),
+                                  ]),
+                                ),
+                              ),
+                            ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.05);
                           }).toList(),
-                        ).animate().fadeIn(delay: 250.ms),
+                        ),
 
                       // ── Sold → Receipt Number ──
                       if (_selectedDisposalType == 'sold' ||

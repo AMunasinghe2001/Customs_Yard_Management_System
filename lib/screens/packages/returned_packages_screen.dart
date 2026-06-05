@@ -12,6 +12,7 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/styled_dropdown.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
@@ -411,51 +412,19 @@ class _ReturnedPackagesScreenState
                                       strokeWidth: 2)),
                               error: (_, __) => const SizedBox.shrink(),
                               data: (reasons) {
-                                final items = [
-                                  'all',
-                                  ...reasons.map((r) => r.reasonText)
-                                ];
-                                return Container(
-                                  height: 32,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10),
-                                  decoration: BoxDecoration(
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                        color: context.colors.borderColor),
-                                  ),
-                                  child: DropdownButtonHideUnderline(
-                                    child: DropdownButton<String>(
-                                      value: items.contains(rFilter)
-                                          ? rFilter
-                                          : 'all',
-                                      isDense: true,
-                                      dropdownColor: context.colors.surfaceDark,
-                                      icon: Icon(Icons.arrow_drop_down,
-                                          color: context.colors.primaryGold,
-                                          size: 16),
-                                      style: TextStyle(
-                                          color: context.colors.textPrimary,
-                                          fontSize: 12),
-                                      onChanged: (v) {
-                                        if (v != null) {
-                                          ref
-                                              .read(
-                                                  returnedPackageReasonFilterProvider
-                                                      .notifier)
-                                              .state = v;
-                                        }
-                                      },
-                                      items: items
-                                          .map((s) => DropdownMenuItem(
-                                                value: s,
-                                                child: Text(s == 'all'
-                                                    ? 'All Reasons'
-                                                    : s),
-                                              ))
-                                          .toList(),
-                                    ),
-                                  ),
+                                return StyledDropdownButton<String>(
+                                  value: rFilter == 'all' ? null : rFilter,
+                                  allLabel: 'All Reasons',
+                                  icon: Icons.label_outline_rounded,
+                                  menuWidth: 320,
+                                  options: reasons
+                                      .map((r) => StyledDropdownOption(
+                                          r.reasonText, r.reasonText))
+                                      .toList(),
+                                  onChanged: (v) => ref
+                                      .read(returnedPackageReasonFilterProvider
+                                          .notifier)
+                                      .state = v ?? 'all',
                                 );
                               },
                             ),

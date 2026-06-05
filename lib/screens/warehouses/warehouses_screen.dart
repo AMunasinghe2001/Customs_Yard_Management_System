@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/styled_dropdown.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
@@ -15,6 +16,23 @@ import '../../widgets/error_view.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/supabase_client.dart';
 
+
+/// Item statuses whose goods have permanently left the yard — these must not
+/// appear in (or be counted by) the Warehouses view. Forfeit / Abandoned /
+/// Confiscated are NOT here: those goods are still held in the yard.
+const _leftYardStatuses = {
+  'released',
+  'returned',
+  'sold',
+  're-export',
+  're-exported',
+  'destroy',
+  'destroyed',
+  'other',
+};
+
+bool _itemLeftYard(String? s) =>
+    _leftYardStatuses.contains((s ?? '').trim().toLowerCase());
 
 class WarehousesScreen extends ConsumerWidget {
   const WarehousesScreen({super.key});
@@ -141,6 +159,16 @@ class _WarehouseTab extends ConsumerWidget {
         final showReturned = ref.watch(warehouseEntryFilterProvider);
         final filteredList = list.where((e) {
           if (e.isReturned) return false;
+          // Goods with a final disposition (Released / Sold / Re-exported /
+          // Destroyed / Other) have left the yard — never show them here.
+          final pkgForStatus =
+              ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+          if (pkgForStatus != null && e.packageItemId != null) {
+            final it = pkgForStatus.items
+                .where((i) => i.id == e.packageItemId)
+                .firstOrNull;
+            if (_itemLeftYard(it?.status)) return false;
+          }
           if (filter != 'all') {
             if (filter == 'confiscated') {
               if (!e.isPackageConfiscated) return false;
@@ -277,30 +305,20 @@ class _WarehouseTab extends ConsumerWidget {
                             loading: () => const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
                             error: (_, __) => const SizedBox.shrink(),
                             data: (reasons) {
-                              final items = ['all', ...reasons.map((r) => r.reasonText)];
-                              return Container(
-                                height: 32,
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: context.colors.borderColor),
-                                ),
-                                child: DropdownButtonHideUnderline(
-                                  child: DropdownButton<String>(
-                                    value: items.contains(rFilter) ? rFilter : 'all',
-                                    isDense: true,
-                                    dropdownColor: context.colors.surfaceDark,
-                                    icon: Icon(Icons.arrow_drop_down, color: context.colors.primaryGold, size: 16),
-                                    style: TextStyle(color: context.colors.textPrimary, fontSize: 12),
-                                    onChanged: (v) {
-                                      if (v != null) ref.read(warehouseReasonFilterProvider(warehouse.id).notifier).state = v;
-                                    },
-                                    items: items.map((s) => DropdownMenuItem(
-                                      value: s,
-                                      child: Text(s == 'all' ? 'All Reasons' : s),
-                                    )).toList(),
-                                  ),
-                                ),
+                              return StyledDropdownButton<String>(
+                                value: rFilter == 'all' ? null : rFilter,
+                                allLabel: 'All Reasons',
+                                icon: Icons.label_outline_rounded,
+                                menuWidth: 320,
+                                options: reasons
+                                    .map((r) => StyledDropdownOption(
+                                        r.reasonText, r.reasonText))
+                                    .toList(),
+                                onChanged: (v) => ref
+                                    .read(warehouseReasonFilterProvider(
+                                            warehouse.id)
+                                        .notifier)
+                                    .state = v ?? 'all',
                               );
                             },
                           );
@@ -552,10 +570,20 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
             final warehouse = warehouses[activeTab];
             final entries = ref.watch(liveWarehouseEntriesProvider(warehouse.id)).valueOrNull ?? [];
 
-            int total = entries.where((e) => !e.isReturned).length;
+            // In-yard entries only: drop returned and final-disposition (gone) items.
             // ref.watch so header stats rebuild when package data loads for any warehouse
-            int held = entries.where((e) {
+            final inYard = entries.where((e) {
               if (e.isReturned) return false;
+              if (e.packageItemId != null) {
+                final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
+                if (_itemLeftYard(item?.status)) return false;
+              }
+              return true;
+            }).toList();
+
+            int total = inYard.length;
+            int held = inYard.where((e) {
               if (e.isPackageConfiscated) return false;
               if (e.packageItemId != null) {
                 final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
@@ -565,8 +593,7 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
               }
               return true;
             }).length;
-            int confiscated = entries.where((e) {
-              if (e.isReturned) return false;
+            int confiscated = inYard.where((e) {
               if (e.isPackageConfiscated) return true;
               if (e.packageItemId != null) {
                 final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
