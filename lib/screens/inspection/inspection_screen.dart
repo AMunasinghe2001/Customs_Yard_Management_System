@@ -1268,6 +1268,9 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
   }
 
   Future<void> _sendToWarehouse() async {
+    // Guard against the SnackBar "RETRY" action firing after this widget is
+    // gone (e.g. user navigated away) — setState would throw otherwise.
+    if (!mounted) return;
     if (widget.tempPackageItems != null) {
       for (int i = 0; i < widget.tempPackageItems!.length; i++) {
         if (_itemWarehouseSelections[i] == null) {

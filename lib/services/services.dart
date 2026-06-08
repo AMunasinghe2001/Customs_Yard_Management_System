@@ -1,5 +1,7 @@
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase_client.dart';
+import '../core/app_session.dart';
+import '../core/yards.dart';
 import '../models/models.dart';
 
 bool _isForfeitStatus(String? status) {
@@ -54,6 +56,8 @@ class AuthService {
       await signOut();
       throw Exception('account_deactivated');
     }
+
+    AppSession.setYard(profile.yard);
   }
 
   Future<ProfileModel?> signIn(String email, String password) async {
@@ -75,6 +79,8 @@ class AuthService {
         await signOut();
         throw Exception('account_deactivated');
       }
+
+      AppSession.setYard(profile.yard);
 
       try {
         await supabase.from('profiles').update({
@@ -123,6 +129,7 @@ class AuthService {
         print('DEBUG: AuthService.signOut - Status update failed: $e');
       }
     }
+    AppSession.clear();
     await supabase.auth.signOut();
   }
 
@@ -132,7 +139,9 @@ class AuthService {
     try {
       final data =
           await supabase.from('profiles').select().eq('id', user.id).single();
-      return ProfileModel.fromJson(data);
+      final profile = ProfileModel.fromJson(data);
+      AppSession.setYard(profile.yard);
+      return profile;
     } catch (_) {
       return null;
     }
@@ -173,20 +182,21 @@ class PackageService {
     final now = DateTime.now();
     final year = now.year;
     final startOfYear = DateTime(year, 1, 1).toIso8601String();
+    final prefix = yardSrPrefix(AppSession.currentYard); // e.g. GL1, RCT...
 
-    // Get the latest SR number for the current year
+    // Get the latest SR number for the current yard & year
     final response = await supabase
         .from('packages')
         .select('sr_number')
         .gte('created_at', startOfYear)
-        .ilike('sr_number', 'GL1/SR/%/$year')
+        .ilike('sr_number', '$prefix/SR/%/$year')
         .order('created_at', ascending: false)
         .limit(1);
 
     int nextNum = 1;
     if (response != null && (response as List).isNotEmpty) {
       final lastSr = response[0]['sr_number'] as String;
-      // Extract number from GL1/SR/XX/YYYY
+      // Extract number from <PREFIX>/SR/XX/YYYY
       final parts = lastSr.split('/');
       if (parts.length >= 3) {
         final lastNum = int.tryParse(parts[2]);
@@ -197,7 +207,7 @@ class PackageService {
     }
 
     final formattedNum = nextNum.toString().padLeft(2, '0');
-    return 'GL1/SR/$formattedNum/$year';
+    return '$prefix/SR/$formattedNum/$year';
   }
 
   Future<PackageModel?> getPackageBySrNumber(String srNumber) async {
@@ -241,6 +251,7 @@ class PackageService {
       PackageModel pkg, List<PackageItem> items) async {
     final user = supabase.auth.currentUser;
     final data = pkg.toInsertJson();
+    data['yard'] = AppSession.currentYard;
     if (data['inspected_by'] == null && user != null) {
       data['inspected_by'] = user.id;
       data['inspected_at'] = DateTime.now().toIso8601String();
@@ -251,7 +262,12 @@ class PackageService {
 
     if (items.isNotEmpty) {
       await supabase.from('package_items').upsert(
-            items.map((i) => i.toInsertJson(createdId)).toList(),
+            items
+                .map((i) => {
+                      ...i.toInsertJson(createdId),
+                      'yard': AppSession.currentYard,
+                    })
+                .toList(),
           );
     }
 
@@ -331,7 +347,12 @@ class PackageService {
 
         // Use upsert to handle both updates and inserts efficiently
         await supabase.from('package_items').upsert(
-              items.map((item) => item.toInsertJson(pkg.id)).toList(),
+              items
+                  .map((item) => {
+                        ...item.toInsertJson(pkg.id),
+                        'yard': AppSession.currentYard,
+                      })
+                  .toList(),
             );
       }
 
@@ -517,6 +538,7 @@ class WarehouseService {
 
     await supabase.from('warehouse_entries').insert({
       'package_id': packageId,
+      'yard': AppSession.currentYard,
       'package_item_id': packageItemId, // Added
       'warehouse_id': warehouseId,
       'zone': zone,
@@ -602,6 +624,7 @@ class WarehouseService {
         // Full return of the remaining held portion
         await supabase.from('warehouse_entries').insert({
           'package_id': entryRes['package_id'],
+          'yard': AppSession.currentYard,
           'package_item_id': itemId,
           'warehouse_id': entryRes['warehouse_id'],
           'zone': entryRes['zone'],
@@ -629,6 +652,7 @@ class WarehouseService {
         // Partial return - always create a new returned entry (no merge)
         await supabase.from('warehouse_entries').insert({
           'package_id': entryRes['package_id'],
+          'yard': AppSession.currentYard,
           'package_item_id': itemId,
           'warehouse_id': entryRes['warehouse_id'],
           'zone': entryRes['zone'],
@@ -816,6 +840,7 @@ class WarehouseService {
 
     await supabase.from('warehouse_entries').insert({
       'package_id': refEntry['package_id'],
+      'yard': AppSession.currentYard,
       'package_item_id': packageItemId,
       'warehouse_id': refEntry['warehouse_id'],
       'zone': refEntry['zone'],
@@ -1337,6 +1362,7 @@ class AuditLogService {
     try {
       await supabase.from('audit_logs').insert({
         'user_id': userId,
+        'yard': AppSession.currentYard,
         'action': action,
         'entity_type': entityType,
         'entity_id': entityId,
@@ -1594,6 +1620,7 @@ class ForfeitedPackageService {
         .from('forfeited_packages')
         .insert({
           'package_id': packageId,
+          'yard': AppSession.currentYard,
           'sr_number': srNumber,
           'consignee_name': consigneeName,
           'forfeited_at': DateTime.now().toIso8601String(),
@@ -1664,6 +1691,7 @@ class TendersService {
         .from('tenders')
         .insert({
           'tender_number': tenderNumber,
+          'yard': AppSession.currentYard,
           'tender_date': tenderDate.toIso8601String(),
           'forfeited_package_ids': forfeitedPackageIds,
           'created_by': supabase.auth.currentUser?.id,
@@ -1704,6 +1732,7 @@ class TendersService {
         .from('tender_disposals')
         .insert({
           'tender_package_id': tenderPackageId,
+          'yard': AppSession.currentYard,
           'forfeited_package_id': forfeitedPackageId,
           'disposal_type': disposalType,
           'receipt_number': receiptNumber,

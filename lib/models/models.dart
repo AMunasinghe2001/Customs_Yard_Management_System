@@ -544,6 +544,7 @@ class ProfileModel {
   final String? mobileNumber;
   final String? jobRole;
   final String? department;
+  final String? yard; // Yard the user belongs to (data isolation)
   final String? profileImageUrl;
   final String role;
   final bool isActive;
@@ -558,6 +559,7 @@ class ProfileModel {
     this.mobileNumber,
     this.jobRole,
     this.department,
+    this.yard,
     this.profileImageUrl,
     required this.role,
     required this.isActive,
@@ -574,6 +576,7 @@ class ProfileModel {
       mobileNumber: json['mobile_number'] as String?,
       jobRole: json['job_role'] as String?,
       department: json['department'] as String?,
+      yard: json['yard'] as String?,
       profileImageUrl: json['profile_image_url'] as String?,
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
@@ -595,6 +598,7 @@ class ProfileModel {
       mobileNumber: mobileNumber,
       jobRole: jobRole,
       department: department,
+      yard: yard,
       profileImageUrl: profileImageUrl,
       role: role,
       isActive: isActive,
