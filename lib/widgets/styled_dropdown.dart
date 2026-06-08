@@ -170,6 +170,8 @@ class StyledDropdownFormField<T> extends StatelessWidget {
   final int perPage;
   final double menuWidth;
   final Color? fillColor;
+  final Widget? prefixIcon;
+  final EdgeInsetsGeometry? contentPadding;
 
   const StyledDropdownFormField({
     super.key,
@@ -184,6 +186,8 @@ class StyledDropdownFormField<T> extends StatelessWidget {
     this.perPage = 8,
     this.menuWidth = 260,
     this.fillColor,
+    this.prefixIcon,
+    this.contentPadding,
   });
 
   String _selectedLabel() {
@@ -235,8 +239,9 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 filled: fillColor != null,
                 fillColor: fillColor,
                 errorText: field.errorText,
-                contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 12, vertical: 12),
+                prefixIcon: prefixIcon,
+                contentPadding: contentPadding ??
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 suffixIcon: Icon(Icons.arrow_drop_down_rounded,
                     color: context.colors.primaryGold, size: 24),
                 suffixIconConstraints: const BoxConstraints(minWidth: 32),

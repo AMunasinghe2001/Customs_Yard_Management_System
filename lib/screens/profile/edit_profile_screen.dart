@@ -8,9 +8,12 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../core/supabase_client.dart';
+import '../../core/yards.dart';
+import '../../core/app_session.dart';
 import '../../services/services.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/styled_dropdown.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -25,8 +28,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   TextEditingController? _salaryCtrl;
   TextEditingController? _mobileCtrl;
   TextEditingController? _jobRoleCtrl;
-  TextEditingController? _departmentCtrl;
   TextEditingController? _profileImageCtrl;
+  String _selectedYard = kDefaultYardCode;
   bool _isLoading = false;
 
   void _ensureControllers() {
@@ -36,7 +39,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _salaryCtrl = TextEditingController(text: profile?.badgeNumber ?? '');
     _mobileCtrl = TextEditingController(text: profile?.mobileNumber ?? '');
     _jobRoleCtrl = TextEditingController(text: profile?.jobRole ?? '');
-    _departmentCtrl = TextEditingController(text: profile?.department ?? '');
+    _selectedYard = yardByCode(profile?.yard).code;
     _profileImageCtrl =
         TextEditingController(text: profile?.profileImageUrl ?? '');
   }
@@ -53,7 +56,6 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _salaryCtrl?.dispose();
     _mobileCtrl?.dispose();
     _jobRoleCtrl?.dispose();
-    _departmentCtrl?.dispose();
     _profileImageCtrl?.dispose();
     super.dispose();
   }
@@ -75,18 +77,18 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
           jobRole:
             _jobRoleCtrl!.text.trim().isEmpty ? null : _jobRoleCtrl!.text.trim(),
-          department: _departmentCtrl!.text.trim().isEmpty
-            ? null
-            : _departmentCtrl!.text.trim(),
+          yard: _selectedYard,
           profileImageUrl: _profileImageCtrl!.text.trim().isEmpty
             ? null
             : _profileImageCtrl!.text.trim(),
           );
-      
+
       // Refresh current profile provider
       final updatedProfile = await ref.read(authServiceProvider).getCurrentProfile();
       if (updatedProfile != null) {
         ref.read(currentProfileProvider.notifier).state = updatedProfile;
+        // Keep the session's active yard in sync so new records are tagged correctly.
+        AppSession.setYard(updatedProfile.yard);
       }
 
       if (mounted && Navigator.of(dialogContext).canPop()) {
@@ -131,7 +133,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _salaryCtrl!.text = profile?.badgeNumber ?? '';
     _mobileCtrl!.text = profile?.mobileNumber ?? '';
     _jobRoleCtrl!.text = profile?.jobRole ?? '';
-    _departmentCtrl!.text = profile?.department ?? '';
+    _selectedYard = yardByCode(profile?.yard).code;
     _profileImageCtrl!.text = profile?.profileImageUrl ?? '';
 
     showDialog(
@@ -272,14 +274,20 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           ),
                           const Gap(10),
                           Expanded(
-                            child: TextFormField(
-                              controller: _departmentCtrl!,
-                              style: TextStyle(color: context.colors.textPrimary),
-                              decoration: const InputDecoration(
-                                labelText: 'Department',
-                                contentPadding:
-                                    EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                              ),
+                            child: StyledDropdownFormField<String>(
+                              value: _selectedYard,
+                              label: 'Yard',
+                              helperText: null,
+                              isDense: false,
+                              contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 14),
+                              menuWidth: 280,
+                              options: [
+                                for (final y in kYards)
+                                  StyledDropdownOption(y.code, y.name),
+                              ],
+                              onChanged: (v) => setDlgState(
+                                  () => _selectedYard = v ?? kDefaultYardCode),
                             ),
                           ),
                         ],
@@ -388,7 +396,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 badge: profile.badgeNumber,
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
-                department: profile.department,
+                yard: yardName(profile.yard),
                 profileImageUrl: profile.profileImageUrl,
                 initials: _initials(profile.fullName),
               ).animate().fadeIn(duration: 400.ms, delay: 100.ms).slideY(begin: 0.1),
@@ -401,7 +409,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 isActive: profile.isActive,
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
-                department: profile.department,
+                yard: yardName(profile.yard),
               ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideY(begin: 0.1),
             ],
           ),
@@ -418,7 +426,7 @@ class _ProfileHeroCard extends StatelessWidget {
   final String? badge;
   final String? mobile;
   final String? jobRole;
-  final String? department;
+  final String? yard;
   final String? profileImageUrl;
   final String initials;
 
@@ -429,7 +437,7 @@ class _ProfileHeroCard extends StatelessWidget {
     required this.badge,
     required this.mobile,
     required this.jobRole,
-    required this.department,
+    required this.yard,
     required this.profileImageUrl,
     required this.initials,
   });
@@ -438,8 +446,8 @@ class _ProfileHeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final meta = <String>[];
     if (jobRole != null && jobRole!.trim().isNotEmpty) meta.add(jobRole!);
-    if (department != null && department!.trim().isNotEmpty) {
-      meta.add(department!);
+    if (yard != null && yard!.trim().isNotEmpty) {
+      meta.add(yard!);
     }
 
     final hasImage = profileImageUrl != null && profileImageUrl!.isNotEmpty;
@@ -552,7 +560,7 @@ class _ProfileDetailsCard extends StatelessWidget {
   final bool isActive;
   final String? mobile;
   final String? jobRole;
-  final String? department;
+  final String? yard;
 
   const _ProfileDetailsCard({
     required this.fullName,
@@ -562,7 +570,7 @@ class _ProfileDetailsCard extends StatelessWidget {
     required this.isActive,
     required this.mobile,
     required this.jobRole,
-    required this.department,
+    required this.yard,
   });
 
   @override
@@ -612,9 +620,9 @@ class _ProfileDetailsCard extends StatelessWidget {
               value: jobRole?.isNotEmpty == true ? jobRole! : '—',
               icon: Icons.work_outline_rounded),
           _InfoRow(
-              label: 'Department',
-              value: department?.isNotEmpty == true ? department! : '—',
-              icon: Icons.business_rounded),
+              label: 'Yard',
+              value: yard?.isNotEmpty == true ? yard! : '—',
+              icon: Icons.warehouse_rounded),
           _InfoRow(
             label: 'Status',
             value: isActive ? 'ACTIVE' : 'INACTIVE',

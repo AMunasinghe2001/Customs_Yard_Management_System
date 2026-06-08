@@ -5,8 +5,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../core/yards.dart';
 import '../../services/services.dart';
 import '../../core/providers.dart';
+import '../../widgets/styled_dropdown.dart';
 
 class AdminSignupScreen extends ConsumerStatefulWidget {
   const AdminSignupScreen({super.key});
@@ -23,6 +25,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _otpCtrl = TextEditingController();
+  String _selectedYard = kDefaultYardCode;
   bool _obscurePass = true, _obscureConfirm = true;
   bool _isLoading = false;
   bool _otpSent = false;
@@ -47,6 +50,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
           fullName: fullName,
           badgeNumber: _salaryCtrl.text.trim(),
           role: 'admin',
+          yard: _selectedYard,
         );
         setState(() {
           _otpSent = true;
@@ -60,6 +64,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
           fullName: fullName,
           badgeNumber: _salaryCtrl.text.trim(),
           role: 'admin',
+          yard: _selectedYard,
         );
         setState(() {
           _success = 'Account verified! Redirecting to Sign In...';
@@ -231,6 +236,21 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                     prefixIcon: Icon(Icons.badge_outlined, color: context.colors.textMuted),
                   ),
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 240.ms).fadeIn(),
+                const Gap(14),
+
+                // Yard selection — which yard this account belongs to
+                StyledDropdownFormField<String>(
+                  value: _selectedYard,
+                  label: 'Yard *',
+                  helperText: null,
+                  menuWidth: 384,
+                  prefixIcon: Icon(Icons.warehouse_outlined, color: context.colors.textMuted),
+                  options: [
+                    for (final y in kYards) StyledDropdownOption(y.code, y.name),
+                  ],
+                  onChanged: (v) => setState(() => _selectedYard = v ?? kDefaultYardCode),
+                  validator: (v) => v == null || v.isEmpty ? 'Select a yard' : null,
+                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 260.ms).fadeIn(),
                 const Gap(14),
 
                 TextFormField(

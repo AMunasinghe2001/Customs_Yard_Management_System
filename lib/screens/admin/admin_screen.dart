@@ -8,11 +8,12 @@ import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../core/yards.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
-import '../../widgets/custom_dropdown.dart';
+import '../../widgets/styled_dropdown.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 class AdminScreen extends ConsumerWidget {
@@ -254,6 +255,7 @@ class _OfficersTab extends ConsumerWidget {
     final emailC = TextEditingController(), passC = TextEditingController();
     final nameC = TextEditingController(), badgeC = TextEditingController();
     String role = 'officer';
+    String selectedYard = kDefaultYardCode;
     bool loading = false;
     showDialog(
         context: context,
@@ -295,6 +297,19 @@ class _OfficersTab extends ConsumerWidget {
                         ],
                         onChanged: (v) => setState(() => role = v!),
                       ),
+                      const Gap(12),
+                      StyledDropdownFormField<String>(
+                        value: selectedYard,
+                        label: 'Yard *',
+                        helperText: null,
+                        menuWidth: 340,
+                        options: [
+                          for (final y in kYards)
+                            StyledDropdownOption(y.code, y.name),
+                        ],
+                        onChanged: (v) =>
+                            setState(() => selectedYard = v ?? kDefaultYardCode),
+                      ),
                     ])),
                 actions: [
                   TextButton(
@@ -324,7 +339,8 @@ class _OfficersTab extends ConsumerWidget {
                                       password: passC.text,
                                       fullName: nameC.text.trim(),
                                       badgeNumber: badgeC.text.trim(),
-                                      role: role);
+                                      role: role,
+                                      yard: selectedYard);
                               ref.invalidate(allProfilesProvider);
                               if (ctx.mounted) Navigator.pop(ctx);
                             } catch (e) {
@@ -358,6 +374,7 @@ class _OfficersTab extends ConsumerWidget {
     final nameC = TextEditingController(text: p.fullName);
     final badgeC = TextEditingController(text: p.badgeNumber);
     String role = p.role;
+    String selectedYard = yardByCode(p.yard).code;
     showDialog(
         context: context,
         builder: (ctx) => StatefulBuilder(
@@ -386,6 +403,19 @@ class _OfficersTab extends ConsumerWidget {
                         ],
                         onChanged: (v) => setState(() => role = v!),
                       ),
+                      const Gap(12),
+                      StyledDropdownFormField<String>(
+                        value: selectedYard,
+                        label: 'Yard',
+                        helperText: null,
+                        menuWidth: 320,
+                        options: [
+                          for (final y in kYards)
+                            StyledDropdownOption(y.code, y.name),
+                        ],
+                        onChanged: (v) =>
+                            setState(() => selectedYard = v ?? kDefaultYardCode),
+                      ),
                     ])),
                 actions: [
                   TextButton(
@@ -396,7 +426,8 @@ class _OfficersTab extends ConsumerWidget {
                         await ref.read(adminServiceProvider).updateProfile(p.id,
                             fullName: nameC.text.trim(),
                             badgeNumber: badgeC.text.trim(),
-                            role: role);
+                            role: role,
+                            yard: selectedYard);
                         ref.invalidate(allProfilesProvider);
                         if (ctx.mounted) Navigator.pop(ctx);
                       },

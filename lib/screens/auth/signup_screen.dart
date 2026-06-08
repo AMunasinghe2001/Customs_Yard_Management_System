@@ -5,8 +5,10 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../core/yards.dart';
+import '../../core/providers.dart';
 import '../../services/services.dart';
-import '../../widgets/custom_dropdown.dart';
+import '../../widgets/styled_dropdown.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -22,6 +24,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   String _role = 'officer';
+  String _selectedYard = kDefaultYardCode;
   bool _obscurePass = true;
   bool _obscureConfirm = true;
   bool _isLoading = false;
@@ -45,6 +48,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
         fullName: _fullNameCtrl.text.trim(),
         badgeNumber: _badgeCtrl.text.trim(),
         role: _role,
+        yard: _selectedYard,
       );
       setState(() {
         _success = 'Account created successfully for ${_fullNameCtrl.text.trim()}!';
@@ -228,6 +232,20 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                           ],
                           onChanged: (v) => setState(() => _role = v!),
                         ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
+                        const Gap(16),
+
+                        StyledDropdownFormField<String>(
+                          value: _selectedYard,
+                          label: 'Yard *',
+                          helperText: null,
+                          menuWidth: 384,
+                          prefixIcon: const Icon(Icons.warehouse_outlined, color: AppTheme.textMuted),
+                          options: [
+                            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+                          ],
+                          onChanged: (v) => setState(() => _selectedYard = v ?? kDefaultYardCode),
+                          validator: (v) => v == null || v.isEmpty ? 'Select a yard' : null,
+                        ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 320.ms).fadeIn(),
                         const Gap(16),
 
                         TextFormField(

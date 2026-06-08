@@ -178,11 +178,12 @@ class AuthService {
 // ── Package Service ──────────────────────────────────────────
 
 class PackageService {
-  Future<String> getNextSrNumber() async {
+  Future<String> getNextSrNumber({String? yard}) async {
     final now = DateTime.now();
     final year = now.year;
     final startOfYear = DateTime(year, 1, 1).toIso8601String();
-    final prefix = yardSrPrefix(AppSession.currentYard); // e.g. GL1, RCT...
+    final prefix =
+        yardSrPrefix(yard ?? AppSession.currentYard); // e.g. GL1, RCT...
 
     // Get the latest SR number for the current yard & year
     final response = await supabase
@@ -248,10 +249,12 @@ class PackageService {
   }
 
   Future<PackageModel> createPackage(
-      PackageModel pkg, List<PackageItem> items) async {
+      PackageModel pkg, List<PackageItem> items,
+      {String? yard}) async {
     final user = supabase.auth.currentUser;
+    final effectiveYard = yard ?? AppSession.currentYard;
     final data = pkg.toInsertJson();
-    data['yard'] = AppSession.currentYard;
+    data['yard'] = effectiveYard;
     if (data['inspected_by'] == null && user != null) {
       data['inspected_by'] = user.id;
       data['inspected_at'] = DateTime.now().toIso8601String();
@@ -265,7 +268,7 @@ class PackageService {
             items
                 .map((i) => {
                       ...i.toInsertJson(createdId),
-                      'yard': AppSession.currentYard,
+                      'yard': effectiveYard,
                     })
                 .toList(),
           );
@@ -313,8 +316,12 @@ class PackageService {
   }
 
   Future<PackageModel> upsertPackage(
-      PackageModel pkg, List<PackageItem> items) async {
-    // If an ID is provided, it's an explicit update to an existing record
+      PackageModel pkg, List<PackageItem> items,
+      {String? yard}) async {
+    final effectiveYard = yard ?? AppSession.currentYard;
+    // If an ID is provided, it's an explicit update to an existing record.
+    // The package keeps its original yard on edit (toInsertJson omits `yard`),
+    // so editing never moves a record between yards.
     if (pkg.id.isNotEmpty) {
       await supabase.from('packages').update({
         ...pkg.toInsertJson(),
@@ -350,7 +357,7 @@ class PackageService {
               items
                   .map((item) => {
                         ...item.toInsertJson(pkg.id),
-                        'yard': AppSession.currentYard,
+                        'yard': effectiveYard,
                       })
                   .toList(),
             );
@@ -393,7 +400,7 @@ class PackageService {
     } else {
       // If no ID is provided, create a new record even if sr_number exists
       // (This requires that the UNIQUE constraint on sr_number is removed from the DB)
-      return createPackage(pkg, items);
+      return createPackage(pkg, items, yard: effectiveYard);
     }
   }
 
@@ -1174,6 +1181,7 @@ class AdminService {
     String? mobileNumber,
     String? jobRole,
     String? department,
+    String? yard,
     String? profileImageUrl,
   }) async {
     final cleanEmail = email.trim();
@@ -1188,6 +1196,7 @@ class AdminService {
         if (mobileNumber != null) 'mobile_number': mobileNumber,
         if (jobRole != null) 'job_role': jobRole,
         if (department != null) 'department': department,
+        if (yard != null) 'yard': yard,
         if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
       },
     );
@@ -1203,6 +1212,7 @@ class AdminService {
     String? mobileNumber,
     String? jobRole,
     String? department,
+    String? yard,
     String? profileImageUrl,
   }) async {
     final response = await supabase.auth.verifyOTP(
@@ -1226,6 +1236,7 @@ class AdminService {
           if (mobileNumber != null) 'mobile_number': mobileNumber,
           if (jobRole != null) 'job_role': jobRole,
           if (department != null) 'department': department,
+          if (yard != null) 'yard': yard,
           if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
         },
       ),
@@ -1241,6 +1252,7 @@ class AdminService {
         if (mobileNumber != null) 'mobile_number': mobileNumber,
         if (jobRole != null) 'job_role': jobRole,
         if (department != null) 'department': department,
+        if (yard != null) 'yard': yard,
         if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
       });
     } catch (_) {}
@@ -1257,12 +1269,18 @@ class AdminService {
     String? mobileNumber,
     String? jobRole,
     String? department,
+    String? yard,
     String? profileImageUrl,
   }) async {
     final response = await supabase.auth.signUp(
       email: email,
       password: password,
-      data: {'full_name': fullName, 'role': role, 'badge_number': badgeNumber},
+      data: {
+        'full_name': fullName,
+        'role': role,
+        'badge_number': badgeNumber,
+        if (yard != null) 'yard': yard,
+      },
     );
 
     if (response.user != null) {
@@ -1276,6 +1294,7 @@ class AdminService {
           if (mobileNumber != null) 'mobile_number': mobileNumber,
           if (jobRole != null) 'job_role': jobRole,
           if (department != null) 'department': department,
+          if (yard != null) 'yard': yard,
           if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
         });
       } catch (_) {}
@@ -1316,6 +1335,7 @@ class AdminService {
       String? mobileNumber,
       String? jobRole,
       String? department,
+      String? yard,
       String? profileImageUrl}) async {
     final updates = <String, dynamic>{};
     if (fullName != null) updates['full_name'] = fullName;
@@ -1324,6 +1344,7 @@ class AdminService {
     if (mobileNumber != null) updates['mobile_number'] = mobileNumber;
     if (jobRole != null) updates['job_role'] = jobRole;
     if (department != null) updates['department'] = department;
+    if (yard != null) updates['yard'] = yard;
     if (profileImageUrl != null) updates['profile_image_url'] = profileImageUrl;
     if (updates.isNotEmpty) {
       await supabase.from('profiles').update(updates).eq('id', id);

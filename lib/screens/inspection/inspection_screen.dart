@@ -9,6 +9,8 @@ import 'package:uuid/uuid.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../core/yards.dart';
+import '../../core/app_session.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
@@ -29,6 +31,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _srNumberCtrl = TextEditingController();
+  // Yard this SR is being registered under. Defaults to the signed-in user's
+  // yard; the prefix of the generated SR number follows this selection.
+  // Normalised through yardByCode so it always matches a dropdown item.
+  String _selectedYard = yardByCode(AppSession.currentYard).code;
   final _caseNumberCtrl = TextEditingController();
   final _originCtrl = TextEditingController();
   final _valueCtrl = TextEditingController();
@@ -261,7 +267,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 
   Future<void> _generateNextSr() async {
     try {
-      final sr = await ref.read(packageServiceProvider).getNextSrNumber();
+      final sr = await ref
+          .read(packageServiceProvider)
+          .getNextSrNumber(yard: _selectedYard);
       setState(() {
         _srNumberCtrl.text = sr;
       });
@@ -611,6 +619,25 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
+                                      SizedBox(
+                                        width: 190,
+                                        // Locked to the signed-in user's own
+                                        // yard — every role (admins included) is
+                                        // scoped to a single yard, so the yard
+                                        // is shown for context but not editable.
+                                        child: CustomDropdownField<String>(
+                                          value: _selectedYard,
+                                          label: 'Yard',
+                                          items: [
+                                            for (final y in kYards)
+                                              DropdownMenuItem(
+                                                  value: y.code,
+                                                  child: Text(y.name)),
+                                          ],
+                                          onChanged: null,
+                                        ),
+                                      ),
+                                      const Gap(12),
                                       Expanded(
                                         child: TextFormField(
                                           controller: _srNumberCtrl,
@@ -906,6 +933,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                       passed: _passed ?? true,
                       violations: _violations,
                       suggestedWarehouseId: _suggestedWarehouseId,
+                      yard: _selectedYard,
                       tempPackageData: _tempPackageData,
                       tempPackageItems: _tempPackageItems,
                       onPackageSaved: (pkg) {
@@ -1212,6 +1240,7 @@ class _ResultPanel extends ConsumerStatefulWidget {
   final bool passed;
   final List<String> violations;
   final String? suggestedWarehouseId;
+  final String yard;
   final PackageModel? tempPackageData;
   final List<PackageItem>? tempPackageItems;
   final ValueChanged<PackageModel> onPackageSaved;
@@ -1221,6 +1250,7 @@ class _ResultPanel extends ConsumerStatefulWidget {
       required this.passed,
       required this.violations,
       this.suggestedWarehouseId,
+      required this.yard,
       this.tempPackageData,
       this.tempPackageItems,
       required this.onPackageSaved,
@@ -1294,6 +1324,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
             widget.tempPackageData!
                 .copyWith(status: 'held'), // Set a general status
             widget.tempPackageItems!,
+            yard: widget.yard,
           );
 
       // Store the saved package for later use
