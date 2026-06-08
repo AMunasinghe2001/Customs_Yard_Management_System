@@ -246,7 +246,7 @@ class _WarehouseTab extends ConsumerWidget {
                       runSpacing: 8,
                       crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        ...['all', 'Detain', 'Forfeit', 'Abandoned', 'confiscated'].map((s) => FilterChip(
+                        ...['all', 'Detain', 'Forfeit', 'Abandoned'].map((s) => FilterChip(
                           label: Text(s == 'all' ? 'ALL' : s.toUpperCase()),
                           selected: filter == s,
                           onSelected: (_) => ref.read(warehouseStatusFilterProvider(warehouse.id).notifier).state = s,
@@ -582,27 +582,25 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
               return true;
             }).toList();
 
-            int total = inYard.length;
-            int held = inYard.where((e) {
-              if (e.isPackageConfiscated) return false;
-              if (e.packageItemId != null) {
-                final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                final s = item?.status?.toLowerCase() ?? '';
-                return !WarehouseEntryModel.isNoChargeStatus(s);
-              }
-              return true;
-            }).length;
-            int confiscated = inYard.where((e) {
-              if (e.isPackageConfiscated) return true;
-              if (e.packageItemId != null) {
-                final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                final item = pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-                final s = item?.status?.toLowerCase() ?? '';
-                return WarehouseEntryModel.isNoChargeStatus(s);
-              }
-              return false;
-            }).length;
+            // Count in-yard entries by their item status, matching the filter
+            // chips below (All / Detain / Forfeit / Abandoned).
+            int statusCount(String target) => inYard.where((e) {
+                  if (e.packageItemId == null) return false;
+                  final pkg =
+                      ref.watch(packageDataProvider(e.packageId)).valueOrNull;
+                  final item = pkg?.items
+                      .where((i) => i.id == e.packageItemId)
+                      .firstOrNull;
+                  final raw = item?.status ?? '';
+                  // Normalise the 'Forfiet' typo to 'Forfeit'
+                  final norm = raw.toLowerCase() == 'forfiet' ? 'Forfeit' : raw;
+                  return norm == target;
+                }).length;
+
+            final int total = inYard.length;
+            final int detain = statusCount('Detain');
+            final int forfeit = statusCount('Forfeit');
+            final int abandoned = statusCount('Abandoned');
 
             return Padding(
               padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
@@ -622,11 +620,13 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        _StatChip(label: 'Total', value: total.toString(), color: context.colors.accentLightBlue).animate().fadeIn(delay: 100.ms).scale(),
+                        _StatChip(label: 'All', value: total.toString(), color: context.colors.accentLightBlue).animate().fadeIn(delay: 100.ms).scale(),
                         const Gap(8),
-                        _StatChip(label: 'Held', value: held.toString(), color: context.colors.heldOrange).animate().fadeIn(delay: 200.ms).scale(),
+                        _StatChip(label: 'Detain', value: detain.toString(), color: context.colors.heldOrange).animate().fadeIn(delay: 200.ms).scale(),
                         const Gap(8),
-                        _StatChip(label: 'Confiscated', value: confiscated.toString(), color: context.colors.dangerRed).animate().fadeIn(delay: 300.ms).scale(),
+                        _StatChip(label: 'Forfeit', value: forfeit.toString(), color: context.colors.dangerRed).animate().fadeIn(delay: 300.ms).scale(),
+                        const Gap(8),
+                        _StatChip(label: 'Abandoned', value: abandoned.toString(), color: const Color(0xFF9E9E9E)).animate().fadeIn(delay: 400.ms).scale(),
                       ],
                     ),
                   ],

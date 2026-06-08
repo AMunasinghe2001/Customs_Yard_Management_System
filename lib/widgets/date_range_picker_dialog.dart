@@ -45,6 +45,7 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
       initialDate: initial,
       firstDate: DateTime(2020),
       lastDate: today,
+      label: 'From Date',
     );
     if (!mounted || picked == null) return;
     setState(() {
@@ -63,6 +64,7 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
       initialDate: initial,
       firstDate: minDate,
       lastDate: today,
+      label: 'To Date',
     );
     if (!mounted || picked == null) return;
     setState(() => _end = picked);
@@ -159,6 +161,7 @@ Future<DateTime?> _showOneTapCalendar(
   required DateTime initialDate,
   required DateTime firstDate,
   required DateTime lastDate,
+  String label = 'Select date',
 }) {
   return showDialog<DateTime>(
     context: context,
@@ -166,6 +169,7 @@ Future<DateTime?> _showOneTapCalendar(
       initialDate: initialDate,
       firstDate: firstDate,
       lastDate: lastDate,
+      label: label,
     ),
   );
 }
@@ -174,11 +178,13 @@ class _OneTapCalendarDialog extends StatefulWidget {
   final DateTime initialDate;
   final DateTime firstDate;
   final DateTime lastDate;
+  final String label;
 
   const _OneTapCalendarDialog({
     required this.initialDate,
     required this.firstDate,
     required this.lastDate,
+    this.label = 'Select date',
   });
 
   @override
@@ -312,9 +318,16 @@ class _OneTapCalendarDialogState extends State<_OneTapCalendarDialog> {
     final dateLabel = DateFormat('EEE,').format(widget.initialDate);
     final monthDayLabel = DateFormat('MMM d').format(widget.initialDate);
 
+    // Determine accent color based on label
+    final isFrom = widget.label.toLowerCase().contains('from');
+    final isTo = widget.label.toLowerCase().contains('to');
+    final labelColor = isFrom
+        ? const Color(0xFF42A5F5) // blue for From
+        : isTo
+            ? const Color(0xFF66BB6A) // green for To
+            : context.colors.primaryGold;
+
     return Row(
-      // No IntrinsicHeight — Row with CrossAxisAlignment.start avoids
-      // GridView intrinsic-size issues entirely
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         // ── Left panel ────────────────────────────────────────────────
@@ -324,13 +337,21 @@ class _OneTapCalendarDialogState extends State<_OneTapCalendarDialog> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Select date',
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: context.colors.textMuted,
-                  letterSpacing: 0.5,
+              // Label badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: labelColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  widget.label.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: labelColor,
+                    letterSpacing: 0.8,
+                  ),
                 ),
               ),
               const Gap(12),
@@ -463,7 +484,7 @@ class _OneTapCalendarDialogState extends State<_OneTapCalendarDialog> {
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: isSelected && !isDisabled
-                                  ? context.colors.primaryGold
+                                  ? labelColor
                                   : Colors.transparent,
                               borderRadius: BorderRadius.circular(8),
                             ),
@@ -477,7 +498,7 @@ class _OneTapCalendarDialogState extends State<_OneTapCalendarDialog> {
                                 color: isDisabled
                                     ? Colors.grey.withOpacity(0.3)
                                     : isSelected && !isDisabled
-                                        ? Colors.black
+                                        ? Colors.white
                                         : null,
                               ),
                             ),

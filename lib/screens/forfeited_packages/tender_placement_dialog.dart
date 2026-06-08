@@ -6,6 +6,7 @@ import 'package:gap/gap.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/one_tap_date_picker.dart';
 
 class TenderPlacementDialog extends ConsumerStatefulWidget {
   final WidgetRef ref;
@@ -214,64 +215,71 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                         child: Row(
                           children: [
                             Expanded(
-                              child: _InputContainer(
-                                icon: Icons.numbers_rounded,
-                                child: TextField(
-                                  controller: _tenderNumberController,
-                                  style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold),
-                                  decoration: InputDecoration(
-                                    labelText: 'Tender Number *',
-                                    labelStyle: TextStyle(color: context.colors.textMuted, fontSize: 12),
-                                    border: InputBorder.none,
-                                    isDense: true,
-                                    contentPadding: EdgeInsets.zero,
-                                    floatingLabelBehavior: FloatingLabelBehavior.always,
+                              child: TextFormField(
+                                controller: _tenderNumberController,
+                                style: TextStyle(
+                                    color: context.colors.textPrimary,
+                                    fontWeight: FontWeight.bold),
+                                decoration: InputDecoration(
+                                  labelText: 'Tender Number *',
+                                  hintText: 'Enter tender number',
+                                  prefixIcon: Icon(Icons.numbers_rounded, color: context.colors.primaryGold, size: 20),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: context.colors.borderColor),
                                   ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: context.colors.borderColor),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: context.colors.primaryGold, width: 2),
+                                  ),
+                                  filled: true,
+                                  fillColor: context.colors.textPrimary.withOpacity(0.02),
                                 ),
                               ),
                             ),
                             const Gap(16),
                             Expanded(
-                              child: _InputContainer(
-                                icon: Icons.calendar_today_rounded,
-                                child: InkWell(
-                                  onTap: () async {
-                                    final date = await showDatePicker(
-                                      context: context,
-                                      initialDate: _selectedDate ?? DateTime.now(),
-                                      firstDate: DateTime(2020),
-                                      lastDate: DateTime(2100),
-                                      builder: (context, child) {
-                                        return Theme(
-                                          data: Theme.of(context).copyWith(
-                                            colorScheme: isDark 
-                                                ? const ColorScheme.dark().copyWith(primary: context.colors.primaryGold)
-                                                : const ColorScheme.light().copyWith(primary: context.colors.customsBlue),
-                                          ),
-                                          child: child!,
-                                        );
-                                      },
-                                    );
-                                    if (date != null) {
-                                      setState(() => _selectedDate = date);
-                                    }
-                                  },
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text('Tender Date *', style: TextStyle(color: context.colors.textMuted, fontSize: 11, fontWeight: FontWeight.bold)),
-                                      const Gap(4),
-                                      Text(
-                                        _selectedDate != null ? DateFormat('yyyy-MM-dd').format(_selectedDate!) : 'Select Date',
-                                        style: TextStyle(
-                                          color: _selectedDate != null ? context.colors.textPrimary : context.colors.textMuted,
-                                          fontSize: 13,
-                                          fontWeight: _selectedDate != null ? FontWeight.bold : FontWeight.normal,
-                                        ),
-                                      ),
-                                    ],
+                              child: TextFormField(
+                                key: ValueKey(_selectedDate),
+                                initialValue: _selectedDate != null ? DateFormat('yyyy-MM-dd').format(_selectedDate!) : '',
+                                readOnly: true,
+                                onTap: () async {
+                                  final date = await showDialog<DateTime>(
+                                    context: context,
+                                    builder: (_) => OneTapDatePicker(
+                                      initialDate:
+                                          _selectedDate ?? DateTime.now(),
+                                    ),
+                                  );
+                                  if (date != null) {
+                                    setState(() => _selectedDate = date);
+                                  }
+                                },
+                                style: TextStyle(
+                                    color: context.colors.textPrimary,
+                                    fontWeight: FontWeight.bold),
+                                decoration: InputDecoration(
+                                  labelText: 'Tender Date *',
+                                  hintText: 'Select Date',
+                                  prefixIcon: Icon(Icons.calendar_today_rounded, color: context.colors.primaryGold, size: 20),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: context.colors.borderColor),
                                   ),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: context.colors.borderColor),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: BorderSide(color: context.colors.primaryGold, width: 2),
+                                  ),
+                                  filled: true,
+                                  fillColor: context.colors.textPrimary.withOpacity(0.02),
                                 ),
                               ),
                             ),
@@ -317,7 +325,54 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                               );
                             }
 
-                            return Container(
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      '${selectedPackages.length} of ${packages.length} selected',
+                                      style: TextStyle(
+                                          color: context.colors.textSecondary,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    const Spacer(),
+                                    TextButton.icon(
+                                      onPressed: () => ref
+                                          .read(selectedTenderPackagesProvider
+                                              .notifier)
+                                          .state = packages
+                                          .map((p) => p.id)
+                                          .toSet(),
+                                      icon: Icon(Icons.done_all_rounded,
+                                          size: 16,
+                                          color: context.colors.primaryGold),
+                                      label: Text('Select All',
+                                          style: TextStyle(
+                                              color: context.colors.primaryGold,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12)),
+                                    ),
+                                    TextButton.icon(
+                                      onPressed: () => ref
+                                          .read(selectedTenderPackagesProvider
+                                              .notifier)
+                                          .state = {},
+                                      icon: Icon(Icons.clear_all_rounded,
+                                          size: 16,
+                                          color: context.colors.textMuted),
+                                      label: Text('Clear All',
+                                          style: TextStyle(
+                                              color: context.colors.textMuted,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12)),
+                                    ),
+                                  ],
+                                ),
+                                const Gap(8),
+                                Container(
                               height: 300,
                               decoration: BoxDecoration(
                                 color: context.colors.textPrimary.withOpacity(0.02),
@@ -410,11 +465,12 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                                   ),
                                 ),
                               ),
-                            );
+                            ),
+                              ]);
                           },
                         ),
                       ),
-                      
+
                       const Gap(32),
 
                       // Action Buttons

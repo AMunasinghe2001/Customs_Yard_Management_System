@@ -1229,58 +1229,92 @@ class _InfoGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final pkg = forfeited.packageDetails;
-    final fields = <(String, String)>[
-      ('SR Number', forfeited.srNumber),
-      ('Consignee', forfeited.consigneeName),
+    final fields = <(String, String, IconData)>[
+      ('SR Number', forfeited.srNumber, Icons.numbers_rounded),
+      ('Consignee', forfeited.consigneeName, Icons.person_rounded),
       ('Forfeited Date',
-          DateFormat('yyyy-MM-dd').format(forfeited.forfeitedAt)),
+          DateFormat('yyyy-MM-dd').format(forfeited.forfeitedAt), Icons.calendar_today_rounded),
       ('Appeal Deadline',
-          DateFormat('yyyy-MM-dd').format(forfeited.appealDeadline)),
-      ('Reason', forfeited.reason),
+          DateFormat('yyyy-MM-dd').format(forfeited.appealDeadline), Icons.event_busy_rounded),
+      ('Reason', forfeited.reason, Icons.gavel_rounded),
       if (pkg != null) ...[
-        ('Weight', '${pkg.weightKg} kg'),
-        ('Declared Value', 'LKR ${NumberFormat('#,##0').format(pkg.declaredValue)}'),
-        if (pkg.cusdecNo != null) ('CUSDEC No.', pkg.cusdecNo!),
-        if (pkg.originCountry.isNotEmpty) ('Origin', pkg.originCountry),
+        ('Weight', '${pkg.weightKg} kg', Icons.scale_rounded),
+        ('Declared Value', 'LKR ${NumberFormat('#,##0').format(pkg.declaredValue)}', Icons.monetization_on_rounded),
+        if (pkg.cusdecNo != null) ('CUSDEC No.', pkg.cusdecNo!, Icons.receipt_long_rounded),
+        if (pkg.originCountry.isNotEmpty) ('Origin', pkg.originCountry, Icons.flight_takeoff_rounded),
         if (pkg.consigneeNic != null && pkg.consigneeNic!.isNotEmpty)
-          ('NIC', pkg.consigneeNic!),
+          ('NIC', pkg.consigneeNic!, Icons.badge_rounded),
       ],
     ];
 
-    return Wrap(
-      spacing: 12,
-      runSpacing: 10,
-      children: fields.map((f) {
-        final (label, value) = f;
-        return Container(
-          width: 220,
-          padding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: context.colors.surfaceDark,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: context.colors.borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label,
-                  style: TextStyle(
-                      color: context.colors.textMuted,
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: 0.5)),
-              const Gap(3),
-              Text(value,
-                  style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 13),
-                  overflow: TextOverflow.ellipsis),
-            ],
-          ),
-        );
-      }).toList(),
+    Widget buildCell((String, String, IconData) f) {
+      final (label, value, icon) = f;
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.colors.textPrimary.withOpacity(0.02),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.colors.borderColor.withOpacity(0.5)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: context.colors.primaryGold.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Icon(icon, size: 16, color: context.colors.primaryGold),
+            ),
+            const Gap(12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label,
+                      style: TextStyle(
+                          color: context.colors.textMuted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.5)),
+                  const Gap(2),
+                  Text(value,
+                      style: TextStyle(
+                          color: context.colors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13),
+                      overflow: TextOverflow.ellipsis),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // Build rows of 2 columns each
+    final rows = <Widget>[];
+    for (int i = 0; i < fields.length; i += 2) {
+      final left = fields[i];
+      final right = i + 1 < fields.length ? fields[i + 1] : null;
+      rows.add(
+        Row(
+          children: [
+            Expanded(child: buildCell(left)),
+            if (right != null) ...[
+              const Gap(12),
+              Expanded(child: buildCell(right)),
+            ] else
+              const Expanded(child: SizedBox()),
+          ],
+        ),
+      );
+      if (i + 2 < fields.length) rows.add(const Gap(12));
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
     );
   }
 }

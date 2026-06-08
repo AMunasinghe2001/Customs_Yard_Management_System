@@ -38,6 +38,7 @@ import 'package:flutter/material.dart'
         FormState,
         TextFormField,
         InputDecoration,
+        OutlineInputBorder,
         DropdownButtonFormField,
         DropdownMenuItem,
         SizedBox,
@@ -74,7 +75,11 @@ import 'package:flutter/material.dart'
         StatefulBuilder,
         ConstrainedBox,
         State,
-        InkWell;
+        InkWell,
+        AlwaysStoppedAnimation,
+        Positioned,
+        SnackBarBehavior,
+        Stack;
 import 'package:flutter/services.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
@@ -669,6 +674,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     final isConfiscated = _hs == 'confiscated' ||
         _hs == 'forfeit' ||
         _hs == 'forfiet' ||
+        _hs == 'abandoned' ||
         widget.highlightEntry?.isPackageConfiscated == true;
 
     // No-charge context: abandoned / forfeit / destroy. These items carry no
@@ -1188,6 +1194,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                       isItemAbandoned ||
                                       isItemDetained ||
                                       isItemDisposed;
+                                    // A custom ("Other") status — anything that
+                                    // is not a known disposition and not a
+                                    // neutral working/left-yard state — should
+                                    // still get a status badge in this card.
+                                    const _neutralStatuses = {
+                                      '', 'pending', 'held', 'inspecting',
+                                      'returned', 'released', 'sold',
+                                      're-exported', 'destroyed',
+                                    };
+                                    final isItemOther = !isItemTerminal &&
+                                        !_neutralStatuses.contains(_itemStatus);
+                                    final showStatusBadge =
+                                        isItemTerminal || isItemOther;
 
                                     // Status-specific color
                                     Color _statusColor() {
@@ -1196,6 +1215,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                       if (isItemDetained) return const Color(0xFFFF8F00);
                                       if (isItemReexport) return const Color(0xFF00ACC1);
                                       if (isItemDestroy) return const Color(0xFFE64A19);
+                                      if (isItemOther) return context.colors.accentLightBlue;
                                       return context.colors.borderColor;
                                     }
                                     final itemStatusColor = _statusColor();
@@ -1207,6 +1227,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                       if (isItemDetained) return 'DETAINED';
                                       if (isItemReexport) return 'RE-EXPORT';
                                       if (isItemDestroy) return 'DESTROYED';
+                                      if (isItemOther) {
+                                        return (item.status ?? '').toUpperCase();
+                                      }
                                       return '';
                                     }
 
@@ -1230,19 +1253,23 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                         children: [
                                           Row(
                                             crossAxisAlignment:
-                                                CrossAxisAlignment.center,
+                                                CrossAxisAlignment.start,
                                             children: [
                                               Expanded(
                                                 child: Row(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
                                                   children: [
-                                                    Icon(
-                                                        Icons
-                                                            .label_important_rounded,
-                                                        size: 16,
-                                                        color: isItemTerminal
-                                                            ? itemStatusColor
-                                                            : context.colors
-                                                                .primaryGold),
+                                                    Padding(
+                                                      padding: const EdgeInsets.only(top: 2),
+                                                      child: Icon(
+                                                          Icons
+                                                              .label_important_rounded,
+                                                          size: 16,
+                                                          color: isItemTerminal
+                                                              ? itemStatusColor
+                                                              : context.colors
+                                                                  .primaryGold),
+                                                    ),
                                                     const Gap(12),
                                                     Expanded(
                                                       child: Column(
@@ -1305,44 +1332,58 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                   ],
                                                 ),
                                               ),
-                                              if (isItemTerminal)
-                                                material.Container(
-                                                  padding: const EdgeInsets
-                                                      .symmetric(
-                                                      horizontal: 10,
-                                                      vertical: 4),
-                                                  decoration: BoxDecoration(
-                                                    color: itemStatusColor
-                                                        .withOpacity(0.15),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                            20),
-                                                    border: Border.all(
-                                                        color: itemStatusColor
-                                                            .withOpacity(0.4)),
+                                              Column(
+                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                children: [
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      if (showStatusBadge) ...[
+                                                        material.Container(
+                                                          padding: const EdgeInsets
+                                                              .symmetric(
+                                                              horizontal: 10,
+                                                              vertical: 4),
+                                                          decoration: BoxDecoration(
+                                                            color: itemStatusColor
+                                                                .withOpacity(0.15),
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                    20),
+                                                            border: Border.all(
+                                                                color: itemStatusColor
+                                                                    .withOpacity(0.4)),
+                                                          ),
+                                                          child: Text(
+                                                            _statusLabel(),
+                                                            maxLines: 1,
+                                                            overflow:
+                                                                TextOverflow.ellipsis,
+                                                            style: material.TextStyle(
+                                                              color: itemStatusColor,
+                                                              fontSize: 10,
+                                                              fontWeight:
+                                                                  FontWeight.w900,
+                                                              letterSpacing: 0.5,
+                                                            ),
+                                                          ),
+                                                        ),
+                                                        const Gap(8),
+                                                      ],
+                                                      Text(
+                                                        'x${item.quantity}',
+                                                        style: material.TextStyle(
+                                                          color: isItemTerminal
+                                                              ? context.colors.textMuted
+                                                              : context
+                                                                  .colors.primaryGold,
+                                                          fontWeight: FontWeight.w900,
+                                                          fontSize: 16,
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
-                                                  child: Text(
-                                                    _statusLabel(),
-                                                    style: material.TextStyle(
-                                                      color: itemStatusColor,
-                                                      fontSize: 10,
-                                                      fontWeight:
-                                                          FontWeight.w900,
-                                                      letterSpacing: 0.5,
-                                                    ),
-                                                  ),
-                                                ),
-                                              const Gap(12),
-                                              Text(
-                                                'x${item.quantity}',
-                                                style: material.TextStyle(
-                                                  color: isItemTerminal
-                                                      ? context.colors.textMuted
-                                                      : context
-                                                          .colors.primaryGold,
-                                                  fontWeight: FontWeight.w900,
-                                                  fontSize: 16,
-                                                ),
+                                                ],
                                               ),
                                             ],
                                           ),
@@ -1722,7 +1763,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
                           message: isConfiscated
-                              ? 'Confiscated / Forfeited packages cannot be actioned'
+                              ? 'Confiscated / Forfeited / Abandoned packages cannot be actioned'
                               : '',
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
@@ -3704,12 +3745,65 @@ class _PackageActionsDialog extends ConsumerStatefulWidget {
 
 class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
   bool _otherExpanded = false;
+  bool _isLoading = false;
   final _otherCtrl = TextEditingController();
 
   @override
   void dispose() {
     _otherCtrl.dispose();
     super.dispose();
+  }
+
+  void _showSuccess(BuildContext ctx, String message) {
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
+          const Gap(12),
+          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w600))),
+        ]),
+        backgroundColor: const Color(0xFF2E7D32),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _showError(BuildContext ctx, String message) {
+    ScaffoldMessenger.of(ctx).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_rounded, color: Colors.white, size: 20),
+          const Gap(12),
+          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w600))),
+        ]),
+        backgroundColor: const Color(0xFFC62828),
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        margin: const EdgeInsets.all(16),
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
+
+  Future<void> _runAction(BuildContext ctx, Future<bool> Function() action, String successMsg) async {
+    setState(() => _isLoading = true);
+    try {
+      final ok = await action();
+      if (!mounted) return;
+      if (ok) {
+        _showSuccess(ctx, successMsg);
+      } else {
+        _showError(ctx, 'Action could not be completed. Please try again.');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      _showError(ctx, 'Error: ${e.toString()}');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   static const _actions = [
@@ -3772,204 +3866,371 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
             .firstOrNull ??
         widget.fallbackEntry;
     final heldCount = (total - processed.length).clamp(0, total);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return material.AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      title: Row(children: [
-        Icon(Icons.bolt_rounded, color: context.colors.primaryGold, size: 22),
-        const Gap(10),
-        const Text('Package Actions'),
-      ]),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 400),
+      tween: Tween(begin: 0.0, end: 1.0),
+      curve: Curves.easeOutBack,
+      builder: (context, value, child) {
+        return Transform.scale(
+          scale: value,
+          child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+        );
+      },
+      child: Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Stack(
+          children: [
+            material.Container(
+              width: 580,
+              constraints: const BoxConstraints(maxHeight: 750),
+              decoration: BoxDecoration(
+                color: context.colors.scaffoldBg,
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.4),
+                    blurRadius: 40,
+                    offset: const Offset(0, 15),
+                  ),
+                ],
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (heldCount <= 0)
-                material.Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: context.colors.successGreen.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: context.colors.successGreen.withOpacity(0.3)),
+              // ── Dialog Header ──
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: isDark
+                        ? [context.colors.surfaceDark, context.colors.cardDark]
+                        : [context.colors.customsBlue, context.colors.customsBlueDark],
                   ),
-                  child: Row(children: [
-                    Icon(Icons.check_circle_rounded,
-                        color: context.colors.successGreen, size: 18),
-                    const Gap(10),
-                    Expanded(
-                      child: Text(
-                          'All $total packages have been processed.',
-                          style: TextStyle(
-                              color: context.colors.textSecondary,
-                              fontSize: 12)),
-                    ),
-                  ]),
-                )
-              else
-                material.Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: material.Align(
-                    alignment: material.Alignment.centerLeft,
-                    child: Text('$heldCount of $total packages remaining',
-                        style: TextStyle(
-                            color: context.colors.textMuted, fontSize: 12)),
-                  ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
                 ),
-              // Show all actions
-            ..._actions.map((a) {
-              final isOther = a.key == 'Other';
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  material.Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      side: BorderSide(
-                        color: (isOther && _otherExpanded)
-                            ? a.color.withOpacity(0.6)
-                            : a.color.withOpacity(0.2),
-                        width: (isOther && _otherExpanded) ? 1.5 : 1,
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                    ),
-                    color: a.color.withOpacity(0.04),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: heldCount <= 0
-                          ? null
-                          : () async {
-                        if (isOther) {
-                          setState(() => _otherExpanded = !_otherExpanded);
-                        } else {
-                          // Show selection dialog with live processed slots
-                          final slots = await showDialog<Set<int>>(
-                            context: context,
-                            builder: (ctx) => _PackageSelectionDialog(
-                              actionColor: a.color,
-                              actionName: a.key == 'Release' ? 'Release' : a.key,
-                              totalQty: total,
-                              processedSlots: processed,
-                            ),
-                          );
-                          if (slots != null && slots.isNotEmpty) {
-                            final list = slots.toList()..sort();
-                            if (a.key == 'Release') {
-                              await widget.onRelease(heldEntry, list);
-                            } else {
-                              await widget.onDispose(heldEntry, a.key, list);
-                            }
-                          }
-                        }
-                      },
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 12),
-                        child: Row(children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: a.color.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(a.icon, color: a.color, size: 20),
-                          ),
-                          const Gap(14),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(a.label,
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 14,
-                                        color: a.color)),
-                                const Gap(2),
-                                Text(a.description,
-                                    style: TextStyle(
-                                        fontSize: 12,
-                                        color:
-                                            context.colors.textMuted)),
-                              ],
-                            ),
-                          ),
-                          Icon(
-                            isOther
-                                ? (_otherExpanded
-                                    ? Icons.expand_less_rounded
-                                    : Icons.expand_more_rounded)
-                                : Icons.chevron_right_rounded,
-                            color: a.color.withOpacity(0.6),
-                            size: 20,
-                          ),
-                        ]),
-                      ),
-                    ),
-                  ),
-                  // Inline "Other" text field
-                  if (isOther && _otherExpanded)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                      child: Icon(Icons.inventory_2_rounded, color: context.colors.primaryGold, size: 24),
+                    ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
+                    const Gap(16),
+                    Expanded(
                       child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          TextFormField(
-                            controller: _otherCtrl,
-                            autofocus: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Disposition Type *',
-                              hintText: 'e.g. Transferred, Seized for Analysis...',
-                              isDense: true,
+                          Text(
+                            'SR REGISTER ENTRY',
+                            style: TextStyle(
+                              color: context.colors.primaryGold,
+                              fontSize: 11,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w800,
                             ),
-                          ),
-                          const Gap(10),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.check_rounded, size: 16),
-                            label: const Text('Confirm Other Disposition'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF7E57C2),
-                              foregroundColor: Colors.white,
+                          ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+                          Text(
+                            heldEntry.srNumber ?? '',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
                             ),
-                            onPressed: () async {
-                              final t = _otherCtrl.text.trim();
-                              if (t.isEmpty) return;
-
-                              final slots = await showDialog<Set<int>>(
-                                context: context,
-                                builder: (ctx) => _PackageSelectionDialog(
-                                  actionColor: const Color(0xFF7E57C2),
-                                  actionName: t,
-                                  totalQty: total,
-                                  processedSlots: processed,
-                                ),
-                              );
-                              if (slots != null && slots.isNotEmpty) {
-                                final list = slots.toList()..sort();
-                                await widget.onDispose(heldEntry, t, list);
-                              }
-                            },
-                          ),
+                          ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 150.ms).fadeIn(),
                         ],
                       ),
                     ),
-                ],
-              );
-            }),
+                    const Gap(12),
+                    IconButton(
+                      icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.7)),
+                      splashRadius: 24,
+                      onPressed: () => Navigator.pop(context),
+                    ),
+                  ],
+                ),
+              ),
+              
+              // ── Dialog Body ──
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.bolt_rounded, color: context.colors.primaryGold, size: 24),
+                          const Gap(10),
+                          Text(
+                            'Package Actions',
+                            style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ).animate().fadeIn(delay: 200.ms),
+                      const Gap(16),
+                      if (heldCount <= 0)
+                        material.Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: context.colors.successGreen.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: context.colors.successGreen.withOpacity(0.3)),
+                          ),
+                          child: Row(children: [
+                            Icon(Icons.check_circle_rounded,
+                                color: context.colors.successGreen, size: 18),
+                            const Gap(10),
+                            Expanded(
+                              child: Text(
+                                  'All $total packages have been processed.',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 12)),
+                            ),
+                          ]),
+                        ).animate().fadeIn(delay: 250.ms)
+                      else
+                        material.Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: material.Align(
+                            alignment: material.Alignment.centerLeft,
+                            child: Text('$heldCount of $total packages remaining',
+                                style: TextStyle(
+                                    color: context.colors.textMuted, fontSize: 13)),
+                          ),
+                        ).animate().fadeIn(delay: 250.ms),
+                      
+                      // Show all actions
+                      ..._actions.map((a) {
+                        final isOther = a.key == 'Other';
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            material.Card(
+                              margin: const EdgeInsets.only(bottom: 12),
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                side: BorderSide(
+                                  color: (isOther && _otherExpanded)
+                                      ? a.color.withOpacity(0.6)
+                                      : a.color.withOpacity(0.2),
+                                  width: (isOther && _otherExpanded) ? 1.5 : 1,
+                                ),
+                              ),
+                              color: a.color.withOpacity(0.04),
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(12),
+                                onTap: heldCount <= 0
+                                    ? null
+                                    : () async {
+                                  if (isOther) {
+                                    setState(() => _otherExpanded = !_otherExpanded);
+                                  } else {
+                                    // Show selection dialog with live processed slots
+                                    final slots = await showDialog<Set<int>>(
+                                      context: context,
+                                      builder: (ctx) => _PackageSelectionDialog(
+                                        actionColor: a.color,
+                                        actionName: a.key == 'Release' ? 'Release' : a.key,
+                                        totalQty: total,
+                                        processedSlots: processed,
+                                      ),
+                                    );
+                                    if (slots != null && slots.isNotEmpty) {
+                                      final list = slots.toList()..sort();
+                                      final ctx = context;
+                                      if (a.key == 'Release') {
+                                        await _runAction(
+                                          ctx,
+                                          () => widget.onRelease(heldEntry, list),
+                                          '${list.length} package(s) released successfully.',
+                                        );
+                                      } else {
+                                        await _runAction(
+                                          ctx,
+                                          () => widget.onDispose(heldEntry, a.key, list),
+                                          '${list.length} package(s) marked as ${a.label} successfully.',
+                                        );
+                                      }
+                                    }
+                                  }
+                                },
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 16, vertical: 14),
+                                  child: Row(children: [
+                                    Container(
+                                      padding: const EdgeInsets.all(10),
+                                      decoration: BoxDecoration(
+                                        color: a.color.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: Icon(a.icon, color: a.color, size: 20),
+                                    ),
+                                    const Gap(16),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(a.label,
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 15,
+                                                  color: a.color)),
+                                          const Gap(4),
+                                          Text(a.description,
+                                              style: TextStyle(
+                                                  fontSize: 13,
+                                                  color:
+                                                      context.colors.textMuted)),
+                                        ],
+                                      ),
+                                    ),
+                                    Icon(
+                                      isOther
+                                          ? (_otherExpanded
+                                              ? Icons.expand_less_rounded
+                                              : Icons.expand_more_rounded)
+                                          : Icons.chevron_right_rounded,
+                                      color: a.color.withOpacity(0.6),
+                                      size: 22,
+                                    ),
+                                  ]),
+                                ),
+                              ),
+                            ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.05),
+                            // Inline "Other" text field
+                            if (isOther && _otherExpanded)
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                                  children: [
+                                    TextFormField(
+                                      controller: _otherCtrl,
+                                      autofocus: true,
+                                      decoration: InputDecoration(
+                                        labelText: 'Disposition Type *',
+                                        hintText: 'e.g. Transferred, Seized for Analysis...',
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: context.colors.borderColor),
+                                        ),
+                                        enabledBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: context.colors.borderColor),
+                                        ),
+                                        focusedBorder: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(12),
+                                          borderSide: BorderSide(color: const Color(0xFF7E57C2), width: 2),
+                                        ),
+                                        filled: true,
+                                        fillColor: context.colors.textPrimary.withOpacity(0.02),
+                                      ),
+                                    ).animate().fadeIn(),
+                                    const Gap(12),
+                                    ElevatedButton.icon(
+                                      icon: const Icon(Icons.check_rounded, size: 18),
+                                      label: const Text('Confirm Other Disposition', style: TextStyle(fontWeight: FontWeight.bold)),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: const Color(0xFF7E57C2),
+                                        foregroundColor: Colors.white,
+                                        padding: const EdgeInsets.symmetric(vertical: 14),
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                      ),
+                                      onPressed: () async {
+                                        final t = _otherCtrl.text.trim();
+                                        if (t.isEmpty) return;
+
+                                        final slots = await showDialog<Set<int>>(
+                                          context: context,
+                                          builder: (ctx) => _PackageSelectionDialog(
+                                            actionColor: const Color(0xFF7E57C2),
+                                            actionName: t,
+                                            totalQty: total,
+                                            processedSlots: processed,
+                                          ),
+                                        );
+                                        if (slots != null && slots.isNotEmpty) {
+                                          final list = slots.toList()..sort();
+                                          final ctx = context;
+                                          await _runAction(
+                                            ctx,
+                                            () => widget.onDispose(heldEntry, t, list),
+                                            '${list.length} package(s) marked as "$t" successfully.',
+                                          );
+                                        }
+                                      },
+                                    ).animate().fadeIn(),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+              
+              // ── Dialog Footer ──
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceDark,
+                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                  border: Border(top: BorderSide(color: context.colors.borderColor)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: TextButton.styleFrom(
+                        foregroundColor: context.colors.textSecondary,
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                      ),
+                      child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        // ── Loading overlay ──
+        if (_isLoading)
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.45),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB300)),
+                  strokeWidth: 3,
+                ),
+              ),
+            ),
+          ),
           ],
         ),
-        ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: Text('Cancel',
-              style: TextStyle(color: context.colors.textMuted)),
-        ),
-      ],
     );
   }
 }
@@ -4666,73 +4927,75 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
       title: Text('Select Packages to ${widget.actionName}'),
       content: SizedBox(
         width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Select which specific packages you want to apply this action to.',
-              style: TextStyle(color: context.colors.textMuted, fontSize: 13),
-            ),
-            const Gap(16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  '${_selectedSlots.length} of ${_heldSlots.length} selected',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-                Row(
-                  children: [
-                    TextButton(
-                      onPressed: _selectAll,
-                      style: TextButton.styleFrom(
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        tapTargetSize: material.MaterialTapTargetSize.shrinkWrap,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select which specific packages you want to apply this action to.',
+                style: TextStyle(color: context.colors.textMuted, fontSize: 13),
+              ),
+              const Gap(16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${_selectedSlots.length} of ${_heldSlots.length} selected',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: _selectAll,
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          tapTargetSize: material.MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('Select All',
+                            style: TextStyle(fontSize: 12)),
                       ),
-                      child: const Text('Select All',
-                          style: TextStyle(fontSize: 12)),
-                    ),
-                    const Gap(8),
-                    TextButton(
-                      onPressed: _clearAll,
-                      style: TextButton.styleFrom(
-                        minimumSize: Size.zero,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        tapTargetSize: material.MaterialTapTargetSize.shrinkWrap,
-                        foregroundColor: context.colors.textMuted,
+                      const Gap(8),
+                      TextButton(
+                        onPressed: _clearAll,
+                        style: TextButton.styleFrom(
+                          minimumSize: Size.zero,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          tapTargetSize: material.MaterialTapTargetSize.shrinkWrap,
+                          foregroundColor: context.colors.textMuted,
+                        ),
+                        child: const Text('Clear All',
+                            style: TextStyle(fontSize: 12)),
                       ),
-                      child: const Text('Clear All',
-                          style: TextStyle(fontSize: 12)),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-            const Gap(12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: List.generate(widget.totalQty, (index) {
-                final slotNumber = index + 1;
-                final isProcessed =
-                    widget.processedSlots.contains(slotNumber);
-                final isSelected = _selectedSlots.contains(slotNumber);
+                    ],
+                  ),
+                ],
+              ),
+              const Gap(12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: List.generate(widget.totalQty, (index) {
+                  final slotNumber = index + 1;
+                  final isProcessed =
+                      widget.processedSlots.contains(slotNumber);
+                  final isSelected = _selectedSlots.contains(slotNumber);
 
-                return _PackageSlotChip(
-                  slotNumber: slotNumber,
-                  totalQty: widget.totalQty,
-                  isProcessed: isProcessed,
-                  isSelected: isSelected,
-                  activeColor: widget.actionColor,
-                  onTap: isProcessed ? null : () => _toggleSlot(slotNumber),
-                );
-              }),
-            ),
-          ],
+                  return _PackageSlotChip(
+                    slotNumber: slotNumber,
+                    totalQty: widget.totalQty,
+                    isProcessed: isProcessed,
+                    isSelected: isSelected,
+                    activeColor: widget.actionColor,
+                    onTap: isProcessed ? null : () => _toggleSlot(slotNumber),
+                  );
+                }),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
