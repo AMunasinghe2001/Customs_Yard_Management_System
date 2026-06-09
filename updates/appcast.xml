@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Auto-update feed for SL Customs SR Management System (Windows / WinSparkle).
+  Upload this file + the new installer .exe to the PUBLIC Supabase Storage
+  bucket named "updates". The app reads it from:
+    https://tstlaauujhrrpjxhvorf.supabase.co/storage/v1/object/public/updates/appcast.xml
+
+  On every release, bump <sparkle:version> + the enclosure url/length below.
+  - sparkle:version       = numeric/build version compared against the running app
+  - sparkle:shortVersionString = human label shown in the prompt
+  - length                = installer size in BYTES (right-click .exe → Properties)
+  - sparkle:edSignature   = EdGet/EdDSA signature (see updates/README.md). Required
+                            for verified updates in production.
+-->
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>SL Customs SR Management System Updates</title>
+    <item>
+      <title>Version 1.0.1</title>
+      <description>Bug fixes and improvements.</description>
+      <pubDate>Tue, 09 Jun 2026 12:00:00 +0530</pubDate>
+      <sparkle:releaseNotesLink>https://tstlaauujhrrpjxhvorf.supabase.co/storage/v1/object/public/updates/release_notes.html</sparkle:releaseNotesLink>
+      <enclosure
+        url="https://tstlaauujhrrpjxhvorf.supabase.co/storage/v1/object/public/updates/SLCustoms-Setup-1.0.1.exe"
+        sparkle:version="1.0.1"
+        sparkle:shortVersionString="1.0.1"
+        sparkle:os="windows"
+        length="0"
+        type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

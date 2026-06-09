@@ -7,7 +7,7 @@
 - **Type**: Flutter **desktop** app, **Windows-first** (only [windows/](windows/) platform dir present; uses `window_manager`).
 - **Backend**: Supabase (PostgreSQL + Auth + Row-Level Security + Realtime). No custom backend server.
 - **Architecture**: Single Flutter client → Supabase directly. Service classes wrap all DB access; Riverpod providers expose data/state to widgets; realtime channels trigger re-fetch.
-- **Core tech**: Flutter/Dart (SDK `>=3.0.0 <4.0.0`), Riverpod (`flutter_riverpod` + `riverpod_annotation`/`riverpod_generator`), `go_router`, `supabase_flutter`, `data_table_2`, `fl_chart`, `pdf`/`printing`/`barcode`, `google_sign_in`, `window_manager`. See [pubspec.yaml](pubspec.yaml).
+- **Core tech**: Flutter/Dart (SDK `>=3.0.0 <4.0.0`), Riverpod (`flutter_riverpod` + `riverpod_annotation`/`riverpod_generator`), `go_router`, `supabase_flutter`, `data_table_2`, `fl_chart`, `pdf`/`printing`/`barcode`, `google_sign_in`, `window_manager`, `auto_updater` (background updates). See [pubspec.yaml](pubspec.yaml).
 
 ## Repository Structure
 - [lib/main.dart](lib/main.dart) — entry: window_manager init, `Supabase.initialize` (non-persisted sessions), `ProviderScope`, `MaterialApp.router`, offline-on-close handler.
@@ -18,6 +18,7 @@
   - [theme.dart](lib/core/theme.dart) — `AppTheme.lightTheme`/`darkTheme`, `context.colors` extension (themed color tokens).
   - [yards.dart](lib/core/yards.dart) — 7 yards + helpers (`kYards`, `kDefaultYardCode`, `yardByCode`, `yardSrPrefix`).
   - [app_session.dart](lib/core/app_session.dart) — `AppSession.currentYard` (set on login, tags writes).
+  - [app_updater.dart](lib/core/app_updater.dart) — `initAutoUpdater()` / `checkForUpdatesNow()`; feed URL derived from `supabaseUrl` + `updates` bucket.
 - [lib/models/models.dart](lib/models/models.dart) — all domain models (single file).
 - [lib/services/services.dart](lib/services/services.dart) — all service classes (single file, ~1800 lines).
 - [lib/screens/](lib/screens/) — UI by feature (admin, auth, dashboard, forfeited_packages, home, inspection, login, packages, profile, reports, warehouses).
@@ -26,6 +27,7 @@
 - [test/widget_test.dart](test/widget_test.dart) — **placeholder only** (trivial assertion).
 - [supabase/](supabase/) — DB SQL: `schema.sql`, fixes/seeds, and timestamped `supabase/migrations/*.sql`.
 - [migrations/](migrations/) — multi-yard SQL: `001_multi_yard.sql`, `002_strict_yard_isolation.sql` (run AFTER supabase/ migrations).
+- [updates/](updates/) — auto-update release assets: `appcast.xml` template + [release README](updates/README.md). Upload to the public Supabase `updates` bucket.
 - Root: [README.md](README.md), [BARCODE_PRINTING_GUIDE.md](BARCODE_PRINTING_GUIDE.md), [analysis_options.yaml](analysis_options.yaml) (`flutter_lints`), SVG logo assets.
 
 ## Key Components
@@ -47,6 +49,7 @@
 - [styled_dropdown.dart](lib/widgets/styled_dropdown.dart) — `StyledDropdownButton` (filter) + `StyledDropdownFormField` (form field) → gold popup that expands downward; used for filters AND yard selectors. Params incl. `prefixIcon`, `contentPadding`, `helperText`, `menuWidth`.
 - [custom_dropdown.dart](lib/widgets/custom_dropdown.dart) — `CustomDropdownField`/`CustomDropdown` (dark-themed Material dropdowns).
 - [one_tap_date_picker.dart](lib/widgets/one_tap_date_picker.dart) — shared gold calendar (`OneTapDatePicker`); tap-to-select, manual-entry mode; used in SR registration + tender placement.
+- [year_filter.dart](lib/widgets/year_filter.dart) — `YearFilterButton` ("All Years" dropdown) + `srYears()`/`srYearMatches()` helpers (parse trailing `/YYYY` of SR numbers). Used on all history/disposition list pages.
 - [status_chip.dart](lib/widgets/status_chip.dart) — `StatusChip(status:)` central status→color/label mapping.
 - [package_details_dialog.dart](lib/widgets/package_details_dialog.dart) — large SR details modal (per-item status badges incl. custom "Other").
 - Also: `date_range_picker_dialog.dart`, `print_barcode_dialog.dart`, `warehouse_selection_dialog.dart`, `error_view.dart`, `empty_table_state.dart`.
@@ -71,6 +74,12 @@
 - Yard is **selected at account signup** (→ `profiles.yard`) and **editable in Edit Profile** (gold `StyledDropdownFormField`). SR Registration yard field is **locked/display-only** (you can only write to your own yard).
 - `AppSession.currentYard` mirrors the signed-in user's yard and tags new writes + SR prefixes.
 
+## Auto-Update (desktop)
+- `auto_updater` (WinSparkle on Windows) wired in [main.dart](lib/main.dart) via `initAutoUpdater()` → background check on startup + every 6h. See [app_updater.dart](lib/core/app_updater.dart).
+- Feed = public Supabase Storage bucket **`updates`** → `<supabaseUrl>/storage/v1/object/public/updates/appcast.xml` (auto-derived; no extra config).
+- Release flow + appcast template in [updates/](updates/) (see [updates/README.md](updates/README.md)): bump `pubspec` version → `flutter build windows` → Inno Setup `.exe` → edit `appcast.xml` (version/url/length/pubDate) → upload `.exe` + `appcast.xml` to the bucket.
+- Init is guarded (`Platform.isWindows||isMacOS`) and swallows all errors — never blocks startup.
+
 ## Build & Run Commands
 - Install: `flutter pub get`
 - Dev run: `flutter run -d windows`
@@ -79,6 +88,7 @@
 - Codegen (riverpod_generator): `dart run build_runner build --delete-conflicting-outputs` (most providers are hand-written, so rarely needed)
 - Production: `flutter build windows` → output `build/windows/x64/runner/Release/`
 - Windows installer: Inno Setup script (added in git history; see repo root if present).
+- Release/auto-update: bump `pubspec` version → build → Inno Setup `.exe` → update + upload [updates/appcast.xml](updates/appcast.xml) and the `.exe` to the public `updates` bucket. Full steps: [updates/README.md](updates/README.md).
 
 ## Important Configuration
 - **Supabase creds**: hardcoded in [lib/core/supabase_client.dart](lib/core/supabase_client.dart) (`supabaseUrl`, `supabaseAnonKey`). **No env vars / .env**. Change here to point to another project.
@@ -108,6 +118,8 @@
 - **Minimal tests**: only a placeholder; no real coverage.
 - **`print()` debug logging** left throughout (esp. auth/session/window-close).
 - **Warehouse "in-yard" logic**: `_leftYardStatuses` / `WarehouseEntryModel.isNoChargeStatus` decide visibility & charges in [warehouses_screen.dart](lib/screens/warehouses/warehouses_screen.dart); summary cards = All/Detain/Forfeit/Abandoned counts.
+- **Two disposition note-tag conventions** (`warehouse_entries.return_notes`): `disposeWarehouseItem` writes `[RE-EXPORT]`/`[DESTROY]`/`[FORFEIT]`/`[ABANDONED]` (present tense); `recordFinalDisposition` writes `[FINAL:RE-EXPORTED]`/`[FINAL:DESTROYED]`/… [disposition_category_screen.dart](lib/screens/packages/disposition_category_screen.dart) `_matchesTag` must accept BOTH per category.
+- **Auto-update unverified natively**: `auto_updater` native (WinSparkle) linking only confirmable via a full `flutter build windows`; production updates should be EdDSA-signed (see [updates/README.md](updates/README.md)).
 
 ## Change Log Summary (inferred from git)
 - Built admin dashboard, package management, reporting + centralized providers & package details dialog.
@@ -115,4 +127,5 @@
 - Added forfeited packages + tenders (models, services, `TenderPlacementDialog`, disposal flow); dummy-data scripts.
 - Barcode printing/saving; Windows Inno Setup installer.
 - Year filter for package management; warehouse item status/charge handling.
-- **Recent**: multi-yard support — `yard` column + RLS isolation (migrations 001/002), yard dropdowns at signup/profile, yard-locked SR registration, shared `OneTapDatePicker`, warehouse summary cards reworked ("yard manage and dropdown fixed").
+- Multi-yard support — `yard` column + RLS isolation (migrations 001/002), yard dropdowns at signup/profile, yard-locked SR registration, shared `OneTapDatePicker`, warehouse summary cards reworked ("yard manage and dropdown fixed").
+- **Latest** (2026-06): styled yard dropdowns (gold popup) on signup/profile/admin; warehouse cards → All/Detain/Forfeit/Abandoned (+ removed Confiscated chip); custom "Other" status badge in package details; tender dialog polish (themed number field, shared calendar, Select All/Clear All); disposition tables now match both `[FINAL:…]` and `[RE-EXPORT]`/`[DESTROY]` tags; **Year filter** (`YearFilterButton`) + Date Range added to all history/disposition pages (packages, abandoned, released, forfeited, sold/destroyed/re-exported/other, tender disposals); sign-in surfaces real errors (no more vague "check credentials"); **auto-update** via `auto_updater` + Supabase `updates` bucket.
