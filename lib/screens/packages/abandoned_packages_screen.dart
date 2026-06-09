@@ -13,6 +13,7 @@ import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/year_filter.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 final abandonedPackageSearchProvider = StateProvider<String>((ref) => '');
@@ -68,6 +69,7 @@ class AbandonedPackagesScreen extends ConsumerStatefulWidget {
 class _AbandonedPackagesScreenState
     extends ConsumerState<AbandonedPackagesScreen> {
   final _tableSearchCtrl = TextEditingController();
+  String? _yearFilter;
 
   /// Builds one row per abandonment — broken down per package item.
   /// A single SR can appear on multiple lines: once per abandoned item, and
@@ -443,6 +445,14 @@ class _AbandonedPackagesScreenState
                                 );
                               },
                             ),
+                        const SizedBox(width: 8),
+                        YearFilterButton(
+                          value: _yearFilter,
+                          years: srYears(_buildRows(packages.valueOrNull ??
+                                  const <PackageModel>[])
+                              .map((r) => r.package.srNumber)),
+                          onChanged: (v) => setState(() => _yearFilter = v),
+                        ),
                       ],
                     ),
                   ],
@@ -489,6 +499,8 @@ class _AbandonedPackagesScreenState
                         if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
                           return false;
                       }
+                      if (!srYearMatches(row.package.srNumber, _yearFilter))
+                        return false;
                       return true;
                     }).toList();
 

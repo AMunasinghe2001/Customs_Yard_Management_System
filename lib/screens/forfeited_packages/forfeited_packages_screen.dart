@@ -10,6 +10,8 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/year_filter.dart';
 import 'tender_placement_dialog.dart';
 
 class _StatChip extends StatelessWidget {
@@ -64,6 +66,8 @@ class _ForfeitRow {
 
 class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScreen> {
   String _searchQuery = '';
+  DateTimeRange? _dateRange;
+  String? _yearFilter;
 
   bool _isForfeitStatus(String? status) {
     if (status == null) return false;
@@ -229,15 +233,86 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
                 ),
-                child: TextField(
-                  style: TextStyle(color: context.colors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Search by SR Number or Consignee...',
-                    prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
-                    isDense: true,
-                    border: InputBorder.none,
-                  ),
-                  onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      style: TextStyle(color: context.colors.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Search by SR Number or Consignee...',
+                        prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
+                        isDense: true,
+                        border: InputBorder.none,
+                      ),
+                      onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+                    ),
+                    const Gap(8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showDialog<dynamic>(
+                              context: context,
+                              builder: (context) => custom.DateRangePickerDialog(
+                                  initialRange: _dateRange),
+                            );
+                            if (picked is DateTimeRange) {
+                              setState(() => _dateRange = picked);
+                            } else if (picked == false) {
+                              setState(() => _dateRange = null);
+                            }
+                          },
+                          icon: Icon(Icons.date_range_rounded,
+                              size: 16,
+                              color: _dateRange != null
+                                  ? context.colors.primaryGold
+                                  : context.colors.textSecondary),
+                          label: Text(
+                            _dateRange != null
+                                ? '${DateFormat('MMM d').format(_dateRange!.start)} - ${DateFormat('MMM d').format(_dateRange!.end)}'
+                                : 'Date Range',
+                            style: TextStyle(
+                                color: _dateRange != null
+                                    ? context.colors.primaryGold
+                                    : context.colors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: _dateRange != null
+                                    ? FontWeight.bold
+                                    : FontWeight.normal),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                                color: _dateRange != null
+                                    ? context.colors.primaryGold
+                                    : context.colors.borderColor),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        if (_dateRange != null)
+                          IconButton(
+                            icon: Icon(Icons.clear_rounded,
+                                size: 16, color: context.colors.dangerRed),
+                            onPressed: () => setState(() => _dateRange = null),
+                            tooltip: 'Clear Date Filter',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        const SizedBox(width: 8),
+                        YearFilterButton(
+                          value: _yearFilter,
+                          years: srYears((forfeitedAsync.valueOrNull ??
+                                  const <ForfeitedPackageModel>[])
+                              .map((p) => p.srNumber)),
+                          onChanged: (v) => setState(() => _yearFilter = v),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
 
@@ -255,7 +330,20 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                     final filtered = packages.where((pkg) {
                       final srMatch = pkg.srNumber.toLowerCase().contains(_searchQuery);
                       final consigneeMatch = pkg.consigneeName.toLowerCase().contains(_searchQuery);
-                      return srMatch || consigneeMatch;
+                      if (!srMatch && !consigneeMatch) return false;
+                      if (_dateRange != null) {
+                        final date = pkg.forfeitedAt;
+                        final startOfDay = DateTime(_dateRange!.start.year,
+                            _dateRange!.start.month, _dateRange!.start.day);
+                        final endOfDay = DateTime(_dateRange!.end.year,
+                            _dateRange!.end.month, _dateRange!.end.day,
+                            23, 59, 59);
+                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay)) {
+                          return false;
+                        }
+                      }
+                      if (!srYearMatches(pkg.srNumber, _yearFilter)) return false;
+                      return true;
                     }).toList();
 
                     final rows = _buildForfeitRows(filtered);

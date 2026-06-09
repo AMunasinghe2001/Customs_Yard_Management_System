@@ -122,7 +122,13 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
     if (raw.contains('account_deactivated')) {
       return 'Your account has been deactivated. Please contact another administrator.';
     }
-    return 'Sign in failed. Please check your credentials.';
+    // Surface the underlying error instead of a vague catch-all, so DB/RLS or
+    // configuration problems are visible rather than looking like a bad password.
+    final cleaned = raw
+        .replaceAll('Exception: ', '')
+        .replaceAll('AuthApiException(', '')
+        .trim();
+    return 'Sign in failed: $cleaned';
   }
 
   @override

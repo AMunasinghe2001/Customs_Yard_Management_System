@@ -100,14 +100,18 @@ class AuthService {
 
       return profile;
     } on AuthApiException catch (e) {
-      if (e.statusCode == '400' && e.message.contains('email_not_confirmed')) {
+      print('DEBUG: signIn AuthApiException code=${e.code} status=${e.statusCode} msg=${e.message}');
+      final msg = e.message.toLowerCase();
+      if (e.code == 'email_not_confirmed' || msg.contains('not confirmed')) {
         throw Exception('email_not_confirmed');
       }
-      if (e.message.contains('Invalid login credentials')) {
+      if (e.code == 'invalid_credentials' ||
+          msg.contains('invalid login credentials')) {
         throw Exception('invalid_credentials');
       }
       rethrow;
     } catch (e) {
+      print('DEBUG: signIn unexpected error: $e');
       rethrow;
     }
   }

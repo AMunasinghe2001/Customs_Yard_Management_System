@@ -11,6 +11,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/year_filter.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
@@ -41,6 +42,7 @@ class _DispositionCategoryScreenState
   final _searchCtrl = TextEditingController();
   String _search = '';
   DateTimeRange? _dateRange;
+  String? _yearFilter;
 
   @override
   void dispose() {
@@ -48,9 +50,27 @@ class _DispositionCategoryScreenState
     super.dispose();
   }
 
+  // A disposition can be recorded two ways, each tagging return_notes
+  // differently:
+  //   • recordFinalDisposition → "[FINAL:RE-EXPORTED]" / "[FINAL:DESTROYED]" …
+  //   • disposeWarehouseItem    → "[RE-EXPORT]" / "[DESTROY]" …  (present tense)
+  // Both must surface in the matching category table. This maps each category's
+  // finalTag to every bracket tag that belongs to it.
+  static const Map<String, Set<String>> _acceptedTags = {
+    'RE-EXPORTED': {'FINAL:RE-EXPORTED', 'RE-EXPORTED', 'RE-EXPORT'},
+    'DESTROYED': {'FINAL:DESTROYED', 'DESTROYED', 'DESTROY'},
+    'SOLD': {'FINAL:SOLD', 'SOLD'},
+    'OTHER': {'FINAL:OTHER', 'OTHER'},
+  };
+
   bool _matchesTag(WarehouseEntryModel e) {
     final notes = (e.returnNotes ?? '').trim().toUpperCase();
-    return notes.startsWith('[FINAL:${widget.finalTag}');
+    final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
+    if (m == null) return false;
+    final tag = m.group(1)!.trim();
+    final accepted =
+        _acceptedTags[widget.finalTag] ?? {'FINAL:${widget.finalTag}'};
+    return accepted.contains(tag);
   }
 
   String _extractNote(String? returnNotes) {
@@ -230,6 +250,14 @@ class _DispositionCategoryScreenState
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
                           ),
+                        YearFilterButton(
+                          value: _yearFilter,
+                          years: srYears(packages.valueOrNull == null
+                              ? const <String>[]
+                              : _buildRows(packages.valueOrNull!)
+                                  .map((r) => r.package.srNumber)),
+                          onChanged: (v) => setState(() => _yearFilter = v),
+                        ),
                       ],
                     ),
                   ],
@@ -274,6 +302,9 @@ class _DispositionCategoryScreenState
                             59);
                         if (date.isBefore(startOfDay) ||
                             date.isAfter(endOfDay)) return false;
+                      }
+                      if (!srYearMatches(row.package.srNumber, _yearFilter)) {
+                        return false;
                       }
                       return true;
                     }).toList();

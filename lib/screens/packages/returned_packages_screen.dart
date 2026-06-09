@@ -13,6 +13,7 @@ import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/year_filter.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
@@ -31,6 +32,7 @@ class ReturnedPackagesScreen extends ConsumerStatefulWidget {
 class _ReturnedPackagesScreenState
     extends ConsumerState<ReturnedPackagesScreen> {
   final _tableSearchCtrl = TextEditingController();
+  String? _yearFilter;
 
   WarehouseEntryModel? _latestReturnedEntry(PackageModel package) {
     final entries =
@@ -428,6 +430,15 @@ class _ReturnedPackagesScreenState
                                 );
                               },
                             ),
+                        const SizedBox(width: 8),
+                        YearFilterButton(
+                          value: _yearFilter,
+                          years: srYears(_buildReturnedRows(
+                                  packages.valueOrNull ??
+                                      const <PackageModel>[])
+                              .map((r) => r.package.srNumber)),
+                          onChanged: (v) => setState(() => _yearFilter = v),
+                        ),
                       ],
                     ),
                   ],
@@ -477,6 +488,8 @@ class _ReturnedPackagesScreenState
                         if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
                           return false;
                       }
+                      if (!srYearMatches(row.package.srNumber, _yearFilter))
+                        return false;
                       return true;
                     }).toList();
 

@@ -12,6 +12,8 @@ import '../../services/services.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/year_filter.dart';
 import 'tender_placement_dialog.dart';
 
 // ── Local providers ────────────────────────────────────────────
@@ -77,6 +79,8 @@ class TenderDisposalScreen extends ConsumerStatefulWidget {
 class _TenderDisposalScreenState
     extends ConsumerState<TenderDisposalScreen> {
   final _searchCtrl = TextEditingController();
+  DateTimeRange? _dateRange;
+  String? _yearFilter;
 
   @override
   void initState() {
@@ -217,30 +221,104 @@ class _TenderDisposalScreenState
                   border: Border.all(
                       color: context.colors.primaryGold.withOpacity(0.5)),
                 ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  style: TextStyle(color: context.colors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Search by tender number or SR number...',
-                    prefixIcon: Icon(Icons.search_rounded,
-                        color: context.colors.textMuted),
-                    suffixIcon: _searchCtrl.text.isNotEmpty
-                        ? IconButton(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _searchCtrl,
+                      style: TextStyle(color: context.colors.textPrimary),
+                      decoration: InputDecoration(
+                        hintText: 'Search by tender number or SR number...',
+                        prefixIcon: Icon(Icons.search_rounded,
+                            color: context.colors.textMuted),
+                        suffixIcon: _searchCtrl.text.isNotEmpty
+                            ? IconButton(
+                                icon: Icon(Icons.clear_rounded,
+                                    color: context.colors.textMuted),
+                                onPressed: () {
+                                  _searchCtrl.clear();
+                                  ref
+                                      .read(tenderSearchProvider.notifier)
+                                      .state = '';
+                                },
+                              )
+                            : null,
+                        isDense: true,
+                      ),
+                      onChanged: (v) {
+                        ref.read(tenderSearchProvider.notifier).state = v;
+                      },
+                    ),
+                    const Gap(8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            final picked = await showDialog<dynamic>(
+                              context: context,
+                              builder: (context) => custom.DateRangePickerDialog(
+                                  initialRange: _dateRange),
+                            );
+                            if (picked is DateTimeRange) {
+                              setState(() => _dateRange = picked);
+                            } else if (picked == false) {
+                              setState(() => _dateRange = null);
+                            }
+                          },
+                          icon: Icon(Icons.date_range_rounded,
+                              size: 16,
+                              color: _dateRange != null
+                                  ? context.colors.primaryGold
+                                  : context.colors.textSecondary),
+                          label: Text(
+                            _dateRange != null
+                                ? '${DateFormat('MMM d').format(_dateRange!.start)} - ${DateFormat('MMM d').format(_dateRange!.end)}'
+                                : 'Date Range',
+                            style: TextStyle(
+                                color: _dateRange != null
+                                    ? context.colors.primaryGold
+                                    : context.colors.textSecondary,
+                                fontSize: 12,
+                                fontWeight: _dateRange != null
+                                    ? FontWeight.bold
+                                    : FontWeight.normal),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: BorderSide(
+                                color: _dateRange != null
+                                    ? context.colors.primaryGold
+                                    : context.colors.borderColor),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8)),
+                          ),
+                        ),
+                        if (_dateRange != null)
+                          IconButton(
                             icon: Icon(Icons.clear_rounded,
-                                color: context.colors.textMuted),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              ref
-                                  .read(tenderSearchProvider.notifier)
-                                  .state = '';
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                  ),
-                  onChanged: (v) {
-                    ref.read(tenderSearchProvider.notifier).state = v;
-                  },
+                                size: 16, color: context.colors.dangerRed),
+                            onPressed: () => setState(() => _dateRange = null),
+                            tooltip: 'Clear Date Filter',
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        const SizedBox(width: 8),
+                        YearFilterButton(
+                          value: _yearFilter,
+                          years: ((tendersAsync.valueOrNull ??
+                                  const <TenderModel>[])
+                              .map((t) => t.tenderDate.year.toString())
+                              .toSet()
+                              .toList()
+                            ..sort((a, b) => b.compareTo(a))),
+                          onChanged: (v) => setState(() => _yearFilter = v),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               )
                   .animate()
@@ -300,13 +378,30 @@ class _TenderDisposalScreenState
                       );
                     }
 
-                    final filtered = search.isEmpty
-                        ? tenders
-                        : tenders.where((t) {
-                            return t.tenderNumber
-                                .toLowerCase()
-                                .contains(search.toLowerCase());
-                          }).toList();
+                    final filtered = tenders.where((t) {
+                      if (search.isNotEmpty &&
+                          !t.tenderNumber
+                              .toLowerCase()
+                              .contains(search.toLowerCase())) {
+                        return false;
+                      }
+                      if (_dateRange != null) {
+                        final date = t.tenderDate;
+                        final startOfDay = DateTime(_dateRange!.start.year,
+                            _dateRange!.start.month, _dateRange!.start.day);
+                        final endOfDay = DateTime(_dateRange!.end.year,
+                            _dateRange!.end.month, _dateRange!.end.day,
+                            23, 59, 59);
+                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay)) {
+                          return false;
+                        }
+                      }
+                      if (_yearFilter != null &&
+                          t.tenderDate.year.toString() != _yearFilter) {
+                        return false;
+                      }
+                      return true;
+                    }).toList();
 
                     return disposalsMapAsync.when(
                       loading: () => Center(
