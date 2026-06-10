@@ -116,7 +116,7 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
             const Gap(36),
             const Text('Sri Lanka Customs',
               style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
-            const Text('SR Management System\nGrey Line 1',
+            const Text('SR Management System',
               textAlign: TextAlign.center,
               style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
             const Gap(28),

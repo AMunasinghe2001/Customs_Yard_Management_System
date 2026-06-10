@@ -59,7 +59,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     ref.read(loginLoadingProvider.notifier).state = true;
     ref.read(loginErrorProvider.notifier).state = null;
     try {
-      final profile = await ref.read(authServiceProvider).signIn(
+      final profile = await ref.read(authServiceProvider).signInWithIdentifier(
         _emailCtrl.text.trim(), _passwordCtrl.text,
       );
       if (profile == null) { ref.read(loginErrorProvider.notifier).state = 'Login failed. Check credentials.'; return; }
@@ -105,17 +105,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   String _friendlyError(String raw) {
+    final low = raw.toLowerCase();
+    if (low.contains('socketexception') ||
+        low.contains('retryablefetch') ||
+        low.contains('semaphore') ||
+        low.contains('failed host lookup') ||
+        low.contains('clientexception') ||
+        low.contains('failedtoopensocket') ||
+        low.contains('timed out')) {
+      return 'Network problem — couldn\'t reach the server. Check your internet connection and try again.';
+    }
     if (raw.contains('email_not_confirmed')) {
       return 'Email not confirmed. Please check your inbox and confirm your email address first.';
     }
     if (raw.contains('Invalid login credentials') || raw.contains('invalid_credentials')) {
-      return 'Incorrect email or password. Please try again.';
+      return 'Incorrect username/email or password. Please try again.';
     }
     if (raw.contains('too many requests') || raw.contains('over_email_send_rate_limit')) {
       return 'Too many attempts. Please wait a moment and try again.';
     }
     if (raw.contains('account_deactivated')) {
       return 'Your account has been deactivated. Please contact an administrator.';
+    }
+    if (raw.contains('account_expired')) {
+      return 'Your account has expired (accounts auto-deactivate 8 months after creation). Please contact an administrator.';
     }
     return 'Sign in failed. Please check your credentials.';
   }
@@ -165,7 +178,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             const Text('Sri Lanka Customs',
               style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
             const Gap(8),
-            const Text('SR Management System\nGrey Line 1',
+            const Text('SR Management System',
               textAlign: TextAlign.center,
               style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
             const Gap(28),
@@ -229,11 +242,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   TextFormField(
                     controller: _emailCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Email',
-                      prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
+                      labelText: 'Username or Email',
+                      prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),
                     ),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (v) => v == null || v.isEmpty ? 'Email required' : null,
+                    keyboardType: TextInputType.text,
+                    validator: (v) => v == null || v.isEmpty ? 'Username or email required' : null,
                   ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
                   const Gap(16),
                   TextFormField(
@@ -293,11 +306,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Divider(color: context.colors.borderColor.withOpacity(0.5)),
                   const Gap(16),
                   Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text("Don't have an account?", style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
-                    TextButton(
-                      onPressed: () => context.go('/signup'),
-                      child: Text('Create Account',
-                          style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600)),
+                    Icon(Icons.info_outline_rounded, size: 15, color: context.colors.textMuted),
+                    const Gap(6),
+                    Flexible(
+                      child: Text('Officer accounts are created by an administrator.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
                     ),
                   ])).animate().fadeIn(delay: 600.ms),
                 ],

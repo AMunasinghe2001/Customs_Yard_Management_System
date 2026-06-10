@@ -57,15 +57,47 @@ class AuthService {
       throw Exception('account_deactivated');
     }
 
+    if (profile.isExpired) {
+      await signOut();
+      throw Exception('account_expired');
+    }
+
     AppSession.setYard(profile.yard);
+  }
+
+  /// Retries [action] a few times on transient network failures
+  /// (socket timeouts, dropped Wi-Fi, retryable fetch errors). Real auth
+  /// errors (bad credentials, etc.) are NOT retried.
+  static Future<T> _withNetworkRetry<T>(Future<T> Function() action,
+      {int retries = 2}) async {
+    for (int attempt = 0;; attempt++) {
+      try {
+        return await action();
+      } on AuthApiException {
+        rethrow; // genuine auth error → don't retry
+      } catch (e) {
+        final s = e.toString().toLowerCase();
+        final transient = s.contains('retryablefetch') ||
+            s.contains('socketexception') ||
+            s.contains('clientexception') ||
+            s.contains('semaphore') ||
+            s.contains('failed host lookup') ||
+            s.contains('failedtoopensocket') ||
+            s.contains('timed out');
+        if (!transient || attempt >= retries) rethrow;
+        await Future.delayed(Duration(milliseconds: 700 * (attempt + 1)));
+      }
+    }
   }
 
   Future<ProfileModel?> signIn(String email, String password) async {
     try {
       print('DEBUG: AuthService.signIn attempting for: "$email"');
-      final response = await supabase.auth.signInWithPassword(
-        email: email.trim(),
-        password: password,
+      final response = await _withNetworkRetry(
+        () => supabase.auth.signInWithPassword(
+          email: email.trim(),
+          password: password,
+        ),
       );
       if (response.user == null) return null;
       final profileData = await supabase
@@ -78,6 +110,11 @@ class AuthService {
       if (!profile.isActive) {
         await signOut();
         throw Exception('account_deactivated');
+      }
+
+      if (profile.isExpired) {
+        await signOut();
+        throw Exception('account_expired');
       }
 
       AppSession.setYard(profile.yard);
@@ -113,6 +150,39 @@ class AuthService {
     } catch (e) {
       print('DEBUG: signIn unexpected error: $e');
       rethrow;
+    }
+  }
+
+  /// Sign in with either a username or an email address.
+  /// Resolves the identifier to the account email via the `email_for_login`
+  /// RPC, then signs in with the password.
+  Future<ProfileModel?> signInWithIdentifier(
+      String identifier, String password) async {
+    final id = identifier.trim();
+    String email = id;
+    if (!id.contains('@')) {
+      final resolved = await _withNetworkRetry(
+        () => supabase.rpc('email_for_login', params: {'identifier': id}),
+      );
+      if (resolved == null || (resolved is String && resolved.isEmpty)) {
+        throw Exception('invalid_credentials');
+      }
+      email = resolved as String;
+    }
+    return signIn(email, password);
+  }
+
+  /// Change the currently signed-in user's password.
+  Future<void> changePassword(String newPassword) async {
+    await supabase.auth.updateUser(UserAttributes(password: newPassword));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Changed password',
+        entityType: 'auth',
+        entityId: user.id,
+      );
     }
   }
 
@@ -1182,6 +1252,7 @@ class AdminService {
     required String fullName,
     required String badgeNumber,
     required String role,
+    String? username,
     String? mobileNumber,
     String? jobRole,
     String? department,
@@ -1197,6 +1268,7 @@ class AdminService {
         'full_name': fullName,
         'role': role,
         'badge_number': badgeNumber,
+        if (username != null) 'username': username,
         if (mobileNumber != null) 'mobile_number': mobileNumber,
         if (jobRole != null) 'job_role': jobRole,
         if (department != null) 'department': department,
@@ -1213,17 +1285,38 @@ class AdminService {
     required String fullName,
     required String badgeNumber,
     required String role,
+    String? username,
     String? mobileNumber,
     String? jobRole,
     String? department,
     String? yard,
     String? profileImageUrl,
   }) async {
-    final response = await supabase.auth.verifyOTP(
-      email: email,
-      token: otp,
-      type: OtpType.signup,
-    );
+    // `signInWithOtp` issues an email OTP code. Verify it as `email`; fall back
+    // to `signup`/`magiclink` so it works regardless of how the project's email
+    // template/OTP is configured.
+    AuthResponse response;
+    try {
+      response = await supabase.auth.verifyOTP(
+        email: email,
+        token: otp,
+        type: OtpType.email,
+      );
+    } on AuthException {
+      try {
+        response = await supabase.auth.verifyOTP(
+          email: email,
+          token: otp,
+          type: OtpType.signup,
+        );
+      } on AuthException {
+        response = await supabase.auth.verifyOTP(
+          email: email,
+          token: otp,
+          type: OtpType.magiclink,
+        );
+      }
+    }
 
     final user = response.user ?? supabase.auth.currentUser;
     if (user == null) {
@@ -1237,6 +1330,7 @@ class AdminService {
           'full_name': fullName,
           'role': role,
           'badge_number': badgeNumber,
+          if (username != null) 'username': username,
           if (mobileNumber != null) 'mobile_number': mobileNumber,
           if (jobRole != null) 'job_role': jobRole,
           if (department != null) 'department': department,
@@ -1253,6 +1347,7 @@ class AdminService {
         'badge_number': badgeNumber,
         'role': role,
         'is_active': true,
+        if (username != null) 'username': username,
         if (mobileNumber != null) 'mobile_number': mobileNumber,
         if (jobRole != null) 'job_role': jobRole,
         if (department != null) 'department': department,
@@ -1334,6 +1429,7 @@ class AdminService {
 
   Future<void> updateProfile(String id,
       {String? fullName,
+      String? username,
       String? badgeNumber,
       String? role,
       String? mobileNumber,
@@ -1343,6 +1439,7 @@ class AdminService {
       String? profileImageUrl}) async {
     final updates = <String, dynamic>{};
     if (fullName != null) updates['full_name'] = fullName;
+    if (username != null) updates['username'] = username.isEmpty ? null : username;
     if (badgeNumber != null) updates['badge_number'] = badgeNumber;
     if (role != null) updates['role'] = role;
     if (mobileNumber != null) updates['mobile_number'] = mobileNumber;
@@ -1363,6 +1460,71 @@ class AdminService {
         );
       }
     }
+  }
+
+  // ── Officer creation via Edge Function (service_role) ─────────
+  // The `admin-officers` Edge Function creates the auth user, generates a
+  // random username/password and emails the credentials, so the admin keeps
+  // their own session. See supabase/functions/admin-officers/index.ts.
+
+  Future<Map<String, dynamic>> _invokeAdminOfficers(
+      Map<String, dynamic> body) async {
+    try {
+      final res =
+          await supabase.functions.invoke('admin-officers', body: body);
+      final data = res.data;
+      if (data is Map && data['error'] != null) {
+        throw Exception(data['error'].toString());
+      }
+      return data is Map
+          ? data.cast<String, dynamic>()
+          : <String, dynamic>{};
+    } on FunctionException catch (e) {
+      final details = e.details;
+      if (details is Map && details['error'] != null) {
+        throw Exception(details['error'].toString());
+      }
+      throw Exception(details?.toString() ?? 'Request failed. Please try again.');
+    }
+  }
+
+  /// Step 1: email an OTP to the prospective officer for verification.
+  Future<void> requestOfficerOtp({
+    required String email,
+    required String fullName,
+    String? mobileNumber,
+    String? badgeNumber,
+  }) async {
+    await _invokeAdminOfficers({
+      'action': 'request-otp',
+      'email': email.trim(),
+      'fullName': fullName.trim(),
+      'mobileNumber': mobileNumber?.trim(),
+      'badgeNumber': badgeNumber?.trim(),
+    });
+  }
+
+  /// Step 2: verify the OTP, create the officer account and email credentials.
+  /// Returns the function payload, e.g. { ok, emailed, username, password? }.
+  Future<Map<String, dynamic>> verifyAndCreateOfficer({
+    required String email,
+    required String otp,
+  }) async {
+    final result = await _invokeAdminOfficers({
+      'action': 'verify-create',
+      'email': email.trim(),
+      'otp': otp.trim(),
+    });
+    final admin = supabase.auth.currentUser;
+    if (admin != null) {
+      await AuditLogService().recordLog(
+        userId: admin.id,
+        action: 'Created officer account (${result['username'] ?? email})',
+        entityType: 'profile',
+        entityId: 'new',
+      );
+    }
+    return result;
   }
 }
 

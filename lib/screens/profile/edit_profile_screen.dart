@@ -25,23 +25,31 @@ class EditProfileScreen extends ConsumerStatefulWidget {
 class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   TextEditingController? _nameCtrl;
+  TextEditingController? _usernameCtrl;
   TextEditingController? _salaryCtrl;
   TextEditingController? _mobileCtrl;
   TextEditingController? _jobRoleCtrl;
   TextEditingController? _profileImageCtrl;
+  TextEditingController? _newPasswordCtrl;
+  TextEditingController? _confirmPasswordCtrl;
   String _selectedYard = kDefaultYardCode;
   bool _isLoading = false;
+  bool _obscureNew = true;
+  bool _obscureConfirm = true;
 
   void _ensureControllers() {
     if (_nameCtrl != null) return;
     final profile = ref.read(currentProfileProvider);
     _nameCtrl = TextEditingController(text: profile?.fullName ?? '');
+    _usernameCtrl = TextEditingController(text: profile?.username ?? '');
     _salaryCtrl = TextEditingController(text: profile?.badgeNumber ?? '');
     _mobileCtrl = TextEditingController(text: profile?.mobileNumber ?? '');
     _jobRoleCtrl = TextEditingController(text: profile?.jobRole ?? '');
     _selectedYard = yardByCode(profile?.yard).code;
     _profileImageCtrl =
         TextEditingController(text: profile?.profileImageUrl ?? '');
+    _newPasswordCtrl = TextEditingController();
+    _confirmPasswordCtrl = TextEditingController();
   }
 
   @override
@@ -53,10 +61,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   @override
   void dispose() {
     _nameCtrl?.dispose();
+    _usernameCtrl?.dispose();
     _salaryCtrl?.dispose();
     _mobileCtrl?.dispose();
     _jobRoleCtrl?.dispose();
     _profileImageCtrl?.dispose();
+    _newPasswordCtrl?.dispose();
+    _confirmPasswordCtrl?.dispose();
     super.dispose();
   }
 
@@ -72,6 +83,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       await ref.read(adminServiceProvider).updateProfile(
             profile.id,
           fullName: _nameCtrl!.text.trim(),
+          username: _usernameCtrl!.text.trim(),
           badgeNumber: _salaryCtrl!.text.trim(),
           mobileNumber:
             _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
@@ -82,6 +94,14 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
             ? null
             : _profileImageCtrl!.text.trim(),
           );
+
+      // Optional password change
+      final newPass = _newPasswordCtrl!.text;
+      if (newPass.isNotEmpty) {
+        await ref.read(authServiceProvider).changePassword(newPass);
+        _newPasswordCtrl!.clear();
+        _confirmPasswordCtrl!.clear();
+      }
 
       // Refresh current profile provider
       final updatedProfile = await ref.read(authServiceProvider).getCurrentProfile();
@@ -96,18 +116,31 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       }
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: const Text('Profile updated successfully'),
+            content: Text(newPass.isNotEmpty
+                ? 'Profile and password updated successfully'
+                : 'Profile updated successfully'),
             backgroundColor: context.colors.successGreen));
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Failed to update profile: $e'),
+            content: Text(_friendlyProfileError(e)),
             backgroundColor: context.colors.dangerRed));
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  String _friendlyProfileError(Object e) {
+    final raw = e.toString().toLowerCase();
+    if (raw.contains('duplicate') ||
+        raw.contains('23505') ||
+        raw.contains('profiles_username_lower_idx') ||
+        raw.contains('unique')) {
+      return 'That username is already taken. Please choose another.';
+    }
+    return 'Failed to update profile: $e';
   }
 
   String _initials(String? name) {
@@ -130,11 +163,16 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     _ensureControllers();
     final profile = ref.read(currentProfileProvider);
     _nameCtrl!.text = profile?.fullName ?? '';
+    _usernameCtrl!.text = profile?.username ?? '';
     _salaryCtrl!.text = profile?.badgeNumber ?? '';
     _mobileCtrl!.text = profile?.mobileNumber ?? '';
     _jobRoleCtrl!.text = profile?.jobRole ?? '';
     _selectedYard = yardByCode(profile?.yard).code;
     _profileImageCtrl!.text = profile?.profileImageUrl ?? '';
+    _newPasswordCtrl!.clear();
+    _confirmPasswordCtrl!.clear();
+    _obscureNew = true;
+    _obscureConfirm = true;
 
     showDialog(
       context: context,
@@ -228,6 +266,25 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                       ),
                       const Gap(10),
                       TextFormField(
+                        controller: _usernameCtrl!,
+                        style: TextStyle(color: context.colors.textPrimary),
+                        decoration: const InputDecoration(
+                          labelText: 'Username',
+                          helperText: 'Used to sign in (email also works)',
+                          contentPadding:
+                              EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                        ),
+                        validator: (v) {
+                          final t = v?.trim() ?? '';
+                          if (t.isEmpty) return null; // optional
+                          if (t.length < 3) return 'Min 3 characters';
+                          if (t.contains('@')) return 'Username cannot contain @';
+                          if (t.contains(' ')) return 'No spaces allowed';
+                          return null;
+                        },
+                      ),
+                      const Gap(10),
+                      TextFormField(
                         controller: _salaryCtrl!,
                         style: TextStyle(color: context.colors.textPrimary),
                         decoration: const InputDecoration(
@@ -291,6 +348,76 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                             ),
                           ),
                         ],
+                      ),
+                      const Gap(10),
+                      const Divider(height: 28),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text('Change Password',
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      const Gap(2),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                            'Leave blank to keep your current password',
+                            style: TextStyle(
+                                color: context.colors.textMuted, fontSize: 11)),
+                      ),
+                      const Gap(10),
+                      TextFormField(
+                        controller: _newPasswordCtrl!,
+                        obscureText: _obscureNew,
+                        style: TextStyle(color: context.colors.textPrimary),
+                        decoration: InputDecoration(
+                          labelText: 'New Password',
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                                _obscureNew
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                color: context.colors.textMuted),
+                            onPressed: () =>
+                                setDlgState(() => _obscureNew = !_obscureNew),
+                          ),
+                        ),
+                        validator: (v) {
+                          if (v == null || v.isEmpty) return null; // optional
+                          if (v.length < 8) return 'Min 8 characters';
+                          return null;
+                        },
+                      ),
+                      const Gap(10),
+                      TextFormField(
+                        controller: _confirmPasswordCtrl!,
+                        obscureText: _obscureConfirm,
+                        style: TextStyle(color: context.colors.textPrimary),
+                        decoration: InputDecoration(
+                          labelText: 'Confirm New Password',
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                                _obscureConfirm
+                                    ? Icons.visibility_off
+                                    : Icons.visibility,
+                                color: context.colors.textMuted),
+                            onPressed: () => setDlgState(
+                                () => _obscureConfirm = !_obscureConfirm),
+                          ),
+                        ),
+                        validator: (v) {
+                          if (_newPasswordCtrl!.text.isEmpty) return null;
+                          if (v != _newPasswordCtrl!.text) {
+                            return 'Passwords do not match';
+                          }
+                          return null;
+                        },
                       ),
                       const Gap(10),
                       TextFormField(
@@ -403,6 +530,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               const Gap(24),
               _ProfileDetailsCard(
                 fullName: profile.fullName,
+                username: profile.username,
                 badge: profile.badgeNumber,
                 email: email,
                 role: profile.role,
@@ -554,6 +682,7 @@ class _ProfileHeroCard extends StatelessWidget {
 
 class _ProfileDetailsCard extends StatelessWidget {
   final String fullName;
+  final String? username;
   final String? badge;
   final String email;
   final String role;
@@ -564,6 +693,7 @@ class _ProfileDetailsCard extends StatelessWidget {
 
   const _ProfileDetailsCard({
     required this.fullName,
+    this.username,
     required this.badge,
     required this.email,
     required this.role,
@@ -599,6 +729,10 @@ class _ProfileDetailsCard extends StatelessWidget {
               label: 'Full Name',
               value: fullName,
               icon: Icons.person_outline_rounded),
+          _InfoRow(
+              label: 'Username',
+              value: username?.isNotEmpty == true ? username! : '—',
+              icon: Icons.alternate_email_rounded),
           _InfoRow(
               label: 'Salary Number',
               value: badge?.isNotEmpty == true ? badge! : '—',

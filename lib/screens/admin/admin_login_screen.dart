@@ -63,7 +63,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     setState(() { _isLoading = true; _error = null; });
     try {
-      final profile = await ref.read(authServiceProvider).signIn(
+      final profile = await ref.read(authServiceProvider).signInWithIdentifier(
         _emailCtrl.text.trim(), _passwordCtrl.text,
       );
       if (profile == null) { setState(() => _error = 'Login failed. Check credentials.'); return; }
@@ -110,17 +110,30 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   }
 
   String _friendlyError(String raw) {
+    final low = raw.toLowerCase();
+    if (low.contains('socketexception') ||
+        low.contains('retryablefetch') ||
+        low.contains('semaphore') ||
+        low.contains('failed host lookup') ||
+        low.contains('clientexception') ||
+        low.contains('failedtoopensocket') ||
+        low.contains('timed out')) {
+      return 'Network problem — couldn\'t reach the server. Check your internet connection (Wi-Fi/firewall) and try again.';
+    }
     if (raw.contains('email_not_confirmed')) {
       return 'Email not confirmed. Please check your inbox and confirm your email address first.';
     }
     if (raw.contains('Invalid login credentials') || raw.contains('invalid_credentials')) {
-      return 'Incorrect email or password. Please try again.';
+      return 'Incorrect username/email or password. Please try again.';
     }
     if (raw.contains('too many requests') || raw.contains('over_email_send_rate_limit')) {
       return 'Too many attempts. Please wait a moment and try again.';
     }
     if (raw.contains('account_deactivated')) {
       return 'Your account has been deactivated. Please contact another administrator.';
+    }
+    if (raw.contains('account_expired')) {
+      return 'Your account has expired (accounts auto-deactivate 8 months after creation). Please contact another administrator.';
     }
     // Surface the underlying error instead of a vague catch-all, so DB/RLS or
     // configuration problems are visible rather than looking like a bad password.
@@ -167,7 +180,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
             Text('Sri Lanka Customs',
               style: TextStyle(color: context.colors.primaryGold, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2),
             ).animate().slideY(begin: 0.5, duration: 500.ms).fadeIn(),
-            const Text('SR Management System\nGrey Line 1',
+            const Text('SR Management System',
               textAlign: TextAlign.center,
               style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2),
             ).animate().slideY(begin: 0.5, duration: 500.ms, delay: 100.ms).fadeIn(),
@@ -232,11 +245,11 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                   TextFormField(
                     controller: _emailCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Admin Email',
-                      prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
+                      labelText: 'Username or Email',
+                      prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),
                     ),
-                    keyboardType: TextInputType.emailAddress,
-                    validator: (v) => v == null || v.isEmpty ? 'Email required' : null,
+                    keyboardType: TextInputType.text,
+                    validator: (v) => v == null || v.isEmpty ? 'Username or email required' : null,
                   ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
                   const Gap(16),
                   TextFormField(

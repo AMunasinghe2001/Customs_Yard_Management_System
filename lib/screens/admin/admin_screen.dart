@@ -14,6 +14,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/styled_form_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 class AdminScreen extends ConsumerWidget {
@@ -145,10 +146,23 @@ class _OfficersTab extends ConsumerWidget {
                   color: context.colors.textPrimary,
                   fontSize: 24,
                   fontWeight: FontWeight.w700)),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: context.colors.primaryGold,
+              foregroundColor: context.colors.primaryNavy,
+            ),
+            icon: const Icon(Icons.person_add_rounded, size: 18),
+            label: const Text('Add Officer',
+                style: TextStyle(fontWeight: FontWeight.w600)),
+            onPressed: () => _showCreateOfficerDialog(context, ref),
+          ),
         ]),
         const Gap(16),
         Expanded(
           child: profiles.when(
+            // Keep the table visible while the realtime/heartbeat refresh
+            // re-fetches in the background (prevents the periodic flicker).
+            skipLoadingOnReload: true,
             loading: () => Center(
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
@@ -194,13 +208,13 @@ class _OfficersTab extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 100),
                     DataColumn2(
-                        label: Text('Active',
+                        label: Text('Status',
                             style: TextStyle(
                                 color: context.colors.primaryGold,
                                 fontWeight: FontWeight.w700,
                                 fontSize: 13)),
                         size: ColumnSize.S,
-                        fixedWidth: 100),
+                        fixedWidth: 130),
                   ],
                   rows: list
                       .map((p) => DataRow(cells: [
@@ -214,29 +228,7 @@ class _OfficersTab extends ConsumerWidget {
                                     color: context.colors.textMuted,
                                     fontSize: 13))),
                             DataCell(_RoleChip(role: p.role)),
-                            DataCell(_StatusToggle(
-                              isActive: p.isActive,
-                              onChanged: (v) async {
-                                final currentProfile =
-                                    ref.read(currentProfileProvider);
-                                if (v == false && currentProfile?.id == p.id) {
-                                  if (context.mounted) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                        const SnackBar(
-                                            content: Text(
-                                                'You cannot deactivate your own account!'),
-                                            backgroundColor: Colors.orange,
-                                            duration: Duration(seconds: 2)));
-                                  }
-                                  return;
-                                }
-                                await ref
-                                    .read(adminServiceProvider)
-                                    .toggleUserStatus(p.id, v);
-                                ref.invalidate(allProfilesProvider);
-                              },
-                              label: p.fullName,
-                            )),
+                            DataCell(_AccountStatusChip(profile: p)),
                           ]))
                       .toList(),
                 ),
@@ -248,6 +240,233 @@ class _OfficersTab extends ConsumerWidget {
           ),
         ),
       ]),
+    );
+  }
+
+  // ── Create Officer (OTP → auto username/password emailed) ──────────────
+  void _showCreateOfficerDialog(BuildContext context, WidgetRef ref) {
+    final firstC = TextEditingController();
+    final lastC = TextEditingController();
+    final salaryC = TextEditingController();
+    final emailC = TextEditingController();
+    final mobileC = TextEditingController();
+    final otpC = TextEditingController();
+    bool otpSent = false;
+    bool loading = false;
+    String? error;
+    String? info;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setState) {
+          Future<void> sendOtp() async {
+            final email = emailC.text.trim();
+            final first = firstC.text.trim();
+            final last = lastC.text.trim();
+            if (first.isEmpty || last.isEmpty) {
+              setState(() => error = 'First and last name are required.');
+              return;
+            }
+            if (email.isEmpty ||
+                !RegExp(r'^[\w.\-]+@([\w\-]+\.)+[\w\-]{2,}$').hasMatch(email)) {
+              setState(() => error = 'Please enter a valid email address.');
+              return;
+            }
+            setState(() {
+              loading = true;
+              error = null;
+              info = null;
+            });
+            try {
+              await ref.read(adminServiceProvider).requestOfficerOtp(
+                    email: email,
+                    fullName: '$first $last',
+                    mobileNumber: mobileC.text.trim(),
+                    badgeNumber: salaryC.text.trim(),
+                  );
+              setState(() {
+                otpSent = true;
+                info =
+                    'OTP sent to $email. Enter the code the officer received to finish.';
+              });
+            } catch (e) {
+              setState(() =>
+                  error = e.toString().replaceAll('Exception: ', ''));
+            } finally {
+              setState(() => loading = false);
+            }
+          }
+
+          Future<void> verifyCreate() async {
+            if (otpC.text.trim().isEmpty) {
+              setState(() => error = 'Enter the OTP code.');
+              return;
+            }
+            setState(() {
+              loading = true;
+              error = null;
+            });
+            try {
+              final res =
+                  await ref.read(adminServiceProvider).verifyAndCreateOfficer(
+                        email: emailC.text.trim(),
+                        otp: otpC.text.trim(),
+                      );
+              ref.invalidate(allProfilesProvider);
+              if (ctx.mounted) Navigator.pop(ctx);
+              final emailed = res['emailed'] == true;
+              if (emailed) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text(
+                        '✅ Officer created — username & password emailed to ${emailC.text.trim()}'),
+                    backgroundColor: context.colors.successGreen,
+                    duration: const Duration(seconds: 6),
+                  ));
+                }
+              } else {
+                // Email delivery failed — show credentials so the admin can
+                // hand them over manually.
+                if (context.mounted) {
+                  _showOfficerCredentialsFallback(
+                    context,
+                    res['username']?.toString() ?? '—',
+                    res['password']?.toString() ?? '—',
+                  );
+                }
+              }
+            } catch (e) {
+              setState(() =>
+                  error = e.toString().replaceAll('Exception: ', ''));
+            } finally {
+              setState(() => loading = false);
+            }
+          }
+
+          Widget banner(String text, Color color, IconData icon) => Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withOpacity(0.4)),
+                ),
+                child: Row(children: [
+                  Icon(icon, color: color, size: 18),
+                  const Gap(8),
+                  Expanded(
+                      child: Text(text,
+                          style: TextStyle(color: color, fontSize: 13))),
+                ]),
+              );
+
+          return StyledFormDialog(
+            label: 'Create Officer',
+            title: 'New Officer Account',
+            icon: Icons.person_add_rounded,
+            width: 480,
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              if (info != null)
+                banner(info!, context.colors.successGreen,
+                    Icons.check_circle_outline),
+              if (error != null)
+                banner(error!, context.colors.dangerRed, Icons.error_outline),
+              StyledFormSection(
+                title: 'Officer Details',
+                icon: Icons.badge_outlined,
+                children: [
+                  Row(children: [
+                    Expanded(
+                        child: TextField(
+                            controller: firstC,
+                            enabled: !otpSent,
+                            decoration: const InputDecoration(
+                                labelText: 'First Name *'))),
+                    const Gap(12),
+                    Expanded(
+                        child: TextField(
+                            controller: lastC,
+                            enabled: !otpSent,
+                            decoration: const InputDecoration(
+                                labelText: 'Last Name *'))),
+                  ]),
+                  TextField(
+                      controller: salaryC,
+                      enabled: !otpSent,
+                      decoration:
+                          const InputDecoration(labelText: 'Salary Number')),
+                  TextField(
+                      controller: emailC,
+                      enabled: !otpSent,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(labelText: 'Email *')),
+                  TextField(
+                      controller: mobileC,
+                      enabled: !otpSent,
+                      keyboardType: TextInputType.phone,
+                      decoration:
+                          const InputDecoration(labelText: 'Mobile Number')),
+                  if (otpSent)
+                    TextField(
+                        controller: otpC,
+                        keyboardType: TextInputType.number,
+                        autofocus: true,
+                        decoration: const InputDecoration(
+                            labelText: 'OTP Code *',
+                            helperText:
+                                'A username & password will be emailed on success')),
+                ],
+              ),
+            ]),
+            actions: [
+              if (otpSent && !loading)
+                TextButton(
+                    onPressed: () => setState(() {
+                          otpSent = false;
+                          otpC.clear();
+                          info = null;
+                          error = null;
+                        }),
+                    child: const Text('Back')),
+              TextButton(
+                  onPressed: loading ? null : () => Navigator.pop(ctx),
+                  child: const Text('Cancel')),
+              StyledDialogPrimaryButton(
+                labelText: otpSent ? 'Verify & Create' : 'Send OTP',
+                icon: otpSent ? Icons.how_to_reg_rounded : Icons.send_rounded,
+                loading: loading,
+                onPressed: otpSent ? verifyCreate : sendOtp,
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showOfficerCredentialsFallback(
+      BuildContext context, String username, String password) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Account created (email failed)'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          const Text(
+              'The account was created but the credentials email could not be sent. Please give these to the officer:'),
+          const Gap(16),
+          SelectableText('Username: $username',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+          SelectableText('Password: $password',
+              style: const TextStyle(fontWeight: FontWeight.w700)),
+        ]),
+        actions: [
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx), child: const Text('Done')),
+        ],
+      ),
     );
   }
 
@@ -463,6 +682,46 @@ class _RoleChip extends StatelessWidget {
                   : context.colors.accentLightBlue,
               fontSize: 11,
               fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+/// Read-only account status. Admins can no longer toggle this manually; an
+/// account is ACTIVE until 8 months after its creation date, then EXPIRED.
+class _AccountStatusChip extends StatelessWidget {
+  final ProfileModel profile;
+  const _AccountStatusChip({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final String label;
+    final Color color;
+    if (!profile.isActive) {
+      label = 'INACTIVE';
+      color = context.colors.dangerRed;
+    } else if (profile.isExpired) {
+      label = 'EXPIRED';
+      color = context.colors.dangerRed;
+    } else {
+      label = 'ACTIVE';
+      color = context.colors.successGreen;
+    }
+    final expiresStr = DateFormat('dd MMM yyyy').format(profile.expiresAt);
+    return Tooltip(
+      message: profile.isExpired
+          ? 'Auto-deactivated on $expiresStr (8 months after creation)'
+          : 'Auto-deactivates on $expiresStr (8 months after creation)',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+      ),
     );
   }
 }
@@ -696,52 +955,50 @@ class _WarehousesTab extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: const Text('Add New Warehouse'),
-          content: SizedBox(
-            width: 400,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameC,
-                    decoration:
-                        const InputDecoration(labelText: 'Warehouse Name *'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: codeC,
-                    decoration: const InputDecoration(
-                        labelText: 'Code (e.g., SR-W01) *'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: descC,
-                    decoration: const InputDecoration(labelText: 'Description'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: locC,
-                    decoration: const InputDecoration(labelText: 'Location'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: capC,
-                    keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Capacity (items)'),
-                  ),
-                ],
+        builder: (ctx, setState) => StyledFormDialog(
+          label: 'Warehouse',
+          title: 'Add New Warehouse',
+          icon: Icons.warehouse_rounded,
+          width: 460,
+          child: StyledFormSection(
+            title: 'Warehouse Details',
+            icon: Icons.warehouse_outlined,
+            children: [
+              TextField(
+                controller: nameC,
+                decoration:
+                    const InputDecoration(labelText: 'Warehouse Name *'),
               ),
-            ),
+              TextField(
+                controller: codeC,
+                decoration: const InputDecoration(
+                    labelText: 'Code (e.g., SR-W01) *'),
+              ),
+              TextField(
+                controller: descC,
+                decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              TextField(
+                controller: locC,
+                decoration: const InputDecoration(labelText: 'Location'),
+              ),
+              TextField(
+                controller: capC,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Capacity (items)'),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
+            StyledDialogPrimaryButton(
+              labelText: 'Create',
+              icon: Icons.add_rounded,
+              loading: loading,
               onPressed: loading
                   ? null
                   : () async {
@@ -793,16 +1050,6 @@ class _WarehousesTab extends ConsumerWidget {
                         setState(() => loading = false);
                       }
                     },
-              child: loading
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Create'),
             ),
           ],
         ),
@@ -825,51 +1072,49 @@ class _WarehousesTab extends ConsumerWidget {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setState) => AlertDialog(
-          title: Text('Edit: ${warehouse.name}'),
-          content: SizedBox(
-            width: 400,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextField(
-                    controller: nameC,
-                    decoration:
-                        const InputDecoration(labelText: 'Warehouse Name'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: codeC,
-                    decoration: const InputDecoration(labelText: 'Code'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: descC,
-                    decoration: const InputDecoration(labelText: 'Description'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: locC,
-                    decoration: const InputDecoration(labelText: 'Location'),
-                  ),
-                  const Gap(12),
-                  TextField(
-                    controller: capC,
-                    keyboardType: TextInputType.number,
-                    decoration:
-                        const InputDecoration(labelText: 'Capacity (items)'),
-                  ),
-                ],
+        builder: (ctx, setState) => StyledFormDialog(
+          label: 'Warehouse',
+          title: 'Edit Warehouse',
+          icon: Icons.warehouse_rounded,
+          width: 460,
+          child: StyledFormSection(
+            title: warehouse.name,
+            icon: Icons.warehouse_outlined,
+            children: [
+              TextField(
+                controller: nameC,
+                decoration:
+                    const InputDecoration(labelText: 'Warehouse Name'),
               ),
-            ),
+              TextField(
+                controller: codeC,
+                decoration: const InputDecoration(labelText: 'Code'),
+              ),
+              TextField(
+                controller: descC,
+                decoration: const InputDecoration(labelText: 'Description'),
+              ),
+              TextField(
+                controller: locC,
+                decoration: const InputDecoration(labelText: 'Location'),
+              ),
+              TextField(
+                controller: capC,
+                keyboardType: TextInputType.number,
+                decoration:
+                    const InputDecoration(labelText: 'Capacity (items)'),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
+            StyledDialogPrimaryButton(
+              labelText: 'Save',
+              icon: Icons.save_rounded,
+              loading: loading,
               onPressed: loading
                   ? null
                   : () async {
@@ -913,16 +1158,6 @@ class _WarehousesTab extends ConsumerWidget {
                         setState(() => loading = false);
                       }
                     },
-              child: loading
-                  ? SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Text('Save'),
             ),
           ],
         ),
@@ -1181,71 +1416,69 @@ class _CategoriesTab extends ConsumerWidget {
         context: context,
         builder: (ctx) => StatefulBuilder(builder: (ctx, setState) {
               final warehouses = ref.watch(warehousesProvider);
-              return AlertDialog(
-                title: const Text('Add Package Category'),
-                content: SizedBox(
-                  width: 600,
-                  child: SingleChildScrollView(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      TextField(
-                          controller: nameC,
-                          decoration: const InputDecoration(
-                              labelText: 'Category Name *')),
-                      const Gap(16),
-                      TextField(
-                          controller: descC,
-                          decoration:
-                              const InputDecoration(labelText: 'Description'),
-                          maxLines: 3),
-                      const Gap(16),
-                      warehouses.when(
-                        data: (list) => DropdownButtonFormField<String>(
-                          value: selectedWarehouseId,
-                          decoration: const InputDecoration(
-                              labelText: 'Target Warehouse (Auto-assign)',
-                              isDense: true),
-                          items: [
-                            const DropdownMenuItem(
-                                value: null,
-                                child: Text('None: Do not auto-assign')),
-                            ...list.map((w) => DropdownMenuItem(
-                                value: w.id, child: Text(w.name)))
-                          ],
-                          onChanged: (v) => setState(() {
-                            selectedWarehouseId = v;
-                            if (v == null) selectedZone = null;
-                          }),
-                        ),
-                        loading: () => const CircularProgressIndicator(),
-                        error: (e, _) => Text('Error: $e'),
+              return StyledFormDialog(
+                label: 'Item Category',
+                title: 'Add Package Category',
+                icon: Icons.category_rounded,
+                width: 560,
+                child: StyledFormSection(
+                  title: 'Category Details',
+                  icon: Icons.label_outline_rounded,
+                  gap: 16,
+                  children: [
+                    TextField(
+                        controller: nameC,
+                        decoration: const InputDecoration(
+                            labelText: 'Category Name *')),
+                    TextField(
+                        controller: descC,
+                        decoration:
+                            const InputDecoration(labelText: 'Description'),
+                        maxLines: 3),
+                    warehouses.when(
+                      data: (list) => DropdownButtonFormField<String>(
+                        value: selectedWarehouseId,
+                        decoration: const InputDecoration(
+                            labelText: 'Target Warehouse (Auto-assign)',
+                            isDense: true),
+                        items: [
+                          const DropdownMenuItem(
+                              value: null,
+                              child: Text('None: Do not auto-assign')),
+                          ...list.map((w) => DropdownMenuItem(
+                              value: w.id, child: Text(w.name)))
+                        ],
+                        onChanged: (v) => setState(() {
+                          selectedWarehouseId = v;
+                          if (v == null) selectedZone = null;
+                        }),
                       ),
-                      const Gap(16),
-                      if (selectedWarehouseId != null)
-                        DropdownButtonFormField<String>(
-                          value: selectedZone,
-                          decoration: const InputDecoration(
-                              labelText: 'Target Zone', isDense: true),
-                          items: [
-                            const DropdownMenuItem(
-                                value: null, child: Text('None')),
-                            ...availableZones.map((z) => DropdownMenuItem(
-                                value: z, child: Text('Zone $z')))
-                          ],
-                          onChanged: (v) => setState(() => selectedZone = v),
-                        ),
-                    ]),
-                  ),
+                      loading: () => const CircularProgressIndicator(),
+                      error: (e, _) => Text('Error: $e'),
+                    ),
+                    if (selectedWarehouseId != null)
+                      DropdownButtonFormField<String>(
+                        value: selectedZone,
+                        decoration: const InputDecoration(
+                            labelText: 'Target Zone', isDense: true),
+                        items: [
+                          const DropdownMenuItem(
+                              value: null, child: Text('None')),
+                          ...availableZones.map((z) => DropdownMenuItem(
+                              value: z, child: Text('Zone $z')))
+                        ],
+                        onChanged: (v) => setState(() => selectedZone = v),
+                      ),
+                  ],
                 ),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(ctx),
                       child:
                           const Text('Cancel', style: TextStyle(fontSize: 16))),
-                  ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 12),
-                      ),
+                  StyledDialogPrimaryButton(
+                      labelText: 'Add Category',
+                      icon: Icons.add_rounded,
                       onPressed: () async {
                         if (nameC.text.isEmpty) return;
 
@@ -1277,9 +1510,7 @@ class _CategoriesTab extends ConsumerWidget {
                             );
                         ref.invalidate(packageCategoriesProvider);
                         if (ctx.mounted) Navigator.pop(ctx);
-                      },
-                      child: const Text('Add Category',
-                          style: TextStyle(fontSize: 16))),
+                      }),
                 ],
               );
             }));
@@ -1298,75 +1529,73 @@ class _CategoriesTab extends ConsumerWidget {
         context: context,
         builder: (ctx) => StatefulBuilder(builder: (ctx, setState) {
               final warehouses = ref.watch(warehousesProvider);
-              return AlertDialog(
-                title: const Text('Edit Package Category'),
-                content: SizedBox(
-                  width: 600,
-                  child: SingleChildScrollView(
-                    child: Column(mainAxisSize: MainAxisSize.min, children: [
-                      TextField(
-                          controller: nameC,
-                          decoration: const InputDecoration(
-                              labelText: 'Category Name *')),
-                      const Gap(16),
-                      TextField(
-                          controller: descC,
-                          decoration:
-                              const InputDecoration(labelText: 'Description'),
-                          maxLines: 3),
-                      const Gap(16),
-                      warehouses.when(
-                        data: (list) => DropdownButtonFormField<String>(
-                          value: list.any((w) => w.id == selectedWarehouseId)
-                              ? selectedWarehouseId
-                              : null,
-                          decoration: const InputDecoration(
-                              labelText: 'Target Warehouse (Auto-assign)',
-                              isDense: true),
-                          items: [
-                            const DropdownMenuItem(
-                                value: null,
-                                child: Text('None: Do not auto-assign')),
-                            ...list.map((w) => DropdownMenuItem(
-                                value: w.id, child: Text(w.name)))
-                          ],
-                          onChanged: (v) => setState(() {
-                            selectedWarehouseId = v;
-                            if (v == null) selectedZone = null;
-                          }),
-                        ),
-                        loading: () => const CircularProgressIndicator(),
-                        error: (e, _) => Text('Error: $e'),
+              return StyledFormDialog(
+                label: 'Item Category',
+                title: 'Edit Package Category',
+                icon: Icons.category_rounded,
+                width: 560,
+                child: StyledFormSection(
+                  title: category.name,
+                  icon: Icons.label_outline_rounded,
+                  gap: 16,
+                  children: [
+                    TextField(
+                        controller: nameC,
+                        decoration: const InputDecoration(
+                            labelText: 'Category Name *')),
+                    TextField(
+                        controller: descC,
+                        decoration:
+                            const InputDecoration(labelText: 'Description'),
+                        maxLines: 3),
+                    warehouses.when(
+                      data: (list) => DropdownButtonFormField<String>(
+                        value: list.any((w) => w.id == selectedWarehouseId)
+                            ? selectedWarehouseId
+                            : null,
+                        decoration: const InputDecoration(
+                            labelText: 'Target Warehouse (Auto-assign)',
+                            isDense: true),
+                        items: [
+                          const DropdownMenuItem(
+                              value: null,
+                              child: Text('None: Do not auto-assign')),
+                          ...list.map((w) => DropdownMenuItem(
+                              value: w.id, child: Text(w.name)))
+                        ],
+                        onChanged: (v) => setState(() {
+                          selectedWarehouseId = v;
+                          if (v == null) selectedZone = null;
+                        }),
                       ),
-                      const Gap(16),
-                      if (selectedWarehouseId != null)
-                        DropdownButtonFormField<String>(
-                          value: availableZones.contains(selectedZone)
-                              ? selectedZone
-                              : null,
-                          decoration: const InputDecoration(
-                              labelText: 'Target Zone', isDense: true),
-                          items: [
-                            const DropdownMenuItem(
-                                value: null, child: Text('None')),
-                            ...availableZones.map((z) => DropdownMenuItem(
-                                value: z, child: Text('Zone $z')))
-                          ],
-                          onChanged: (v) => setState(() => selectedZone = v),
-                        ),
-                    ]),
-                  ),
+                      loading: () => const CircularProgressIndicator(),
+                      error: (e, _) => Text('Error: $e'),
+                    ),
+                    if (selectedWarehouseId != null)
+                      DropdownButtonFormField<String>(
+                        value: availableZones.contains(selectedZone)
+                            ? selectedZone
+                            : null,
+                        decoration: const InputDecoration(
+                            labelText: 'Target Zone', isDense: true),
+                        items: [
+                          const DropdownMenuItem(
+                              value: null, child: Text('None')),
+                          ...availableZones.map((z) => DropdownMenuItem(
+                              value: z, child: Text('Zone $z')))
+                        ],
+                        onChanged: (v) => setState(() => selectedZone = v),
+                      ),
+                  ],
                 ),
                 actions: [
                   TextButton(
                       onPressed: () => Navigator.pop(ctx),
                       child:
                           const Text('Cancel', style: TextStyle(fontSize: 16))),
-                  ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 24, vertical: 12),
-                      ),
+                  StyledDialogPrimaryButton(
+                      labelText: 'Save Changes',
+                      icon: Icons.save_rounded,
                       onPressed: () async {
                         if (nameC.text.isEmpty) return;
 
@@ -1404,9 +1633,7 @@ class _CategoriesTab extends ConsumerWidget {
                             );
                         ref.invalidate(packageCategoriesProvider);
                         if (ctx.mounted) Navigator.pop(ctx);
-                      },
-                      child: const Text('Save Changes',
-                          style: TextStyle(fontSize: 16))),
+                      }),
                 ],
               );
             }));
@@ -1904,52 +2131,44 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          title: const Text('Update Storage Charges'),
-          content: SizedBox(
-            width: 400,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Set the daily storage fee per package. This rate is used to calculate the total cost for held items.',
-                  style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
+        builder: (ctx, setDlgState) => StyledFormDialog(
+          label: 'Storage Rate',
+          title: 'Update Storage Charges',
+          icon: Icons.payments_rounded,
+          width: 440,
+          child: StyledFormSection(
+            title: 'Daily Charge',
+            icon: Icons.attach_money_rounded,
+            children: [
+              Text(
+                'Set the daily storage fee per package. This rate is used to calculate the total cost for held items.',
+                style: TextStyle(
+                    color: context.colors.textSecondary, fontSize: 13),
+              ),
+              TextField(
+                controller: _chargeCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                autofocus: true,
+                style: TextStyle(color: context.colors.textPrimary),
+                decoration: const InputDecoration(
+                  labelText: 'Daily Charge Rate (LKR)',
+                  prefixText: 'LKR ',
+                  helperText: 'e.g. 150.00',
                 ),
-                const Gap(24),
-                TextField(
-                  controller: _chargeCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  autofocus: true,
-                  style: TextStyle(color: context.colors.textPrimary),
-                  decoration: InputDecoration(
-                    labelText: 'Daily Charge Rate (LKR)',
-                    prefixText: 'LKR ',
-                    helperText: 'e.g. 150.00',
-                    filled: true,
-                    fillColor: context.colors.surfaceDark.withOpacity(0.5),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel'),
             ),
-            ElevatedButton(
-              onPressed: _loading ? null : _save,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: context.colors.primaryGold,
-                foregroundColor: context.colors.primaryNavy,
-              ),
-              child: _loading
-                  ? const SizedBox(
-                      height: 18,
-                      width: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                  : const Text('Update Rate'),
+            StyledDialogPrimaryButton(
+              labelText: 'Update Rate',
+              icon: Icons.save_rounded,
+              loading: _loading,
+              onPressed: _save,
             ),
           ],
         ),
@@ -2129,27 +2348,33 @@ class _HoldReasonsTab extends ConsumerWidget {
     final descC = TextEditingController();
     showDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
-              title: const Text('Add Hold Reason'),
-              content: SizedBox(
-                  width: 420,
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    TextField(
-                        controller: nameC,
-                        decoration:
-                            const InputDecoration(labelText: 'Reason Text *')),
-                    const Gap(12),
-                    TextField(
-                        controller: descC,
-                        decoration:
-                            const InputDecoration(labelText: 'Description'),
-                        maxLines: 2),
-                  ])),
+        builder: (ctx) => StyledFormDialog(
+              label: 'Hold Reason',
+              title: 'Add Hold Reason',
+              icon: Icons.list_alt_rounded,
+              width: 440,
+              child: StyledFormSection(
+                title: 'Reason Details',
+                icon: Icons.label_important_outline_rounded,
+                children: [
+                  TextField(
+                      controller: nameC,
+                      decoration:
+                          const InputDecoration(labelText: 'Reason Text *')),
+                  TextField(
+                      controller: descC,
+                      decoration:
+                          const InputDecoration(labelText: 'Description'),
+                      maxLines: 2),
+                ],
+              ),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Cancel')),
-                ElevatedButton(
+                StyledDialogPrimaryButton(
+                    labelText: 'Add Reason',
+                    icon: Icons.add_rounded,
                     onPressed: () async {
                       if (nameC.text.trim().isEmpty) return;
                       await ref.read(holdReasonServiceProvider).addReason(
@@ -2157,8 +2382,7 @@ class _HoldReasonsTab extends ConsumerWidget {
                           descC.text.trim().isEmpty ? null : descC.text.trim());
                       ref.invalidate(holdReasonsProvider);
                       if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: const Text('Add Reason')),
+                    }),
               ],
             ));
   }
@@ -2169,27 +2393,33 @@ class _HoldReasonsTab extends ConsumerWidget {
     final descC = TextEditingController(text: reason.description);
     showDialog(
         context: context,
-        builder: (ctx) => AlertDialog(
-              title: const Text('Edit Hold Reason'),
-              content: SizedBox(
-                  width: 420,
-                  child: Column(mainAxisSize: MainAxisSize.min, children: [
-                    TextField(
-                        controller: nameC,
-                        decoration:
-                            const InputDecoration(labelText: 'Reason Text *')),
-                    const Gap(12),
-                    TextField(
-                        controller: descC,
-                        decoration:
-                            const InputDecoration(labelText: 'Description'),
-                        maxLines: 2),
-                  ])),
+        builder: (ctx) => StyledFormDialog(
+              label: 'Hold Reason',
+              title: 'Edit Hold Reason',
+              icon: Icons.list_alt_rounded,
+              width: 440,
+              child: StyledFormSection(
+                title: 'Reason Details',
+                icon: Icons.label_important_outline_rounded,
+                children: [
+                  TextField(
+                      controller: nameC,
+                      decoration:
+                          const InputDecoration(labelText: 'Reason Text *')),
+                  TextField(
+                      controller: descC,
+                      decoration:
+                          const InputDecoration(labelText: 'Description'),
+                      maxLines: 2),
+                ],
+              ),
               actions: [
                 TextButton(
                     onPressed: () => Navigator.pop(ctx),
                     child: const Text('Cancel')),
-                ElevatedButton(
+                StyledDialogPrimaryButton(
+                    labelText: 'Save Changes',
+                    icon: Icons.save_rounded,
                     onPressed: () async {
                       if (nameC.text.trim().isEmpty) return;
                       await ref.read(holdReasonServiceProvider).updateReason(
@@ -2198,8 +2428,7 @@ class _HoldReasonsTab extends ConsumerWidget {
                           descC.text.trim().isEmpty ? null : descC.text.trim());
                       ref.invalidate(holdReasonsProvider);
                       if (ctx.mounted) Navigator.pop(ctx);
-                    },
-                    child: const Text('Save Changes')),
+                    }),
               ],
             ));
   }

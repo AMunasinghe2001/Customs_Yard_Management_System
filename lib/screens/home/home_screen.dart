@@ -49,7 +49,7 @@ class HomeScreen extends ConsumerWidget {
                   style: TextStyle(color: context.colors.customsBlue, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 1.2),
                 ).animate().slideY(begin: 0.4, duration: 500.ms, delay: 200.ms).fadeIn(),
                 const Gap(6),
-                Text('SR Management System - Grey Line 1',
+                Text('SR Management System',
                   style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
                 ).animate().slideY(begin: 0.4, duration: 500.ms, delay: 300.ms).fadeIn(),
                 const Gap(44),
@@ -61,10 +61,10 @@ class HomeScreen extends ConsumerWidget {
                     Flexible(child: _RoleCard(
                       icon: Icons.person_outline_rounded,
                       title: 'Officer',
-                      subtitle: 'Customs Officers\nLog in to your account',
+                      subtitle: 'Customs Officers\nAccounts are created by an admin',
                       accentColor: context.colors.accentLightBlue,
                       onLogin: (ctx) => ctx.go('/login'),
-                      onSignup: (ctx) => ctx.go('/signup'),
+                      showSignup: false,
                       delay: 500,
                     )),
                     const Gap(24),
@@ -107,12 +107,14 @@ class _RoleCard extends StatefulWidget {
   final String title, subtitle;
   final Color accentColor;
   final void Function(BuildContext) onLogin;
-  final void Function(BuildContext) onSignup;
+  final void Function(BuildContext)? onSignup;
+  final bool showSignup;
   final int delay;
 
   const _RoleCard({
     required this.icon, required this.title, required this.subtitle,
-    required this.accentColor, required this.onLogin, required this.onSignup, required this.delay,
+    required this.accentColor, required this.onLogin, this.onSignup,
+    this.showSignup = true, required this.delay,
   });
 
   @override
@@ -176,18 +178,20 @@ class _RoleCardState extends State<_RoleCard> {
               child: const Text('Sign In', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
             ),
           ),
-          const Gap(10),
-          SizedBox(width: double.infinity, height: 42,
-            child: OutlinedButton(
-              style: OutlinedButton.styleFrom(
-                foregroundColor: widget.accentColor,
-                side: BorderSide(color: widget.accentColor.withOpacity(0.5)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          if (widget.showSignup && widget.onSignup != null) ...[
+            const Gap(10),
+            SizedBox(width: double.infinity, height: 42,
+              child: OutlinedButton(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: widget.accentColor,
+                  side: BorderSide(color: widget.accentColor.withOpacity(0.5)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+                onPressed: () => widget.onSignup!(context),
+                child: const Text('Create Account', style: TextStyle(fontSize: 13)),
               ),
-              onPressed: () => widget.onSignup(context),
-              child: const Text('Create Account', style: TextStyle(fontSize: 13)),
             ),
-          ),
+          ],
         ]),
       ).animate().scale(
         begin: const Offset(0.92, 0.92),

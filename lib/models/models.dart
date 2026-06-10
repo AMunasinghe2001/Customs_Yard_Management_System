@@ -540,6 +540,7 @@ class WarehouseModel {
 class ProfileModel {
   final String id;
   final String fullName;
+  final String? username;
   final String? badgeNumber;
   final String? mobileNumber;
   final String? jobRole;
@@ -555,6 +556,7 @@ class ProfileModel {
   const ProfileModel({
     required this.id,
     required this.fullName,
+    this.username,
     this.badgeNumber,
     this.mobileNumber,
     this.jobRole,
@@ -572,6 +574,7 @@ class ProfileModel {
     return ProfileModel(
       id: json['id'] as String,
       fullName: json['full_name'] as String,
+      username: json['username'] as String?,
       badgeNumber: json['badge_number'] as String?,
       mobileNumber: json['mobile_number'] as String?,
       jobRole: json['job_role'] as String?,
@@ -590,10 +593,24 @@ class ProfileModel {
 
   bool get isAdmin => role == 'admin';
 
+  /// Accounts automatically deactivate 8 months after they were created.
+  /// (Applies to admins and officers alike.)
+  DateTime get expiresAt =>
+      DateTime(createdAt.year, createdAt.month + 8, createdAt.day,
+          createdAt.hour, createdAt.minute, createdAt.second);
+
+  /// True once the account is past its 8-month lifetime.
+  bool get isExpired => DateTime.now().isAfter(expiresAt);
+
+  /// Whether the account may currently sign in: explicitly active AND not
+  /// past its 8-month auto-deactivation window.
+  bool get isEffectivelyActive => isActive && !isExpired;
+
   ProfileModel copyWithOnline(bool online, DateTime? seenAt) {
     return ProfileModel(
       id: id,
       fullName: fullName,
+      username: username,
       badgeNumber: badgeNumber,
       mobileNumber: mobileNumber,
       jobRole: jobRole,

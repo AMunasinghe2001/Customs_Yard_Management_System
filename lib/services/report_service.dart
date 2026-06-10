@@ -901,7 +901,7 @@ class ReportService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Report validated by SR Management System (Grey Line 1)', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
+            pw.Text('Report validated by SR Management System', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
             pw.Text('$label $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColor.fromInt(0xFF0D47A1))),
           ],
         ),

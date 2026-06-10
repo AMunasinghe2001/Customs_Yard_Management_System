@@ -136,7 +136,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                           children: [
                             Text('SL Customs',
                                 style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
-                            Text('SR Management System\nGrey Line 1',
+                            Text('SR Management System',
                                 style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.2)),
                           ],
                         ),

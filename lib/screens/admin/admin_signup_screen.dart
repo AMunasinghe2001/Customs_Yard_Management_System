@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -21,6 +22,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _salaryCtrl = TextEditingController();
+  final _usernameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
@@ -31,56 +33,167 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
   bool _otpSent = false;
   String? _error, _success;
 
+  // ── OTP timer / resend throttling ──────────────────────────────
+  static const int _otpWindowSeconds = 120; // 2 minutes
+  static const int _maxResends = 2; // resend allowed twice
+  Timer? _countdownTimer;
+  Timer? _lockTimer;
+  int _secondsLeft = 0;
+  int _resendCount = 0;
+  DateTime? _resendLockUntil; // after 2 resends → locked for 2 hours
+
   @override
   void dispose() {
+    _countdownTimer?.cancel();
+    _lockTimer?.cancel();
     _firstNameCtrl.dispose(); _lastNameCtrl.dispose(); _salaryCtrl.dispose();
+    _usernameCtrl.dispose();
     _emailCtrl.dispose(); _passwordCtrl.dispose(); _confirmCtrl.dispose();
     _otpCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _createAccount() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() { _isLoading = true; _error = null; _success = null; });
-    try {
-      final fullName = '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}';
-      if (!_otpSent) {
-        await ref.read(adminServiceProvider).requestSignupOtp(
-          email: _emailCtrl.text.trim(),
-          fullName: fullName,
-          badgeNumber: _salaryCtrl.text.trim(),
-          role: 'admin',
-          yard: _selectedYard,
-        );
-        setState(() {
-          _otpSent = true;
-          _success = 'OTP sent to your email. Please enter the code to verify.';
-        });
-      } else {
-        await ref.read(adminServiceProvider).verifySignupOtp(
-          email: _emailCtrl.text.trim(),
-          otp: _otpCtrl.text.trim(),
-          password: _passwordCtrl.text,
-          fullName: fullName,
-          badgeNumber: _salaryCtrl.text.trim(),
-          role: 'admin',
-          yard: _selectedYard,
-        );
-        setState(() {
-          _success = 'Account verified! Redirecting to Sign In...';
-          _formKey.currentState?.reset();
-          _firstNameCtrl.clear(); _lastNameCtrl.clear(); _salaryCtrl.clear();
-          _emailCtrl.clear(); _passwordCtrl.clear(); _confirmCtrl.clear();
-          _otpCtrl.clear();
-          _otpSent = false;
-        });
-        await Future.delayed(const Duration(seconds: 2));
-        if (mounted) context.go('/admin/login');
+  bool get _resendLocked =>
+      _resendLockUntil != null && DateTime.now().isBefore(_resendLockUntil!);
+
+  bool get _canResend =>
+      _otpSent &&
+      !_isLoading &&
+      !_resendLocked &&
+      _secondsLeft == 0 &&
+      _resendCount < _maxResends;
+
+  String get _countdownText {
+    final m = (_secondsLeft ~/ 60).toString().padLeft(2, '0');
+    final s = (_secondsLeft % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  String _two(int v) => v.toString().padLeft(2, '0');
+
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+    setState(() => _secondsLeft = _otpWindowSeconds);
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) {
+        t.cancel();
+        return;
       }
+      if (_secondsLeft <= 1) {
+        t.cancel();
+        setState(() => _secondsLeft = 0);
+      } else {
+        setState(() => _secondsLeft--);
+      }
+    });
+  }
+
+  Future<void> _sendOtp({bool isResend = false}) async {
+    if (_resendLocked) {
+      setState(() => _error =
+          'Too many OTP requests. Please try again after 2 hours.');
+      return;
+    }
+    if (!isResend) {
+      if (!_formKey.currentState!.validate()) return;
+    } else if (!_canResend) {
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _success = null;
+    });
+    try {
+      final fullName =
+          '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}';
+      await ref.read(adminServiceProvider).requestSignupOtp(
+            email: _emailCtrl.text.trim(),
+            fullName: fullName,
+            badgeNumber: _salaryCtrl.text.trim(),
+            username: _usernameCtrl.text.trim().isEmpty
+                ? null
+                : _usernameCtrl.text.trim(),
+            role: 'admin',
+            yard: _selectedYard,
+          );
+      if (isResend) {
+        _resendCount++;
+        if (_resendCount >= _maxResends) {
+          _resendLockUntil = DateTime.now().add(const Duration(hours: 2));
+          _lockTimer?.cancel();
+          _lockTimer = Timer(const Duration(hours: 2), () {
+            if (mounted) {
+              setState(() {
+                _resendCount = 0;
+                _resendLockUntil = null;
+              });
+            }
+          });
+        }
+      }
+      setState(() {
+        _otpSent = true;
+        _success = isResend
+            ? 'A new code was sent to ${_emailCtrl.text.trim()}.'
+            : 'Code sent to ${_emailCtrl.text.trim()}.';
+      });
+      _startCountdown();
     } catch (e) {
-      final msg = e.toString();
-      setState(() => _error = _friendlyError(msg));
-    } finally { setState(() => _isLoading = false); }
+      setState(() => _error = _friendlyError(e.toString()));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _verifyAndCreate() async {
+    if (_otpCtrl.text.trim().isEmpty) {
+      setState(() => _error = 'Please enter the OTP code.');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _success = null;
+    });
+    try {
+      final fullName =
+          '${_firstNameCtrl.text.trim()} ${_lastNameCtrl.text.trim()}';
+      await ref.read(adminServiceProvider).verifySignupOtp(
+            email: _emailCtrl.text.trim(),
+            otp: _otpCtrl.text.trim(),
+            password: _passwordCtrl.text,
+            fullName: fullName,
+            badgeNumber: _salaryCtrl.text.trim(),
+            username: _usernameCtrl.text.trim().isEmpty
+                ? null
+                : _usernameCtrl.text.trim(),
+            role: 'admin',
+            yard: _selectedYard,
+          );
+      _countdownTimer?.cancel();
+      _lockTimer?.cancel();
+      setState(() {
+        _success = 'Account verified! Redirecting to Sign In...';
+        _otpSent = false;
+      });
+      await Future.delayed(const Duration(seconds: 2));
+      if (mounted) context.go('/admin/login');
+    } catch (e) {
+      setState(() => _error = _friendlyError(e.toString()));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _editDetails() {
+    _countdownTimer?.cancel();
+    setState(() {
+      _otpSent = false;
+      _otpCtrl.clear();
+      _error = null;
+      _success = null;
+    });
   }
 
   String _friendlyError(String raw) {
@@ -97,6 +210,38 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
       return 'Too many attempts. Please wait a moment and try again.';
     }
     return raw.replaceAll('Exception: ', '').replaceAll('AuthApiException(', '').replaceAll(')', '');
+  }
+
+  Widget _buildResendControl(BuildContext context) {
+    if (_resendLocked) {
+      final u = _resendLockUntil!;
+      return Text('Resend after ${_two(u.hour)}:${_two(u.minute)}',
+          style: TextStyle(
+              color: context.colors.dangerRed,
+              fontSize: 12,
+              fontWeight: FontWeight.w600));
+    }
+    if (_resendCount >= _maxResends) {
+      return Text('Resend limit reached',
+          style: TextStyle(color: context.colors.textMuted, fontSize: 12));
+    }
+    final remaining = _maxResends - _resendCount;
+    return TextButton(
+      onPressed: _canResend ? () => _sendOtp(isResend: true) : null,
+      style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          minimumSize: const Size(0, 0),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      child: Text(
+        _secondsLeft > 0 ? 'Resend code' : 'Resend code ($remaining left)',
+        style: TextStyle(
+          color:
+              _canResend ? context.colors.primaryGold : context.colors.textMuted,
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+        ),
+      ),
+    );
   }
 
   @override
@@ -119,7 +264,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
             const Gap(36),
             Text('Sri Lanka Customs',
               style: TextStyle(color: context.colors.primaryGold, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
-            const Text('SR Management System\nGrey Line 1',
+            const Text('SR Management System',
               textAlign: TextAlign.center,
               style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
             const Gap(28),
@@ -209,6 +354,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                   const Gap(20),
                 ],
 
+                if (!_otpSent) ...[
                 // First & Last Name
                 Row(children: [
                   Expanded(child: TextFormField(
@@ -236,6 +382,25 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                     prefixIcon: Icon(Icons.badge_outlined, color: context.colors.textMuted),
                   ),
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 240.ms).fadeIn(),
+                const Gap(14),
+
+                // Username — admin's login handle (can also log in with email)
+                TextFormField(
+                  controller: _usernameCtrl,
+                  decoration: InputDecoration(
+                    labelText: 'Username *',
+                    helperText: 'Used to sign in (email also works)',
+                    prefixIcon: Icon(Icons.alternate_email_rounded, color: context.colors.textMuted),
+                  ),
+                  validator: (v) {
+                    final t = v?.trim() ?? '';
+                    if (t.isEmpty) return 'Username required';
+                    if (t.length < 3) return 'Min 3 characters';
+                    if (t.contains('@')) return 'Username cannot contain @';
+                    if (t.contains(' ')) return 'No spaces allowed';
+                    return null;
+                  },
+                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 250.ms).fadeIn(),
                 const Gap(14),
 
                 // Yard selection — which yard this account belongs to
@@ -294,19 +459,6 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 360.ms).fadeIn(),
                 const Gap(28),
 
-                if (_otpSent) ...[
-                  TextFormField(
-                    controller: _otpCtrl,
-                    decoration: InputDecoration(
-                      labelText: 'OTP Code *',
-                      prefixIcon: Icon(Icons.verified_user_rounded, color: context.colors.textMuted),
-                    ),
-                    keyboardType: TextInputType.number,
-                    validator: (v) => v == null || v.isEmpty ? 'OTP required' : null,
-                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 380.ms).fadeIn(),
-                  const Gap(18),
-                ],
-
                 SizedBox(height: 52, child: ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: context.colors.primaryGold,
@@ -314,14 +466,101 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                   ),
                   icon: _isLoading
                       ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
-                      : const Icon(Icons.admin_panel_settings_rounded),
-                  label: Text(
-                      _isLoading
-                          ? 'Processing...'
-                          : (_otpSent ? 'Verify OTP & Create Account' : 'Send OTP'),
+                      : const Icon(Icons.mark_email_unread_rounded),
+                  label: Text(_isLoading ? 'Sending...' : 'Send OTP',
                       style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                  onPressed: _isLoading ? null : _createAccount,
+                  onPressed: _isLoading ? null : () => _sendOtp(),
                 )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
+                ],
+
+                // ── OTP verification step (shown on its own) ──────────
+                if (_otpSent) ...[
+                  Row(children: [
+                    Icon(Icons.mark_email_read_rounded,
+                        color: context.colors.primaryGold, size: 22),
+                    const Gap(10),
+                    Expanded(
+                      child: Text(
+                        'Enter the 6-digit code sent to\n${_emailCtrl.text.trim()}',
+                        style: TextStyle(
+                            color: context.colors.textSecondary, fontSize: 13),
+                      ),
+                    ),
+                  ]).animate().fadeIn(duration: 300.ms),
+                  const Gap(20),
+                  TextFormField(
+                    controller: _otpCtrl,
+                    autofocus: true,
+                    keyboardType: TextInputType.number,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 22,
+                        letterSpacing: 8,
+                        fontWeight: FontWeight.w700),
+                    decoration: InputDecoration(
+                      labelText: 'OTP Code *',
+                      prefixIcon: Icon(Icons.verified_user_rounded,
+                          color: context.colors.textMuted),
+                    ),
+                    onFieldSubmitted: (_) =>
+                        _isLoading ? null : _verifyAndCreate(),
+                  ),
+                  const Gap(14),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.timer_outlined,
+                            size: 16,
+                            color: _secondsLeft > 0
+                                ? context.colors.textMuted
+                                : context.colors.dangerRed),
+                        const Gap(6),
+                        Text(
+                          _secondsLeft > 0
+                              ? 'Code expires in $_countdownText'
+                              : 'Code expired',
+                          style: TextStyle(
+                            color: _secondsLeft > 0
+                                ? context.colors.textSecondary
+                                : context.colors.dangerRed,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ]),
+                      _buildResendControl(context),
+                    ],
+                  ),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _isLoading ? null : _editDetails,
+                      icon: Icon(Icons.edit_outlined,
+                          size: 15, color: context.colors.textMuted),
+                      label: Text('Change details',
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 13)),
+                    ),
+                  ),
+                  const Gap(10),
+                  SizedBox(height: 52, child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: context.colors.primaryGold,
+                      foregroundColor: context.colors.primaryNavy,
+                    ),
+                    icon: _isLoading
+                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
+                        : const Icon(Icons.how_to_reg_rounded),
+                    label: Text(
+                        _isLoading
+                            ? 'Processing...'
+                            : 'Verify OTP & Create Account',
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700)),
+                    onPressed: _isLoading ? null : _verifyAndCreate,
+                  )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 200.ms).fadeIn(),
+                ],
               ],
             )),
           ),

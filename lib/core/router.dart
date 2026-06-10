@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../screens/home/home_screen.dart';
 import '../screens/login/login_screen.dart';
-import '../screens/login/officer_signup_screen.dart';
 import '../screens/admin/admin_login_screen.dart';
 import '../screens/admin/admin_signup_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
@@ -30,7 +29,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) async {
       final user = supabase.auth.currentUser;
       final isLoggedIn = user != null;
-      final publicRoutes = ['/', '/login', '/signup', '/admin/login', '/admin/signup'];
+      final publicRoutes = ['/', '/login', '/admin/login', '/admin/signup'];
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
       
       if (isLoggedIn) {
@@ -52,7 +51,6 @@ final routerProvider = Provider<GoRouter>((ref) {
     routes: [
       GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-      GoRoute(path: '/signup', builder: (_, __) => const OfficerSignupScreen()),
       GoRoute(path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
       GoRoute(path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),
       GoRoute(path: '/dashboard', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DashboardScreen())),
