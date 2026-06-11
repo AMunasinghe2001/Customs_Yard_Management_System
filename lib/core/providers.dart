@@ -301,11 +301,51 @@ final disposalSoldPackagesProvider =
   return ref.read(disposalServiceProvider).getSoldPackages(yard: yard);
 });
 
+final disposalForfeitedPackagesProvider =
+    FutureProvider<List<ForfeitedPackageModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  final yard = ref.watch(disposalSelectedYardProvider);
+  return ref.read(disposalServiceProvider).getForfeitedPackages(yard: yard);
+});
+
 final tenderSalesRefreshProvider =
     StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
 final tenderSalesProvider = FutureProvider<List<TenderSaleModel>>((ref) async {
   ref.watch(tenderSalesRefreshProvider);
   return ref.read(disposalServiceProvider).getTenderSales();
+});
+
+// ── Disposal Requests (Yard → Central Disposal) ────────────────
+// Refresh trigger fires after a yard submits a request and is watched by both
+// the yard-side requestable list and the disposal-side request feed.
+final disposalRequestsRefreshProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+
+// Yard-side: forfeited packages (appeal window passed) not yet requested.
+final requestableForfeitedPackagesProvider =
+    FutureProvider<List<ForfeitedPackageModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsRefreshProvider);
+  return ref.read(forfeitedPackageServiceProvider).getRequestableExpiredPackages();
+});
+
+// Yard-side request form selection: forfeited_package_id → 'destruction' | 'sale'.
+final selectedRequestDispositionsProvider =
+    StateProvider<Map<String, String>>((ref) => {});
+
+// Disposal-side: every yard's submitted requests (cross-yard via RLS).
+final disposalRequestsProvider =
+    FutureProvider<List<DisposalRequestModel>>((ref) async {
+  ref.watch(disposalRequestsRefreshProvider);
+  return ref.read(disposalServiceProvider).getDisposalRequests();
+});
+
+// Disposal-side: "sale"-tagged request items available to add to a tender sale.
+final saleRequestItemsProvider =
+    FutureProvider<List<DisposalRequestItemModel>>((ref) async {
+  ref.watch(disposalRequestsRefreshProvider);
+  ref.watch(tenderSalesRefreshProvider);
+  return ref.read(disposalServiceProvider).getSaleRequestItems();
 });
 
 // ── Admin Dashboard Providers ──────────────────────────────────

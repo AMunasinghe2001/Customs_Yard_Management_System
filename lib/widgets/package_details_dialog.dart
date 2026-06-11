@@ -1713,6 +1713,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                             ],
                           ),
                         ),
+                      if (p.status?.toLowerCase() == 'sold' || p.items.any((i) => i.status?.toLowerCase() == 'sold') || widget.highlightEntry?.returnNotes?.contains('SOLD') == true)
+                        _SaleFinancialsSection(package: p),
                     ],
                   ),
                 ),
@@ -2407,6 +2409,96 @@ class _SystemEntrySection extends StatelessWidget {
       ),
     ).animate().slideY(
         delay: Duration(milliseconds: delay), duration: 300.ms, begin: 0.1);
+  }
+}
+
+class _SaleFinancialsSection extends ConsumerStatefulWidget {
+  final PackageModel package;
+  const _SaleFinancialsSection({required this.package});
+  @override
+  ConsumerState<_SaleFinancialsSection> createState() => _SaleFinancialsSectionState();
+}
+
+class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> {
+  TenderSaleItemModel? _saleItem;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    try {
+      final item = await ref
+          .read(disposalServiceProvider)
+          .getTenderSaleItemForPackage(widget.package.id);
+      if (mounted) setState(() => _saleItem = item);
+    } catch (_) {
+      if (mounted) setState(() => _saleItem = null);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const material.Center(
+        child: material.Padding(
+          padding: EdgeInsets.all(16),
+          child: material.CircularProgressIndicator()
+        )
+      );
+    }
+    if (_saleItem == null) return const material.SizedBox.shrink();
+
+    double taxSum = 0;
+    for(var t in _saleItem!.appliedTaxes) {
+      taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
+    }
+
+    return _DetailSection(
+      title: 'Sale & Financial Information',
+      icon: Icons.sell_rounded,
+      delay: 650,
+      child: material.Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.colors.surfaceDark,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.colors.borderColor),
+        ),
+        child: Column(
+          children: [
+            _DetailItem(
+              icon: Icons.payments_rounded,
+              label: 'Sold Price (Rs)',
+              value: _saleItem!.soldPrice.toStringAsFixed(2),
+            ),
+            if (_saleItem!.appliedTaxes.isNotEmpty)
+              ..._saleItem!.appliedTaxes.map((t) => _DetailItem(
+                icon: Icons.receipt_rounded,
+                label: '${t['name']} (${t['percentage']}%)',
+                value: ((t['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2),
+              )),
+            _DetailItem(
+              icon: Icons.account_balance_wallet_rounded,
+              label: 'Total Sale Value (Inc. Taxes)',
+              value: (_saleItem!.soldPrice + taxSum).toStringAsFixed(2),
+              valueColor: context.colors.primaryGold,
+            ),
+            _DetailItem(
+              icon: Icons.local_shipping_rounded,
+              label: 'Delivery Status',
+              value: _saleItem!.isDelivered ? 'Delivered' : 'Pending',
+              valueColor: _saleItem!.isDelivered ? context.colors.successGreen : context.colors.dangerRed,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

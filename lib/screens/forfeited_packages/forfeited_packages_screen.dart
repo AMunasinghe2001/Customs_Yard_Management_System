@@ -12,7 +12,8 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
-import 'tender_placement_dialog.dart';
+import '../../widgets/package_details_dialog.dart';
+import 'disposal_request_dialog.dart';
 
 class _StatChip extends StatelessWidget {
   final String label;
@@ -150,6 +151,8 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
   @override
   Widget build(BuildContext context) {
     final forfeitedAsync = ref.watch(forfeitedPackagesProvider);
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        {DateTime(2020, 1, 1): 50.0};
 
     return AppShell(
       currentRoute: '/forfeited-packages',
@@ -195,8 +198,8 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                             _StatChip(label: 'Expired', value: expiredCount.toString(), color: context.colors.dangerRed).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
                             const Gap(16),
                             ElevatedButton.icon(
-                              icon: const Icon(Icons.gavel_rounded, size: 16),
-                              label: const Text('Place Tender'),
+                              icon: const Icon(Icons.local_shipping_rounded, size: 16),
+                              label: const Text('Send Disposal Request'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: expiredCount > 0 ? context.colors.primaryGold : context.colors.textMuted.withOpacity(0.2),
                                 foregroundColor: expiredCount > 0 ? Colors.white : context.colors.textMuted,
@@ -207,9 +210,8 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                               onPressed: expiredCount > 0
                                   ? () => showDialog(
                                         context: context,
-                                        builder: (ctx) => TenderPlacementDialog(
-                                          ref: ref,
-                                          onTenderCreated: () => ref.invalidate(forfeitedPackagesProvider),
+                                        builder: (ctx) => DisposalRequestDialog(
+                                          onSubmitted: () => ref.invalidate(forfeitedPackagesProvider),
                                         ),
                                       )
                                   : null,
@@ -373,6 +375,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                             DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.M),
                             DataColumn2(label: Text('Days Remaining'), size: ColumnSize.S),
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
+                            DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                           ],
                           rows: rows.map((row) {
                             final pkg = row.forfeited;
@@ -419,6 +422,25 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
+                                  ),
+                                )),
+                                DataCell(Center(
+                                  child: IconButton(
+                                    icon: Icon(Icons.info_outline_rounded,
+                                        color: context.colors.accentLightBlue,
+                                        size: 18),
+                                    tooltip: 'View details',
+                                    onPressed: pkg.packageDetails == null
+                                        ? null
+                                        : () => showDialog(
+                                              context: context,
+                                              builder: (_) =>
+                                                  PackageDetailsDialog(
+                                                package: pkg.packageDetails!,
+                                                storageRate: storageRate,
+                                                useLegacySummary: true,
+                                              ),
+                                            ),
                                   ),
                                 )),
                               ],

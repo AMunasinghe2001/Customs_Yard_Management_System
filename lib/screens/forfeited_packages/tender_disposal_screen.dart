@@ -791,6 +791,7 @@ class _DisposalTypeBadge extends StatelessWidget {
     final (label, color) = switch (type) {
       'sold' => ('Sold', context.colors.successGreen),
       're_export' => ('Re-export', context.colors.accentLightBlue),
+      'release' => ('Released', context.colors.heldOrange),
       'govt_use' => ('Govt. Use', context.colors.primaryGold),
       'destroy' => ('Destroy', context.colors.dangerRed),
       'other' => ('Other', context.colors.textSecondary),
@@ -840,6 +841,8 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
     ('sold', 'Sold', Icons.sell_rounded, 'Goods sold / disposed by sale.'),
     ('re_export', 'Re-export', Icons.flight_takeoff_rounded,
         'Goods sent back to country of origin.'),
+    ('release', 'Release', Icons.lock_open_rounded,
+        'Goods released back to the owner / consignee.'),
     ('govt_use', 'Government Use', Icons.account_balance_rounded,
         'Goods transferred for government use.'),
     ('destroy', 'Destroy', Icons.delete_forever_rounded,
@@ -847,6 +850,11 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
     ('other', 'Other', Icons.more_horiz_rounded,
         'Custom disposal outcome.'),
   ];
+
+  // Outcomes a yard admin may NOT record here — they are handled centrally by
+  // the Central Disposal Directorate (Sold via Tender Sale; Destroy / Govt Use
+  // via the directorate). Shown disabled so the reason is visible.
+  static const Set<String> _restrictedTypes = {'sold', 'govt_use', 'destroy'};
 
   @override
   void initState() {
@@ -871,6 +879,14 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
     if (_selectedDisposalType == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select a disposal type')),
+      );
+      return;
+    }
+    if (_restrictedTypes.contains(_selectedDisposalType)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Sold, Destroy and Government Use are handled by the Central Disposal Directorate.')),
       );
       return;
     }
@@ -1060,70 +1076,88 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
                         Column(
                           children: _disposalTypes.map((entry) {
                             final (value, label, icon, description) = entry;
-                            final isSelected = _selectedDisposalType == value;
+                            final restricted = _restrictedTypes.contains(value);
+                            final isSelected =
+                                !restricted && _selectedDisposalType == value;
                             final color = _disposalTypeColor(context, value);
-                            return Card(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: isSelected
-                                      ? color.withOpacity(0.6)
-                                      : color.withOpacity(0.2),
-                                  width: isSelected ? 1.5 : 1,
+                            return Opacity(
+                              opacity: restricted ? 0.5 : 1,
+                              child: Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: isSelected
+                                        ? color.withOpacity(0.6)
+                                        : color.withOpacity(0.2),
+                                    width: isSelected ? 1.5 : 1,
+                                  ),
                                 ),
-                              ),
-                              color: isSelected
-                                  ? color.withOpacity(0.1)
-                                  : color.withOpacity(0.04),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: () => setState(
-                                    () => _selectedDisposalType = value),
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 12),
-                                  child: Row(children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(8),
-                                      decoration: BoxDecoration(
-                                        color: color.withOpacity(0.12),
-                                        borderRadius: BorderRadius.circular(8),
+                                color: isSelected
+                                    ? color.withOpacity(0.1)
+                                    : color.withOpacity(0.04),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: restricted
+                                      ? null
+                                      : () => setState(
+                                          () => _selectedDisposalType = value),
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    child: Row(children: [
+                                      Container(
+                                        padding: const EdgeInsets.all(8),
+                                        decoration: BoxDecoration(
+                                          color: color.withOpacity(0.12),
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                        ),
+                                        child:
+                                            Icon(icon, color: color, size: 20),
                                       ),
-                                      child:
-                                          Icon(icon, color: color, size: 20),
-                                    ),
-                                    const Gap(14),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(label,
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 14,
-                                                  color: color)),
-                                          const Gap(2),
-                                          Text(description,
-                                              style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: context
-                                                      .colors.textMuted)),
-                                        ],
+                                      const Gap(14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(label,
+                                                style: TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    fontSize: 14,
+                                                    color: color)),
+                                            const Gap(2),
+                                            Text(
+                                                restricted
+                                                    ? 'Handled by the Central Disposal Directorate'
+                                                    : description,
+                                                style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontStyle: restricted
+                                                        ? FontStyle.italic
+                                                        : FontStyle.normal,
+                                                    color: context
+                                                        .colors.textMuted)),
+                                          ],
+                                        ),
                                       ),
-                                    ),
-                                    Icon(
-                                      isSelected
-                                          ? Icons.check_circle_rounded
-                                          : Icons.chevron_right_rounded,
-                                      color: isSelected
-                                          ? color
-                                          : color.withOpacity(0.6),
-                                      size: 20,
-                                    ),
-                                  ]),
+                                      Icon(
+                                        restricted
+                                            ? Icons.lock_outline_rounded
+                                            : (isSelected
+                                                ? Icons.check_circle_rounded
+                                                : Icons.chevron_right_rounded),
+                                        color: restricted
+                                            ? context.colors.textMuted
+                                            : (isSelected
+                                                ? color
+                                                : color.withOpacity(0.6)),
+                                        size: 20,
+                                      ),
+                                    ]),
+                                  ),
                                 ),
                               ),
                             ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.05);
@@ -1308,6 +1342,7 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
     return switch (type) {
       'sold' => context.colors.successGreen,
       're_export' => context.colors.accentLightBlue,
+      'release' => context.colors.heldOrange,
       'govt_use' => context.colors.primaryGold,
       'destroy' => context.colors.dangerRed,
       _ => context.colors.textSecondary,

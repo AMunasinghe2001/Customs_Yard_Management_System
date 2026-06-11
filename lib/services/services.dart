@@ -1928,6 +1928,78 @@ class ForfeitedPackageService {
       );
     }
   }
+
+  /// Forfeited packages whose 30-day appeal window has passed and that are
+  /// not yet part of a disposal request — i.e. items a yard can request the
+  /// Central Disposal Directorate to dispose of. RLS keeps this to the
+  /// caller's own yard.
+  Future<List<ForfeitedPackageModel>> getRequestableExpiredPackages() async {
+    // Already-requested forfeited package ids (this yard, via RLS).
+    final requested = await AuthService._withNetworkRetry(() =>
+        supabase.from('disposal_request_items').select('forfeited_package_id'));
+    final requestedIds = (requested as List)
+        .map((e) => e['forfeited_package_id'].toString())
+        .toSet();
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .lt('appeal_deadline', DateTime.now().toIso8601String())
+        .order('appeal_deadline', ascending: true));
+
+    return (data as List)
+        .where((e) => !requestedIds.contains(e['id']))
+        .map((e) => ForfeitedPackageModel.fromJson(e))
+        .toList();
+  }
+
+  /// Submit a disposal request for the current yard. [dispositions] maps a
+  /// forfeited_package_id to either 'destruction' or 'sale'.
+  Future<void> createDisposalRequest({
+    required DateTime requestDate,
+    required Map<String, String> dispositions,
+  }) async {
+    if (dispositions.isEmpty) {
+      throw Exception('Select at least one package');
+    }
+    final user = supabase.auth.currentUser;
+
+    final header = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_requests')
+        .insert({
+          'yard': AppSession.currentYard,
+          'request_date': requestDate.toIso8601String().substring(0, 10),
+          'created_by': user?.id,
+        })
+        .select('id')
+        .single());
+
+    final requestId = header['id'] as String;
+
+    final items = dispositions.entries
+        .map((e) => {
+              'request_id': requestId,
+              'forfeited_package_id': e.key,
+              'disposition': e.value,
+            })
+        .toList();
+    await AuthService._withNetworkRetry(
+        () => supabase.from('disposal_request_items').insert(items));
+
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Submitted disposal request',
+        entityType: 'disposal_request',
+        entityId: requestId,
+        details: {
+          'yard': AppSession.currentYard,
+          'package_count': dispositions.length,
+        },
+      );
+    }
+  }
 }
 
 // ── Tenders Service ────────────────────────────────────────────
@@ -2045,14 +2117,70 @@ class DisposalService {
     return PackageService().getAllPackages(yard: yard);
   }
 
-  Future<List<TenderSaleModel>> getTenderSales() async {
+  /// Forfeited packages for a specific yard. Disposal users have cross-yard
+  /// read access via the `disposal_read_all` RLS policy on forfeited_packages.
+  Future<List<ForfeitedPackageModel>> getForfeitedPackages(
+      {required String yard}) async {
     final data = await supabase
+        .from('forfeited_packages')
+        .select('*, packages(*, package_items(*))')
+        .eq('yard', yard)
+        .order('appeal_deadline', ascending: true);
+    return (data as List)
+        .map((e) => ForfeitedPackageModel.fromJson(e))
+        .toList();
+  }
+
+  Future<List<TenderSaleModel>> getTenderSales() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sales')
-        .select('*, profiles!created_by(full_name)')
-        .order('created_at', ascending: false);
+        .select(
+            '*, profiles!created_by(full_name), tender_sale_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+        .order('created_at', ascending: false));
     return (data as List).map((e) => TenderSaleModel.fromJson(e)).toList();
   }
 
+  /// "Sale"-tagged disposal-request items that are not yet in a tender sale —
+  /// the pool the Tender Sale form can pick from. Cross-yard via RLS; each
+  /// carries the forfeited package (incl. yard, items, warehouse location).
+  Future<List<DisposalRequestItemModel>> getSaleRequestItems() async {
+    final inSale = await AuthService._withNetworkRetry(
+        () => supabase.from('tender_sale_items').select('forfeited_package_id'));
+    final usedIds = (inSale as List)
+        .map((e) => e['forfeited_package_id'].toString())
+        .toSet();
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_request_items')
+        .select(
+            '*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+        .eq('disposition', 'sale'));
+
+    final items = (data as List)
+        .map((e) => DisposalRequestItemModel.fromJson(e))
+        .where((i) => !usedIds.contains(i.forfeitedPackageId))
+        .toList();
+
+    // De-duplicate by forfeited package (a package could be requested twice).
+    final seen = <String>{};
+    return items.where((i) => seen.add(i.forfeitedPackageId)).toList();
+  }
+
+  /// All yards' disposal requests (cross-yard via RLS), newest first, each with
+  /// its line items + the underlying forfeited package detail for display.
+  Future<List<DisposalRequestModel>> getDisposalRequests() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_requests')
+        .select(
+            '*, profiles!created_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*))))')
+        .order('created_at', ascending: false));
+    return (data as List)
+        .map((e) => DisposalRequestModel.fromJson(e))
+        .toList();
+  }
+
+  /// Create a tender sale. [packageYards] maps each selected forfeited-package
+  /// id → its yard; one `tender_sale_items` row is created per entry.
   Future<void> createTenderSale({
     String? saleNumber,
     DateTime? saleDate,
@@ -2060,27 +2188,137 @@ class DisposalService {
     int? year,
     String? tenderType,
     String? yard,
+    Map<String, String> packageYards = const {},
   }) async {
     final user = supabase.auth.currentUser;
-    await supabase.from('tender_sales').insert({
-      'sale_number': saleNumber,
-      'sale_date': saleDate == null
-          ? null
-          : saleDate.toIso8601String().substring(0, 10),
-      'serial': serial,
-      'year': year,
-      'tender_type': tenderType,
-      'yard': yard,
-      'created_by': user?.id,
-    });
+    final sale = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sales')
+        .insert({
+          'sale_number': saleNumber,
+          'sale_date': saleDate == null
+              ? null
+              : saleDate.toIso8601String().substring(0, 10),
+          'serial': serial,
+          'year': year,
+          'tender_type': tenderType,
+          'yard': yard,
+          'created_by': user?.id,
+        })
+        .select('id')
+        .single());
+
+    final saleId = sale['id'] as String;
+
+    if (packageYards.isNotEmpty) {
+      final rows = packageYards.entries
+          .map((e) => {
+                'tender_sale_id': saleId,
+                'forfeited_package_id': e.key,
+                'yard': e.value,
+              })
+          .toList();
+      await AuthService._withNetworkRetry(
+          () => supabase.from('tender_sale_items').insert(rows));
+    }
+
     if (user != null) {
       await AuditLogService().recordLog(
         userId: user.id,
         action: 'Created tender sale ${saleNumber ?? ''}'.trim(),
         entityType: 'tender_sale',
-        entityId: 'new',
-        details: {'type': tenderType},
+        entityId: saleId,
+        details: {'type': tenderType, 'package_count': packageYards.length},
       );
     }
+  }
+
+  /// Mark one tender-sale package SOLD. Server-side RPC writes a [FINAL:SOLD]
+  /// warehouse entry in the package's own yard (so it shows in that yard's
+  /// Warehouses + the cross-yard Sold Packages tab) and flips the item status.
+  Future<void> markTenderSaleItemSold({
+    required String tenderSaleItemId,
+    String? receipt,
+    double soldPrice = 0.0,
+    List<dynamic> appliedTaxes = const [],
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'disposal_mark_sale_item_sold',
+          params: {
+            'p_item_id': tenderSaleItemId,
+            'p_receipt': (receipt == null || receipt.trim().isEmpty)
+                ? null
+                : receipt.trim(),
+            'p_sold_price': soldPrice,
+            'p_applied_taxes': appliedTaxes,
+          },
+        ));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Marked tender-sale package sold',
+        entityType: 'tender_sale_item',
+        entityId: tenderSaleItemId,
+        details: {'receipt': receipt, 'soldPrice': soldPrice},
+      );
+    }
+  }
+
+  Future<void> toggleDeliveryStatus(String tenderSaleItemId, bool isDelivered) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'disposal_toggle_delivery_status',
+          params: {
+            'p_item_id': tenderSaleItemId,
+            'p_is_delivered': isDelivered,
+          },
+        ));
+  }
+
+  // --- Taxes ---
+
+  Future<List<DisposalTaxModel>> getTaxes() async {
+    final data = await AuthService._withNetworkRetry(() =>
+        supabase.from('disposal_taxes').select().order('created_at', ascending: true));
+    return (data as List).map((e) => DisposalTaxModel.fromJson(e)).toList();
+  }
+
+  Future<void> createTax(String name, double percentage) async {
+    await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_taxes')
+        .insert({'name': name, 'percentage': percentage}));
+  }
+
+  Future<void> updateTax(String id, String name, double percentage, bool isActive) async {
+    await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_taxes')
+        .update({'name': name, 'percentage': percentage, 'is_active': isActive})
+        .eq('id', id));
+  }
+
+  Future<TenderSaleItemModel?> getTenderSaleItemForPackage(String packageId) async {
+    // A package can have more than one forfeited row historically, so DON'T use
+    // maybeSingle here (it throws on >1 row). Gather all ids, then look up the
+    // most recent tender-sale item across them.
+    final fpkgs = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('id')
+        .eq('package_id', packageId));
+    final ids = (fpkgs as List).map((e) => e['id'] as String).toList();
+    if (ids.isEmpty) return null;
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_items')
+        .select()
+        .inFilter('forfeited_package_id', ids)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle());
+    if (data == null) return null;
+    return TenderSaleItemModel.fromJson(data);
+  }
+
+  Future<void> deleteTax(String id) async {
+    await AuthService._withNetworkRetry(
+        () => supabase.from('disposal_taxes').delete().eq('id', id));
   }
 }

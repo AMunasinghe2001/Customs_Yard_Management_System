@@ -678,6 +678,7 @@ class ForfeitedPackageModel {
   final DateTime forfeitedAt;
   final DateTime appealDeadline;
   final String reason;
+  final String? yard;
   final PackageModel? packageDetails;
 
   const ForfeitedPackageModel({
@@ -688,6 +689,7 @@ class ForfeitedPackageModel {
     required this.forfeitedAt,
     required this.appealDeadline,
     required this.reason,
+    this.yard,
     this.packageDetails,
   });
 
@@ -703,6 +705,7 @@ class ForfeitedPackageModel {
       forfeitedAt: DateTime.parse(json['forfeited_at'] as String),
       appealDeadline: DateTime.parse(json['appeal_deadline'] as String),
       reason: json['reason'] as String? ?? '',
+      yard: json['yard'] as String?,
       packageDetails: json['packages'] != null
           ? PackageModel.fromJson(json['packages'] as Map<String, dynamic>)
           : null,
@@ -813,6 +816,61 @@ const Map<String, String> kTenderSaleTypes = {
 String tenderSaleTypeLabel(String? code) =>
     kTenderSaleTypes[code] ?? (code ?? '—');
 
+/// One package placed in a Tender Sale, with its sold status.
+class TenderSaleItemModel {
+  final String id;
+  final String tenderSaleId;
+  final String forfeitedPackageId;
+  final String yard;
+  final bool sold;
+  final DateTime? soldAt;
+  final String? receiptNumber;
+  final ForfeitedPackageModel? forfeited;
+  final double soldPrice;
+  final List<dynamic> appliedTaxes;
+  final bool isDelivered;
+  final DateTime? deliveredAt;
+
+  const TenderSaleItemModel({
+    required this.id,
+    required this.tenderSaleId,
+    required this.forfeitedPackageId,
+    required this.yard,
+    this.sold = false,
+    this.soldAt,
+    this.receiptNumber,
+    this.forfeited,
+    this.soldPrice = 0.0,
+    this.appliedTaxes = const [],
+    this.isDelivered = false,
+    this.deliveredAt,
+  });
+
+  factory TenderSaleItemModel.fromJson(Map<String, dynamic> json) {
+    return TenderSaleItemModel(
+      id: json['id'] as String,
+      tenderSaleId: json['tender_sale_id'] as String,
+      forfeitedPackageId: json['forfeited_package_id'] as String,
+      yard: json['yard'] as String? ?? '',
+      sold: json['sold'] as bool? ?? false,
+      soldAt: json['sold_at'] != null
+          ? DateTime.tryParse(json['sold_at'].toString())
+          : null,
+      receiptNumber: json['receipt_number'] as String?,
+      forfeited: json['forfeited_packages'] != null
+          ? ForfeitedPackageModel.fromJson(
+              json['forfeited_packages'] as Map<String, dynamic>)
+          : null,
+      soldPrice: (json['sold_price'] as num?)?.toDouble() ?? 0.0,
+      appliedTaxes: json['applied_taxes'] as List<dynamic>? ?? const [],
+      isDelivered: json['is_delivered'] as bool? ?? false,
+      deliveredAt: json['delivered_at'] != null
+          ? DateTime.tryParse(json['delivered_at'].toString())
+          : null,
+    );
+  }
+}
+
 class TenderSaleModel {
   final String id;
   final String? saleNumber;
@@ -823,6 +881,7 @@ class TenderSaleModel {
   final String? yard;
   final DateTime createdAt;
   final String? createdByName;
+  final List<TenderSaleItemModel> items;
 
   const TenderSaleModel({
     required this.id,
@@ -834,11 +893,14 @@ class TenderSaleModel {
     this.yard,
     required this.createdAt,
     this.createdByName,
+    this.items = const [],
   });
 
   String get typeLabel => tenderSaleTypeLabel(tenderType);
+  int get soldCount => items.where((i) => i.sold).length;
 
   factory TenderSaleModel.fromJson(Map<String, dynamic> json) {
+    final itemsJson = json['tender_sale_items'] as List? ?? const [];
     return TenderSaleModel(
       id: json['id'] as String,
       saleNumber: json['sale_number'] as String?,
@@ -852,6 +914,96 @@ class TenderSaleModel {
       createdAt: DateTime.parse(json['created_at'] as String),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      items: itemsJson
+          .map((e) => TenderSaleItemModel.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+// ── Disposal Requests (Yard → Central Disposal Directorate) ──────────────
+//
+// A yard submits a request listing forfeited packages whose 30-day appeal
+// window has passed. Each package is tagged for either DESTRUCTION or SALE.
+
+/// The two disposition options offered per requested package.
+const Map<String, String> kDispositions = {
+  'destruction': 'Destruction',
+  'sale': 'Sale',
+};
+
+String dispositionLabel(String? code) =>
+    kDispositions[code] ?? (code ?? '—');
+
+class DisposalRequestItemModel {
+  final String id;
+  final String requestId;
+  final String forfeitedPackageId;
+  final String disposition; // 'destruction' | 'sale'
+  final ForfeitedPackageModel? forfeited;
+
+  const DisposalRequestItemModel({
+    required this.id,
+    required this.requestId,
+    required this.forfeitedPackageId,
+    required this.disposition,
+    this.forfeited,
+  });
+
+  String get dispositionLabelText => dispositionLabel(disposition);
+
+  factory DisposalRequestItemModel.fromJson(Map<String, dynamic> json) {
+    return DisposalRequestItemModel(
+      id: json['id'] as String,
+      requestId: json['request_id'] as String,
+      forfeitedPackageId: json['forfeited_package_id'] as String,
+      disposition: json['disposition'] as String? ?? 'destruction',
+      forfeited: json['forfeited_packages'] != null
+          ? ForfeitedPackageModel.fromJson(
+              json['forfeited_packages'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+}
+
+class DisposalRequestModel {
+  final String id;
+  final String yard;
+  final DateTime requestDate;
+  final String status;
+  final DateTime createdAt;
+  final String? createdByName;
+  final List<DisposalRequestItemModel> items;
+
+  const DisposalRequestModel({
+    required this.id,
+    required this.yard,
+    required this.requestDate,
+    required this.status,
+    required this.createdAt,
+    this.createdByName,
+    this.items = const [],
+  });
+
+  int get destructionCount =>
+      items.where((i) => i.disposition == 'destruction').length;
+  int get saleCount => items.where((i) => i.disposition == 'sale').length;
+
+  factory DisposalRequestModel.fromJson(Map<String, dynamic> json) {
+    final itemsJson = json['disposal_request_items'] as List? ?? const [];
+    final items = itemsJson
+        .map((e) =>
+            DisposalRequestItemModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return DisposalRequestModel(
+      id: json['id'] as String,
+      yard: json['yard'] as String? ?? '',
+      requestDate: DateTime.parse(json['request_date'].toString()),
+      status: json['status'] as String? ?? 'pending',
+      createdAt: DateTime.parse(json['created_at'] as String),
+      createdByName:
+          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      items: items,
     );
   }
 }
@@ -887,13 +1039,38 @@ class PackageCategory {
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
+}
+
+class DisposalTaxModel {
+  final String id;
+  final String name;
+  final double percentage;
+  final bool isActive;
+  final DateTime createdAt;
+
+  const DisposalTaxModel({
+    required this.id,
+    required this.name,
+    required this.percentage,
+    required this.isActive,
+    required this.createdAt,
+  });
+
+  factory DisposalTaxModel.fromJson(Map<String, dynamic> json) {
+    return DisposalTaxModel(
+      id: json['id'] as String,
+      name: json['name'] as String,
+      percentage: (json['percentage'] as num).toDouble(),
+      isActive: json['is_active'] as bool? ?? true,
+      createdAt: DateTime.parse(json['created_at'].toString()),
+    );
+  }
 
   Map<String, dynamic> toJson() {
     return {
       'name': name,
-      'description': description,
-      if (targetWarehouseId != null) 'target_warehouse_id': targetWarehouseId,
-      if (targetZone != null) 'target_zone': targetZone,
+      'percentage': percentage,
+      'is_active': isActive,
     };
   }
 }
