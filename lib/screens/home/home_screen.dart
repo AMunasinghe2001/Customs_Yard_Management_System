@@ -57,7 +57,11 @@ class HomeScreen extends ConsumerWidget {
                 // Role cards side by side
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 40),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  child: IntrinsicHeight(
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
                     Flexible(child: _RoleCard(
                       icon: Icons.person_outline_rounded,
                       title: 'Officer',
@@ -77,7 +81,18 @@ class HomeScreen extends ConsumerWidget {
                       onSignup: (ctx) => ctx.go('/admin/signup'),
                       delay: 650,
                     )),
+                    const Gap(24),
+                    Flexible(child: _RoleCard(
+                      icon: Icons.gavel_rounded,
+                      title: 'Central Disposal Directorate',
+                      subtitle: 'View sold items across all yards\n& record tender sales',
+                      accentColor: context.colors.successGreen,
+                      onLogin: (ctx) => ctx.go('/disposal/login'),
+                      onSignup: (ctx) => ctx.go('/disposal/signup'),
+                      delay: 800,
+                    )),
                   ]),
+                  ),
                 ),
                 const Spacer(),
               ]),
@@ -149,7 +164,7 @@ class _RoleCardState extends State<_RoleCard> {
               ? [BoxShadow(color: widget.accentColor.withOpacity(0.2), blurRadius: 28, spreadRadius: 2)]
               : [],
         ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
+        child: Column(mainAxisSize: MainAxisSize.max, children: [
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -160,13 +175,24 @@ class _RoleCardState extends State<_RoleCard> {
             child: Icon(widget.icon, color: widget.accentColor, size: 36),
           ),
           const Gap(16),
-          Text(widget.title,
-              style: TextStyle(color: widget.accentColor, fontSize: 20, fontWeight: FontWeight.w800)),
+          SizedBox(
+            height: 56,
+            child: Center(
+              child: Text(widget.title,
+                  textAlign: TextAlign.center,
+                  maxLines: 2,
+                  style: TextStyle(
+                      color: widget.accentColor,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w800)),
+            ),
+          ),
           const Gap(6),
           Text(widget.subtitle,
               textAlign: TextAlign.center,
               style: TextStyle(color: context.colors.textSecondary, fontSize: 13, height: 1.5)),
-          const Gap(24),
+          const Spacer(),
+          const Gap(20),
           SizedBox(width: double.infinity, height: 44,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(

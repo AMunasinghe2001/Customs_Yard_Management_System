@@ -186,6 +186,71 @@ class AuthService {
     }
   }
 
+  /// Step 1 of OTP-gated login (Disposal Directorate, every login):
+  /// verify the password, then email a one-time code. Returns the resolved
+  /// account email to use in [finishOtpLogin].
+  Future<String> startOtpLogin(String identifier, String password) async {
+    final id = identifier.trim();
+    String email = id;
+    if (!id.contains('@')) {
+      final resolved = await _withNetworkRetry(
+          () => supabase.rpc('email_for_login', params: {'identifier': id}));
+      if (resolved == null || (resolved is String && resolved.isEmpty)) {
+        throw Exception('invalid_credentials');
+      }
+      email = resolved as String;
+    }
+    // Verify the password (throws on bad credentials), then discard that
+    // session so the user cannot proceed without the emailed code.
+    await _withNetworkRetry(() =>
+        supabase.auth.signInWithPassword(email: email, password: password));
+    await supabase.auth.signOut();
+    await _withNetworkRetry(() =>
+        supabase.auth.signInWithOtp(email: email, shouldCreateUser: false));
+    return email;
+  }
+
+  /// Step 2 of OTP-gated login: verify the emailed code and finish signing in.
+  Future<ProfileModel?> finishOtpLogin(String email, String otp) async {
+    AuthResponse response;
+    try {
+      response = await supabase.auth
+          .verifyOTP(email: email, token: otp, type: OtpType.email);
+    } on AuthException {
+      response = await supabase.auth
+          .verifyOTP(email: email, token: otp, type: OtpType.magiclink);
+    }
+    final user = response.user ?? supabase.auth.currentUser;
+    if (user == null) throw Exception('otp_failed');
+
+    final profileData =
+        await supabase.from('profiles').select().eq('id', user.id).single();
+    final profile = ProfileModel.fromJson(profileData);
+
+    if (!profile.isActive) {
+      await signOut();
+      throw Exception('account_deactivated');
+    }
+    if (profile.isExpired) {
+      await signOut();
+      throw Exception('account_expired');
+    }
+    AppSession.setYard(profile.yard);
+    try {
+      await supabase.from('profiles').update({
+        'is_online': true,
+        'last_seen_at': DateTime.now().toIso8601String(),
+      }).eq('id', profile.id);
+    } catch (_) {}
+    await AuditLogService().recordLog(
+      userId: profile.id,
+      action: 'Signed In (OTP)',
+      entityType: 'auth',
+      entityId: profile.id,
+    );
+    return profile;
+  }
+
   Future<void> signOut() async {
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -308,11 +373,13 @@ class PackageService {
   }
 
   Future<List<PackageModel>> getAllPackages(
-      {String? status, String? search, DateTime? since}) async {
+      {String? status, String? search, DateTime? since, String? yard}) async {
     var query = supabase.from('packages').select(
         '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)');
     if (status != null && status != 'all' && status != 'returned')
       query = query.eq('status', status);
+    // Explicit yard filter (used by the cross-yard Disposal Directorate views).
+    if (yard != null) query = query.eq('yard', yard);
     if (since != null) query = query.gte('created_at', since.toIso8601String());
     if (search != null && search.isNotEmpty) {
       query =
@@ -1247,6 +1314,14 @@ class AdminService {
     return data.map((e) => ProfileModel.fromJson(e)).toList();
   }
 
+  /// Whether a Disposal Directorate position (DC/SDDC) is still free to claim.
+  /// Returns false if an account already exists for that position.
+  Future<bool> isDisposalPositionAvailable(String code) async {
+    final res = await supabase
+        .rpc('disposal_position_available', params: {'code': code});
+    return res == true;
+  }
+
   Future<void> requestSignupOtp({
     required String email,
     required String fullName,
@@ -1297,24 +1372,15 @@ class AdminService {
     // template/OTP is configured.
     AuthResponse response;
     try {
-      response = await supabase.auth.verifyOTP(
-        email: email,
-        token: otp,
-        type: OtpType.email,
-      );
+      response = await AuthService._withNetworkRetry(() => supabase.auth
+          .verifyOTP(email: email, token: otp, type: OtpType.email));
     } on AuthException {
       try {
-        response = await supabase.auth.verifyOTP(
-          email: email,
-          token: otp,
-          type: OtpType.signup,
-        );
+        response = await AuthService._withNetworkRetry(() => supabase.auth
+            .verifyOTP(email: email, token: otp, type: OtpType.signup));
       } on AuthException {
-        response = await supabase.auth.verifyOTP(
-          email: email,
-          token: otp,
-          type: OtpType.magiclink,
-        );
+        response = await AuthService._withNetworkRetry(() => supabase.auth
+            .verifyOTP(email: email, token: otp, type: OtpType.magiclink));
       }
     }
 
@@ -1323,22 +1389,31 @@ class AdminService {
       throw Exception('OTP verification failed. Please try again.');
     }
 
-    await supabase.auth.updateUser(
-      UserAttributes(
-        password: password,
-        data: {
-          'full_name': fullName,
-          'role': role,
-          'badge_number': badgeNumber,
-          if (username != null) 'username': username,
-          if (mobileNumber != null) 'mobile_number': mobileNumber,
-          if (jobRole != null) 'job_role': jobRole,
-          if (department != null) 'department': department,
-          if (yard != null) 'yard': yard,
-          if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
-        },
-      ),
-    );
+    final metadata = <String, dynamic>{
+      'full_name': fullName,
+      'role': role,
+      'badge_number': badgeNumber,
+      if (username != null) 'username': username,
+      if (mobileNumber != null) 'mobile_number': mobileNumber,
+      if (jobRole != null) 'job_role': jobRole,
+      if (department != null) 'department': department,
+      if (yard != null) 'yard': yard,
+      if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
+    };
+    try {
+      await supabase.auth
+          .updateUser(UserAttributes(password: password, data: metadata));
+    } on AuthException catch (e) {
+      // The account already existed with this exact password (re-verifying a
+      // previously half-created account). Keep the password and just refresh
+      // the metadata so the rest of setup (profile/username) still completes.
+      final m = e.message.toLowerCase();
+      if (e.code == 'same_password' || m.contains('different from the old')) {
+        await supabase.auth.updateUser(UserAttributes(data: metadata));
+      } else {
+        rethrow;
+      }
+    }
 
     try {
       await supabase.from('profiles').upsert({
@@ -1956,5 +2031,56 @@ class TendersService {
         .eq('tender_package_id', tenderPackageId)
         .order('disposed_at', ascending: false);
     return data.map((e) => TenderDisposalModel.fromJson(e)).toList();
+  }
+}
+
+// ── Disposal Directorate Service ───────────────────────────────
+// Central Disposal Directorate users can read SOLD packages across ALL yards
+// (cross-yard RLS) and manage Tender Sale records.
+
+class DisposalService {
+  /// Sold packages for a specific yard. The caller (disposal role) has
+  /// cross-yard read access via RLS; the UI filters the [FINAL:SOLD] entries.
+  Future<List<PackageModel>> getSoldPackages({required String yard}) async {
+    return PackageService().getAllPackages(yard: yard);
+  }
+
+  Future<List<TenderSaleModel>> getTenderSales() async {
+    final data = await supabase
+        .from('tender_sales')
+        .select('*, profiles!created_by(full_name)')
+        .order('created_at', ascending: false);
+    return (data as List).map((e) => TenderSaleModel.fromJson(e)).toList();
+  }
+
+  Future<void> createTenderSale({
+    String? saleNumber,
+    DateTime? saleDate,
+    String? serial,
+    int? year,
+    String? tenderType,
+    String? yard,
+  }) async {
+    final user = supabase.auth.currentUser;
+    await supabase.from('tender_sales').insert({
+      'sale_number': saleNumber,
+      'sale_date': saleDate == null
+          ? null
+          : saleDate.toIso8601String().substring(0, 10),
+      'serial': serial,
+      'year': year,
+      'tender_type': tenderType,
+      'yard': yard,
+      'created_by': user?.id,
+    });
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created tender sale ${saleNumber ?? ''}'.trim(),
+        entityType: 'tender_sale',
+        entityId: 'new',
+        details: {'type': tenderType},
+      );
+    }
   }
 }

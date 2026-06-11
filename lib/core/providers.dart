@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'supabase_client.dart';
+import 'yards.dart';
 
 // ── Service Providers ──────────────────────────────────────────
 final authServiceProvider = Provider((ref) => AuthService());
@@ -15,6 +16,7 @@ final packageCategoryServiceProvider = Provider((ref) => PackageCategoryService(
 final holdReasonServiceProvider = Provider((ref) => HoldReasonService());
 final forfeitedPackageServiceProvider = Provider((ref) => ForfeitedPackageService());
 final tendersServiceProvider = Provider((ref) => TendersService());
+final disposalServiceProvider = Provider((ref) => DisposalService());
 
 // ── Shared Auth State ──────────────────────────────────────────
 final currentProfileProvider = StateProvider<ProfileModel?>((ref) => null);
@@ -287,6 +289,24 @@ final tendersProvider = FutureProvider<List<TenderModel>>((ref) async {
 final tenderNumberInputProvider = StateProvider<String>((ref) => '');
 final tenderDateInputProvider = StateProvider<DateTime?>((ref) => DateTime.now());
 final selectedTenderPackagesProvider = StateProvider<Set<String>>((ref) => {});
+
+// ── Disposal Directorate Providers ─────────────────────────────
+final disposalSelectedYardProvider =
+    StateProvider<String>((ref) => kYards.first.code);
+
+final disposalSoldPackagesProvider =
+    FutureProvider<List<PackageModel>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider); // refresh on package changes
+  final yard = ref.watch(disposalSelectedYardProvider);
+  return ref.read(disposalServiceProvider).getSoldPackages(yard: yard);
+});
+
+final tenderSalesRefreshProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+final tenderSalesProvider = FutureProvider<List<TenderSaleModel>>((ref) async {
+  ref.watch(tenderSalesRefreshProvider);
+  return ref.read(disposalServiceProvider).getTenderSales();
+});
 
 // ── Admin Dashboard Providers ──────────────────────────────────
 final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {

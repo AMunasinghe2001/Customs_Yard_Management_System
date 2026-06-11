@@ -5,6 +5,9 @@ import '../screens/home/home_screen.dart';
 import '../screens/login/login_screen.dart';
 import '../screens/admin/admin_login_screen.dart';
 import '../screens/admin/admin_signup_screen.dart';
+import '../screens/disposal/disposal_login_screen.dart';
+import '../screens/disposal/disposal_signup_screen.dart';
+import '../screens/disposal/disposal_dashboard_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/inspection/inspection_screen.dart';
 import '../screens/warehouses/warehouses_screen.dart';
@@ -29,7 +32,14 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) async {
       final user = supabase.auth.currentUser;
       final isLoggedIn = user != null;
-      final publicRoutes = ['/', '/login', '/admin/login', '/admin/signup'];
+      final publicRoutes = [
+        '/',
+        '/login',
+        '/admin/login',
+        '/admin/signup',
+        '/disposal/login',
+        '/disposal/signup'
+      ];
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
       
       if (isLoggedIn) {
@@ -44,6 +54,9 @@ final routerProvider = Provider<GoRouter>((ref) {
 
       if (!isLoggedIn && !isPublicPage) return '/';
       if (isLoggedIn && (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
+        final profile = ref.read(currentProfileProvider);
+        if (profile?.isDisposal == true) return '/disposal';
+        if (profile?.isAdmin == true) return '/admin';
         return '/dashboard';
       }
       return null;
@@ -53,6 +66,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
       GoRoute(path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),
+      GoRoute(path: '/disposal/login', builder: (_, __) => const DisposalLoginScreen()),
+      GoRoute(path: '/disposal/signup', builder: (_, __) => const DisposalSignupScreen()),
+      GoRoute(path: '/disposal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DisposalDashboardScreen())),
       GoRoute(path: '/dashboard', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DashboardScreen())),
       GoRoute(path: '/inspection', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const InspectionScreen())),
       GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),

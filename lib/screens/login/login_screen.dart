@@ -87,22 +87,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     } finally { ref.read(loginLoadingProvider.notifier).state = false; }
   }
 
-  Future<void> _signInWithGoogle() async {
-    ref.read(loginLoadingProvider.notifier).state = true;
-    ref.read(loginErrorProvider.notifier).state = null;
-    try {
-      final profile = await ref.read(authServiceProvider).signInWithGoogle();
-      if (profile == null) return;
-      if (profile.isAdmin) {
-        await supabase.auth.signOut();
-        ref.read(loginErrorProvider.notifier).state = 'Admin accounts must use the Admin Sign In.'; return;
-      }
-      ref.read(currentProfileProvider.notifier).state = profile;
-      if (mounted) context.go('/dashboard');
-    } catch (e) {
-      ref.read(loginErrorProvider.notifier).state = _friendlyError(e.toString());
-    } finally { ref.read(loginLoadingProvider.notifier).state = false; }
-  }
+
 
   String _friendlyError(String raw) {
     final low = raw.toLowerCase();
@@ -283,25 +268,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ? SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
                         : const Text('Sign In', style: TextStyle(fontSize: 16)),
                   )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
-                  const Gap(24),
-                  Row(children: [
-                    Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('OR', style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
-                    ),
-                    Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
-                  ]).animate().fadeIn(delay: 450.ms),
-                  const Gap(24),
-                  SizedBox(height: 54, child: OutlinedButton.icon(
-                    onPressed: isLoading ? null : _signInWithGoogle,
-                    icon: const Icon(Icons.g_mobiledata, size: 30), // Placeholder using a built-in icon
-                    label: const Text('Sign in with Google', style: TextStyle(fontSize: 16)),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: context.colors.borderColor),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 500.ms).fadeIn(),
                   const Gap(24),
                   Divider(color: context.colors.borderColor.withOpacity(0.5)),
                   const Gap(16),

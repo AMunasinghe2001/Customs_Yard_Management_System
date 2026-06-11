@@ -21,7 +21,7 @@ class ErrorView extends StatelessWidget {
                           error is SocketException;
 
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(40),
         child: Column(
           mainAxisSize: MainAxisSize.min,

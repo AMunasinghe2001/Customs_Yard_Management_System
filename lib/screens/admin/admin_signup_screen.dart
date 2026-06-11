@@ -197,11 +197,24 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
   }
 
   String _friendlyError(String raw) {
+    final low = raw.toLowerCase();
+    if (low.contains('rate limit') ||
+        low.contains('429') ||
+        low.contains('over_email_send_rate_limit')) {
+      return 'Too many email requests. Please wait a few minutes before sending the OTP again.';
+    }
+    if (low.contains('same_password') ||
+        low.contains('different from the old')) {
+      return 'This account already exists with this password. Try signing in instead.';
+    }
     if (raw.contains('already_registered') || raw.contains('User already registered') || raw.contains('already been registered')) {
       return 'This email is already registered. Please sign in instead.';
     }
+    if (raw.toLowerCase().contains('expired')) {
+      return 'This code has expired. Tap "Resend code" to get a new one, then enter it within 2 minutes.';
+    }
     if (raw.contains('invalid_otp') || raw.contains('otp') || raw.contains('token')) {
-      return 'Invalid OTP. Please check the code and try again.';
+      return 'Invalid or expired code. Use the code from the latest email, or tap "Resend code".';
     }
     if (raw.contains('Invalid login credentials') || raw.contains('invalid_credentials')) {
       return 'Invalid email or password. Please try again.';

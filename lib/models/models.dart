@@ -593,14 +593,19 @@ class ProfileModel {
 
   bool get isAdmin => role == 'admin';
 
+  /// Central Disposal Directorate user (cross-yard sold-package visibility).
+  bool get isDisposal => role == 'disposal';
+
   /// Accounts automatically deactivate 8 months after they were created.
   /// (Applies to admins and officers alike.)
   DateTime get expiresAt =>
       DateTime(createdAt.year, createdAt.month + 8, createdAt.day,
           createdAt.hour, createdAt.minute, createdAt.second);
 
-  /// True once the account is past its 8-month lifetime.
-  bool get isExpired => DateTime.now().isAfter(expiresAt);
+  /// True once the account is past its 8-month lifetime. Disposal Directorate
+  /// (DC/SDDC) accounts are institutional and never auto-expire (officers
+  /// transfer in/out of the post).
+  bool get isExpired => !isDisposal && DateTime.now().isAfter(expiresAt);
 
   /// Whether the account may currently sign in: explicitly active AND not
   /// past its 8-month auto-deactivation window.
@@ -780,6 +785,72 @@ class TenderDisposalModel {
       otherDetails: json['other_details'] as String?,
       disposedAt: DateTime.parse(json['disposed_at'] as String),
       disposedByName:
+          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+    );
+  }
+}
+
+// ── Central Disposal Directorate positions ───────────────────────────────
+// Two institutional head-office accounts only (not personal). Whoever holds
+// the post logs in with the shared branch email + password.
+const Map<String, String> kDisposalPositions = {
+  'DC': 'DC (Director)',
+  'SDDC': 'SDDC (Senior Deputy Director)',
+};
+
+String disposalPositionLabel(String? code) =>
+    kDisposalPositions[code] ?? (code ?? 'Disposal Directorate');
+
+// ── Tender Sale (Central Disposal Directorate) ───────────────────────────
+
+/// The three tender-sale types offered to the Disposal Directorate.
+const Map<String, String> kTenderSaleTypes = {
+  'special': 'Special Tender Sale (perishable goods)',
+  'general_cargo': 'General Cargo Tender Sale (normal goods)',
+  'motor_vehicle': 'Motor Vehicle Tender Sale (vehicles)',
+};
+
+String tenderSaleTypeLabel(String? code) =>
+    kTenderSaleTypes[code] ?? (code ?? '—');
+
+class TenderSaleModel {
+  final String id;
+  final String? saleNumber;
+  final DateTime? saleDate;
+  final String? serial;
+  final int? year;
+  final String? tenderType; // special | general_cargo | motor_vehicle
+  final String? yard;
+  final DateTime createdAt;
+  final String? createdByName;
+
+  const TenderSaleModel({
+    required this.id,
+    this.saleNumber,
+    this.saleDate,
+    this.serial,
+    this.year,
+    this.tenderType,
+    this.yard,
+    required this.createdAt,
+    this.createdByName,
+  });
+
+  String get typeLabel => tenderSaleTypeLabel(tenderType);
+
+  factory TenderSaleModel.fromJson(Map<String, dynamic> json) {
+    return TenderSaleModel(
+      id: json['id'] as String,
+      saleNumber: json['sale_number'] as String?,
+      saleDate: json['sale_date'] != null
+          ? DateTime.tryParse(json['sale_date'].toString())
+          : null,
+      serial: json['serial'] as String?,
+      year: (json['year'] as num?)?.toInt(),
+      tenderType: json['tender_type'] as String?,
+      yard: json['yard'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
   }
