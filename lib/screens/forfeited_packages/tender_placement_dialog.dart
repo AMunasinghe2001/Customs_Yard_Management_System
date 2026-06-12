@@ -125,7 +125,13 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
         return list.map((i) => i.forfeited).toList();
       });
     } else {
-      poolAsync = ref.watch(expiredAppealPackagesProvider);
+      // Fresh tenders draw only from "Sale"-tagged disposal-request items that
+      // haven't been tendered yet.
+      final sale = ref.watch(tenderableSaleItemsProvider);
+      poolAsync = sale.whenData((list) => list
+          .where((i) => i.forfeited != null)
+          .map((i) => i.forfeited!)
+          .toList());
     }
 
     return TweenAnimationBuilder<double>(
@@ -316,7 +322,7 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                                     ? ref.refresh(
                                         reTenderablePackagesProvider)
                                     : ref.refresh(
-                                        expiredAppealPackagesProvider)),
+                                        tenderableSaleItemsProvider)),
                           ),
                           data: (packages) =>
                               _packageList(context, packages, selected, tenderCounts),

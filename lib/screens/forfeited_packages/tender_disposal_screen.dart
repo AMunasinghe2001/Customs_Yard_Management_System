@@ -1072,7 +1072,14 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
                             type: widget.existingDisposal!.disposalType)
                       else
                         Column(
-                          children: _disposalTypes.map((entry) {
+                          // Central Disposal records only Sold here (a tender is
+                          // a sale); yard admins keep Re-export / Release / Other.
+                          children: (isDisposalUser
+                                  ? _disposalTypes
+                                      .where((e) => e.$1 == 'sold')
+                                      .toList()
+                                  : _disposalTypes)
+                              .map((entry) {
                             final (value, label, icon, description) = entry;
                             final restricted = !isDisposalUser &&
                                 _restrictedTypes.contains(value);

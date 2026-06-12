@@ -16,8 +16,6 @@ import 'taxes_tab.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
-import '../forfeited_packages/tender_disposal_screen.dart';
-import '../forfeited_packages/tender_placement_dialog.dart';
 
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
@@ -132,83 +130,72 @@ class DisposalDashboardScreen extends ConsumerWidget {
             Container(
               color: context.colors.cardDark,
               padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: context.colors.surfaceDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: context.colors.borderColor),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: context.colors.surfaceDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.colors.borderColor),
+                ),
+                child: TabBar(
+                  splashFactory: NoSplash.splashFactory,
+                  overlayColor:
+                      WidgetStateProperty.all(Colors.transparent),
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicatorPadding: const EdgeInsets.all(4),
+                  dividerColor: Colors.transparent,
+                  indicator: BoxDecoration(
+                    color: green.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(9),
+                    border: Border.all(color: green.withOpacity(0.5)),
                   ),
-                  child: TabBar(
-                    isScrollable: true,
-                    tabAlignment: TabAlignment.start,
-                    splashFactory: NoSplash.splashFactory,
-                    overlayColor:
-                        WidgetStateProperty.all(Colors.transparent),
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicatorPadding: const EdgeInsets.all(4),
-                    dividerColor: Colors.transparent,
-                    indicator: BoxDecoration(
-                      color: green.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(9),
-                      border: Border.all(color: green.withOpacity(0.5)),
-                    ),
-                    labelColor: green,
-                    unselectedLabelColor: context.colors.textMuted,
-                    labelStyle: const TextStyle(
-                        fontWeight: FontWeight.w700, fontSize: 13),
-                    tabs: const [
-                      Tab(
-                          height: 44,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.sell_rounded, size: 18),
-                              Gap(8),
-                              Text('Sold Packages'),
-                            ]),
-                          )),
-                      Tab(
-                          height: 44,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.gavel_outlined, size: 18),
-                              Gap(8),
-                              Text('Forfeited Packages'),
-                            ]),
-                          )),
-                      Tab(
-                          height: 44,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.assignment_turned_in_rounded, size: 18),
-                              Gap(8),
-                              Text('Disposal Requests'),
-                            ]),
-                          )),
-                      Tab(
-                          height: 44,
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 10),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.replay_rounded, size: 18),
-                              Gap(8),
-                              Text('Unsold'),
-                            ]),
-                          )),
-                      Tab(
-                        icon: Icon(Icons.storefront_rounded),
-                        text: 'Tender Sales',
-                      ),
-                      Tab(
-                        icon: Icon(Icons.receipt_long_rounded),
-                        text: 'Taxes',
-                      ),
-                    ],
-                  ),
+                  labelColor: green,
+                  unselectedLabelColor: context.colors.textMuted,
+                  labelStyle: const TextStyle(
+                      fontWeight: FontWeight.w700, fontSize: 13),
+                  tabs: const [
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.sell_rounded, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Sold Packages', overflow: TextOverflow.ellipsis)),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.gavel_outlined, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Forfeited Packages', overflow: TextOverflow.ellipsis)),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.assignment_turned_in_rounded, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Disposal Requests', overflow: TextOverflow.ellipsis)),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.storefront_rounded, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Tender Sales', overflow: TextOverflow.ellipsis)),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.replay_rounded, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Unsold Tenders', overflow: TextOverflow.ellipsis)),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.receipt_long_rounded, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Taxes', overflow: TextOverflow.ellipsis)),
+                        ])),
+                  ],
                 ),
               ),
             ).animate().fadeIn(duration: 350.ms, delay: 80.ms),
@@ -217,8 +204,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 _SoldPackagesTab(),
                 _ForfeitedPackagesTab(),
                 _DisposalRequestsTab(),
-                _UnsoldReTenderTab(),
                 _TenderSalesTab(),
+                _UnsoldReTenderTab(),
                 TaxesTab(),
               ]),
             ),
@@ -1031,91 +1018,6 @@ class _CountPill extends StatelessWidget {
   }
 }
 
-// ── Tenders (cross-yard tender management) ────────────────────────
-// Place tenders, record disposal outcomes, and re-tender unsold lots — the full
-// tender lifecycle, moved here from the yard side. Reuses TenderCard +
-// UnsoldReTenderDialog + TenderPlacementDialog from the Tender Disposals screen.
-
-class _TendersTab extends ConsumerWidget {
-  const _TendersTab();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final green = context.colors.successGreen;
-    final tenders = ref.watch(tendersProvider);
-    final disposalsMap = ref.watch(tenderDisposalsMapProvider);
-    final forfeitedMap = ref.watch(allForfeitedMapProvider);
-
-    void invalidate() {
-      ref.invalidate(tendersProvider);
-      ref.invalidate(forfeitedPackagesProvider);
-      ref.invalidate(reTenderablePackagesProvider);
-    }
-
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Text('Tenders',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
-            const Spacer(),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: green, foregroundColor: Colors.white),
-              icon: const Icon(Icons.gavel_rounded, size: 18),
-              label: const Text('Place Tender',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              onPressed: () => showDialog(
-                context: context,
-                builder: (_) => TenderPlacementDialog(
-                  ref: ref,
-                  onTenderCreated: invalidate,
-                ),
-              ),
-            ),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(16),
-          Expanded(
-            child: tenders.when(
-              skipLoadingOnReload: true,
-              loading: () =>
-                  Center(child: CircularProgressIndicator(color: green)),
-              error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(tendersProvider)),
-              data: (list) {
-                if (list.isEmpty) {
-                  return _listCard(
-                    context,
-                    const EmptyTableState(
-                        message: 'No tenders yet — Place Tender to start'),
-                  );
-                }
-                final dMap = disposalsMap.valueOrNull ??
-                    <String, TenderDisposalModel>{};
-                final fMap = forfeitedMap.valueOrNull ??
-                    <String, ForfeitedPackageModel>{};
-                return ListView.builder(
-                  itemCount: list.length,
-                  itemBuilder: (context, i) => TenderCard(
-                    tender: list[i],
-                    disposalsMap: dMap,
-                    forfeitedMap: fMap,
-                  ),
-                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 // ── Unsold packages → Re-tender (separate page/tab) ───────────────
 
 class _UnsoldReTenderTab extends ConsumerWidget {
@@ -1157,7 +1059,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                         ? null
                         : () => showDialog(
                               context: context,
-                              builder: (_) => const _TenderSaleFormDialog(),
+                              builder: (_) =>
+                                  const _TenderSaleFormDialog(reTender: true),
                             ).then((_) {
                               ref.invalidate(unsoldTenderSalesProvider);
                               ref.invalidate(tenderSalesProvider);
@@ -1304,17 +1207,20 @@ class _TenderSalesTab extends ConsumerWidget {
               error: (e, _) => ErrorView(
                   error: e, onRetry: () => ref.refresh(tenderSalesProvider)),
               data: (list) {
-                if (list.isEmpty) {
+                // Hide sales whose packages are all sold (fully consumed).
+                final visible =
+                    list.where((s) => s.items.any((i) => !i.sold)).toList();
+                if (visible.isEmpty) {
                   return _listCard(
                     context,
                     const EmptyTableState(
-                        message: 'No tender sales recorded yet'),
+                        message: 'No tender sales with unsold packages'),
                   );
                 }
                 return ListView.separated(
-                  itemCount: list.length,
+                  itemCount: visible.length,
                   separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) => _TenderSaleCard(sale: list[i]),
+                  itemBuilder: (context, i) => _TenderSaleCard(sale: visible[i]),
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
               },
             ),
@@ -1352,7 +1258,8 @@ class _TenderSaleCard extends ConsumerWidget {
 
   List<_TsRow> _rows() {
     final rows = <_TsRow>[];
-    for (final si in sale.items) {
+    // Sold items leave the Tender Sales page (they move to Sold Packages).
+    for (final si in sale.items.where((s) => !s.sold)) {
       final pkg = si.forfeited?.packageDetails;
       final items = pkg?.items ?? const [];
       if (items.isEmpty) {
@@ -1736,7 +1643,10 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
 // ── New Tender Sale form (details + Sale-only package picker) ─────────────
 
 class _TenderSaleFormDialog extends ConsumerStatefulWidget {
-  const _TenderSaleFormDialog();
+  /// In [reTender] mode the package pool is the unsold tender-sale packages
+  /// (not fresh "Sale" requests) — used by the Unsold Tenders page.
+  final bool reTender;
+  const _TenderSaleFormDialog({this.reTender = false});
   @override
   ConsumerState<_TenderSaleFormDialog> createState() =>
       _TenderSaleFormDialogState();
@@ -1815,10 +1725,22 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   @override
   Widget build(BuildContext context) {
     final green = context.colors.successGreen;
-    final pool = ref.watch(saleRequestItemsProvider);
+    // Fresh sale → "Sale"-tagged requests. Re-tender → only the unsold packages
+    // shown on the Unsold Tenders page.
+    final AsyncValue<List<DisposalRequestItemModel>> pool = widget.reTender
+        ? ref.watch(unsoldTenderSalesProvider).whenData((list) => list
+            .map((info) => DisposalRequestItemModel(
+                  id: info.forfeited.id,
+                  requestId: '',
+                  forfeitedPackageId: info.forfeited.id,
+                  disposition: 'sale',
+                  forfeited: info.forfeited,
+                ))
+            .toList())
+        : ref.watch(saleRequestItemsProvider);
     return StyledFormDialog(
       label: 'Tender Sale',
-      title: 'New Tender Sale',
+      title: widget.reTender ? 'Re-tender Sale' : 'New Tender Sale',
       icon: Icons.gavel_rounded,
       width: 720,
       child: Column(
@@ -1926,7 +1848,9 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                 ),
                 error: (e, _) => ErrorView(
                     error: e,
-                    onRetry: () => ref.refresh(saleRequestItemsProvider)),
+                    onRetry: () => ref.refresh(widget.reTender
+                        ? unsoldTenderSalesProvider
+                        : saleRequestItemsProvider)),
                 data: (items) {
                   if (items.isEmpty) {
                     return Padding(

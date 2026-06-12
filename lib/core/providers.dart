@@ -411,6 +411,15 @@ final saleRequestItemsProvider =
   return ref.read(disposalServiceProvider).getSaleRequestItems();
 });
 
+// "Sale" request items NOT yet placed in a tender — the Central Disposal
+// "Place Tender" form's package pool.
+final tenderableSaleItemsProvider =
+    FutureProvider<List<DisposalRequestItemModel>>((ref) async {
+  ref.watch(disposalRequestsRefreshProvider);
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getSaleRequestItemsNotTendered();
+});
+
 // ── Admin Dashboard Providers ──────────────────────────────────
 final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   ref.watch(packagesChangeTriggerProvider); // Refresh stats on package changes
