@@ -348,7 +348,7 @@ class _DispositionCategoryScreenState
                                   size: ColumnSize.M),
                             if (widget.finalTag == 'SOLD')
                               const DataColumn2(
-                                  label: Text('Delivery'), size: ColumnSize.S),
+                                  label: Text('Delivery'), fixedWidth: 120),
                             const DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -433,139 +433,79 @@ class _CategoryRow {
   });
 }
 
-class _DeliveryStatusCell extends ConsumerStatefulWidget {
+// Read-only delivery STATUS chip (the action button is in the details dialog,
+// enabled for yards). Watches the shared per-package provider.
+class _DeliveryStatusCell extends ConsumerWidget {
   final PackageModel package;
   const _DeliveryStatusCell({required this.package});
   @override
-  ConsumerState<_DeliveryStatusCell> createState() => _DeliveryStatusCellState();
-}
-
-class _DeliveryStatusCellState extends ConsumerState<_DeliveryStatusCell> {
-  TenderSaleItemModel? _saleItem;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    try {
-      final item = await ref
-          .read(disposalServiceProvider)
-          .getTenderSaleItemForPackage(widget.package.id);
-      if (mounted) setState(() => _saleItem = item);
-    } catch (_) {
-      // Network/lookup failed — show nothing rather than spinning forever.
-      if (mounted) setState(() => _saleItem = null);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _toggleDelivery() async {
-    if (_saleItem == null) return;
-    final newValue = !_saleItem!.isDelivered;
-    setState(() => _loading = true);
-    try {
-      await ref.read(disposalServiceProvider).toggleDeliveryStatus(_saleItem!.id, newValue);
-      await _loadData();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
-          backgroundColor: newValue ? Colors.green : Colors.orange,
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) return const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2));
-    if (_saleItem == null) return const Text('—');
-    return InkWell(
-      onTap: _toggleDelivery,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: _saleItem!.isDelivered ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          _saleItem!.isDelivered ? 'Delivered' : 'Pending',
-          style: TextStyle(
-            color: _saleItem!.isDelivered ? Colors.green : Colors.orange,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(saleItemForPackageProvider(package.id));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) => item == null
+          ? const Text('—')
+          : _DeliveryStatusChip(delivered: item.isDelivered),
     );
   }
 }
 
-/// Read-only sold price + tax total for a sold package (tender-sale items).
-class _SaleFinancialsCell extends ConsumerStatefulWidget {
+class _DeliveryStatusChip extends StatelessWidget {
+  final bool delivered;
+  const _DeliveryStatusChip({required this.delivered});
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        delivered ? context.colors.successGreen : context.colors.warningAmber;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(delivered ? Icons.check_circle_rounded : Icons.schedule_rounded,
+            size: 13, color: color),
+        const SizedBox(width: 5),
+        Text(delivered ? 'Delivered' : 'Pending',
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+      ]),
+    );
+  }
+}
+
+/// Read-only sold price + tax total for a sold package (watches the provider).
+class _SaleFinancialsCell extends ConsumerWidget {
   final PackageModel package;
   const _SaleFinancialsCell({required this.package});
   @override
-  ConsumerState<_SaleFinancialsCell> createState() =>
-      _SaleFinancialsCellState();
-}
-
-class _SaleFinancialsCellState extends ConsumerState<_SaleFinancialsCell> {
-  TenderSaleItemModel? _saleItem;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    try {
-      final item = await ref
-          .read(disposalServiceProvider)
-          .getTenderSaleItemForPackage(widget.package.id);
-      if (mounted) setState(() => _saleItem = item);
-    } catch (_) {
-      if (mounted) setState(() => _saleItem = null);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) {
-      return const SizedBox(
-          width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2));
-    }
-    if (_saleItem == null) return const Text('—');
-    double taxSum = 0;
-    for (final t in _saleItem!.appliedTaxes) {
-      taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text('Rs ${_saleItem!.soldPrice.toStringAsFixed(2)}',
-            style: const TextStyle(fontWeight: FontWeight.bold)),
-        Text('Tax: Rs ${taxSum.toStringAsFixed(2)}',
-            style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
-      ],
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(saleItemForPackageProvider(package.id));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) {
+        if (item == null) return const Text('—');
+        double taxSum = 0;
+        for (final t in item.appliedTaxes) {
+          taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Rs ${item.soldPrice.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text('Tax: Rs ${taxSum.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
+          ],
+        );
+      },
     );
   }
 }

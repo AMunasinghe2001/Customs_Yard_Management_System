@@ -1,0 +1,1 @@
+alter table public.tender_sales add column if not exists sale_time text;

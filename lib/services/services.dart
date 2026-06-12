@@ -1832,6 +1832,12 @@ class ForfeitedPackageService {
         .map((e) => e.toString())
         .toSet();
 
+    // 1b. Get IDs of packages already in a disposal request
+    final reqData = await supabase.from('disposal_request_items').select('forfeited_package_id');
+    final requestedIds = (reqData as List)
+        .map((e) => e['forfeited_package_id'].toString())
+        .toSet();
+
     // 2. Fetch forfeited packages
     final data = await supabase
         .from('forfeited_packages')
@@ -1841,7 +1847,7 @@ class ForfeitedPackageService {
 
     // 3. Filter out tendered and map to models
     return (data as List)
-        .where((e) => !tenderedIds.contains(e['id']))
+        .where((e) => !tenderedIds.contains(e['id']) && !requestedIds.contains(e['id']))
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .toList();
   }
@@ -1855,6 +1861,12 @@ class ForfeitedPackageService {
         .map((e) => e.toString())
         .toSet();
 
+    // 1b. Get IDs of packages already in a disposal request
+    final reqData = await supabase.from('disposal_request_items').select('forfeited_package_id');
+    final requestedIds = (reqData as List)
+        .map((e) => e['forfeited_package_id'].toString())
+        .toSet();
+
     // 2. Fetch expired packages
     final data = await supabase
         .from('forfeited_packages')
@@ -1865,7 +1877,7 @@ class ForfeitedPackageService {
 
     // 3. Filter out tendered and map to models
     return (data as List)
-        .where((e) => !tenderedIds.contains(e['id']))
+        .where((e) => !tenderedIds.contains(e['id']) && !requestedIds.contains(e['id']))
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .toList();
   }
@@ -2019,6 +2031,8 @@ class TendersService {
     required String tenderNumber,
     required DateTime tenderDate,
     required List<String> forfeitedPackageIds,
+    DateTime? saleDate,
+    String? saleTime,
   }) async {
     // Create tender record
     final data = await supabase
@@ -2027,6 +2041,8 @@ class TendersService {
           'tender_number': tenderNumber,
           'yard': AppSession.currentYard,
           'tender_date': tenderDate.toIso8601String(),
+          'sale_date': saleDate?.toIso8601String().substring(0, 10),
+          'sale_time': saleTime,
           'forfeited_package_ids': forfeitedPackageIds,
           'created_by': supabase.auth.currentUser?.id,
         })
@@ -2054,6 +2070,62 @@ class TendersService {
     return TenderModel.fromJson(data);
   }
 
+  /// Forfeited packages that have been tendered ≥1 time, whose latest tender's
+  /// sale window has passed, and that were NOT sold — i.e. eligible to be
+  /// re-tendered. Each carries its full tender history (newest first).
+  Future<List<ReTenderInfo>> getReTenderablePackages() async {
+    final tendersData = await supabase
+        .from('tenders')
+        .select('*, profiles(full_name)')
+        .order('tender_date', ascending: false);
+    final tenders =
+        (tendersData as List).map((e) => TenderModel.fromJson(e)).toList();
+
+    final disp = await supabase
+        .from('tender_disposals')
+        .select('forfeited_package_id, disposal_type');
+    final soldIds = <String>{};
+    for (final d in (disp as List)) {
+      if ((d['disposal_type'] as String?) == 'sold') {
+        soldIds.add(d['forfeited_package_id'].toString());
+      }
+    }
+
+    // forfeited id → tenders containing it (already newest-first from the query)
+    final byPkg = <String, List<TenderModel>>{};
+    for (final t in tenders) {
+      for (final id in t.forfeitedPackageIds) {
+        byPkg.putIfAbsent(id, () => []).add(t);
+      }
+    }
+
+    final eligible = <String, List<TenderModel>>{};
+    byPkg.forEach((id, ts) {
+      if (soldIds.contains(id)) return;
+      // ts[0] is the latest tender (query ordered by tender_date desc).
+      if (ts.first.saleWindowPassed) eligible[id] = ts;
+    });
+    if (eligible.isEmpty) return [];
+
+    final fp = await supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .inFilter('id', eligible.keys.toList());
+
+    final result = <ReTenderInfo>[];
+    for (final e in (fp as List)) {
+      final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
+      result.add(ReTenderInfo(forfeited: f, tenders: eligible[f.id] ?? const []));
+    }
+    // Stable order: most-tendered first, then by SR number.
+    result.sort((a, b) {
+      final c = b.tenderCount.compareTo(a.tenderCount);
+      return c != 0 ? c : a.forfeited.srNumber.compareTo(b.forfeited.srNumber);
+    });
+    return result;
+  }
+
   /// Record disposal outcome for a package in a tender
   Future<TenderDisposalModel> recordDisposal({
     required String tenderPackageId,
@@ -2076,6 +2148,20 @@ class TendersService {
         })
         .select('*, profiles(full_name)')
         .single();
+
+    // A "Sold" tender outcome sends the package to the Sold Packages page —
+    // write a [FINAL:SOLD] warehouse entry in the package's own yard.
+    if (disposalType == 'sold') {
+      await AuthService._withNetworkRetry(() => supabase.rpc(
+            'disposal_mark_forfeited_sold',
+            params: {
+              'p_forfeited_id': forfeitedPackageId,
+              'p_receipt': (receiptNumber == null || receiptNumber.trim().isEmpty)
+                  ? null
+                  : receiptNumber.trim(),
+            },
+          ));
+    }
 
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -2140,6 +2226,55 @@ class DisposalService {
     return (data as List).map((e) => TenderSaleModel.fromJson(e)).toList();
   }
 
+  Future<List<ReTenderSaleInfo>> getUnsoldTenderSales() async {
+    final sales = await getTenderSales();
+    // forfeited id → tender sales containing it
+    final byPkg = <String, List<TenderSaleModel>>{};
+    
+    // Find all packages that were sold across any tender sale
+    final soldIds = <String>{};
+    for (final sale in sales) {
+      for (final item in sale.items) {
+        if (item.sold) soldIds.add(item.forfeitedPackageId);
+        byPkg.putIfAbsent(item.forfeitedPackageId, () => []).add(sale);
+      }
+    }
+
+    final eligible = <String, List<TenderSaleModel>>{};
+    byPkg.forEach((id, ts) {
+      if (soldIds.contains(id)) return;
+      
+      // Let's assume if it is in a sale and not sold, it's eligible if sale date has passed.
+      // If sale_date is null, we can consider it not passed yet or just include it. Let's include if sale_date <= today.
+      bool passed = true;
+      if (ts.first.saleDate != null) {
+        final saleDateEnd = ts.first.saleDate!.add(const Duration(days: 1));
+        if (DateTime.now().isBefore(saleDateEnd)) passed = false;
+      }
+      if (passed) eligible[id] = ts;
+    });
+
+    if (eligible.isEmpty) return [];
+
+    final fp = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .inFilter('id', eligible.keys.toList()));
+
+    final result = <ReTenderSaleInfo>[];
+    for (final e in (fp as List)) {
+      final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
+      result.add(ReTenderSaleInfo(forfeited: f, sales: eligible[f.id] ?? const []));
+    }
+    // Stable order: most-tendered first, then by SR number.
+    result.sort((a, b) {
+      final c = b.tenderCount.compareTo(a.tenderCount);
+      return c != 0 ? c : a.forfeited.srNumber.compareTo(b.forfeited.srNumber);
+    });
+    return result;
+  }
+
   /// "Sale"-tagged disposal-request items that are not yet in a tender sale —
   /// the pool the Tender Sale form can pick from. Cross-yard via RLS; each
   /// carries the forfeited package (incl. yard, items, warehouse location).
@@ -2166,6 +2301,48 @@ class DisposalService {
     return items.where((i) => seen.add(i.forfeitedPackageId)).toList();
   }
 
+  /// "Sale"-tagged disposal-request items NOT yet placed in a tender — the pool
+  /// the Central Disposal "Place Tender" form picks from (cross-yard via RLS).
+  Future<List<DisposalRequestItemModel>> getSaleRequestItemsNotTendered() async {
+    final tendersData = await AuthService._withNetworkRetry(
+        () => supabase.from('tenders').select('forfeited_package_ids'));
+    final tenderedIds = (tendersData as List)
+        .expand((t) => (t['forfeited_package_ids'] as List? ?? const []))
+        .map((e) => e.toString())
+        .toSet();
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_request_items')
+        .select(
+            '*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+        .eq('disposition', 'sale'));
+
+    final items = (data as List)
+        .map((e) => DisposalRequestItemModel.fromJson(e))
+        .where((i) => !tenderedIds.contains(i.forfeitedPackageId))
+        .toList();
+    final seen = <String>{};
+    return items.where((i) => seen.add(i.forfeitedPackageId)).toList();
+  }
+
+  /// Mark a forfeited package SOLD (used when a tender outcome is "Sold"):
+  /// writes a [FINAL:SOLD] warehouse entry in the package's own yard so it
+  /// surfaces in that yard's Warehouses + the cross-yard Sold Packages tab.
+  Future<void> markForfeitedSold({
+    required String forfeitedPackageId,
+    String? receipt,
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'disposal_mark_forfeited_sold',
+          params: {
+            'p_forfeited_id': forfeitedPackageId,
+            'p_receipt': (receipt == null || receipt.trim().isEmpty)
+                ? null
+                : receipt.trim(),
+          },
+        ));
+  }
+
   /// All yards' disposal requests (cross-yard via RLS), newest first, each with
   /// its line items + the underlying forfeited package detail for display.
   Future<List<DisposalRequestModel>> getDisposalRequests() async {
@@ -2179,11 +2356,27 @@ class DisposalService {
         .toList();
   }
 
+  /// Get the next serial number for tender sales in a given year.
+  Future<int> getNextTenderSaleSerial(int year) async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sales')
+        .select('serial')
+        .eq('year', year));
+    if (data == null) return 1;
+    int maxSerial = 0;
+    for (var row in data as List) {
+      final s = int.tryParse(row['serial']?.toString() ?? '0') ?? 0;
+      if (s > maxSerial) maxSerial = s;
+    }
+    return maxSerial + 1;
+  }
+
   /// Create a tender sale. [packageYards] maps each selected forfeited-package
   /// id → its yard; one `tender_sale_items` row is created per entry.
   Future<void> createTenderSale({
     String? saleNumber,
     DateTime? saleDate,
+    String? saleTime,
     String? serial,
     int? year,
     String? tenderType,
@@ -2198,6 +2391,7 @@ class DisposalService {
           'sale_date': saleDate == null
               ? null
               : saleDate.toIso8601String().substring(0, 10),
+          'sale_time': saleTime,
           'serial': serial,
           'year': year,
           'tender_type': tenderType,

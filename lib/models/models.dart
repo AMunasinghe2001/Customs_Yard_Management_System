@@ -719,6 +719,8 @@ class TenderModel {
   final String id;
   final String tenderNumber;
   final DateTime tenderDate;
+  final DateTime? saleDate; // when the tender sale runs
+  final String? saleTime; // sale start time, e.g. '10:00'
   final List<String> forfeitedPackageIds;
   final DateTime createdAt;
   final String? createdByName;
@@ -727,10 +729,18 @@ class TenderModel {
     required this.id,
     required this.tenderNumber,
     required this.tenderDate,
+    this.saleDate,
+    this.saleTime,
     required this.forfeitedPackageIds,
     required this.createdAt,
     this.createdByName,
   });
+
+  /// After the sale date + 1 grace day (to mark outcomes), unsold packages in
+  /// this tender become re-tenderable. A null saleDate counts as passed.
+  bool get saleWindowPassed =>
+      saleDate == null ||
+      DateTime.now().isAfter(saleDate!.add(const Duration(days: 1)));
 
   factory TenderModel.fromJson(Map<String, dynamic> json) {
     final idsJson = json['forfeited_package_ids'];
@@ -747,12 +757,36 @@ class TenderModel {
       id: json['id'] as String,
       tenderNumber: json['tender_number'] as String,
       tenderDate: DateTime.parse(json['tender_date'] as String),
+      saleDate: json['sale_date'] != null
+          ? DateTime.tryParse(json['sale_date'].toString())
+          : null,
+      saleTime: json['sale_time'] as String?,
       forfeitedPackageIds: ids,
       createdAt: DateTime.parse(json['created_at'] as String),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
   }
+}
+
+/// A forfeited package that has been tendered ≥1 time but is still unsold —
+/// eligible to be re-tendered. Carries the full tender history for the package.
+class ReTenderInfo {
+  final ForfeitedPackageModel forfeited;
+  final List<TenderModel> tenders; // newest first
+  const ReTenderInfo({required this.forfeited, required this.tenders});
+
+  int get tenderCount => tenders.length;
+  TenderModel? get latestTender => tenders.isNotEmpty ? tenders.first : null;
+}
+
+class ReTenderSaleInfo {
+  final ForfeitedPackageModel forfeited;
+  final List<TenderSaleModel> sales; // newest first
+  const ReTenderSaleInfo({required this.forfeited, required this.sales});
+
+  int get tenderCount => sales.length;
+  TenderSaleModel? get latestSale => sales.isNotEmpty ? sales.first : null;
 }
 
 // ── Tender Disposal Outcome Model ────────────────────────────
@@ -879,6 +913,7 @@ class TenderSaleModel {
   final int? year;
   final String? tenderType; // special | general_cargo | motor_vehicle
   final String? yard;
+  final String? saleTime;
   final DateTime createdAt;
   final String? createdByName;
   final List<TenderSaleItemModel> items;
@@ -891,6 +926,7 @@ class TenderSaleModel {
     this.year,
     this.tenderType,
     this.yard,
+    this.saleTime,
     required this.createdAt,
     this.createdByName,
     this.items = const [],
@@ -911,6 +947,7 @@ class TenderSaleModel {
       year: (json['year'] as num?)?.toInt(),
       tenderType: json['tender_type'] as String?,
       yard: json['yard'] as String?,
+      saleTime: json['sale_time'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,

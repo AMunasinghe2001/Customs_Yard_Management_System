@@ -15,6 +15,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
 import 'tender_placement_dialog.dart';
+import 'disposal_request_dialog.dart';
 
 // ── Local providers ────────────────────────────────────────────
 
@@ -173,8 +174,8 @@ class _TenderDisposalScreenState
                                     color: context.colors.dangerRed).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
                                 const Gap(16),
                                 ElevatedButton.icon(
-                                  icon: const Icon(Icons.gavel_rounded, size: 16),
-                                label: const Text('Place Tender'),
+                                  icon: const Icon(Icons.local_shipping_rounded, size: 16),
+                                  label: const Text('Send Disposal Request'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: expiredCount > 0
                                         ? context.colors.primaryGold
@@ -187,14 +188,9 @@ class _TenderDisposalScreenState
                                   onPressed: expiredCount > 0
                                       ? () => showDialog(
                                             context: context,
-                                            builder: (ctx) =>
-                                                TenderPlacementDialog(
-                                              ref: ref,
-                                              onTenderCreated: () {
-                                                ref.invalidate(tendersProvider);
-                                                ref.invalidate(
-                                                    forfeitedPackagesProvider);
-                                              },
+                                            builder: (_) => DisposalRequestDialog(
+                                              onSubmitted: () => ref.invalidate(
+                                                  forfeitedPackagesProvider),
                                             ),
                                           )
                                       : null,
@@ -357,18 +353,14 @@ class _TenderDisposalScreenState
                                     fontSize: 16)),
                             const Gap(8),
                             OutlinedButton.icon(
-                              icon: const Icon(Icons.add_rounded, size: 16),
-                              label: const Text('Place First Tender'),
+                              icon: const Icon(Icons.local_shipping_rounded, size: 16),
+                              label: const Text('Send Disposal Request'),
                               onPressed: () {
                                 showDialog(
                                   context: context,
-                                  builder: (ctx) => TenderPlacementDialog(
-                                    ref: ref,
-                                    onTenderCreated: () {
-                                      Navigator.pop(context);
-                                      ref.invalidate(tendersProvider);
-                                      ref.invalidate(forfeitedPackagesProvider);
-                                    },
+                                  builder: (_) => DisposalRequestDialog(
+                                    onSubmitted: () => ref
+                                        .invalidate(forfeitedPackagesProvider),
                                   ),
                                 );
                               },
@@ -424,7 +416,7 @@ class _TenderDisposalScreenState
                             return ListView.builder(
                               itemCount: filtered.length,
                               itemBuilder: (context, i) {
-                                return _TenderCard(
+                                return TenderCard(
                                   tender: filtered[i],
                                   disposalsMap: disposalsMap,
                                   forfeitedMap: forfeitedMap,
@@ -454,12 +446,12 @@ class _TenderDisposalScreenState
 
 // ── Tender Card ─────────────────────────────────────────────────
 
-class _TenderCard extends ConsumerWidget {
+class TenderCard extends ConsumerWidget {
   final TenderModel tender;
   final Map<String, TenderDisposalModel> disposalsMap;
   final Map<String, ForfeitedPackageModel> forfeitedMap;
 
-  const _TenderCard({
+  const TenderCard({
     required this.tender,
     required this.disposalsMap,
     required this.forfeitedMap,
@@ -882,7 +874,9 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
       );
       return;
     }
-    if (_restrictedTypes.contains(_selectedDisposalType)) {
+    final isDisposalUser =
+        ref.read(currentProfileProvider)?.isDisposal ?? false;
+    if (!isDisposalUser && _restrictedTypes.contains(_selectedDisposalType)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
             content: Text(
@@ -946,6 +940,10 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
   Widget build(BuildContext context) {
     final forfeited = widget.forfeited;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // The Central Disposal Directorate may record any outcome; yard admins are
+    // restricted (Sold / Destroy / Govt Use are centralised).
+    final isDisposalUser =
+        ref.watch(currentProfileProvider)?.isDisposal ?? false;
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 400),
@@ -1076,7 +1074,8 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
                         Column(
                           children: _disposalTypes.map((entry) {
                             final (value, label, icon, description) = entry;
-                            final restricted = _restrictedTypes.contains(value);
+                            final restricted = !isDisposalUser &&
+                                _restrictedTypes.contains(value);
                             final isSelected =
                                 !restricted && _selectedDisposalType == value;
                             final color = _disposalTypeColor(context, value);
@@ -1512,6 +1511,336 @@ class _StatChip extends StatelessWidget {
                   letterSpacing: 0.5)),
         ],
       ),
+    );
+  }
+}
+
+// ── Unsold packages → re-tender view ────────────────────────────────
+// Tendered-but-unsold packages (sale window passed). Shows how many times each
+// was tendered, a Details button (full tender history), and a Re-tender action
+// that opens the tender form sourcing only these packages.
+
+class UnsoldReTenderDialog extends ConsumerWidget {
+  const UnsoldReTenderDialog();
+
+  String _itemName(ForfeitedPackageModel f) {
+    final items = f.packageDetails?.items ?? const [];
+    if (items.isEmpty) return 'Multiple/Unspecified';
+    if (items.length == 1) return items.first.itemName;
+    return '${items.first.itemName} +${items.length - 1}';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(reTenderablePackagesProvider);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Container(
+        width: 900,
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.86),
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBg,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          // Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: isDark
+                    ? [context.colors.surfaceDark, context.colors.cardDark]
+                    : [
+                        context.colors.customsBlue,
+                        context.colors.customsBlueDark
+                      ],
+              ),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.replay_rounded,
+                    color: context.colors.primaryGold, size: 22),
+              ),
+              const Gap(14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('TENDER MANAGEMENT',
+                        style: TextStyle(
+                            color: context.colors.primaryGold,
+                            fontSize: 11,
+                            letterSpacing: 1.2,
+                            fontWeight: FontWeight.w800)),
+                    const Text('Unsold Packages — Re-tender',
+                        style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold)),
+                  ],
+                ),
+              ),
+              async.maybeWhen(
+                data: (list) => ElevatedButton.icon(
+                  icon: const Icon(Icons.gavel_rounded, size: 16),
+                  label: const Text('Re-tender'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: context.colors.primaryGold,
+                    foregroundColor: Colors.white,
+                  ),
+                  onPressed: list.isEmpty
+                      ? null
+                      : () => showDialog(
+                            context: context,
+                            builder: (_) => TenderPlacementDialog(
+                              ref: ref,
+                              reTender: true,
+                              onTenderCreated: () {
+                                ref.invalidate(reTenderablePackagesProvider);
+                                ref.invalidate(tendersProvider);
+                              },
+                            ),
+                          ),
+                ),
+                orElse: () => const SizedBox(),
+              ),
+              const Gap(8),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: Icon(Icons.close_rounded,
+                    color: Colors.white.withOpacity(0.7)),
+              ),
+            ]),
+          ),
+          // Body
+          Flexible(
+            child: async.when(
+              loading: () => Center(
+                  child: CircularProgressIndicator(
+                      color: context.colors.primaryGold)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () => ref.refresh(reTenderablePackagesProvider)),
+              data: (list) {
+                if (list.isEmpty) {
+                  return const Padding(
+                    padding: EdgeInsets.all(40),
+                    child: EmptyTableState(
+                        message:
+                            'No unsold packages — everything tendered is either sold or still in an active sale window'),
+                  );
+                }
+                return Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: DataTable2(
+                    columnSpacing: 12,
+                    horizontalMargin: 12,
+                    fixedTopRows: 1,
+                    minWidth: 760,
+                    columns: const [
+                      DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Item'), size: ColumnSize.L),
+                      DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Center(child: Text('Times Tendered')),
+                          size: ColumnSize.S,
+                          fixedWidth: 130),
+                      DataColumn2(
+                          label: Center(child: Text('Tenders')),
+                          size: ColumnSize.S,
+                          fixedWidth: 90),
+                    ],
+                    rows: list.map((info) {
+                      final f = info.forfeited;
+                      return DataRow(cells: [
+                        DataCell(Text(f.srNumber,
+                            style: TextStyle(
+                                color: context.colors.accentLightBlue,
+                                fontWeight: FontWeight.w600))),
+                        DataCell(Text(_itemName(f),
+                            overflow: TextOverflow.ellipsis)),
+                        DataCell(Text(f.consigneeName,
+                            overflow: TextOverflow.ellipsis)),
+                        DataCell(Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color:
+                                  context.colors.warningAmber.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                  color: context.colors.warningAmber
+                                      .withOpacity(0.4)),
+                            ),
+                            child: Text('${info.tenderCount}×',
+                                style: TextStyle(
+                                    color: context.colors.warningAmber,
+                                    fontWeight: FontWeight.w800)),
+                          ),
+                        )),
+                        DataCell(Center(
+                          child: IconButton(
+                            tooltip: 'Tender history',
+                            icon: Icon(Icons.history_rounded,
+                                color: context.colors.accentLightBlue,
+                                size: 20),
+                            onPressed: () => showDialog(
+                              context: context,
+                              builder: (_) => TenderHistoryDialog(info: info),
+                            ),
+                          ),
+                        )),
+                      ]);
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+class TenderHistoryDialog extends StatelessWidget {
+  final ReTenderInfo info;
+  const TenderHistoryDialog({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    final tenders = info.tenders;
+    return Dialog(
+      backgroundColor: context.colors.scaffoldBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Container(
+        width: 540,
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.history_rounded, color: context.colors.primaryGold),
+              const Gap(10),
+              Expanded(
+                child: Text('Tender History — ${info.forfeited.srNumber}',
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800)),
+              ),
+              IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded)),
+            ]),
+            const Gap(4),
+            Text('Tendered ${info.tenderCount} time(s)',
+                style: TextStyle(color: context.colors.textSecondary)),
+            const Gap(12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: tenders.length,
+                separatorBuilder: (_, __) => const Gap(10),
+                itemBuilder: (context, i) {
+                  final t = tenders[i];
+                  final isLatest = i == 0;
+                  return Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: context.colors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: isLatest
+                              ? context.colors.primaryGold.withOpacity(0.5)
+                              : context.colors.borderColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.gavel_rounded,
+                              size: 16, color: context.colors.primaryGold),
+                          const Gap(8),
+                          Text(t.tenderNumber,
+                              style: TextStyle(
+                                  color: context.colors.textPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15)),
+                          if (isLatest) ...[
+                            const Gap(8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: context.colors.primaryGold
+                                    .withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text('Latest',
+                                  style: TextStyle(
+                                      color: context.colors.primaryGold,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ]),
+                        const Gap(8),
+                        _kv(context, 'Tender Date',
+                            DateFormat('yyyy-MM-dd').format(t.tenderDate)),
+                        _kv(
+                            context,
+                            'Sale Date',
+                            t.saleDate != null
+                                ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
+                                : '—'),
+                        _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
+                        if (t.createdByName != null)
+                          _kv(context, 'Created By', t.createdByName!),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _kv(BuildContext context, String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(children: [
+        SizedBox(
+          width: 130,
+          child: Text(k,
+              style: TextStyle(
+                  color: context.colors.textMuted, fontSize: 12)),
+        ),
+        Expanded(
+          child: Text(v,
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+        ),
+      ]),
     );
   }
 }

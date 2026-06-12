@@ -143,8 +143,17 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  v_yard text;
 begin
-  if not public.auth_user_is_disposal() then
+  select yard into v_yard from public.tender_sale_items where id = p_item_id;
+  if v_yard is null then
+    raise exception 'tender sale item not found';
+  end if;
+  -- The Central Disposal Directorate OR the package's own yard may update
+  -- delivery (yard admins confirm delivery from their Sold Packages table).
+  if not (public.auth_user_is_disposal()
+          or v_yard = (select yard from public.profiles where id = auth.uid())) then
     raise exception 'not authorized';
   end if;
   update public.tender_sale_items

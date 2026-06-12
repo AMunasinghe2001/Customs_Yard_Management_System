@@ -16,6 +16,8 @@ import 'taxes_tab.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../forfeited_packages/tender_disposal_screen.dart';
+import '../forfeited_packages/tender_placement_dialog.dart';
 
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
@@ -25,7 +27,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -188,7 +190,17 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             ]),
                           )),
                       Tab(
-                        icon: Icon(Icons.gavel_rounded),
+                          height: 44,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(horizontal: 10),
+                            child: Row(mainAxisSize: MainAxisSize.min, children: [
+                              Icon(Icons.replay_rounded, size: 18),
+                              Gap(8),
+                              Text('Unsold'),
+                            ]),
+                          )),
+                      Tab(
+                        icon: Icon(Icons.storefront_rounded),
                         text: 'Tender Sales',
                       ),
                       Tab(
@@ -205,6 +217,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 _SoldPackagesTab(),
                 _ForfeitedPackagesTab(),
                 _DisposalRequestsTab(),
+                _UnsoldReTenderTab(),
                 _TenderSalesTab(),
                 TaxesTab(),
               ]),
@@ -400,7 +413,7 @@ class _SoldPackagesTab extends ConsumerWidget {
                       DataColumn2(label: Text('Sold Date'), size: ColumnSize.M),
                       DataColumn2(label: Text('Sold By'), size: ColumnSize.M),
                       DataColumn2(label: Text('Financials'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Delivery'), size: ColumnSize.S),
+                      DataColumn2(label: Text('Delivery'), fixedWidth: 120),
                       DataColumn2(
                           label: Center(child: Text('Details')),
                           size: ColumnSize.S,
@@ -452,131 +465,80 @@ class _SoldPackagesTab extends ConsumerWidget {
   }
 }
 
-class _SaleFinancialsCell extends ConsumerStatefulWidget {
+// Read-only sold price + tax total (watches the shared per-package provider).
+class _SaleFinancialsCell extends ConsumerWidget {
   final PackageModel package;
   const _SaleFinancialsCell({required this.package});
   @override
-  ConsumerState<_SaleFinancialsCell> createState() => _SaleFinancialsCellState();
-}
-
-class _SaleFinancialsCellState extends ConsumerState<_SaleFinancialsCell> {
-  TenderSaleItemModel? _saleItem;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    try {
-      final item = await ref
-          .read(disposalServiceProvider)
-          .getTenderSaleItemForPackage(widget.package.id);
-      if (mounted) setState(() => _saleItem = item);
-    } catch (_) {
-      if (mounted) setState(() => _saleItem = null);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (_loading) return const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2));
-    if (_saleItem == null) return const Text('—');
-    double taxSum = 0;
-    for(var t in _saleItem!.appliedTaxes) {
-      taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text('Rs ${_saleItem!.soldPrice.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-        Text('Tax: Rs ${taxSum.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
-      ]
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(saleItemForPackageProvider(package.id));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) {
+        if (item == null) return const Text('—');
+        double taxSum = 0;
+        for (final t in item.appliedTaxes) {
+          taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Rs ${item.soldPrice.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text('Tax: Rs ${taxSum.toStringAsFixed(2)}',
+                style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
+          ],
+        );
+      },
     );
   }
 }
 
-class _DeliveryStatusCell extends ConsumerStatefulWidget {
+// Read-only delivery STATUS chip (the action button lives in the details
+// dialog, enabled for yards only). Watches the shared per-package provider.
+class _DeliveryStatusCell extends ConsumerWidget {
   final PackageModel package;
   const _DeliveryStatusCell({required this.package});
   @override
-  ConsumerState<_DeliveryStatusCell> createState() => _DeliveryStatusCellState();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(saleItemForPackageProvider(package.id));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) => item == null
+          ? const Text('—')
+          : DeliveryStatusChip(delivered: item.isDelivered),
+    );
+  }
 }
 
-class _DeliveryStatusCellState extends ConsumerState<_DeliveryStatusCell> {
-  TenderSaleItemModel? _saleItem;
-  bool _loading = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    try {
-      final item = await ref
-          .read(disposalServiceProvider)
-          .getTenderSaleItemForPackage(widget.package.id);
-      if (mounted) setState(() => _saleItem = item);
-    } catch (_) {
-      if (mounted) setState(() => _saleItem = null);
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _toggleDelivery() async {
-    if (_saleItem == null) return;
-    final newValue = !_saleItem!.isDelivered;
-    setState(() => _loading = true);
-    try {
-      await ref.read(disposalServiceProvider).toggleDeliveryStatus(_saleItem!.id, newValue);
-      await _loadData();
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
-          backgroundColor: newValue ? Colors.green : Colors.orange,
-        ));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
+/// Small read-only Delivered/Pending chip shared by the Sold tables.
+class DeliveryStatusChip extends StatelessWidget {
+  final bool delivered;
+  const DeliveryStatusChip({super.key, required this.delivered});
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2));
-    if (_saleItem == null) return const Text('—');
-    return InkWell(
-      onTap: _toggleDelivery,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        decoration: BoxDecoration(
-          color: _saleItem!.isDelivered ? Colors.green.withOpacity(0.1) : Colors.orange.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Text(
-          _saleItem!.isDelivered ? 'Delivered' : 'Pending',
-          style: TextStyle(
-            color: _saleItem!.isDelivered ? Colors.green : Colors.orange,
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+    final color =
+        delivered ? context.colors.successGreen : context.colors.warningAmber;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.4)),
       ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(delivered ? Icons.check_circle_rounded : Icons.schedule_rounded,
+            size: 13, color: color),
+        const Gap(5),
+        Text(delivered ? 'Delivered' : 'Pending',
+            style:
+                TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+      ]),
     );
   }
 }
@@ -1069,6 +1031,238 @@ class _CountPill extends StatelessWidget {
   }
 }
 
+// ── Tenders (cross-yard tender management) ────────────────────────
+// Place tenders, record disposal outcomes, and re-tender unsold lots — the full
+// tender lifecycle, moved here from the yard side. Reuses TenderCard +
+// UnsoldReTenderDialog + TenderPlacementDialog from the Tender Disposals screen.
+
+class _TendersTab extends ConsumerWidget {
+  const _TendersTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final green = context.colors.successGreen;
+    final tenders = ref.watch(tendersProvider);
+    final disposalsMap = ref.watch(tenderDisposalsMapProvider);
+    final forfeitedMap = ref.watch(allForfeitedMapProvider);
+
+    void invalidate() {
+      ref.invalidate(tendersProvider);
+      ref.invalidate(forfeitedPackagesProvider);
+      ref.invalidate(reTenderablePackagesProvider);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text('Tenders',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700)),
+            const Spacer(),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                  backgroundColor: green, foregroundColor: Colors.white),
+              icon: const Icon(Icons.gavel_rounded, size: 18),
+              label: const Text('Place Tender',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => TenderPlacementDialog(
+                  ref: ref,
+                  onTenderCreated: invalidate,
+                ),
+              ),
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(16),
+          Expanded(
+            child: tenders.when(
+              skipLoadingOnReload: true,
+              loading: () =>
+                  Center(child: CircularProgressIndicator(color: green)),
+              error: (e, _) => ErrorView(
+                  error: e, onRetry: () => ref.refresh(tendersProvider)),
+              data: (list) {
+                if (list.isEmpty) {
+                  return _listCard(
+                    context,
+                    const EmptyTableState(
+                        message: 'No tenders yet — Place Tender to start'),
+                  );
+                }
+                final dMap = disposalsMap.valueOrNull ??
+                    <String, TenderDisposalModel>{};
+                final fMap = forfeitedMap.valueOrNull ??
+                    <String, ForfeitedPackageModel>{};
+                return ListView.builder(
+                  itemCount: list.length,
+                  itemBuilder: (context, i) => TenderCard(
+                    tender: list[i],
+                    disposalsMap: dMap,
+                    forfeitedMap: fMap,
+                  ),
+                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Unsold packages → Re-tender (separate page/tab) ───────────────
+
+class _UnsoldReTenderTab extends ConsumerWidget {
+  const _UnsoldReTenderTab();
+
+  String _itemName(ForfeitedPackageModel f) {
+    final items = f.packageDetails?.items ?? const [];
+    if (items.isEmpty) return 'Multiple/Unspecified';
+    if (items.length == 1) return items.first.itemName;
+    return '${items.first.itemName} +${items.length - 1}';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final green = context.colors.successGreen;
+    final amber = context.colors.warningAmber;
+    final async = ref.watch(unsoldTenderSalesProvider);
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text('Unsold Packages — Re-tender',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700)),
+            const Spacer(),
+            async.maybeWhen(
+                  data: (list) => ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: green, foregroundColor: Colors.white),
+                    icon: const Icon(Icons.gavel_rounded, size: 18),
+                    label: const Text('Re-tender',
+                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    onPressed: list.isEmpty
+                        ? null
+                        : () => showDialog(
+                              context: context,
+                              builder: (_) => const _TenderSaleFormDialog(),
+                            ).then((_) {
+                              ref.invalidate(unsoldTenderSalesProvider);
+                              ref.invalidate(tenderSalesProvider);
+                            }),
+                  ),
+              orElse: () => const SizedBox(),
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(14),
+          async.maybeWhen(
+            data: (list) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: _StatChip(
+                  label: 'Unsold — re-tenderable',
+                  value: '${list.length}',
+                  color: amber),
+            ).animate().fadeIn(duration: 300.ms),
+            orElse: () => const SizedBox.shrink(),
+          ),
+          Expanded(
+            child: async.when(
+              skipLoadingOnReload: true,
+              loading: () =>
+                  Center(child: CircularProgressIndicator(color: green)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
+              data: (list) {
+                if (list.isEmpty) {
+                  return _listCard(
+                    context,
+                    const EmptyTableState(
+                        message:
+                            'No unsold packages — everything tendered is sold or still in an active sale window'),
+                  );
+                }
+                return _listCard(
+                  context,
+                  DataTable2(
+                    columnSpacing: 12,
+                    horizontalMargin: 16,
+                    fixedTopRows: 1,
+                    minWidth: 760,
+                    headingRowColor: _headingColor(context),
+                    columns: const [
+                      DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Item'), size: ColumnSize.L),
+                      DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Center(child: Text('Times Tendered')),
+                          size: ColumnSize.S,
+                          fixedWidth: 130),
+                      DataColumn2(
+                          label: Center(child: Text('Tenders')),
+                          size: ColumnSize.S,
+                          fixedWidth: 90),
+                    ],
+                    rows: list.map((info) {
+                      final f = info.forfeited;
+                      return DataRow(cells: [
+                        DataCell(Text(f.srNumber,
+                            style: TextStyle(
+                                color: context.colors.accentLightBlue,
+                                fontWeight: FontWeight.w600))),
+                        DataCell(Text(_itemName(f),
+                            overflow: TextOverflow.ellipsis)),
+                        DataCell(Text(f.consigneeName,
+                            overflow: TextOverflow.ellipsis)),
+                        DataCell(Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: amber.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: amber.withOpacity(0.4)),
+                            ),
+                            child: Text('${info.tenderCount}×',
+                                style: TextStyle(
+                                    color: amber, fontWeight: FontWeight.w800)),
+                          ),
+                        )),
+                        DataCell(Center(
+                          child: IconButton(
+                            icon: const Icon(Icons.history_rounded, size: 18),
+                            color: context.colors.accentLightBlue,
+                            onPressed: () => showDialog(
+                              context: context,
+                              builder: (_) => _TenderSaleHistoryDialog(info: info),
+                            ),
+                          ),
+                        )),
+                      ]);
+                    }).toList(),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 // ── Tender Sales ──────────────────────────────────────────────────
 
 class _TenderSalesTab extends ConsumerWidget {
@@ -1552,18 +1746,63 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   final _numberC = TextEditingController();
   final _serialC = TextEditingController();
   final _yearC = TextEditingController(text: DateTime.now().year.toString());
-  DateTime? _saleDate = DateTime.now();
+  DateTime? _saleDate;
+  TimeOfDay? _saleTime;
   String? _tenderType;
   bool _loading = false;
   // forfeited_package_id → yard
   final Map<String, String> _selected = {};
 
   @override
+  void initState() {
+    super.initState();
+    _yearC.addListener(_onYearChanged);
+    _serialC.addListener(_updateSaleNumber);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadSerialForYear();
+    });
+  }
+
+  @override
   void dispose() {
+    _yearC.removeListener(_onYearChanged);
+    _serialC.removeListener(_updateSaleNumber);
     _numberC.dispose();
     _serialC.dispose();
     _yearC.dispose();
     super.dispose();
+  }
+
+  void _onYearChanged() {
+    if (_yearC.text.length == 4) {
+      _loadSerialForYear();
+    }
+  }
+
+  Future<void> _loadSerialForYear() async {
+    final year = int.tryParse(_yearC.text);
+    if (year == null) return;
+    try {
+      final nextSerial = await ref.read(disposalServiceProvider).getNextTenderSaleSerial(year);
+      if (mounted) {
+        _serialC.text = nextSerial.toString();
+        _updateSaleNumber();
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  void _updateSaleNumber() {
+    final year = _yearC.text;
+    final serial = _serialC.text;
+    if (year.isEmpty || serial.isEmpty) return;
+    
+    String saleNum = 'CDU/TS/$year/$serial';
+    if (_tenderType == 'special') {
+      saleNum += '(Special)';
+    }
+    _numberC.text = saleNum;
   }
 
   String _summary(DisposalRequestItemModel it) {
@@ -1591,33 +1830,60 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
             children: [
               TextField(
                 controller: _numberC,
+                readOnly: true,
                 decoration:
                     const InputDecoration(labelText: 'Tender Sale Number'),
               ),
-              InkWell(
-                onTap: () async {
-                  final picked = await showDatePicker(
-                    context: context,
-                    initialDate: _saleDate ?? DateTime.now(),
-                    firstDate: DateTime(2015),
-                    lastDate: DateTime(2100),
-                  );
-                  if (picked != null) setState(() => _saleDate = picked);
-                },
-                child: InputDecorator(
-                  decoration: const InputDecoration(
-                    labelText: 'Date',
-                    suffixIcon: Icon(Icons.calendar_month_rounded),
+              Row(children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _saleDate ?? DateTime.now(),
+                        firstDate: DateTime(2015),
+                        lastDate: DateTime(2100),
+                      );
+                      if (picked != null) setState(() => _saleDate = picked);
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Tender Sale Date',
+                        suffixIcon: Icon(Icons.calendar_month_rounded),
+                      ),
+                      child: Text(_saleDate != null
+                          ? DateFormat('yyyy-MM-dd').format(_saleDate!)
+                          : 'Select sale date', style: _saleDate == null ? TextStyle(color: context.colors.textMuted) : null),
+                    ),
                   ),
-                  child: Text(_saleDate != null
-                      ? DateFormat('yyyy-MM-dd').format(_saleDate!)
-                      : 'Select date'),
                 ),
-              ),
+                const Gap(12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: _saleTime ?? TimeOfDay.now(),
+                      );
+                      if (picked != null) setState(() => _saleTime = picked);
+                    },
+                    child: InputDecorator(
+                      decoration: const InputDecoration(
+                        labelText: 'Sale Start Time',
+                        suffixIcon: Icon(Icons.access_time_rounded),
+                      ),
+                      child: Text(_saleTime != null
+                          ? _saleTime!.format(context)
+                          : 'Select time', style: _saleTime == null ? TextStyle(color: context.colors.textMuted) : null),
+                    ),
+                  ),
+                ),
+              ]),
               Row(children: [
                 Expanded(
                   child: TextField(
                     controller: _serialC,
+                    readOnly: true,
                     decoration: const InputDecoration(labelText: 'Serial'),
                   ),
                 ),
@@ -1641,7 +1907,10 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                         value: e.key,
                         child: Text(e.value, overflow: TextOverflow.ellipsis)),
                 ],
-                onChanged: (v) => setState(() => _tenderType = v),
+                onChanged: (v) {
+                  setState(() => _tenderType = v);
+                  _updateSaleNumber();
+                },
               ),
             ],
           ),
@@ -1780,9 +2049,9 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
             setState(() => _loading = true);
             try {
               await ref.read(disposalServiceProvider).createTenderSale(
-                    saleNumber:
-                        _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
+                    saleNumber: _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
                     saleDate: _saleDate,
+                    saleTime: _saleTime?.format(context),
                     serial:
                         _serialC.text.trim().isEmpty ? null : _serialC.text.trim(),
                     year: int.tryParse(_yearC.text.trim()),
@@ -1811,6 +2080,135 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
           },
         ),
       ],
+    );
+  }
+}
+
+class _TenderSaleHistoryDialog extends StatelessWidget {
+  final ReTenderSaleInfo info;
+  const _TenderSaleHistoryDialog({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    final sales = info.sales;
+    return Dialog(
+      backgroundColor: context.colors.scaffoldBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Container(
+        width: 540,
+        constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.8),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.history_rounded, color: context.colors.primaryGold),
+              const Gap(10),
+              Expanded(
+                child: Text('Tender Sale History — ${info.forfeited.srNumber}',
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800)),
+              ),
+              IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  icon: const Icon(Icons.close_rounded)),
+            ]),
+            const Gap(4),
+            Text('Tendered ${info.tenderCount} time(s)',
+                style: TextStyle(color: context.colors.textSecondary)),
+            const Gap(12),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: sales.length,
+                separatorBuilder: (_, __) => const Gap(10),
+                itemBuilder: (context, i) {
+                  final t = sales[i];
+                  final isLatest = i == 0;
+                  return Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: context.colors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: isLatest
+                              ? context.colors.primaryGold.withOpacity(0.5)
+                              : context.colors.borderColor),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Icon(Icons.gavel_rounded,
+                              size: 16, color: context.colors.primaryGold),
+                          const Gap(8),
+                          Text(t.saleNumber ?? 'No Number',
+                              style: TextStyle(
+                                  color: context.colors.textPrimary,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 15)),
+                          if (isLatest) ...[
+                            const Gap(8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: context.colors.primaryGold
+                                    .withOpacity(0.15),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text('Latest',
+                                  style: TextStyle(
+                                      color: context.colors.primaryGold,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.bold)),
+                            ),
+                          ],
+                        ]),
+                        const Gap(8),
+                        _kv(
+                            context,
+                            'Sale Date',
+                            t.saleDate != null
+                                ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
+                                : '—'),
+                        _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
+                        if (t.createdByName != null)
+                          _kv(context, 'Created By', t.createdByName!),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _kv(BuildContext context, String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(children: [
+        SizedBox(
+          width: 130,
+          child: Text(k,
+              style: TextStyle(
+                  color: context.colors.textMuted, fontSize: 12)),
+        ),
+        Expanded(
+          child: Text(v,
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600)),
+        ),
+      ]),
     );
   }
 }

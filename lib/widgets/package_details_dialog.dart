@@ -684,6 +684,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         WarehouseEntryModel.isNoChargeStatus(_hs) ||
             _isAbandonOrForfeitEntry(widget.highlightEntry);
 
+    // SOLD-via-tender context: declutter — no release receipt / warehouse
+    // charges / packages-released fields (the Sale & Financial section covers it).
+    final isSoldContext = _hs == 'sold' ||
+        p.status.toLowerCase() == 'sold' ||
+        (widget.highlightEntry?.returnNotes?.toUpperCase().contains('SOLD') ??
+            false);
+
     return Dialog(
       backgroundColor: Colors.transparent,
       elevation: 0,
@@ -1017,42 +1024,43 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                               label: 'Item Name',
                                               value: highlightedItem.itemName,
                                             ),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .view_in_ar_rounded,
-                                                    label: 'Total Packages',
-                                                    value:
-                                                        '${highlightedItem.quantity}',
+                                            if (!isSoldContext)
+                                              Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: _DetailItem(
+                                                      icon: Icons
+                                                          .view_in_ar_rounded,
+                                                      label: 'Total Packages',
+                                                      value:
+                                                          '${highlightedItem.quantity}',
+                                                    ),
                                                   ),
-                                                ),
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: widget
-                                                            .useWarehouseSummary
-                                                        ? Icons
-                                                            .inventory_2_rounded
-                                                        : Icons
-                                                            .keyboard_return_rounded,
-                                                    label: widget
-                                                            .useWarehouseSummary
-                                                        ? 'Remaining (Current)'
-                                                        : 'Released (This Receipt)',
-                                                    value:
-                                                        '${widget.highlightEntry!.itemCount}',
-                                                    valueColor: widget
-                                                            .useWarehouseSummary
-                                                        ? context
-                                                            .colors.primaryGold
-                                                        : context.colors
-                                                            .successGreen,
+                                                  const Gap(12),
+                                                  Expanded(
+                                                    child: _DetailItem(
+                                                      icon: widget
+                                                              .useWarehouseSummary
+                                                          ? Icons
+                                                              .inventory_2_rounded
+                                                          : Icons
+                                                              .keyboard_return_rounded,
+                                                      label: widget
+                                                              .useWarehouseSummary
+                                                          ? 'Remaining (Current)'
+                                                          : 'Released (This Receipt)',
+                                                      value:
+                                                          '${widget.highlightEntry!.itemCount}',
+                                                      valueColor: widget
+                                                              .useWarehouseSummary
+                                                          ? context
+                                                              .colors.primaryGold
+                                                          : context.colors
+                                                              .successGreen,
+                                                    ),
                                                   ),
-                                                ),
-                                              ],
-                                            ),
+                                                ],
+                                              ),
                                           ],
                                         ),
                                 ),
@@ -1093,7 +1101,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                           value:
                                               '${DateFormat('yyyy-MM-dd').format(legacyEntries.first.admittedAt)} to ${legacyEntries.first.returnedAt != null ? DateFormat('yyyy-MM-dd').format(legacyEntries.first.returnedAt!) : '—'}',
                                         ),
-                                        if (!isNoChargeContext) ...[
+                                        if (!isNoChargeContext &&
+                                            !isSoldContext) ...[
                                           _DetailItem(
                                             icon: Icons.receipt_long_rounded,
                                             label: 'Receipt No',
@@ -1693,8 +1702,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       ],
 
                       // Warehouse Charges Section — hidden for no-charge
-                      // (abandoned / forfeit / destroy) items.
-                      if (widget.highlightEntry != null && !isNoChargeContext)
+                      // (abandoned / forfeit / destroy) items and sold items.
+                      if (widget.highlightEntry != null &&
+                          !isNoChargeContext &&
+                          !isSoldContext)
                         _DetailSection(
                           title: 'Warehouse Charges',
                           icon: Icons.payments_rounded,
@@ -2420,84 +2431,136 @@ class _SaleFinancialsSection extends ConsumerStatefulWidget {
 }
 
 class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> {
-  TenderSaleItemModel? _saleItem;
-  bool _loading = true;
+  bool _toggling = false;
 
-  @override
-  void initState() {
-    super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
+  Future<void> _toggleDelivery(TenderSaleItemModel item) async {
+    setState(() => _toggling = true);
+    final newValue = !item.isDelivered;
     try {
-      final item = await ref
+      await ref
           .read(disposalServiceProvider)
-          .getTenderSaleItemForPackage(widget.package.id);
-      if (mounted) setState(() => _saleItem = item);
-    } catch (_) {
-      if (mounted) setState(() => _saleItem = null);
+          .toggleDeliveryStatus(item.id, newValue);
+      ref.invalidate(saleItemForPackageProvider(widget.package.id));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
+          backgroundColor:
+              newValue ? context.colors.successGreen : context.colors.warningAmber,
+        ));
+        // Close the details popup on success.
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: context.colors.dangerRed,
+        ));
+      }
     } finally {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) setState(() => _toggling = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading) {
-      return const material.Center(
+    final async = ref.watch(saleItemForPackageProvider(widget.package.id));
+    return async.when(
+      loading: () => const material.Center(
         child: material.Padding(
-          padding: EdgeInsets.all(16),
-          child: material.CircularProgressIndicator()
-        )
-      );
-    }
-    if (_saleItem == null) return const material.SizedBox.shrink();
-
-    double taxSum = 0;
-    for(var t in _saleItem!.appliedTaxes) {
-      taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
-    }
-
-    return _DetailSection(
-      title: 'Sale & Financial Information',
-      icon: Icons.sell_rounded,
-      delay: 650,
-      child: material.Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: context.colors.surfaceDark,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: context.colors.borderColor),
-        ),
-        child: Column(
-          children: [
-            _DetailItem(
-              icon: Icons.payments_rounded,
-              label: 'Sold Price (Rs)',
-              value: _saleItem!.soldPrice.toStringAsFixed(2),
-            ),
-            if (_saleItem!.appliedTaxes.isNotEmpty)
-              ..._saleItem!.appliedTaxes.map((t) => _DetailItem(
-                icon: Icons.receipt_rounded,
-                label: '${t['name']} (${t['percentage']}%)',
-                value: ((t['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2),
-              )),
-            _DetailItem(
-              icon: Icons.account_balance_wallet_rounded,
-              label: 'Total Sale Value (Inc. Taxes)',
-              value: (_saleItem!.soldPrice + taxSum).toStringAsFixed(2),
-              valueColor: context.colors.primaryGold,
-            ),
-            _DetailItem(
-              icon: Icons.local_shipping_rounded,
-              label: 'Delivery Status',
-              value: _saleItem!.isDelivered ? 'Delivered' : 'Pending',
-              valueColor: _saleItem!.isDelivered ? context.colors.successGreen : context.colors.dangerRed,
-            ),
-          ],
-        ),
+            padding: EdgeInsets.all(16),
+            child: material.CircularProgressIndicator()),
       ),
+      error: (_, __) => const material.SizedBox.shrink(),
+      data: (saleItem) {
+        if (saleItem == null) return const material.SizedBox.shrink();
+
+        double taxSum = 0;
+        for (final t in saleItem.appliedTaxes) {
+          taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
+        }
+
+        final profile = ref.watch(currentProfileProvider);
+        // Only a yard (admin/officer) confirms delivery; Central Disposal views.
+        final canEdit = profile != null && !profile.isDisposal;
+        final delivered = saleItem.isDelivered;
+        final actionColor =
+            delivered ? context.colors.warningAmber : context.colors.successGreen;
+
+        return _DetailSection(
+          title: 'Sale & Financial Information',
+          icon: Icons.sell_rounded,
+          delay: 650,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: context.colors.surfaceDark,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.colors.borderColor),
+            ),
+            child: Column(
+              children: [
+                _DetailItem(
+                  icon: Icons.payments_rounded,
+                  label: 'Sold Price (Rs)',
+                  value: saleItem.soldPrice.toStringAsFixed(2),
+                ),
+                if (saleItem.appliedTaxes.isNotEmpty)
+                  ...saleItem.appliedTaxes.map((t) => _DetailItem(
+                        icon: Icons.receipt_rounded,
+                        label: '${t['name']} (${t['percentage']}%)',
+                        value: ((t['amount'] as num?)?.toDouble() ?? 0)
+                            .toStringAsFixed(2),
+                      )),
+                _DetailItem(
+                  icon: Icons.account_balance_wallet_rounded,
+                  label: 'Total Sale Value (Inc. Taxes)',
+                  value: (saleItem.soldPrice + taxSum).toStringAsFixed(2),
+                  valueColor: context.colors.primaryGold,
+                ),
+                _DetailItem(
+                  icon: Icons.local_shipping_rounded,
+                  label: 'Delivery Status',
+                  value: delivered ? 'Delivered' : 'Pending',
+                  valueColor: delivered
+                      ? context.colors.successGreen
+                      : context.colors.dangerRed,
+                ),
+                if (canEdit) ...[
+                  const Gap(10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed:
+                          _toggling ? null : () => _toggleDelivery(saleItem),
+                      icon: _toggling
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
+                          : Icon(
+                              delivered
+                                  ? Icons.undo_rounded
+                                  : Icons.local_shipping_rounded,
+                              size: 18),
+                      label: Text(delivered
+                          ? 'Mark as Not Delivered'
+                          : 'Mark Delivered'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: actionColor,
+                        side: BorderSide(color: actionColor.withOpacity(0.6)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 }

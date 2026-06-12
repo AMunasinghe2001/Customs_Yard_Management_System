@@ -272,17 +272,34 @@ final forfeitedPackagesChangeTriggerProvider = StreamProvider<int>((ref) async* 
 
 final forfeitedPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
   return ref.read(forfeitedPackageServiceProvider).getForfeitedPackages();
 });
 
 final expiredAppealPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
   return ref.read(forfeitedPackageServiceProvider).getExpiredAppealPackages();
 });
 
 final tendersProvider = FutureProvider<List<TenderModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   return ref.read(tendersServiceProvider).getTenders();
+});
+
+// Tendered-but-unsold packages whose sale window has passed — eligible for
+// re-tendering (unlimited). Each carries its full tender history.
+final reTenderablePackagesProvider =
+    FutureProvider<List<ReTenderInfo>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(tendersServiceProvider).getReTenderablePackages();
+});
+
+// Central Disposal Directorate unsold packages from tender_sales
+final unsoldTenderSalesProvider =
+    FutureProvider<List<ReTenderSaleInfo>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getUnsoldTenderSales();
 });
 
 // ── Tender Form State Providers ──────────────────────────────
@@ -304,6 +321,7 @@ final disposalSoldPackagesProvider =
 final disposalForfeitedPackagesProvider =
     FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
   final yard = ref.watch(disposalSelectedYardProvider);
   return ref.read(disposalServiceProvider).getForfeitedPackages(yard: yard);
 });
@@ -334,10 +352,55 @@ final selectedRequestDispositionsProvider =
     StateProvider<Map<String, String>>((ref) => {});
 
 // Disposal-side: every yard's submitted requests (cross-yard via RLS).
+
+final disposalRequestsChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  final trigger = ref.watch(disposalRequestsRefreshProvider);
+  yield trigger;
+  final channel = supabase.channel('disposal-requests-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'disposal_requests',
+      callback: (payload) => ref.read(disposalRequestsRefreshProvider.notifier).trigger(),
+    ).subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
 final disposalRequestsProvider =
     FutureProvider<List<DisposalRequestModel>>((ref) async {
-  ref.watch(disposalRequestsRefreshProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getDisposalRequests();
+});
+
+// Realtime on tender_sale_items — so a delivery toggle / new sale in ANY session
+// (e.g. a yard marking Delivered) propagates to the Central Disposal tables.
+// NOTE: requires tender_sale_items to be in the `supabase_realtime` publication
+// (migration 20260611_tender_sale_items_realtime.sql).
+final tenderSaleItemsRefreshProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+final tenderSaleItemsChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  final trigger = ref.watch(tenderSaleItemsRefreshProvider);
+  yield trigger;
+  final channel = supabase.channel('tender-sale-items-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'tender_sale_items',
+      callback: (_) =>
+          ref.read(tenderSaleItemsRefreshProvider.notifier).trigger(),
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
+// The tender-sale item for a given package id (sold price, taxes, delivery).
+// Used by the Sold Packages table cells + the package details dialog. Re-fetches
+// on realtime tender_sale_items changes so every session stays in sync; also
+// invalidated directly after a local delivery toggle for instant feedback.
+final saleItemForPackageProvider =
+    FutureProvider.family<TenderSaleItemModel?, String>((ref, packageId) async {
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getTenderSaleItemForPackage(packageId);
 });
 
 // Disposal-side: "sale"-tagged request items available to add to a tender sale.
