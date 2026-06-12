@@ -958,6 +958,124 @@ class TenderSaleModel {
   }
 }
 
+// ── Destruction (Central Disposal Directorate) ─────────────────────────────
+
+const Map<String, String> kDestructionTypes = {
+  'special': 'Special Destruction (perishable goods)',
+  'general_cargo': 'General Cargo Destruction (normal goods)',
+  'motor_vehicle': 'Motor Vehicle Destruction (vehicles)',
+};
+
+String destructionTypeLabel(String? code) =>
+    kDestructionTypes[code] ?? (code ?? '—');
+
+class DestructionItemModel {
+  final String id;
+  final String destructionId;
+  final String forfeitedPackageId;
+  final String yard;
+  final bool destroyed;
+  final DateTime? destroyedAt;
+  final String? notes;
+  final ForfeitedPackageModel? forfeited;
+
+  const DestructionItemModel({
+    required this.id,
+    required this.destructionId,
+    required this.forfeitedPackageId,
+    required this.yard,
+    this.destroyed = false,
+    this.destroyedAt,
+    this.notes,
+    this.forfeited,
+  });
+
+  factory DestructionItemModel.fromJson(Map<String, dynamic> json) {
+    return DestructionItemModel(
+      id: json['id'] as String,
+      destructionId: json['destruction_id'] as String,
+      forfeitedPackageId: json['forfeited_package_id'] as String,
+      yard: json['yard'] as String? ?? '',
+      destroyed: json['destroyed'] as bool? ?? false,
+      destroyedAt: json['destroyed_at'] != null
+          ? DateTime.tryParse(json['destroyed_at'].toString())
+          : null,
+      notes: json['notes'] as String?,
+      forfeited: json['forfeited_packages'] != null
+          ? ForfeitedPackageModel.fromJson(
+              json['forfeited_packages'] as Map<String, dynamic>)
+          : null,
+    );
+  }
+}
+
+class DestructionModel {
+  final String id;
+  final String? saleNumber;
+  final DateTime? saleDate;
+  final String? serial;
+  final int? year;
+  final String? tenderType;
+  final String? yard;
+  final String? saleTime;
+  final DateTime createdAt;
+  final String? createdByName;
+  final List<DestructionItemModel> items;
+
+  const DestructionModel({
+    required this.id,
+    this.saleNumber,
+    this.saleDate,
+    this.serial,
+    this.year,
+    this.tenderType,
+    this.yard,
+    this.saleTime,
+    required this.createdAt,
+    this.createdByName,
+    this.items = const [],
+  });
+
+  String get typeLabel => destructionTypeLabel(tenderType);
+  int get destroyedCount => items.where((i) => i.destroyed).length;
+
+  factory DestructionModel.fromJson(Map<String, dynamic> json) {
+    final itemsJson = json['destruction_items'] as List? ?? const [];
+    return DestructionModel(
+      id: json['id'] as String,
+      saleNumber: json['sale_number'] as String?,
+      saleDate: json['sale_date'] != null
+          ? DateTime.tryParse(json['sale_date'].toString())
+          : null,
+      serial: json['serial']?.toString(),
+      year: (json['year'] as num?)?.toInt(),
+      tenderType: json['tender_type'] as String?,
+      yard: json['yard'] as String?,
+      saleTime: json['sale_time'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      createdByName:
+          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      items: itemsJson
+          .map((e) => DestructionItemModel.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
+class ReDestructionInfo {
+  final ForfeitedPackageModel forfeited;
+  final List<DestructionModel> destructions; // newest first
+
+  const ReDestructionInfo({
+    required this.forfeited,
+    required this.destructions,
+  });
+
+  int get timesAttempted => destructions.length;
+  DestructionModel? get latestDestruction =>
+      destructions.isNotEmpty ? destructions.first : null;
+}
+
 // ── Disposal Requests (Yard → Central Disposal Directorate) ──────────────
 //
 // A yard submits a request listing forfeited packages whose 30-day appeal

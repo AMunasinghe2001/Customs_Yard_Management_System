@@ -302,6 +302,13 @@ final unsoldTenderSalesProvider =
   return ref.read(disposalServiceProvider).getUnsoldTenderSales();
 });
 
+// Central Disposal Directorate undestroyed packages from destructions
+final undestroyedDestructionsProvider =
+    FutureProvider<List<ReDestructionInfo>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getUndestroyedDestructions();
+});
+
 // ── Tender Form State Providers ──────────────────────────────
 final tenderNumberInputProvider = StateProvider<String>((ref) => '');
 final tenderDateInputProvider = StateProvider<DateTime?>((ref) => DateTime.now());
@@ -331,6 +338,13 @@ final tenderSalesRefreshProvider =
 final tenderSalesProvider = FutureProvider<List<TenderSaleModel>>((ref) async {
   ref.watch(tenderSalesRefreshProvider);
   return ref.read(disposalServiceProvider).getTenderSales();
+});
+
+final destructionsRefreshProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+final destructionsProvider = FutureProvider<List<DestructionModel>>((ref) async {
+  ref.watch(destructionsRefreshProvider);
+  return ref.read(disposalServiceProvider).getDestructions();
 });
 
 // ── Disposal Requests (Yard → Central Disposal) ────────────────
@@ -418,6 +432,15 @@ final tenderableSaleItemsProvider =
   ref.watch(disposalRequestsRefreshProvider);
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getSaleRequestItemsNotTendered();
+});
+
+// "Destruction" request items NOT yet placed in a destruction.
+final destructionRequestItemsProvider =
+    FutureProvider<List<DisposalRequestItemModel>>((ref) async {
+  ref.watch(disposalRequestsRefreshProvider);
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(destructionsRefreshProvider);
+  return ref.read(disposalServiceProvider).getDestructionRequestItemsNotDestroyed();
 });
 
 // ── Admin Dashboard Providers ──────────────────────────────────

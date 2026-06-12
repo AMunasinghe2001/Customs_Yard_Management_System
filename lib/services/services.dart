@@ -2518,6 +2518,177 @@ class DisposalService {
         ));
   }
 
+  // --- Destructions ---
+
+  Future<List<DestructionModel>> getDestructions() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('destructions')
+        .select(
+            '*, profiles!created_by(full_name), destruction_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+        .order('created_at', ascending: false));
+    return (data as List).map((e) => DestructionModel.fromJson(e)).toList();
+  }
+
+  Future<List<ReDestructionInfo>> getUndestroyedDestructions() async {
+    final dests = await getDestructions();
+    final byPkg = <String, List<DestructionModel>>{};
+    
+    final destroyedIds = <String>{};
+    for (final dest in dests) {
+      for (final item in dest.items) {
+        if (item.destroyed) destroyedIds.add(item.forfeitedPackageId);
+        byPkg.putIfAbsent(item.forfeitedPackageId, () => []).add(dest);
+      }
+    }
+
+    final eligible = <String, List<DestructionModel>>{};
+    byPkg.forEach((id, ts) {
+      if (destroyedIds.contains(id)) return;
+      
+      bool passed = true;
+      if (ts.first.saleDate != null) {
+        final saleDateEnd = ts.first.saleDate!.add(const Duration(days: 1));
+        if (DateTime.now().isBefore(saleDateEnd)) passed = false;
+      }
+      if (passed) eligible[id] = ts;
+    });
+
+    if (eligible.isEmpty) return [];
+
+    final fp = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .inFilter('id', eligible.keys.toList()));
+
+    final result = <ReDestructionInfo>[];
+    for (final e in (fp as List)) {
+      final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
+      result.add(ReDestructionInfo(forfeited: f, destructions: eligible[f.id] ?? const []));
+    }
+    result.sort((a, b) {
+      final c = b.timesAttempted.compareTo(a.timesAttempted);
+      return c != 0 ? c : a.forfeited.srNumber.compareTo(b.forfeited.srNumber);
+    });
+    return result;
+  }
+
+  Future<List<DisposalRequestItemModel>> getDestructionRequestItemsNotDestroyed() async {
+    final destsData = await AuthService._withNetworkRetry(
+        () => supabase.from('destruction_items').select('forfeited_package_id'));
+    final destsIds = (destsData as List)
+        .map((e) => e['forfeited_package_id'].toString())
+        .toSet();
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_request_items')
+        .select(
+            '*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+        .eq('disposition', 'destruction'));
+
+    final items = (data as List)
+        .map((e) => DisposalRequestItemModel.fromJson(e))
+        .where((i) => !destsIds.contains(i.forfeitedPackageId))
+        .toList();
+    final seen = <String>{};
+    return items.where((i) => seen.add(i.forfeitedPackageId)).toList();
+  }
+
+  Future<int> getNextDestructionSerial(int year) async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('destructions')
+        .select('serial')
+        .eq('year', year));
+    if (data == null) return 1;
+    int maxSerial = 0;
+    for (var row in data as List) {
+      final s = int.tryParse(row['serial']?.toString() ?? '0') ?? 0;
+      if (s > maxSerial) maxSerial = s;
+    }
+    return maxSerial + 1;
+  }
+
+  Future<void> createDestruction({
+    String? saleNumber,
+    DateTime? saleDate,
+    String? saleTime,
+    String? serial,
+    int? year,
+    String? tenderType,
+    String? yard,
+    Map<String, String> packageYards = const {},
+  }) async {
+    final user = supabase.auth.currentUser;
+    final dest = await AuthService._withNetworkRetry(() => supabase
+        .from('destructions')
+        .insert({
+          'sale_number': saleNumber,
+          'sale_date': saleDate == null
+              ? null
+              : saleDate.toIso8601String().substring(0, 10),
+          'sale_time': saleTime,
+          'serial': serial,
+          'year': year,
+          'tender_type': tenderType,
+          'yard': yard,
+          'created_by': user?.id,
+        })
+        .select('id')
+        .single());
+
+    final destId = dest['id'] as String;
+
+    if (packageYards.isNotEmpty) {
+      final rows = packageYards.entries
+          .map((e) => {
+                'destruction_id': destId,
+                'forfeited_package_id': e.key,
+                'yard': e.value,
+                'destroyed': false,
+                'destroyed_at': null,
+              })
+          .toList();
+      await AuthService._withNetworkRetry(() => supabase
+          .from('destruction_items')
+          .upsert(rows, onConflict: 'forfeited_package_id'));
+    }
+
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Created destruction ${saleNumber ?? ''}'.trim(),
+        entityType: 'destruction',
+        entityId: destId,
+        details: {'type': tenderType, 'package_count': packageYards.length},
+      );
+    }
+  }
+
+  Future<void> markDestructionItemDestroyed({
+    required String destructionItemId,
+    String? receipt,
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'disposal_mark_destruction_item_destroyed',
+          params: {
+            'p_item_id': destructionItemId,
+            'p_receipt': (receipt == null || receipt.trim().isEmpty)
+                ? null
+                : receipt.trim(),
+          },
+        ));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Marked destruction package destroyed',
+        entityType: 'destruction_item',
+        entityId: destructionItemId,
+        details: {'receipt': receipt},
+      );
+    }
+  }
+
   // --- Taxes ---
 
   Future<List<DisposalTaxModel>> getTaxes() async {
