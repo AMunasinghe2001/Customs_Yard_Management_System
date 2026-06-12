@@ -128,6 +128,10 @@
 - **Two disposition note-tag conventions** (`warehouse_entries.return_notes`): `disposeWarehouseItem` writes `[RE-EXPORT]`/`[DESTROY]`/`[FORFEIT]`/`[ABANDONED]` (present tense); `recordFinalDisposition` writes `[FINAL:RE-EXPORTED]`/`[FINAL:DESTROYED]`/… [disposition_category_screen.dart](lib/screens/packages/disposition_category_screen.dart) `_matchesTag` must accept BOTH per category.
 - **Auto-update unverified natively**: `auto_updater` native (WinSparkle) linking only confirmable via a full `flutter build windows`; production updates should be EdDSA-signed (see [updates/README.md](updates/README.md)).
 
+## Central Disposal search + yard filters (2026-06-12)
+- Every Central Disposal tab now has a styled **search box** (`_DisposalSearch`, per-tab `_disposalSearchProvider` family in [disposal_dashboard_screen.dart](lib/screens/disposal/disposal_dashboard_screen.dart)); filters by SR / item / consignee / sale-no as relevant. Taxes tab ([taxes_tab.dart](lib/screens/disposal/taxes_tab.dart)) filters by tax name via `_taxSearchProvider`.
+- **Yard selector** on every list tab: Sold/Forfeited keep `_YardFilter` (single yard, `disposalSelectedYardProvider`); Disposal Requests + the cross-yard tabs (Tender Sales, Unsold Tenders, Destructions, Undestroyed) use `_YardAllFilter` ("All Yards" + yards) bound to `_disposalYardFilterProvider` family and filter their list by `sale.yard` / `info.forfeited.yard`. Taxes has no yard (global).
+
 ## Central Disposal consolidated onto Tender Sales (2026-06-12)
 - The standalone **"Tenders" tab was removed** from Central Disposal; the lifecycle now runs through **Tender Sales** + **Unsold Tenders**. Tabs (6, uniform `Tab(height:44, Row[Icon,Gap,Flexible(Text)])`): Sold · Forfeited · Disposal Requests · **Tender Sales** · **Unsold Tenders** · Taxes.
 - **Disposal Requests** (`getDisposalRequests`) now hides packages already in a `tenders` row OR a `tender_sale_items` row (they've moved on); requests with no remaining items are dropped.

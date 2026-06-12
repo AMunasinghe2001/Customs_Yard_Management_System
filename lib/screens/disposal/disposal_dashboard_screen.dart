@@ -234,6 +234,116 @@ class DisposalDashboardScreen extends ConsumerWidget {
 
 // ── Shared widgets ────────────────────────────────────────────────
 
+// Per-tab search query (keyed by tab name).
+final _disposalSearchProvider =
+    StateProvider.family<String, String>((ref, key) => '');
+
+// Per-tab yard filter (null = All Yards) for the cross-yard list tabs.
+final _disposalYardFilterProvider =
+    StateProvider.family<String?, String>((ref, key) => null);
+
+/// Styled search box shared by every Central Disposal tab.
+class _DisposalSearch extends ConsumerStatefulWidget {
+  final String tabKey;
+  final String hint;
+  final double width;
+  const _DisposalSearch(
+      {required this.tabKey, this.hint = 'Search…', this.width = 300});
+  @override
+  ConsumerState<_DisposalSearch> createState() => _DisposalSearchState();
+}
+
+class _DisposalSearchState extends ConsumerState<_DisposalSearch> {
+  late final TextEditingController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = TextEditingController(
+        text: ref.read(_disposalSearchProvider(widget.tabKey)));
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12),
+        borderSide: BorderSide(color: c, width: w));
+    return SizedBox(
+      width: widget.width,
+      child: TextField(
+        controller: _c,
+        style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
+        onChanged: (v) {
+          ref.read(_disposalSearchProvider(widget.tabKey).notifier).state = v;
+          setState(() {});
+        },
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: widget.hint,
+          hintStyle: TextStyle(color: context.colors.textMuted, fontSize: 13),
+          prefixIcon: Icon(Icons.search_rounded,
+              size: 18, color: context.colors.textMuted),
+          suffixIcon: _c.text.isEmpty
+              ? null
+              : IconButton(
+                  splashRadius: 16,
+                  icon: Icon(Icons.close_rounded,
+                      size: 16, color: context.colors.textMuted),
+                  onPressed: () {
+                    _c.clear();
+                    ref
+                        .read(_disposalSearchProvider(widget.tabKey).notifier)
+                        .state = '';
+                    setState(() {});
+                  },
+                ),
+          filled: true,
+          fillColor: context.colors.cardDark,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+          border: border(context.colors.borderColor),
+          enabledBorder: border(context.colors.borderColor),
+          focusedBorder: border(context.colors.successGreen, 1.5),
+        ),
+      ),
+    );
+  }
+}
+
+/// Yard dropdown with an "All Yards" option, bound to a provided value/onChanged.
+/// Used by tabs that filter their own (cross-yard) list locally.
+class _YardAllFilter extends StatelessWidget {
+  final String? value; // null = all
+  final ValueChanged<String?> onChanged;
+  const _YardAllFilter({required this.value, required this.onChanged});
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 200,
+      child: StyledDropdownFormField<String>(
+        value: value ?? '_all',
+        label: 'Yard',
+        helperText: null,
+        isDense: true,
+        menuWidth: 200,
+        prefixIcon:
+            Icon(Icons.warehouse_outlined, color: context.colors.textMuted),
+        options: [
+          const StyledDropdownOption('_all', 'All Yards'),
+          for (final y in kYards) StyledDropdownOption(y.code, y.name),
+        ],
+        onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
+      ),
+    );
+  }
+}
+
 class _YardFilter extends ConsumerWidget {
   const _YardFilter();
   @override
@@ -368,6 +478,9 @@ class _SoldPackagesTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
+            const _DisposalSearch(
+                tabKey: 'sold', hint: 'Search SR / item / sold by…'),
+            const Gap(12),
             const _YardFilter(),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
@@ -395,7 +508,17 @@ class _SoldPackagesTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(disposalSoldPackagesProvider)),
               data: (packages) {
-                final rows = _rows(packages);
+                final q =
+                    ref.watch(_disposalSearchProvider('sold')).toLowerCase();
+                var rows = _rows(packages);
+                if (q.isNotEmpty) {
+                  rows = rows
+                      .where((r) =>
+                          r.package.srNumber.toLowerCase().contains(q) ||
+                          r.itemName.toLowerCase().contains(q) ||
+                          r.officer.toLowerCase().contains(q))
+                      .toList();
+                }
                 return _listCard(
                   context,
                   DataTable2(
@@ -579,6 +702,9 @@ class _ForfeitedPackagesTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
+            const _DisposalSearch(
+                tabKey: 'forfeited', hint: 'Search SR / item / consignee…'),
+            const Gap(12),
             const _YardFilter(),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
@@ -618,6 +744,17 @@ class _ForfeitedPackagesTab extends ConsumerWidget {
                   onRetry: () =>
                       ref.refresh(disposalForfeitedPackagesProvider)),
               data: (list) {
+                final q = ref
+                    .watch(_disposalSearchProvider('forfeited'))
+                    .toLowerCase();
+                if (q.isNotEmpty) {
+                  list = list
+                      .where((f) =>
+                          f.srNumber.toLowerCase().contains(q) ||
+                          f.consigneeName.toLowerCase().contains(q) ||
+                          _itemName(f).toLowerCase().contains(q))
+                      .toList();
+                }
                 return _listCard(
                   context,
                   DataTable2(
@@ -748,24 +885,13 @@ class _DisposalRequestsTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            SizedBox(
-              width: 240,
-              child: StyledDropdownFormField<String>(
-                value: yardFilter ?? '_all',
-                label: 'Yard',
-                helperText: null,
-                isDense: true,
-                menuWidth: 240,
-                prefixIcon: Icon(Icons.warehouse_outlined,
-                    color: context.colors.textMuted),
-                options: [
-                  const StyledDropdownOption('_all', 'All Yards'),
-                  for (final y in kYards) StyledDropdownOption(y.code, y.name),
-                ],
-                onChanged: (v) =>
-                    ref.read(_requestYardFilterProvider.notifier).state =
-                        (v == null || v == '_all') ? null : v,
-              ),
+            const _DisposalSearch(
+                tabKey: 'requests', hint: 'Search SR / consignee…'),
+            const Gap(12),
+            _YardAllFilter(
+              value: yardFilter,
+              onChanged: (v) =>
+                  ref.read(_requestYardFilterProvider.notifier).state = v,
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(16),
@@ -778,9 +904,23 @@ class _DisposalRequestsTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(disposalRequestsProvider)),
               data: (list) {
-                final filtered = yardFilter == null
+                final q = ref
+                    .watch(_disposalSearchProvider('requests'))
+                    .toLowerCase();
+                var filtered = yardFilter == null
                     ? list
                     : list.where((r) => r.yard == yardFilter).toList();
+                if (q.isNotEmpty) {
+                  filtered = filtered
+                      .where((r) => r.items.any((i) =>
+                          (i.forfeited?.srNumber ?? '')
+                              .toLowerCase()
+                              .contains(q) ||
+                          (i.forfeited?.consigneeName ?? '')
+                              .toLowerCase()
+                              .contains(q)))
+                      .toList();
+                }
                 if (filtered.isEmpty) {
                   return _listCard(
                     context,
@@ -1064,6 +1204,16 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
+            const _DisposalSearch(
+                tabKey: 'unsold', hint: 'Search SR / item / consignee…'),
+            const Gap(12),
+            _YardAllFilter(
+              value: ref.watch(_disposalYardFilterProvider('unsold')),
+              onChanged: (v) => ref
+                  .read(_disposalYardFilterProvider('unsold').notifier)
+                  .state = v,
+            ),
+            const Gap(12),
             async.maybeWhen(
                   data: (list) => ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -1105,6 +1255,23 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
               data: (list) {
+                final q =
+                    ref.watch(_disposalSearchProvider('unsold')).toLowerCase();
+                final yf = ref.watch(_disposalYardFilterProvider('unsold'));
+                if (yf != null) {
+                  list =
+                      list.where((info) => info.forfeited.yard == yf).toList();
+                }
+                if (q.isNotEmpty) {
+                  list = list
+                      .where((info) =>
+                          info.forfeited.srNumber.toLowerCase().contains(q) ||
+                          info.forfeited.consigneeName
+                              .toLowerCase()
+                              .contains(q) ||
+                          _itemName(info.forfeited).toLowerCase().contains(q))
+                      .toList();
+                }
                 if (list.isEmpty) {
                   return _listCard(
                     context,
@@ -1203,6 +1370,16 @@ class _TenderSalesTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
+            const _DisposalSearch(
+                tabKey: 'tendersales', hint: 'Search sale no / SR…'),
+            const Gap(12),
+            _YardAllFilter(
+              value: ref.watch(_disposalYardFilterProvider('tendersales')),
+              onChanged: (v) => ref
+                  .read(_disposalYardFilterProvider('tendersales').notifier)
+                  .state = v,
+            ),
+            const Gap(12),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                   backgroundColor: green, foregroundColor: Colors.white),
@@ -1223,9 +1400,30 @@ class _TenderSalesTab extends ConsumerWidget {
               error: (e, _) => ErrorView(
                   error: e, onRetry: () => ref.refresh(tenderSalesProvider)),
               data: (list) {
+                final q = ref
+                    .watch(_disposalSearchProvider('tendersales'))
+                    .toLowerCase();
                 // Hide sales whose packages are all sold (fully consumed).
-                final visible =
+                var visible =
                     list.where((s) => s.items.any((i) => !i.sold)).toList();
+                final yf =
+                    ref.watch(_disposalYardFilterProvider('tendersales'));
+                if (yf != null) {
+                  visible = visible.where((s) => s.yard == yf).toList();
+                }
+                if (q.isNotEmpty) {
+                  visible = visible
+                      .where((s) =>
+                          (s.saleNumber ?? '').toLowerCase().contains(q) ||
+                          s.items.any((i) =>
+                              (i.forfeited?.srNumber ?? '')
+                                  .toLowerCase()
+                                  .contains(q) ||
+                              (i.forfeited?.consigneeName ?? '')
+                                  .toLowerCase()
+                                  .contains(q)))
+                      .toList();
+                }
                 if (visible.isEmpty) {
                   return _listCard(
                     context,
@@ -2175,6 +2373,16 @@ class _DestructionsTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
+            const _DisposalSearch(
+                tabKey: 'destructions', hint: 'Search sale no / SR…'),
+            const Gap(12),
+            _YardAllFilter(
+              value: ref.watch(_disposalYardFilterProvider('destructions')),
+              onChanged: (v) => ref
+                  .read(_disposalYardFilterProvider('destructions').notifier)
+                  .state = v,
+            ),
+            const Gap(12),
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
                   backgroundColor: green, foregroundColor: Colors.white),
@@ -2195,9 +2403,30 @@ class _DestructionsTab extends ConsumerWidget {
               error: (e, _) => ErrorView(
                   error: e, onRetry: () => ref.refresh(destructionsProvider)),
               data: (list) {
+                final q = ref
+                    .watch(_disposalSearchProvider('destructions'))
+                    .toLowerCase();
+                final yf =
+                    ref.watch(_disposalYardFilterProvider('destructions'));
                 // Hide sales whose packages are all destroyed (fully consumed).
-                final visible =
+                var visible =
                     list.where((s) => s.items.any((i) => !i.destroyed)).toList();
+                if (yf != null) {
+                  visible = visible.where((s) => s.yard == yf).toList();
+                }
+                if (q.isNotEmpty) {
+                  visible = visible
+                      .where((s) =>
+                          (s.saleNumber ?? '').toLowerCase().contains(q) ||
+                          s.items.any((i) =>
+                              (i.forfeited?.srNumber ?? '')
+                                  .toLowerCase()
+                                  .contains(q) ||
+                              (i.forfeited?.consigneeName ?? '')
+                                  .toLowerCase()
+                                  .contains(q)))
+                      .toList();
+                }
                 if (visible.isEmpty) {
                   return _listCard(
                     context,
@@ -3151,6 +3380,16 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
+            const _DisposalSearch(
+                tabKey: 'undestroyed', hint: 'Search SR / item / consignee…'),
+            const Gap(12),
+            _YardAllFilter(
+              value: ref.watch(_disposalYardFilterProvider('undestroyed')),
+              onChanged: (v) => ref
+                  .read(_disposalYardFilterProvider('undestroyed').notifier)
+                  .state = v,
+            ),
+            const Gap(12),
             async.maybeWhen(
                   data: (list) => ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
@@ -3192,6 +3431,25 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(undestroyedDestructionsProvider)),
               data: (list) {
+                final q = ref
+                    .watch(_disposalSearchProvider('undestroyed'))
+                    .toLowerCase();
+                final yf =
+                    ref.watch(_disposalYardFilterProvider('undestroyed'));
+                if (yf != null) {
+                  list =
+                      list.where((info) => info.forfeited.yard == yf).toList();
+                }
+                if (q.isNotEmpty) {
+                  list = list
+                      .where((info) =>
+                          info.forfeited.srNumber.toLowerCase().contains(q) ||
+                          info.forfeited.consigneeName
+                              .toLowerCase()
+                              .contains(q) ||
+                          _itemName(info.forfeited).toLowerCase().contains(q))
+                      .toList();
+                }
                 if (list.isEmpty) {
                   return _listCard(
                     context,

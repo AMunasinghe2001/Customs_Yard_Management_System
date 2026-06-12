@@ -11,6 +11,8 @@ final taxesProvider = FutureProvider<List<DisposalTaxModel>>((ref) async {
   return DisposalService().getTaxes();
 });
 
+final _taxSearchProvider = StateProvider<String>((ref) => '');
+
 class TaxesTab extends ConsumerWidget {
   const TaxesTab({super.key});
 
@@ -24,12 +26,29 @@ class TaxesTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Tax Configuration',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
+              const Spacer(),
+              SizedBox(
+                width: 260,
+                child: TextField(
+                  onChanged: (v) =>
+                      ref.read(_taxSearchProvider.notifier).state = v,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    hintText: 'Search tax…',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 11),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const Gap(12),
               ElevatedButton.icon(
                 onPressed: () => _showTaxDialog(context, ref),
                 icon: const Icon(Icons.add),
@@ -41,7 +60,15 @@ class TaxesTab extends ConsumerWidget {
           Expanded(
             child: Card(
               child: taxesAsync.when(
-                data: (taxes) => _buildTable(context, ref, taxes),
+                data: (taxes) {
+                  final q = ref.watch(_taxSearchProvider).toLowerCase();
+                  final filtered = q.isEmpty
+                      ? taxes
+                      : taxes
+                          .where((t) => t.name.toLowerCase().contains(q))
+                          .toList();
+                  return _buildTable(context, ref, filtered);
+                },
                 loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, st) => Center(child: Text('Error: $e')),
               ),
