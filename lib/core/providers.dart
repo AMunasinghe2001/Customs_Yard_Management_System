@@ -225,6 +225,34 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   }).toList();
 });
 
+/// Staff in the signed-in admin's own yard — officers + admins only.
+/// The cross-yard SELECT policy for disposal accounts means [allProfilesProvider]
+/// can leak head-office (DC/SDDC) and other-yard rows; the Admin Dashboard wants
+/// only "my yard" staff, so we filter client-side. Disposal (DC/SDDC) accounts
+/// are head-office and excluded outright (their `yard` may default to GL1, which
+/// would otherwise match a Grey Line 1 admin and show DC as "online").
+final myYardProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
+  final all = await ref.watch(allProfilesProvider.future);
+  final myYard = ref.watch(currentProfileProvider)?.yard;
+  return all.where((p) {
+    if (p.isDisposal) return false; // never show head-office accounts here
+    if (myYard == null) return true;
+    return p.yard == myYard;
+  }).toList();
+});
+
+/// Online members (seen in the last 5 min) within the admin's own yard.
+final myYardOnlineProfilesProvider =
+    FutureProvider<List<ProfileModel>>((ref) async {
+  final mine = await ref.watch(myYardProfilesProvider.future);
+  final now = DateTime.now();
+  return mine.where((p) {
+    if (!p.isOnline) return false;
+    if (p.lastSeenAt == null) return false;
+    return now.difference(p.lastSeenAt!).inMinutes < 5;
+  }).toList();
+});
+
 final auditLogsRefreshTriggerProvider = StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
 final auditLogsChangeTriggerProvider = StreamProvider<int>((ref) async* {
   final trigger = ref.watch(auditLogsRefreshTriggerProvider);

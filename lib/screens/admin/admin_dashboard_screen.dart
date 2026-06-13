@@ -7,7 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
-import '../../services/services.dart';
+import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
@@ -18,15 +18,6 @@ import 'package:data_table_2/data_table_2.dart';
 
 // Dashboard providers now moved to lib/core/providers.dart for shared access
 
-
-double? _latestStorageRate(Map<DateTime, double>? rates) {
-  if (rates == null || rates.isEmpty) return null;
-  final latestEntry = rates.entries.reduce(
-    (a, b) => a.key.isAfter(b.key) ? a : b,
-  );
-  return latestEntry.value;
-}
-
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
 
@@ -34,11 +25,11 @@ class AdminDashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final pkgStats = ref.watch(dashboardStatsProvider);
     final recent = ref.watch(recentPackagesProvider);
-    final profiles = ref.watch(allProfilesProvider);
-    final online = ref.watch(onlineProfilesProvider);
-    final storageRate = _latestStorageRate(
-      ref.watch(storageRateProvider).valueOrNull,
-    );
+    // Yard-scoped: only the admin's own yard (officers + admins), never
+    // head-office (DC/SDDC) or other yards leaked by the cross-yard policy.
+    final profiles = ref.watch(myYardProfilesProvider);
+    final online = ref.watch(myYardOnlineProfilesProvider);
+    final myYard = ref.watch(currentProfileProvider)?.yard;
 
     return AppShell(
       currentRoute: '/admin',
@@ -49,8 +40,10 @@ class AdminDashboardScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ── Header: title + date · yard badge + staff stats ──────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -64,12 +57,16 @@ class AdminDashboardScreen extends ConsumerWidget {
                               TextStyle(color: context.colors.textSecondary)),
                     ],
                   ),
-                  _buildHeaderStats(context, online, profiles),
+                  Row(mainAxisSize: MainAxisSize.min, children: [
+                    _yardBadge(context, myYard),
+                    const Gap(12),
+                    _buildHeaderStats(context, online, profiles),
+                  ]),
                 ],
               ).animate().fadeIn(),
-              const Gap(16),
+              const Gap(20),
 
-              // TOP SECTION: Operational Stats
+              // ── Operational stat cards ───────────────────────────────────
               pkgStats
                   .when(
                     loading: () => const _StatsLoadingRow(),
@@ -79,42 +76,32 @@ class AdminDashboardScreen extends ConsumerWidget {
                     data: (data) => Row(
                       children: [
                         Expanded(
-                            child: _buildPkgStat(
-                                context,
-                                'Seized Today',
-                                "${data['seized'] ?? 0}",
-                                Icons.gavel_rounded,
-                                context.colors.dangerRed,
-                                small: true)),
-                        const Gap(12),
+                            child: _StatCard(
+                                label: 'Forfeited Today',
+                                value: "${data['forfeit'] ?? 0}",
+                                icon: Icons.gavel_rounded,
+                                color: context.colors.dangerRed)),
+                        const Gap(16),
                         Expanded(
-                            child: _buildPkgStat(
-                                context,
-                                'Released (Cleared)',
-                                "${data['cleared'] ?? 0}",
-                                Icons.check_circle_rounded,
-                                context.colors.successGreen,
-                                small: true)),
-                        const Gap(12),
+                            child: _StatCard(
+                                label: 'Abandoned Today',
+                                value: "${data['abandon'] ?? 0}",
+                                icon: Icons.inventory_2_rounded,
+                                color: context.colors.heldOrange)),
+                        const Gap(16),
                         Expanded(
-                            child: _buildPkgStat(
-                                context,
-                                'Held in SR',
-                                "${data['held'] ?? 0}",
-                                Icons.report_problem_rounded,
-                                context.colors.heldOrange,
-                                small: true)),
-                        const Gap(12),
+                            child: _StatCard(
+                                label: 'Destroyed Today',
+                                value: "${data['destroy'] ?? 0}",
+                                icon: Icons.local_fire_department_rounded,
+                                color: context.colors.warningAmber)),
+                        const Gap(16),
                         Expanded(
-                            child: _buildPkgStat(
-                                context,
-                                'Warehouse Charges',
-                            storageRate != null
-                              ? "LKR ${storageRate.toStringAsFixed(2)}"
-                              : 'LKR 0.00',
-                                Icons.account_balance_wallet_rounded,
-                                context.colors.accentLightBlue,
-                                small: true)),
+                            child: _StatCard(
+                                label: 'Released Today',
+                                value: "${data['release'] ?? 0}",
+                                icon: Icons.check_circle_rounded,
+                                color: context.colors.successGreen)),
                       ],
                     ),
                   )
@@ -122,46 +109,44 @@ class AdminDashboardScreen extends ConsumerWidget {
                   .fadeIn(delay: 100.ms)
                   .slideY(begin: 0.1),
 
-              const Gap(16),
+              const Gap(20),
 
-              // MIDDLE & BOTTOM SECTION COMBINED:
+              // ── Body: two columns ────────────────────────────────────────
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Left Column: Online Officers & Shortcuts
+                    // Left: actions + inventory
                     Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _buildQuickShortcutsGrid(context),
-                          const Gap(24),
+                          const Gap(20),
                           _buildSummaryGrid(context, ref),
                         ],
                       ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
                     ),
                     const Gap(24),
-                    // Right Column: Recent Activity
+                    // Right: online staff + recent inspections
                     Expanded(
                       flex: 5,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildOnlineOfficersList(context, ref, online),
-                          const Gap(24),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text('Recent Package Inspections',
-                                  style:
-                                      Theme.of(context).textTheme.titleLarge),
-                              TextButton(
-                                  onPressed: () => context.go('/packages'),
-                                  child: const Text('View All Packages →')),
-                            ],
+                          _buildOnlineOfficersList(context, ref, online, myYard),
+                          const Gap(20),
+                          _SectionHeader(
+                            title: 'Recent Package Inspections',
+                            trailing: TextButton.icon(
+                              onPressed: () => context.go('/packages'),
+                              icon: const Text('View All'),
+                              label: const Icon(Icons.arrow_forward_rounded,
+                                  size: 16),
+                            ),
                           ),
-                          const Gap(8),
+                          const Gap(10),
                           Expanded(
                             child: recent.when(
                               loading: () => const Center(
@@ -189,6 +174,27 @@ class AdminDashboardScreen extends ConsumerWidget {
     );
   }
 
+  // Yard chip shown in the header so the admin knows the scope of everything
+  // on this dashboard.
+  Widget _yardBadge(BuildContext context, String? yard) {
+    final gold = context.colors.primaryGold;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: gold.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: gold.withOpacity(0.35)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(Icons.warehouse_rounded, color: gold, size: 16),
+        const Gap(8),
+        Text(yardName(yard),
+            style: TextStyle(
+                color: gold, fontWeight: FontWeight.w700, fontSize: 13)),
+      ]),
+    );
+  }
+
   Widget _buildHeaderStats(
       BuildContext context,
       AsyncValue<List<ProfileModel>> online,
@@ -212,7 +218,7 @@ class AdminDashboardScreen extends ConsumerWidget {
           const VerticalDivider(width: 32, indent: 8, endIndent: 8),
           _headerStat(
               context,
-              'Total Staff',
+              'In Yard',
               all.maybeWhen(
                   data: (d) => d.length.toString(), orElse: () => '...'),
               context.colors.accentBlue),
@@ -224,6 +230,7 @@ class AdminDashboardScreen extends ConsumerWidget {
   Widget _headerStat(
       BuildContext context, String label, String value, Color color) {
     return Column(
+      mainAxisSize: MainAxisSize.min,
       children: [
         Text(value,
             style: TextStyle(
@@ -234,100 +241,67 @@ class AdminDashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildPkgStat(BuildContext context, String label, String value,
-      IconData icon, Color color, {bool small = false}) {
-    return Container(
-      padding: EdgeInsets.symmetric(horizontal: 16, vertical: small ? 8 : 12),
-      decoration: BoxDecoration(
-        color: context.colors.cardDark,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.colors.borderColor),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: EdgeInsets.all(small ? 8 : 10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: small ? 20 : 24),
-          ),
-          const Gap(12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(value,
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: small ? 20 : 24,
-                        fontWeight: FontWeight.bold,
-                        height: 1.1)),
-                Text(label,
-                    style: TextStyle(
-                        color: context.colors.textSecondary, fontSize: small ? 11 : 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildOnlineOfficersList(BuildContext context, WidgetRef ref,
-      AsyncValue<List<ProfileModel>> online) {
+      AsyncValue<List<ProfileModel>> online, String? yard) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Text('Officers Online',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleSmall
-                    ?.copyWith(fontWeight: FontWeight.w600)),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-              decoration: BoxDecoration(
-                color: context.colors.successGreen.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                online.maybeWhen(data: (d) => d.length.toString(), orElse: () => '0'),
-                style: TextStyle(color: context.colors.successGreen, fontSize: 11, fontWeight: FontWeight.bold),
-              ),
+        _SectionHeader(
+          title: 'Online in ${yardName(yard)}',
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+            decoration: BoxDecoration(
+              color: context.colors.successGreen.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(
+                  color: context.colors.successGreen.withOpacity(0.35)),
             ),
-          ],
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                    color: context.colors.successGreen,
+                    shape: BoxShape.circle),
+              ),
+              const Gap(6),
+              Text(
+                '${online.maybeWhen(data: (d) => d.length, orElse: () => 0)} online',
+                style: TextStyle(
+                    color: context.colors.successGreen,
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold),
+              ),
+            ]),
+          ),
         ),
-        const Gap(8),
+        const Gap(10),
         Container(
-          height: 140, // Reduced height for logs-like feel
+          height: 156,
           decoration: BoxDecoration(
             color: context.colors.cardDark,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: context.colors.borderColor),
           ),
           child: online.when(
             loading: () => const Center(child: CircularProgressIndicator()),
             error: (e, _) => ErrorView(
-                error: e, onRetry: () => ref.refresh(onlineProfilesProvider)),
+                error: e,
+                onRetry: () => ref.refresh(myYardOnlineProfilesProvider)),
             data: (list) => list.isEmpty
                 ? _buildEmptyOnline(context)
                 : Scrollbar(
-                  child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
                       itemCount: list.length,
                       separatorBuilder: (_, __) => Divider(
                           height: 1,
-                          color: context.colors.borderColor,
-                          indent: 50),
+                          color: context.colors.borderColor.withOpacity(0.6),
+                          indent: 58),
                       itemBuilder: (ctx, i) =>
                           _OnlineMemberTile(profile: list[i]),
                     ),
-                ),
+                  ),
           ),
         ),
       ],
@@ -342,7 +316,7 @@ class AdminDashboardScreen extends ConsumerWidget {
           Icon(Icons.sensors_off_rounded,
               color: context.colors.textMuted, size: 32),
           const Gap(8),
-          Text('No officers currently online',
+          Text('No one currently online in this yard',
               style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
         ],
       ),
@@ -353,19 +327,15 @@ class AdminDashboardScreen extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Administrative Actions',
-            style: Theme.of(context)
-                .textTheme
-                .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w600)),
+        const _SectionHeader(title: 'Administrative Actions'),
         const Gap(12),
         GridView.count(
           crossAxisCount: 2,
-          crossAxisSpacing: 10,
-          mainAxisSpacing: 10,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 3.5,
+          childAspectRatio: 3.4,
           children: [
             _shortcut(context, 'Officers', Icons.person_add_rounded,
                 () => context.go('/admin/panel?tab=0'),
@@ -396,9 +366,8 @@ class AdminDashboardScreen extends ConsumerWidget {
         key: const ValueKey('category_zone_summary_column'),
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Category & Zone Inventory', 
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-          const Gap(8),
+          const _SectionHeader(title: 'Category & Zone Inventory'),
+          const Gap(10),
           ref.watch(categoryZoneSummaryProvider).when(
             data: (summary) {
               if (summary.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No active inventory.')));
@@ -464,29 +433,38 @@ class AdminDashboardScreen extends ConsumerWidget {
   Widget _shortcut(
       BuildContext context, String label, IconData icon, VoidCallback onTap,
       {Color? color}) {
+    final c = color ?? context.colors.primaryGold;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: context.colors.cardDark,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(color: context.colors.borderColor),
           ),
           child: Row(
             children: [
-              Icon(icon,
-                  color: color ?? context.colors.accentLightBlue, size: 18),
-              const Gap(8),
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: c.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, color: c, size: 17),
+              ),
+              const Gap(10),
               Expanded(
                   child: Text(label,
                       style: const TextStyle(
-                          fontWeight: FontWeight.w500, fontSize: 13),
+                          fontWeight: FontWeight.w600, fontSize: 13),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis)),
+              Icon(Icons.chevron_right_rounded,
+                  size: 16, color: context.colors.textMuted),
             ],
           ),
         ),
@@ -495,51 +473,106 @@ class AdminDashboardScreen extends ConsumerWidget {
   }
 }
 
-class _GridSummary extends StatelessWidget {
-  final Map<String, int> stats;
-  final Color color;
-  const _GridSummary({required this.stats, required this.color});
+// ── Reusable bits ─────────────────────────────────────────────────────────
+
+/// A left-aligned section title with an optional trailing widget (count chip,
+/// "View all" link). Keeps every section header on the dashboard consistent.
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final Widget? trailing;
+  const _SectionHeader({required this.title, this.trailing});
 
   @override
   Widget build(BuildContext context) {
-    if (stats.isEmpty)
-      return const Text('No active inventory.', style: TextStyle(fontSize: 12));
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Row(children: [
+          Container(
+            width: 4,
+            height: 16,
+            decoration: BoxDecoration(
+              color: context.colors.primaryGold,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const Gap(10),
+          Text(title,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleSmall
+                  ?.copyWith(fontWeight: FontWeight.w700)),
+        ]),
+        if (trailing != null) trailing!,
+      ],
+    );
+  }
+}
 
+/// An operational stat card: gold-on-tinted icon box + big value + label, with
+/// a faint accent gradient. Used for the four headline metrics.
+class _StatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        color: context.colors.cardDark,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.colors.borderColor),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            color.withOpacity(0.08),
+            context.colors.cardDark,
+          ],
+        ),
       ),
-      child: Column(
-        children: stats.entries
-            .map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(e.key,
-                          style: TextStyle(
-                              color: context.colors.textPrimary, fontSize: 12)),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: color.withOpacity(0.3)),
-                        ),
-                        child: Text(e.value.toString(),
-                            style: TextStyle(
-                                color: color,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 11)),
-                      ),
-                    ],
-                  ),
-                ))
-            .toList(),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 22),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        height: 1.1)),
+                const Gap(2),
+                Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: context.colors.textSecondary, fontSize: 12)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

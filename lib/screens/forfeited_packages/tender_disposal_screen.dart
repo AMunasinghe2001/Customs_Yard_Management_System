@@ -7,15 +7,15 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/supabase_client.dart';
+import '../../core/app_session.dart';
 import '../../models/models.dart';
-import '../../services/services.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
+import '../disposal/disposal_dashboard_screen.dart';
 import 'tender_placement_dialog.dart';
-import 'disposal_request_dialog.dart';
 
 // ── Local providers ────────────────────────────────────────────
 
@@ -99,11 +99,9 @@ class _TenderDisposalScreenState
 
   @override
   Widget build(BuildContext context) {
-    final tendersAsync = ref.watch(tendersProvider);
-    final disposalsMapAsync = ref.watch(tenderDisposalsMapProvider);
-    final forfeitedAsync = ref.watch(forfeitedPackagesProvider);
-    final allForfeitedMapAsync = ref.watch(allForfeitedMapProvider);
+    final salesAsync = ref.watch(tenderSalesProvider);
     final search = ref.watch(tenderSearchProvider);
+    final myYard = AppSession.currentYard;
 
     return AppShell(
       currentRoute: '/tender-disposals',
@@ -115,96 +113,16 @@ class _TenderDisposalScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Header ──────────────────────────────────────────
-              SizedBox(
-                width: double.infinity,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  runSpacing: 16,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Tender Disposals',
-                            style: Theme.of(context).textTheme.headlineLarge),
-                        Text(
-                          'Record and manage disposal outcomes for tendered packages',
-                          style: TextStyle(
-                              color: context.colors.textSecondary),
-                        ),
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        tendersAsync.when(
-                          data: (tenders) {
-                            final totalPkgs = tenders
-                                .fold<int>(0,
-                                    (s, t) => s + t.forfeitedPackageIds.length);
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _StatChip(
-                                    label: 'Tenders',
-                                    value: '${tenders.length}',
-                                    color: context.colors.primaryGold).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
-                                const Gap(8),
-                                _StatChip(
-                                    label: 'Packages',
-                                    value: '$totalPkgs',
-                                    color: context.colors.accentLightBlue).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
-                                const Gap(16),
-                              ],
-                            );
-                          },
-                          loading: () => const SizedBox(),
-                          error: (_, __) => const SizedBox(),
-                        ),
-                        forfeitedAsync.when(
-                          data: (packages) {
-                            final expiredCount =
-                                packages.where((p) => p.isAppealExpired).length;
-                            return Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _StatChip(
-                                    label: 'Expired',
-                                    value: '$expiredCount',
-                                    color: context.colors.dangerRed).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
-                                const Gap(16),
-                                ElevatedButton.icon(
-                                  icon: const Icon(Icons.local_shipping_rounded, size: 16),
-                                  label: const Text('Send Disposal Request'),
-                                  style: ElevatedButton.styleFrom(
-                                    backgroundColor: expiredCount > 0
-                                        ? context.colors.primaryGold
-                                        : context.colors.textMuted.withOpacity(0.1),
-                                    foregroundColor: expiredCount > 0
-                                        ? Colors.white
-                                        : context.colors.textMuted,
-                                    elevation: expiredCount > 0 ? 2 : 0,
-                                  ),
-                                  onPressed: expiredCount > 0
-                                      ? () => showDialog(
-                                            context: context,
-                                            builder: (_) => DisposalRequestDialog(
-                                              onSubmitted: () => ref.invalidate(
-                                                  forfeitedPackagesProvider),
-                                            ),
-                                          )
-                                      : null,
-                                ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
-                              ],
-                            );
-                          },
-                          loading: () => const SizedBox(),
-                          error: (_, __) => const SizedBox(),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Tender Sale',
+                      style: Theme.of(context).textTheme.headlineLarge),
+                  Text(
+                    'Tender sales that include packages from this yard',
+                    style: TextStyle(color: context.colors.textSecondary),
+                  ),
+                ],
               ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
               const Gap(20),
 
@@ -224,7 +142,7 @@ class _TenderDisposalScreenState
                       controller: _searchCtrl,
                       style: TextStyle(color: context.colors.textPrimary),
                       decoration: InputDecoration(
-                        hintText: 'Search by tender number or SR number...',
+                        hintText: 'Search by sale number or SR number...',
                         prefixIcon: Icon(Icons.search_rounded,
                             color: context.colors.textMuted),
                         suffixIcon: _searchCtrl.text.isNotEmpty
@@ -304,9 +222,10 @@ class _TenderDisposalScreenState
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: ((tendersAsync.valueOrNull ??
-                                  const <TenderModel>[])
-                              .map((t) => t.tenderDate.year.toString())
+                          years: ((salesAsync.valueOrNull ??
+                                  const <TenderSaleModel>[])
+                              .where((s) => s.saleDate != null)
+                              .map((s) => s.saleDate!.year.toString())
                               .toSet()
                               .toList()
                             ..sort((a, b) => b.compareTo(a))),
@@ -323,116 +242,92 @@ class _TenderDisposalScreenState
 
               const Gap(16),
 
-              // ── Tenders List ─────────────────────────────────────
+              // ── Tender Sales list (view-only, this yard's packages) ──────
               Expanded(
-                child: tendersAsync.when(
+                child: salesAsync.when(
                   loading: () => Center(
                       child: CircularProgressIndicator(
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(tendersProvider)),
-                  data: (tenders) {
-                    if (tenders.isEmpty) {
+                      onRetry: () => ref.refresh(tenderSalesProvider)),
+                  data: (sales) {
+                    // Keep only sales that contain at least one package from this
+                    // yard, then narrow each card's items to this yard's rows.
+                    var visible = sales
+                        .where((s) =>
+                            myYard == null ||
+                            s.items.any((i) => i.yard == myYard))
+                        .toList();
+
+                    final q = search.toLowerCase();
+                    if (q.isNotEmpty) {
+                      visible = visible
+                          .where((s) =>
+                              (s.saleNumber ?? '').toLowerCase().contains(q) ||
+                              s.items.any((i) => (i.forfeited?.srNumber ?? '')
+                                  .toLowerCase()
+                                  .contains(q)))
+                          .toList();
+                    }
+                    if (_dateRange != null) {
+                      final start = DateTime(_dateRange!.start.year,
+                          _dateRange!.start.month, _dateRange!.start.day);
+                      final end = DateTime(_dateRange!.end.year,
+                          _dateRange!.end.month, _dateRange!.end.day, 23, 59, 59);
+                      visible = visible.where((s) {
+                        final d = s.saleDate;
+                        return d != null &&
+                            !d.isBefore(start) &&
+                            !d.isAfter(end);
+                      }).toList();
+                    }
+                    if (_yearFilter != null) {
+                      visible = visible
+                          .where((s) =>
+                              s.saleDate?.year.toString() == _yearFilter)
+                          .toList();
+                    }
+
+                    if (visible.isEmpty) {
                       return Container(
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: context.colors.cardDark,
                           borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: context.colors.borderColor),
+                          border:
+                              Border.all(color: context.colors.borderColor),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.gavel_rounded,
+                            Icon(Icons.storefront_rounded,
                                 color: context.colors.textMuted, size: 48),
                             const Gap(12),
-                            Text('No tenders found',
+                            Text('No tender sales for this yard yet',
                                 style: TextStyle(
                                     color: context.colors.textSecondary,
                                     fontSize: 16)),
-                            const Gap(8),
-                            OutlinedButton.icon(
-                              icon: const Icon(Icons.local_shipping_rounded, size: 16),
-                              label: const Text('Send Disposal Request'),
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (_) => DisposalRequestDialog(
-                                    onSubmitted: () => ref
-                                        .invalidate(forfeitedPackagesProvider),
-                                  ),
-                                );
-                              },
-                            ),
+                            const Gap(6),
+                            Text(
+                                'Sales are created centrally by the Disposal Directorate',
+                                style: TextStyle(
+                                    color: context.colors.textMuted,
+                                    fontSize: 13)),
                           ],
                         ),
                       );
                     }
 
-                    final filtered = tenders.where((t) {
-                      if (search.isNotEmpty &&
-                          !t.tenderNumber
-                              .toLowerCase()
-                              .contains(search.toLowerCase())) {
-                        return false;
-                      }
-                      if (_dateRange != null) {
-                        final date = t.tenderDate;
-                        final startOfDay = DateTime(_dateRange!.start.year,
-                            _dateRange!.start.month, _dateRange!.start.day);
-                        final endOfDay = DateTime(_dateRange!.end.year,
-                            _dateRange!.end.month, _dateRange!.end.day,
-                            23, 59, 59);
-                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay)) {
-                          return false;
-                        }
-                      }
-                      if (_yearFilter != null &&
-                          t.tenderDate.year.toString() != _yearFilter) {
-                        return false;
-                      }
-                      return true;
-                    }).toList();
-
-                    return disposalsMapAsync.when(
-                      loading: () => Center(
-                          child: CircularProgressIndicator(
-                              color: context.colors.primaryGold)),
-                      error: (e, _) => ErrorView(
-                          error: e,
-                          onRetry: () =>
-                              ref.refresh(tenderDisposalsMapProvider)),
-                      data: (disposalsMap) {
-                        return allForfeitedMapAsync.when(
-                          loading: () => Center(
-                              child: CircularProgressIndicator(
-                                  color: context.colors.primaryGold)),
-                          error: (e, _) => ErrorView(
-                              error: e,
-                              onRetry: () =>
-                                  ref.refresh(allForfeitedMapProvider)),
-                          data: (forfeitedMap) {
-                            return ListView.builder(
-                              itemCount: filtered.length,
-                              itemBuilder: (context, i) {
-                                return TenderCard(
-                                  tender: filtered[i],
-                                  disposalsMap: disposalsMap,
-                                  forfeitedMap: forfeitedMap,
-                                );
-                              },
-                            )
-                                .animate()
-                                .slideY(
-                                    begin: 0.1,
-                                    duration: 400.ms,
-                                    delay: 300.ms)
-                                .fadeIn();
-                          },
-                        );
-                      },
-                    );
+                    return ListView.separated(
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => const Gap(16),
+                      itemBuilder: (context, i) =>
+                          TenderSaleCard(sale: visible[i], readOnly: true),
+                    )
+                        .animate()
+                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
+                        .fadeIn();
                   },
                 ),
               ),
@@ -1478,46 +1373,6 @@ class _SectionLabel extends StatelessWidget {
                 fontSize: 13,
                 letterSpacing: 0.3)),
       ],
-    );
-  }
-}
-
-// ── Stat Chip ─────────────────────────────────────────────────────
-
-class _StatChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _StatChip(
-      {required this.label, required this.value, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(value,
-              style: TextStyle(
-                  color: color,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  height: 1.1)),
-          Text(label,
-              style: TextStyle(
-                  color: context.colors.textSecondary,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 0.5)),
-        ],
-      ),
     );
   }
 }

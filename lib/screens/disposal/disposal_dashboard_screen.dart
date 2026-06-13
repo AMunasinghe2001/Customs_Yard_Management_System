@@ -16,6 +16,8 @@ import 'taxes_tab.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/one_tap_date_picker.dart';
+import '../../widgets/disposal_profile_dialog.dart';
 
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
@@ -76,23 +78,53 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 ),
                 const Spacer(),
                 if (profile != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: green.withOpacity(0.1),
+                  Tooltip(
+                    message: 'View profile',
+                    child: InkWell(
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: green.withOpacity(0.35)),
+                      onTap: () => showDialog(
+                        context: context,
+                        builder: (_) => const DisposalProfileDialog(),
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: green.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: green.withOpacity(0.35)),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.verified_user_rounded,
+                              color: green, size: 16),
+                          const Gap(8),
+                          Text(profile.fullName,
+                              style: TextStyle(
+                                  color: green,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13)),
+                          // Amber dot when the password is within its 7-day
+                          // expiry window — a quiet nudge to open the profile.
+                          if (profile.isPasswordExpiringSoon ||
+                              profile.isPasswordExpired) ...[
+                            const Gap(8),
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: profile.isPasswordExpired
+                                    ? context.colors.dangerRed
+                                    : context.colors.warningAmber,
+                              ),
+                            ),
+                          ],
+                          const Gap(4),
+                          Icon(Icons.chevron_right_rounded,
+                              color: green.withOpacity(0.7), size: 16),
+                        ]),
+                      ),
                     ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.verified_user_rounded, color: green, size: 16),
-                      const Gap(8),
-                      Text(profile.fullName,
-                          style: TextStyle(
-                              color: green,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13)),
-                    ]),
                   ),
                 const Gap(8),
                 IconButton(
@@ -272,13 +304,13 @@ class _DisposalSearchState extends ConsumerState<_DisposalSearch> {
   @override
   Widget build(BuildContext context) {
     OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: c, width: w));
     return SizedBox(
       width: widget.width,
       child: TextField(
         controller: _c,
-        style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
+        style: TextStyle(color: context.colors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
         onChanged: (v) {
           ref.read(_disposalSearchProvider(widget.tabKey).notifier).state = v;
           setState(() {});
@@ -286,9 +318,9 @@ class _DisposalSearchState extends ConsumerState<_DisposalSearch> {
         decoration: InputDecoration(
           isDense: true,
           hintText: widget.hint,
-          hintStyle: TextStyle(color: context.colors.textMuted, fontSize: 13),
+          hintStyle: TextStyle(color: context.colors.textSecondary, fontSize: 13),
           prefixIcon: Icon(Icons.search_rounded,
-              size: 18, color: context.colors.textMuted),
+              size: 20, color: context.colors.primaryGold),
           suffixIcon: _c.text.isEmpty
               ? null
               : IconButton(
@@ -304,12 +336,12 @@ class _DisposalSearchState extends ConsumerState<_DisposalSearch> {
                   },
                 ),
           filled: true,
-          fillColor: context.colors.cardDark,
+          fillColor: context.colors.primaryGold.withOpacity(0.06),
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
-          border: border(context.colors.borderColor),
-          enabledBorder: border(context.colors.borderColor),
-          focusedBorder: border(context.colors.successGreen, 1.5),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          border: border(context.colors.primaryGold.withOpacity(0.4)),
+          enabledBorder: border(context.colors.primaryGold.withOpacity(0.4)),
+          focusedBorder: border(context.colors.primaryGold, 1.5),
         ),
       ),
     );
@@ -325,20 +357,38 @@ class _YardAllFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 200,
-      child: StyledDropdownFormField<String>(
-        value: value ?? '_all',
-        label: 'Yard',
-        helperText: null,
-        isDense: true,
-        menuWidth: 200,
-        prefixIcon:
-            Icon(Icons.warehouse_outlined, color: context.colors.textMuted),
-        options: [
-          const StyledDropdownOption('_all', 'All Yards'),
-          for (final y in kYards) StyledDropdownOption(y.code, y.name),
-        ],
-        onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
+      width: 220,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+            filled: true,
+            fillColor: context.colors.primaryGold.withOpacity(0.06),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.colors.primaryGold, width: 1.5)),
+          ),
+        ),
+        child: StyledDropdownFormField<String>(
+          value: value ?? '_all',
+          label: 'Yard',
+          helperText: null,
+          isDense: true,
+          menuWidth: 220,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          prefixIcon:
+              Icon(Icons.warehouse_rounded, color: context.colors.primaryGold, size: 20),
+          options: [
+            const StyledDropdownOption('_all', 'All Yards'),
+            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+          ],
+          onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
+        ),
       ),
     );
   }
@@ -351,19 +401,37 @@ class _YardFilter extends ConsumerWidget {
     final selectedYard = ref.watch(disposalSelectedYardProvider);
     return SizedBox(
       width: 240,
-      child: StyledDropdownFormField<String>(
-        value: selectedYard,
-        label: 'Yard',
-        helperText: null,
-        isDense: true,
-        menuWidth: 240,
-        prefixIcon:
-            Icon(Icons.warehouse_outlined, color: context.colors.textMuted),
-        options: [
-          for (final y in kYards) StyledDropdownOption(y.code, y.name),
-        ],
-        onChanged: (v) => ref.read(disposalSelectedYardProvider.notifier).state =
-            v ?? kYards.first.code,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+            filled: true,
+            fillColor: context.colors.primaryGold.withOpacity(0.06),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: context.colors.primaryGold, width: 1.5)),
+          ),
+        ),
+        child: StyledDropdownFormField<String>(
+          value: selectedYard,
+          label: 'Yard',
+          helperText: null,
+          isDense: true,
+          menuWidth: 240,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          prefixIcon:
+              Icon(Icons.warehouse_rounded, color: context.colors.primaryGold, size: 20),
+          options: [
+            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+          ],
+          onChanged: (v) => ref.read(disposalSelectedYardProvider.notifier).state =
+              v ?? kYards.first.code,
+        ),
       ),
     );
   }
@@ -810,13 +878,17 @@ class _ForfeitedPackagesTab extends ConsumerWidget {
                                       size: 18),
                                   onPressed: f.packageDetails == null
                                       ? null
+                                      // Default mode (no highlightEntry / legacy
+                                      // receipt view) → full "Package Item
+                                      // Summary" + Warehouse Summary for every
+                                      // item, which is what forfeited packages
+                                      // need (they have no single sale receipt).
                                       : () => showDialog(
                                             context: context,
                                             builder: (_) =>
                                                 PackageDetailsDialog(
                                               package: f.packageDetails!,
                                               storageRate: storageRate,
-                                              useLegacySummary: true,
                                             ),
                                           ),
                                 ),
@@ -1434,7 +1506,7 @@ class _TenderSalesTab extends ConsumerWidget {
                 return ListView.separated(
                   itemCount: visible.length,
                   separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) => _TenderSaleCard(sale: visible[i]),
+                  itemBuilder: (context, i) => TenderSaleCard(sale: visible[i]),
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
               },
             ),
@@ -1454,9 +1526,12 @@ class _TsRow {
   const _TsRow(this.saleItem, this.item, this.warehouse);
 }
 
-class _TenderSaleCard extends ConsumerWidget {
+class TenderSaleCard extends ConsumerWidget {
   final TenderSaleModel sale;
-  const _TenderSaleCard({required this.sale});
+  /// Yard-side, view-only mode: shows every item (sold included) with a
+  /// read-only Sold/Pending status chip instead of the Mark-Sold action.
+  final bool readOnly;
+  const TenderSaleCard({required this.sale, this.readOnly = false});
 
   String _warehouseFor(PackageModel? pkg, String itemId) {
     if (pkg == null) return '—';
@@ -1472,8 +1547,11 @@ class _TenderSaleCard extends ConsumerWidget {
 
   List<_TsRow> _rows() {
     final rows = <_TsRow>[];
-    // Sold items leave the Tender Sales page (they move to Sold Packages).
-    for (final si in sale.items.where((s) => !s.sold)) {
+    // Central Disposal hides sold items (they move to Sold Packages); the
+    // yard view-only page keeps them so the yard can see the full outcome.
+    final source =
+        readOnly ? sale.items : sale.items.where((s) => !s.sold);
+    for (final si in source) {
       final pkg = si.forfeited?.packageDetails;
       final items = pkg?.items ?? const [];
       if (items.isEmpty) {
@@ -1650,45 +1728,32 @@ class _TenderSaleCard extends ConsumerWidget {
                       )),
                       DataCell(Center(
                         child: r.saleItem.sold
-                            ? Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: green.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border:
-                                      Border.all(color: green.withOpacity(0.4)),
-                                ),
-                                child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(Icons.check_circle_rounded,
-                                          size: 13, color: green),
-                                      const Gap(5),
-                                      Text('Sold',
-                                          style: TextStyle(
-                                              color: green,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700)),
-                                    ]),
-                              )
-                            : OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: green,
-                                  side: BorderSide(
-                                      color: green.withOpacity(0.5)),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  minimumSize: const Size(0, 32),
-                                ),
-                                icon: const Icon(Icons.sell_rounded, size: 14),
-                                label: const Text('Mark Sold',
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700)),
-                                onPressed: () => _markSold(
-                                    context, ref, r.saleItem),
-                              ),
+                            ? _statusChip(context, 'Sold',
+                                Icons.check_circle_rounded, green)
+                            // Yard view-only → read-only "Pending" chip; Central
+                            // Disposal keeps the actionable Mark-Sold button.
+                            : readOnly
+                                ? _statusChip(context, 'Pending',
+                                    Icons.schedule_rounded,
+                                    context.colors.warningAmber)
+                                : OutlinedButton.icon(
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: green,
+                                      side: BorderSide(
+                                          color: green.withOpacity(0.5)),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 6),
+                                      minimumSize: const Size(0, 32),
+                                    ),
+                                    icon:
+                                        const Icon(Icons.sell_rounded, size: 14),
+                                    label: const Text('Mark Sold',
+                                        style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700)),
+                                    onPressed: () =>
+                                        _markSold(context, ref, r.saleItem),
+                                  ),
                       )),
                     ]);
                   }).toList(),
@@ -1698,6 +1763,25 @@ class _TenderSaleCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _statusChip(
+      BuildContext context, String label, IconData icon, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 13, color: color),
+        const Gap(5),
+        Text(label,
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+      ]),
     );
   }
 
@@ -1972,46 +2056,18 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               ),
               Row(children: [
                 Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _saleDate ?? DateTime.now(),
-                        firstDate: DateTime(2015),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) setState(() => _saleDate = picked);
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Tender Sale Date',
-                        suffixIcon: Icon(Icons.calendar_month_rounded),
-                      ),
-                      child: Text(_saleDate != null
-                          ? DateFormat('yyyy-MM-dd').format(_saleDate!)
-                          : 'Select sale date', style: _saleDate == null ? TextStyle(color: context.colors.textMuted) : null),
-                    ),
+                  child: _OneTapDateField(
+                    label: 'Tender Sale Date',
+                    value: _saleDate,
+                    onChanged: (d) => setState(() => _saleDate = d),
                   ),
                 ),
                 const Gap(12),
                 Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final picked = await showTimePicker(
-                        context: context,
-                        initialTime: _saleTime ?? TimeOfDay.now(),
-                      );
-                      if (picked != null) setState(() => _saleTime = picked);
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Sale Start Time',
-                        suffixIcon: Icon(Icons.access_time_rounded),
-                      ),
-                      child: Text(_saleTime != null
-                          ? _saleTime!.format(context)
-                          : 'Select time', style: _saleTime == null ? TextStyle(color: context.colors.textMuted) : null),
-                    ),
+                  child: _OneTapTimeField(
+                    label: 'Sale Start Time',
+                    value: _saleTime,
+                    onChanged: (t) => setState(() => _saleTime = t),
                   ),
                 ),
               ]),
@@ -2080,7 +2136,23 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                       ),
                     );
                   }
-                  return ConstrainedBox(
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _SelectAllBar(
+                        selectedCount: _selected.length,
+                        totalCount: items.length,
+                        onSelectAll: () => setState(() {
+                          for (final it in items) {
+                            _selected[it.forfeitedPackageId] =
+                                it.forfeited?.yard ?? '';
+                          }
+                        }),
+                        onClearAll: () => setState(_selected.clear),
+                      ),
+                      const Gap(8),
+                      ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 280),
                     child: ListView.separated(
                       shrinkWrap: true,
@@ -2168,6 +2240,8 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                         );
                       },
                     ),
+                  ),
+                    ],
                   );
                 },
               ),
@@ -2229,102 +2303,78 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sales = info.sales;
-    return Dialog(
-      backgroundColor: context.colors.scaffoldBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Container(
-        width: 540,
-        constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(Icons.history_rounded, color: context.colors.primaryGold),
-              const Gap(10),
-              Expanded(
-                child: Text('Tender Sale History — ${info.forfeited.srNumber}',
+    return StyledFormDialog(
+      label: 'Tender Sale History',
+      title: info.forfeited.srNumber,
+      icon: Icons.history_rounded,
+      width: 540,
+      child: StyledFormSection(
+        title: 'Tendered ${info.tenderCount} time(s)',
+        icon: Icons.gavel_rounded,
+        children: [
+          for (int i = 0; i < sales.length; i++)
+            _saleCard(context, sales[i], i == 0),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close')),
+      ],
+    );
+  }
+
+  Widget _saleCard(BuildContext context, dynamic t, bool isLatest) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: isLatest
+                ? context.colors.primaryGold.withOpacity(0.5)
+                : context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.gavel_rounded,
+                size: 16, color: context.colors.primaryGold),
+            const Gap(8),
+            Text(t.saleNumber ?? 'No Number',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15)),
+            if (isLatest) ...[
+              const Gap(8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: context.colors.primaryGold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text('Latest',
                     style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800)),
+                        color: context.colors.primaryGold,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold)),
               ),
-              IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded)),
-            ]),
-            const Gap(4),
-            Text('Tendered ${info.tenderCount} time(s)',
-                style: TextStyle(color: context.colors.textSecondary)),
-            const Gap(12),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: sales.length,
-                separatorBuilder: (_, __) => const Gap(10),
-                itemBuilder: (context, i) {
-                  final t = sales[i];
-                  final isLatest = i == 0;
-                  return Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.colors.cardDark,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: isLatest
-                              ? context.colors.primaryGold.withOpacity(0.5)
-                              : context.colors.borderColor),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Icon(Icons.gavel_rounded,
-                              size: 16, color: context.colors.primaryGold),
-                          const Gap(8),
-                          Text(t.saleNumber ?? 'No Number',
-                              style: TextStyle(
-                                  color: context.colors.textPrimary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15)),
-                          if (isLatest) ...[
-                            const Gap(8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: context.colors.primaryGold
-                                    .withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text('Latest',
-                                  style: TextStyle(
-                                      color: context.colors.primaryGold,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ]),
-                        const Gap(8),
-                        _kv(
-                            context,
-                            'Sale Date',
-                            t.saleDate != null
-                                ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
-                                : '—'),
-                        _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
-                        if (t.createdByName != null)
-                          _kv(context, 'Created By', t.createdByName!),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+            ],
+          ]),
+          const Gap(8),
+          _kv(
+              context,
+              'Sale Date',
+              t.saleDate != null
+                  ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
+                  : '—'),
+          _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
+          if (t.createdByName != null)
+            _kv(context, 'Created By', t.createdByName!),
+        ],
       ),
     );
   }
@@ -2973,46 +3023,18 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
               ),
               Row(children: [
                 Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate: _saleDate ?? DateTime.now(),
-                        firstDate: DateTime(2015),
-                        lastDate: DateTime(2100),
-                      );
-                      if (picked != null) setState(() => _saleDate = picked);
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Destruction Sale Date',
-                        suffixIcon: Icon(Icons.calendar_month_rounded),
-                      ),
-                      child: Text(_saleDate != null
-                          ? DateFormat('yyyy-MM-dd').format(_saleDate!)
-                          : 'Select sale date', style: _saleDate == null ? TextStyle(color: context.colors.textMuted) : null),
-                    ),
+                  child: _OneTapDateField(
+                    label: 'Destruction Sale Date',
+                    value: _saleDate,
+                    onChanged: (d) => setState(() => _saleDate = d),
                   ),
                 ),
                 const Gap(12),
                 Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final picked = await showTimePicker(
-                        context: context,
-                        initialTime: _saleTime ?? TimeOfDay.now(),
-                      );
-                      if (picked != null) setState(() => _saleTime = picked);
-                    },
-                    child: InputDecorator(
-                      decoration: const InputDecoration(
-                        labelText: 'Sale Start Time',
-                        suffixIcon: Icon(Icons.access_time_rounded),
-                      ),
-                      child: Text(_saleTime != null
-                          ? _saleTime!.format(context)
-                          : 'Select time', style: _saleTime == null ? TextStyle(color: context.colors.textMuted) : null),
-                    ),
+                  child: _OneTapTimeField(
+                    label: 'Sale Start Time',
+                    value: _saleTime,
+                    onChanged: (t) => setState(() => _saleTime = t),
                   ),
                 ),
               ]),
@@ -3081,7 +3103,23 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                       ),
                     );
                   }
-                  return ConstrainedBox(
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _SelectAllBar(
+                        selectedCount: _selected.length,
+                        totalCount: items.length,
+                        onSelectAll: () => setState(() {
+                          for (final it in items) {
+                            _selected[it.forfeitedPackageId] =
+                                it.forfeited?.yard ?? '';
+                          }
+                        }),
+                        onClearAll: () => setState(_selected.clear),
+                      ),
+                      const Gap(8),
+                      ConstrainedBox(
                     constraints: const BoxConstraints(maxHeight: 280),
                     child: ListView.separated(
                       shrinkWrap: true,
@@ -3169,6 +3207,8 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                         );
                       },
                     ),
+                  ),
+                    ],
                   );
                 },
               ),
@@ -3230,102 +3270,78 @@ class _DestructionSaleHistoryDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sales = info.destructions;
-    return Dialog(
-      backgroundColor: context.colors.scaffoldBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: Container(
-        width: 540,
-        constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.8),
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(Icons.history_rounded, color: context.colors.primaryGold),
-              const Gap(10),
-              Expanded(
-                child: Text('Destruction Sale History — ${info.forfeited.srNumber}',
+    return StyledFormDialog(
+      label: 'Destruction Sale History',
+      title: info.forfeited.srNumber,
+      icon: Icons.history_rounded,
+      width: 540,
+      child: StyledFormSection(
+        title: 'Attempted ${info.timesAttempted} time(s)',
+        icon: Icons.gavel_rounded,
+        children: [
+          for (int i = 0; i < sales.length; i++)
+            _saleCard(context, sales[i], i == 0),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close')),
+      ],
+    );
+  }
+
+  Widget _saleCard(BuildContext context, dynamic t, bool isLatest) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+            color: isLatest
+                ? context.colors.primaryGold.withOpacity(0.5)
+                : context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.gavel_rounded,
+                size: 16, color: context.colors.primaryGold),
+            const Gap(8),
+            Text(t.saleNumber ?? 'No Number',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15)),
+            if (isLatest) ...[
+              const Gap(8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: context.colors.primaryGold.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text('Latest',
                     style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w800)),
+                        color: context.colors.primaryGold,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold)),
               ),
-              IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: const Icon(Icons.close_rounded)),
-            ]),
-            const Gap(4),
-            Text('Destructioned ${info.timesAttempted} time(s)',
-                style: TextStyle(color: context.colors.textSecondary)),
-            const Gap(12),
-            Flexible(
-              child: ListView.separated(
-                shrinkWrap: true,
-                itemCount: sales.length,
-                separatorBuilder: (_, __) => const Gap(10),
-                itemBuilder: (context, i) {
-                  final t = sales[i];
-                  final isLatest = i == 0;
-                  return Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.colors.cardDark,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: isLatest
-                              ? context.colors.primaryGold.withOpacity(0.5)
-                              : context.colors.borderColor),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(children: [
-                          Icon(Icons.gavel_rounded,
-                              size: 16, color: context.colors.primaryGold),
-                          const Gap(8),
-                          Text(t.saleNumber ?? 'No Number',
-                              style: TextStyle(
-                                  color: context.colors.textPrimary,
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 15)),
-                          if (isLatest) ...[
-                            const Gap(8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: context.colors.primaryGold
-                                    .withOpacity(0.15),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text('Latest',
-                                  style: TextStyle(
-                                      color: context.colors.primaryGold,
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold)),
-                            ),
-                          ],
-                        ]),
-                        const Gap(8),
-                        _kv(
-                            context,
-                            'Sale Date',
-                            t.saleDate != null
-                                ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
-                                : '—'),
-                        _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
-                        if (t.createdByName != null)
-                          _kv(context, 'Created By', t.createdByName!),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+            ],
+          ]),
+          const Gap(8),
+          _kv(
+              context,
+              'Sale Date',
+              t.saleDate != null
+                  ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
+                  : '—'),
+          _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
+          if (t.createdByName != null)
+            _kv(context, 'Created By', t.createdByName!),
+        ],
       ),
     );
   }
@@ -3522,6 +3538,127 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Select All / Clear All bar for the package picker lists ───────────────────
+
+class _SelectAllBar extends StatelessWidget {
+  final int selectedCount;
+  final int totalCount;
+  final VoidCallback onSelectAll;
+  final VoidCallback onClearAll;
+  const _SelectAllBar({
+    required this.selectedCount,
+    required this.totalCount,
+    required this.onSelectAll,
+    required this.onClearAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Text('$selectedCount of $totalCount selected',
+            style: TextStyle(
+                color: context.colors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600)),
+        const Spacer(),
+        TextButton.icon(
+          onPressed: onSelectAll,
+          icon: Icon(Icons.done_all_rounded,
+              size: 16, color: context.colors.primaryGold),
+          label: Text('Select All',
+              style: TextStyle(
+                  color: context.colors.primaryGold,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12)),
+        ),
+        TextButton.icon(
+          onPressed: onClearAll,
+          icon: Icon(Icons.clear_all_rounded,
+              size: 16, color: context.colors.textMuted),
+          label: Text('Clear All',
+              style: TextStyle(
+                  color: context.colors.textMuted,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12)),
+        ),
+      ],
+    );
+  }
+}
+
+// ── Shared form fields (gold one-tap calendar / clock, no OK button) ──────────
+
+/// A read-only field that opens the gold [OneTapDatePicker] on tap and reports
+/// the picked date. Matches the SR-registration calendar look & flow.
+class _OneTapDateField extends StatelessWidget {
+  final String label;
+  final DateTime? value;
+  final ValueChanged<DateTime> onChanged;
+  const _OneTapDateField(
+      {required this.label, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showDialog<DateTime>(
+          context: context,
+          builder: (_) => OneTapDatePicker(initialDate: value ?? DateTime.now()),
+        );
+        if (picked != null) onChanged(picked);
+      },
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.calendar_month_rounded),
+        ),
+        child: Text(
+          value != null ? DateFormat('yyyy-MM-dd').format(value!) : 'Select sale date',
+          style: value == null
+              ? TextStyle(color: context.colors.textMuted)
+              : null,
+        ),
+      ),
+    );
+  }
+}
+
+/// A read-only field that opens the gold [OneTapTimePicker] on tap. No OK
+/// button — tapping a minute closes the picker immediately.
+class _OneTapTimeField extends StatelessWidget {
+  final String label;
+  final TimeOfDay? value;
+  final ValueChanged<TimeOfDay> onChanged;
+  const _OneTapTimeField(
+      {required this.label, required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showDialog<TimeOfDay>(
+          context: context,
+          builder: (_) => OneTapTimePicker(initialTime: value ?? TimeOfDay.now()),
+        );
+        if (picked != null) onChanged(picked);
+      },
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          suffixIcon: const Icon(Icons.access_time_rounded),
+        ),
+        child: Text(
+          value != null ? value!.format(context) : 'Select time',
+          style: value == null
+              ? TextStyle(color: context.colors.textMuted)
+              : null,
+        ),
       ),
     );
   }

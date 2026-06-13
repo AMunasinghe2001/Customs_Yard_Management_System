@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
 
+import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/empty_table_state.dart';
+import '../../widgets/styled_form_dialog.dart';
 
 final taxesProvider = FutureProvider<List<DisposalTaxModel>>((ref) async {
   return DisposalService().getTaxes();
@@ -230,37 +232,51 @@ class _TaxDialogState extends State<_TaxDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text(widget.tax == null ? 'Add Tax' : 'Edit Tax'),
-      content: Form(
+    final isEdit = widget.tax != null;
+    return StyledFormDialog(
+      label: 'Tax Configuration',
+      title: isEdit ? 'Edit Tax' : 'Add Tax',
+      icon: Icons.receipt_long_rounded,
+      width: 460,
+      child: Form(
         key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: StyledFormSection(
+          title: 'Tax Details',
+          icon: Icons.percent_rounded,
           children: [
             TextFormField(
               controller: _nameCtrl,
-              decoration: const InputDecoration(labelText: 'Tax Name (e.g. VAT)'),
+              decoration:
+                  const InputDecoration(labelText: 'Tax Name (e.g. VAT)'),
               validator: (v) => v!.isEmpty ? 'Required' : null,
             ),
-            const Gap(16),
             TextFormField(
               controller: _percentCtrl,
               decoration: const InputDecoration(
                   labelText: 'Percentage (%)', suffixText: '%'),
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               validator: (v) {
                 if (v!.isEmpty) return 'Required';
                 if (double.tryParse(v) == null) return 'Invalid number';
                 return null;
               },
             ),
-            const Gap(16),
-            if (widget.tax != null)
-              SwitchListTile(
-                title: const Text('Active'),
-                value: _isActive,
-                onChanged: (v) => setState(() => _isActive = v),
-                contentPadding: EdgeInsets.zero,
+            if (isEdit)
+              Container(
+                decoration: BoxDecoration(
+                  color: context.colors.textPrimary.withOpacity(0.02),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: context.colors.borderColor),
+                ),
+                child: SwitchListTile(
+                  title: const Text('Active'),
+                  activeColor: context.colors.primaryGold,
+                  value: _isActive,
+                  onChanged: (v) => setState(() => _isActive = v),
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 14),
+                ),
               ),
           ],
         ),
@@ -270,14 +286,11 @@ class _TaxDialogState extends State<_TaxDialog> {
           onPressed: () => Navigator.pop(context),
           child: const Text('Cancel'),
         ),
-        ElevatedButton(
+        StyledDialogPrimaryButton(
+          labelText: 'Save',
+          icon: Icons.save_rounded,
+          loading: _isLoading,
           onPressed: _isLoading ? null : _save,
-          child: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Save'),
         ),
       ],
     );

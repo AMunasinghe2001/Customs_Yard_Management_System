@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
-import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
@@ -42,14 +41,6 @@ final categoryStatsProvider = FutureProvider<Map<String, int>>((ref) async {
   return ref.read(warehouseServiceProvider).getCategoryStats();
 });
 
-double? _latestStorageRate(Map<DateTime, double>? rates) {
-  if (rates == null || rates.isEmpty) return null;
-  final latestEntry = rates.entries.reduce(
-    (a, b) => a.key.isAfter(b.key) ? a : b,
-  );
-  return latestEntry.value;
-}
-
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
 
@@ -74,9 +65,6 @@ class DashboardScreen extends ConsumerWidget {
     AsyncValue<Map<String, dynamic>> stats,
     AsyncValue<List<PackageModel>> recent,
   ) {
-    final storageRate = _latestStorageRate(
-      ref.watch(storageRateProvider).valueOrNull,
-    );
     return AppShell(
       currentRoute: '/dashboard',
       child: Scaffold(
@@ -122,9 +110,9 @@ class DashboardScreen extends ConsumerWidget {
                       children: [
                         Expanded(
                           child: _StatCard(
-                            label: 'Seized Today',
-                            value: "${data['seized'] ?? 0}",
-                            icon: Icons.warning_amber_rounded,
+                            label: 'Forfeited Today',
+                            value: "${data['forfeit'] ?? 0}",
+                            icon: Icons.gavel_rounded,
                             color: const Color(0xFFEF5350),
                             small: true,
                           ).animate().slideY(begin: 0.3, duration: 400.ms).fadeIn(),
@@ -132,32 +120,30 @@ class DashboardScreen extends ConsumerWidget {
                         const Gap(12),
                         Expanded(
                           child: _StatCard(
-                            label: 'Released (Cleared)',
-                            value: "${data['cleared'] ?? 0}",
-                            icon: Icons.check_circle_rounded,
-                            color: context.colors.successGreen,
+                            label: 'Abandoned Today',
+                            value: "${data['abandon'] ?? 0}",
+                            icon: Icons.inventory_2_rounded,
+                            color: context.colors.heldOrange,
                             small: true,
                           ).animate().slideY(begin: 0.3, duration: 400.ms, delay: 100.ms).fadeIn(),
                         ),
                         const Gap(12),
                         Expanded(
                           child: _StatCard(
-                            label: 'Held in SR',
-                            value: "${data['held'] ?? 0}",
-                            icon: Icons.warehouse_rounded,
-                            color: context.colors.heldOrange,
+                            label: 'Destroyed Today',
+                            value: "${data['destroy'] ?? 0}",
+                            icon: Icons.local_fire_department_rounded,
+                            color: context.colors.warningAmber,
                             small: true,
                           ).animate().slideY(begin: 0.3, duration: 400.ms, delay: 200.ms).fadeIn(),
                         ),
                         const Gap(12),
                         Expanded(
                           child: _StatCard(
-                            label: 'Warehouse Charges',
-                            value: storageRate != null
-                                ? 'LKR ${storageRate.toStringAsFixed(2)}'
-                                : 'LKR 0.00',
-                            icon: Icons.payment_rounded,
-                            color: context.colors.accentLightBlue,
+                            label: 'Released Today',
+                            value: "${data['release'] ?? 0}",
+                            icon: Icons.check_circle_rounded,
+                            color: context.colors.successGreen,
                             small: true,
                           ).animate().slideY(begin: 0.3, duration: 400.ms, delay: 300.ms).fadeIn(),
                         ),
@@ -228,9 +214,6 @@ class DashboardScreen extends ConsumerWidget {
     AsyncValue<Map<String, dynamic>> stats,
     AsyncValue<List<PackageModel>> recent,
   ) {
-    final storageRate = _latestStorageRate(
-      ref.watch(storageRateProvider).valueOrNull,
-    );
     return AppShell(
       currentRoute: '/dashboard',
       child: Scaffold(
@@ -269,29 +252,26 @@ class DashboardScreen extends ConsumerWidget {
                   children: [
                     ConstrainedBox(
                       constraints: const BoxConstraints(minWidth: 180),
-                      child: _StatCard(label: 'Seized Today', value: "${data['seized'] ?? 0}",
-                        icon: Icons.warning_amber_rounded, color: const Color(0xFFEF5350))
+                      child: _StatCard(label: 'Forfeited Today', value: "${data['forfeit'] ?? 0}",
+                        icon: Icons.gavel_rounded, color: const Color(0xFFEF5350))
                         .animate().slideY(begin: 0.3, duration: 400.ms).fadeIn(),
                     ),
                     ConstrainedBox(
                       constraints: const BoxConstraints(minWidth: 180),
-                      child: _StatCard(label: 'Released (Cleared)', value: "${data['cleared'] ?? 0}",
-                        icon: Icons.check_circle_rounded, color: context.colors.successGreen)
+                      child: _StatCard(label: 'Abandoned Today', value: "${data['abandon'] ?? 0}",
+                        icon: Icons.inventory_2_rounded, color: context.colors.heldOrange)
                         .animate().slideY(begin: 0.3, duration: 400.ms, delay: 100.ms).fadeIn(),
                     ),
                     ConstrainedBox(
                       constraints: const BoxConstraints(minWidth: 180),
-                      child: _StatCard(label: 'Held in SR', value: "${data['held'] ?? 0}",
-                        icon: Icons.warehouse_rounded, color: context.colors.heldOrange)
+                      child: _StatCard(label: 'Destroyed Today', value: "${data['destroy'] ?? 0}",
+                        icon: Icons.local_fire_department_rounded, color: context.colors.warningAmber)
                         .animate().slideY(begin: 0.3, duration: 400.ms, delay: 200.ms).fadeIn(),
                     ),
                     ConstrainedBox(
                       constraints: const BoxConstraints(minWidth: 180),
-                      child: _StatCard(label: 'Warehouse Charges', 
-                        value: storageRate != null
-                            ? 'LKR ${storageRate.toStringAsFixed(2)}'
-                            : 'LKR 0.00',
-                        icon: Icons.payment_rounded, color: context.colors.accentLightBlue)
+                      child: _StatCard(label: 'Released Today', value: "${data['release'] ?? 0}",
+                        icon: Icons.check_circle_rounded, color: context.colors.successGreen)
                         .animate().slideY(begin: 0.3, duration: 400.ms, delay: 300.ms).fadeIn(),
                     ),
                   ],

@@ -277,10 +277,11 @@ class _TenderPlacementDialogState extends ConsumerState<TenderPlacementDialog> {
                               Expanded(
                                 child: InkWell(
                                   onTap: () async {
-                                    final t = await showTimePicker(
+                                    final t = await showDialog<TimeOfDay>(
                                       context: context,
-                                      initialTime:
-                                          _saleTime ?? TimeOfDay.now(),
+                                      builder: (_) => OneTapTimePicker(
+                                          initialTime:
+                                              _saleTime ?? TimeOfDay.now()),
                                     );
                                     if (t != null) setState(() => _saleTime = t);
                                   },

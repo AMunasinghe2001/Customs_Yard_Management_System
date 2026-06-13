@@ -26,6 +26,12 @@ class AuthService {
     }
   }
 
+  Future<void> updatePassword(String newPassword) async {
+    await supabase.auth.updateUser(
+      UserAttributes(password: newPassword),
+    );
+  }
+
   Future<void> verifyUserSession() async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
@@ -182,6 +188,24 @@ class AuthService {
         action: 'Changed password',
         entityType: 'auth',
         entityId: user.id,
+      );
+    }
+  }
+
+  /// Change the currently signed-in user's login email. Supabase emails a
+  /// confirmation link to the new address; the change only takes effect once
+  /// that link is followed. The `profiles` row carries no email, so nothing
+  /// there needs updating.
+  Future<void> changeEmail(String newEmail) async {
+    await supabase.auth.updateUser(UserAttributes(email: newEmail.trim()));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Requested email change',
+        entityType: 'auth',
+        entityId: user.id,
+        details: {'new_email': newEmail.trim()},
       );
     }
   }
@@ -600,28 +624,41 @@ class PackageService {
     final today = DateTime.now();
     final startOfDay = DateTime(today.year, today.month, today.day);
 
-    // Get all packages created or updated today
+    // Packages registered or updated today, with their items' statuses.
     final allRes = await supabase
         .from('packages')
         .select('id, status, package_items(status)')
         .or('created_at.gte.${startOfDay.toIso8601String()},updated_at.gte.${startOfDay.toIso8601String()}');
 
-    int clearedOrReturned = 0;
-    int held = 0;
-    int seized = 0;
+    // Count today's disposition outcomes across all package items (the four the
+    // Package Registration form can assign). Status strings are inconsistent
+    // (capitalised, lowercase, the `Forfiet` typo, `confiscated` ≡ forfeit),
+    // so normalise before matching.
+    int forfeit = 0, abandon = 0, destroy = 0, release = 0;
+
+    void tally(String? raw) {
+      final s = (raw ?? '').trim().toLowerCase();
+      if (s == 'forfeit' || s == 'forfeited' || s == 'forfiet' ||
+          s == 'confiscated') {
+        forfeit++;
+      } else if (s == 'abandoned' || s == 'abandon') {
+        abandon++;
+      } else if (s == 'destroy' || s == 'destroyed') {
+        destroy++;
+      } else if (s == 'release' || s == 'released' || s == 'cleared' ||
+          s == 'returned') {
+        release++;
+      }
+    }
 
     for (final p in (allRes as List)) {
-      final status = p['status'] as String;
       final items = p['package_items'] as List? ?? [];
-      final hasConfiscatedItem = items.any((i) => i['status'] == 'confiscated');
-
-      // Priority: Seized/Confiscated > Cleared/Returned > Held
-      if (status == 'seized' || status == 'forfeited' || hasConfiscatedItem) {
-        seized++;
-      } else if (status == 'cleared' || status == 'returned') {
-        clearedOrReturned++;
-      } else if (status == 'held') {
-        held++;
+      if (items.isEmpty) {
+        tally(p['status'] as String?); // package-level fallback
+      } else {
+        for (final i in items) {
+          tally(i['status'] as String?);
+        }
       }
     }
 
@@ -637,9 +674,10 @@ class PackageService {
         : 0.0;
 
     return {
-      'seized': seized,
-      'cleared': clearedOrReturned,
-      'held': held,
+      'forfeit': forfeit,
+      'abandon': abandon,
+      'destroy': destroy,
+      'release': release,
       'storageRate': storageRate,
     };
   }
@@ -2220,9 +2258,13 @@ class DisposalService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
+    // Pull the full warehouse context too, so the Central Disposal "Details"
+    // popup shows the same Warehouse Summary (warehouse / zone / date range) as
+    // the Sold Packages popup — not just item rows.
     final data = await supabase
         .from('forfeited_packages')
-        .select('*, packages(*, package_items(*))')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .eq('yard', yard)
         .order('appeal_deadline', ascending: true);
 

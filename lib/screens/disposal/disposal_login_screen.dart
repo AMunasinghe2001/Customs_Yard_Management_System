@@ -9,6 +9,7 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
+import '../../models/models.dart';
 import '../../services/services.dart';
 
 /// Two-step login for the Disposal Directorate: password first, then an email
@@ -31,6 +32,17 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   bool _otpStage = false;
   String _resolvedEmail = '';
   String? _error, _success;
+
+  // ── Password-expiry gate (shown after a valid OTP, before the dashboard) ──
+  // When a signed-in profile's password is expired (mandatory) or expiring
+  // within 7 days (warning + skippable), we hold them on this screen to set a
+  // new password instead of routing straight to the dashboard.
+  ProfileModel? _pendingProfile; // verified, awaiting password decision
+  bool _passwordStage = false;
+  bool _passwordExpired = false; // true = mandatory, false = skippable warning
+  final _newPassCtrl = TextEditingController();
+  final _confirmPassCtrl = TextEditingController();
+  bool _obscureNew = true, _obscureConfirm = true;
 
   static const int _otpWindowSeconds = 120;
   static const int _maxResends = 2;
@@ -75,6 +87,8 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     _idCtrl.dispose();
     _passwordCtrl.dispose();
     _otpCtrl.dispose();
+    _newPassCtrl.dispose();
+    _confirmPassCtrl.dispose();
     super.dispose();
   }
 
@@ -180,17 +194,80 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
             'This account is not a Disposal Directorate account. Use the correct portal.');
         return;
       }
-      await _saveCredentials();
-      ref.read(currentProfileProvider.notifier).state = profile;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('✅ Logged in as ${profile.fullName}'),
-          backgroundColor: context.colors.successGreen,
-        ));
-        context.go('/disposal');
+      // Gate on the 90-day password policy before routing to the dashboard.
+      if (profile.isPasswordExpired || profile.isPasswordExpiringSoon) {
+        _countdownTimer?.cancel();
+        setState(() {
+          _pendingProfile = profile;
+          _passwordExpired = profile.isPasswordExpired;
+          _passwordStage = true;
+          _otpStage = false;
+          _success = null;
+          _error = null;
+        });
+        return;
       }
+      await _finishLogin(profile);
     } catch (e) {
       setState(() => _error = _friendlyError(e.toString()));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  /// Save credentials, publish the profile, and route to the dashboard.
+  Future<void> _finishLogin(ProfileModel profile) async {
+    await _saveCredentials();
+    ref.read(currentProfileProvider.notifier).state = profile;
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('✅ Logged in as ${profile.fullName}'),
+        backgroundColor: context.colors.successGreen,
+      ));
+      context.go('/disposal');
+    }
+  }
+
+  // Apply the new password, then continue into the dashboard. The auth.users
+  // trigger resets password_updated_at, so the next login starts a fresh
+  // 90-day window.
+  Future<void> _submitNewPassword() async {
+    final newPass = _newPassCtrl.text;
+    if (newPass.length < 8) {
+      setState(() => _error = 'Password must be at least 8 characters.');
+      return;
+    }
+    if (newPass != _confirmPassCtrl.text) {
+      setState(() => _error = 'Passwords do not match.');
+      return;
+    }
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    try {
+      await ref.read(authServiceProvider).changePassword(newPass);
+      // Re-read the profile so the refreshed password_updated_at is in hand.
+      final refreshed =
+          await ref.read(authServiceProvider).getCurrentProfile();
+      final profile = refreshed ?? _pendingProfile!;
+      // If "remember me" is on, keep the saved password in step with the new one.
+      _passwordCtrl.text = newPass;
+      await _finishLogin(profile);
+    } catch (e) {
+      setState(() => _error = _friendlyError(e.toString()));
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // Skippable only when the password is merely expiring soon (not expired).
+  Future<void> _skipPasswordChange() async {
+    final profile = _pendingProfile;
+    if (profile == null) return;
+    setState(() => _isLoading = true);
+    try {
+      await _finishLogin(profile);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -367,9 +444,13 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
                         Padding(
                           padding: const EdgeInsets.only(left: 48),
                           child: Text(
-                              _otpStage
-                                  ? 'Two-step verification'
-                                  : 'Central Disposal Directorate access',
+                              _passwordStage
+                                  ? (_passwordExpired
+                                      ? 'Your password has expired'
+                                      : 'Update your password')
+                                  : _otpStage
+                                      ? 'Two-step verification'
+                                      : 'Central Disposal Directorate access',
                               style: TextStyle(
                                   color: context.colors.textSecondary,
                                   fontSize: 14)),
@@ -385,7 +466,7 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
                               Icons.error_outline),
                           const Gap(16),
                         ],
-                        if (!_otpStage) ...[
+                        if (!_otpStage && !_passwordStage) ...[
                           TextFormField(
                             controller: _idCtrl,
                             decoration: InputDecoration(
@@ -570,6 +651,7 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
                             ),
                           ),
                         ],
+                        if (_passwordStage) ..._buildPasswordStage(context, green),
                       ],
                     ),
                   ),
@@ -614,5 +696,93 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
             child: Text(text, style: TextStyle(color: color, fontSize: 13))),
       ]),
     );
+  }
+
+  // ── Password-expiry stage UI (mandatory change, or skippable warning) ──────
+  List<Widget> _buildPasswordStage(BuildContext context, Color green) {
+    final profile = _pendingProfile;
+    final daysLeft = profile?.daysUntilPasswordExpiry ?? 0;
+    final amber = context.colors.warningAmber;
+    final red = context.colors.dangerRed;
+    final accentColor = _passwordExpired ? red : amber;
+
+    return [
+      _banner(
+        context,
+        _passwordExpired
+            ? 'Your password has passed its 90-day limit. Set a new password to continue.'
+            : 'Your password expires in $daysLeft day${daysLeft == 1 ? '' : 's'}. '
+                'Set a new one now, or skip and change it later.',
+        accentColor,
+        _passwordExpired
+            ? Icons.lock_clock_rounded
+            : Icons.warning_amber_rounded,
+      ),
+      const Gap(20),
+      TextFormField(
+        controller: _newPassCtrl,
+        obscureText: _obscureNew,
+        decoration: InputDecoration(
+          labelText: 'New Password',
+          helperText: 'Minimum 8 characters',
+          prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
+          suffixIcon: IconButton(
+            icon: Icon(
+                _obscureNew ? Icons.visibility_off : Icons.visibility,
+                color: context.colors.textMuted),
+            onPressed: () => setState(() => _obscureNew = !_obscureNew),
+          ),
+        ),
+      ),
+      const Gap(16),
+      TextFormField(
+        controller: _confirmPassCtrl,
+        obscureText: _obscureConfirm,
+        decoration: InputDecoration(
+          labelText: 'Confirm New Password',
+          prefixIcon:
+              Icon(Icons.lock_outline, color: context.colors.textMuted),
+          suffixIcon: IconButton(
+            icon: Icon(
+                _obscureConfirm ? Icons.visibility_off : Icons.visibility,
+                color: context.colors.textMuted),
+            onPressed: () =>
+                setState(() => _obscureConfirm = !_obscureConfirm),
+          ),
+        ),
+        onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),
+      ),
+      const Gap(24),
+      SizedBox(
+        height: 54,
+        child: ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+              backgroundColor: green, foregroundColor: Colors.white),
+          icon: _isLoading
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.check_circle_rounded),
+          label: Text(_isLoading ? 'Updating...' : 'Update Password & Sign In',
+              style: const TextStyle(fontSize: 16)),
+          onPressed: _isLoading ? null : _submitNewPassword,
+        ),
+      ),
+      // Only an expiring-soon warning is skippable; an expired password is not.
+      if (!_passwordExpired) ...[
+        const Gap(10),
+        Center(
+          child: TextButton(
+            onPressed: _isLoading ? null : _skipPasswordChange,
+            child: Text('Skip for now',
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ),
+      ],
+    ];
   }
 }

@@ -552,6 +552,7 @@ class ProfileModel {
   final bool isOnline;
   final DateTime? lastSeenAt;
   final DateTime createdAt;
+  final DateTime? passwordUpdatedAt;
 
   const ProfileModel({
     required this.id,
@@ -568,6 +569,7 @@ class ProfileModel {
     this.isOnline = false,
     this.lastSeenAt,
     required this.createdAt,
+    this.passwordUpdatedAt,
   });
 
   factory ProfileModel.fromJson(Map<String, dynamic> json) {
@@ -584,10 +586,9 @@ class ProfileModel {
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
       isOnline: json['is_online'] as bool? ?? false,
-      lastSeenAt: json['last_seen_at'] != null
-          ? DateTime.tryParse(json['last_seen_at'].toString())
-          : null,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at'] as String).toLocal() : null,
+      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
+      passwordUpdatedAt: json['password_updated_at'] != null ? DateTime.parse(json['password_updated_at'] as String).toLocal() : null,
     );
   }
 
@@ -611,6 +612,31 @@ class ProfileModel {
   /// past its 8-month auto-deactivation window.
   bool get isEffectivelyActive => isActive && !isExpired;
 
+  // ── Password expiry (90-day rotation policy) ───────────────────────────
+  /// Passwords must be rotated every 90 days. The clock starts from
+  /// [passwordUpdatedAt] (set by the auth.users trigger), falling back to
+  /// [createdAt] for accounts that pre-date the column.
+  static const int passwordMaxAgeDays = 90;
+
+  /// A 7-day warning window before the password expires.
+  static const int passwordWarnDays = 7;
+
+  DateTime get _passwordAnchor => passwordUpdatedAt ?? createdAt;
+
+  /// Whole days until the current password expires (negative once expired).
+  int get daysUntilPasswordExpiry {
+    final expiry =
+        _passwordAnchor.add(const Duration(days: passwordMaxAgeDays));
+    return expiry.difference(DateTime.now()).inDays;
+  }
+
+  /// True once the password is past its 90-day life — a change is mandatory.
+  bool get isPasswordExpired => daysUntilPasswordExpiry < 0;
+
+  /// True in the final [passwordWarnDays] before expiry (not yet expired).
+  bool get isPasswordExpiringSoon =>
+      !isPasswordExpired && daysUntilPasswordExpiry <= passwordWarnDays;
+
   ProfileModel copyWithOnline(bool online, DateTime? seenAt) {
     return ProfileModel(
       id: id,
@@ -627,6 +653,7 @@ class ProfileModel {
       isOnline: online,
       lastSeenAt: seenAt,
       createdAt: createdAt,
+      passwordUpdatedAt: passwordUpdatedAt,
     );
   }
 }
