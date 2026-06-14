@@ -27,7 +27,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 8,
+      length: 7,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -195,13 +195,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     Tab(
                         height: 44,
                         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.gavel_outlined, size: 18),
-                          Gap(8),
-                          Flexible(child: Text('Forfeited Packages', overflow: TextOverflow.ellipsis)),
-                        ])),
-                    Tab(
-                        height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.assignment_turned_in_rounded, size: 18),
                           Gap(8),
                           Flexible(child: Text('Disposal Requests', overflow: TextOverflow.ellipsis)),
@@ -248,7 +241,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
             const Expanded(
               child: TabBarView(children: [
                 _SoldPackagesTab(),
-                _ForfeitedPackagesTab(),
                 _DisposalRequestsTab(),
                 _TenderSalesTab(),
                 _UnsoldReTenderTab(),
@@ -738,200 +730,6 @@ class DeliveryStatusChip extends StatelessWidget {
 }
 
 
-// ── Forfeited Packages (cross-yard, yard dropdown) ────────────────
-
-class _ForfeitedPackagesTab extends ConsumerWidget {
-  const _ForfeitedPackagesTab();
-
-  String _itemName(ForfeitedPackageModel f) {
-    final items = f.packageDetails?.items ?? const [];
-    if (items.isEmpty) return 'Multiple/Unspecified';
-    if (items.length == 1) return items.first.itemName;
-    return '${items.first.itemName} +${items.length - 1}';
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final green = context.colors.successGreen;
-    final selectedYard = ref.watch(disposalSelectedYardProvider);
-    final forfeited = ref.watch(disposalForfeitedPackagesProvider);
-    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
-        {DateTime(2020, 1, 1): 50.0};
-
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Text('Forfeited Packages',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
-            const Spacer(),
-            const _DisposalSearch(
-                tabKey: 'forfeited', hint: 'Search SR / item / consignee…'),
-            const Gap(12),
-            const _YardFilter(),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
-          forfeited.maybeWhen(
-            data: (list) {
-              final expired = list.where((f) => f.isAppealExpired).length;
-              final inAppeal = list.length - expired;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Row(children: [
-                  _StatChip(
-                      label: 'Total',
-                      value: '${list.length}',
-                      color: context.colors.accentLightBlue),
-                  const Gap(12),
-                  _StatChip(
-                      label: 'In Appeal',
-                      value: '$inAppeal',
-                      color: green),
-                  const Gap(12),
-                  _StatChip(
-                      label: 'Appeal Expired',
-                      value: '$expired',
-                      color: context.colors.dangerRed),
-                ]),
-              ).animate().fadeIn(duration: 300.ms);
-            },
-            orElse: () => const SizedBox.shrink(),
-          ),
-          Expanded(
-            child: forfeited.when(
-              skipLoadingOnReload: true,
-              loading: () =>
-                  Center(child: CircularProgressIndicator(color: green)),
-              error: (e, _) => ErrorView(
-                  error: e,
-                  onRetry: () =>
-                      ref.refresh(disposalForfeitedPackagesProvider)),
-              data: (list) {
-                final q = ref
-                    .watch(_disposalSearchProvider('forfeited'))
-                    .toLowerCase();
-                if (q.isNotEmpty) {
-                  list = list
-                      .where((f) =>
-                          f.srNumber.toLowerCase().contains(q) ||
-                          f.consigneeName.toLowerCase().contains(q) ||
-                          _itemName(f).toLowerCase().contains(q))
-                      .toList();
-                }
-                return _listCard(
-                  context,
-                  DataTable2(
-                    columnSpacing: 12,
-                    horizontalMargin: 16,
-                    fixedTopRows: 1,
-                    empty: EmptyTableState(
-                        message:
-                            'No forfeited packages in ${yardName(selectedYard)}'),
-                    headingRowColor: _headingColor(context),
-                    columns: const [
-                      DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Text('Forfeited'), size: ColumnSize.S),
-                      DataColumn2(
-                          label: Text('Appeal Deadline'), size: ColumnSize.S),
-                      DataColumn2(
-                          label: Text('Status'),
-                          size: ColumnSize.S,
-                          fixedWidth: 130),
-                      DataColumn2(
-                          label: Center(child: Text('Details')),
-                          size: ColumnSize.S,
-                          fixedWidth: 70),
-                    ],
-                    rows: list
-                        .map((f) => DataRow(cells: [
-                              DataCell(Text(f.srNumber,
-                                  style: TextStyle(
-                                      color: context.colors.accentLightBlue,
-                                      fontWeight: FontWeight.w600))),
-                              DataCell(Text(_itemName(f),
-                                  overflow: TextOverflow.ellipsis)),
-                              DataCell(Text(f.consigneeName,
-                                  overflow: TextOverflow.ellipsis)),
-                              DataCell(Text(DateFormat('yyyy-MM-dd')
-                                  .format(f.forfeitedAt))),
-                              DataCell(Text(
-                                  DateFormat('yyyy-MM-dd')
-                                      .format(f.appealDeadline),
-                                  style: TextStyle(
-                                      color: f.isAppealExpired
-                                          ? context.colors.dangerRed
-                                          : context.colors.textSecondary,
-                                      fontWeight: FontWeight.w600))),
-                              DataCell(_AppealStatusChip(f: f)),
-                              DataCell(Center(
-                                child: IconButton(
-                                  icon: Icon(Icons.info_outline_rounded,
-                                      color: context.colors.accentLightBlue,
-                                      size: 18),
-                                  onPressed: f.packageDetails == null
-                                      ? null
-                                      // Default mode (no highlightEntry / legacy
-                                      // receipt view) → full "Package Item
-                                      // Summary" + Warehouse Summary for every
-                                      // item, which is what forfeited packages
-                                      // need (they have no single sale receipt).
-                                      : () => showDialog(
-                                            context: context,
-                                            builder: (_) =>
-                                                PackageDetailsDialog(
-                                              package: f.packageDetails!,
-                                              storageRate: storageRate,
-                                            ),
-                                          ),
-                                ),
-                              )),
-                            ]))
-                        .toList(),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AppealStatusChip extends StatelessWidget {
-  final ForfeitedPackageModel f;
-  const _AppealStatusChip({required this.f});
-  @override
-  Widget build(BuildContext context) {
-    final expired = f.isAppealExpired;
-    final color =
-        expired ? context.colors.dangerRed : context.colors.successGreen;
-    final label = expired
-        ? 'Appeal Expired'
-        : 'In Appeal · ${f.daysUntilDeadline}d';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Text(label,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
 // ── Disposal Requests (per yard, per submission) ──────────────────
 // null = all yards.
 final _requestYardFilterProvider = StateProvider<String?>((ref) => null);
@@ -1134,6 +932,10 @@ class _RequestCard extends ConsumerWidget {
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
                     DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                     DataColumn2(
+                        label: Text('Source'),
+                        size: ColumnSize.S,
+                        fixedWidth: 110),
+                    DataColumn2(
                         label: Text('Disposition'),
                         size: ColumnSize.S,
                         fixedWidth: 130),
@@ -1153,6 +955,7 @@ class _RequestCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(f?.consigneeName ?? '—',
                           overflow: TextOverflow.ellipsis)),
+                      DataCell(_SourceChip(source: f?.source ?? 'forfeit')),
                       DataCell(_DispositionChip(disposition: it.disposition)),
                       DataCell(Center(
                         child: IconButton(
@@ -1178,6 +981,29 @@ class _RequestCard extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Forfeit / Abandoned origin tag for a requested package.
+class _SourceChip extends StatelessWidget {
+  final String source; // 'forfeit' | 'abandoned'
+  const _SourceChip({required this.source});
+  @override
+  Widget build(BuildContext context) {
+    final isAbandoned = source == 'abandoned';
+    final color =
+        isAbandoned ? context.colors.heldOrange : context.colors.accentBlue;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Text(isAbandoned ? 'Abandoned' : 'Forfeit',
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -1358,12 +1184,16 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     columnSpacing: 12,
                     horizontalMargin: 16,
                     fixedTopRows: 1,
-                    minWidth: 760,
+                    minWidth: 880,
                     headingRowColor: _headingColor(context),
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Item'), size: ColumnSize.L),
                       DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Text('Source'),
+                          size: ColumnSize.S,
+                          fixedWidth: 110),
                       DataColumn2(
                           label: Center(child: Text('Times Tendered')),
                           size: ColumnSize.S,
@@ -1384,6 +1214,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                             overflow: TextOverflow.ellipsis)),
                         DataCell(Text(f.consigneeName,
                             overflow: TextOverflow.ellipsis)),
+                        DataCell(_SourceChip(source: f.source)),
                         DataCell(Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -1912,7 +1743,10 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
                 soldPrice: price,
                 appliedTaxes: appliedTaxesList,
               );
+              // Fire every related trigger so this session's views update
+              // instantly (the realtime round-trip handles other sessions).
               widget.ref.read(tenderSalesRefreshProvider.notifier).trigger();
+              widget.ref.read(tenderSaleItemsRefreshProvider.notifier).trigger();
               widget.ref.read(packagesRefreshTriggerProvider.notifier).trigger();
               if (mounted) {
                 Navigator.pop(context);
@@ -1924,7 +1758,7 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
             } catch (e) {
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Error: $e'),
+                  content: Text(_appealHoldMessage(e)),
                   backgroundColor: context.colors.dangerRed,
                 ));
               }
@@ -1936,6 +1770,14 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
       ],
     );
   }
+}
+
+/// Maps the `appeal_hold_active` RPC error to a clear message, else a generic one.
+String _appealHoldMessage(Object e) {
+  if (e.toString().contains('appeal_hold_active')) {
+    return 'This package is under an appeal hold and cannot be sold or destroyed.';
+  }
+  return 'Error: $e';
 }
 
 // ── New Tender Sale form (details + Sale-only package picker) ─────────────
@@ -2194,11 +2036,22 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.start,
                                   children: [
-                                    Text(it.forfeited?.srNumber ?? '—',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: context
-                                                .colors.accentLightBlue)),
+                                    Row(children: [
+                                      Flexible(
+                                        child: Text(
+                                            it.forfeited?.srNumber ?? '—',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: context
+                                                    .colors.accentLightBlue)),
+                                      ),
+                                      const Gap(8),
+                                      _SourceChip(
+                                          source:
+                                              it.forfeited?.source ?? 'forfeit'),
+                                    ]),
                                     Text(_summary(it),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -2271,7 +2124,9 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     yard: ref.read(disposalSelectedYardProvider),
                     packageYards: Map<String, String>.from(_selected),
                   );
+              // New sale → its items leave the request pool; refresh both.
               ref.read(tenderSalesRefreshProvider.notifier).trigger();
+              ref.read(tenderSaleItemsRefreshProvider.notifier).trigger();
               if (mounted) Navigator.pop(context);
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -2773,61 +2628,29 @@ class _MarkDestroyedDialog extends StatefulWidget {
 
 class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
   final _receiptC = TextEditingController();
-  final _destroyedPriceC = TextEditingController();
   bool _loading = false;
-  List<DisposalTaxModel>? _activeTaxes;
-
-  @override
-  void initState() {
-    super.initState();
-    widget.ref.read(disposalServiceProvider).getTaxes().then((taxes) {
-      if (mounted) {
-        setState(() {
-          _activeTaxes = taxes.where((t) => t.isActive).toList();
-        });
-      }
-    });
-    _destroyedPriceC.addListener(() => setState(() {}));
-  }
 
   @override
   void dispose() {
     _receiptC.dispose();
-    _destroyedPriceC.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final price = double.tryParse(_destroyedPriceC.text) ?? 0.0;
-    double totalTax = 0.0;
-    final List<Map<String, dynamic>> appliedTaxesList = [];
-    if (_activeTaxes != null) {
-      for (var t in _activeTaxes!) {
-        final taxAmount = price * (t.percentage / 100);
-        totalTax += taxAmount;
-        appliedTaxesList.add({
-          'id': t.id,
-          'name': t.name,
-          'percentage': t.percentage,
-          'amount': taxAmount,
-        });
-      }
-    }
-    final double grandTotal = price + totalTax;
-
+    // Destruction is not a sale — no price or taxes apply, just a receipt.
     return StyledFormDialog(
-      label: 'Destruction Sale',
+      label: 'Destruction',
       title: 'Mark Package Destroyed',
-      icon: Icons.sell_rounded,
+      icon: Icons.delete_forever_rounded,
       width: 460,
       child: StyledFormSection(
-        title: 'Sale Confirmation',
+        title: 'Destruction Confirmation',
         icon: Icons.receipt_rounded,
         children: [
           Text(
             '${widget.item.forfeited?.srNumber ?? 'Package'} — ${yardName(widget.item.yard)}. '
-            'This records the package as SOLD.',
+            'This records the package as DESTROYED.',
             style: TextStyle(
               color: context.colors.textSecondary, fontSize: 13)
           ),
@@ -2835,32 +2658,6 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             controller: _receiptC,
             decoration: const InputDecoration(labelText: 'Receipt Number (optional)'),
           ),
-          const Gap(16),
-          TextField(
-            controller: _destroyedPriceC,
-            decoration: const InputDecoration(labelText: 'Destroyed Price', prefixText: 'Rs '),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          ),
-          if (_activeTaxes != null && _activeTaxes!.isNotEmpty) ...[
-            const Gap(16),
-            const Text('Taxes:', style: TextStyle(fontWeight: FontWeight.bold)),
-            for (var t in _activeTaxes!)
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text('${t.name} (${t.percentage}%)'),
-                  Text('Rs ${(price * (t.percentage / 100)).toStringAsFixed(2)}'),
-                ],
-              ),
-            const Divider(),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Grand Total:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text('Rs ${grandTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ],
         ],
       ),
       actions: [
@@ -2891,7 +2688,7 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             } catch (e) {
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Error: $e'),
+                  content: Text(_appealHoldMessage(e)),
                   backgroundColor: context.colors.dangerRed,
                 ));
               }
@@ -2990,8 +2787,8 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
   @override
   Widget build(BuildContext context) {
     final green = context.colors.successGreen;
-    // Fresh sale → "Destruction"-tagged requests. Re-destruction → only the undestroyed packages
-    // shown on the Undestroyed Destructions page.
+    // Fresh destruction → "Destruction"-tagged requests. Re-destruction → only
+    // the undestroyed packages shown on the Undestroyed Destructions page.
     final AsyncValue<List<DisposalRequestItemModel>> pool = widget.reDestruction
         ? ref.watch(undestroyedDestructionsProvider).whenData((list) => list
             .map((info) => DisposalRequestItemModel(
@@ -3002,7 +2799,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                   forfeited: info.forfeited,
                 ))
             .toList())
-        : ref.watch(saleRequestItemsProvider);
+        : ref.watch(destructionRequestItemsProvider);
     return StyledFormDialog(
       label: 'Destruction Sale',
       title: widget.reDestruction ? 'Re-destruction Sale' : 'New Destruction Sale',
@@ -3087,7 +2884,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                     error: e,
                     onRetry: () => ref.refresh(widget.reDestruction
                         ? undestroyedDestructionsProvider
-                        : saleRequestItemsProvider)),
+                        : destructionRequestItemsProvider)),
                 data: (items) {
                   if (items.isEmpty) {
                     return Padding(
@@ -3161,11 +2958,22 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                                   crossAxisAlignment:
                                       CrossAxisAlignment.start,
                                   children: [
-                                    Text(it.forfeited?.srNumber ?? '—',
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: context
-                                                .colors.accentLightBlue)),
+                                    Row(children: [
+                                      Flexible(
+                                        child: Text(
+                                            it.forfeited?.srNumber ?? '—',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: TextStyle(
+                                                fontWeight: FontWeight.w700,
+                                                color: context
+                                                    .colors.accentLightBlue)),
+                                      ),
+                                      const Gap(8),
+                                      _SourceChip(
+                                          source:
+                                              it.forfeited?.source ?? 'forfeit'),
+                                    ]),
                                     Text(_summary(it),
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
@@ -3480,12 +3288,16 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     columnSpacing: 12,
                     horizontalMargin: 16,
                     fixedTopRows: 1,
-                    minWidth: 760,
+                    minWidth: 880,
                     headingRowColor: _headingColor(context),
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Item'), size: ColumnSize.L),
                       DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Text('Source'),
+                          size: ColumnSize.S,
+                          fixedWidth: 110),
                       DataColumn2(
                           label: Center(child: Text('Times Attempted')),
                           size: ColumnSize.S,
@@ -3506,6 +3318,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                             overflow: TextOverflow.ellipsis)),
                         DataCell(Text(f.consigneeName,
                             overflow: TextOverflow.ellipsis)),
+                        DataCell(_SourceChip(source: f.source)),
                         DataCell(Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(

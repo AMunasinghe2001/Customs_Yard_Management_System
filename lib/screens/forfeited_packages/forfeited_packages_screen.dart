@@ -407,22 +407,62 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                   ),
                                 )),
                                 DataCell(Center(
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
-                                    ),
-                                    child: Text(
-                                      isExpired ? 'Appeal Expired' : 'Appealing',
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
-                                  ),
+                                  child: pkg.appealHold
+                                      // Appeal Directorate has placed a hold —
+                                      // this package must NOT be sold/destroyed.
+                                      ? Tooltip(
+                                          message: pkg.appealHoldNote?.isNotEmpty ==
+                                                  true
+                                              ? pkg.appealHoldNote!
+                                              : 'Appeal received — do not sell or destroy',
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 10, vertical: 4),
+                                            decoration: BoxDecoration(
+                                              color: context.colors.warningAmber
+                                                  .withOpacity(0.15),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                              border: Border.all(
+                                                  color: context
+                                                      .colors.warningAmber
+                                                      .withOpacity(0.5)),
+                                            ),
+                                            child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(Icons.gavel_rounded,
+                                                      size: 12,
+                                                      color: context
+                                                          .colors.warningAmber),
+                                                  const Gap(4),
+                                                  Text('APPEAL HOLD',
+                                                      style: TextStyle(
+                                                          fontSize: 10.5,
+                                                          color: context.colors
+                                                              .warningAmber,
+                                                          fontWeight:
+                                                              FontWeight.w800)),
+                                                ]),
+                                          ),
+                                        )
+                                      : Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 10, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
+                                          ),
+                                          child: Text(
+                                            isExpired ? 'Appeal Expired' : 'Appealing',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
                                 )),
                                 DataCell(Center(
                                   child: IconButton(

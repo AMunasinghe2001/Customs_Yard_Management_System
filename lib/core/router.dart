@@ -8,6 +8,9 @@ import '../screens/admin/admin_signup_screen.dart';
 import '../screens/disposal/disposal_login_screen.dart';
 import '../screens/disposal/disposal_signup_screen.dart';
 import '../screens/disposal/disposal_dashboard_screen.dart';
+import '../screens/appeal/appeal_login_screen.dart';
+import '../screens/appeal/appeal_signup_screen.dart';
+import '../screens/appeal/appeal_dashboard_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/inspection/inspection_screen.dart';
 import '../screens/warehouses/warehouses_screen.dart';
@@ -38,7 +41,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         '/admin/login',
         '/admin/signup',
         '/disposal/login',
-        '/disposal/signup'
+        '/disposal/signup',
+        '/appeal/login',
+        '/appeal/signup'
       ];
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
       
@@ -56,6 +61,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isLoggedIn && (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
         final profile = ref.read(currentProfileProvider);
         if (profile?.isDisposal == true) return '/disposal';
+        if (profile?.isAppeal == true) return '/appeal';
         if (profile?.isAdmin == true) return '/admin';
         return '/dashboard';
       }
@@ -69,6 +75,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/disposal/login', builder: (_, __) => const DisposalLoginScreen()),
       GoRoute(path: '/disposal/signup', builder: (_, __) => const DisposalSignupScreen()),
       GoRoute(path: '/disposal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DisposalDashboardScreen())),
+      GoRoute(path: '/appeal/login', builder: (_, __) => const AppealLoginScreen()),
+      GoRoute(path: '/appeal/signup', builder: (_, __) => const AppealSignupScreen()),
+      GoRoute(path: '/appeal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AppealDashboardScreen())),
       GoRoute(path: '/dashboard', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DashboardScreen())),
       GoRoute(path: '/inspection', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const InspectionScreen())),
       GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),

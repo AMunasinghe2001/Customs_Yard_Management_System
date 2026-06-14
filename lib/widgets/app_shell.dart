@@ -29,7 +29,7 @@ const _officerNav = [
   NavItem('Destroyed Packages', Icons.delete_forever_rounded, '/destroyed-packages'),
   NavItem('Re-exported Packages', Icons.flight_takeoff_rounded, '/reexported-packages'),
   NavItem('Other Dispositions', Icons.more_horiz_rounded, '/other-dispositions'),
-  NavItem('Tender Disposals', Icons.assignment_ind_rounded, '/tender-disposals'),
+  NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
@@ -45,7 +45,7 @@ const _adminNav = [
   NavItem('Destroyed Packages', Icons.delete_forever_rounded, '/destroyed-packages'),
   NavItem('Re-exported Packages', Icons.flight_takeoff_rounded, '/reexported-packages'),
   NavItem('Other Dispositions', Icons.more_horiz_rounded, '/other-dispositions'),
-  NavItem('Tender Disposals', Icons.assignment_ind_rounded, '/tender-disposals'),
+  NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];

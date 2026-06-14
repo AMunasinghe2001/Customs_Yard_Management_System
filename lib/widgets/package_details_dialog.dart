@@ -100,6 +100,16 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final bool useLegacySummary;
   final bool useWarehouseSummary;
 
+  // Optional generic footer action (e.g. the Appeal Directorate's "Hold Appeal"
+  // / "Release"). When [footerActionLabel] is set, a button is shown in the
+  // dialog footer — styled like the Final Disposition footer — that calls
+  // [onFooterAction] (the dialog closes first).
+  final String? footerActionLabel;
+  final IconData? footerActionIcon;
+  final Color? footerActionColor;
+  final String? footerActionHint;
+  final VoidCallback? onFooterAction;
+
   const PackageDetailsDialog({
     super.key,
     required this.package,
@@ -107,6 +117,11 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.highlightEntry, // Added highlightEntry
     this.useLegacySummary = false,
     this.useWarehouseSummary = false,
+    this.footerActionLabel,
+    this.footerActionIcon,
+    this.footerActionColor,
+    this.footerActionHint,
+    this.onFooterAction,
   });
 
   @override
@@ -1839,6 +1854,48 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           entry: widget.highlightEntry,
                           isOfficer: isOfficer,
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+
+              // ── Generic footer action (e.g. Appeal Directorate Hold/Release) ──
+              if (widget.footerActionLabel != null)
+                material.Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.black26 : Colors.grey.shade50,
+                    border: Border(
+                        top: BorderSide(color: context.colors.borderColor)),
+                    borderRadius: const BorderRadius.vertical(
+                        bottom: Radius.circular(23)),
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          widget.footerActionHint ?? '',
+                          style: material.TextStyle(
+                              color: context.colors.textMuted, fontSize: 12),
+                        ),
+                      ),
+                      ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: widget.footerActionColor ??
+                              context.colors.primaryGold,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 12),
+                        ),
+                        icon: Icon(
+                            widget.footerActionIcon ?? Icons.check_rounded,
+                            size: 18),
+                        label: Text(widget.footerActionLabel!),
+                        onPressed: () {
+                          Navigator.of(context).pop();
+                          widget.onFooterAction?.call();
+                        },
                       ),
                     ],
                   ),

@@ -436,6 +436,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                           srNumber: pkg.srNumber,
                                           itemName: _itemSummary(pkg),
                                           consignee: pkg.consigneeName,
+                                          source: pkg.source,
                                           deadline: pkg.appealDeadline,
                                           isSelected: isSelected,
                                           disposition: disposition,
@@ -533,6 +534,7 @@ class _PackageRequestRow extends StatelessWidget {
   final String srNumber;
   final String itemName;
   final String consignee;
+  final String source; // 'forfeit' | 'abandoned'
   final DateTime deadline;
   final bool isSelected;
   final String? disposition;
@@ -543,6 +545,7 @@ class _PackageRequestRow extends StatelessWidget {
     required this.srNumber,
     required this.itemName,
     required this.consignee,
+    required this.source,
     required this.deadline,
     required this.isSelected,
     required this.disposition,
@@ -572,10 +575,18 @@ class _PackageRequestRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(srNumber,
-                      style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: context.colors.accentLightBlue)),
+                  Row(children: [
+                    Flexible(
+                      child: Text(srNumber,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: context.colors.accentLightBlue)),
+                    ),
+                    const Gap(8),
+                    _SourceChip(source: source),
+                  ]),
                   Text(itemName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -603,6 +614,31 @@ class _PackageRequestRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Small Forfeit / Abandoned tag so the yard sees where each requestable
+/// package came from.
+class _SourceChip extends StatelessWidget {
+  final String source; // 'forfeit' | 'abandoned'
+  const _SourceChip({required this.source});
+
+  @override
+  Widget build(BuildContext context) {
+    final isAbandoned = source == 'abandoned';
+    final color =
+        isAbandoned ? context.colors.heldOrange : context.colors.accentBlue;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Text(isAbandoned ? 'Abandoned' : 'Forfeit',
+          style: TextStyle(
+              color: color, fontSize: 9.5, fontWeight: FontWeight.w800)),
     );
   }
 }

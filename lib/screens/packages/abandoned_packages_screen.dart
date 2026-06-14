@@ -14,6 +14,7 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
+import '../forfeited_packages/disposal_request_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 final abandonedPackageSearchProvider = StateProvider<String>((ref) => '');
@@ -175,7 +176,7 @@ class _AbandonedPackagesScreenState
                         Text('Abandoned Packages',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                          'View and search all packages declared abandoned',
+                          'Manage abandoned packages and send them for disposal',
                           style: TextStyle(
                               color: context.colors.textSecondary)),
                       ],
@@ -187,16 +188,72 @@ class _AbandonedPackagesScreenState
                           builder: (context, ref, child) {
                             final pkgs = ref.watch(livePackagesProvider);
                             return pkgs.when(
-                              data: (list) {
-                                final count = _buildRows(list).length;
-                                return Text('$count Abandoned',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold));
-                              },
+                              data: (list) => _AbandonedStatChip(
+                                  label: 'Abandoned',
+                                  value: '${_buildRows(list).length}',
+                                  color: context.colors.accentLightBlue),
                               loading: () => const SizedBox(),
                               error: (_, __) => const SizedBox(),
+                            );
+                          },
+                        ),
+                        const Gap(8),
+                        // Requestable count = abandoned packages not yet sent in
+                        // a disposal request (surfaced by the shared provider).
+                        Consumer(
+                          builder: (context, ref, child) {
+                            final req =
+                                ref.watch(requestableForfeitedPackagesProvider);
+                            final n = req.maybeWhen(
+                                data: (list) => list
+                                    .where((p) => p.isAbandonedSource)
+                                    .length,
+                                orElse: () => 0);
+                            return _AbandonedStatChip(
+                                label: 'Requestable',
+                                value: '$n',
+                                color: context.colors.primaryGold);
+                          },
+                        ),
+                        const Gap(16),
+                        Consumer(
+                          builder: (context, ref, child) {
+                            final req =
+                                ref.watch(requestableForfeitedPackagesProvider);
+                            final n = req.maybeWhen(
+                                data: (list) => list
+                                    .where((p) => p.isAbandonedSource)
+                                    .length,
+                                orElse: () => 0);
+                            return ElevatedButton.icon(
+                              icon: const Icon(Icons.local_shipping_rounded,
+                                  size: 16),
+                              label: const Text('Send Disposal Request'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: n > 0
+                                    ? context.colors.primaryGold
+                                    : context.colors.textMuted.withOpacity(0.2),
+                                foregroundColor: n > 0
+                                    ? Colors.white
+                                    : context.colors.textMuted,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                                elevation: n > 0 ? 2 : 0,
+                              ),
+                              onPressed: n > 0
+                                  ? () => showDialog(
+                                        context: context,
+                                        builder: (ctx) => DisposalRequestDialog(
+                                          onSubmitted: () {
+                                            ref.invalidate(
+                                                requestableForfeitedPackagesProvider);
+                                            ref.invalidate(livePackagesProvider);
+                                          },
+                                        ),
+                                      )
+                                  : null,
                             );
                           },
                         ),
@@ -595,6 +652,42 @@ class _AbandonedPackagesScreenState
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _AbandonedStatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  const _AbandonedStatChip(
+      {required this.label, required this.value, required this.color});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value,
+              style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  height: 1.1)),
+          Text(label,
+              style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5)),
+        ],
       ),
     );
   }

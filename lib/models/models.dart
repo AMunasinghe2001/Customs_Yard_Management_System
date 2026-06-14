@@ -603,10 +603,15 @@ class ProfileModel {
       DateTime(createdAt.year, createdAt.month + 8, createdAt.day,
           createdAt.hour, createdAt.minute, createdAt.second);
 
-  /// True once the account is past its 8-month lifetime. Disposal Directorate
-  /// (DC/SDDC) accounts are institutional and never auto-expire (officers
-  /// transfer in/out of the post).
-  bool get isExpired => !isDisposal && DateTime.now().isAfter(expiresAt);
+  /// Appeal Directorate (AD/ADD) user — cross-yard forfeited-package review +
+  /// appeal-hold authority.
+  bool get isAppeal => role == 'appeal';
+
+  /// True once the account is past its 8-month lifetime. Directorate accounts
+  /// (Disposal DC/SDDC, Appeal AD/ADD) are institutional and never auto-expire
+  /// (officers transfer in/out of the post).
+  bool get isExpired =>
+      !isDisposal && !isAppeal && DateTime.now().isAfter(expiresAt);
 
   /// Whether the account may currently sign in: explicitly active AND not
   /// past its 8-month auto-deactivation window.
@@ -706,6 +711,15 @@ class ForfeitedPackageModel {
   final DateTime appealDeadline;
   final String reason;
   final String? yard;
+  /// Where this package entered the disposal pipeline: 'forfeit' (the default,
+  /// genuine forfeitures) or 'abandoned' (an abandoned package routed through
+  /// the same pipeline via a synthetic forfeited_packages row).
+  final String source;
+  /// Set by the Appeal Directorate when an appeal is received before the appeal
+  /// window passes — a held package cannot be sold or destroyed.
+  final bool appealHold;
+  final String? appealHoldNote;
+  final DateTime? appealHeldAt;
   final PackageModel? packageDetails;
 
   const ForfeitedPackageModel({
@@ -717,11 +731,17 @@ class ForfeitedPackageModel {
     required this.appealDeadline,
     required this.reason,
     this.yard,
+    this.source = 'forfeit',
+    this.appealHold = false,
+    this.appealHoldNote,
+    this.appealHeldAt,
     this.packageDetails,
   });
 
   bool get isAppealExpired => DateTime.now().isAfter(appealDeadline);
   int get daysUntilDeadline => appealDeadline.difference(DateTime.now()).inDays;
+  bool get isAbandonedSource => source == 'abandoned';
+  bool get isAppealHeld => appealHold;
 
   factory ForfeitedPackageModel.fromJson(Map<String, dynamic> json) {
     return ForfeitedPackageModel(
@@ -733,6 +753,12 @@ class ForfeitedPackageModel {
       appealDeadline: DateTime.parse(json['appeal_deadline'] as String),
       reason: json['reason'] as String? ?? '',
       yard: json['yard'] as String?,
+      source: json['source'] as String? ?? 'forfeit',
+      appealHold: json['appeal_hold'] as bool? ?? false,
+      appealHoldNote: json['appeal_hold_note'] as String?,
+      appealHeldAt: json['appeal_held_at'] != null
+          ? DateTime.parse(json['appeal_held_at'] as String).toLocal()
+          : null,
       packageDetails: json['packages'] != null
           ? PackageModel.fromJson(json['packages'] as Map<String, dynamic>)
           : null,
@@ -864,6 +890,18 @@ const Map<String, String> kDisposalPositions = {
 
 String disposalPositionLabel(String? code) =>
     kDisposalPositions[code] ?? (code ?? 'Disposal Directorate');
+
+// ── Appeal Directorate positions (DC / SDDC — same titles as Disposal) ──────
+// Keys are the *usernames* and must stay distinct from the disposal `dc`/`sddc`
+// (profiles.username is globally unique), so the Appeal Directorate uses the
+// `adc` / `asddc` usernames while displaying the same DC / SDDC titles.
+const Map<String, String> kAppealPositions = {
+  'ADC': 'DC (Director)',
+  'ASDDC': 'SDDC (Senior Deputy Director)',
+};
+
+String appealPositionLabel(String? code) =>
+    kAppealPositions[code] ?? (code ?? 'Appeal Directorate');
 
 // ── Tender Sale (Central Disposal Directorate) ───────────────────────────
 

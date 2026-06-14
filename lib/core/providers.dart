@@ -17,6 +17,7 @@ final holdReasonServiceProvider = Provider((ref) => HoldReasonService());
 final forfeitedPackageServiceProvider = Provider((ref) => ForfeitedPackageService());
 final tendersServiceProvider = Provider((ref) => TendersService());
 final disposalServiceProvider = Provider((ref) => DisposalService());
+final appealServiceProvider = Provider((ref) => AppealService());
 
 // ── Shared Auth State ──────────────────────────────────────────
 final currentProfileProvider = StateProvider<ProfileModel?>((ref) => null);
@@ -226,16 +227,17 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
 });
 
 /// Staff in the signed-in admin's own yard — officers + admins only.
-/// The cross-yard SELECT policy for disposal accounts means [allProfilesProvider]
-/// can leak head-office (DC/SDDC) and other-yard rows; the Admin Dashboard wants
-/// only "my yard" staff, so we filter client-side. Disposal (DC/SDDC) accounts
-/// are head-office and excluded outright (their `yard` may default to GL1, which
-/// would otherwise match a Grey Line 1 admin and show DC as "online").
+/// The cross-yard SELECT policy for directorate accounts means [allProfilesProvider]
+/// can leak head-office rows; the Admin Dashboard wants only "my yard" staff, so
+/// we filter client-side. The institutional directorate accounts (Disposal
+/// DC/SDDC, Appeal AD/ADD) are head-office and excluded outright (their `yard`
+/// may default to GL1, which would otherwise match a Grey Line 1 admin and show
+/// the directorate as "online").
 final myYardProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   final all = await ref.watch(allProfilesProvider.future);
   final myYard = ref.watch(currentProfileProvider)?.yard;
   return all.where((p) {
-    if (p.isDisposal) return false; // never show head-office accounts here
+    if (p.isDisposal || p.isAppeal) return false; // never show directorate accounts here
     if (myYard == null) return true;
     return p.yard == myYard;
   }).toList();
@@ -327,6 +329,8 @@ final reTenderablePackagesProvider =
 final unsoldTenderSalesProvider =
     FutureProvider<List<ReTenderSaleInfo>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
+  // A sale marked sold / re-tendered changes tender_sale_items → refresh live.
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getUnsoldTenderSales();
 });
 
@@ -334,6 +338,8 @@ final unsoldTenderSalesProvider =
 final undestroyedDestructionsProvider =
     FutureProvider<List<ReDestructionInfo>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
+  // A destruction marked destroyed / re-destroyed changes destruction_items.
+  ref.watch(destructionsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getUndestroyedDestructions();
 });
 
@@ -361,17 +367,54 @@ final disposalForfeitedPackagesProvider =
   return ref.read(disposalServiceProvider).getForfeitedPackages(yard: yard);
 });
 
+// ── Appeal Directorate: cross-yard forfeited packages (all yards) ──────────
+// An appeal-hold toggle is a forfeited_packages UPDATE, so the existing
+// forfeited-packages realtime channel propagates it here and to the yard view.
+final appealForfeitedPackagesProvider =
+    FutureProvider<List<ForfeitedPackageModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(appealServiceProvider).getForfeitedPackages();
+});
+
 final tenderSalesRefreshProvider =
     StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
 final tenderSalesProvider = FutureProvider<List<TenderSaleModel>>((ref) async {
   ref.watch(tenderSalesRefreshProvider);
+  // A Mark-Sold updates tender_sale_items; watching its realtime trigger means
+  // the Tender Sales cards re-fetch the moment any item changes, in any session.
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getTenderSales();
 });
 
 final destructionsRefreshProvider =
     StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+
+// Realtime on destructions + destruction_items — a Mark-Destroyed / new
+// destruction in any session propagates to every open Destructions view.
+// Requires both tables in the `supabase_realtime` publication
+// (migration 20260613_disposal_realtime.sql).
+final destructionsChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  final trigger = ref.watch(destructionsRefreshProvider);
+  yield trigger;
+  final channel = supabase.channel('destructions-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'destructions',
+      callback: (_) => ref.read(destructionsRefreshProvider.notifier).trigger(),
+    )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'destruction_items',
+      callback: (_) => ref.read(destructionsRefreshProvider.notifier).trigger(),
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
 final destructionsProvider = FutureProvider<List<DestructionModel>>((ref) async {
-  ref.watch(destructionsRefreshProvider);
+  ref.watch(destructionsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getDestructions();
 });
 
@@ -398,13 +441,25 @@ final selectedRequestDispositionsProvider =
 final disposalRequestsChangeTriggerProvider = StreamProvider<int>((ref) async* {
   final trigger = ref.watch(disposalRequestsRefreshProvider);
   yield trigger;
+  // Subscribe to BOTH the request header and its line items — an item moving on
+  // (e.g. placed in a tender sale / destruction, or deleted) must refresh the
+  // requests feed too, not just header inserts.
   final channel = supabase.channel('disposal-requests-realtime')
     ..onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
       table: 'disposal_requests',
-      callback: (payload) => ref.read(disposalRequestsRefreshProvider.notifier).trigger(),
-    ).subscribe();
+      callback: (_) =>
+          ref.read(disposalRequestsRefreshProvider.notifier).trigger(),
+    )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'disposal_request_items',
+      callback: (_) =>
+          ref.read(disposalRequestsRefreshProvider.notifier).trigger(),
+    )
+    ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
@@ -446,10 +501,13 @@ final saleItemForPackageProvider =
 });
 
 // Disposal-side: "sale"-tagged request items available to add to a tender sale.
+// Re-fetches on tender_sale_items realtime too, so a package placed in a sale
+// (or marked sold) drops out of this pool live.
 final saleRequestItemsProvider =
     FutureProvider<List<DisposalRequestItemModel>>((ref) async {
   ref.watch(disposalRequestsRefreshProvider);
   ref.watch(tenderSalesRefreshProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getSaleRequestItems();
 });
 
@@ -459,6 +517,7 @@ final tenderableSaleItemsProvider =
     FutureProvider<List<DisposalRequestItemModel>>((ref) async {
   ref.watch(disposalRequestsRefreshProvider);
   ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getSaleRequestItemsNotTendered();
 });
 
@@ -467,7 +526,7 @@ final destructionRequestItemsProvider =
     FutureProvider<List<DisposalRequestItemModel>>((ref) async {
   ref.watch(disposalRequestsRefreshProvider);
   ref.watch(forfeitedPackagesChangeTriggerProvider);
-  ref.watch(destructionsRefreshProvider);
+  ref.watch(destructionsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getDestructionRequestItemsNotDestroyed();
 });
 

@@ -10,12 +10,15 @@ import '../core/supabase_client.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 
-/// Profile view + edit dialog for the Central Disposal Directorate (DC / SDDC).
-/// Opened from the green account chip in the dashboard top bar. Lets the holder
-/// update their mobile number, profile photo and branch email, and change their
-/// password. The full name / role are institutional and read-only here.
+/// Profile view + edit dialog for an institutional directorate account
+/// (Central Disposal DC/SDDC, Appeal AD/ADD). Opened from the account chip in
+/// the dashboard top bar. Lets the holder update their mobile number, profile
+/// photo and branch email, and change their password. The full name / role are
+/// institutional and read-only here. Pass [accent] to match the directorate's
+/// colour (defaults to the disposal green).
 class DisposalProfileDialog extends ConsumerStatefulWidget {
-  const DisposalProfileDialog({super.key});
+  final Color? accent;
+  const DisposalProfileDialog({super.key, this.accent});
 
   @override
   ConsumerState<DisposalProfileDialog> createState() =>
@@ -106,7 +109,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.successGreen,
+          backgroundColor: widget.accent ?? context.colors.successGreen,
           content: Text(emailChanged
               ? 'Profile updated. Check your new email to confirm the address.'
               : 'Profile updated successfully.'),
@@ -126,7 +129,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final green = context.colors.successGreen;
+    final green = widget.accent ?? context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -300,7 +303,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
 
   // ── Edit form ───────────────────────────────────────────────────────────
   Widget _buildEditForm(BuildContext context, ProfileModel? profile) {
-    final green = context.colors.successGreen;
+    final green = widget.accent ?? context.colors.successGreen;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -443,7 +446,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
       _avatarFromPath(profile?.profileImageUrl ?? '', profile, size);
 
   Widget _avatarFromPath(String path, ProfileModel? profile, double size) {
-    final green = context.colors.successGreen;
+    final green = widget.accent ?? context.colors.successGreen;
     final initials = _initials(profile?.fullName);
     Widget fallback = Center(
       child: Text(initials,
@@ -487,7 +490,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
         border: Border.all(color: context.colors.borderColor),
       ),
       child: Row(children: [
-        Icon(icon, color: context.colors.successGreen, size: 20),
+        Icon(icon, color: widget.accent ?? context.colors.successGreen, size: 20),
         const Gap(14),
         Expanded(
           child: Column(

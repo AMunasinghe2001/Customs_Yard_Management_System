@@ -1360,6 +1360,13 @@ class AdminService {
     return res == true;
   }
 
+  /// Whether an Appeal Directorate position (AD/ADD) is still free to claim.
+  Future<bool> isAppealPositionAvailable(String code) async {
+    final res =
+        await supabase.rpc('appeal_position_available', params: {'code': code});
+    return res == true;
+  }
+
   Future<void> requestSignupOtp({
     required String email,
     required String fullName,
@@ -1876,11 +1883,13 @@ class ForfeitedPackageService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
-    // 2. Fetch forfeited packages
+    // 2. Fetch forfeited packages (genuine forfeits only — synthetic
+    //    source='abandoned' rows belong to the Abandoned page, not here).
     final data = await supabase
         .from('forfeited_packages')
         .select(
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .eq('source', 'forfeit')
         .order('appeal_deadline', ascending: true);
 
     // 3. Filter out tendered and map to models
@@ -1905,11 +1914,12 @@ class ForfeitedPackageService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
-    // 2. Fetch expired packages
+    // 2. Fetch expired packages (genuine forfeits only)
     final data = await supabase
         .from('forfeited_packages')
         .select(
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .eq('source', 'forfeit')
         .lt('appeal_deadline', DateTime.now().toIso8601String())
         .order('appeal_deadline', ascending: true);
 
@@ -1984,24 +1994,109 @@ class ForfeitedPackageService {
   /// Central Disposal Directorate to dispose of. RLS keeps this to the
   /// caller's own yard.
   Future<List<ForfeitedPackageModel>> getRequestableExpiredPackages() async {
-    // Already-requested forfeited package ids (this yard, via RLS).
+    // ── 1. Genuine forfeits whose appeal window has passed ───────────────────
+    // Already-requested forfeited package ids (this yard, via RLS) — also used
+    // below to know which abandoned packages already have a synthetic FP row.
     final requested = await AuthService._withNetworkRetry(() =>
         supabase.from('disposal_request_items').select('forfeited_package_id'));
     final requestedIds = (requested as List)
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
-    final data = await AuthService._withNetworkRetry(() => supabase
+    final fpData = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .eq('source', 'forfeit')
         .lt('appeal_deadline', DateTime.now().toIso8601String())
         .order('appeal_deadline', ascending: true));
 
-    return (data as List)
+    final result = (fpData as List)
         .where((e) => !requestedIds.contains(e['id']))
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .toList();
+
+    // ── 2. Abandoned packages (no appeal — requestable immediately) ──────────
+    // Abandoned packages live in `packages`/`package_items`; they have no
+    // forfeited_packages row until requested. Surface them here as synthetic
+    // ForfeitedPackageModels (id == package_id, source='abandoned') so the same
+    // request dialog/pipeline can pick them up. A package that already has a
+    // source='abandoned' FP row is dropped (it's been requested already).
+    final pkgData = await AuthService._withNetworkRetry(() => supabase
+        .from('packages')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number))'));
+
+    // package_ids that already have an abandoned FP row (any request state).
+    final existingAbandonedFp = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('package_id')
+        .eq('source', 'abandoned'));
+    final abandonedFpPkgIds = (existingAbandonedFp as List)
+        .map((e) => e['package_id'].toString())
+        .toSet();
+
+    for (final raw in (pkgData as List)) {
+      final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
+      if (abandonedFpPkgIds.contains(pkg.id)) continue; // already requested
+      if (!_packageHasAbandonedItem(pkg)) continue;
+      result.add(ForfeitedPackageModel(
+        id: pkg.id, // synthetic — uses package id until the FP row is created
+        packageId: pkg.id,
+        srNumber: pkg.srNumber,
+        consigneeName: pkg.consigneeName,
+        forfeitedAt: pkg.createdAt,
+        // No appeal for abandoned goods → already-passed deadline.
+        appealDeadline:
+            DateTime.now().subtract(const Duration(days: 1)),
+        reason: _abandonReasonFor(pkg),
+        yard: AppSession.currentYard,
+        source: 'abandoned',
+        packageDetails: pkg,
+      ));
+    }
+
+    return result;
+  }
+
+  /// True if a package has any abandoned item — either a form-level abandoned
+  /// item (status 'abandoned') or an `[ABANDONED]` disposition event. Mirrors
+  /// the detection in abandoned_packages_screen.dart, minus the final-
+  /// disposition exclusion (a finalised package can't be requested anyway).
+  bool _packageHasAbandonedItem(PackageModel p) {
+    bool isAbandonedEntry(WarehouseEntryModel e) =>
+        e.isReturned &&
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[ABANDONED]');
+    bool hasFinal(String itemId) => p.warehouseEntries.any((e) =>
+        e.packageItemId == itemId &&
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+
+    for (final item in p.items) {
+      if (hasFinal(item.id)) continue;
+      final entries =
+          p.warehouseEntries.where((e) => e.packageItemId == item.id);
+      if (entries.any(isAbandonedEntry)) return true;
+      if ((item.status ?? '').trim().toLowerCase() == 'abandoned' &&
+          !entries.any(isAbandonedEntry)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  String _abandonReasonFor(PackageModel p) {
+    for (final item in p.items) {
+      final entries =
+          p.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+      final tagged = entries.where((e) =>
+          (e.returnNotes ?? '').trim().toUpperCase().startsWith('[ABANDONED]'));
+      final ctx = tagged.isNotEmpty
+          ? tagged.first
+          : (entries.isNotEmpty ? entries.first : null);
+      if (ctx != null && ctx.holdReason.isNotEmpty) return ctx.holdReason;
+      if (item.reasons?.isNotEmpty == true) return item.reasons!;
+    }
+    return 'Abandoned';
   }
 
   /// Submit a disposal request for the current yard. [dispositions] maps a
@@ -2027,10 +2122,54 @@ class ForfeitedPackageService {
 
     final requestId = header['id'] as String;
 
+    // Selected keys are forfeited_packages ids for genuine forfeits, but
+    // package ids for abandoned packages (their FP row doesn't exist yet). Find
+    // which selected keys are real forfeited_packages rows; the rest are
+    // abandoned packages needing a synthetic FP row created here.
+    final selectedKeys = dispositions.keys.toList();
+    final existingFp = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('id')
+        .inFilter('id', selectedKeys));
+    final realFpIds =
+        (existingFp as List).map((e) => e['id'].toString()).toSet();
+
+    // key (selection id) → forfeited_packages id to store on the request item.
+    final forfeitedIdFor = <String, String>{};
+    for (final key in selectedKeys) {
+      if (realFpIds.contains(key)) {
+        forfeitedIdFor[key] = key; // genuine forfeit
+        continue;
+      }
+      // Abandoned package → create (or reuse) a source='abandoned' FP row.
+      final pkg = await AuthService._withNetworkRetry(() => supabase
+          .from('packages')
+          .select('id, sr_number, consignee_name')
+          .eq('id', key)
+          .single());
+      final newFp = await AuthService._withNetworkRetry(() => supabase
+          .from('forfeited_packages')
+          .insert({
+            'package_id': key,
+            'sr_number': pkg['sr_number'],
+            'consignee_name': pkg['consignee_name'] ?? '',
+            'forfeited_at': DateTime.now().toIso8601String(),
+            'appeal_deadline': DateTime.now()
+                .subtract(const Duration(days: 1))
+                .toIso8601String(),
+            'reason': 'Abandoned',
+            'yard': AppSession.currentYard,
+            'source': 'abandoned',
+          })
+          .select('id')
+          .single());
+      forfeitedIdFor[key] = newFp['id'] as String;
+    }
+
     final items = dispositions.entries
         .map((e) => {
               'request_id': requestId,
-              'forfeited_package_id': e.key,
+              'forfeited_package_id': forfeitedIdFor[e.key],
               'disposition': e.value,
             })
         .toList();
@@ -2777,5 +2916,63 @@ class DisposalService {
   Future<void> deleteTax(String id) async {
     await AuthService._withNetworkRetry(
         () => supabase.from('disposal_taxes').delete().eq('id', id));
+  }
+}
+
+// ── Appeal Directorate Service ───────────────────────────────────
+// Cross-yard read of forfeited packages (genuine forfeits only) so the Appeal
+// Directorate can place / lift an appeal hold while the 30-day window is open.
+class AppealService {
+  /// Every genuine forfeited package across all yards (newest deadline first),
+  /// with full package + warehouse detail. Unlike the disposal query this does
+  /// NOT exclude tendered / requested packages — appeals can be raised at any
+  /// point before the window passes. Packages already fully sold/destroyed
+  /// (every item finalised) ARE dropped — there's nothing left to appeal.
+  Future<List<ForfeitedPackageModel>> getForfeitedPackages() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .eq('source', 'forfeit')
+        .order('appeal_deadline', ascending: true));
+    return (data as List)
+        .map((e) => ForfeitedPackageModel.fromJson(e))
+        .where((f) => !_isFullyFinalised(f.packageDetails))
+        .toList();
+  }
+
+  /// True if every package item has moved on to a final disposition
+  /// (sold / destroyed / re-exported / released) — via a `[FINAL:…]` warehouse
+  /// entry or a terminal item status. Such packages no longer need appeals.
+  bool _isFullyFinalised(PackageModel? p) {
+    final items = p?.items ?? const [];
+    if (p == null || items.isEmpty) return false;
+    bool hasFinalEntry(String itemId) => p.warehouseEntries.any((e) =>
+        e.packageItemId == itemId &&
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+    const terminal = {'sold', 'destroyed', 're-exported', 'released'};
+    return items.every((it) =>
+        hasFinalEntry(it.id) ||
+        terminal.contains((it.status ?? '').trim().toLowerCase()));
+  }
+
+  /// Place (or lift) an appeal hold. Blocked server-side once the window passes.
+  Future<void> setAppealHold(String forfeitedId, bool hold,
+      {String? note}) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc('set_appeal_hold',
+        params: {
+          'p_forfeited_id': forfeitedId,
+          'p_hold': hold,
+          'p_note': note,
+        }));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: hold ? 'Placed appeal hold' : 'Lifted appeal hold',
+        entityType: 'forfeited_package',
+        entityId: forfeitedId,
+      );
+    }
   }
 }
