@@ -3,7 +3,10 @@ import '../core/theme.dart';
 
 class StatusChip extends StatelessWidget {
   final String status;
-  const StatusChip({super.key, required this.status});
+  /// When set, every chip renders at this exact width (label centred, ellipsis
+  /// if too long) so a column of chips lines up uniformly. Null = size to text.
+  final double? fixedWidth;
+  const StatusChip({super.key, required this.status, this.fixedWidth});
 
   @override
   Widget build(BuildContext context) {
@@ -75,7 +78,9 @@ class StatusChip extends StatelessWidget {
         label = status.isNotEmpty ? status.toUpperCase() : 'PENDING';
     }
     return Container(
+      width: fixedWidth,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      alignment: fixedWidth != null ? Alignment.center : null,
       decoration: BoxDecoration(
         color: color.withOpacity(0.15),
         borderRadius: BorderRadius.circular(6),
@@ -83,9 +88,11 @@ class StatusChip extends StatelessWidget {
       ),
       child: Text(
         label,
+        textAlign: fixedWidth != null ? TextAlign.center : TextAlign.start,
         style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
         maxLines: 1,
         softWrap: false,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }

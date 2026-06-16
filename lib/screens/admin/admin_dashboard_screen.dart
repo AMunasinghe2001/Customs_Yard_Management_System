@@ -69,6 +69,11 @@ class AdminDashboardScreen extends ConsumerWidget {
                     error: (e, _) => ErrorView(
                         error: e,
                         onRetry: () => ref.refresh(dashboardStatsProvider)),
+                    // Plain row: every card now has the SAME 2-line content
+                    // (the W/H Rate card was flattened to match _StatCard), so
+                    // they line up at equal height without any stretch/
+                    // IntrinsicHeight wrapper (which broke layout because the
+                    // cards contain Expanded children).
                     data: (data) => Row(
                       children: [
                         Expanded(
@@ -132,11 +137,6 @@ class AdminDashboardScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _WarehouseCapacitySection(ref: ref)
-                              .animate()
-                              .fadeIn(delay: 280.ms)
-                              .slideY(begin: 0.1),
-                          const Gap(20),
                           _buildOnlineOfficersList(context, ref, online, myYard)
                               .animate()
                               .fadeIn(delay: 300.ms)
@@ -591,6 +591,10 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                     ),
                     const Gap(16),
                     _NextTenderSaleBanner(date: next),
+                    const Gap(20),
+                    // Warehouse capacity sits directly under the Tender Sale
+                    // banner in this column.
+                    _WarehouseCapacitySection(ref: ref),
                   ],
                 ),
               );
@@ -648,7 +652,11 @@ class _LifecycleTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 168,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      // Fixed height (tall enough for a TWO-line label) so every tile in a row
+      // is the same size regardless of whether its label wraps to one or two
+      // lines (e.g. "Sent for Destruction" vs "Sent for Sale").
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: context.colors.cardDark,
         borderRadius: BorderRadius.circular(12),
@@ -668,6 +676,7 @@ class _LifecycleTile extends StatelessWidget {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(value,
@@ -709,8 +718,10 @@ class _NextTenderSaleBanner extends StatelessWidget {
           ? DateFormat('EEEE, d MMMM yyyy').format(parsed)
           : date!;
     }
-    return Container(
-      width: double.infinity,
+    return ConstrainedBox(
+      // Narrower than the full column width so it doesn't dominate the section.
+      constraints: const BoxConstraints(maxWidth: 460),
+      child: Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: gold.withOpacity(0.08),
@@ -747,6 +758,7 @@ class _NextTenderSaleBanner extends StatelessWidget {
           ),
         ),
       ]),
+    ),
     );
   }
 }
@@ -772,7 +784,8 @@ class _WarehouseChargeCard extends StatelessWidget {
         orElse: () => 'Accruedâ€¦');
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      // Match _StatCard padding exactly so this card is the same height.
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: context.colors.borderColor),
@@ -793,6 +806,9 @@ class _WarehouseChargeCard extends StatelessWidget {
             child: Icon(Icons.payments_rounded, color: gold, size: 22),
           ),
           const Gap(14),
+          // Two equal halves so this card matches the other stat cards' height:
+          // the per-day rate (headline) and the live accrued total. Each half is
+          // a value + label line, mirroring [_StatCard].
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -821,19 +837,11 @@ class _WarehouseChargeCard extends StatelessWidget {
                   ],
                 ),
                 const Gap(2),
-                Text('Current W/H Rate',
+                Text('Current W/H Rate · $accruedText',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         color: context.colors.textSecondary, fontSize: 12)),
-                const Gap(3),
-                Text(accruedText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: gold,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -1001,35 +1009,53 @@ class _RecentActivitySection extends StatelessWidget {
 
   Widget _activityTile(BuildContext context, PackageModel p) {
     final (icon, color) = _statusVisual(context, p.status);
-    return ListTile(
-      visualDensity: VisualDensity.compact,
-      dense: true,
-      leading: Container(
-        height: 34,
-        width: 34,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: color.withOpacity(0.14),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Icon(icon, color: color, size: 17),
-      ),
-      title: Text(p.srNumber,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-      subtitle: Text(p.consigneeName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
-      trailing: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.end,
+    // Custom row (not ListTile) so the trailing chip + time never overflow the
+    // tile's fixed dense height — we control the layout entirely here.
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
         children: [
-          StatusChip(status: p.status),
-          const Gap(3),
-          Text(DateFormat('HH:mm').format(p.updatedAt.toLocal()),
-              style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+          Container(
+            height: 34,
+            width: 34,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withOpacity(0.14),
+              border: Border.all(color: color.withOpacity(0.3)),
+            ),
+            child: Icon(icon, color: color, size: 17),
+          ),
+          const Gap(12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(p.srNumber,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w600, fontSize: 13)),
+                Text(p.consigneeName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 11.5)),
+              ],
+            ),
+          ),
+          const Gap(10),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              StatusChip(status: p.status, fixedWidth: 96),
+              const Gap(2),
+              Text(DateFormat('HH:mm').format(p.updatedAt.toLocal()),
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 10)),
+            ],
+          ),
         ],
       ),
     );

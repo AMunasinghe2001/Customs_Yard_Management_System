@@ -58,6 +58,33 @@ bool _isLegacyOtherStatus(String? s) {
 bool _statusIsOther(String? s) =>
     _isOtherMarker(s) || _isLegacyOtherStatus(s);
 
+/// True if a warehouse entry is an "Other" disposition event — a custom
+/// disposition recorded from the warehouse Actions dialog. A PARTIAL "Other"
+/// disposition tags the entry "[OTHER: <text>]" but leaves item.status
+/// unchanged (e.g. 'detain'), so these events must be surfaced here directly.
+/// Final-disposition entries ("[FINAL:OTHER]") are NOT included — those belong
+/// to the finished-category views.
+bool _isOtherEntry(WarehouseEntryModel e) {
+  if (!e.isReturned) return false;
+  final notes = (e.returnNotes ?? '').trim().toUpperCase();
+  return notes.startsWith('[OTHER:') ||
+      notes.startsWith('[OTHER]') ||
+      notes.startsWith('[OTHER ');
+}
+
+/// The custom label from an "[OTHER: <text>] — notes" disposition entry — the
+/// text inside the brackets after the "OTHER:" marker (falls back to 'Other').
+String _otherEntryLabel(WarehouseEntryModel e) {
+  final notes = (e.returnNotes ?? '').trim();
+  final m = RegExp(r'^\[OTHER:\s*([^\]]*)\]', caseSensitive: false)
+      .firstMatch(notes);
+  if (m != null) {
+    final t = m.group(1)!.trim();
+    if (t.isNotEmpty) return t;
+  }
+  return 'Other';
+}
+
 /// The custom disposition label for an "Other" item — strips the "Other:"
 /// marker prefix when present, otherwise returns the raw status (legacy) or
 /// 'Other'.
@@ -95,8 +122,16 @@ bool _itemIsManageableOther(PackageModel p, PackageItem item) {
   return false;
 }
 
-bool _packageHasOther(PackageModel p) =>
-    p.items.any((item) => _itemIsManageableOther(p, item));
+bool _packageHasOther(PackageModel p) {
+  for (final item in p.items) {
+    if (_itemIsManageableOther(p, item)) return true;
+    // A partial "[OTHER]" disposition event also qualifies — its item.status
+    // may still read 'detain' (partial dispositions don't change it).
+    final entries = p.warehouseEntries.where((e) => e.packageItemId == item.id);
+    if (entries.any(_isOtherEntry)) return true;
+  }
+  return false;
+}
 
 /// Admin-only management view for packages registered with an "Other" item
 /// status. Mirrors the Abandoned page: there is NO appeal period and no Appeal
@@ -123,7 +158,9 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
     try {
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
             requestDate: DateTime.now(),
-            dispositions: {pkg.id: disposition},
+            // ":other" suffix tells createDisposalRequest to tag the synthetic
+            // forfeited_packages row source='other' (not the abandoned default).
+            dispositions: {'${pkg.id}:other': disposition},
           );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
@@ -145,32 +182,54 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
     }
   }
 
-  /// One row per "Other"-status item still held in the warehouse.
+  /// Builds rows for "Other" packages — broken down per package item.
+  /// A single SR can appear on multiple lines: once per "Other"-status item
+  /// (set on the SR form), and once per partial "[OTHER]" disposition event
+  /// recorded from the warehouse Actions dialog (these don't change the item
+  /// status, so they must be surfaced from the warehouse entries directly).
   List<_OtherRow> _buildRows(List<PackageModel> packages) {
     final rows = <_OtherRow>[];
     for (final package in packages) {
       for (final item in package.items) {
-        if (!_itemIsManageableOther(package, item)) continue;
-
         final itemEntries = package.warehouseEntries
             .where((e) => e.packageItemId == item.id)
             .toList();
-        final ctx = itemEntries.isNotEmpty ? itemEntries.first : null;
 
-        // The custom "Other Status" label is the most descriptive disposition.
-        final disposition = _otherLabel(item.status);
+        // 1. Partial/full "[OTHER]" disposition events — each is its own row
+        //    (repeatable per item). Skipped for finalised items.
+        final otherEntries = _itemHasFinalDisposition(package, item.id)
+            ? const <WarehouseEntryModel>[]
+            : itemEntries.where(_isOtherEntry).toList();
+        for (final entry in otherEntries) {
+          rows.add(_OtherRow(
+            package: package,
+            item: item,
+            entry: entry,
+            qty: entry.itemCount,
+            date: entry.returnedAt ?? entry.admittedAt,
+            disposition: _otherEntryLabel(entry),
+            reason: entry.holdReason,
+            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
+          ));
+        }
 
-        rows.add(_OtherRow(
-          package: package,
-          item: item,
-          entry: ctx,
-          qty: ctx?.itemCount ?? item.quantity,
-          date: ctx?.admittedAt,
-          disposition: disposition,
-          reason: ctx?.holdReason ??
-              (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
-          officer: ctx?.admittedByName ?? '—',
-        ));
+        // 2. Form-level "Other" status (item.status == 'Other: …') with no
+        //    "[OTHER]" disposition event — use the held entry for context.
+        if (_itemIsManageableOther(package, item) && otherEntries.isEmpty) {
+          final ctx = itemEntries.isNotEmpty ? itemEntries.first : null;
+          rows.add(_OtherRow(
+            package: package,
+            item: item,
+            entry: ctx,
+            qty: ctx?.itemCount ?? item.quantity,
+            date: ctx?.admittedAt,
+            // The custom "Other Status" label is the most descriptive label.
+            disposition: _otherLabel(item.status),
+            reason: ctx?.holdReason ??
+                (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
+            officer: ctx?.admittedByName ?? '—',
+          ));
+        }
       }
     }
     rows.sort((a, b) {
@@ -312,44 +371,6 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                 ),
               ).animate().fadeIn(),
               const Gap(20),
-
-              // ── TEMP DIAGNOSTIC (remove after debugging) ──
-              Container(
-                width: double.infinity,
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: context.colors.warningAmber.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                      color: context.colors.warningAmber.withOpacity(0.4)),
-                ),
-                child: ref.watch(requestableForfeitedPackagesProvider).when(
-                      loading: () => const Text('DEBUG: loading requestable…'),
-                      error: (e, _) => Text('DEBUG requestable ERROR: $e',
-                          style: TextStyle(
-                              fontSize: 11, color: context.colors.dangerRed)),
-                      data: (req) => Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                              'DEBUG — requestable=${req.length} '
-                              '(abandoned=${req.where((p) => p.isAbandonedSource).length}, '
-                              'other=${req.where((p) => p.isOtherSource).length}, '
-                              'forfeit=${req.where((p) => p.source == 'forfeit').length})',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 12,
-                                  color: context.colors.warningAmber)),
-                          const Gap(4),
-                          for (final p in req)
-                            Text('  • ${p.srNumber} · source=${p.source}',
-                                style: const TextStyle(
-                                    fontSize: 11, fontFamily: 'monospace')),
-                        ],
-                      ),
-                    ),
-              ),
 
               // ── Search & filters ──
               Container(
@@ -692,6 +713,7 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                             package: row.package,
                                             storageRate: storageRateHistory,
                                             highlightEntry: row.entry,
+                                            highlightItemId: row.item.id,
                                             useLegacySummary: true,
                                             // "Other" goods have no appeal —
                                             // disposition allowed immediately.

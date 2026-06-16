@@ -74,6 +74,10 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
   }
 
   String _itemSummary(ForfeitedPackageModel f) {
+    // Synthetic per-item rows (abandoned / "Other") name their specific item.
+    if (f.itemName != null && f.itemName!.trim().isNotEmpty) {
+      return f.itemName!;
+    }
     final items = f.packageDetails?.items ?? const [];
     if (items.isEmpty) return 'Multiple/Unspecified';
     if (items.length == 1) return items.first.itemName;

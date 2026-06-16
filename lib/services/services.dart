@@ -2162,39 +2162,53 @@ class ForfeitedPackageService {
         .map((e) => e['package_id'].toString())
         .toSet();
 
+    final expiredDeadline = DateTime.now().subtract(const Duration(days: 1));
+
     for (final raw in (pkgData as List)) {
       final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
+      final alreadyAbandoned = abandonedFpPkgIds.contains(pkg.id);
+      final alreadyOther = otherFpPkgIds.contains(pkg.id);
 
-      if (!abandonedFpPkgIds.contains(pkg.id) && _packageHasAbandonedItem(pkg)) {
-        result.add(ForfeitedPackageModel(
-          id: pkg.id, // synthetic — uses package id until the FP row is created
-          packageId: pkg.id,
-          srNumber: pkg.srNumber,
-          consigneeName: pkg.consigneeName,
-          forfeitedAt: pkg.createdAt,
-          // No appeal for abandoned goods → already-passed deadline.
-          appealDeadline: DateTime.now().subtract(const Duration(days: 1)),
-          reason: _abandonReasonFor(pkg),
-          yard: AppSession.currentYard,
-          source: 'abandoned',
-          packageDetails: pkg,
-        ));
-      }
+      // One requestable row PER qualifying ITEM (an SR can have several abandoned
+      // / "Other" items at once). Each row's synthetic id is
+      // "<pkgId>:<itemId>:<source>" so selecting one in the dialog never toggles
+      // another, and `createDisposalRequest` can map it back to the package.
+      for (final item in pkg.items) {
+        if (!alreadyAbandoned && _itemIsRequestableAbandoned(pkg, item)) {
+          result.add(ForfeitedPackageModel(
+            id: '${pkg.id}:${item.id}:abandoned',
+            packageId: pkg.id,
+            srNumber: pkg.srNumber,
+            consigneeName: pkg.consigneeName,
+            forfeitedAt: pkg.createdAt,
+            // No appeal for abandoned goods → already-passed deadline.
+            appealDeadline: expiredDeadline,
+            reason: _abandonReasonFor(pkg),
+            yard: AppSession.currentYard,
+            source: 'abandoned',
+            packageDetails: pkg,
+            itemId: item.id,
+            itemName: item.itemName,
+          ));
+        }
 
-      if (!otherFpPkgIds.contains(pkg.id) && _packageHasOtherItem(pkg)) {
-        result.add(ForfeitedPackageModel(
-          id: pkg.id,
-          packageId: pkg.id,
-          srNumber: pkg.srNumber,
-          consigneeName: pkg.consigneeName,
-          forfeitedAt: pkg.createdAt,
-          // No appeal for "Other" goods → already-passed deadline.
-          appealDeadline: DateTime.now().subtract(const Duration(days: 1)),
-          reason: _otherReasonFor(pkg),
-          yard: AppSession.currentYard,
-          source: 'other',
-          packageDetails: pkg,
-        ));
+        if (!alreadyOther && _itemIsRequestableOther(pkg, item)) {
+          result.add(ForfeitedPackageModel(
+            id: '${pkg.id}:${item.id}:other',
+            packageId: pkg.id,
+            srNumber: pkg.srNumber,
+            consigneeName: pkg.consigneeName,
+            forfeitedAt: pkg.createdAt,
+            // No appeal for "Other" goods → already-passed deadline.
+            appealDeadline: expiredDeadline,
+            reason: _otherReasonFor(pkg),
+            yard: AppSession.currentYard,
+            source: 'other',
+            packageDetails: pkg,
+            itemId: item.id,
+            itemName: item.itemName,
+          ));
+        }
       }
     }
 
@@ -2278,23 +2292,25 @@ class ForfeitedPackageService {
   /// item (status 'abandoned') or an `[ABANDONED]` disposition event. Mirrors
   /// the detection in abandoned_packages_screen.dart, minus the final-
   /// disposition exclusion (a finalised package can't be requested anyway).
-  bool _packageHasAbandonedItem(PackageModel p) {
+  bool _packageHasAbandonedItem(PackageModel p) =>
+      p.items.any((item) => _itemIsRequestableAbandoned(p, item));
+
+  /// True if a single item is an abandoned item that can be sent in a disposal
+  /// request — a form-level 'abandoned' status or an `[ABANDONED]` disposition
+  /// event, and not already finalised ([FINAL:…]).
+  bool _itemIsRequestableAbandoned(PackageModel p, PackageItem item) {
+    final entries =
+        p.warehouseEntries.where((e) => e.packageItemId == item.id);
+    final hasFinal = entries.any((e) =>
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+    if (hasFinal) return false;
     bool isAbandonedEntry(WarehouseEntryModel e) =>
         e.isReturned &&
         (e.returnNotes ?? '').trim().toUpperCase().startsWith('[ABANDONED]');
-    bool hasFinal(String itemId) => p.warehouseEntries.any((e) =>
-        e.packageItemId == itemId &&
-        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
-
-    for (final item in p.items) {
-      if (hasFinal(item.id)) continue;
-      final entries =
-          p.warehouseEntries.where((e) => e.packageItemId == item.id);
-      if (entries.any(isAbandonedEntry)) return true;
-      if ((item.status ?? '').trim().toLowerCase() == 'abandoned' &&
-          !entries.any(isAbandonedEntry)) {
-        return true;
-      }
+    if (entries.any(isAbandonedEntry)) return true;
+    if ((item.status ?? '').trim().toLowerCase() == 'abandoned' &&
+        !entries.any(isAbandonedEntry)) {
+      return true;
     }
     return false;
   }
@@ -2320,23 +2336,32 @@ class ForfeitedPackageService {
   /// period — the yard admin can release / re-export / record an outcome
   /// directly, or send it to Central Disposal for sale / destruction.
   /// An item already finalised ([FINAL:…]) is ignored.
-  bool _packageHasOtherItem(PackageModel p) {
-    bool hasFinal(String itemId) => p.warehouseEntries.any((e) =>
-        e.packageItemId == itemId &&
-        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+  bool _packageHasOtherItem(PackageModel p) =>
+      p.items.any((item) => _itemIsRequestableOther(p, item));
 
-    for (final item in p.items) {
-      if (hasFinal(item.id)) continue;
-      final st = (item.status ?? '').trim().toLowerCase();
-      // Explicit "Other"/"Other: <text>" marker always qualifies.
-      if (st == 'other' || st.startsWith('other:')) return true;
-      // Legacy free-text status only when the item is actually held.
-      if (st.isNotEmpty &&
-          !_knownStatuses.contains(st) &&
-          p.warehouseEntries
-              .any((e) => e.packageItemId == item.id && !e.isReturned)) {
-        return true;
-      }
+  /// True if a single item is an "Other" item that can be sent in a disposal
+  /// request — a form-level Other status, OR a partial "[OTHER:]" disposition
+  /// event from the warehouse Actions dialog (those leave item.status as
+  /// 'detain'). Not already finalised ([FINAL:…]).
+  bool _itemIsRequestableOther(PackageModel p, PackageItem item) {
+    final entries =
+        p.warehouseEntries.where((e) => e.packageItemId == item.id);
+    final hasFinal = entries.any((e) =>
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+    if (hasFinal) return false;
+    // A partial "[OTHER:]" disposition event (status stays 'detain').
+    final hasOtherEntry = entries.any((e) =>
+        e.isReturned &&
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[OTHER'));
+    if (hasOtherEntry) return true;
+    final st = (item.status ?? '').trim().toLowerCase();
+    // Explicit "Other"/"Other: <text>" marker always qualifies.
+    if (st == 'other' || st.startsWith('other:')) return true;
+    // Legacy free-text status only when the item is actually held.
+    if (st.isNotEmpty &&
+        !_knownStatuses.contains(st) &&
+        entries.any((e) => !e.isReturned)) {
+      return true;
     }
     return false;
   }
@@ -2414,43 +2439,59 @@ class ForfeitedPackageService {
 
     final requestId = header['id'] as String;
 
-    // Selected keys are forfeited_packages ids for genuine forfeits, but
-    // package ids for abandoned packages (their FP row doesn't exist yet). Find
-    // which selected keys are real forfeited_packages rows; the rest are
-    // abandoned packages needing a synthetic FP row created here.
+    // Selected keys are either a genuine forfeited_packages id (plain UUID) or a
+    // synthetic abandoned/"Other" key. Synthetic keys are per-item now —
+    // "<packageId>:<itemId>:<source>" — but the older 2-part form
+    // "<packageId>:<source>" is still accepted. Real forfeit keys carry no ':'.
+    // [forfeited_packages] is package-level (package_id + source, no item_id),
+    // so several selected items of the SAME package+source share ONE FP row.
+    (String pkgId, String source) parseSynthetic(String key) {
+      final parts = key.split(':');
+      if (parts.length >= 3) return (parts.first, parts.last);
+      if (parts.length == 2) return (parts[0], parts[1]);
+      return (key, 'abandoned');
+    }
+
     final selectedKeys = dispositions.keys.toList();
-    final existingFp = await AuthService._withNetworkRetry(() => supabase
-        .from('forfeited_packages')
-        .select('id')
-        .inFilter('id', selectedKeys));
+    final realForfeitKeys =
+        selectedKeys.where((k) => !k.contains(':')).toList();
+    final existingFp = realForfeitKeys.isEmpty
+        ? const []
+        : await AuthService._withNetworkRetry(() => supabase
+            .from('forfeited_packages')
+            .select('id')
+            .inFilter('id', realForfeitKeys));
     final realFpIds =
         (existingFp as List).map((e) => e['id'].toString()).toSet();
 
     // key (selection id) → forfeited_packages id to store on the request item.
     final forfeitedIdFor = <String, String>{};
+    // Cache so one package+source creates exactly one FP row across its items.
+    final fpIdByPkgSource = <String, String>{};
     for (final key in selectedKeys) {
       if (realFpIds.contains(key)) {
         forfeitedIdFor[key] = key; // genuine forfeit
         continue;
       }
-      // Synthetic source: an abandoned OR an "Other"-status package needs an FP
-      // row created here. Load the items to decide which (and a good reason).
+      final (packageId, source) = parseSynthetic(key);
+      final cacheKey = '$packageId:$source';
+      final cached = fpIdByPkgSource[cacheKey];
+      if (cached != null) {
+        forfeitedIdFor[key] = cached;
+        continue;
+      }
       final pkgRaw = await AuthService._withNetworkRetry(() => supabase
           .from('packages')
           .select('*, package_items(*), warehouse_entries(*)')
-          .eq('id', key)
+          .eq('id', packageId)
           .single());
       final pkg = PackageModel.fromJson(pkgRaw);
-      // Prefer "Other" only when the package has no abandoned item — abandoned
-      // keeps its existing pipeline/behaviour.
-      final isAbandoned = _packageHasAbandonedItem(pkg);
-      final source = isAbandoned ? 'abandoned' : 'other';
       final reason =
-          isAbandoned ? _abandonReasonFor(pkg) : _otherReasonFor(pkg);
+          source == 'other' ? _otherReasonFor(pkg) : _abandonReasonFor(pkg);
       final newFp = await AuthService._withNetworkRetry(() => supabase
           .from('forfeited_packages')
           .insert({
-            'package_id': key,
+            'package_id': packageId,
             'sr_number': pkg.srNumber,
             'consignee_name': pkg.consigneeName,
             'forfeited_at': DateTime.now().toIso8601String(),
@@ -2463,16 +2504,26 @@ class ForfeitedPackageService {
           })
           .select('id')
           .single());
-      forfeitedIdFor[key] = newFp['id'] as String;
+      final newId = newFp['id'] as String;
+      fpIdByPkgSource[cacheKey] = newId;
+      forfeitedIdFor[key] = newId;
     }
 
-    final items = dispositions.entries
-        .map((e) => {
-              'request_id': requestId,
-              'forfeited_package_id': forfeitedIdFor[e.key],
-              'disposition': e.value,
-            })
-        .toList();
+    // Several selected items can resolve to the same FP row (same package+
+    // source). Collapse to unique (forfeited_package_id, disposition) pairs so
+    // we don't insert duplicate request items for one package.
+    final seenItemRows = <String>{};
+    final items = <Map<String, dynamic>>[];
+    for (final e in dispositions.entries) {
+      final fpId = forfeitedIdFor[e.key];
+      if (fpId == null) continue;
+      if (!seenItemRows.add('$fpId|${e.value}')) continue;
+      items.add({
+        'request_id': requestId,
+        'forfeited_package_id': fpId,
+        'disposition': e.value,
+      });
+    }
     await AuthService._withNetworkRetry(
         () => supabase.from('disposal_request_items').insert(items));
 

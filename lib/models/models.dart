@@ -736,6 +736,12 @@ class ForfeitedPackageModel {
   final DateTime? appealDecidedAt;
   final PackageModel? packageDetails;
 
+  /// For synthetic per-item requestable rows (abandoned / "Other") only: the
+  /// specific package item this row represents, so the request dialog lists
+  /// each item separately. Null for genuine package-level forfeit rows.
+  final String? itemId;
+  final String? itemName;
+
   const ForfeitedPackageModel({
     required this.id,
     required this.packageId,
@@ -753,6 +759,8 @@ class ForfeitedPackageModel {
     this.appealDecisionNote,
     this.appealDecidedAt,
     this.packageDetails,
+    this.itemId,
+    this.itemName,
   });
 
   bool get isAppealExpired => DateTime.now().isAfter(appealDeadline);

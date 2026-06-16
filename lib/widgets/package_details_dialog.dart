@@ -97,6 +97,11 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final PackageModel package;
   final Map<DateTime, double> storageRate;
   final WarehouseEntryModel? highlightEntry; // Added highlightEntry
+  // Fallback item to highlight when there is no warehouse entry ([highlightEntry]
+  // is null) — e.g. an abandoned/"Other" item registered on the SR form that was
+  // never admitted to a warehouse. Ensures such items still get the item-detail
+  // view and the Final Disposition footer button.
+  final String? highlightItemId;
   final bool useLegacySummary;
   final bool useWarehouseSummary;
 
@@ -129,6 +134,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     required this.package,
     required this.storageRate,
     this.highlightEntry, // Added highlightEntry
+    this.highlightItemId,
     this.useLegacySummary = false,
     this.useWarehouseSummary = false,
     this.footerActionLabel,
@@ -652,12 +658,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Filter to find the highlighted entry's specific item if needed
+    // Filter to find the highlighted entry's specific item if needed. Falls
+    // back to [highlightItemId] when there's no warehouse entry (a form-level
+    // abandoned/"Other" item never admitted to a warehouse) so it still gets
+    // item details + the Final Disposition button.
     final highlightedItem = widget.highlightEntry != null
         ? p.items.firstWhere(
             (i) => i.id == widget.highlightEntry!.packageItemId,
             orElse: () => p.items.first)
-        : null;
+        : (widget.highlightItemId != null
+            ? p.items.firstWhere(
+                (i) => i.id == widget.highlightItemId,
+                orElse: () => p.items.first)
+            : null);
 
     final legacyItems =
         (widget.highlightEntry != null && highlightedItem != null)
@@ -728,16 +741,26 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     // entry is also no-charge even if the item status didn't update.
     final _entryNotesUpper =
         (widget.highlightEntry?.returnNotes ?? '').trim().toUpperCase();
-    final isDestroyedEntry = _entryNotesUpper.startsWith('[FINAL:DESTROYED');
-    final isNoChargeContext =
-        WarehouseEntryModel.isNoChargeStatus(_hs) ||
-            _isAbandonOrForfeitEntry(widget.highlightEntry) ||
-            isDestroyedEntry;
+    final isDestroyedEntry = _entryNotesUpper.startsWith('[FINAL:DESTROYED') ||
+        _entryNotesUpper.startsWith('[DESTROY');
+    final isReExportEntry = _entryNotesUpper.startsWith('[FINAL:RE-EXPORTED') ||
+        _entryNotesUpper.startsWith('[RE-EXPORT');
+    final isOtherEntry = _entryNotesUpper.startsWith('[FINAL:OTHER') ||
+        _entryNotesUpper.startsWith('[OTHER');
+
+    // No-charge context: abandoned / forfeit / destroy / re-export / other. These items carry no
+    // storage fee and no release receipt — so we show registration-form item
+    // details instead of charge/receipt fields.
+    final isNoChargeContext = WarehouseEntryModel.isNoChargeStatus(_hs) ||
+        _isAbandonOrForfeitEntry(widget.highlightEntry) ||
+        isDestroyedEntry ||
+        isReExportEntry ||
+        isOtherEntry;
 
     // SOLD-via-tender context: declutter — no release receipt / warehouse
     // charges / packages-released fields (the Sale & Financial section covers it).
     final isSoldContext = _hs == 'sold' ||
-        p.status.toLowerCase() == 'sold' ||
+        p.status?.toLowerCase() == 'sold' ||
         (widget.highlightEntry?.returnNotes?.toUpperCase().contains('SOLD') ??
             false);
 
@@ -751,10 +774,26 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     String? _actionCountLabel;
     if (widget.highlightEntry != null && !isSoldContext) {
       final notes = (widget.highlightEntry!.returnNotes ?? '').trim();
-      final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
+      final m = RegExp(r'^\[([^\]]+)\](.*)').firstMatch(notes);
       if (m != null) {
         final raw = m.group(1)!.trim();
-        _actionCountLabel = '${_dispoLabel(raw.toUpperCase(), raw)} (This Action)';
+        final rawUpper = raw.toUpperCase();
+        if (rawUpper.startsWith('OTHER:')) {
+          // New "[OTHER: <text>]" tag — the custom text is inside the bracket.
+          final customText = raw.substring(6).trim();
+          _actionCountLabel =
+              '${customText.isEmpty ? 'Other' : customText} (This Action)';
+        } else if (raw == 'OTHER' || raw == 'FINAL:OTHER') {
+          final dashIndex = notes.indexOf('—');
+          if (dashIndex != -1) {
+            final customText = notes.substring(dashIndex + 1).trim();
+            _actionCountLabel = '$customText (This Action)';
+          } else {
+            _actionCountLabel = 'Other (This Action)';
+          }
+        } else {
+          _actionCountLabel = '${_dispoLabel(raw.toUpperCase(), raw)} (This Action)';
+        }
       } else if (isNoChargeContext) {
         // No disposition tag but a no-charge status (form-level forfeit/abandoned/
         // destroy) — label by the item status.
@@ -1036,11 +1075,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           title: 'Item Details',
                           icon: Icons.shopping_bag_rounded,
                           delay: 300,
-                          child: (widget.highlightEntry == null ||
-                                  highlightedItem == null)
-                              ? const _EmptyState(
-                                  message: 'No released item details')
-                              : material.Container(
+                          child: (widget.highlightEntry == null &&
+                                  highlightedItem != null)
+                              // No warehouse entry (form-level abandoned/"Other"
+                              // item) — show a compact item card from the SR
+                              // registration data.
+                              ? _NoEntryItemCard(item: highlightedItem)
+                              : (widget.highlightEntry == null ||
+                                      highlightedItem == null)
+                                  ? const _EmptyState(
+                                      message: 'No released item details')
+                                  : material.Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
                                     color: context.colors.surfaceDark,
@@ -1839,21 +1884,66 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       ),
                       const Gap(16),
 
-                      // Released By Section — only for an actual release back to
-                      // the owner. Disposal outcomes (destroy / forfeit /
-                      // abandoned / sold) are handled by the Central Disposal
-                      // Directorate, not "released", so this is hidden for them.
+                      // Released By Section
+                      // For dispositions like Destroy/Re-export/Other, we change the label and icon.
                       if (!widget.useWarehouseSummary &&
                           widget.highlightEntry?.isReturned == true &&
-                          !isNoChargeContext &&
-                          !isSoldContext) ...[
-                        _SystemEntrySection(
-                          officerDisplay: returnedOfficerDisplay,
-                          badgeNumber: returnedOfficerBadge,
-                          delay: 550,
-                          customTitle: 'Released By',
-                          customIcon: Icons.keyboard_return_rounded,
-                        ),
+                          !isSoldContext &&
+                          (!isNoChargeContext ||
+                              isDestroyedEntry ||
+                              isReExportEntry ||
+                              isOtherEntry)) ...[
+                        material.Builder(builder: (context) {
+                          String returnedOfficerTitle = 'Released By';
+                          IconData returnedOfficerIcon =
+                              Icons.keyboard_return_rounded;
+
+                          if (isDestroyedEntry) {
+                            returnedOfficerTitle = 'Destroyed By';
+                            returnedOfficerIcon = Icons.delete_forever_rounded;
+                          } else if (isReExportEntry) {
+                            returnedOfficerTitle = 'Re-exported By';
+                            returnedOfficerIcon = Icons.flight_takeoff_rounded;
+                          } else if (isOtherEntry) {
+                            String customText = 'Actioned';
+                            final notes =
+                                (widget.highlightEntry?.returnNotes ?? '')
+                                    .trim();
+                            // New "[OTHER: <text>]" tag — the disposition label
+                            // lives inside the bracket.
+                            final bracket = RegExp(
+                                    r'^\[OTHER:\s*([^\]]*)\]',
+                                    caseSensitive: false)
+                                .firstMatch(notes);
+                            if (bracket != null &&
+                                bracket.group(1)!.trim().isNotEmpty) {
+                              customText = bracket.group(1)!.trim();
+                            } else {
+                              // Legacy "[…] — <text>" form.
+                              final m = RegExp(r'^\[([^\]]+)\](.*)')
+                                  .firstMatch(notes);
+                              if (m != null) {
+                                final dashIndex = notes.indexOf('—');
+                                if (dashIndex != -1) {
+                                  customText =
+                                      notes.substring(dashIndex + 1).trim();
+                                } else {
+                                  customText = 'Other';
+                                }
+                              }
+                            }
+                            returnedOfficerTitle = '$customText By';
+                            returnedOfficerIcon = Icons.more_horiz_rounded;
+                          }
+
+                          return _SystemEntrySection(
+                            officerDisplay: returnedOfficerDisplay,
+                            badgeNumber: returnedOfficerBadge,
+                            delay: 550,
+                            customTitle: returnedOfficerTitle,
+                            customIcon: returnedOfficerIcon,
+                          );
+                        }),
                         const Gap(16),
                       ],
 
@@ -1992,8 +2082,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                 ),
               // ── Final Disposition footer ──
               // Shown for every appeal-expired item (allowFinalDisposition),
-              // regardless of its forfeit/abandoned status. Hidden only while an
-              // appeal is still open, or once a final disposition is recorded.
+              // regardless of how it reached the Other/Abandoned table. Every
+              // such item MUST still be actionable — Release / Re-export / Other
+              // (recorded directly) or Sale / Destroy (Central Disposal request)
+              // — so it can move on to its final-outcome table. Hidden only while
+              // an appeal is still open, or once a FINAL disposition is recorded.
               if (widget.allowFinalDisposition &&
                   widget.useLegacySummary &&
                   highlightedItem != null &&
@@ -2892,6 +2985,82 @@ class _EmptyState extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Compact item-detail card shown when an abandoned / "Other" item has no
+/// warehouse entry (registered on the SR form but never admitted). Uses the
+/// item's registration data — no charges/receipts apply.
+class _NoEntryItemCard extends StatelessWidget {
+  final PackageItem item;
+  const _NoEntryItemCard({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return material.Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        children: [
+          _DetailItem(
+            icon: Icons.label_important_rounded,
+            label: 'Item Name',
+            value: item.itemName,
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.view_in_ar_rounded,
+                  label: 'Total Packages',
+                  value: '${item.quantity}',
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.straighten_rounded,
+                  label: 'Unit',
+                  value: item.unitOfMeasure == 'Other'
+                      ? (item.unitOther ?? 'Other')
+                      : item.unitOfMeasure,
+                ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.tag_rounded,
+                  label: 'HS Code',
+                  value: (item.hsCode?.isNotEmpty == true) ? item.hsCode! : '—',
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.payments_rounded,
+                  label: 'Value',
+                  value:
+                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                ),
+              ),
+            ],
+          ),
+          if (item.reasons?.isNotEmpty == true)
+            _DetailItem(
+              icon: Icons.warning_amber_rounded,
+              label: 'Hold Reasons',
+              value: item.reasons!,
+            ),
+        ],
       ),
     );
   }
@@ -4633,9 +4802,16 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                         if (slots != null && slots.isNotEmpty) {
                                           final list = slots.toList()..sort();
                                           final ctx = context;
+                                          // Prefix the custom text with the "Other:"
+                                          // marker so the disposition is unambiguously
+                                          // an "Other" outcome — tagged "[OTHER: <text>]"
+                                          // in returnNotes (partial) and stored as item
+                                          // status "Other: <text>" (full). This is what
+                                          // the Other Packages table detects.
                                           await _runAction(
                                             ctx,
-                                            () => widget.onDispose(heldEntry, t, list),
+                                            () => widget.onDispose(
+                                                heldEntry, 'Other: $t', list),
                                             '${list.length} package(s) marked as "$t" successfully.',
                                           );
                                         }
@@ -4718,9 +4894,19 @@ class _ActionDef {
 // ── Final-disposition helpers ─────────────────────────────────────────────────
 
 bool _hasFinalDisposition(PackageModel pkg, String itemId) {
-  return pkg.warehouseEntries.any((e) =>
-      e.packageItemId == itemId &&
-      (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+  return pkg.warehouseEntries.any((e) {
+    if (e.packageItemId != itemId) return false;
+    final notes = (e.returnNotes ?? '').trim().toUpperCase();
+    // NOTE: a bare "[OTHER…]" tag is a warehouse-Actions custom disposition
+    // (like "[ABANDONED]"/"[FORFEIT]") — NOT a final-table move, so it does
+    // NOT count here. The item must remain actionable via Final Disposition
+    // until it is genuinely finalised ("[FINAL:OTHER]" etc.). Only the real
+    // final markers below hide the button.
+    return notes.contains('[FINAL:') ||
+        notes.startsWith('[RE-EXPORT') ||
+        notes.startsWith('[DESTROY') ||
+        notes.startsWith('[SOLD');
+  });
 }
 
 /// True if the highlighted entry is itself an abandon/forfeit disposition —

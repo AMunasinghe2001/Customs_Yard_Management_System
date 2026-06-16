@@ -81,7 +81,8 @@ class _AbandonedPackagesScreenState
     try {
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
             requestDate: DateTime.now(),
-            dispositions: {pkg.id: disposition},
+            // ":abandoned" suffix tags the synthetic forfeited_packages row.
+            dispositions: {'${pkg.id}:abandoned': disposition},
           );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
@@ -675,6 +676,7 @@ class _AbandonedPackagesScreenState
                                             package: row.package,
                                             storageRate: storageRateHistory,
                                             highlightEntry: row.entry,
+                                            highlightItemId: row.item.id,
                                             useLegacySummary: true,
                                             // Abandoned goods have no appeal —
                                             // disposition allowed immediately.
