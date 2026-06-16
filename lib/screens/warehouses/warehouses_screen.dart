@@ -342,6 +342,7 @@ class _WarehouseTab extends ConsumerWidget {
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
+                            DataColumn2(label: Text('HS Code'), size: ColumnSize.S, fixedWidth: 110),
                             DataColumn2(label: Text('No. of Packages'), size: ColumnSize.S, fixedWidth: 100),
                             DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
@@ -396,6 +397,29 @@ class _WarehouseTab extends ConsumerWidget {
                                     ]
                                   ],
                                 )),
+                                DataCell(Builder(builder: (_) {
+                                  final hs = pkg == null
+                                      ? null
+                                      : (e.packageItemId != null
+                                          ? pkg.items
+                                              .where((i) => i.id == e.packageItemId)
+                                              .firstOrNull
+                                              ?.hsCode
+                                          : pkg.items
+                                              .map((i) => i.hsCode)
+                                              .where((c) => c != null && c.isNotEmpty)
+                                              .join(', '));
+                                  return Text(
+                                    (hs != null && hs.isNotEmpty) ? hs : '—',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isItemConfiscated
+                                          ? context.colors.textMuted
+                                          : null,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  );
+                                })),
                                 DataCell(Text('${e.itemCount}', style: TextStyle(color: isItemConfiscated ? context.colors.textMuted : null))),
                                 DataCell(Center(child: Text(
                                   pkg == null ? '—' : (isFree ? '—' : 'LKR ${NumberFormat('#,##0.00').format(charge)}'),

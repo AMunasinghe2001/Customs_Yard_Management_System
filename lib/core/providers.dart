@@ -187,6 +187,16 @@ final storageRateProvider = FutureProvider<Map<DateTime, double>>((ref) async {
   return rates;
 });
 
+/// The storage rate currently in effect — the most recent entry by
+/// `effective_from`. Shown as the headline value of the Admin Dashboard's
+/// "Current W/H Charge" card (the per-day rate, e.g. LKR 40/day).
+final currentStorageRateProvider = FutureProvider<double>((ref) async {
+  final rates = await ref.watch(storageRateProvider.future);
+  if (rates.isEmpty) return 0;
+  final latest = rates.entries.reduce((a, b) => a.key.isAfter(b.key) ? a : b);
+  return latest.value;
+});
+
 final storageRateHistoryProvider = FutureProvider<List<AuditLogModel>>((ref) async {
   final data = await supabase
       .from('storage_rates')
@@ -303,6 +313,10 @@ final forfeitedPackagesChangeTriggerProvider = StreamProvider<int>((ref) async* 
 final forfeitedPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(disposalRequestsChangeTriggerProvider);
+  // A package becoming SOLD / DESTROYED removes it from this list, so refresh
+  // when tender_sale_items / destruction_items change in any session.
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
   return ref.read(forfeitedPackageServiceProvider).getForfeitedPackages();
 });
 
@@ -429,6 +443,13 @@ final requestableForfeitedPackagesProvider =
     FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(disposalRequestsRefreshProvider);
+  // Abandoned / "Other" requestable packages are synthesised from the `packages`
+  // table, so a newly registered (or re-statused) package must refresh this too.
+  ref.watch(packagesChangeTriggerProvider);
+  // A package becoming SOLD / DESTROYED makes it non-requestable, so refresh
+  // when tender_sale_items / destruction_items change in any session.
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
   return ref.read(forfeitedPackageServiceProvider).getRequestableExpiredPackages();
 });
 
@@ -552,4 +573,41 @@ final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
 final categoryZoneSummaryProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(packagesChangeTriggerProvider); // Refresh inventory on package changes
   return ref.read(warehouseServiceProvider).getCategoryZoneCombinedSummary();
+});
+
+/// Per-warehouse capacity utilisation for the current admin's yard (used by the
+/// Zone Capacity page). Refreshes whenever stock moves in/out of a warehouse.
+final yardWarehouseCapacityProvider =
+    FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseRefreshTriggerProvider);
+  return ref.read(warehouseServiceProvider).getYardWarehouseCapacity();
+});
+
+/// Total storage charge currently accruing across all goods still held in the
+/// yard's warehouses (active, not-returned entries). Shown as a header stat on
+/// the Admin Dashboard.
+final currentWarehouseChargeProvider = FutureProvider<double>((ref) async {
+  final packages = await ref.watch(livePackagesProvider.future);
+  final rates = await ref.watch(storageRateProvider.future);
+  double total = 0;
+  for (final p in packages) {
+    for (final entry in p.warehouseEntries) {
+      if (entry.isReturned) continue;
+      total += entry.calculatePackageCharge(p.items, rates);
+    }
+  }
+  return total;
+});
+
+/// Forfeit → disposal lifecycle counts for the admin's yard: appeal holds /
+/// decisions and how requested packages ended up (tender sale / destruction /
+/// unsold), plus the next scheduled tender-sale date.
+final forfeitLifecycleProvider =
+    FutureProvider<Map<String, dynamic>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsRefreshProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getForfeitLifecycleSummary();
 });

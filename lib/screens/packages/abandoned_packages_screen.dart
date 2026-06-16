@@ -72,6 +72,37 @@ class _AbandonedPackagesScreenState
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
 
+  /// Submits a single-package disposal request (Sale / Destruction) for an
+  /// abandoned package — used by the details popup's Final Disposition
+  /// Sale/Destroy buttons. createDisposalRequest creates the synthetic
+  /// forfeited_packages row for abandoned goods automatically.
+  Future<void> _requestSingleDisposal(
+      PackageModel pkg, String disposition) async {
+    try {
+      await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
+            requestDate: DateTime.now(),
+            dispositions: {pkg.id: disposition},
+          );
+      ref.read(disposalRequestsRefreshProvider.notifier).trigger();
+      ref.invalidate(livePackagesProvider);
+      ref.invalidate(requestableForfeitedPackagesProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.successGreen,
+          content: Text(
+              'Disposal request sent for ${pkg.srNumber} (${disposition == 'sale' ? 'Sale' : 'Destruction'}).'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.dangerRed,
+          content: Text('Error: $e'),
+        ));
+      }
+    }
+  }
+
   /// Builds one row per abandonment — broken down per package item.
   /// A single SR can appear on multiple lines: once per abandoned item, and
   /// once per separate abandonment event (e.g. detained → partly abandoned).
@@ -584,6 +615,10 @@ class _AbandonedPackagesScreenState
                             DataColumn2(
                                 label: Text('Item Name'), size: ColumnSize.M),
                             DataColumn2(
+                                label: Text('HS Code'),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
+                            DataColumn2(
                                 label: Text('Abandoned Qty'),
                                 size: ColumnSize.S,
                                 fixedWidth: 130),
@@ -608,6 +643,13 @@ class _AbandonedPackagesScreenState
                                             fontWeight: FontWeight.w600))),
                                     DataCell(Text(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
+                                    DataCell(Text(
+                                        (row.item.hsCode != null &&
+                                                row.item.hsCode!.isNotEmpty)
+                                            ? row.item.hsCode!
+                                            : '—',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 12))),
                                     DataCell(Center(
                                         child: Text('${row.qty}'))),
                                     DataCell(Text(row.reason,
@@ -634,6 +676,13 @@ class _AbandonedPackagesScreenState
                                             storageRate: storageRateHistory,
                                             highlightEntry: row.entry,
                                             useLegacySummary: true,
+                                            // Abandoned goods have no appeal —
+                                            // disposition allowed immediately.
+                                            onSaleOrDestroyRequest:
+                                                (disposition) =>
+                                                    _requestSingleDisposal(
+                                                        row.package,
+                                                        disposition),
                                           ),
                                         );
                                       },

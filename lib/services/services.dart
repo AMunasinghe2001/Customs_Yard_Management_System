@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase_client.dart';
 import '../core/app_session.dart';
@@ -1211,6 +1213,62 @@ class WarehouseService {
     }).toList();
   }
 
+  /// Per-warehouse capacity utilisation for the current admin's yard.
+  /// Returns one map per warehouse that holds active (not-returned) stock for
+  /// this yard:
+  ///   { 'warehouseName', 'warehouseCode', 'zones' (sorted List<String>),
+  ///     'used' (int), 'capacity' (int), 'percent' (double 0..100+) }
+  /// Warehouses are global, but the used count is scoped to AppSession yard.
+  Future<List<Map<String, dynamic>>> getYardWarehouseCapacity() async {
+    final yard = AppSession.currentYard;
+
+    final data = await supabase
+        .from('warehouse_entries')
+        .select('item_count, zone, warehouse_id, warehouses(name, code, capacity)')
+        .eq('yard', yard)
+        .eq('is_returned', false);
+
+    // warehouse_id → aggregate
+    final Map<String, Map<String, dynamic>> byWarehouse = {};
+
+    for (final e in (data as List)) {
+      final wh = e['warehouses'] as Map?;
+      if (wh == null) continue;
+      final whId = e['warehouse_id']?.toString() ?? '';
+      final agg = byWarehouse.putIfAbsent(whId, () => {
+            'warehouseName': wh['name']?.toString() ?? 'Unknown',
+            'warehouseCode': wh['code']?.toString() ?? '—',
+            'capacity': (wh['capacity'] as num?)?.toInt() ?? 500,
+            'used': 0,
+            'zones': <String>{},
+          });
+      agg['used'] = (agg['used'] as int) + ((e['item_count'] as num?)?.toInt() ?? 0);
+      final z = e['zone']?.toString();
+      if (z != null && z.trim().isNotEmpty && z.toUpperCase() != 'N/A') {
+        (agg['zones'] as Set<String>).add(z.trim());
+      }
+    }
+
+    final result = byWarehouse.values.map((v) {
+      final used = v['used'] as int;
+      final capacity = v['capacity'] as int;
+      final zones = (v['zones'] as Set<String>).toList()..sort();
+      final percent = capacity > 0 ? (used / capacity) * 100 : 0.0;
+      return {
+        'warehouseName': v['warehouseName'],
+        'warehouseCode': v['warehouseCode'],
+        'zones': zones,
+        'used': used,
+        'capacity': capacity,
+        'percent': percent,
+      };
+    }).toList();
+
+    result.sort((a, b) =>
+        (a['warehouseCode'] as String).compareTo(b['warehouseCode'] as String));
+    return result;
+  }
+
   // ── Warehouse Management (CRUD) ────────────────────────────
 
   /// Add a new warehouse
@@ -1651,10 +1709,21 @@ class AdminService {
 // ── Audit Log Service ──────────────────────────────────────────
 
 class AuditLogService {
+  static final Random _rand = Random();
+
   Future<List<AuditLogModel>> getAllLogs() async {
+    // Admins only see activity from their OWN yard (the directorate accounts
+    // live in a head-office yard, so their actions are excluded automatically).
+    // Retention: only the last 12 months are kept on screen — older rows are
+    // pruned from the table by purge_old_audit_logs() (migration
+    // 20260615_audit_log_retention.sql).
+    final oneYearAgo =
+        DateTime.now().subtract(const Duration(days: 365)).toIso8601String();
     final data = await supabase
         .from('audit_logs')
         .select('*, profiles(full_name)')
+        .eq('yard', AppSession.currentYard)
+        .gte('created_at', oneYearAgo)
         .order('created_at', ascending: false);
     return data.map((e) => AuditLogModel.fromJson(e)).toList();
   }
@@ -1675,6 +1744,13 @@ class AuditLogService {
         'entity_id': entityId,
         'details': details,
       });
+      // Opportunistically prune logs older than a year. Sampled (~1 in 20
+      // writes) so we don't run the delete on every single insert; fire-and-
+      // forget so a failure never blocks the action being logged.
+      if (_rand.nextInt(20) == 0) {
+        unawaited(supabase.rpc('purge_old_audit_logs').then((_) {},
+            onError: (_) {}));
+      }
     } catch (e) {
       print('DEBUG: AuditLogService.recordLog error: $e');
     }
@@ -1883,6 +1959,11 @@ class ForfeitedPackageService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
+    // 1c. Get IDs of packages that have already been SOLD or DESTROYED — these
+    //     belong on the Sold / Destroyed pages, not the Forfeited list. Unsold
+    //     tender entries (sold=false) stay so they remain actionable here.
+    final goneIds = await _soldOrDestroyedForfeitedIds();
+
     // 2. Fetch forfeited packages (genuine forfeits only — synthetic
     //    source='abandoned' rows belong to the Abandoned page, not here).
     final data = await supabase
@@ -1892,11 +1973,32 @@ class ForfeitedPackageService {
         .eq('source', 'forfeit')
         .order('appeal_deadline', ascending: true);
 
-    // 3. Filter out tendered and map to models
+    // 3. Filter out tendered / requested / sold / destroyed and map to models
     return (data as List)
-        .where((e) => !tenderedIds.contains(e['id']) && !requestedIds.contains(e['id']))
+        .where((e) =>
+            !tenderedIds.contains(e['id']) &&
+            !requestedIds.contains(e['id']) &&
+            !goneIds.contains(e['id'].toString()))
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .toList();
+  }
+
+  /// Forfeited package ids that have reached a terminal sale/destruction
+  /// outcome (a sold tender-sale item, or a destroyed destruction item) and
+  /// should therefore no longer appear in the Forfeited list.
+  Future<Set<String>> _soldOrDestroyedForfeitedIds() async {
+    final soldData = await supabase
+        .from('tender_sale_items')
+        .select('forfeited_package_id')
+        .eq('sold', true);
+    final destroyedData = await supabase
+        .from('destruction_items')
+        .select('forfeited_package_id')
+        .eq('destroyed', true);
+    return {
+      ...(soldData as List).map((e) => e['forfeited_package_id'].toString()),
+      ...(destroyedData as List).map((e) => e['forfeited_package_id'].toString()),
+    };
   }
 
   /// Get forfeited packages where appeal has expired (> 30 days) and not tendered
@@ -1994,7 +2096,12 @@ class ForfeitedPackageService {
   /// Central Disposal Directorate to dispose of. RLS keeps this to the
   /// caller's own yard.
   Future<List<ForfeitedPackageModel>> getRequestableExpiredPackages() async {
-    // ── 1. Genuine forfeits whose appeal window has passed ───────────────────
+    // ── 1. Genuine forfeits whose appeal window has PASSED ───────────────────
+    // Only appeal-expired forfeits can be sent in a disposal request. Excludes:
+    //   • appeals still open (window not yet passed),
+    //   • packages currently on an appeal hold,
+    //   • packages the Appeal Directorate decided as RELEASE / RE-EXPORT / OTHER
+    //     (those are handled directly by the yard, not via a request).
     // Already-requested forfeited package ids (this yard, via RLS) — also used
     // below to know which abandoned packages already have a synthetic FP row.
     final requested = await AuthService._withNetworkRetry(() =>
@@ -2003,16 +2110,24 @@ class ForfeitedPackageService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
+    // Packages already SOLD or DESTROYED can't be requested again — drop them.
+    final goneIds = await _soldOrDestroyedForfeitedIds();
+
     final fpData = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .eq('source', 'forfeit')
+        .eq('appeal_hold', false)
         .lt('appeal_deadline', DateTime.now().toIso8601String())
         .order('appeal_deadline', ascending: true));
 
+    const _nonDisposalDecisions = {'RELEASE', 'RE-EXPORT', 'OTHER'};
     final result = (fpData as List)
         .where((e) => !requestedIds.contains(e['id']))
+        .where((e) => !goneIds.contains(e['id'].toString()))
+        .where((e) => !_nonDisposalDecisions
+            .contains(((e['appeal_decision'] as String?) ?? '').toUpperCase()))
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .toList();
 
@@ -2036,27 +2151,127 @@ class ForfeitedPackageService {
         .map((e) => e['package_id'].toString())
         .toSet();
 
+    // ── 3. "Other"-status packages (no appeal — requestable immediately) ─────
+    // Same synthetic-row trick as abandoned goods, with source='other'. A
+    // package that already has a source='other' FP row was requested already.
+    final existingOtherFp = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('package_id')
+        .eq('source', 'other'));
+    final otherFpPkgIds = (existingOtherFp as List)
+        .map((e) => e['package_id'].toString())
+        .toSet();
+
     for (final raw in (pkgData as List)) {
       final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
-      if (abandonedFpPkgIds.contains(pkg.id)) continue; // already requested
-      if (!_packageHasAbandonedItem(pkg)) continue;
-      result.add(ForfeitedPackageModel(
-        id: pkg.id, // synthetic — uses package id until the FP row is created
-        packageId: pkg.id,
-        srNumber: pkg.srNumber,
-        consigneeName: pkg.consigneeName,
-        forfeitedAt: pkg.createdAt,
-        // No appeal for abandoned goods → already-passed deadline.
-        appealDeadline:
-            DateTime.now().subtract(const Duration(days: 1)),
-        reason: _abandonReasonFor(pkg),
-        yard: AppSession.currentYard,
-        source: 'abandoned',
-        packageDetails: pkg,
-      ));
+
+      if (!abandonedFpPkgIds.contains(pkg.id) && _packageHasAbandonedItem(pkg)) {
+        result.add(ForfeitedPackageModel(
+          id: pkg.id, // synthetic — uses package id until the FP row is created
+          packageId: pkg.id,
+          srNumber: pkg.srNumber,
+          consigneeName: pkg.consigneeName,
+          forfeitedAt: pkg.createdAt,
+          // No appeal for abandoned goods → already-passed deadline.
+          appealDeadline: DateTime.now().subtract(const Duration(days: 1)),
+          reason: _abandonReasonFor(pkg),
+          yard: AppSession.currentYard,
+          source: 'abandoned',
+          packageDetails: pkg,
+        ));
+      }
+
+      if (!otherFpPkgIds.contains(pkg.id) && _packageHasOtherItem(pkg)) {
+        result.add(ForfeitedPackageModel(
+          id: pkg.id,
+          packageId: pkg.id,
+          srNumber: pkg.srNumber,
+          consigneeName: pkg.consigneeName,
+          forfeitedAt: pkg.createdAt,
+          // No appeal for "Other" goods → already-passed deadline.
+          appealDeadline: DateTime.now().subtract(const Duration(days: 1)),
+          reason: _otherReasonFor(pkg),
+          yard: AppSession.currentYard,
+          source: 'other',
+          packageDetails: pkg,
+        ));
+      }
     }
 
     return result;
+  }
+
+  /// Forfeit → disposal lifecycle counts for the current yard, used by the
+  /// Admin Dashboard summary card. Counts are package-level (one forfeited
+  /// package = one unit).
+  Future<Map<String, dynamic>> getForfeitLifecycleSummary() async {
+    final yard = AppSession.currentYard;
+
+    // Forfeited packages in this yard → appeal hold / appeal decision counts.
+    final fpRows = await supabase
+        .from('forfeited_packages')
+        .select('id, appeal_hold, appeal_decision')
+        .eq('yard', yard)
+        .eq('source', 'forfeit');
+    int appealHold = 0;
+    int appealDecided = 0;
+    for (final r in (fpRows as List)) {
+      if (r['appeal_hold'] == true) appealHold++;
+      final dec = (r['appeal_decision'] as String?)?.trim();
+      if (dec != null && dec.isNotEmpty) appealDecided++;
+    }
+
+    // Disposal requests (this yard) → how many asked for sale vs destruction.
+    final reqRows = await supabase
+        .from('disposal_request_items')
+        .select('disposition, forfeited_packages!inner(yard)')
+        .eq('forfeited_packages.yard', yard);
+    int requestedSale = 0;
+    int requestedDestruction = 0;
+    for (final r in (reqRows as List)) {
+      final d = (r['disposition'] as String?)?.toLowerCase();
+      if (d == 'sale') requestedSale++;
+      if (d == 'destruction') requestedDestruction++;
+    }
+
+    // Tender-sale items (this yard) → sold vs not-yet-sold (unsold).
+    final tsRows = await supabase
+        .from('tender_sale_items')
+        .select('sold')
+        .eq('yard', yard);
+    int tenderTotal = (tsRows as List).length;
+    int sold = tsRows.where((r) => r['sold'] == true).length;
+    int unsold = tenderTotal - sold;
+
+    // Destruction items (this yard) → queued vs destroyed.
+    final deRows = await supabase
+        .from('destruction_items')
+        .select('destroyed')
+        .eq('yard', yard);
+    int destroyed = (deRows as List).where((r) => r['destroyed'] == true).length;
+
+    // Next scheduled tender-sale date (a sale_date today or in the future).
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    final nextSale = await supabase
+        .from('tender_sales')
+        .select('sale_date')
+        .eq('yard', yard)
+        .gte('sale_date', today)
+        .order('sale_date', ascending: true)
+        .limit(1)
+        .maybeSingle();
+    final nextTenderSaleDate = nextSale?['sale_date'] as String?;
+
+    return {
+      'appealHold': appealHold,
+      'appealDecided': appealDecided,
+      'requestedSale': requestedSale,
+      'requestedDestruction': requestedDestruction,
+      'tenderSold': sold,
+      'tenderUnsold': unsold,
+      'destroyed': destroyed,
+      'nextTenderSaleDate': nextTenderSaleDate,
+    };
   }
 
   /// True if a package has any abandoned item — either a form-level abandoned
@@ -2097,6 +2312,83 @@ class ForfeitedPackageService {
       if (item.reasons?.isNotEmpty == true) return item.reasons!;
     }
     return 'Abandoned';
+  }
+
+  /// True if a package has any "Other"-status item still held in the warehouse.
+  /// "Other" is set on the SR registration form (a custom disposition, e.g.
+  /// court-held / pending-decision). Like abandoned goods it has NO appeal
+  /// period — the yard admin can release / re-export / record an outcome
+  /// directly, or send it to Central Disposal for sale / destruction.
+  /// An item already finalised ([FINAL:…]) is ignored.
+  bool _packageHasOtherItem(PackageModel p) {
+    bool hasFinal(String itemId) => p.warehouseEntries.any((e) =>
+        e.packageItemId == itemId &&
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+
+    for (final item in p.items) {
+      if (hasFinal(item.id)) continue;
+      final st = (item.status ?? '').trim().toLowerCase();
+      // Explicit "Other"/"Other: <text>" marker always qualifies.
+      if (st == 'other' || st.startsWith('other:')) return true;
+      // Legacy free-text status only when the item is actually held.
+      if (st.isNotEmpty &&
+          !_knownStatuses.contains(st) &&
+          p.warehouseEntries
+              .any((e) => e.packageItemId == item.id && !e.isReturned)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// An item status is "Other" when it is neither one of the built-in
+  /// dispositions (detain / forfeit / abandoned / released / re-export /
+  /// destroy / sold) nor empty/cleared. The SR form stores the custom text the
+  /// officer typed in the "Other Status" field, so we treat anything outside
+  /// the known set as an "Other" disposition.
+  static const Set<String> _knownStatuses = {
+    'detain', 'detained', 'held',
+    'forfeit', 'forfiet', 'forfeited', 'confiscated',
+    'abandoned',
+    'released', 'returned', 'cleared',
+    're-export', 're-exported', 'reexport',
+    'destroy', 'destroyed',
+    'sold', 'sale',
+    'inspecting', 'pending', '',
+  };
+
+  bool _statusIsOther(String? s) {
+    final v = (s ?? '').trim().toLowerCase();
+    if (v.isEmpty) return false;
+    if (v == 'other' || v.startsWith('other:')) return true;
+    return !_knownStatuses.contains(v);
+  }
+
+  /// Custom "Other" disposition label — strips the "Other:" marker prefix.
+  String _otherLabelFor(String? s) {
+    final raw = (s ?? '').trim();
+    if (raw.toLowerCase().startsWith('other:')) {
+      final t = raw.substring(6).trim();
+      return t.isEmpty ? 'Other' : t;
+    }
+    if (raw.isEmpty || raw.toLowerCase() == 'other') return 'Other';
+    return raw;
+  }
+
+  String _otherReasonFor(PackageModel p) {
+    for (final item in p.items) {
+      if (!_statusIsOther(item.status)) continue;
+      // The custom "Other Status" text is the most descriptive label.
+      final label = _otherLabelFor(item.status);
+      if (label != 'Other') return label;
+      if (item.reasons?.isNotEmpty == true) return item.reasons!;
+      final entries =
+          p.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+      if (entries.isNotEmpty && entries.first.holdReason.isNotEmpty) {
+        return entries.first.holdReason;
+      }
+    }
+    return 'Other';
   }
 
   /// Submit a disposal request for the current yard. [dispositions] maps a
@@ -2141,25 +2433,33 @@ class ForfeitedPackageService {
         forfeitedIdFor[key] = key; // genuine forfeit
         continue;
       }
-      // Abandoned package → create (or reuse) a source='abandoned' FP row.
-      final pkg = await AuthService._withNetworkRetry(() => supabase
+      // Synthetic source: an abandoned OR an "Other"-status package needs an FP
+      // row created here. Load the items to decide which (and a good reason).
+      final pkgRaw = await AuthService._withNetworkRetry(() => supabase
           .from('packages')
-          .select('id, sr_number, consignee_name')
+          .select('*, package_items(*), warehouse_entries(*)')
           .eq('id', key)
           .single());
+      final pkg = PackageModel.fromJson(pkgRaw);
+      // Prefer "Other" only when the package has no abandoned item — abandoned
+      // keeps its existing pipeline/behaviour.
+      final isAbandoned = _packageHasAbandonedItem(pkg);
+      final source = isAbandoned ? 'abandoned' : 'other';
+      final reason =
+          isAbandoned ? _abandonReasonFor(pkg) : _otherReasonFor(pkg);
       final newFp = await AuthService._withNetworkRetry(() => supabase
           .from('forfeited_packages')
           .insert({
             'package_id': key,
-            'sr_number': pkg['sr_number'],
-            'consignee_name': pkg['consignee_name'] ?? '',
+            'sr_number': pkg.srNumber,
+            'consignee_name': pkg.consigneeName,
             'forfeited_at': DateTime.now().toIso8601String(),
             'appeal_deadline': DateTime.now()
                 .subtract(const Duration(days: 1))
                 .toIso8601String(),
-            'reason': 'Abandoned',
+            'reason': reason,
             'yard': AppSession.currentYard,
-            'source': 'abandoned',
+            'source': source,
           })
           .select('id')
           .single());
@@ -2397,6 +2697,20 @@ class DisposalService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
+    // 1c. Sold / destroyed packages belong on the Sold / Destroyed pages.
+    final soldData = await supabase
+        .from('tender_sale_items')
+        .select('forfeited_package_id')
+        .eq('sold', true);
+    final destroyedData = await supabase
+        .from('destruction_items')
+        .select('forfeited_package_id')
+        .eq('destroyed', true);
+    final goneIds = <String>{
+      ...(soldData as List).map((e) => e['forfeited_package_id'].toString()),
+      ...(destroyedData as List).map((e) => e['forfeited_package_id'].toString()),
+    };
+
     // Pull the full warehouse context too, so the Central Disposal "Details"
     // popup shows the same Warehouse Summary (warehouse / zone / date range) as
     // the Sold Packages popup — not just item rows.
@@ -2408,7 +2722,10 @@ class DisposalService {
         .order('appeal_deadline', ascending: true);
 
     return (data as List)
-        .where((e) => !tenderedIds.contains(e['id']) && !requestedIds.contains(e['id']))
+        .where((e) =>
+            !tenderedIds.contains(e['id']) &&
+            !requestedIds.contains(e['id']) &&
+            !goneIds.contains(e['id'].toString()))
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .toList();
   }
@@ -2970,6 +3287,31 @@ class AppealService {
       await AuditLogService().recordLog(
         userId: user.id,
         action: hold ? 'Placed appeal hold' : 'Lifted appeal hold',
+        entityType: 'forfeited_package',
+        entityId: forfeitedId,
+      );
+    }
+  }
+
+  /// Lift an appeal hold AND record the directorate's decision so the owning
+  /// yard knows what to do next: [decision] is one of 'RELEASE', 'SALE',
+  /// 'DESTROY', 'RE-EXPORT' or 'OTHER' (custom outcome carried in [note]).
+  Future<void> releaseAppealWithDecision(
+    String forfeitedId,
+    String decision, {
+    String? note,
+  }) async {
+    await AuthService._withNetworkRetry(
+        () => supabase.rpc('release_appeal_with_decision', params: {
+              'p_forfeited_id': forfeitedId,
+              'p_decision': decision,
+              'p_note': note,
+            }));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Appeal decision: $decision',
         entityType: 'forfeited_package',
         entityId: forfeitedId,
       );

@@ -110,6 +110,20 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final String? footerActionHint;
   final VoidCallback? onFooterAction;
 
+  // Appeal Directorate decision banner. When [appealDecisionLabel] is set, a
+  // prominent banner is shown at the top of the body telling the owning yard
+  // what to do with the package (e.g. "Release to owner", "Destroy").
+  final String? appealDecisionLabel;
+
+  // Final-disposition gating (Forfeited screen). The footer "Final Disposition"
+  // button is shown ONLY when [allowFinalDisposition] is true — i.e. the appeal
+  // window has passed. While an appeal is still open it is hidden entirely.
+  // When the admin picks Sale / Destroy, [onSaleOrDestroyRequest] is invoked
+  // ('sale' | 'destruction') so the caller can submit a disposal request to the
+  // Central Disposal Directorate (the dialog closes first).
+  final bool allowFinalDisposition;
+  final void Function(String disposition)? onSaleOrDestroyRequest;
+
   const PackageDetailsDialog({
     super.key,
     required this.package,
@@ -122,6 +136,9 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.footerActionColor,
     this.footerActionHint,
     this.onFooterAction,
+    this.appealDecisionLabel,
+    this.allowFinalDisposition = true,
+    this.onSaleOrDestroyRequest,
   });
 
   @override
@@ -524,8 +541,6 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         packageId: entry.packageId,
         itemId: specificItem.id,
         fallbackEntry: entry,
-        // The actions dialog stays open and self-refreshes — we do NOT pop the
-        // details dialog, so the page never jumps back to the warehouse top.
         onRelease: (held, slots) async {
           return await _showReleaseConfirmation(ctx, held,
               preselectedQty: slots.length, packageNumbers: slots);
@@ -533,6 +548,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         onDispose: (held, type, slots) async {
           return await _showDispositionDialog(ctx, held, type,
               preselectedQty: slots.length, packageNumbers: slots);
+        },
+        // On a successful action the actions dialog pops itself, then this
+        // closes the details dialog too so we return to the previous screen.
+        onCompleted: () {
+          if (ctx.mounted) Navigator.of(ctx).pop();
         },
       ),
     );
@@ -553,6 +573,16 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         item: item,
         qty: qty,
         isOfficer: isOfficer,
+        // When a Sale/Destroy request handler is supplied (Forfeited screen),
+        // those two route to the Central Disposal request flow instead of
+        // writing a [FINAL:…] entry directly.
+        onRequestDisposal: widget.onSaleOrDestroyRequest == null
+            ? null
+            : (String disposition) {
+                Navigator.pop(dialogCtx); // close the picker
+                Navigator.pop(ctx); // close the details dialog
+                widget.onSaleOrDestroyRequest!(disposition);
+              },
         onConfirm: (String type, String? notes) async {
           Navigator.pop(dialogCtx);
           try {
@@ -694,10 +724,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
 
     // No-charge context: abandoned / forfeit / destroy. These items carry no
     // storage fee and no release receipt — so we show registration-form item
-    // details instead of charge/receipt fields.
+    // details instead of charge/receipt fields. A [FINAL:DESTROYED] disposition
+    // entry is also no-charge even if the item status didn't update.
+    final _entryNotesUpper =
+        (widget.highlightEntry?.returnNotes ?? '').trim().toUpperCase();
+    final isDestroyedEntry = _entryNotesUpper.startsWith('[FINAL:DESTROYED');
     final isNoChargeContext =
         WarehouseEntryModel.isNoChargeStatus(_hs) ||
-            _isAbandonOrForfeitEntry(widget.highlightEntry);
+            _isAbandonOrForfeitEntry(widget.highlightEntry) ||
+            isDestroyedEntry;
 
     // SOLD-via-tender context: declutter — no release receipt / warehouse
     // charges / packages-released fields (the Sale & Financial section covers it).
@@ -705,6 +740,31 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
         p.status.toLowerCase() == 'sold' ||
         (widget.highlightEntry?.returnNotes?.toUpperCase().contains('SOLD') ??
             false);
+
+    // ── "(This Action)" count label ──
+    // For released items the second count reads "Released (This Receipt)".
+    // For every other disposition (Forfeit / Abandoned / Re-export / Destroy /
+    // Other-custom) we show the SAME pattern — Total Packages + the count of
+    // packages handled by THIS specific action — using a label matching the
+    // disposition type. The disposition key is read from the entry's returnNotes
+    // tag (e.g. "[FORFEIT]"), falling back to the item status.
+    String? _actionCountLabel;
+    if (widget.highlightEntry != null && !isSoldContext) {
+      final notes = (widget.highlightEntry!.returnNotes ?? '').trim();
+      final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
+      if (m != null) {
+        final raw = m.group(1)!.trim();
+        _actionCountLabel = '${_dispoLabel(raw.toUpperCase(), raw)} (This Action)';
+      } else if (isNoChargeContext) {
+        // No disposition tag but a no-charge status (form-level forfeit/abandoned/
+        // destroy) — label by the item status.
+        String key = _hs.toUpperCase();
+        if (key == 'FORFEIT' || key == 'FORFIET' || key == 'CONFISCATED') {
+          key = 'FORFEIT';
+        }
+        _actionCountLabel = '${_dispoLabel(key, _hs)} (This Action)';
+      }
+    }
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -808,6 +868,52 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                   padding: const EdgeInsets.all(24),
                   child: Column(
                     children: [
+                      // ── Appeal decision banner ──
+                      // Shown to the owning yard once the Appeal Directorate has
+                      // released a hold with a decision.
+                      if (widget.appealDecisionLabel != null &&
+                          widget.appealDecisionLabel!.trim().isNotEmpty)
+                        material.Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: context.colors.accentLightBlue
+                                .withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                                color: context.colors.accentLightBlue
+                                    .withOpacity(0.4)),
+                          ),
+                          child: Row(children: [
+                            Icon(Icons.gavel_rounded,
+                                color: context.colors.accentLightBlue,
+                                size: 22),
+                            const Gap(12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('APPEAL DIRECTORATE DECISION',
+                                      style: material.TextStyle(
+                                          color:
+                                              context.colors.accentLightBlue,
+                                          fontSize: 10,
+                                          letterSpacing: 1.0,
+                                          fontWeight: FontWeight.w800)),
+                                  const Gap(2),
+                                  Text(
+                                    'Proceed with: ${widget.appealDecisionLabel}',
+                                    style: material.TextStyle(
+                                        color: context.colors.textPrimary,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w700),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ]),
+                        ),
                       // SR Register Information Section
                       _DetailSection(
                         title: 'SR Register Information',
@@ -957,12 +1063,28 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                   child: _DetailItem(
                                                     icon: Icons
                                                         .view_in_ar_rounded,
-                                                    label: 'Quantity',
+                                                    label: 'Total Packages',
                                                     value:
                                                         '${highlightedItem.quantity}',
                                                   ),
                                                 ),
                                                 const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .inventory_2_rounded,
+                                                    label: _actionCountLabel ??
+                                                        'Quantity',
+                                                    value:
+                                                        '${widget.highlightEntry!.itemCount}',
+                                                    valueColor: context
+                                                        .colors.primaryGold,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            Row(
+                                              children: [
                                                 Expanded(
                                                   child: _DetailItem(
                                                     icon: Icons
@@ -978,10 +1100,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                             .unitOfMeasure,
                                                   ),
                                                 ),
-                                              ],
-                                            ),
-                                            Row(
-                                              children: [
+                                                const Gap(12),
                                                 Expanded(
                                                   child: _DetailItem(
                                                     icon: Icons
@@ -999,14 +1118,24 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                 const Gap(12),
                                                 Expanded(
                                                   child: _DetailItem(
-                                                    icon:
-                                                        Icons.payments_rounded,
-                                                    label: 'Unit Value',
-                                                    value:
-                                                        'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                    icon: Icons.tag_rounded,
+                                                    label: 'HS Code',
+                                                    value: (highlightedItem
+                                                                .hsCode
+                                                                ?.isNotEmpty ==
+                                                            true)
+                                                        ? highlightedItem
+                                                            .hsCode!
+                                                        : '—',
                                                   ),
                                                 ),
                                               ],
+                                            ),
+                                            _DetailItem(
+                                              icon: Icons.payments_rounded,
+                                              label: 'Value',
+                                              value:
+                                                  'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
                                             ),
                                             if (highlightedItem
                                                     .goodsDescription
@@ -1063,7 +1192,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                       label: widget
                                                               .useWarehouseSummary
                                                           ? 'Remaining (Current)'
-                                                          : 'Released (This Receipt)',
+                                                          : (_actionCountLabel ??
+                                                              'Released (This Receipt)'),
                                                       value:
                                                           '${widget.highlightEntry!.itemCount}',
                                                       valueColor: widget
@@ -1076,6 +1206,33 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                   ),
                                                 ],
                                               ),
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons.tag_rounded,
+                                                    label: 'HS Code',
+                                                    value: (highlightedItem
+                                                                .hsCode
+                                                                ?.isNotEmpty ==
+                                                            true)
+                                                        ? highlightedItem
+                                                            .hsCode!
+                                                        : '—',
+                                                  ),
+                                                ),
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon:
+                                                        Icons.payments_rounded,
+                                                    label: 'Value',
+                                                    value:
+                                                        'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
                                           ],
                                         ),
                                 ),
@@ -1440,19 +1597,33 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                                         .colors.successGreen,
                                                   ),
                                                 ),
-                                              ] else if (!isItemForfeited &&
-                                                  !isItemAbandoned) ...[
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon:
-                                                        Icons.payments_rounded,
-                                                    label: 'Unit Value',
-                                                    value:
-                                                        'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
-                                                  ),
-                                                ),
                                               ],
+                                            ],
+                                          ),
+                                          Row(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.tag_rounded,
+                                                  label: 'HS Code',
+                                                  value: (item.hsCode
+                                                              ?.isNotEmpty ==
+                                                          true)
+                                                      ? item.hsCode!
+                                                      : '—',
+                                                ),
+                                              ),
+                                              const Gap(12),
+                                              Expanded(
+                                                child: _DetailItem(
+                                                  icon: Icons.payments_rounded,
+                                                  label: 'Value',
+                                                  value:
+                                                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                                                ),
+                                              ),
                                             ],
                                           ),
                                           if (item.reasons != null &&
@@ -1668,9 +1839,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       ),
                       const Gap(16),
 
-                      // Returned By Section
+                      // Released By Section — only for an actual release back to
+                      // the owner. Disposal outcomes (destroy / forfeit /
+                      // abandoned / sold) are handled by the Central Disposal
+                      // Directorate, not "released", so this is hidden for them.
                       if (!widget.useWarehouseSummary &&
-                          widget.highlightEntry?.isReturned == true) ...[
+                          widget.highlightEntry?.isReturned == true &&
+                          !isNoChargeContext &&
+                          !isSoldContext) ...[
                         _SystemEntrySection(
                           officerDisplay: returnedOfficerDisplay,
                           badgeNumber: returnedOfficerBadge,
@@ -1814,11 +1990,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                     ],
                   ),
                 ),
-              // ── Final Disposition footer (abandoned / forfeit items) ──
-              if (widget.useLegacySummary &&
+              // ── Final Disposition footer ──
+              // Shown for every appeal-expired item (allowFinalDisposition),
+              // regardless of its forfeit/abandoned status. Hidden only while an
+              // appeal is still open, or once a final disposition is recorded.
+              if (widget.allowFinalDisposition &&
+                  widget.useLegacySummary &&
                   highlightedItem != null &&
-                  (_isAbandonedOrForfeitStatus(highlightedItem.status) ||
-                      _isAbandonOrForfeitEntry(widget.highlightEntry)) &&
                   !_hasFinalDisposition(p, highlightedItem.id))
                 material.Container(
                   padding:
@@ -2143,6 +2321,14 @@ class _CargoItemTile extends StatelessWidget {
                     Text(item.category!,
                         style: material.TextStyle(
                             color: context.colors.textMuted, fontSize: 11)),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'HS: ${(item.hsCode?.isNotEmpty == true) ? item.hsCode! : '—'}  ·  Value: LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                      style: material.TextStyle(
+                          color: context.colors.textMuted, fontSize: 11),
+                    ),
+                  ),
                   if (item.reasons != null && item.reasons!.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
@@ -2584,7 +2770,9 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                       ? context.colors.successGreen
                       : context.colors.dangerRed,
                 ),
-                if (canEdit) ...[
+                // Only show the action while the package is still pending —
+                // once delivered there is no "Mark as Not Delivered" revert.
+                if (canEdit && !delivered) ...[
                   const Gap(10),
                   SizedBox(
                     width: double.infinity,
@@ -2597,14 +2785,8 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                               height: 16,
                               child:
                                   CircularProgressIndicator(strokeWidth: 2))
-                          : Icon(
-                              delivered
-                                  ? Icons.undo_rounded
-                                  : Icons.local_shipping_rounded,
-                              size: 18),
-                      label: Text(delivered
-                          ? 'Mark as Not Delivered'
-                          : 'Mark Delivered'),
+                          : const Icon(Icons.local_shipping_rounded, size: 18),
+                      label: const Text('Mark Delivered'),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: actionColor,
                         side: BorderSide(color: actionColor.withOpacity(0.6)),
@@ -2831,6 +3013,7 @@ class _ItemRow {
   final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
   final unitOtherCtrl = TextEditingController();
   final valueCtrl = TextEditingController(text: '0');
+  final hsCodeCtrl = TextEditingController();
   final categoryCtrl = TextEditingController();
   String status = 'Detain';
   final otherStatusCtrl = TextEditingController();
@@ -2922,6 +3105,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
       }
 
       row.valueCtrl.text = widget.highlightedItem!.unitValue.toString();
+      row.hsCodeCtrl.text = widget.highlightedItem!.hsCode ?? '';
       row.categoryCtrl.text = widget.highlightedItem!.category ?? '';
       _applyStatusToRow(row, widget.highlightedItem!.status);
 
@@ -2968,6 +3152,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
         }
 
         row.valueCtrl.text = item.unitValue.toString();
+        row.hsCodeCtrl.text = item.hsCode ?? '';
         row.categoryCtrl.text = item.category ?? '';
         _applyStatusToRow(row, item.status);
         if (item.reasons != null && item.reasons!.isNotEmpty) {
@@ -3009,6 +3194,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
       item.unitOfMeasureCtrl.dispose();
       item.unitOtherCtrl.dispose();
       item.valueCtrl.dispose();
+      item.hsCodeCtrl.dispose();
       item.categoryCtrl.dispose();
       item.otherStatusCtrl.dispose();
     }
@@ -3064,6 +3250,9 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                   : row.goodsDescriptionCtrl.text.trim(),
               quantity: int.tryParse(row.qtyCtrl.text) ?? 1,
               unitValue: double.tryParse(row.valueCtrl.text) ?? 0,
+              hsCode: row.hsCodeCtrl.text.trim().isEmpty
+                  ? null
+                  : row.hsCodeCtrl.text.trim(),
               category: row.categoryCtrl.text,
               unitOfMeasure: row.unitOfMeasureCtrl.text == 'Other'
                   ? row.unitOtherCtrl.text
@@ -3088,6 +3277,9 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
                       : r.goodsDescriptionCtrl.text.trim(),
                   quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
                   unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
+                  hsCode: r.hsCodeCtrl.text.trim().isEmpty
+                      ? null
+                      : r.hsCodeCtrl.text.trim(),
                   category: r.categoryCtrl.text,
                   unitOfMeasure: r.unitOfMeasureCtrl.text == 'Other'
                       ? r.unitOtherCtrl.text
@@ -3766,6 +3958,35 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
               ),
             ],
           ),
+          const Gap(12),
+          // ── HS Code & Value (per item) ──
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: widget.row.hsCodeCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'HS Code', isDense: true),
+                  onChanged: (_) => widget.onChanged(),
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: TextFormField(
+                  controller: widget.row.valueCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Value', isDense: true, prefixText: 'LKR '),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                  ],
+                  onChanged: (_) => widget.onChanged(),
+                ),
+              ),
+            ],
+          ),
           const Gap(16),
           Row(
             children: [
@@ -3936,11 +4157,15 @@ class _PackageActionsDialog extends ConsumerStatefulWidget {
   final String packageId;
   final String itemId;
   final WarehouseEntryModel fallbackEntry;
-  // Return true when the action was applied. The dialog stays open and refreshes.
+  // Return true when the action was applied.
   final Future<bool> Function(WarehouseEntryModel held, List<int> slots)
       onRelease;
   final Future<bool> Function(
       WarehouseEntryModel held, String type, List<int> slots) onDispose;
+  // Invoked after a successful action so the caller can close the parent
+  // details dialog too (this dialog pops itself first). When null, only this
+  // dialog closes.
+  final VoidCallback? onCompleted;
 
   const _PackageActionsDialog({
     required this.packageId,
@@ -3948,6 +4173,7 @@ class _PackageActionsDialog extends ConsumerStatefulWidget {
     required this.fallbackEntry,
     required this.onRelease,
     required this.onDispose,
+    this.onCompleted,
   });
 
   @override
@@ -4007,6 +4233,12 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
       if (!mounted) return;
       if (ok) {
         _showSuccess(ctx, successMsg);
+        // Auto-close on success: pop this actions dialog, then ask the caller
+        // to close the parent details dialog so we land back on the list.
+        setState(() => _isLoading = false);
+        Navigator.of(context).pop();
+        widget.onCompleted?.call();
+        return;
       } else {
         _showError(ctx, 'Action could not be completed. Please try again.');
       }
@@ -4079,6 +4311,16 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
         widget.fallbackEntry;
     final heldCount = (total - processed.length).clamp(0, total);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Role-based action permissions.
+    // - Officers: no disposition actions enabled at all.
+    // - Admins: only Release, Re-export, Abandoned and Other are enabled.
+    //   Forfeit and Destroy are disabled for everyone.
+    final isOfficer =
+        ref.watch(currentProfileProvider)?.role == 'officer';
+    const _disabledForAll = {'Forfeit', 'Destroy'};
+    bool isActionEnabled(String key) =>
+        !isOfficer && !_disabledForAll.contains(key);
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 400),
@@ -4228,25 +4470,34 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                       // Show all actions
                       ..._actions.map((a) {
                         final isOther = a.key == 'Other';
+                        // Disabled either by role-permission or because there
+                        // are no packages left to act on.
+                        final permitted = isActionEnabled(a.key);
+                        final isDisabled = !permitted || heldCount <= 0;
+                        // Greyed colour for disabled cards/labels.
+                        final cardColor =
+                            isDisabled ? context.colors.textMuted : a.color;
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            material.Card(
+                            material.Opacity(
+                              opacity: isDisabled ? 0.45 : 1.0,
+                              child: material.Card(
                               margin: const EdgeInsets.only(bottom: 12),
                               elevation: 0,
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12),
                                 side: BorderSide(
                                   color: (isOther && _otherExpanded)
-                                      ? a.color.withOpacity(0.6)
-                                      : a.color.withOpacity(0.2),
+                                      ? cardColor.withOpacity(0.6)
+                                      : cardColor.withOpacity(0.2),
                                   width: (isOther && _otherExpanded) ? 1.5 : 1,
                                 ),
                               ),
-                              color: a.color.withOpacity(0.04),
+                              color: cardColor.withOpacity(0.04),
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(12),
-                                onTap: heldCount <= 0
+                                onTap: isDisabled
                                     ? null
                                     : () async {
                                   if (isOther) {
@@ -4288,10 +4539,11 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                     Container(
                                       padding: const EdgeInsets.all(10),
                                       decoration: BoxDecoration(
-                                        color: a.color.withOpacity(0.12),
+                                        color: cardColor.withOpacity(0.12),
                                         borderRadius: BorderRadius.circular(10),
                                       ),
-                                      child: Icon(a.icon, color: a.color, size: 20),
+                                      child: Icon(a.icon,
+                                          color: cardColor, size: 20),
                                     ),
                                     const Gap(16),
                                     Expanded(
@@ -4302,7 +4554,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                               style: TextStyle(
                                                   fontWeight: FontWeight.w700,
                                                   fontSize: 15,
-                                                  color: a.color)),
+                                                  color: cardColor)),
                                           const Gap(4),
                                           Text(a.description,
                                               style: TextStyle(
@@ -4318,13 +4570,14 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                                               ? Icons.expand_less_rounded
                                               : Icons.expand_more_rounded)
                                           : Icons.chevron_right_rounded,
-                                      color: a.color.withOpacity(0.6),
+                                      color: cardColor.withOpacity(0.6),
                                       size: 22,
                                     ),
                                   ]),
                                 ),
                               ),
                             ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.05),
+                            ),
                             // Inline "Other" text field
                             if (isOther && _otherExpanded)
                               Padding(
@@ -4464,15 +4717,6 @@ class _ActionDef {
 
 // ── Final-disposition helpers ─────────────────────────────────────────────────
 
-bool _isAbandonedOrForfeitStatus(String? s) {
-  final v = (s ?? '').trim().toLowerCase();
-  return v == 'abandoned' ||
-      v == 'forfeit' ||
-      v == 'forfeited' ||
-      v == 'forfiet' ||
-      v == 'confiscated';
-}
-
 bool _hasFinalDisposition(PackageModel pkg, String itemId) {
   return pkg.warehouseEntries.any((e) =>
       e.packageItemId == itemId &&
@@ -4557,12 +4801,17 @@ class _FinalDispositionDialog extends StatefulWidget {
   final int qty;
   final bool isOfficer;
   final Future<void> Function(String type, String? notes) onConfirm;
+  // When supplied (Forfeited screen), Sale → 'sale' and Destroy → 'destruction'
+  // route here to open the Central Disposal request flow instead of writing a
+  // [FINAL:…] entry. When null, Sale / Destroy stay disabled.
+  final void Function(String disposition)? onRequestDisposal;
 
   const _FinalDispositionDialog({
     required this.item,
     required this.qty,
     required this.isOfficer,
     required this.onConfirm,
+    this.onRequestDisposal,
   });
 
   @override
@@ -4593,7 +4842,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'SOLD',
       icon: Icons.sell_rounded,
       label: 'Sale',
-      description: 'Goods sold / disposed by sale.',
+      description: 'Send a disposal request to the Central Disposal Directorate.',
       color: Color(0xFFE8A826),
       adminOnly: false,
     ),
@@ -4601,7 +4850,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'DESTROYED',
       icon: Icons.delete_forever_rounded,
       label: 'Destroy',
-      description: 'Goods destroyed.',
+      description: 'Send a disposal request to the Central Disposal Directorate.',
       color: Color(0xFFE64A19),
       adminOnly: false,
     ),
@@ -4623,12 +4872,24 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
     ),
   ];
 
+  // Sale and Destroy are disabled for everyone here — they are recorded by the
+  // Central Disposal Directorate, not from this dialog.
+  static const _requestActions = {'SOLD', 'DESTROYED'};
+
+  // Whether THIS user may trigger the given action.
+  // - Officers: nothing is enabled.
+  // - Sale / Destroy: disabled for everyone (greyed out).
+  // - Admins: Release / Re-export / Other.
+  bool _isActionEnabled(_FinalActionDef a) {
+    if (widget.isOfficer) return false;
+    if (_requestActions.contains(a.type)) return false;
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Officers cannot see admin-only actions
-    final visible = _actions
-        .where((a) => !(a.adminOnly && widget.isOfficer))
-        .toList();
+    // All actions are shown; disabled ones are greyed out and non-tappable.
+    final visible = _actions;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return TweenAnimationBuilder<double>(
@@ -4754,7 +5015,16 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       if (widget.isOfficer) ...[
                         const Gap(6),
                         Text(
-                          'Release, Re-export and Other require an administrator.',
+                          'Final disposition is restricted to administrators.',
+                          style: material.TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic),
+                        ),
+                      ] else ...[
+                        const Gap(6),
+                        Text(
+                          'Sale / Destroy go to the Central Disposal Directorate as a request; Release / Re-export / Other are recorded directly.',
                           style: material.TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
@@ -4764,7 +5034,12 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       const Gap(16),
                       ...visible.map((a) {
                 final isOther = a.type == 'OTHER';
-                return Column(
+                final isEnabled = _isActionEnabled(a);
+                final cardColor =
+                    isEnabled ? a.color : context.colors.textMuted;
+                return Opacity(
+                  opacity: isEnabled ? 1.0 : 0.45,
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     material.Card(
@@ -4774,17 +5049,24 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                         borderRadius: BorderRadius.circular(12),
                         side: BorderSide(
                           color: (isOther && _otherExpanded)
-                              ? a.color.withOpacity(0.6)
-                              : a.color.withOpacity(0.2),
+                              ? cardColor.withOpacity(0.6)
+                              : cardColor.withOpacity(0.2),
                           width: (isOther && _otherExpanded) ? 1.5 : 1,
                         ),
                       ),
-                      color: a.color.withOpacity(0.04),
+                      color: cardColor.withOpacity(0.04),
                       child: InkWell(
                         borderRadius: BorderRadius.circular(12),
-                        onTap: () {
+                        onTap: !isEnabled
+                            ? null
+                            : () {
                           if (isOther) {
                             setState(() => _otherExpanded = !_otherExpanded);
+                          } else if (_requestActions.contains(a.type)) {
+                            // Sale / Destroy → disposal request (not a direct
+                            // [FINAL:…] write).
+                            widget.onRequestDisposal!(
+                                a.type == 'SOLD' ? 'sale' : 'destruction');
                           } else {
                             widget.onConfirm(a.type, null);
                           }
@@ -4796,10 +5078,10 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                             Container(
                               padding: const EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: a.color.withOpacity(0.12),
+                                color: cardColor.withOpacity(0.12),
                                 borderRadius: BorderRadius.circular(8),
                               ),
-                              child: Icon(a.icon, color: a.color, size: 20),
+                              child: Icon(a.icon, color: cardColor, size: 20),
                             ),
                             const Gap(14),
                             Expanded(
@@ -4811,14 +5093,31 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                         style: material.TextStyle(
                                             fontWeight: FontWeight.w700,
                                             fontSize: 14,
-                                            color: a.color)),
-                                    if (a.adminOnly) ...[
+                                            color: cardColor)),
+                                    if (_requestActions.contains(a.type)) ...[
                                       const Gap(6),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
                                             horizontal: 6, vertical: 1),
                                         decoration: BoxDecoration(
-                                          color: a.color.withOpacity(0.12),
+                                          color: cardColor.withOpacity(0.12),
+                                          borderRadius:
+                                              BorderRadius.circular(4),
+                                        ),
+                                        child: Text('CENTRAL DISPOSAL',
+                                            style: material.TextStyle(
+                                                fontSize: 8,
+                                                fontWeight: FontWeight.w800,
+                                                color: cardColor,
+                                                letterSpacing: 0.5)),
+                                      ),
+                                    ] else if (a.adminOnly) ...[
+                                      const Gap(6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 6, vertical: 1),
+                                        decoration: BoxDecoration(
+                                          color: cardColor.withOpacity(0.12),
                                           borderRadius:
                                               BorderRadius.circular(4),
                                         ),
@@ -4826,7 +5125,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                             style: material.TextStyle(
                                                 fontSize: 8,
                                                 fontWeight: FontWeight.w800,
-                                                color: a.color,
+                                                color: cardColor,
                                                 letterSpacing: 0.5)),
                                       ),
                                     ],
@@ -4845,7 +5144,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                       ? Icons.expand_less_rounded
                                       : Icons.expand_more_rounded)
                                   : Icons.chevron_right_rounded,
-                              color: a.color.withOpacity(0.6),
+                              color: cardColor.withOpacity(0.6),
                               size: 20,
                             ),
                           ]),
@@ -4885,7 +5184,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                         ),
                       ),
                   ],
-                ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.05);
+                ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.05),
+                );
               }),
                     ],
                   ),

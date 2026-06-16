@@ -515,6 +515,10 @@ class _ReturnedPackagesScreenState
                               DataColumn2(
                                 label: Text('Item Name'), size: ColumnSize.M),
                               DataColumn2(
+                                label: Text('HS Code'),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
+                              DataColumn2(
                                 label: Text('Released Qty'),
                                 size: ColumnSize.S,
                                 fixedWidth: 120),
@@ -540,6 +544,18 @@ class _ReturnedPackagesScreenState
                                             fontWeight: FontWeight.w600))),
                                     DataCell(Text(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
+                                    DataCell(Text((() {
+                                      final hs = row.package.items
+                                          .where((i) =>
+                                              i.id == row.entry.packageItemId)
+                                          .firstOrNull
+                                          ?.hsCode;
+                                      return (hs != null && hs.isNotEmpty)
+                                          ? hs
+                                          : '—';
+                                    })(),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 12))),
                                     DataCell(Center(
                                         child: Text(
                                             '${row.entry.itemCount}'))),

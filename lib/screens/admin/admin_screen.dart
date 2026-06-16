@@ -136,7 +136,10 @@ class _OfficersTab extends ConsumerWidget {
   const _OfficersTab();
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profiles = ref.watch(allProfilesProvider);
+    // Admins manage only their own yard's staff. [myYardProfilesProvider]
+    // filters to the current admin's yard and drops the head-office Appeal /
+    // Disposal directorate accounts.
+    final profiles = ref.watch(myYardProfilesProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -167,7 +170,7 @@ class _OfficersTab extends ConsumerWidget {
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
             error: (e, _) => ErrorView(
-                error: e, onRetry: () => ref.refresh(allProfilesProvider)),
+                error: e, onRetry: () => ref.refresh(myYardProfilesProvider)),
             data: (list) => Container(
               width: double.infinity,
               decoration: BoxDecoration(
@@ -1414,7 +1417,11 @@ class _CategoriesTab extends ConsumerWidget {
 
     showDialog(
         context: context,
-        builder: (ctx) => StatefulBuilder(builder: (ctx, setState) {
+        // Consumer so the dialog rebuilds when warehousesProvider resolves —
+        // capturing the parent tab's `ref` here would freeze it on whatever
+        // state the provider had when the dialog opened (often loading).
+        builder: (ctx) => Consumer(builder: (ctx, ref, _) {
+          return StatefulBuilder(builder: (ctx, setState) {
               final warehouses = ref.watch(warehousesProvider);
               return StyledFormDialog(
                 label: 'Item Category',
@@ -1513,7 +1520,8 @@ class _CategoriesTab extends ConsumerWidget {
                       }),
                 ],
               );
-            }));
+            });
+        }));
   }
 
   void _showEditCategoryDialog(
@@ -1527,7 +1535,11 @@ class _CategoriesTab extends ConsumerWidget {
 
     showDialog(
         context: context,
-        builder: (ctx) => StatefulBuilder(builder: (ctx, setState) {
+        // Consumer so the dialog rebuilds when warehousesProvider resolves —
+        // capturing the parent tab's `ref` here would freeze it on whatever
+        // state the provider had when the dialog opened (often loading).
+        builder: (ctx) => Consumer(builder: (ctx, ref, _) {
+          return StatefulBuilder(builder: (ctx, setState) {
               final warehouses = ref.watch(warehousesProvider);
               return StyledFormDialog(
                 label: 'Item Category',
@@ -1636,7 +1648,8 @@ class _CategoriesTab extends ConsumerWidget {
                       }),
                 ],
               );
-            }));
+            });
+        }));
   }
 }
 

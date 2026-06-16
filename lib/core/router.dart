@@ -14,9 +14,11 @@ import '../screens/appeal/appeal_dashboard_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/inspection/inspection_screen.dart';
 import '../screens/warehouses/warehouses_screen.dart';
+import '../screens/warehouses/warehouse_capacity_screen.dart';
 import '../screens/packages/packages_screen.dart';
 import '../screens/packages/returned_packages_screen.dart';
 import '../screens/packages/abandoned_packages_screen.dart';
+import '../screens/packages/other_packages_screen.dart';
 import '../screens/packages/disposition_category_screen.dart';
 import '../screens/admin/admin_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
@@ -81,10 +83,12 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/dashboard', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DashboardScreen())),
       GoRoute(path: '/inspection', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const InspectionScreen())),
       GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),
+      GoRoute(path: '/zone-capacity', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehouseCapacityScreen())),
       GoRoute(path: '/packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const PackagesScreen())),
       GoRoute(path: '/returned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ReturnedPackagesScreen())),
       GoRoute(path: '/abandoned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AbandonedPackagesScreen())),
       GoRoute(path: '/forfeited-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ForfeitedPackagesScreen())),
+      GoRoute(path: '/other-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const OtherPackagesScreen())),
       GoRoute(path: '/sold-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/sold-packages', title: 'Sold Packages', subtitle: 'Goods disposed by sale', countLabel: 'Sold', finalTag: 'SOLD'))),
       GoRoute(path: '/destroyed-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/destroyed-packages', title: 'Destroyed Packages', subtitle: 'Goods that have been destroyed', countLabel: 'Destroyed', finalTag: 'DESTROYED'))),
       GoRoute(path: '/reexported-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/reexported-packages', title: 'Re-exported Packages', subtitle: 'Goods sent back to country of origin', countLabel: 'Re-exported', finalTag: 'RE-EXPORTED'))),

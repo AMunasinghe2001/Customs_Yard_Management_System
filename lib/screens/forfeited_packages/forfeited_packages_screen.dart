@@ -52,16 +52,24 @@ class ForfeitedPackagesScreen extends ConsumerStatefulWidget {
 class _ForfeitRow {
   final ForfeitedPackageModel forfeited;
   final String itemName;
+  final String? hsCode;
   final int qty;
   final DateTime forfeitedDate;
   final String officer;
+  // The specific item + its forfeit warehouse entry this row represents, so
+  // the details dialog can highlight exactly this item (like the Abandoned page).
+  final PackageItem? item;
+  final WarehouseEntryModel? entry;
 
   const _ForfeitRow({
     required this.forfeited,
     required this.itemName,
+    this.hsCode,
     required this.qty,
     required this.forfeitedDate,
     required this.officer,
+    this.item,
+    this.entry,
   });
 }
 
@@ -69,6 +77,36 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
   String _searchQuery = '';
   DateTimeRange? _dateRange;
   String? _yearFilter;
+
+  /// Submits a single-package disposal request (Sale / Destruction) to the
+  /// Central Disposal Directorate — used by the details popup's Final
+  /// Disposition Sale/Destroy buttons. The package then leaves the Forfeited
+  /// list (it is now "requested") and surfaces in the directorate's queue.
+  Future<void> _requestSingleDisposal(
+      ForfeitedPackageModel fp, String disposition) async {
+    try {
+      await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
+            requestDate: DateTime.now(),
+            dispositions: {fp.id: disposition},
+          );
+      ref.read(disposalRequestsRefreshProvider.notifier).trigger();
+      ref.invalidate(forfeitedPackagesProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.successGreen,
+          content: Text(
+              'Disposal request sent for ${fp.srNumber} (${disposition == 'sale' ? 'Sale' : 'Destruction'}).'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.dangerRed,
+          content: Text('Error: $e'),
+        ));
+      }
+    }
+  }
 
   bool _isForfeitStatus(String? status) {
     if (status == null) return false;
@@ -99,10 +137,17 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
       final pkg = fp.packageDetails;
       final items = pkg?.items ?? [];
       bool addedAny = false;
+      // True once at least one item has been resolved to a final disposition
+      // (sold / destroyed / re-exported / …). Such a package has left the
+      // forfeit lifecycle, so we must NOT fall back to a summary row for it.
+      bool anyItemFinalized = false;
 
       for (final item in items) {
         // Skip items that have moved to a final disposition.
-        if (pkg != null && _itemHasFinalDisposition(pkg, item.id)) continue;
+        if (pkg != null && _itemHasFinalDisposition(pkg, item.id)) {
+          anyItemFinalized = true;
+          continue;
+        }
 
         final itemEntries = pkg!.warehouseEntries
             .where((e) => e.packageItemId == item.id)
@@ -114,9 +159,12 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
           rows.add(_ForfeitRow(
             forfeited: fp,
             itemName: item.itemName,
+            hsCode: item.hsCode,
             qty: entry.itemCount,
             forfeitedDate: entry.returnedAt ?? fp.forfeitedAt,
             officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
+            item: item,
+            entry: entry,
           ));
           addedAny = true;
         }
@@ -126,19 +174,36 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
           rows.add(_ForfeitRow(
             forfeited: fp,
             itemName: item.itemName,
+            hsCode: item.hsCode,
             qty: item.quantity,
             forfeitedDate: fp.forfeitedAt,
             officer: '—',
+            item: item,
+            // No forfeit disposition event — fall back to any warehouse entry
+            // for this item so the dialog can still show its details.
+            entry: itemEntries.firstOrNull,
           ));
           addedAny = true;
         }
       }
 
-      // 3. Legacy / no item detail — show a single summary row
-      if (!addedAny) {
+      // The Appeal Directorate decided this package should be Sold / Destroyed
+      // but the yard admin hasn't sent the disposal request yet — it is still
+      // pending an admin action. Keep it on the table (even if some items carry
+      // an unrelated [FINAL:…] tag) so the admin can see and act on it.
+      final pendingAppealAction = fp.appealRequestDisposition != null;
+
+      // 3. Legacy / no item detail — show a single summary row. Skipped when an
+      //    item has already been finalized (sold / destroyed / …) AND there's no
+      //    pending appeal action: such a package now lives on its outcome page,
+      //    not the Forfeited list.
+      if (!addedAny && (!anyItemFinalized || pendingAppealAction)) {
         rows.add(_ForfeitRow(
           forfeited: fp,
-          itemName: 'Multiple/Unspecified',
+          itemName: items.isNotEmpty ? items.first.itemName : 'Multiple/Unspecified',
+          hsCode: items.isNotEmpty ? items.first.hsCode : null,
+          item: items.isNotEmpty ? items.first : null,
+          entry: pkg?.warehouseEntries.firstOrNull,
           qty: items.fold<int>(0, (s, i) => s + i.quantity),
           forfeitedDate: fp.forfeitedAt,
           officer: '—',
@@ -166,9 +231,18 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
               // ── Header ──────────────────────────────────────────
               forfeitedAsync.when(
                 data: (packages) {
-                  final totalCount = packages.length;
-                  final appealingCount = packages.where((p) => !p.isAppealExpired).length;
-                  final expiredCount = packages.where((p) => p.isAppealExpired).length;
+                  // Count the SAME rows the table renders (one per forfeited
+                  // item / disposition event) so the header stats always match
+                  // the list below — not the raw package count, which includes
+                  // packages that produce no forfeit rows (e.g. fully sold).
+                  final headerRows = _buildForfeitRows(packages);
+                  final totalCount = headerRows.length;
+                  final appealingCount = headerRows
+                      .where((r) => !r.forfeited.isAppealExpired)
+                      .length;
+                  final expiredCount = headerRows
+                      .where((r) => r.forfeited.isAppealExpired)
+                      .length;
 
                   return SizedBox(
                     width: double.infinity,
@@ -369,6 +443,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
+                            DataColumn2(label: Text('HS Code'), size: ColumnSize.S, fixedWidth: 110),
                             DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 70),
                             DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(label: Text('Forfeited Date'), size: ColumnSize.M),
@@ -389,6 +464,12 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                               cells: [
                                 DataCell(Text(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
                                 DataCell(Text(row.itemName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500))),
+                                DataCell(Text(
+                                    (row.hsCode != null && row.hsCode!.isNotEmpty)
+                                        ? row.hsCode!
+                                        : '—',
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12))),
                                 DataCell(Text('${row.qty}')),
                                 DataCell(Text(pkg.consigneeName, overflow: TextOverflow.ellipsis)),
                                 DataCell(Text(DateFormat('yyyy-MM-dd').format(row.forfeitedDate))),
@@ -436,17 +517,71 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                       color: context
                                                           .colors.warningAmber),
                                                   const Gap(4),
-                                                  Text('APPEAL HOLD',
-                                                      style: TextStyle(
-                                                          fontSize: 10.5,
-                                                          color: context.colors
-                                                              .warningAmber,
-                                                          fontWeight:
-                                                              FontWeight.w800)),
+                                                  Flexible(
+                                                    child: Text('APPEAL HOLD',
+                                                        overflow: TextOverflow
+                                                            .ellipsis,
+                                                        style: TextStyle(
+                                                            fontSize: 10.5,
+                                                            color: context.colors
+                                                                .warningAmber,
+                                                            fontWeight:
+                                                                FontWeight
+                                                                    .w800)),
+                                                  ),
                                                 ]),
                                           ),
                                         )
-                                      : Container(
+                                      : pkg.hasAppealDecision
+                                          // Appeal processed — directorate told
+                                          // the yard what to do with this package.
+                                          ? Tooltip(
+                                              message:
+                                                  'Appeal decision: ${pkg.appealDecisionLabel}',
+                                              child: Container(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 10,
+                                                        vertical: 4),
+                                                decoration: BoxDecoration(
+                                                  color: context
+                                                      .colors.accentLightBlue
+                                                      .withOpacity(0.12),
+                                                  borderRadius:
+                                                      BorderRadius.circular(6),
+                                                  border: Border.all(
+                                                      color: context.colors
+                                                          .accentLightBlue
+                                                          .withOpacity(0.4)),
+                                                ),
+                                                child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    children: [
+                                                      Icon(Icons.gavel_rounded,
+                                                          size: 12,
+                                                          color: context.colors
+                                                              .accentLightBlue),
+                                                      const Gap(4),
+                                                      Flexible(
+                                                        child: Text(
+                                                            '→ ${pkg.appealDecisionLabel}',
+                                                            overflow:
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style: TextStyle(
+                                                                fontSize: 10.5,
+                                                                color: context
+                                                                    .colors
+                                                                    .accentLightBlue,
+                                                                fontWeight:
+                                                                    FontWeight
+                                                                        .w800)),
+                                                      ),
+                                                    ]),
+                                              ),
+                                            )
+                                          : Container(
                                           padding: const EdgeInsets.symmetric(
                                               horizontal: 10, vertical: 4),
                                           decoration: BoxDecoration(
@@ -478,7 +613,22 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                   PackageDetailsDialog(
                                                 package: pkg.packageDetails!,
                                                 storageRate: storageRate,
+                                                highlightEntry: row.entry,
                                                 useLegacySummary: true,
+                                                appealDecisionLabel:
+                                                    pkg.hasAppealDecision
+                                                        ? pkg.appealDecisionLabel
+                                                        : null,
+                                                // Final disposition only once the
+                                                // appeal window has passed.
+                                                allowFinalDisposition:
+                                                    pkg.isAppealExpired,
+                                                // Sale / Destroy → disposal
+                                                // request to Central Disposal.
+                                                onSaleOrDestroyRequest:
+                                                    (disposition) =>
+                                                        _requestSingleDisposal(
+                                                            pkg, disposition),
                                               ),
                                             ),
                                   ),

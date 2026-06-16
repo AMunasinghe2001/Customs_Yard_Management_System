@@ -59,6 +59,18 @@ class StatusChip extends StatelessWidget {
         label = 'FORFEITED';
         break;
       default:
+        // "Other: <custom text>" disposition marker → show the custom label.
+        if (status.toLowerCase().startsWith('other:')) {
+          color = context.colors.warningAmber;
+          final custom = status.substring(6).trim();
+          label = custom.isEmpty ? 'OTHER' : custom.toUpperCase();
+          break;
+        }
+        if (status.toLowerCase() == 'other') {
+          color = context.colors.warningAmber;
+          label = 'OTHER';
+          break;
+        }
         color = context.colors.textMuted;
         label = status.isNotEmpty ? status.toUpperCase() : 'PENDING';
     }

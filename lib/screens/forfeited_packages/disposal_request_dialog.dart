@@ -25,6 +25,9 @@ class DisposalRequestDialog extends ConsumerStatefulWidget {
 class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
   DateTime _requestDate = DateTime.now();
   bool _isLoading = false;
+  // Guards the one-time pre-selection of appeal-decided packages so the user's
+  // later edits aren't overwritten on every rebuild.
+  bool _appliedAppealDefaults = false;
 
   @override
   void initState() {
@@ -32,6 +35,24 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
     // Start the selection fresh every time the form opens.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(selectedRequestDispositionsProvider.notifier).state = {};
+    });
+  }
+
+  /// Pre-selects packages the Appeal Directorate already decided to Sell /
+  /// Destroy, with that disposition pre-filled — so the yard just confirms.
+  /// Runs once, after the requestable list first loads.
+  void _applyAppealDecisionDefaults(List<ForfeitedPackageModel> packages) {
+    if (_appliedAppealDefaults) return;
+    final defaults = <String, String>{};
+    for (final p in packages) {
+      final d = p.appealRequestDisposition; // 'destruction' | 'sale' | null
+      if (d != null) defaults[p.id] = d;
+    }
+    _appliedAppealDefaults = true;
+    if (defaults.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final notifier = ref.read(selectedRequestDispositionsProvider.notifier);
+      notifier.state = {...defaults, ...notifier.state};
     });
   }
 
@@ -332,6 +353,9 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                             ),
                           ),
                           data: (packages) {
+                            // Pre-fill Sale / Destroy for appeal-decided
+                            // packages (runs once after the list loads).
+                            _applyAppealDecisionDefaults(packages);
                             if (packages.isEmpty) {
                               return Padding(
                                 padding: const EdgeInsets.all(32.0),
@@ -618,17 +642,19 @@ class _PackageRequestRow extends StatelessWidget {
   }
 }
 
-/// Small Forfeit / Abandoned tag so the yard sees where each requestable
-/// package came from.
+/// Small Forfeit / Abandoned / Other tag so the yard sees where each
+/// requestable package came from.
 class _SourceChip extends StatelessWidget {
-  final String source; // 'forfeit' | 'abandoned'
+  final String source; // 'forfeit' | 'abandoned' | 'other'
   const _SourceChip({required this.source});
 
   @override
   Widget build(BuildContext context) {
-    final isAbandoned = source == 'abandoned';
-    final color =
-        isAbandoned ? context.colors.heldOrange : context.colors.accentBlue;
+    final (label, color) = switch (source) {
+      'abandoned' => ('Abandoned', context.colors.heldOrange),
+      'other' => ('Other', context.colors.warningAmber),
+      _ => ('Forfeit', context.colors.accentBlue),
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
       decoration: BoxDecoration(
@@ -636,7 +662,7 @@ class _SourceChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(5),
         border: Border.all(color: color.withOpacity(0.4)),
       ),
-      child: Text(isAbandoned ? 'Abandoned' : 'Forfeit',
+      child: Text(label,
           style: TextStyle(
               color: color, fontSize: 9.5, fontWeight: FontWeight.w800)),
     );

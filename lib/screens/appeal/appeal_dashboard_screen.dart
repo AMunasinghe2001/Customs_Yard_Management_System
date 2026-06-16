@@ -286,10 +286,6 @@ class AppealDashboardScreen extends ConsumerWidget {
                                   size: ColumnSize.S,
                                   fixedWidth: 140),
                               DataColumn2(
-                                  label: Center(child: Text('Appeal Hold')),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 150),
-                              DataColumn2(
                                   label: Center(child: Text('Details')),
                                   size: ColumnSize.S,
                                   fixedWidth: 70),
@@ -317,8 +313,6 @@ class AppealDashboardScreen extends ConsumerWidget {
                                                       .colors.textSecondary,
                                               fontWeight: FontWeight.w600))),
                                       DataCell(_statusChip(context, f)),
-                                      DataCell(
-                                          Center(child: _holdChip(context, f))),
                                       DataCell(Center(
                                         child: IconButton(
                                           icon: Icon(Icons.info_outline_rounded,
@@ -350,10 +344,12 @@ class AppealDashboardScreen extends ConsumerWidget {
   Widget _statusChip(BuildContext context, ForfeitedPackageModel f) {
     final (label, color) = f.isAppealHeld
         ? ('On Appeal Hold', context.colors.warningAmber)
-        : f.isAppealExpired
-            ? ('Window Passed', context.colors.dangerRed)
-            : ('In Appeal · ${f.daysUntilDeadline}d',
-                context.colors.successGreen);
+        : f.hasAppealDecision
+            ? ('Decided · ${f.appealDecisionLabel}', context.colors.accentLightBlue)
+            : f.isAppealExpired
+                ? ('Window Passed', context.colors.dangerRed)
+                : ('In Appeal · ${f.daysUntilDeadline}d',
+                    context.colors.successGreen);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -368,30 +364,6 @@ class AppealDashboardScreen extends ConsumerWidget {
     );
   }
 
-  // Appeal-hold STATUS chip only — the actual Hold/Release action now lives in
-  // the package details popup footer (opened via the Details ⓘ button).
-  Widget _holdChip(BuildContext context, ForfeitedPackageModel f) {
-    if (f.isAppealHeld) {
-      final amber = context.colors.warningAmber;
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: amber.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: amber.withOpacity(0.4)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.lock_rounded, size: 12, color: amber),
-          const Gap(5),
-          Text('On Hold',
-              style: TextStyle(
-                  color: amber, fontSize: 11, fontWeight: FontWeight.w700)),
-        ]),
-      );
-    }
-    return Text('—', style: TextStyle(color: context.colors.textMuted));
-  }
-
   // Opens the package details popup with a footer Hold-Appeal / Release action.
   void _openDetails(BuildContext context, WidgetRef ref,
       ForfeitedPackageModel f, Map<DateTime, double> storageRate) {
@@ -403,11 +375,11 @@ class AppealDashboardScreen extends ConsumerWidget {
     String? hint;
     VoidCallback? action;
     if (f.isAppealHeld) {
-      label = 'Release Hold';
-      icon = Icons.lock_open_rounded;
-      color = context.colors.dangerRed;
-      hint = 'Lift the appeal hold — this package may again be sold/destroyed';
-      action = () => _setHold(context, ref, f, false);
+      label = 'Release Hold & Decide';
+      icon = Icons.gavel_rounded;
+      color = context.colors.successGreen;
+      hint = 'Lift the hold and record what the yard should do with this package';
+      action = () => _showDecisionDialog(context, ref, f);
     } else if (canHold) {
       label = 'Hold Appeal';
       icon = Icons.gavel_rounded;
@@ -452,6 +424,40 @@ class AppealDashboardScreen extends ConsumerWidget {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           backgroundColor: context.colors.dangerRed,
           content: Text(msg),
+        ));
+      }
+    }
+  }
+
+  // Asks the directorate which disposition the yard should carry out, then
+  // lifts the hold and records the decision.
+  Future<void> _showDecisionDialog(
+      BuildContext context, WidgetRef ref, ForfeitedPackageModel f) async {
+    final result = await showDialog<_AppealDecisionResult>(
+      context: context,
+      builder: (_) => _AppealDecisionDialog(srNumber: f.srNumber),
+    );
+    if (result == null) return; // cancelled
+    if (!context.mounted) return;
+    try {
+      await ref.read(appealServiceProvider).releaseAppealWithDecision(
+            f.id,
+            result.decision,
+            note: result.note,
+          );
+      ref.invalidate(appealForfeitedPackagesProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.successGreen,
+          content: Text(
+              'Hold lifted — ${f.srNumber} forwarded to yard for: ${result.label}.'),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.dangerRed,
+          content: Text('Error: $e'),
         ));
       }
     }
@@ -549,6 +555,273 @@ class _StatChip extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   letterSpacing: 0.5)),
         ],
+      ),
+    );
+  }
+}
+
+// ── Appeal decision picker ────────────────────────────────────────────────────
+// Returned when the directorate lifts a hold and chooses what the owning yard
+// should do next with the package.
+class _AppealDecisionResult {
+  final String decision; // RELEASE / SALE / DESTROY / RE-EXPORT / OTHER
+  final String? note; // custom outcome text for OTHER
+  final String label; // human-friendly label for the snackbar
+  const _AppealDecisionResult(this.decision, this.label, {this.note});
+}
+
+class _AppealDecisionOption {
+  final String key;
+  final String label;
+  final String description;
+  final IconData icon;
+  final Color color;
+  const _AppealDecisionOption(
+      this.key, this.label, this.description, this.icon, this.color);
+}
+
+class _AppealDecisionDialog extends StatefulWidget {
+  final String srNumber;
+  const _AppealDecisionDialog({required this.srNumber});
+
+  @override
+  State<_AppealDecisionDialog> createState() => _AppealDecisionDialogState();
+}
+
+class _AppealDecisionDialogState extends State<_AppealDecisionDialog> {
+  String? _selected;
+  final _otherCtrl = TextEditingController();
+
+  static const _options = [
+    _AppealDecisionOption('RELEASE', 'Release to owner',
+        'Return the goods to the owner.', Icons.assignment_return_rounded,
+        Color(0xFF43A047)),
+    _AppealDecisionOption('SALE', 'Sell',
+        'Dispose of the goods by sale.', Icons.sell_rounded,
+        Color(0xFFE8A826)),
+    _AppealDecisionOption('DESTROY', 'Destroy',
+        'Destroy the goods.', Icons.delete_forever_rounded,
+        Color(0xFFE64A19)),
+    _AppealDecisionOption('RE-EXPORT', 'Re-export',
+        'Send the goods back to country of origin.',
+        Icons.flight_takeoff_rounded, Color(0xFF00ACC1)),
+    _AppealDecisionOption('OTHER', 'Other',
+        'A custom outcome — describe below.', Icons.more_horiz_rounded,
+        Color(0xFF7E57C2)),
+  ];
+
+  @override
+  void dispose() {
+    _otherCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.colors.accentBlue;
+    final isOther = _selected == 'OTHER';
+    final canConfirm = _selected != null &&
+        (!isOther || _otherCtrl.text.trim().isNotEmpty);
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
+        width: 520,
+        constraints: const BoxConstraints(maxHeight: 720),
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBg,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              decoration: BoxDecoration(
+                color: accent,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.gavel_rounded,
+                      color: Colors.white, size: 22),
+                ),
+                const Gap(14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('APPEAL DECISION',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w800)),
+                      Text(widget.srNumber,
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      color: Colors.white.withOpacity(0.8)),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ]),
+            ),
+            // Body
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'The appeal has been processed. Choose what the owning yard '
+                      'should do with this package — the yard will act on this decision.',
+                      style: TextStyle(
+                          color: context.colors.textSecondary, fontSize: 13),
+                    ),
+                    const Gap(16),
+                    ..._options.map((o) {
+                      final selected = _selected == o.key;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () => setState(() => _selected = o.key),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 12),
+                            decoration: BoxDecoration(
+                              color: o.color
+                                  .withOpacity(selected ? 0.10 : 0.04),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: o.color.withOpacity(selected ? 0.7 : 0.2),
+                                width: selected ? 1.6 : 1,
+                              ),
+                            ),
+                            child: Row(children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: o.color.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(o.icon, color: o.color, size: 20),
+                              ),
+                              const Gap(14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  children: [
+                                    Text(o.label,
+                                        style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                            color: o.color)),
+                                    const Gap(2),
+                                    Text(o.description,
+                                        style: TextStyle(
+                                            fontSize: 12,
+                                            color: context.colors.textMuted)),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                selected
+                                    ? Icons.radio_button_checked_rounded
+                                    : Icons.radio_button_unchecked_rounded,
+                                color: selected
+                                    ? o.color
+                                    : context.colors.textMuted,
+                                size: 20,
+                              ),
+                            ]),
+                          ),
+                        ),
+                      );
+                    }),
+                    if (isOther) ...[
+                      const Gap(4),
+                      TextField(
+                        controller: _otherCtrl,
+                        autofocus: true,
+                        onChanged: (_) => setState(() {}),
+                        decoration: const InputDecoration(
+                          labelText: 'Describe the outcome *',
+                          hintText: 'e.g. Transfer to another authority',
+                          isDense: true,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            // Footer
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              decoration: BoxDecoration(
+                color: context.colors.surfaceDark,
+                borderRadius:
+                    const BorderRadius.vertical(bottom: Radius.circular(20)),
+                border:
+                    Border(top: BorderSide(color: context.colors.borderColor)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Cancel'),
+                  ),
+                  const Gap(8),
+                  ElevatedButton.icon(
+                    icon: const Icon(Icons.check_rounded, size: 18),
+                    label: const Text('Confirm & Release Hold'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor:
+                          context.colors.textMuted.withOpacity(0.3),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 14),
+                    ),
+                    onPressed: !canConfirm
+                        ? null
+                        : () {
+                            final opt = _options
+                                .firstWhere((o) => o.key == _selected);
+                            final note = isOther
+                                ? _otherCtrl.text.trim()
+                                : null;
+                            final label =
+                                isOther ? _otherCtrl.text.trim() : opt.label;
+                            Navigator.pop(
+                                context,
+                                _AppealDecisionResult(opt.key, label,
+                                    note: note));
+                          },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

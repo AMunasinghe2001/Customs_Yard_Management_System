@@ -333,6 +333,10 @@ class _DispositionCategoryScreenState
                             const DataColumn2(
                                 label: Text('Item Name'), size: ColumnSize.M),
                             const DataColumn2(
+                                label: Text('HS Code'),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
+                            const DataColumn2(
                                 label: Text('Qty'),
                                 size: ColumnSize.S,
                                 fixedWidth: 70),
@@ -363,6 +367,18 @@ class _DispositionCategoryScreenState
                                             fontWeight: FontWeight.w600))),
                                     DataCell(Text(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
+                                    DataCell(Text((() {
+                                      final hs = row.package.items
+                                          .where((i) =>
+                                              i.id == row.entry.packageItemId)
+                                          .firstOrNull
+                                          ?.hsCode;
+                                      return (hs != null && hs.isNotEmpty)
+                                          ? hs
+                                          : '—';
+                                    })(),
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(fontSize: 12))),
                                     DataCell(
                                         Text('${row.entry.itemCount}')),
                                     DataCell(Text(row.entry.returnedAt != null

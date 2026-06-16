@@ -241,6 +241,7 @@ class PackageItem {
   final String unitOfMeasure;
   final String? unitOther;
   final double unitValue;
+  final String? hsCode;
   final String? category;
   final bool isProhibited;
   final String status; // Added status here
@@ -256,6 +257,7 @@ class PackageItem {
     this.unitOfMeasure = 'Pieces',
     this.unitOther,
     this.unitValue = 0,
+    this.hsCode,
     this.category,
     this.isProhibited = false,
     this.status = 'pending', // Default to pending
@@ -273,6 +275,7 @@ class PackageItem {
       unitOfMeasure: json['unit_of_measure'] as String? ?? 'Pieces',
       unitOther: json['unit_other'] as String?,
       unitValue: (json['unit_value'] as num?)?.toDouble() ?? 0,
+      hsCode: json['hs_code'] as String?,
       category: json['category'] as String?,
       isProhibited: json['is_prohibited'] as bool? ?? false,
       status: json['status'] as String? ?? 'pending',
@@ -291,6 +294,7 @@ class PackageItem {
       'unit_of_measure': unitOfMeasure,
       'unit_other': unitOther,
       'unit_value': unitValue,
+      'hs_code': hsCode,
       'category': category,
       'is_prohibited': isProhibited,
       'status': status,
@@ -308,6 +312,7 @@ class PackageItem {
     String? unitOfMeasure,
     String? unitOther,
     double? unitValue,
+    String? hsCode,
     String? category,
     bool? isProhibited,
     String? status,
@@ -323,6 +328,7 @@ class PackageItem {
       unitOfMeasure: unitOfMeasure ?? this.unitOfMeasure,
       unitOther: unitOther ?? this.unitOther,
       unitValue: unitValue ?? this.unitValue,
+      hsCode: hsCode ?? this.hsCode,
       category: category ?? this.category,
       isProhibited: isProhibited ?? this.isProhibited,
       status: status ?? this.status,
@@ -441,8 +447,10 @@ class WarehouseEntryModel {
       s == 'confiscated' ||
       s == 'forfeit' ||
       s == 'forfiet' ||
+      s == 'forfeited' ||
       s == 'abandoned' ||
-      s == 'destroy';
+      s == 'destroy' ||
+      s == 'destroyed';
 
   /// Calculates charge considering historical rate changes across all items in the package (or specific item if tied)
   double calculatePackageCharge(
@@ -720,6 +728,12 @@ class ForfeitedPackageModel {
   final bool appealHold;
   final String? appealHoldNote;
   final DateTime? appealHeldAt;
+  /// Recorded by the Appeal Directorate when an appeal hold is lifted — the
+  /// decision the owning yard should act on: 'RELEASE', 'SALE', 'DESTROY',
+  /// 'RE-EXPORT' or 'OTHER' (custom outcome carried in [appealDecisionNote]).
+  final String? appealDecision;
+  final String? appealDecisionNote;
+  final DateTime? appealDecidedAt;
   final PackageModel? packageDetails;
 
   const ForfeitedPackageModel({
@@ -735,13 +749,54 @@ class ForfeitedPackageModel {
     this.appealHold = false,
     this.appealHoldNote,
     this.appealHeldAt,
+    this.appealDecision,
+    this.appealDecisionNote,
+    this.appealDecidedAt,
     this.packageDetails,
   });
 
   bool get isAppealExpired => DateTime.now().isAfter(appealDeadline);
   int get daysUntilDeadline => appealDeadline.difference(DateTime.now()).inDays;
   bool get isAbandonedSource => source == 'abandoned';
+  bool get isOtherSource => source == 'other';
   bool get isAppealHeld => appealHold;
+  bool get hasAppealDecision =>
+      appealDecision != null && appealDecision!.trim().isNotEmpty;
+
+  /// The disposal-request disposition this package's appeal decision implies,
+  /// as the code the request form uses ('destruction' | 'sale'), or null when
+  /// the decision isn't a disposal outcome (RELEASE / RE-EXPORT / OTHER).
+  String? get appealRequestDisposition {
+    switch ((appealDecision ?? '').trim().toUpperCase()) {
+      case 'DESTROY':
+        return 'destruction';
+      case 'SALE':
+        return 'sale';
+      default:
+        return null;
+    }
+  }
+
+  /// Human-friendly label for [appealDecision] (falls back to the custom note
+  /// for 'OTHER').
+  String? get appealDecisionLabel {
+    switch ((appealDecision ?? '').trim().toUpperCase()) {
+      case 'RELEASE':
+        return 'Release to owner';
+      case 'SALE':
+        return 'Sell';
+      case 'DESTROY':
+        return 'Destroy';
+      case 'RE-EXPORT':
+        return 'Re-export';
+      case 'OTHER':
+        return (appealDecisionNote?.trim().isNotEmpty == true)
+            ? appealDecisionNote!.trim()
+            : 'Other';
+      default:
+        return appealDecision;
+    }
+  }
 
   factory ForfeitedPackageModel.fromJson(Map<String, dynamic> json) {
     return ForfeitedPackageModel(
@@ -758,6 +813,11 @@ class ForfeitedPackageModel {
       appealHoldNote: json['appeal_hold_note'] as String?,
       appealHeldAt: json['appeal_held_at'] != null
           ? DateTime.parse(json['appeal_held_at'] as String).toLocal()
+          : null,
+      appealDecision: json['appeal_decision'] as String?,
+      appealDecisionNote: json['appeal_decision_note'] as String?,
+      appealDecidedAt: json['appeal_decided_at'] != null
+          ? DateTime.parse(json['appeal_decided_at'] as String).toLocal()
           : null,
       packageDetails: json['packages'] != null
           ? PackageModel.fromJson(json['packages'] as Map<String, dynamic>)

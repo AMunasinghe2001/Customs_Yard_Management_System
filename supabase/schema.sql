@@ -81,6 +81,7 @@ CREATE TABLE package_items (
   unit_of_measure TEXT NOT NULL DEFAULT 'Pieces',
   unit_other TEXT,
   unit_value NUMERIC(10,2) DEFAULT 0,
+  hs_code TEXT,
   category TEXT,
   is_prohibited BOOLEAN DEFAULT false,
   status TEXT NOT NULL DEFAULT 'Detain',

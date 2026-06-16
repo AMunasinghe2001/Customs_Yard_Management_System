@@ -135,14 +135,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             row.goodsDescriptionCtrl.text = item.goodsDescription ?? '';
             row.qtyCtrl.text = item.quantity.toString();
             row.valueCtrl.text = item.unitValue.toString();
+            row.hsCodeCtrl.text = item.hsCode ?? '';
             row.categoryCtrl.text = item.category ?? '';
             const statuses = ['Detain', 'Forfeit', 'Abandoned', 'Other'];
-            if (statuses.contains(item.status)) {
-              row.status = item.status;
+            final rawStatus = item.status;
+            // "Other: <text>" marker (current) or any non-standard free text
+            // (legacy) → restore as Other with the custom text in its field.
+            if (rawStatus.toLowerCase().startsWith('other:')) {
+              row.status = 'Other';
+              row.otherStatusCtrl.text = rawStatus.substring(6).trim();
+            } else if (statuses.contains(rawStatus)) {
+              row.status = rawStatus;
               row.otherStatusCtrl.clear();
             } else {
               row.status = 'Other';
-              row.otherStatusCtrl.text = item.status;
+              row.otherStatusCtrl.text = rawStatus;
             }
 
             if (item.reasons != null && item.reasons!.isNotEmpty) {
@@ -331,9 +338,16 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                     ? r.unitOtherCtrl.text
                     : null,
                 unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
+                hsCode: r.hsCodeCtrl.text.trim().isEmpty
+                    ? null
+                    : r.hsCodeCtrl.text.trim(),
                 category: r.categoryCtrl.text,
+                // "Other" disposition: store with an explicit marker prefix
+                // ("Other: <custom text>") so it is unambiguously detectable as
+                // an Other-status held package (the custom text alone could
+                // collide with any word). Detection/label code strips the prefix.
                 status: r.status == 'Other'
-                    ? r.otherStatusCtrl.text.trim()
+                    ? 'Other: ${r.otherStatusCtrl.text.trim()}'
                     : r.status,
                 reasons:
                     r.selectedReasons.where((res) => res != null).join(', '),
@@ -1511,6 +1525,7 @@ class _ItemRow {
   final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
   final unitOtherCtrl = TextEditingController();
   final valueCtrl = TextEditingController(text: '0');
+  final hsCodeCtrl = TextEditingController();
   final categoryCtrl = TextEditingController();
   String status = 'Detain';
   final otherStatusCtrl = TextEditingController();
@@ -1730,6 +1745,38 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     },
                   );
                 },
+              ),
+            ),
+          ],
+        ),
+        const Gap(12),
+        // ── HS Code & Value (per item) ──
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: widget.row.hsCodeCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'HS Code', isDense: true, helperText: ' '),
+                onChanged: (_) => widget.onChanged(),
+              ),
+            ),
+            const Gap(12),
+            Expanded(
+              child: TextFormField(
+                controller: widget.row.valueCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'Value',
+                    isDense: true,
+                    helperText: ' ',
+                    prefixText: 'LKR '),
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+                ],
+                onChanged: (_) => widget.onChanged(),
               ),
             ),
           ],

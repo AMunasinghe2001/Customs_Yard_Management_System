@@ -1,7 +1,6 @@
-import 'dart:io';
+﻿import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -12,8 +11,6 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
-import '../../widgets/empty_table_state.dart';
-import 'package:data_table_2/data_table_2.dart';
 
 
 // Dashboard providers now moved to lib/core/providers.dart for shared access
@@ -24,7 +21,6 @@ class AdminDashboardScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final pkgStats = ref.watch(dashboardStatsProvider);
-    final recent = ref.watch(recentPackagesProvider);
     // Yard-scoped: only the admin's own yard (officers + admins), never
     // head-office (DC/SDDC) or other yards leaked by the cross-yard policy.
     final profiles = ref.watch(myYardProfilesProvider);
@@ -40,7 +36,7 @@ class AdminDashboardScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // ── Header: title + date · yard badge + staff stats ──────────
+              // â”€â”€ Header: title + date Â· yard badge + staff stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -66,7 +62,7 @@ class AdminDashboardScreen extends ConsumerWidget {
               ).animate().fadeIn(),
               const Gap(20),
 
-              // ── Operational stat cards ───────────────────────────────────
+              // â”€â”€ Operational stat cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               pkgStats
                   .when(
                     loading: () => const _StatsLoadingRow(),
@@ -102,6 +98,10 @@ class AdminDashboardScreen extends ConsumerWidget {
                                 value: "${data['release'] ?? 0}",
                                 icon: Icons.check_circle_rounded,
                                 color: context.colors.successGreen)),
+                        const Gap(16),
+                        // Current per-day storage rate (headline) with the live
+                        // total accruing across all held goods as the subtitle.
+                        Expanded(child: _WarehouseChargeCard(ref: ref)),
                       ],
                     ),
                   )
@@ -111,58 +111,45 @@ class AdminDashboardScreen extends ConsumerWidget {
 
               const Gap(20),
 
-              // ── Body: two columns ────────────────────────────────────────
+              // â”€â”€ Body: two columns that fill the height (minimal scrolling) â”€
               Expanded(
                 child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    // Left: actions + inventory
+                    // Left: forfeit â†’ disposal lifecycle (fills the column)
+                    Expanded(
+                      flex: 5,
+                      child: _ForfeitLifecycleSection(ref: ref)
+                          .animate()
+                          .fadeIn(delay: 200.ms)
+                          .slideY(begin: 0.1),
+                    ),
+                    const Gap(24),
+                    // Right: capacity + online staff (fixed) then recent
+                    // activity expands to absorb the remaining height.
                     Expanded(
                       flex: 4,
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildQuickShortcutsGrid(context),
+                          _WarehouseCapacitySection(ref: ref)
+                              .animate()
+                              .fadeIn(delay: 280.ms)
+                              .slideY(begin: 0.1),
                           const Gap(20),
-                          _buildSummaryGrid(context, ref),
-                        ],
-                      ).animate().fadeIn(delay: 200.ms).slideY(begin: 0.1),
-                    ),
-                    const Gap(24),
-                    // Right: online staff + recent inspections
-                    Expanded(
-                      flex: 5,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildOnlineOfficersList(context, ref, online, myYard),
+                          _buildOnlineOfficersList(context, ref, online, myYard)
+                              .animate()
+                              .fadeIn(delay: 300.ms)
+                              .slideY(begin: 0.1),
                           const Gap(20),
-                          _SectionHeader(
-                            title: 'Recent Package Inspections',
-                            trailing: TextButton.icon(
-                              onPressed: () => context.go('/packages'),
-                              icon: const Text('View All'),
-                              label: const Icon(Icons.arrow_forward_rounded,
-                                  size: 16),
-                            ),
-                          ),
-                          const Gap(10),
                           Expanded(
-                            child: recent.when(
-                              loading: () => const Center(
-                                  child: Padding(
-                                      padding: EdgeInsets.all(40),
-                                      child: CircularProgressIndicator())),
-                              error: (e, _) => ErrorView(
-                                  error: e,
-                                  onRetry: () =>
-                                      ref.refresh(recentPackagesProvider)),
-                              data: (packages) =>
-                                  _RecentPackagesTable(packages: packages),
-                            ),
+                            child: _RecentActivitySection(ref: ref)
+                                .animate()
+                                .fadeIn(delay: 340.ms)
+                                .slideY(begin: 0.1),
                           ),
                         ],
-                      ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.1),
+                      ),
                     ),
                   ],
                 ),
@@ -323,157 +310,9 @@ class AdminDashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildQuickShortcutsGrid(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const _SectionHeader(title: 'Administrative Actions'),
-        const Gap(12),
-        GridView.count(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          childAspectRatio: 3.4,
-          children: [
-            _shortcut(context, 'Officers', Icons.person_add_rounded,
-                () => context.go('/admin/panel?tab=0'),
-                color: context.colors.primaryGold),
-            _shortcut(context, 'Customs Rules', Icons.gavel_rounded,
-                () => context.go('/admin/panel?tab=1'),
-                color: context.colors.primaryGold),
-            _shortcut(context, 'Categories', Icons.category_rounded,
-                () => context.go('/admin/panel?tab=2'),
-                color: context.colors.primaryGold),
-            _shortcut(context, 'Storage Charges', Icons.payments_rounded,
-                () => context.go('/admin/panel?tab=3'),
-                color: context.colors.primaryGold),
-            _shortcut(context, 'Hold Reasons', Icons.list_alt_rounded,
-                () => context.go('/admin/panel?tab=4'),
-                color: context.colors.primaryGold),
-            _shortcut(context, 'System Logs', Icons.history_rounded,
-                () => context.go('/admin/panel?tab=5'),
-                color: context.colors.primaryGold),
-          ],
-        ),
-      ],
-    );
-  }
-  Widget _buildSummaryGrid(BuildContext context, WidgetRef ref) {
-    return Expanded(
-      child: Column(
-        key: const ValueKey('category_zone_summary_column'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const _SectionHeader(title: 'Category & Zone Inventory'),
-          const Gap(10),
-          ref.watch(categoryZoneSummaryProvider).when(
-            data: (summary) {
-              if (summary.isEmpty) return const SizedBox(height: 100, child: Center(child: Text('No active inventory.')));
-              return Expanded(
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: context.colors.cardDark,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: context.colors.borderColor),
-                  ),
-                  child: Column(
-                    children: [
-                      // Header
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: context.colors.surfaceDark,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(11)),
-                          border: Border(bottom: BorderSide(color: context.colors.borderColor)),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(flex: 5, child: Text('Category', style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
-                            Expanded(flex: 5, child: Text('W/H - Zone', style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
-                            Expanded(flex: 2, child: Text('Qty', textAlign: TextAlign.right, style: TextStyle(fontSize: 11, color: context.colors.primaryGold, fontWeight: FontWeight.bold))),
-                          ],
-                        ),
-                      ),
-                      // Body
-                      Expanded(
-                        child: ListView.separated(
-                          padding: const EdgeInsets.all(0),
-                          itemCount: summary.length,
-                          separatorBuilder: (context, index) => Divider(color: context.colors.borderColor, height: 1),
-                          itemBuilder: (context, index) {
-                            final s = summary[index];
-                            return Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                              child: Row(
-                                children: [
-                                  Expanded(flex: 5, child: Text(s['category'], style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
-                                  Expanded(flex: 5, child: Text('${s['warehouse']} - ${s['zone']}', style: const TextStyle(fontSize: 11), overflow: TextOverflow.ellipsis)),
-                                  Expanded(flex: 2, child: Text(s['count'].toString(), textAlign: TextAlign.right, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: context.colors.accentLightBlue))),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-            loading: () => const LinearProgressIndicator(),
-            error: (e, _) => Text('Error: $e'),
-          ),
-        ],
-      ),
-    );
-  }
-  Widget _shortcut(
-      BuildContext context, String label, IconData icon, VoidCallback onTap,
-      {Color? color}) {
-    final c = color ?? context.colors.primaryGold;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: context.colors.cardDark,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: context.colors.borderColor),
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: c.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(9),
-                ),
-                child: Icon(icon, color: c, size: 17),
-              ),
-              const Gap(10),
-              Expanded(
-                  child: Text(label,
-                      style: const TextStyle(
-                          fontWeight: FontWeight.w600, fontSize: 13),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis)),
-              Icon(Icons.chevron_right_rounded,
-                  size: 16, color: context.colors.textMuted),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
-// ── Reusable bits ─────────────────────────────────────────────────────────
+// â”€â”€ Reusable bits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /// A left-aligned section title with an optional trailing widget (count chip,
 /// "View all" link). Keeps every section header on the dashboard consistent.
@@ -666,114 +505,585 @@ class _StatsLoadingRow extends StatelessWidget {
   }
 }
 
-class _RecentPackagesTable extends StatelessWidget {
-  final List<PackageModel> packages;
-  const _RecentPackagesTable({required this.packages});
+/// Forfeit â†’ disposal lifecycle overview: appeal status, disposal-request
+/// breakdown, final outcomes (tender sold / unsold / destroyed) and the next
+/// scheduled tender-sale date. Scoped to the admin's yard.
+class _ForfeitLifecycleSection extends StatelessWidget {
+  final WidgetRef ref;
+  const _ForfeitLifecycleSection({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(forfeitLifecycleProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader(title: 'Forfeit & Disposal Lifecycle'),
+        const Gap(12),
+        Expanded(
+          child: async.when(
+            loading: () => Center(
+                child: CircularProgressIndicator(
+                    color: context.colors.primaryGold)),
+            error: (e, _) => ErrorView(
+                error: e,
+                onRetry: () => ref.refresh(forfeitLifecycleProvider)),
+            data: (d) {
+              final next = d['nextTenderSaleDate'] as String?;
+              return SingleChildScrollView(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _LifecycleGroup(
+                      title: 'Appeal Directorate',
+                      icon: Icons.gavel_rounded,
+                      tiles: [
+                        _LifecycleTile(
+                            label: 'On Appeal Hold',
+                            value: '${d['appealHold'] ?? 0}',
+                            color: context.colors.heldOrange,
+                            icon: Icons.pan_tool_rounded),
+                        _LifecycleTile(
+                            label: 'Decision Received',
+                            value: '${d['appealDecided'] ?? 0}',
+                            color: context.colors.accentLightBlue,
+                            icon: Icons.how_to_reg_rounded),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Disposal Requests (Central Disposal)',
+                      icon: Icons.local_shipping_rounded,
+                      tiles: [
+                        _LifecycleTile(
+                            label: 'Sent for Sale',
+                            value: '${d['requestedSale'] ?? 0}',
+                            color: context.colors.primaryGold,
+                            icon: Icons.sell_rounded),
+                        _LifecycleTile(
+                            label: 'Sent for Destruction',
+                            value: '${d['requestedDestruction'] ?? 0}',
+                            color: context.colors.dangerRed,
+                            icon: Icons.delete_forever_rounded),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Final Outcomes',
+                      icon: Icons.flag_rounded,
+                      tiles: [
+                        _LifecycleTile(
+                            label: 'Tender Sold',
+                            value: '${d['tenderSold'] ?? 0}',
+                            color: context.colors.successGreen,
+                            icon: Icons.check_circle_rounded),
+                        _LifecycleTile(
+                            label: 'Unsold',
+                            value: '${d['tenderUnsold'] ?? 0}',
+                            color: context.colors.textMuted,
+                            icon: Icons.remove_shopping_cart_rounded),
+                        _LifecycleTile(
+                            label: 'Destroyed',
+                            value: '${d['destroyed'] ?? 0}',
+                            color: context.colors.warningAmber,
+                            icon: Icons.local_fire_department_rounded),
+                      ],
+                    ),
+                    const Gap(16),
+                    _NextTenderSaleBanner(date: next),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A titled group of lifecycle stat tiles laid out in a wrap.
+class _LifecycleGroup extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final List<Widget> tiles;
+  const _LifecycleGroup(
+      {required this.title, required this.icon, required this.tiles});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(icon, size: 15, color: context.colors.textMuted),
+          const Gap(8),
+          Text(title.toUpperCase(),
+              style: TextStyle(
+                  fontSize: 10.5,
+                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w800,
+                  color: context.colors.textMuted)),
+        ]),
+        const Gap(8),
+        Wrap(spacing: 12, runSpacing: 12, children: tiles),
+      ],
+    );
+  }
+}
+
+/// A single lifecycle metric tile (icon + big number + label).
+class _LifecycleTile extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final IconData icon;
+  const _LifecycleTile(
+      {required this.label,
+      required this.value,
+      required this.color,
+      required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: 168,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: context.colors.cardDark,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.colors.borderColor),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.25)),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: DataTable2(
-          columnSpacing: 12,
-          horizontalMargin: 12,
-          fixedTopRows: 1,
-          empty: const EmptyTableState(message: 'No inspections recorded today'),
-          headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
-          dataRowColor: WidgetStateProperty.all(Colors.transparent),
-          columns: [
-            DataColumn2(
-                label: Text('SR Number',
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const Gap(10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(value,
                     style: TextStyle(
-                        color: context.colors.primaryGold,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13)),
-                size: ColumnSize.M),
-            DataColumn2(
-                label: Text('Item Name',
-                    style: TextStyle(
-                        color: context.colors.primaryGold,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13)),
-                size: ColumnSize.L),
-            DataColumn2(
-                label: Text('Qty',
-                    style: TextStyle(
-                        color: context.colors.primaryGold,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13)),
-                size: ColumnSize.S,
-                fixedWidth: 60),
-            DataColumn2(
-                label: Center(
-                  child: Text('Status',
-                      style: TextStyle(
-                          color: context.colors.primaryGold,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 13)),
-                ),
-                size: ColumnSize.S,
-                fixedWidth: 100),
-            DataColumn2(
-                label: Text('Date',
-                    style: TextStyle(
-                        color: context.colors.primaryGold,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 13)),
-                size: ColumnSize.M),
-          ],
-          rows: packages.isEmpty ? [] : packages.expand((p) {
-            if (p.items.isEmpty) {
-              return [
-                DataRow(cells: [
-                  DataCell(Text(p.srNumber,
-                      style: TextStyle(
-                          color: context.colors.accentLightBlue,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13))),
-                  const DataCell(Text('No items', style: TextStyle(fontSize: 13))),
-                  const DataCell(Text('0',
-                      style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold))),
-                  DataCell(Center(child: StatusChip(status: p.status))),
-                  DataCell(Text(DateFormat('dd/MM HH:mm').format(p.updatedAt),
-                      style: TextStyle(
-                          color: context.colors.textMuted, fontSize: 13))),
-                ])
-              ];
-            }
-
-            return p.items.map((item) {
-              // Priority: Item specific status (e.g. confiscated) > Package status
-              String effectiveStatus = (item.status != null && item.status != 'pending') 
-                  ? item.status! 
-                  : p.status;
-
-              return DataRow(cells: [
-                DataCell(Text(p.srNumber,
-                    style: TextStyle(
-                        color: context.colors.accentLightBlue,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13))),
-                DataCell(Text(item.itemName,
+                        color: color,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w800,
+                        height: 1.0)),
+                const Gap(2),
+                Text(label,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 13))),
-                DataCell(Text(item.quantity.toString(),
-                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold))),
-                DataCell(Center(child: StatusChip(status: effectiveStatus))),
-                DataCell(Text(DateFormat('dd/MM HH:mm').format(p.updatedAt),
                     style: TextStyle(
-                        color: context.colors.textMuted, fontSize: 13))),
-              ]);
-            });
-          }).toList(),
-        ),
+                        color: context.colors.textSecondary,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+/// Highlights the next scheduled tender-sale date (or a calm "none scheduled").
+class _NextTenderSaleBanner extends StatelessWidget {
+  final String? date;
+  const _NextTenderSaleBanner({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final has = date != null && date!.isNotEmpty;
+    final gold = context.colors.primaryGold;
+    String pretty = 'â€”';
+    if (has) {
+      final parsed = DateTime.tryParse(date!);
+      pretty = parsed != null
+          ? DateFormat('EEEE, d MMMM yyyy').format(parsed)
+          : date!;
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: gold.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: gold.withOpacity(0.3)),
+      ),
+      child: Row(children: [
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: gold.withOpacity(0.14),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(Icons.event_available_rounded, color: gold, size: 20),
+        ),
+        const Gap(12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('NEXT TENDER SALE',
+                  style: TextStyle(
+                      color: gold,
+                      fontSize: 10,
+                      letterSpacing: 1.0,
+                      fontWeight: FontWeight.w800)),
+              const Gap(2),
+              Text(has ? pretty : 'No tender sale scheduled',
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700)),
+            ],
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+/// Headline stat card for storage charges: shows the current per-day rate
+/// (e.g. "LKR 40 / day") as the big number, with the live total accruing across
+/// all goods still held in the yard shown underneath as a subtitle.
+class _WarehouseChargeCard extends StatelessWidget {
+  final WidgetRef ref;
+  const _WarehouseChargeCard({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    final rate = ref.watch(currentStorageRateProvider);
+    final accrued = ref.watch(currentWarehouseChargeProvider);
+
+    final rateText = rate.maybeWhen(
+        data: (r) => 'LKR ${NumberFormat('#,##0').format(r)}',
+        orElse: () => 'â€¦');
+    final accruedText = accrued.maybeWhen(
+        data: (c) => 'Accrued: LKR ${NumberFormat('#,##0').format(c)}',
+        orElse: () => 'Accruedâ€¦');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: context.colors.borderColor),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [gold.withOpacity(0.10), context.colors.cardDark],
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(11),
+            decoration: BoxDecoration(
+              color: gold.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(Icons.payments_rounded, color: gold, size: 22),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Flexible(
+                      child: Text(rateText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                              height: 1.1)),
+                    ),
+                    const Gap(3),
+                    Text('/day',
+                        style: TextStyle(
+                            color: context.colors.textMuted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const Gap(2),
+                Text('Current W/H Rate',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: context.colors.textSecondary, fontSize: 12)),
+                const Gap(3),
+                Text(accruedText,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: gold,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Per-warehouse capacity utilisation for the admin's yard, shown as compact
+/// fill bars so the admin can see at a glance which warehouses are filling up.
+class _WarehouseCapacitySection extends StatelessWidget {
+  final WidgetRef ref;
+  const _WarehouseCapacitySection({required this.ref});
+
+  Color _fillColor(BuildContext context, double percent) {
+    if (percent >= 90) return context.colors.dangerRed;
+    if (percent >= 70) return context.colors.heldOrange;
+    return context.colors.successGreen;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(yardWarehouseCapacityProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader(title: 'Warehouse Capacity'),
+        const Gap(10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: context.colors.cardDark,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: context.colors.borderColor),
+          ),
+          child: async.when(
+            loading: () => const SizedBox(
+                height: 80,
+                child: Center(child: CircularProgressIndicator())),
+            error: (e, _) => ErrorView(
+                error: e,
+                onRetry: () => ref.refresh(yardWarehouseCapacityProvider)),
+            data: (rows) {
+              if (rows.isEmpty) {
+                return _emptyHint(context, Icons.warehouse_rounded,
+                    'No active warehouse stock in your yard');
+              }
+              // Cap the panel height; scroll if a yard has many warehouses.
+              return ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 220),
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < rows.length; i++) ...[
+                        if (i > 0) const Gap(14),
+                        _capacityRow(context, rows[i]),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _capacityRow(BuildContext context, Map<String, dynamic> r) {
+    final used = r['used'] as int;
+    final capacity = r['capacity'] as int;
+    final percent = (r['percent'] as double);
+    final color = _fillColor(context, percent);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(r['warehouseName'] as String,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600)),
+            ),
+            const Gap(8),
+            Text('$used / $capacity',
+                style: TextStyle(
+                    color: context.colors.textMuted, fontSize: 11.5)),
+            const Gap(8),
+            Text('${percent.toStringAsFixed(0)}%',
+                style: TextStyle(
+                    color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const Gap(6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(6),
+          child: LinearProgressIndicator(
+            value: (percent / 100).clamp(0.0, 1.0),
+            minHeight: 7,
+            backgroundColor: context.colors.surfaceDark,
+            valueColor: AlwaysStoppedAnimation<Color>(color),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Today's package activity timeline (forfeit / release / destroy / etc.) so
+/// the admin sees what's been happening in the yard at a glance.
+class _RecentActivitySection extends StatelessWidget {
+  final WidgetRef ref;
+  const _RecentActivitySection({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(recentPackagesProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const _SectionHeader(title: 'Recent Activity'),
+        const Gap(10),
+        Expanded(
+          child: Container(
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: context.colors.cardDark,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: context.colors.borderColor),
+            ),
+            child: async.when(
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (e, _) => ErrorView(
+                  error: e, onRetry: () => ref.refresh(recentPackagesProvider)),
+              data: (list) {
+                if (list.isEmpty) {
+                  return _emptyHint(context, Icons.history_rounded,
+                      'No package activity today');
+                }
+                return Scrollbar(
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => Divider(
+                        height: 1,
+                        indent: 16,
+                        endIndent: 16,
+                        color: context.colors.borderColor.withOpacity(0.5)),
+                    itemBuilder: (ctx, i) => _activityTile(context, list[i]),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _activityTile(BuildContext context, PackageModel p) {
+    final (icon, color) = _statusVisual(context, p.status);
+    return ListTile(
+      visualDensity: VisualDensity.compact,
+      dense: true,
+      leading: Container(
+        height: 34,
+        width: 34,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withOpacity(0.14),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Icon(icon, color: color, size: 17),
+      ),
+      title: Text(p.srNumber,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+      subtitle: Text(p.consigneeName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
+      trailing: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          StatusChip(status: p.status),
+          const Gap(3),
+          Text(DateFormat('HH:mm').format(p.updatedAt.toLocal()),
+              style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+        ],
+      ),
+    );
+  }
+
+  /// Icon + colour for the leading badge, matching [StatusChip]'s grouping.
+  (IconData, Color) _statusVisual(BuildContext context, String status) {
+    switch (status) {
+      case 'cleared':
+      case 'returned':
+        return (Icons.check_circle_rounded, context.colors.successGreen);
+      case 'held':
+      case 'detained':
+      case 'Detain':
+        return (Icons.pan_tool_rounded, context.colors.heldOrange);
+      case 'Forfeit':
+      case 'Forfiet':
+      case 'forfeit':
+      case 'forfiet':
+      case 'forfeited':
+      case 'confiscated':
+        return (Icons.gavel_rounded, context.colors.dangerRed);
+      case 'Abandoned':
+      case 'abandoned':
+        return (Icons.inventory_2_rounded, const Color(0xFF9E9E9E));
+      case 'Re-export':
+      case 're-export':
+        return (Icons.flight_takeoff_rounded, const Color(0xFF00ACC1));
+      case 'Destroy':
+      case 'destroy':
+        return (Icons.local_fire_department_rounded, const Color(0xFFE64A19));
+      case 'inspecting':
+        return (Icons.search_rounded, context.colors.warningAmber);
+      default:
+        return (Icons.inventory_rounded, context.colors.textMuted);
+    }
+  }
+}
+
+/// Shared "nothing here yet" placeholder for the dashboard panels.
+Widget _emptyHint(BuildContext context, IconData icon, String message) {
+  return Center(
+    child: Padding(
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: context.colors.textMuted, size: 28),
+          const Gap(8),
+          Text(message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: context.colors.textMuted, fontSize: 12.5)),
+        ],
+      ),
+    ),
+  );
 }

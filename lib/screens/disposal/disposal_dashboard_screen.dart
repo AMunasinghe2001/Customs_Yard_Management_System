@@ -985,15 +985,17 @@ class _RequestCard extends ConsumerWidget {
   }
 }
 
-/// Forfeit / Abandoned origin tag for a requested package.
+/// Forfeit / Abandoned / Other origin tag for a requested package.
 class _SourceChip extends StatelessWidget {
-  final String source; // 'forfeit' | 'abandoned'
+  final String source; // 'forfeit' | 'abandoned' | 'other'
   const _SourceChip({required this.source});
   @override
   Widget build(BuildContext context) {
-    final isAbandoned = source == 'abandoned';
-    final color =
-        isAbandoned ? context.colors.heldOrange : context.colors.accentBlue;
+    final (label, color) = switch (source) {
+      'abandoned' => ('Abandoned', context.colors.heldOrange),
+      'other' => ('Other', context.colors.warningAmber),
+      _ => ('Forfeit', context.colors.accentBlue),
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -1001,7 +1003,7 @@ class _SourceChip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color.withOpacity(0.4)),
       ),
-      child: Text(isAbandoned ? 'Abandoned' : 'Forfeit',
+      child: Text(label,
           style: TextStyle(
               color: color, fontSize: 11, fontWeight: FontWeight.w700)),
     );
