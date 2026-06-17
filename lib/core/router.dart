@@ -11,6 +11,9 @@ import '../screens/disposal/disposal_dashboard_screen.dart';
 import '../screens/appeal/appeal_login_screen.dart';
 import '../screens/appeal/appeal_signup_screen.dart';
 import '../screens/appeal/appeal_dashboard_screen.dart';
+import '../screens/valuation/valuation_login_screen.dart';
+import '../screens/valuation/valuation_signup_screen.dart';
+import '../screens/valuation/valuation_dashboard_screen.dart';
 import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/inspection/inspection_screen.dart';
 import '../screens/warehouses/warehouses_screen.dart';
@@ -45,7 +48,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         '/disposal/login',
         '/disposal/signup',
         '/appeal/login',
-        '/appeal/signup'
+        '/appeal/signup',
+        '/valuation/login',
+        '/valuation/signup'
       ];
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
       
@@ -64,6 +69,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         final profile = ref.read(currentProfileProvider);
         if (profile?.isDisposal == true) return '/disposal';
         if (profile?.isAppeal == true) return '/appeal';
+        if (profile?.isValuation == true) return '/valuation';
         if (profile?.isAdmin == true) return '/admin';
         return '/dashboard';
       }
@@ -77,6 +83,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/disposal/login', builder: (_, __) => const DisposalLoginScreen()),
       GoRoute(path: '/disposal/signup', builder: (_, __) => const DisposalSignupScreen()),
       GoRoute(path: '/disposal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DisposalDashboardScreen())),
+      GoRoute(path: '/valuation/login', builder: (_, __) => const ValuationLoginScreen()),
+      GoRoute(path: '/valuation/signup', builder: (_, __) => const ValuationSignupScreen()),
+      GoRoute(path: '/valuation', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ValuationDashboardScreen())),
       GoRoute(path: '/appeal/login', builder: (_, __) => const AppealLoginScreen()),
       GoRoute(path: '/appeal/signup', builder: (_, __) => const AppealSignupScreen()),
       GoRoute(path: '/appeal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AppealDashboardScreen())),

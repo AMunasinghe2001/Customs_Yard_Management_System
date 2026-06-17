@@ -1425,6 +1425,12 @@ class AdminService {
     return res == true;
   }
 
+  Future<bool> isValuationPositionAvailable(String code) async {
+    final res = await supabase
+        .rpc('valuation_position_available', params: {'code': code});
+    return res == true;
+  }
+
   Future<void> requestSignupOtp({
     required String email,
     required String fullName,
@@ -2927,7 +2933,10 @@ class DisposalService {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_requests')
         .select(
-            '*, profiles!created_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*))))')
+            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*))))')
+        // Mandatory valuation gate: Central Disposal only sees requests the
+        // Valuation Directorate has forwarded.
+        .eq('valuation_status', 'forwarded')
         .order('created_at', ascending: false));
 
     final result = <DisposalRequestModel>[];
@@ -2945,6 +2954,9 @@ class DisposalService {
         createdAt: r.createdAt,
         createdByName: r.createdByName,
         items: items,
+        valuationStatus: r.valuationStatus,
+        valuedAt: r.valuedAt,
+        valuedByName: r.valuedByName,
       ));
     }
     return result;
@@ -3365,6 +3377,55 @@ class AppealService {
         action: 'Appeal decision: $decision',
         entityType: 'forfeited_package',
         entityId: forfeitedId,
+      );
+    }
+  }
+}
+
+/// Valuation Directorate (DC / SDDC). A yard's disposal request lands here
+/// FIRST: the directorate reads every yard's pending requests (cross-yard),
+/// enters a cost per package item, then forwards the request to the Central
+/// Disposal Directorate. Only after forwarding does Central Disposal see it.
+class ValuationService {
+  /// Requests still awaiting valuation (across all yards), newest first, with
+  /// full package + item detail for the per-item cost form.
+  Future<List<DisposalRequestModel>> getValuationRequests() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_requests')
+        .select(
+            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*))))')
+        .eq('valuation_status', 'pending_valuation')
+        .order('created_at', ascending: false));
+    return (data as List)
+        .map((e) => DisposalRequestModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Save per-item costs (map of disposal_request_items.id → cost). When
+  /// [forward] is true the request is released to the Central Disposal
+  /// Directorate (server requires every item to have a cost first).
+  Future<void> setValuationCosts(
+    String requestId,
+    Map<String, double> costs, {
+    bool forward = false,
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'valuation_set_costs',
+          params: {
+            'p_request_id': requestId,
+            'p_costs': costs.map((k, v) => MapEntry(k, v)),
+            'p_forward': forward,
+          },
+        ));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: forward
+            ? 'Forwarded valued disposal request to Central Disposal'
+            : 'Saved valuation costs',
+        entityType: 'disposal_request',
+        entityId: requestId,
       );
     }
   }

@@ -615,11 +615,16 @@ class ProfileModel {
   /// appeal-hold authority.
   bool get isAppeal => role == 'appeal';
 
+  /// Valuation Directorate (DC/SDDC) user — cross-yard valuation of disposal
+  /// requests before they reach the Central Disposal Directorate.
+  bool get isValuation => role == 'valuation';
+
   /// True once the account is past its 8-month lifetime. Directorate accounts
-  /// (Disposal DC/SDDC, Appeal AD/ADD) are institutional and never auto-expire
-  /// (officers transfer in/out of the post).
+  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC) are institutional and
+  /// never auto-expire (officers transfer in/out of the post).
   bool get isExpired =>
-      !isDisposal && !isAppeal && DateTime.now().isAfter(expiresAt);
+      !isDisposal && !isAppeal && !isValuation &&
+      DateTime.now().isAfter(expiresAt);
 
   /// Whether the account may currently sign in: explicitly active AND not
   /// past its 8-month auto-deactivation window.
@@ -971,6 +976,18 @@ const Map<String, String> kAppealPositions = {
 String appealPositionLabel(String? code) =>
     kAppealPositions[code] ?? (code ?? 'Appeal Directorate');
 
+// ── Valuation Directorate positions (DC / SDDC — same titles as Disposal) ───
+// Keys are the *usernames* and must stay globally unique (profiles.username),
+// so the Valuation Directorate uses the `vdc` / `vsddc` usernames while
+// displaying the same DC / SDDC titles.
+const Map<String, String> kValuationPositions = {
+  'VDC': 'DC (Director)',
+  'VSDDC': 'SDDC (Senior Deputy Director)',
+};
+
+String valuationPositionLabel(String? code) =>
+    kValuationPositions[code] ?? (code ?? 'Valuation Directorate');
+
 // ── Tender Sale (Central Disposal Directorate) ───────────────────────────
 
 /// The three tender-sale types offered to the Disposal Directorate.
@@ -1229,6 +1246,8 @@ class DisposalRequestItemModel {
   final String forfeitedPackageId;
   final String disposition; // 'destruction' | 'sale'
   final ForfeitedPackageModel? forfeited;
+  /// Per-item cost set by the Valuation Directorate (null until valued).
+  final double? valuationCost;
 
   const DisposalRequestItemModel({
     required this.id,
@@ -1236,6 +1255,7 @@ class DisposalRequestItemModel {
     required this.forfeitedPackageId,
     required this.disposition,
     this.forfeited,
+    this.valuationCost,
   });
 
   String get dispositionLabelText => dispositionLabel(disposition);
@@ -1250,6 +1270,7 @@ class DisposalRequestItemModel {
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)
           : null,
+      valuationCost: (json['valuation_cost'] as num?)?.toDouble(),
     );
   }
 }
@@ -1262,6 +1283,11 @@ class DisposalRequestModel {
   final DateTime createdAt;
   final String? createdByName;
   final List<DisposalRequestItemModel> items;
+  /// Valuation gate: 'pending_valuation' (only the Valuation Directorate sees
+  /// it) or 'forwarded' (released to the Central Disposal Directorate).
+  final String valuationStatus;
+  final DateTime? valuedAt;
+  final String? valuedByName;
 
   const DisposalRequestModel({
     required this.id,
@@ -1271,11 +1297,16 @@ class DisposalRequestModel {
     required this.createdAt,
     this.createdByName,
     this.items = const [],
+    this.valuationStatus = 'forwarded',
+    this.valuedAt,
+    this.valuedByName,
   });
 
   int get destructionCount =>
       items.where((i) => i.disposition == 'destruction').length;
   int get saleCount => items.where((i) => i.disposition == 'sale').length;
+  bool get isForwarded => valuationStatus == 'forwarded';
+  bool get isPendingValuation => valuationStatus == 'pending_valuation';
 
   factory DisposalRequestModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['disposal_request_items'] as List? ?? const [];
@@ -1283,6 +1314,7 @@ class DisposalRequestModel {
         .map((e) =>
             DisposalRequestItemModel.fromJson(e as Map<String, dynamic>))
         .toList();
+    // 'profiles' is the created_by join; 'valued_profile' the valued_by join.
     return DisposalRequestModel(
       id: json['id'] as String,
       yard: json['yard'] as String? ?? '',
@@ -1292,6 +1324,12 @@ class DisposalRequestModel {
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
       items: items,
+      valuationStatus: json['valuation_status'] as String? ?? 'forwarded',
+      valuedAt: json['valued_at'] != null
+          ? DateTime.parse(json['valued_at'] as String)
+          : null,
+      valuedByName: (json['valued_profile'] as Map<String, dynamic>?)?[
+          'full_name'] as String?,
     );
   }
 }

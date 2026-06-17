@@ -62,24 +62,17 @@ class HomeScreen extends ConsumerWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                    // Officer + Admin both belong to a yard → one combined
+                    // "Yard Access" card that opens a chooser (Officer / Admin).
                     Flexible(child: _RoleCard(
-                      icon: Icons.person_outline_rounded,
-                      title: 'Officer',
-                      subtitle: 'Customs Officers\nAccounts are created by an admin',
+                      icon: Icons.warehouse_rounded,
+                      title: 'Yard Access',
+                      subtitle: 'Officers & Administrators\nSign in to your yard',
                       accentColor: context.colors.accentLightBlue,
-                      onLogin: (ctx) => ctx.go('/login'),
+                      onLogin: (ctx) => showDialog(
+                          context: ctx, builder: (_) => const _YardAccessDialog()),
                       showSignup: false,
                       delay: 500,
-                    )),
-                    const Gap(24),
-                    Flexible(child: _RoleCard(
-                      icon: Icons.admin_panel_settings_rounded,
-                      title: 'Admin',
-                      subtitle: 'Administrators\nManage the system',
-                      accentColor: context.colors.primaryGold,
-                      onLogin: (ctx) => ctx.go('/admin/login'),
-                      onSignup: (ctx) => ctx.go('/admin/signup'),
-                      delay: 650,
                     )),
                     const Gap(24),
                     Flexible(child: _RoleCard(
@@ -100,6 +93,16 @@ class HomeScreen extends ConsumerWidget {
                       onLogin: (ctx) => ctx.go('/appeal/login'),
                       onSignup: (ctx) => ctx.go('/appeal/signup'),
                       delay: 950,
+                    )),
+                    const Gap(24),
+                    Flexible(child: _RoleCard(
+                      icon: Icons.calculate_rounded,
+                      title: 'Valuation Directorate',
+                      subtitle: 'Value disposal requests\nbefore Central Disposal',
+                      accentColor: context.colors.primaryGold,
+                      onLogin: (ctx) => ctx.go('/valuation/login'),
+                      onSignup: (ctx) => ctx.go('/valuation/signup'),
+                      delay: 1100,
                     )),
                   ]),
                   ),
@@ -235,6 +238,155 @@ class _RoleCardState extends State<_RoleCard> {
         delay: Duration(milliseconds: widget.delay),
         curve: Curves.easeOutBack,
       ).fadeIn(delay: Duration(milliseconds: widget.delay)),
+    );
+  }
+}
+
+/// Chooser opened from the "Yard Access" card: pick Officer or Admin, then go
+/// to that login. Admin can also create an account; officers are admin-created.
+class _YardAccessDialog extends StatelessWidget {
+  const _YardAccessDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: context.colors.scaffoldBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 460),
+        child: Padding(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(children: [
+                Icon(Icons.warehouse_rounded,
+                    color: context.colors.accentLightBlue, size: 24),
+                const Gap(12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Yard Access',
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800)),
+                      Text('Choose how you want to sign in',
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 13)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      color: context.colors.textMuted),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ]),
+              const Gap(24),
+              // Officer — login only (accounts are created by an admin).
+              _YardChoice(
+                icon: Icons.person_outline_rounded,
+                title: 'Officer',
+                subtitle: 'Customs officers · account created by an admin',
+                accent: context.colors.accentLightBlue,
+                onTap: () {
+                  Navigator.pop(context);
+                  context.go('/login');
+                },
+              ),
+              const Gap(14),
+              // Admin — login or create account.
+              _YardChoice(
+                icon: Icons.admin_panel_settings_rounded,
+                title: 'Admin',
+                subtitle: 'Administrators · manage the yard & system',
+                accent: context.colors.primaryGold,
+                onTap: () {
+                  Navigator.pop(context);
+                  context.go('/admin/login');
+                },
+                onCreate: () {
+                  Navigator.pop(context);
+                  context.go('/admin/signup');
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _YardChoice extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color accent;
+  final VoidCallback onTap;
+  final VoidCallback? onCreate;
+  const _YardChoice({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.accent,
+    required this.onTap,
+    this.onCreate,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: accent.withOpacity(0.05),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: accent.withOpacity(0.3)),
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.14),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: accent, size: 22),
+          ),
+          const Gap(14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title,
+                    style: TextStyle(
+                        color: accent,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800)),
+                const Gap(2),
+                Text(subtitle,
+                    style: TextStyle(
+                        color: context.colors.textSecondary, fontSize: 12)),
+              ],
+            ),
+          ),
+          if (onCreate != null)
+            TextButton(
+              onPressed: onCreate,
+              style: TextButton.styleFrom(foregroundColor: accent),
+              child: const Text('Create',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
+            ),
+          const Gap(4),
+          Icon(Icons.chevron_right_rounded,
+              color: accent.withOpacity(0.7), size: 20),
+        ]),
+      ),
     );
   }
 }

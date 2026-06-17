@@ -940,6 +940,10 @@ class _RequestCard extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 130),
                     DataColumn2(
+                        label: Text('Valuation'),
+                        size: ColumnSize.S,
+                        fixedWidth: 130),
+                    DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
                         fixedWidth: 70),
@@ -957,6 +961,16 @@ class _RequestCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(_SourceChip(source: f?.source ?? 'forfeit')),
                       DataCell(_DispositionChip(disposition: it.disposition)),
+                      DataCell(it.valuationCost != null
+                          ? Text(
+                              'LKR ${NumberFormat('#,##0').format(it.valuationCost)}',
+                              style: TextStyle(
+                                  color: context.colors.primaryGold,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 12))
+                          : Text('—',
+                              style:
+                                  TextStyle(color: context.colors.textMuted))),
                       DataCell(Center(
                         child: IconButton(
                           icon: Icon(Icons.info_outline_rounded,

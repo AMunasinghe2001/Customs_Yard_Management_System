@@ -18,6 +18,7 @@ final forfeitedPackageServiceProvider = Provider((ref) => ForfeitedPackageServic
 final tendersServiceProvider = Provider((ref) => TendersService());
 final disposalServiceProvider = Provider((ref) => DisposalService());
 final appealServiceProvider = Provider((ref) => AppealService());
+final valuationServiceProvider = Provider((ref) => ValuationService());
 
 // ── Shared Auth State ──────────────────────────────────────────
 final currentProfileProvider = StateProvider<ProfileModel?>((ref) => null);
@@ -442,7 +443,10 @@ final disposalRequestsRefreshProvider =
 final requestableForfeitedPackagesProvider =
     FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
-  ref.watch(disposalRequestsRefreshProvider);
+  // Watch the STREAM (not just the refresh notifier) so the disposal_requests /
+  // _items realtime subscription is active on yard pages too — a request sent
+  // or forwarded in any session live-drops it from the requestable list.
+  ref.watch(disposalRequestsChangeTriggerProvider);
   // Abandoned / "Other" requestable packages are synthesised from the `packages`
   // table, so a newly registered (or re-statused) package must refresh this too.
   ref.watch(packagesChangeTriggerProvider);
@@ -488,6 +492,16 @@ final disposalRequestsProvider =
     FutureProvider<List<DisposalRequestModel>>((ref) async {
   ref.watch(disposalRequestsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getDisposalRequests();
+});
+
+// ── Valuation Directorate: requests still awaiting valuation (cross-yard) ────
+// Shares the same realtime trigger as the disposal feed (both watch the
+// disposal_requests / _items tables), so forwarding a request live-updates both
+// the valuation list (it leaves) and the central-disposal list (it appears).
+final valuationRequestsProvider =
+    FutureProvider<List<DisposalRequestModel>>((ref) async {
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  return ref.read(valuationServiceProvider).getValuationRequests();
 });
 
 // Realtime on tender_sale_items — so a delivery toggle / new sale in ANY session
