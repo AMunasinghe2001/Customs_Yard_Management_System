@@ -286,21 +286,38 @@ class _YardAccessDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final accent = context.colors.accentLightBlue;
     return Dialog(
       backgroundColor: context.colors.scaffoldBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 460),
-        child: Padding(
-          padding: const EdgeInsets.all(28),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(children: [
-                Icon(Icons.warehouse_rounded,
-                    color: context.colors.accentLightBlue, size: 24),
-                const Gap(12),
+        constraints: const BoxConstraints(maxWidth: 560),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Gradient header ──
+            Container(
+              padding: const EdgeInsets.fromLTRB(32, 30, 22, 30),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [accent.withOpacity(0.18), context.colors.cardDark],
+                ),
+              ),
+              child: Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: accent.withOpacity(0.4)),
+                  ),
+                  child: Icon(Icons.warehouse_rounded, color: accent, size: 28),
+                ),
+                const Gap(16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,57 +325,80 @@ class _YardAccessDialog extends StatelessWidget {
                       Text('Yard Access',
                           style: TextStyle(
                               color: context.colors.textPrimary,
-                              fontSize: 20,
+                              fontSize: 24,
                               fontWeight: FontWeight.w800)),
+                      const Gap(3),
                       Text('Choose how you want to sign in',
                           style: TextStyle(
-                              color: context.colors.textMuted, fontSize: 13)),
+                              color: context.colors.textMuted, fontSize: 14)),
                     ],
                   ),
                 ),
                 IconButton(
                   icon: Icon(Icons.close_rounded,
-                      color: context.colors.textMuted),
+                      color: context.colors.textMuted, size: 24),
                   onPressed: () => Navigator.pop(context),
                 ),
               ]),
-              const Gap(24),
-              // Officer — login only (accounts are created by an admin).
-              _YardChoice(
-                icon: Icons.person_outline_rounded,
-                title: 'Officer',
-                subtitle: 'Customs officers · account created by an admin',
-                accent: context.colors.accentLightBlue,
-                onTap: () {
-                  Navigator.pop(context);
-                  context.go('/login');
-                },
+            ),
+            // ── Choices ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(28, 26, 28, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Officer — login only (accounts are created by an admin).
+                  _YardChoice(
+                    icon: Icons.badge_rounded,
+                    title: 'Officer',
+                    subtitle: 'Customs officers · account created by an admin',
+                    accent: context.colors.accentLightBlue,
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/login');
+                    },
+                  ).animate().fadeIn(delay: 80.ms).slideX(begin: 0.08),
+                  const Gap(16),
+                  // Admin — login or create account.
+                  _YardChoice(
+                    icon: Icons.admin_panel_settings_rounded,
+                    title: 'Admin',
+                    subtitle: 'Administrators · manage the yard & system',
+                    accent: context.colors.primaryGold,
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.go('/admin/login');
+                    },
+                    onCreate: () {
+                      Navigator.pop(context);
+                      context.go('/admin/signup');
+                    },
+                  ).animate().fadeIn(delay: 160.ms).slideX(begin: 0.08),
+                  const Gap(18),
+                  // Footer hint
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.lock_outline_rounded,
+                          size: 13, color: context.colors.textMuted),
+                      const Gap(6),
+                      Text('Officer accounts are created by an administrator',
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 11.5)),
+                    ],
+                  ).animate().fadeIn(delay: 240.ms),
+                ],
               ),
-              const Gap(14),
-              // Admin — login or create account.
-              _YardChoice(
-                icon: Icons.admin_panel_settings_rounded,
-                title: 'Admin',
-                subtitle: 'Administrators · manage the yard & system',
-                accent: context.colors.primaryGold,
-                onTap: () {
-                  Navigator.pop(context);
-                  context.go('/admin/login');
-                },
-                onCreate: () {
-                  Navigator.pop(context);
-                  context.go('/admin/signup');
-                },
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _YardChoice extends StatelessWidget {
+class _YardChoice extends StatefulWidget {
   final IconData icon;
   final String title;
   final String subtitle;
@@ -375,54 +415,121 @@ class _YardChoice extends StatelessWidget {
   });
 
   @override
+  State<_YardChoice> createState() => _YardChoiceState();
+}
+
+class _YardChoiceState extends State<_YardChoice> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: accent.withOpacity(0.05),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: accent.withOpacity(0.3)),
+    final accent = widget.accent;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: _hovered
+                  ? [accent.withOpacity(0.16), accent.withOpacity(0.06)]
+                  : [accent.withOpacity(0.06), accent.withOpacity(0.02)],
+            ),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+                color: accent.withOpacity(_hovered ? 0.6 : 0.3),
+                width: _hovered ? 1.5 : 1),
+            boxShadow: _hovered
+                ? [
+                    BoxShadow(
+                        color: accent.withOpacity(0.18),
+                        blurRadius: 18,
+                        spreadRadius: 1)
+                  ]
+                : [],
+          ),
+          child: Row(children: [
+            // Haloed icon
+            AnimatedScale(
+              scale: _hovered ? 1.08 : 1.0,
+              duration: const Duration(milliseconds: 180),
+              child: Container(
+                width: 52,
+                height: 52,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.15),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: accent.withOpacity(0.35)),
+                ),
+                child: Icon(widget.icon, color: accent, size: 25),
+              ),
+            ),
+            const Gap(16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(widget.title,
+                      style: TextStyle(
+                          color: accent,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800)),
+                  const Gap(4),
+                  Text(widget.subtitle,
+                      style: TextStyle(
+                          color: context.colors.textSecondary,
+                          fontSize: 12.5,
+                          height: 1.3)),
+                  // "Create Account" pill — only for roles that allow signup.
+                  if (widget.onCreate != null) ...[
+                    const Gap(10),
+                    GestureDetector(
+                      onTap: widget.onCreate,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: accent.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(color: accent.withOpacity(0.4)),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.add_rounded, size: 14, color: accent),
+                          const Gap(5),
+                          Text('Create Account',
+                              style: TextStyle(
+                                  color: accent,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700)),
+                        ]),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Gap(8),
+            // Sign-in affordance
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: _hovered ? accent : accent.withOpacity(0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(Icons.arrow_forward_rounded,
+                  size: 18,
+                  color: _hovered ? Colors.white : accent.withOpacity(0.8)),
+            ),
+          ]),
         ),
-        child: Row(children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: accent.withOpacity(0.14),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: accent, size: 22),
-          ),
-          const Gap(14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: TextStyle(
-                        color: accent,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800)),
-                const Gap(2),
-                Text(subtitle,
-                    style: TextStyle(
-                        color: context.colors.textSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
-          if (onCreate != null)
-            TextButton(
-              onPressed: onCreate,
-              style: TextButton.styleFrom(foregroundColor: accent),
-              child: const Text('Create',
-                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 12)),
-            ),
-          const Gap(4),
-          Icon(Icons.chevron_right_rounded,
-              color: accent.withOpacity(0.7), size: 20),
-        ]),
       ),
     );
   }

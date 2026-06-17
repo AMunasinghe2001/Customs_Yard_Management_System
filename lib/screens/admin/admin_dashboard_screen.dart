@@ -16,7 +16,11 @@ import '../../widgets/status_chip.dart';
 // Dashboard providers now moved to lib/core/providers.dart for shared access
 
 class AdminDashboardScreen extends ConsumerWidget {
-  const AdminDashboardScreen({super.key});
+  /// The nav route to highlight. Admins land here via `/admin`; officers reuse
+  /// this exact dashboard from `/dashboard` (one shared dashboard for both), so
+  /// the route is passed in to keep the correct nav item highlighted.
+  final String currentRoute;
+  const AdminDashboardScreen({super.key, this.currentRoute = '/admin'});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,7 +32,7 @@ class AdminDashboardScreen extends ConsumerWidget {
     final myYard = ref.watch(currentProfileProvider)?.yard;
 
     return AppShell(
-      currentRoute: '/admin',
+      currentRoute: currentRoute,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Padding(
@@ -44,7 +48,10 @@ class AdminDashboardScreen extends ConsumerWidget {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Admin Dashboard',
+                      Text(
+                          ref.watch(currentProfileProvider)?.isAdmin == true
+                              ? 'Admin Dashboard'
+                              : 'Dashboard',
                           style: Theme.of(context).textTheme.headlineLarge),
                       Text(
                           DateFormat('EEEE, d MMMM yyyy')

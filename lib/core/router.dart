@@ -14,7 +14,6 @@ import '../screens/appeal/appeal_dashboard_screen.dart';
 import '../screens/valuation/valuation_login_screen.dart';
 import '../screens/valuation/valuation_signup_screen.dart';
 import '../screens/valuation/valuation_dashboard_screen.dart';
-import '../screens/dashboard/dashboard_screen.dart';
 import '../screens/inspection/inspection_screen.dart';
 import '../screens/warehouses/warehouses_screen.dart';
 import '../screens/warehouses/warehouse_capacity_screen.dart';
@@ -89,7 +88,9 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/appeal/login', builder: (_, __) => const AppealLoginScreen()),
       GoRoute(path: '/appeal/signup', builder: (_, __) => const AppealSignupScreen()),
       GoRoute(path: '/appeal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AppealDashboardScreen())),
-      GoRoute(path: '/dashboard', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DashboardScreen())),
+      // Officers land here — same dashboard as admins (one shared dashboard),
+      // just with the '/dashboard' nav item highlighted.
+      GoRoute(path: '/dashboard', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminDashboardScreen(currentRoute: '/dashboard'))),
       GoRoute(path: '/inspection', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const InspectionScreen())),
       GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),
       GoRoute(path: '/zone-capacity', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehouseCapacityScreen())),

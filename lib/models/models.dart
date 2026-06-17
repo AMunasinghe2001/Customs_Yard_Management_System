@@ -365,6 +365,10 @@ class WarehouseEntryModel {
   final String? caseNumber;
   final String? consigneeName;
   final String? packageStatus;
+  // From joined package_items (the item this entry holds, or the package's
+  // first item) — so reports can identify the goods, not just the SR number.
+  final String? itemName;
+  final String? hsCode;
 
   const WarehouseEntryModel({
     required this.id,
@@ -392,11 +396,28 @@ class WarehouseEntryModel {
     this.caseNumber,
     this.consigneeName,
     this.packageStatus,
+    this.itemName,
+    this.hsCode,
   });
 
   factory WarehouseEntryModel.fromJson(Map<String, dynamic> json) {
     final warehouse = json['warehouses'] as Map<String, dynamic>?;
     final package = json['packages'] as Map<String, dynamic>?;
+    // Resolve the item this entry holds (or the package's first item) from the
+    // joined package_items, so reports can show the goods name + HS code.
+    final pkgItems = (package?['package_items'] as List?) ?? const [];
+    final entryItemId = json['package_item_id'] as String?;
+    Map<String, dynamic>? matchedItem;
+    if (pkgItems.isNotEmpty) {
+      if (entryItemId != null) {
+        matchedItem = pkgItems.cast<Map<String, dynamic>>().firstWhere(
+              (i) => i['id'] == entryItemId,
+              orElse: () => pkgItems.first as Map<String, dynamic>,
+            );
+      } else {
+        matchedItem = pkgItems.first as Map<String, dynamic>;
+      }
+    }
     return WarehouseEntryModel(
       id: json['id'] as String,
       packageId: json['package_id'] as String,
@@ -429,6 +450,8 @@ class WarehouseEntryModel {
       srNumber: package?['sr_number'] as String?,
       consigneeName: package?['consignee_name'] as String?,
       packageStatus: package?['status'] as String?,
+      itemName: matchedItem?['item_name'] as String?,
+      hsCode: matchedItem?['hs_code'] as String?,
     );
   }
 

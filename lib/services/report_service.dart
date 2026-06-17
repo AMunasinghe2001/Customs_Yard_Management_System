@@ -24,6 +24,29 @@ class ReportService {
     _fontSinhala = await PdfGoogleFonts.notoSansSinhalaRegular();
   }
 
+  // ── Item-identity helpers (every report shows the item name + HS code so a
+  //    package is easy to identify, not just the SR number) ──────────────────
+
+  /// A readable item label for a list of package items: the single item's name,
+  /// or "<first> +N" for several, or '—' when none.
+  static String itemLabel(List<PackageItem> items) {
+    if (items.isEmpty) return '—';
+    if (items.length == 1) return items.first.itemName;
+    return '${items.first.itemName} +${items.length - 1}';
+  }
+
+  /// A readable HS-code label: the single code, 'Multiple' when they differ,
+  /// or '—' when none recorded.
+  static String hsLabel(List<PackageItem> items) {
+    final codes = items
+        .map((i) => i.hsCode?.trim())
+        .where((c) => c != null && c.isNotEmpty)
+        .toSet();
+    if (codes.isEmpty) return '—';
+    if (codes.length == 1) return codes.first!;
+    return 'Multiple';
+  }
+
   /// Generates a PDF report for report items with category summary and zone summary
   Future<Uint8List> generateCategoryAndZonePdf(List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
     final pdf = pw.Document();
@@ -184,30 +207,34 @@ class ReportService {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
+    // Disposition breakdown columns (in addition to admit/release/net).
+    const dispoCols = ['forfeit', 'abandoned', 're-export', 'destroy', 'sold', 'other'];
+    const dispoHeaders = ['Forfeit', 'Abandoned', 'Re-export', 'Destroy', 'Sold', 'Other'];
+
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: format ?? PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        pageFormat: format ?? PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(28),
         build: (context) => [
           _buildHeader(title, dateStr, ''),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headers: [periodLabel, 'Admitted', 'Released', 'Net Change'],
+            headers: [
+              periodLabel, 'Admitted', 'Released', ...dispoHeaders, 'Net Change'
+            ],
             data: summaryData.map((d) => [
               d['period'],
               d['admitted'].toString(),
               d['returned'].toString(),
+              for (final c in dispoCols) (d[c] ?? 0).toString(),
               (d['admitted'] - d['returned']).toString(),
             ]).toList(),
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
+            cellStyle: const pw.TextStyle(fontSize: 8),
             headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)), // Customs Blue
             rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
-            cellAlignments: {
-              0: pw.Alignment.centerLeft,
-              1: pw.Alignment.center,
-              2: pw.Alignment.center,
-              3: pw.Alignment.center,
-            },
+            cellAlignment: pw.Alignment.center,
+            cellAlignments: {0: pw.Alignment.centerLeft},
           ),
           pw.SizedBox(height: 20),
           _buildFooter(summaryData.length, label: 'Total Periods:'),
@@ -226,12 +253,13 @@ class ReportService {
 
     // Add Headers
     List<String> headers = [
-      'SR Number', 'Consignee', 'Warehouse', 'Admitted At', 'Reason', 'Items'
+      'SR Number', 'Item', 'HS Code', 'Consignee', 'Warehouse', 'Admitted At',
+      'Reason', 'Items'
     ];
     if (isReturned) {
       headers.addAll(['Released At', 'Release Notes']);
     }
-    
+
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
     // Style the header row
@@ -248,6 +276,8 @@ class ReportService {
     for (var e in entries) {
       List<CellValue> row = [
         TextCellValue(e.srNumber ?? ''),
+        TextCellValue(e.itemName ?? ''),
+        TextCellValue((e.hsCode?.trim().isNotEmpty == true) ? e.hsCode!.trim() : ''),
         TextCellValue(e.consigneeName ?? ''),
         TextCellValue(e.warehouseCode),
         TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(e.admittedAt)),
@@ -270,10 +300,14 @@ class ReportService {
     Sheet sheetObject = excel['Summary'];
     excel.delete('Sheet1');
 
+    const dispoCols = ['forfeit', 'abandoned', 're-export', 'destroy', 'sold', 'other'];
+    const dispoHeaders = ['Forfeit', 'Abandoned', 'Re-export', 'Destroy', 'Sold', 'Other'];
+
     sheetObject.appendRow([
       TextCellValue(periodLabel),
       TextCellValue('Admitted'),
       TextCellValue('Released'),
+      ...dispoHeaders.map((h) => TextCellValue(h)),
       TextCellValue('Net Change')
     ]);
 
@@ -292,6 +326,7 @@ class ReportService {
         TextCellValue(d['period'].toString()),
         IntCellValue(d['admitted']),
         IntCellValue(d['returned']),
+        ...dispoCols.map((c) => IntCellValue((d[c] ?? 0) as int)),
         IntCellValue(d['admitted'] - d['returned']),
       ]);
     }
@@ -314,7 +349,7 @@ class ReportService {
 
     // Add Headers
     List<String> headers = [
-      'SR Number', 'Date', 'Consignee', 'NIC', 'Status', 
+      'SR Number', 'Item', 'HS Code', 'Date', 'Consignee', 'NIC', 'Status',
       'Weight (kg)', 'Value (LKR)', 'Cusdec No', 'Origin', 'Description'
     ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
@@ -334,6 +369,8 @@ class ReportService {
     for (var p in packages) {
       sheetObject.appendRow([
         TextCellValue(p.srNumber),
+        TextCellValue(itemLabel(p.items)),
+        TextCellValue(hsLabel(p.items)),
         TextCellValue(p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : ''),
         TextCellValue(p.consigneeName),
         TextCellValue(p.consigneeNic ?? ''),
@@ -673,9 +710,13 @@ class ReportService {
       final package = packages.firstWhere((p) => p.id == entry.packageId, orElse: () => packages.first);
       final charge = entry.calculatePackageCharge(package.items, rates);
       totalCharge += charge;
-      
+
       rowData.add([
         entry.srNumber ?? '-',
+        entry.itemName ?? itemLabel(package.items),
+        (entry.hsCode?.trim().isNotEmpty == true)
+            ? entry.hsCode!.trim()
+            : hsLabel(package.items),
         entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : '-') : 'Active',
         entry.itemCount.toString(),
         entry.storageDays.toString(),
@@ -693,9 +734,10 @@ class ReportService {
           pw.TableHelper.fromTextArray(
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            headers: ['SR Number', 'Release Date', 'Items', 'Days', 'Calculated Charge'],
+            headers: ['SR Number', 'Item', 'HS Code', 'Release Date', 'Items', 'Days', 'Calculated Charge'],
             data: rowData,
-            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.center, 4: pw.Alignment.centerRight},
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.centerLeft, 4: pw.Alignment.center, 5: pw.Alignment.center, 6: pw.Alignment.centerRight},
           ),
           pw.SizedBox(height: 10),
           pw.Row(
@@ -723,9 +765,9 @@ class ReportService {
     sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
     sheetObject.appendRow([TextCellValue('')]);
 
-    List<String> headers = ['SR Number', 'Release Date', 'Items', 'Days', 'Calculated Charge (LKR)'];
+    List<String> headers = ['SR Number', 'Item', 'HS Code', 'Release Date', 'Items', 'Days', 'Calculated Charge (LKR)'];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
-    
+
     var headerRow = sheetObject.row(3);
     for (var cell in headerRow) {
       if (cell != null) cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
@@ -736,18 +778,22 @@ class ReportService {
       final package = packages.firstWhere((p) => p.id == entry.packageId, orElse: () => packages.first);
       final charge = entry.calculatePackageCharge(package.items, rates);
       totalCharge += charge;
-      
+
       sheetObject.appendRow([
         TextCellValue(entry.srNumber ?? '-'),
+        TextCellValue(entry.itemName ?? itemLabel(package.items)),
+        TextCellValue((entry.hsCode?.trim().isNotEmpty == true)
+            ? entry.hsCode!.trim()
+            : hsLabel(package.items)),
         TextCellValue(entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : '-') : 'Active'),
         IntCellValue(entry.itemCount),
         IntCellValue(entry.storageDays),
         DoubleCellValue(charge),
       ]);
     }
-    
+
     sheetObject.appendRow([TextCellValue('')]);
-    sheetObject.appendRow([TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue('Total:'), DoubleCellValue(totalCharge)]);
+    sheetObject.appendRow([TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue('Total:'), DoubleCellValue(totalCharge)]);
     
     return Uint8List.fromList(excel.encode()!);
   }
@@ -821,14 +867,18 @@ class ReportService {
   }
 
   pw.Widget _buildPackageTable(List<PackageModel> packages) {
-    const headers = ['SR Number', 'Consignee', 'NIC', 'Status', 'Date', 'Weight', 'Value', 'Origin'];
+    const headers = [
+      'SR Number', 'Item', 'HS Code', 'Consignee', 'Status', 'Date',
+      'Weight', 'Value', 'Origin'
+    ];
 
     return pw.TableHelper.fromTextArray(
       headers: headers,
       data: packages.map((p) => [
         p.srNumber,
+        itemLabel(p.items),
+        hsLabel(p.items),
         p.consigneeName,
-        p.consigneeNic ?? '-',
         p.status.toUpperCase(),
         p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : '-',
         p.weightKg.toStringAsFixed(1),
@@ -844,18 +894,20 @@ class ReportService {
         0: pw.Alignment.centerLeft,
         1: pw.Alignment.centerLeft,
         2: pw.Alignment.center,
-        3: pw.Alignment.center,
+        3: pw.Alignment.centerLeft,
         4: pw.Alignment.center,
-        5: pw.Alignment.centerRight,
+        5: pw.Alignment.center,
         6: pw.Alignment.centerRight,
-        7: pw.Alignment.center,
+        7: pw.Alignment.centerRight,
+        8: pw.Alignment.center,
       },
     );
   }
 
   pw.Widget _buildWarehouseTable(List<WarehouseEntryModel> entries, {bool isReturnedReport = false}) {
     final headers = [
-      'SR No', 'Consignee', 'Warehouse', 'Reason', 'Admitted', 'Items'
+      'SR No', 'Item', 'HS Code', 'Consignee', 'Warehouse', 'Reason',
+      'Admitted', 'Items'
     ];
     if (isReturnedReport) {
       headers.add('Released');
@@ -866,6 +918,8 @@ class ReportService {
       data: entries.map((e) {
         final row = [
           e.srNumber ?? '-',
+          e.itemName ?? '—',
+          (e.hsCode?.trim().isNotEmpty == true) ? e.hsCode!.trim() : '—',
           e.consigneeName ?? '-',
           e.warehouseCode,
           e.holdReason,
@@ -877,8 +931,8 @@ class ReportService {
         }
         return row;
       }).toList(),
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 10, color: PdfColors.white),
-      cellStyle: const pw.TextStyle(fontSize: 9),
+      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+      cellStyle: const pw.TextStyle(fontSize: 8),
       headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
       rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
       cellHeight: 20,
@@ -888,8 +942,10 @@ class ReportService {
         2: pw.Alignment.center,
         3: pw.Alignment.centerLeft,
         4: pw.Alignment.center,
-        5: pw.Alignment.center,
+        5: pw.Alignment.centerLeft,
         6: pw.Alignment.center,
+        7: pw.Alignment.center,
+        8: pw.Alignment.center,
       },
     );
   }
@@ -907,6 +963,106 @@ class ReportService {
         ),
       ],
     );
+  }
+
+  // ── Generic forfeited-package list report (Forfeited / Sold / Destroyed) ──
+
+  /// PDF for any list of forfeited packages (used by the yard-page reports:
+  /// Forfeited, Sold, Destroyed, etc.). [title]/[subTitle] label the report.
+  Future<Uint8List> generateForfeitedPdf(
+    List<ForfeitedPackageModel> packages, {
+    required String title,
+    String subTitle = '',
+  }) async {
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: PdfPageFormat.a4.landscape,
+        margin: const pw.EdgeInsets.all(32),
+        build: (context) => [
+          _buildHeader(title, dateStr, subTitle),
+          pw.SizedBox(height: 20),
+          pw.TableHelper.fromTextArray(
+            headers: const [
+              'SR Number',
+              'Item',
+              'HS Code',
+              'Consignee',
+              'Yard',
+              'Source',
+              'Reason',
+              'Forfeited On',
+            ],
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+            headerDecoration:
+                const pw.BoxDecoration(color: PdfColor.fromInt(0xFF1A237E)),
+            cellStyle: const pw.TextStyle(fontSize: 8),
+            cellAlignment: pw.Alignment.centerLeft,
+            data: packages.map((f) {
+              final items = f.packageDetails?.items ?? const [];
+              final name = f.itemName ?? itemLabel(items);
+              return [
+                f.srNumber,
+                name,
+                hsLabel(items),
+                f.consigneeName,
+                f.yard ?? '—',
+                f.source.toUpperCase(),
+                f.reason,
+                DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+              ];
+            }).toList(),
+          ),
+          pw.SizedBox(height: 20),
+          _buildFooter(packages.length),
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  /// Excel for any list of forfeited packages.
+  Future<Uint8List?> exportForfeitedToExcel(
+    List<ForfeitedPackageModel> packages, {
+    required String title,
+  }) async {
+    final excel = Excel.createExcel();
+    final sheet = excel['Report'];
+    excel.delete('Sheet1');
+    sheet.appendRow([TextCellValue(title.toUpperCase())]);
+    sheet.appendRow([
+      TextCellValue(
+          'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
+    ]);
+    sheet.appendRow([TextCellValue('')]);
+    final headers = [
+      'SR Number',
+      'Item',
+      'HS Code',
+      'Consignee',
+      'Yard',
+      'Source',
+      'Reason',
+      'Forfeited On',
+    ];
+    sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
+    for (final f in packages) {
+      final items = f.packageDetails?.items ?? const [];
+      final name = f.itemName ?? (items.isEmpty ? '' : itemLabel(items));
+      sheet.appendRow([
+        TextCellValue(f.srNumber),
+        TextCellValue(name),
+        TextCellValue(items.isEmpty ? '' : hsLabel(items)),
+        TextCellValue(f.consigneeName),
+        TextCellValue(f.yard ?? ''),
+        TextCellValue(f.source.toUpperCase()),
+        TextCellValue(f.reason),
+        TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
+      ]);
+    }
+    return Uint8List.fromList(excel.encode()!);
   }
 
   // ── Tender Packages PDF Report ────────────────────────────────

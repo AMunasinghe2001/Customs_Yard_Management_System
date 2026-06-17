@@ -757,7 +757,7 @@ class WarehouseService {
   Future<List<WarehouseEntryModel>> getAllWarehouseEntries(
       {bool? isReturned}) async {
     var query = supabase.from('warehouse_entries').select(
-        '*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)');
+        '*, warehouses(*), packages(*, package_items(*)), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)');
     if (isReturned != null) query = query.eq('is_returned', isReturned);
     final data = await query.order('admitted_at', ascending: false);
     return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
@@ -2036,6 +2036,19 @@ class ForfeitedPackageService {
             !goneIds.contains(e['id'].toString()))
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .toList();
+  }
+
+  /// All forfeited_packages rows for a given [source] ('abandoned' | 'other' |
+  /// 'forfeit'), with package + item detail — used by the yard reports for the
+  /// Abandoned / Other pages (the main getForfeitedPackages() is forfeit-only).
+  Future<List<ForfeitedPackageModel>> getForfeitedBySource(String source) async {
+    final data = await supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .eq('source', source)
+        .order('forfeited_at', ascending: false);
+    return (data as List).map((e) => ForfeitedPackageModel.fromJson(e)).toList();
   }
 
   /// Forfeited package ids that have reached a terminal sale/destruction

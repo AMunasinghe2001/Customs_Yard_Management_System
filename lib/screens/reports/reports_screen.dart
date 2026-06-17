@@ -132,7 +132,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                         contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      items: ['all', 'pending', 'held', 'cleared', 'returned', 'seized'].map((s) {
+                      // Package-level statuses the app actually stores (see
+                      // StatusChip). 'seized' was stale — packages never carry
+                      // it (forfeiture is item-level → forfeited_packages), so
+                      // it always returned an empty report. Removed.
+                      items: ['all', 'pending', 'held', 'cleared', 'returned'].map((s) {
                         final label = s == 'returned' ? 'released' : s;
                         return DropdownMenuItem(
                           value: s,
@@ -270,14 +274,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: _generateCategoryZonePdf,
                       onExcel: _exportCategoryZoneExcel,
                     ),
-                    _buildReportCard(
-                      title: 'Confiscated Items',
-                      description: 'All items seized/confiscated by customs.',
-                      icon: Icons.gavel_rounded,
-                      color: const Color(0xFFD32F2F),
-                      onPdf: _generateConfiscatedPdf,
-                      onExcel: _exportConfiscatedExcel,
-                    ),
+                    // (Removed "Confiscated Items" — it filtered on a package
+                    // status 'confiscated' the app no longer uses, so it always
+                    // returned empty. Forfeitures now live in forfeited_packages
+                    // and are covered by the "Forfeited Packages" report below.)
                     if (isAdmin)
                       _buildReportCard(
                         title: 'Staff Audit',
@@ -287,6 +287,66 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                         onPdf: _generateStaffPdf,
                         onExcel: _exportStaffExcel,
                       ),
+                  ],
+                ),
+
+                // ── Section: Disposal Lifecycle Reports (yard pages) ──
+                const Gap(24),
+                _buildSectionHeader(
+                    'Disposal Lifecycle Reports', Icons.recycling_rounded),
+                const Gap(8),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 2.3,
+                  children: [
+                    _buildReportCard(
+                      title: 'Forfeited Packages',
+                      description: 'All forfeited goods in this yard.',
+                      icon: Icons.gavel_rounded,
+                      color: const Color(0xFFC62828),
+                      onPdf: () => _generateForfeitedReport('pdf'),
+                      onExcel: () => _generateForfeitedReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Abandoned Packages',
+                      description: 'Goods abandoned by the consignee.',
+                      icon: Icons.inbox_rounded,
+                      color: const Color(0xFF8D6E63),
+                      onPdf: () => _generateSourceForfeitedReport(
+                          'abandoned', 'Abandoned Packages', 'pdf'),
+                      onExcel: () => _generateSourceForfeitedReport(
+                          'abandoned', 'Abandoned Packages', 'excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Other Packages',
+                      description: 'Packages routed via "Other" disposition.',
+                      icon: Icons.more_horiz_rounded,
+                      color: const Color(0xFF5E35B1),
+                      onPdf: () => _generateSourceForfeitedReport(
+                          'other', 'Other Packages', 'pdf'),
+                      onExcel: () => _generateSourceForfeitedReport(
+                          'other', 'Other Packages', 'excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Sold Packages',
+                      description: 'Packages sold via tender in this yard.',
+                      icon: Icons.sell_rounded,
+                      color: const Color(0xFF2E7D32),
+                      onPdf: () => _generateSoldReport('pdf'),
+                      onExcel: () => _generateSoldReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Destroyed Packages',
+                      description: 'Packages marked destroyed in this yard.',
+                      icon: Icons.local_fire_department_rounded,
+                      color: const Color(0xFFEF6C00),
+                      onPdf: () => _generateDestroyedReport('pdf'),
+                      onExcel: () => _generateDestroyedReport('excel'),
+                    ),
                   ],
                 ),
 
@@ -412,14 +472,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: _generateCategoriesPdf,
                       onExcel: _exportCategoriesExcel,
                     ),
-                    _buildReportCard(
-                      title: 'Audit Logs',
-                      description: 'Date-filtered system activity.',
-                      icon: Icons.history_rounded,
-                      color: Colors.blueGrey,
-                      onPdf: _generateLogsPdf,
-                      onExcel: _exportLogsExcel,
-                    ),
+                    // (Audit Logs report removed per request.)
                   ],
                 ),
               ],
@@ -589,6 +642,146 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _showError(e.toString());
     } finally {
       _setLoading(key, false);
+    }
+  }
+
+  // ── Disposal Lifecycle Reports (yard pages) ──────────────────────────────
+
+  /// Forfeited Packages page report (all genuine forfeits in this yard).
+  Future<void> _generateForfeitedReport(String format) async {
+    await _emitForfeitedReport(
+      key: 'Forfeited Packages',
+      title: 'FORFEITED PACKAGES',
+      fileBase: 'Forfeited_Packages',
+      format: format,
+      fetch: () =>
+          ref.read(forfeitedPackageServiceProvider).getForfeitedPackages(),
+    );
+  }
+
+  /// Abandoned / "Other" page report — forfeited rows with a matching source.
+  Future<void> _generateSourceForfeitedReport(
+      String source, String label, String format) async {
+    await _emitForfeitedReport(
+      key: label,
+      title: label.toUpperCase(),
+      fileBase: label.replaceAll(' ', '_'),
+      format: format,
+      fetch: () => ref
+          .read(forfeitedPackageServiceProvider)
+          .getForfeitedBySource(source),
+    );
+  }
+
+  /// Shared emit for a forfeited-package list report (PDF preview or Excel).
+  Future<void> _emitForfeitedReport({
+    required String key,
+    required String title,
+    required String fileBase,
+    required String format,
+    required Future<List<ForfeitedPackageModel>> Function() fetch,
+  }) async {
+    final loadKey = '${key}_$format';
+    _setLoading(loadKey, true);
+    try {
+      final list = _filterByDate(await fetch());
+      if (list.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final dateRange = (_startDate != null && _endDate != null)
+          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+          : 'Full Historical Report';
+      if (format == 'pdf') {
+        _showPdfPreview(
+          (_) => ReportService()
+              .generateForfeitedPdf(list, title: title, subTitle: dateRange),
+          '${fileBase}_Report.pdf',
+        );
+      } else if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => ExcelExportDialog(
+            title: 'Export $key',
+            recordCount: list.length,
+            fileName: '${fileBase}_Report.xlsx',
+            onExport: () =>
+                ReportService().exportForfeitedToExcel(list, title: title),
+            onSave: (bytes) => _handleFileSave(bytes, fileBase, 'xlsx'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(loadKey, false);
+    }
+  }
+
+  /// Packages with a final SOLD warehouse tag in this yard.
+  Future<void> _generateSoldReport(String format) =>
+      _emitFinalTagPackageReport(
+          tag: 'SOLD',
+          key: 'Sold Packages',
+          title: 'SOLD PACKAGES',
+          fileBase: 'Sold_Packages',
+          format: format);
+
+  /// Packages with a final DESTROYED warehouse tag in this yard.
+  Future<void> _generateDestroyedReport(String format) =>
+      _emitFinalTagPackageReport(
+          tag: 'DESTROYED',
+          key: 'Destroyed Packages',
+          title: 'DESTROYED PACKAGES',
+          fileBase: 'Destroyed_Packages',
+          format: format);
+
+  /// Shared emit for packages bearing a `[FINAL:<tag>]` warehouse-entry tag
+  /// (the Sold / Destroyed pages read the same tag).
+  Future<void> _emitFinalTagPackageReport({
+    required String tag,
+    required String key,
+    required String title,
+    required String fileBase,
+    required String format,
+  }) async {
+    final loadKey = '${key}_$format';
+    _setLoading(loadKey, true);
+    try {
+      final all = await ref.read(packageServiceProvider).getAllPackages();
+      final matches = all.where((p) => p.warehouseEntries.any((e) =>
+          (e.returnNotes ?? '').toUpperCase().contains('[FINAL:$tag'))).toList();
+      final list = _filterByDate(matches);
+      if (list.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final dateRange = (_startDate != null && _endDate != null)
+          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+          : 'Full Historical Report';
+      if (format == 'pdf') {
+        _showPdfPreview(
+          (fmt) => ReportService()
+              .generatePackagePdf(list, title: title, dateRange: dateRange, format: fmt),
+          '${fileBase}_Report.pdf',
+        );
+      } else if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => ExcelExportDialog(
+            title: 'Export $key',
+            recordCount: list.length,
+            fileName: '${fileBase}_Report.xlsx',
+            onExport: () =>
+                ReportService().exportPackagesToExcel(list, title: title),
+            onSave: (bytes) => _handleFileSave(bytes, fileBase, 'xlsx'),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(loadKey, false);
     }
   }
 
@@ -923,36 +1116,54 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
+  // The disposition buckets a period summary tracks, beyond admit/release.
+  static const List<String> _summaryDispoCols = [
+    'forfeit', 'abandoned', 're-export', 'destroy', 'sold', 'other'
+  ];
+
+  String _periodKey(DateTime d, String periodType) {
+    if (periodType == 'day') return DateFormat('yyyy-MM-dd').format(d);
+    if (periodType == 'week') return 'Year ${d.year} - Week ${(d.day / 7).ceil()}';
+    return DateFormat('yyyy-MM').format(d);
+  }
+
+  /// Classify a released entry into a disposition bucket using its return-note
+  /// tag (same tags the disposition pages read) — falling back to a plain
+  /// release. Returns null for entries that aren't a disposition.
+  String? _dispoOf(WarehouseEntryModel e) {
+    final n = (e.returnNotes ?? '').toUpperCase();
+    if (n.contains('FORFEIT')) return 'forfeit';
+    if (n.contains('ABANDON')) return 'abandoned';
+    if (n.contains('RE-EXPORT') || n.contains('REEXPORT')) return 're-export';
+    if (n.contains('DESTROY')) return 'destroy';
+    if (n.contains('SOLD') || n.contains('SALE')) return 'sold';
+    if (n.contains('OTHER')) return 'other';
+    return null; // plain release
+  }
+
   List<Map<String, dynamic>> _calculateSummary(List<WarehouseEntryModel> entries, String periodType) {
     final Map<String, Map<String, int>> groups = {};
+    Map<String, int> blank() => {
+          'admitted': 0,
+          'returned': 0,
+          for (final c in _summaryDispoCols) c: 0,
+        };
 
     for (var e in entries) {
-      String key;
-      if (periodType == 'day') {
-        key = DateFormat('yyyy-MM-dd').format(e.admittedAt);
-      } else if (periodType == 'week') {
-        final week = (e.admittedAt.day / 7).ceil();
-        key = 'Year ${e.admittedAt.year} - Week $week';
-      } else {
-        key = DateFormat('yyyy-MM').format(e.admittedAt);
-      }
+      // Admissions counted by admit date.
+      final aKey = _periodKey(e.admittedAt, periodType);
+      groups[aKey] ??= blank();
+      groups[aKey]!['admitted'] = groups[aKey]!['admitted']! + 1;
 
-      groups[key] ??= {'admitted': 0, 'returned': 0};
-      groups[key]!['admitted'] = groups[key]!['admitted']! + 1;
-      
+      // Releases / dispositions counted by the release date.
       if (e.isReturned && e.returnedAt != null) {
-        String rKey;
-        if (periodType == 'day') {
-          rKey = DateFormat('yyyy-MM-dd').format(e.returnedAt!);
-        } else if (periodType == 'week') {
-          final week = (e.returnedAt!.day / 7).ceil();
-          rKey = 'Year ${e.returnedAt!.year} - Week $week';
-        } else {
-          rKey = DateFormat('yyyy-MM').format(e.returnedAt!);
-        }
-        
-        groups[rKey] ??= {'admitted': 0, 'returned': 0};
+        final rKey = _periodKey(e.returnedAt!, periodType);
+        groups[rKey] ??= blank();
         groups[rKey]!['returned'] = groups[rKey]!['returned']! + 1;
+        final dispo = _dispoOf(e);
+        if (dispo != null) {
+          groups[rKey]![dispo] = (groups[rKey]![dispo] ?? 0) + 1;
+        }
       }
     }
 
@@ -961,6 +1172,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       'period': k,
       'admitted': groups[k]!['admitted'],
       'returned': groups[k]!['returned'],
+      for (final c in _summaryDispoCols) c: groups[k]![c],
     }).toList();
   }
 
@@ -1120,77 +1332,8 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
       _setLoading(key, false);
     }
   }
-  Future<void> _generateLogsPdf() async {
-    const key = 'Audit Logs_pdf';
-    _setLoading(key, true);
-    try {
-      final allLogs = await ref.read(auditLogServiceProvider).getAllLogs();
-      final filtered = _filterByDate(allLogs);
-      
-      if (filtered.isEmpty) {
-        _showNoDataMessage();
-        return;
-      }
-
-      final dateRangeStr = (_startDate != null && _endDate != null) 
-          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
-          : 'Full Historical Logs';
-
-      _showPdfPreview(
-        (format) => ReportService().generateLogsPdf(filtered, dateRangeStr),
-        'System_Audit_Logs.pdf',
-      );
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      _setLoading(key, false);
-    }
-  }
-
-  Future<void> _exportLogsExcel() async {
-    const key = 'Audit Logs_excel';
-    _setLoading(key, true);
-    try {
-      final allLogs = await ref.read(auditLogServiceProvider).getAllLogs();
-      final filtered = _filterByDate(allLogs);
-
-      if (filtered.isEmpty) {
-        _showNoDataMessage();
-        return;
-      }
-
-      final dateRangeStr = (_startDate != null && _endDate != null) 
-          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
-          : 'Full Historical Logs';
-
-      if (mounted) {
-        showDialog(
-          context: context,
-          builder: (ctx) => ExcelExportDialog(
-            title: 'Export Audit Logs',
-            recordCount: filtered.length,
-            fileName: 'System_Audit_Logs.xlsx',
-            onExport: () => ReportService().exportLogsToExcel(filtered, dateRangeStr),
-            onSave: (bytes) => _handleFileSave(bytes, 'System_Audit_Logs', 'xlsx'),
-          ),
-        );
-      }
-    } catch (e) {
-      _showError(e.toString());
-    } finally {
-      _setLoading(key, false);
-    }
-  }
 
   // ── New Report Handlers ──
-
-  Future<void> _generateConfiscatedPdf() async {
-    await _generateStatusReport('confiscated', 'pdf');
-  }
-
-  Future<void> _exportConfiscatedExcel() async {
-    await _generateStatusReport('confiscated', 'excel');
-  }
 
   Future<void> _generateWarehousesListPdf() async {
     const key = 'Warehouses List_pdf';
@@ -1363,6 +1506,8 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
         dt = item.createdAt;
       } else if (item is WarehouseEntryModel) {
         dt = item.admittedAt;
+      } else if (item is ForfeitedPackageModel) {
+        dt = item.forfeitedAt;
       } else {
         return true;
       }
