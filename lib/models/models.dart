@@ -1260,6 +1260,47 @@ class DisposalRequestItemModel {
 
   String get dispositionLabelText => dispositionLabel(disposition);
 
+  /// The package items this disposal-request row covers. For a per-item
+  /// (abandoned / "Other") row that names a specific [ForfeitedPackageModel.itemId]
+  /// only that item; otherwise every item in the package.
+  List<PackageItem> get coveredItems {
+    final all = forfeited?.packageDetails?.items ?? const <PackageItem>[];
+    final itemId = forfeited?.itemId;
+    if (itemId != null) {
+      final match = all.where((i) => i.id == itemId).toList();
+      if (match.isNotEmpty) return match;
+    }
+    return all;
+  }
+
+  /// Total quantity across the covered package items (defaults to 1 when no
+  /// item detail is available, so a cost × qty total is never zeroed out).
+  int get totalQuantity {
+    final items = coveredItems;
+    if (items.isEmpty) return 1;
+    return items.fold(0, (sum, i) => sum + i.quantity);
+  }
+
+  /// HS code to show in the table: the single item's code, or 'Multiple' when
+  /// the covered items carry different codes. Null when none is recorded.
+  String? get hsCodeLabel {
+    final codes = coveredItems
+        .map((i) => i.hsCode?.trim())
+        .where((c) => c != null && c.isNotEmpty)
+        .toSet();
+    if (codes.isEmpty) return null;
+    if (codes.length == 1) return codes.first;
+    return 'Multiple';
+  }
+
+  /// The per-unit cost entered by the Valuation Directorate (alias of the
+  /// stored [valuationCost]; null until valued).
+  double? get unitCost => valuationCost;
+
+  /// Total valuation = per-unit cost × total quantity (null until valued).
+  double? get totalCost =>
+      valuationCost == null ? null : valuationCost! * totalQuantity;
+
   factory DisposalRequestItemModel.fromJson(Map<String, dynamic> json) {
     return DisposalRequestItemModel(
       id: json['id'] as String,

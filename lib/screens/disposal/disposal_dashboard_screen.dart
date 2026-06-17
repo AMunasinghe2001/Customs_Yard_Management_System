@@ -932,6 +932,15 @@ class _RequestCard extends ConsumerWidget {
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
                     DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                     DataColumn2(
+                        label: Text('HS Code'),
+                        size: ColumnSize.S,
+                        fixedWidth: 110),
+                    DataColumn2(
+                        label: Text('Qty'),
+                        size: ColumnSize.S,
+                        fixedWidth: 64,
+                        numeric: true),
+                    DataColumn2(
                         label: Text('Source'),
                         size: ColumnSize.S,
                         fixedWidth: 110),
@@ -942,7 +951,7 @@ class _RequestCard extends ConsumerWidget {
                     DataColumn2(
                         label: Text('Valuation'),
                         size: ColumnSize.S,
-                        fixedWidth: 130),
+                        fixedWidth: 150),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
@@ -959,15 +968,37 @@ class _RequestCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(f?.consigneeName ?? '—',
                           overflow: TextOverflow.ellipsis)),
+                      DataCell(Text(it.hsCodeLabel ?? '—',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12))),
+                      DataCell(Text('${it.totalQuantity}',
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12))),
                       DataCell(_SourceChip(source: f?.source ?? 'forfeit')),
                       DataCell(_DispositionChip(disposition: it.disposition)),
                       DataCell(it.valuationCost != null
-                          ? Text(
-                              'LKR ${NumberFormat('#,##0').format(it.valuationCost)}',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12))
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                    'LKR ${NumberFormat('#,##0').format(it.totalCost)}',
+                                    style: TextStyle(
+                                        color: context.colors.primaryGold,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12)),
+                                Text(
+                                    '@ ${NumberFormat('#,##0').format(it.unitCost)} × ${it.totalQuantity}',
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 10)),
+                              ],
+                            )
                           : Text('—',
                               style:
                                   TextStyle(color: context.colors.textMuted))),

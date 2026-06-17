@@ -815,12 +815,7 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
       ref.invalidate(forfeitedPackagesProvider);
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Disposal recorded successfully'),
-            duration: Duration(seconds: 2),
-          ),
-        );
+        context.showSuccess('Disposal recorded successfully');
         Navigator.pop(context);
       }
     } catch (e) {

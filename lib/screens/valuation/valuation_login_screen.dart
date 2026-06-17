@@ -214,10 +214,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
     await _saveCredentials();
     ref.read(currentProfileProvider.notifier).state = profile;
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('✅ Logged in as ${profile.fullName}'),
-        backgroundColor: context.colors.accentBlue,
-      ));
+      context.showSuccess('Logged in as ${profile.fullName}');
       context.go('/valuation');
     }
   }

@@ -212,10 +212,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
     await _saveCredentials();
     ref.read(currentProfileProvider.notifier).state = profile;
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('✅ Logged in as ${profile.fullName}'),
-        backgroundColor: context.colors.accentBlue,
-      ));
+      context.showSuccess('Logged in as ${profile.fullName}');
       context.go('/appeal');
     }
   }

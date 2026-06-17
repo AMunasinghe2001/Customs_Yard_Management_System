@@ -350,13 +350,22 @@ class _ValuationRequestCard extends ConsumerWidget {
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
                     DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                     DataColumn2(
+                        label: Text('HS Code'),
+                        size: ColumnSize.S,
+                        fixedWidth: 110),
+                    DataColumn2(
+                        label: Text('Qty'),
+                        size: ColumnSize.S,
+                        fixedWidth: 64,
+                        numeric: true),
+                    DataColumn2(
                         label: Text('Disposition'),
                         size: ColumnSize.S,
                         fixedWidth: 130),
                     DataColumn2(
                         label: Text('Valuation'),
                         size: ColumnSize.S,
-                        fixedWidth: 130),
+                        fixedWidth: 150),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
@@ -373,14 +382,36 @@ class _ValuationRequestCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(f?.consigneeName ?? '—',
                           overflow: TextOverflow.ellipsis)),
+                      DataCell(Text(it.hsCodeLabel ?? '—',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12))),
+                      DataCell(Text('${it.totalQuantity}',
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12))),
                       DataCell(_DispoChip(disposition: it.disposition)),
                       DataCell(it.valuationCost != null
-                          ? Text(
-                              'LKR ${NumberFormat('#,##0').format(it.valuationCost)}',
-                              style: TextStyle(
-                                  color: gold,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12))
+                          ? Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                    'LKR ${NumberFormat('#,##0').format(it.totalCost)}',
+                                    style: TextStyle(
+                                        color: gold,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12)),
+                                Text(
+                                    '@ ${NumberFormat('#,##0').format(it.unitCost)} × ${it.totalQuantity}',
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 10)),
+                              ],
+                            )
                           : Text('Not set',
                               style: TextStyle(
                                   color: context.colors.textMuted,
@@ -441,11 +472,21 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
                 ? it.valuationCost!.toStringAsFixed(0)
                 : ''),
     };
+    // Rebuild on every keystroke so each item's live total (cost × qty)
+    // updates as the directorate types.
+    for (final c in _ctrls.values) {
+      c.addListener(_onCostChanged);
+    }
+  }
+
+  void _onCostChanged() {
+    if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
     for (final c in _ctrls.values) {
+      c.removeListener(_onCostChanged);
       c.dispose();
     }
     super.dispose();
@@ -605,6 +646,24 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
                                   style: TextStyle(
                                       color: context.colors.textSecondary,
                                       fontSize: 12)),
+                              const Gap(4),
+                              Row(children: [
+                                Icon(Icons.tag_rounded,
+                                    size: 12, color: context.colors.textMuted),
+                                const Gap(4),
+                                Text('HS ${it.hsCodeLabel ?? '—'}',
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 11)),
+                                const Gap(10),
+                                Icon(Icons.inventory_2_rounded,
+                                    size: 12, color: context.colors.textMuted),
+                                const Gap(4),
+                                Text('Qty ${it.totalQuantity}',
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 11)),
+                              ]),
                             ],
                           ),
                         ),
@@ -613,15 +672,24 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
                         const Gap(12),
                         SizedBox(
                           width: 150,
-                          child: TextField(
-                            controller: _ctrls[it.id],
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true),
-                            decoration: const InputDecoration(
-                              labelText: 'Cost (LKR)',
-                              isDense: true,
-                              prefixText: 'LKR ',
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              TextField(
+                                controller: _ctrls[it.id],
+                                keyboardType:
+                                    const TextInputType.numberWithOptions(
+                                        decimal: true),
+                                decoration: const InputDecoration(
+                                  labelText: 'Cost / item (LKR)',
+                                  isDense: true,
+                                  prefixText: 'LKR ',
+                                ),
+                              ),
+                              const Gap(6),
+                              _LiveTotal(item: it, controller: _ctrls[it.id]!),
+                            ],
                           ),
                         ),
                       ]),
@@ -671,6 +739,32 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
         ),
       ),
     );
+  }
+}
+
+/// The live "× qty = total" line under a cost field in the Set Valuation
+/// dialog. The dialog rebuilds on every keystroke, so reading the controller
+/// here is enough to keep it current.
+class _LiveTotal extends StatelessWidget {
+  final DisposalRequestItemModel item;
+  final TextEditingController controller;
+  const _LiveTotal({required this.item, required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final qty = item.totalQuantity;
+    final unit = double.tryParse(controller.text.trim());
+    if (unit == null || unit < 0) {
+      return Text('× $qty',
+          style: TextStyle(color: context.colors.textMuted, fontSize: 11));
+    }
+    final total = unit * qty;
+    return Text(
+        '× $qty = LKR ${NumberFormat('#,##0').format(total)}',
+        style: TextStyle(
+            color: context.colors.primaryGold,
+            fontWeight: FontWeight.w700,
+            fontSize: 11));
   }
 }
 

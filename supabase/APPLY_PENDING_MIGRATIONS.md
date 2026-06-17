@@ -28,8 +28,16 @@ new row for relation "forfeited_packages" violates check constraint
 
 → Run **`supabase/migrations/20260617_valuation_directorate.sql`**
 (new `valuation` role, RLS, position guard, `valuation_status` / per-item
-`valuation_cost` columns, `valuation_set_costs` RPC, and a backfill that marks
-all pre-existing disposal requests `forwarded`).
+`valuation_cost` columns, `valuation_set_costs` RPC, and a **one-shot** backfill
+that marks all *pre-existing* disposal requests `forwarded`).
+
+> 🐛 **If you ran an OLDER copy of this migration:** its backfill had no guard
+> and re-forwarded **every** request on each re-run — so a freshly created
+> request awaiting valuation would silently vanish (Pending Valuation = 0). The
+> migration is now fixed (backfill runs once, tracked via `app_migration_flags`).
+> To restore requests that were wrongly forwarded, run
+> **`supabase/fix_valuation_status_backfill.sql`** (preview first, then the
+> UPDATE + flag insert).
 
 ## 3. (Optional) Backfill legacy bare `[CCCC]` Other-disposition tags
 

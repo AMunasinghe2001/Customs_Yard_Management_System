@@ -6,6 +6,42 @@ extension AppThemeExt on BuildContext {
   AppColors get colors => Theme.of(this).extension<AppColors>()!;
 }
 
+/// App-wide snackbar helpers so every yard and directorate shows feedback with
+/// consistent, semantic colours: success = green, error = red, info = gold.
+/// Use `context.showSuccess('Saved')` instead of hand-rolling a SnackBar — this
+/// keeps the colour right everywhere (success was sometimes blue/navy before).
+extension AppSnackBar on BuildContext {
+  void _showSnack(String message, Color bg, IconData icon) {
+    final messenger = ScaffoldMessenger.of(this);
+    messenger.clearSnackBars();
+    messenger.showSnackBar(SnackBar(
+      backgroundColor: bg,
+      behavior: SnackBarBehavior.fixed,
+      content: Row(children: [
+        Icon(icon, color: Colors.white, size: 18),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(message,
+              style: const TextStyle(
+                  color: Colors.white, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    ));
+  }
+
+  /// Green success toast.
+  void showSuccess(String message) =>
+      _showSnack(message, colors.successGreen, Icons.check_circle_rounded);
+
+  /// Red error toast.
+  void showError(String message) =>
+      _showSnack(message, colors.dangerRed, Icons.error_rounded);
+
+  /// Gold informational toast.
+  void showInfo(String message) =>
+      _showSnack(message, colors.primaryGold, Icons.info_rounded);
+}
+
 // Custom theme extension to hold our specific semantic colors
 class AppColors extends ThemeExtension<AppColors> {
   final Color customsBlue;

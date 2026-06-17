@@ -26,9 +26,8 @@ class HomeScreen extends ConsumerWidget {
               tooltip: 'Toggle Theme',
               onPressed: () {
                 final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
-                final nextMode = isDark ? ThemeMode.light : ThemeMode.dark;
-                print('DEBUG: HomeScreen toggling theme. Current isDark: $isDark, nextMode: $nextMode');
-                ref.read(themeModeProvider.notifier).state = nextMode;
+                ref.read(themeModeProvider.notifier).state =
+                    isDark ? ThemeMode.light : ThemeMode.dark;
               },
             ),
         ),
@@ -41,18 +40,26 @@ class HomeScreen extends ConsumerWidget {
                 const Spacer(),
                 // Logo
                 SvgPicture.asset(
-                  'Sri_Lanka_Customs_logo.svg', 
-                  width: 160, height: 160,
-                ),
-                const Gap(20),
+                  'Sri_Lanka_Customs_logo.svg',
+                  width: 132, height: 132,
+                ).animate().scale(
+                    begin: const Offset(0.8, 0.8),
+                    duration: 500.ms,
+                    curve: Curves.easeOutBack).fadeIn(),
+                const Gap(18),
                 Text('Sri Lanka Customs',
                   style: TextStyle(color: context.colors.customsBlue, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: 1.2),
                 ).animate().slideY(begin: 0.4, duration: 500.ms, delay: 200.ms).fadeIn(),
-                const Gap(6),
+                const Gap(8),
                 Text('SR Management System',
-                  style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.w500),
+                  style: TextStyle(color: context.colors.textMuted, fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.5),
                 ).animate().slideY(begin: 0.4, duration: 500.ms, delay: 300.ms).fadeIn(),
-                const Gap(44),
+                const Gap(28),
+                // Helper line so users know what the cards are for.
+                Text('Select your portal to continue',
+                  style: TextStyle(color: context.colors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500),
+                ).animate().fadeIn(delay: 400.ms),
+                const Gap(28),
 
                 // Role cards side by side
                 Padding(
@@ -154,6 +161,11 @@ class _RoleCardState extends State<_RoleCard> {
 
   @override
   Widget build(BuildContext context) {
+    // Pick a label colour that stays legible on the accent: white on dark
+    // accents, near-black on light ones (e.g. the gold card).
+    final onAccent = widget.accentColor.computeLuminance() > 0.55
+        ? const Color(0xFF1A1A24)
+        : Colors.white;
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -178,14 +190,18 @@ class _RoleCardState extends State<_RoleCard> {
               : [],
         ),
         child: Column(mainAxisSize: MainAxisSize.max, children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: widget.accentColor.withOpacity(0.15),
-              shape: BoxShape.circle,
-              border: Border.all(color: widget.accentColor.withOpacity(0.4)),
+          AnimatedScale(
+            scale: _hovered ? 1.08 : 1.0,
+            duration: const Duration(milliseconds: 200),
+            child: Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: widget.accentColor.withOpacity(0.15),
+                shape: BoxShape.circle,
+                border: Border.all(color: widget.accentColor.withOpacity(0.4)),
+              ),
+              child: Icon(widget.icon, color: widget.accentColor, size: 34),
             ),
-            child: Icon(widget.icon, color: widget.accentColor, size: 36),
           ),
           const Gap(16),
           SizedBox(
@@ -196,25 +212,42 @@ class _RoleCardState extends State<_RoleCard> {
                   maxLines: 2,
                   style: TextStyle(
                       color: widget.accentColor,
-                      fontSize: 20,
+                      fontSize: 19,
+                      height: 1.2,
                       fontWeight: FontWeight.w800)),
             ),
           ),
-          const Gap(6),
+          const Gap(8),
           Text(widget.subtitle,
               textAlign: TextAlign.center,
               style: TextStyle(color: context.colors.textSecondary, fontSize: 13, height: 1.5)),
           const Spacer(),
           const Gap(20),
-          SizedBox(width: double.infinity, height: 44,
+          // Primary action — white label on the saturated accent so it reads
+          // clearly on every card colour (the previous navy-on-accent was hard
+          // to see, especially on the blue/green cards).
+          SizedBox(width: double.infinity, height: 46,
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.accentColor,
-                foregroundColor: context.colors.primaryNavy,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                foregroundColor: onAccent,
+                elevation: _hovered ? 4 : 0,
+                shadowColor: widget.accentColor.withOpacity(0.5),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
               onPressed: () => widget.onLogin(context),
-              child: const Text('Sign In', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text('Sign In',
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: onAccent)),
+                  const Gap(8),
+                  Icon(Icons.arrow_forward_rounded, size: 18, color: onAccent),
+                ],
+              ),
             ),
           ),
           if (widget.showSignup && widget.onSignup != null) ...[
@@ -223,11 +256,15 @@ class _RoleCardState extends State<_RoleCard> {
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: widget.accentColor,
-                  side: BorderSide(color: widget.accentColor.withOpacity(0.5)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  side: BorderSide(color: widget.accentColor.withOpacity(0.6), width: 1.4),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () => widget.onSignup!(context),
-                child: const Text('Create Account', style: TextStyle(fontSize: 13)),
+                child: Text('Create Account',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: widget.accentColor)),
               ),
             ),
           ],

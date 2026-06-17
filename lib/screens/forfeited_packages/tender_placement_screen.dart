@@ -106,12 +106,7 @@ class _TenderPlacementScreenState
       ref.invalidate(forfeitedPackagesProvider);
       ref.read(selectedTenderPackagesProvider.notifier).state = {};
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Tender created successfully'),
-          duration: Duration(seconds: 2),
-        ),
-      );
+      context.showSuccess('Tender created successfully');
       if (mounted) context.go('/tender-disposals');
     } catch (e) {
       ScaffoldMessenger.of(context)

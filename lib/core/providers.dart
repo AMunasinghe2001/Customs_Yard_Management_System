@@ -474,17 +474,24 @@ final disposalRequestsChangeTriggerProvider = StreamProvider<int>((ref) async* {
       event: PostgresChangeEvent.all,
       schema: 'public',
       table: 'disposal_requests',
-      callback: (_) =>
-          ref.read(disposalRequestsRefreshProvider.notifier).trigger(),
+      callback: (payload) {
+        debugPrint('[realtime] disposal_requests ${payload.eventType} → refresh');
+        ref.read(disposalRequestsRefreshProvider.notifier).trigger();
+      },
     )
     ..onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',
       table: 'disposal_request_items',
-      callback: (_) =>
-          ref.read(disposalRequestsRefreshProvider.notifier).trigger(),
+      callback: (payload) {
+        debugPrint(
+            '[realtime] disposal_request_items ${payload.eventType} → refresh');
+        ref.read(disposalRequestsRefreshProvider.notifier).trigger();
+      },
     )
-    ..subscribe();
+    ..subscribe((status, err) {
+      debugPrint('[realtime] disposal-requests channel: $status ${err ?? ''}');
+    });
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 

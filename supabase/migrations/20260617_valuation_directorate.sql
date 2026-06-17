@@ -111,13 +111,35 @@ alter table public.disposal_request_items
 create index if not exists idx_disposal_requests_valuation_status
   on public.disposal_requests(valuation_status);
 
--- Backfill: every request that already exists when this migration runs is
--- treated as already forwarded, so it keeps showing in Central Disposal (no
--- regression). Only requests created AFTER this migration default to
--- 'pending_valuation' and must pass through the Valuation Directorate.
-update public.disposal_requests
-   set valuation_status = 'forwarded',
-       valued_at = coalesce(valued_at, created_at);
+-- One-shot flags so re-runnable migrations can do "first run only" work. Tiny,
+-- generic, and reused by future backfills.
+create table if not exists public.app_migration_flags (
+  flag       text primary key,
+  applied_at timestamptz not null default now()
+);
+
+-- Backfill: every request that PRE-DATES this feature is treated as already
+-- forwarded, so it keeps showing in Central Disposal (no regression). Only
+-- requests created AFTER this migration default to 'pending_valuation' and must
+-- pass through the Valuation Directorate.
+--
+-- ⚠️ Idempotency guard: this migration is documented as "safe to re-run", and an
+-- UNCONDITIONAL backfill would re-forward EVERY request on each re-run — including
+-- legitimate new ones still awaiting valuation, making them silently vanish from
+-- the Valuation dashboard. To run the backfill exactly ONCE we record a sentinel
+-- the first time and skip the UPDATE on every subsequent run.
+do $$
+begin
+  if not exists (
+    select 1 from public.app_migration_flags
+    where flag = 'valuation_directorate_backfilled'
+  ) then
+    update public.disposal_requests
+       set valuation_status = 'forwarded',
+           valued_at = coalesce(valued_at, created_at);
+    insert into public.app_migration_flags(flag) values ('valuation_directorate_backfilled');
+  end if;
+end $$;
 
 -- 6. ── RPC: set per-item costs, optionally forward (Valuation only) ──────────
 --    p_costs is a JSON object mapping disposal_request_items.id → numeric cost.
