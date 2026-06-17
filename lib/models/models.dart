@@ -835,6 +835,9 @@ class ForfeitedPackageModel {
       packageDetails: json['packages'] != null
           ? PackageModel.fromJson(json['packages'] as Map<String, dynamic>)
           : null,
+      // Per-item pin for synthetic abandoned/"Other" rows (null for genuine
+      // package-level forfeits). Lets request rows show exactly their item.
+      itemId: json['item_id'] as String?,
     );
   }
 }

@@ -204,8 +204,10 @@ class ValuationDashboardScreen extends ConsumerWidget {
                                   color: context.colors.borderColor),
                             ),
                             child: const EmptyTableState(
-                                message:
-                                    'No disposal requests awaiting valuation'),
+                                icon: Icons.calculate_outlined,
+                                message: 'Nothing awaiting valuation',
+                                subtitle:
+                                    'New disposal requests from the yards will appear here for costing.'),
                           );
                         }
                         return ListView.separated(
@@ -429,6 +431,16 @@ class _ValuationRequestCard extends ConsumerWidget {
                                       package: f!.packageDetails!,
                                       storageRate: storageRate,
                                       useLegacySummary: true,
+                                      // Single item for this request row + yard.
+                                      highlightItemId: f.itemId ??
+                                          (f.packageDetails!.items.isNotEmpty
+                                              ? f.packageDetails!.items.first.id
+                                              : null),
+                                      yardLabel: yardName(
+                                          f.yard ?? request.yard),
+                                      valuationUnitCost: it.unitCost,
+                                      valuationTotalCost: it.totalCost,
+                                      valuationQty: it.totalQuantity,
                                     ),
                                   ),
                         ),

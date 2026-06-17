@@ -425,7 +425,13 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                     final rows = _buildForfeitRows(filtered);
 
                     if (rows.isEmpty) {
-                      return const EmptyTableState(message: 'No forfeited packages found').animate().fadeIn();
+                      return const EmptyTableState(
+                              icon: Icons.gavel_outlined,
+                              message: 'No forfeited packages found',
+                              subtitle:
+                                  'Try adjusting the search or date filters.')
+                          .animate()
+                          .fadeIn();
                     }
 
                     return Container(

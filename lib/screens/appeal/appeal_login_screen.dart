@@ -9,6 +9,7 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
+import '../../core/dev_config.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 
@@ -134,6 +135,36 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
       _success = null;
     });
     try {
+      // DEV/TESTING: skip the emailed OTP — verify password and sign in.
+      if (kDevSkipOtp && !isResend) {
+        final profile = await ref
+            .read(authServiceProvider)
+            .passwordOnlyLogin(_idCtrl.text.trim(), _passwordCtrl.text);
+        if (profile == null) {
+          setState(() => _error = 'Verification failed. Please try again.');
+          return;
+        }
+        if (!profile.isAppeal) {
+          await supabase.auth.signOut();
+          setState(() => _error =
+              'This account is not an Appeal Directorate account. Use the correct portal.');
+          return;
+        }
+        if (profile.isPasswordExpired || profile.isPasswordExpiringSoon) {
+          _countdownTimer?.cancel();
+          setState(() {
+            _pendingProfile = profile;
+            _passwordExpired = profile.isPasswordExpired;
+            _passwordStage = true;
+            _otpStage = false;
+            _success = null;
+            _error = null;
+          });
+          return;
+        }
+        await _finishLogin(profile);
+        return;
+      }
       final email = await ref
           .read(authServiceProvider)
           .startOtpLogin(_idCtrl.text.trim(), _passwordCtrl.text);

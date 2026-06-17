@@ -79,12 +79,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
       await _saveCredentials();
       ref.read(currentProfileProvider.notifier).state = profile;
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('✅ Logged in successfully as ${profile.fullName}'),
-            backgroundColor: context.colors.successGreen,
-          ),
-        );
+        context.showSuccess('Logged in successfully as ${profile.fullName}');
         context.go('/admin');
       }
     } catch (e) {

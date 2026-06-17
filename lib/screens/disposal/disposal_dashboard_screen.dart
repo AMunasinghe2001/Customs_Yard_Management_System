@@ -795,7 +795,10 @@ class _DisposalRequestsTab extends ConsumerWidget {
                   return _listCard(
                     context,
                     const EmptyTableState(
-                        message: 'No disposal requests submitted yet'),
+                        icon: Icons.assignment_turned_in_outlined,
+                        message: 'No disposal requests yet',
+                        subtitle:
+                            'Forwarded requests from the Valuation Directorate will appear here.'),
                   );
                 }
                 return ListView.separated(
@@ -1014,6 +1017,18 @@ class _RequestCard extends ConsumerWidget {
                                       package: f!.packageDetails!,
                                       storageRate: storageRate,
                                       useLegacySummary: true,
+                                      // Show only THIS request row's item: the
+                                      // forfeited row's own item if it names one,
+                                      // else the package's first item.
+                                      highlightItemId: f.itemId ??
+                                          (f.packageDetails!.items.isNotEmpty
+                                              ? f.packageDetails!.items.first.id
+                                              : null),
+                                      yardLabel: yardName(
+                                          f.yard ?? request.yard),
+                                      valuationUnitCost: it.unitCost,
+                                      valuationTotalCost: it.totalCost,
+                                      valuationQty: it.totalQuantity,
                                     ),
                                   ),
                         ),
@@ -1221,8 +1236,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                   return _listCard(
                     context,
                     const EmptyTableState(
-                        message:
-                            'No unsold packages — everything tendered is sold or still in an active sale window'),
+                        icon: Icons.refresh_rounded,
+                        message: 'No unsold packages to re-tender',
+                        subtitle:
+                            'Everything tendered is sold or still in an active sale window.'),
                   );
                 }
                 return _listCard(
@@ -1378,7 +1395,10 @@ class _TenderSalesTab extends ConsumerWidget {
                   return _listCard(
                     context,
                     const EmptyTableState(
-                        message: 'No tender sales with unsold packages'),
+                        icon: Icons.storefront_outlined,
+                        message: 'No tender sales yet',
+                        subtitle:
+                            'Create a tender sale to start selling forfeited packages.'),
                   );
                 }
                 return ListView.separated(

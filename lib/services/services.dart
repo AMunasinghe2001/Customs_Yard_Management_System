@@ -277,6 +277,55 @@ class AuthService {
     return profile;
   }
 
+  /// DEV/TESTING ONLY (guarded by [kDevSkipOtp] at the call sites): verify the
+  /// password and sign in directly, skipping the emailed OTP step. Mirrors the
+  /// post-OTP checks of [finishOtpLogin] (active/expired gates, presence, audit)
+  /// so the resulting session is identical — only the one-time code is skipped.
+  Future<ProfileModel?> passwordOnlyLogin(
+      String identifier, String password) async {
+    final id = identifier.trim();
+    String email = id;
+    if (!id.contains('@')) {
+      final resolved = await _withNetworkRetry(
+          () => supabase.rpc('email_for_login', params: {'identifier': id}));
+      if (resolved == null || (resolved is String && resolved.isEmpty)) {
+        throw Exception('invalid_credentials');
+      }
+      email = resolved as String;
+    }
+    final response = await _withNetworkRetry(() =>
+        supabase.auth.signInWithPassword(email: email, password: password));
+    final user = response.user ?? supabase.auth.currentUser;
+    if (user == null) throw Exception('invalid_credentials');
+
+    final profileData =
+        await supabase.from('profiles').select().eq('id', user.id).single();
+    final profile = ProfileModel.fromJson(profileData);
+
+    if (!profile.isActive) {
+      await signOut();
+      throw Exception('account_deactivated');
+    }
+    if (profile.isExpired) {
+      await signOut();
+      throw Exception('account_expired');
+    }
+    AppSession.setYard(profile.yard);
+    try {
+      await supabase.from('profiles').update({
+        'is_online': true,
+        'last_seen_at': DateTime.now().toIso8601String(),
+      }).eq('id', profile.id);
+    } catch (_) {}
+    await AuditLogService().recordLog(
+      userId: profile.id,
+      action: 'Signed In (password, OTP skipped — dev)',
+      entityType: 'auth',
+      entityId: profile.id,
+    );
+    return profile;
+  }
+
   Future<void> signOut() async {
     final user = supabase.auth.currentUser;
     if (user != null) {
@@ -2446,16 +2495,16 @@ class ForfeitedPackageService {
     final requestId = header['id'] as String;
 
     // Selected keys are either a genuine forfeited_packages id (plain UUID) or a
-    // synthetic abandoned/"Other" key. Synthetic keys are per-item now —
+    // synthetic abandoned/"Other" key. Synthetic keys are per-item —
     // "<packageId>:<itemId>:<source>" — but the older 2-part form
-    // "<packageId>:<source>" is still accepted. Real forfeit keys carry no ':'.
-    // [forfeited_packages] is package-level (package_id + source, no item_id),
-    // so several selected items of the SAME package+source share ONE FP row.
-    (String pkgId, String source) parseSynthetic(String key) {
+    // "<packageId>:<source>" is still accepted (itemId null). Real forfeit keys
+    // carry no ':'. We now keep the itemId so each item of a package+source gets
+    // its OWN forfeited_packages row (item_id stored) — no more aggregation.
+    (String pkgId, String? itemId, String source) parseSynthetic(String key) {
       final parts = key.split(':');
-      if (parts.length >= 3) return (parts.first, parts.last);
-      if (parts.length == 2) return (parts[0], parts[1]);
-      return (key, 'abandoned');
+      if (parts.length >= 3) return (parts.first, parts[1], parts.last);
+      if (parts.length == 2) return (parts[0], null, parts[1]);
+      return (key, null, 'abandoned');
     }
 
     final selectedKeys = dispositions.keys.toList();
@@ -2472,16 +2521,18 @@ class ForfeitedPackageService {
 
     // key (selection id) → forfeited_packages id to store on the request item.
     final forfeitedIdFor = <String, String>{};
-    // Cache so one package+source creates exactly one FP row across its items.
-    final fpIdByPkgSource = <String, String>{};
+    // Cache so one (package, item, source) creates exactly one FP row — each
+    // selected item gets its own row (with item_id) so it never aggregates with
+    // the package's other items.
+    final fpIdByPkgItemSource = <String, String>{};
     for (final key in selectedKeys) {
       if (realFpIds.contains(key)) {
         forfeitedIdFor[key] = key; // genuine forfeit
         continue;
       }
-      final (packageId, source) = parseSynthetic(key);
-      final cacheKey = '$packageId:$source';
-      final cached = fpIdByPkgSource[cacheKey];
+      final (packageId, itemId, source) = parseSynthetic(key);
+      final cacheKey = '$packageId:${itemId ?? '-'}:$source';
+      final cached = fpIdByPkgItemSource[cacheKey];
       if (cached != null) {
         forfeitedIdFor[key] = cached;
         continue;
@@ -2498,6 +2549,7 @@ class ForfeitedPackageService {
           .from('forfeited_packages')
           .insert({
             'package_id': packageId,
+            if (itemId != null) 'item_id': itemId,
             'sr_number': pkg.srNumber,
             'consignee_name': pkg.consigneeName,
             'forfeited_at': DateTime.now().toIso8601String(),
@@ -2511,7 +2563,7 @@ class ForfeitedPackageService {
           .select('id')
           .single());
       final newId = newFp['id'] as String;
-      fpIdByPkgSource[cacheKey] = newId;
+      fpIdByPkgItemSource[cacheKey] = newId;
       forfeitedIdFor[key] = newId;
     }
 
@@ -2932,8 +2984,10 @@ class DisposalService {
 
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_requests')
+        // Pull package_items AND warehouse_entries so the details popup can show
+        // full Item Details + Warehouse Summary (like the Forfeited screen).
         .select(
-            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*))))')
+            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
         // Mandatory valuation gate: Central Disposal only sees requests the
         // Valuation Directorate has forwarded.
         .eq('valuation_status', 'forwarded')
@@ -3392,8 +3446,10 @@ class ValuationService {
   Future<List<DisposalRequestModel>> getValuationRequests() async {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_requests')
+        // Include warehouse_entries too so the details popup shows the full
+        // Item Details + Warehouse Summary (mirrors the Forfeited screen).
         .select(
-            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*))))')
+            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
         .eq('valuation_status', 'pending_valuation')
         .order('created_at', ascending: false));
     return (data as List)

@@ -105,6 +105,18 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final bool useLegacySummary;
   final bool useWarehouseSummary;
 
+  // Optional yard label (e.g. 'Grey Line 1') shown in the Warehouse Summary so
+  // the cross-yard directorate views (Central Disposal / Valuation) can see
+  // which yard holds the package. Null hides the row.
+  final String? yardLabel;
+
+  // Optional valuation cost set by the Valuation Directorate, shown in the Item
+  // Details alongside the package's own declared value. [valuationUnitCost] is
+  // per item; [valuationTotalCost] = unit × qty. Null hides the rows.
+  final double? valuationUnitCost;
+  final double? valuationTotalCost;
+  final int? valuationQty;
+
   // Optional generic footer action (e.g. the Appeal Directorate's "Hold Appeal"
   // / "Release"). When [footerActionLabel] is set, a button is shown in the
   // dialog footer — styled like the Final Disposition footer — that calls
@@ -137,6 +149,10 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.highlightItemId,
     this.useLegacySummary = false,
     this.useWarehouseSummary = false,
+    this.yardLabel,
+    this.valuationUnitCost,
+    this.valuationTotalCost,
+    this.valuationQty,
     this.footerActionLabel,
     this.footerActionIcon,
     this.footerActionColor,
@@ -679,10 +695,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     final legacyEntries =
         (widget.useLegacySummary && widget.highlightEntry != null)
             ? [widget.highlightEntry!]
-            : (widget.highlightEntry != null && highlightedItem != null)
-                ? p.warehouseEntries
-                    .where((e) => e.packageItemId == highlightedItem.id)
-                    .toList()
+            // When an item is known (via entry OR highlightItemId), show only
+            // that item's warehouse entries (the Central Disposal / Valuation
+            // request popup goes through here). Package-level entries with no
+            // packageItemId are kept too so legacy data still surfaces. If that
+            // leaves nothing, fall back to all entries. Otherwise show all.
+            : (highlightedItem != null)
+                ? (() {
+                    final matched = p.warehouseEntries
+                        .where((e) =>
+                            e.packageItemId == highlightedItem.id ||
+                            e.packageItemId == null)
+                        .toList();
+                    return matched.isEmpty ? p.warehouseEntries : matched;
+                  })()
                 : p.warehouseEntries;
 
     int? displayQty;
@@ -1083,8 +1109,24 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                               ? _NoEntryItemCard(item: highlightedItem)
                               : (widget.highlightEntry == null ||
                                       highlightedItem == null)
-                                  ? const _EmptyState(
-                                      message: 'No released item details')
+                                  // No specific item/entry highlighted (e.g. the
+                                  // Central Disposal request view) — fall back to
+                                  // listing every package item so the popup still
+                                  // shows full details, like the Forfeited screen.
+                                  ? (legacyItems.isEmpty
+                                      ? const _EmptyState(
+                                          message: 'No released item details')
+                                      : Column(
+                                          children: [
+                                            for (var i = 0;
+                                                i < legacyItems.length;
+                                                i++) ...[
+                                              if (i > 0) const Gap(12),
+                                              _NoEntryItemCard(
+                                                  item: legacyItems[i]),
+                                            ],
+                                          ],
+                                        ))
                                   : material.Container(
                                   padding: const EdgeInsets.all(12),
                                   decoration: BoxDecoration(
@@ -1282,14 +1324,74 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                         ),
                                 ),
                         ),
+                        // Valuation Directorate cost (Central Disposal /
+                        // Valuation request popups) — shown next to the package's
+                        // own declared value.
+                        if (widget.valuationUnitCost != null)
+                          _DetailSection(
+                            title: 'Valuation',
+                            icon: Icons.calculate_rounded,
+                            delay: 320,
+                            child: material.Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.colors.surfaceDark,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: context.colors.borderColor),
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.sell_rounded,
+                                      label: 'Valuation Cost / item',
+                                      value:
+                                          'LKR ${NumberFormat('#,##0').format(widget.valuationUnitCost)}',
+                                    ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.functions_rounded,
+                                      label: widget.valuationQty != null
+                                          ? 'Total (× ${widget.valuationQty})'
+                                          : 'Total Valuation',
+                                      value:
+                                          'LKR ${NumberFormat('#,##0').format(widget.valuationTotalCost ?? widget.valuationUnitCost)}',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         if (!widget.useWarehouseSummary)
                           _DetailSection(
                             title: 'Warehouse Summary',
                             icon: Icons.warehouse_rounded,
                             delay: 350,
                             child: legacyEntries.isEmpty
-                                ? const _EmptyState(
-                                    message: 'No warehouse details')
+                                // Even with no warehouse entry, surface the yard
+                                // so the cross-yard directorate views still show
+                                // where the package belongs.
+                                ? (widget.yardLabel != null
+                                    ? material.Container(
+                                        padding: const EdgeInsets.all(12),
+                                        decoration: BoxDecoration(
+                                          color: context.colors.surfaceDark,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                              color: context.colors.borderColor),
+                                        ),
+                                        child: _DetailItem(
+                                          icon: Icons.maps_home_work_rounded,
+                                          label: 'Yard',
+                                          value: widget.yardLabel!,
+                                        ),
+                                      )
+                                    : const _EmptyState(
+                                        message: 'No warehouse details'))
                                 : material.Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
@@ -1300,6 +1402,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                                     ),
                                     child: Column(
                                       children: [
+                                        if (widget.yardLabel != null)
+                                          _DetailItem(
+                                            icon: Icons.maps_home_work_rounded,
+                                            label: 'Yard',
+                                            value: widget.yardLabel!,
+                                          ),
                                         _DetailItem(
                                           icon: Icons.warehouse_rounded,
                                           label: 'Warehouse',
@@ -2087,7 +2195,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
               // (recorded directly) or Sale / Destroy (Central Disposal request)
               // — so it can move on to its final-outcome table. Hidden only while
               // an appeal is still open, or once a FINAL disposition is recorded.
+              // Footer action shows ONLY when the caller actually wires up the
+              // disposition callback (Forfeited screen). Read-only viewers like
+              // Central Disposal / Valuation pass no callback → no button.
               if (widget.allowFinalDisposition &&
+                  widget.onSaleOrDestroyRequest != null &&
                   widget.useLegacySummary &&
                   highlightedItem != null &&
                   !_hasFinalDisposition(p, highlightedItem.id))

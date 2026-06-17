@@ -13,14 +13,24 @@ extension AppThemeExt on BuildContext {
 extension AppSnackBar on BuildContext {
   void _showSnack(String message, Color bg, IconData icon) {
     final messenger = ScaffoldMessenger.of(this);
+    final width = MediaQuery.of(this).size.width;
+    // A centred, floating toast that doesn't span the whole width — leaves
+    // breathing room on the sides like the Admin dashboard's snackbar. Cap the
+    // width on large windows so it stays a compact pill.
+    final maxWidth = width > 700 ? 520.0 : width - 48;
     messenger.clearSnackBars();
     messenger.showSnackBar(SnackBar(
       backgroundColor: bg,
-      behavior: SnackBarBehavior.fixed,
-      content: Row(children: [
+      behavior: SnackBarBehavior.floating,
+      width: maxWidth,
+      elevation: 6,
+      duration: const Duration(seconds: 3),
+      shape:
+          RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      content: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(icon, color: Colors.white, size: 18),
         const SizedBox(width: 10),
-        Expanded(
+        Flexible(
           child: Text(message,
               style: const TextStyle(
                   color: Colors.white, fontWeight: FontWeight.w600)),
