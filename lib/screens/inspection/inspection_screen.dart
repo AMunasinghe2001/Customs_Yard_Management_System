@@ -81,6 +81,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   String? _savedPackageId;
   String? _suggestedWarehouseId;
   bool _isUpdate = false;
+  // The SR number that was loaded for editing (via the search). Edit mode only
+  // applies while the SR field still matches this — change the SR and it's a
+  // new entry again (so the duplicate-SR guard re-applies).
+  String? _loadedSrNumber;
   late TabController _tabController;
   PackageModel? _warehouseConfirmedPackage;
 
@@ -98,7 +102,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final pkg =
           await ref.read(packageServiceProvider).getPackageBySrNumber(sr);
       if (pkg == null) {
-        setState(() => _isUpdate = false);
+        setState(() {
+          _isUpdate = false;
+          _loadedSrNumber = null;
+        });
         if (mounted)
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text('SR "$sr" not found – filling as new entry.'),
@@ -126,6 +133,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             ? 'held'
             : pkg.status;
         _isUpdate = true;
+        _loadedSrNumber = sr;
         _items.clear();
         if (pkg.items != null && pkg.items!.isNotEmpty) {
           for (final item in pkg.items!) {
@@ -315,6 +323,27 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (!_formKey.currentState!.validate()) {
       _scheduleValidationHide();
       return;
+    }
+    // Duplicate-SR guard: reject an SR that already exists UNLESS we're editing
+    // exactly that SR (loaded via the search). This blocks both a fresh new
+    // entry AND the case where someone loads SR-A then retypes it to an existing
+    // SR-B — so we never create two packages under one SR or silently clobber
+    // another package.
+    final sr = _srNumberCtrl.text.trim();
+    final isEditingThisSr = _isUpdate && _loadedSrNumber == sr;
+    if (!isEditingThisSr) {
+      try {
+        final existing =
+            await ref.read(packageServiceProvider).getPackageBySrNumber(sr);
+        if (!mounted) return;
+        if (existing != null) {
+          context.showError(
+              'A package with SR "$sr" already exists. Use the search to edit it.');
+          return;
+        }
+      } catch (_) {
+        // Lookup failure shouldn't block registration; fall through to save.
+      }
     }
     _validationRun++;
     setState(() {
@@ -1129,7 +1158,12 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 
       // Friendly error mapping
       final errStr = e.toString().toLowerCase();
-      if (errStr.contains('socketexception') ||
+      if (errStr.contains('duplicate key') ||
+          errStr.contains('unique constraint') ||
+          errStr.contains('23505')) {
+        userMessage =
+            'A package with SR "${widget.tempPackageData?.srNumber ?? ''}" already exists. Use the search to edit it.';
+      } else if (errStr.contains('socketexception') ||
           errStr.contains('timeout') ||
           errStr.contains('semaphore')) {
         userMessage =

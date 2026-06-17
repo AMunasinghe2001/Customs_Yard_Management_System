@@ -602,6 +602,13 @@ class ProfileModel {
 
   bool get isAdmin => role == 'admin';
 
+  /// Yard officer (front-line yard staff, not a directorate account).
+  bool get isOfficer => role == 'officer';
+
+  /// True for accounts that belong to a physical yard (admin or officer), as
+  /// opposed to the head-office directorate roles.
+  bool get isYardStaff => isAdmin || isOfficer;
+
   /// Central Disposal Directorate user (cross-yard sold-package visibility).
   bool get isDisposal => role == 'disposal';
 

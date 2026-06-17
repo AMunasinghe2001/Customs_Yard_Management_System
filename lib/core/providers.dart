@@ -237,18 +237,18 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   }).toList();
 });
 
-/// Staff in the signed-in admin's own yard — officers + admins only.
+/// Staff in the signed-in admin's own yard — officers + admins ONLY.
 /// The cross-yard SELECT policy for directorate accounts means [allProfilesProvider]
-/// can leak head-office rows; the Admin Dashboard wants only "my yard" staff, so
-/// we filter client-side. The institutional directorate accounts (Disposal
-/// DC/SDDC, Appeal AD/ADD) are head-office and excluded outright (their `yard`
-/// may default to GL1, which would otherwise match a Grey Line 1 admin and show
-/// the directorate as "online").
+/// can leak head-office rows; the Admin Dashboard wants only "my yard" staff. We
+/// whitelist the two yard roles (admin / officer) rather than blacklisting each
+/// directorate — so a new institutional role (Disposal, Appeal, Valuation, …)
+/// can never leak in as "online" just because its `yard` defaults to a matching
+/// yard code.
 final myYardProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   final all = await ref.watch(allProfilesProvider.future);
   final myYard = ref.watch(currentProfileProvider)?.yard;
   return all.where((p) {
-    if (p.isDisposal || p.isAppeal) return false; // never show directorate accounts here
+    if (!p.isYardStaff) return false; // officers + admins only
     if (myYard == null) return true;
     return p.yard == myYard;
   }).toList();
