@@ -1015,9 +1015,18 @@ class _RecentActivitySection extends StatelessWidget {
   }
 
   Widget _activityTile(BuildContext context, PackageModel p) {
-    final (icon, color) = _statusVisual(context, p.status);
-    // Custom row (not ListTile) so the trailing chip + time never overflow the
-    // tile's fixed dense height — we control the layout entirely here.
+    // Show the ACTUAL item activities, not the generic package status (which is
+    // always "held"). A package's items split into dispositions (Detain /
+    // Forfeit / Abandoned / Other / …) — surface those instead.
+    final statuses = _itemActivityStatuses(p);
+    // Representative status drives the leading icon/colour; the chip(s) show the
+    // breakdown.
+    final primary = statuses.isNotEmpty ? statuses.first : p.status;
+    final (icon, color) = _statusVisual(context, primary);
+    final subtitle = statuses.length > 1
+        ? '${p.consigneeName} · ${statuses.length} activities'
+        : p.consigneeName;
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
@@ -1043,7 +1052,7 @@ class _RecentActivitySection extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                         fontWeight: FontWeight.w600, fontSize: 13)),
-                Text(p.consigneeName,
+                Text(subtitle,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -1056,7 +1065,17 @@ class _RecentActivitySection extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              StatusChip(status: p.status, fixedWidth: 96),
+              // One chip per distinct item activity (wrapped so it never
+              // overflows); falls back to the package status if no items.
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 4,
+                runSpacing: 4,
+                children: (statuses.isEmpty ? [p.status] : statuses)
+                    .take(3)
+                    .map((s) => StatusChip(status: s))
+                    .toList(),
+              ),
               const Gap(2),
               Text(DateFormat('HH:mm').format(p.updatedAt.toLocal()),
                   style:
@@ -1066,6 +1085,22 @@ class _RecentActivitySection extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// The distinct item-level activity statuses in a package, ordered by how
+  /// many items carry each (most common first). Empty when the package has no
+  /// items (caller falls back to the package status).
+  List<String> _itemActivityStatuses(PackageModel p) {
+    if (p.items.isEmpty) return const [];
+    final counts = <String, int>{};
+    for (final it in p.items) {
+      final s = it.status.trim();
+      if (s.isEmpty) continue;
+      counts[s] = (counts[s] ?? 0) + 1;
+    }
+    final entries = counts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    return entries.map((e) => e.key).toList();
   }
 
   /// Icon + colour for the leading badge, matching [StatusChip]'s grouping.

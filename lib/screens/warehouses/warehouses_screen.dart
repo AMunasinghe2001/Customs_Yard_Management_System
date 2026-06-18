@@ -60,6 +60,9 @@ class WarehousesScreen extends ConsumerWidget {
       error: (e, _) => AppShell(currentRoute: '/warehouses', child: ErrorView(error: e, onRetry: () => ref.refresh(warehousesProvider))),
       data: (ws) => DefaultTabController(
         length: ws.length,
+        // Persisted so a data refresh (after a package action) keeps the tab.
+        initialIndex:
+            ws.isEmpty ? 0 : ref.read(warehouseTabIndexProvider).clamp(0, ws.length - 1),
         child: AppShell(
           currentRoute: '/warehouses',
           child: Scaffold(
@@ -81,6 +84,9 @@ class WarehousesScreen extends ConsumerWidget {
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(14),
                     child: TabBar(
+                      onTap: (i) => ref
+                          .read(warehouseTabIndexProvider.notifier)
+                          .state = i,
                       tabs: ws.map((w) => Tab(
                         child: Text(_formatWarehouseName(w.name), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
                       )).toList(),

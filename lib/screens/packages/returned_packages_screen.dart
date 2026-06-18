@@ -14,6 +14,7 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
+import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
@@ -33,6 +34,7 @@ class _ReturnedPackagesScreenState
     extends ConsumerState<ReturnedPackagesScreen> {
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
+  int _page = 0; // current client-side page of the filtered rows
 
   WarehouseEntryModel? _latestReturnedEntry(PackageModel package) {
     final entries =
@@ -128,6 +130,13 @@ class _ReturnedPackagesScreenState
     super.dispose();
   }
 
+  void _resetPage() {
+    if (_page == 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _page = 0);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final packages = ref.watch(livePackagesProvider);
@@ -136,6 +145,11 @@ class _ReturnedPackagesScreenState
     final search = ref.watch(returnedPackageSearchProvider);
     final dateRange = ref.watch(returnedPackageDateRangeProvider);
     final rFilter = ref.watch(returnedPackageReasonFilterProvider);
+
+    // Any filter change jumps back to the first page.
+    ref.listen(returnedPackageSearchProvider, (_, __) => _resetPage());
+    ref.listen(returnedPackageDateRangeProvider, (_, __) => _resetPage());
+    ref.listen(returnedPackageReasonFilterProvider, (_, __) => _resetPage());
 
     return AppShell(
       currentRoute: '/returned-packages',
@@ -437,7 +451,10 @@ class _ReturnedPackagesScreenState
                                   packages.valueOrNull ??
                                       const <PackageModel>[])
                               .map((r) => r.package.srNumber)),
-                          onChanged: (v) => setState(() => _yearFilter = v),
+                          onChanged: (v) => setState(() {
+                            _yearFilter = v;
+                            _page = 0;
+                          }),
                         ),
                       ],
                     ),
@@ -493,7 +510,22 @@ class _ReturnedPackagesScreenState
                       return true;
                     }).toList();
 
-                    return Container(
+                    // Client-side paging: clamp the page if the filtered set
+                    // shrank, then show only the current page's rows.
+                    final maxPage =
+                        rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
+                    final pageRows = pageSlice(rows, _page.clamp(0, maxPage));
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
                           color: context.colors.cardDark,
@@ -535,7 +567,7 @@ class _ReturnedPackagesScreenState
                                 size: ColumnSize.S,
                                 fixedWidth: 55),
                             ],
-                            rows: rows
+                            rows: pageRows
                               .map((row) => DataRow(cells: [
                                     DataCell(Text(row.package.srNumber,
                                         style: TextStyle(
@@ -596,6 +628,14 @@ class _ReturnedPackagesScreenState
                               .toList(),
                         ),
                       ),
+                          ),
+                        ),
+                        TablePager(
+                          total: rows.length,
+                          page: _page.clamp(0, maxPage),
+                          onPageChanged: (p) => setState(() => _page = p),
+                        ),
+                      ],
                     )
                         .animate()
                         .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)

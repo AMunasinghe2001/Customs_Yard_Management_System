@@ -12,6 +12,7 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
+import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
@@ -43,6 +44,7 @@ class _DispositionCategoryScreenState
   String _search = '';
   DateTimeRange? _dateRange;
   String? _yearFilter;
+  int _page = 0;
 
   @override
   void dispose() {
@@ -183,13 +185,19 @@ class _DispositionCategoryScreenState
                                     color: context.colors.textMuted),
                                 onPressed: () {
                                   _searchCtrl.clear();
-                                  setState(() => _search = '');
+                                  setState(() {
+                                    _search = '';
+                                    _page = 0;
+                                  });
                                 },
                               )
                             : null,
                         isDense: true,
                       ),
-                      onChanged: (v) => setState(() => _search = v),
+                      onChanged: (v) => setState(() {
+                        _search = v;
+                        _page = 0;
+                      }),
                     ),
                     const Gap(8),
                     Wrap(
@@ -206,9 +214,15 @@ class _DispositionCategoryScreenState
                                       initialRange: _dateRange),
                             );
                             if (picked is DateTimeRange) {
-                              setState(() => _dateRange = picked);
+                              setState(() {
+                                _dateRange = picked;
+                                _page = 0;
+                              });
                             } else if (picked == false) {
-                              setState(() => _dateRange = null);
+                              setState(() {
+                                _dateRange = null;
+                                _page = 0;
+                              });
                             }
                           },
                           icon: Icon(Icons.date_range_rounded,
@@ -244,8 +258,10 @@ class _DispositionCategoryScreenState
                           IconButton(
                             icon: Icon(Icons.clear_rounded,
                                 size: 16, color: context.colors.dangerRed),
-                            onPressed: () =>
-                                setState(() => _dateRange = null),
+                            onPressed: () => setState(() {
+                              _dateRange = null;
+                              _page = 0;
+                            }),
                             tooltip: 'Clear Date Filter',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
@@ -256,7 +272,10 @@ class _DispositionCategoryScreenState
                               ? const <String>[]
                               : _buildRows(packages.valueOrNull!)
                                   .map((r) => r.package.srNumber)),
-                          onChanged: (v) => setState(() => _yearFilter = v),
+                          onChanged: (v) => setState(() {
+                            _yearFilter = v;
+                            _page = 0;
+                          }),
                         ),
                       ],
                     ),
@@ -309,7 +328,21 @@ class _DispositionCategoryScreenState
                       return true;
                     }).toList();
 
-                    return Container(
+                    // Client-side paging over the filtered rows.
+                    final maxPage =
+                        rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
+                    final pageRows = pageSlice(rows, _page.clamp(0, maxPage));
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
                           color: context.colors.cardDark,
@@ -358,7 +391,7 @@ class _DispositionCategoryScreenState
                                 size: ColumnSize.S,
                                 fixedWidth: 55),
                           ],
-                          rows: rows
+                          rows: pageRows
                               .map((row) => DataRow(cells: [
                                     DataCell(Text(row.package.srNumber,
                                         style: TextStyle(
@@ -418,6 +451,14 @@ class _DispositionCategoryScreenState
                               .toList(),
                         ),
                       ),
+                          ),
+                        ),
+                        TablePager(
+                          total: rows.length,
+                          page: _page.clamp(0, maxPage),
+                          onPageChanged: (p) => setState(() => _page = p),
+                        ),
+                      ],
                     )
                         .animate()
                         .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)

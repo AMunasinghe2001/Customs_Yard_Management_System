@@ -119,6 +119,11 @@ final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
   return ref.read(warehouseServiceProvider).getWarehouses();
 });
 
+// Selected warehouse tab index on the Warehouses page — persisted so a data
+// refresh (e.g. after a package action) doesn't snap the tabs back to the
+// first warehouse.
+final warehouseTabIndexProvider = StateProvider<int>((ref) => 0);
+
 // ── Warehouse Admin Management Providers ────────────────────────
 final warehouseEditingProvider = StateProvider<WarehouseModel?>((ref) => null);
 final warehouseNameInputProvider = StateProvider<String>((ref) => '');
@@ -141,6 +146,34 @@ final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   final search = ref.watch(packageSearchProvider);
   return ref.read(packageServiceProvider).getAllPackages(
       status: filter, search: search.isEmpty ? null : search);
+});
+
+// ── Package History server-side pagination ─────────────────────────────────
+/// Rows per page on the Package History table.
+const int kPackagePageSize = 50;
+
+/// Current zero-based page index for the Package History table.
+final packagePageProvider = StateProvider<int>((ref) => 0);
+
+/// One page of packages + the total matching count (server-side). Re-queries
+/// whenever a filter or the page index changes, so the page opens fast even
+/// with very large tables (only [kPackagePageSize] rows leave the DB per call).
+typedef PackagePage = ({List<PackageModel> rows, int total});
+
+final packagesPageProvider = FutureProvider<PackagePage>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  final page = ref.watch(packagePageProvider);
+  final search = ref.watch(packageSearchProvider);
+  final dateRange = ref.watch(packageDateRangeProvider);
+  final year = ref.watch(packageYearFilterProvider);
+  return ref.read(packageServiceProvider).getPackagesPaged(
+        offset: page * kPackagePageSize,
+        limit: kPackagePageSize,
+        search: search.isEmpty ? null : search,
+        dateStart: dateRange?.start,
+        dateEnd: dateRange?.end,
+        year: year,
+      );
 });
 
 // ── Live Warehouse Entries Provider ─────────────────────────────

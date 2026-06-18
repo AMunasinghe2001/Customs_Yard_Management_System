@@ -464,6 +464,58 @@ class PackageService {
     return data.map((e) => PackageModel.fromJson(e)).toList();
   }
 
+  /// Server-side paged fetch for the Package History page so it opens fast even
+  /// with very large tables (only [limit] rows leave the DB per call). Filters
+  /// are applied server-side. Returns the page rows + the total matching count
+  /// (for the pager). [year] matches the SR-number suffix '/YYYY'.
+  Future<({List<PackageModel> rows, int total})> getPackagesPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+    String? yard,
+  }) async {
+    // Apply the same filters to any PostgrestFilterBuilder (rows or count).
+    PostgrestFilterBuilder<T> applyFilters<T>(PostgrestFilterBuilder<T> q) {
+      if (yard != null) q = q.eq('yard', yard);
+      if (search != null && search.trim().isNotEmpty) {
+        final s = search.trim();
+        q = q.or(
+            'sr_number.ilike.%$s%,consignee_name.ilike.%$s%,declarant_name.ilike.%$s%,cusdec_no.ilike.%$s%');
+      }
+      if (year != null && year.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$year');
+      }
+      if (dateStart != null) {
+        final start =
+            DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('created_at', start.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final end =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('created_at', end.toIso8601String());
+      }
+      return q;
+    }
+
+    final rowsData = await AuthService._withNetworkRetry(() => applyFilters(
+            supabase.from('packages').select(
+                '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)'))
+        .order('created_at', ascending: false)
+        .range(offset, offset + limit - 1));
+
+    // Count-only query (no rows transferred) for the pager total.
+    final total = await AuthService._withNetworkRetry(() =>
+        applyFilters(supabase.from('packages').count(CountOption.exact)));
+
+    final rows =
+        (rowsData as List).map((e) => PackageModel.fromJson(e)).toList();
+    return (rows: rows, total: total);
+  }
+
   Future<PackageModel> createPackage(
       PackageModel pkg, List<PackageItem> items,
       {String? yard}) async {

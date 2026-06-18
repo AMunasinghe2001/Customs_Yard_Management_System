@@ -275,15 +275,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section: QR Code Labels ──
-                const Gap(24),
-                _buildSectionHeader('QR Code Labels', Icons.qr_code_2_rounded),
-                const Gap(8),
-                _QrLabelCard(onTap: _openQrLabelGenerator)
-                    .animate()
-                    .fadeIn()
-                    .slideY(begin: 0.1),
-
                 // ── Section: Disposal Lifecycle Reports (yard pages) ──
                 const Gap(24),
                 _buildSectionHeader(
@@ -469,6 +460,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     // (Audit Logs report removed per request.)
                   ],
                 ),
+
+                // ── Section: QR Code Labels (kept at the very bottom) ──
+                const Gap(24),
+                _buildSectionHeader('QR Code Labels', Icons.qr_code_2_rounded),
+                const Gap(8),
+                _QrLabelCard(onTap: _openQrLabelGenerator)
+                    .animate()
+                    .fadeIn()
+                    .slideY(begin: 0.1),
               ],
             ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn();
           },
@@ -2168,28 +2168,32 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
                                         fontSize: 12,
                                         fontWeight: FontWeight.w600)),
                                 const Spacer(),
+                                // Select All + Clear All as two distinct
+                                // actions (like the disposal-request dialog).
                                 TextButton.icon(
-                                  onPressed: () => setState(() {
-                                    if (allShownSelected) {
-                                      _selected.removeAll(
-                                          filtered.map((p) => p.id));
-                                    } else {
-                                      _selected
-                                          .addAll(filtered.map((p) => p.id));
-                                    }
-                                  }),
-                                  icon: Icon(
-                                      allShownSelected
-                                          ? Icons.remove_done_rounded
-                                          : Icons.done_all_rounded,
-                                      size: 16,
-                                      color: gold),
-                                  label: Text(
-                                      allShownSelected
-                                          ? 'Clear All'
-                                          : 'Select All',
+                                  onPressed: allShownSelected
+                                      ? null
+                                      : () => setState(() => _selected.addAll(
+                                          filtered.map((p) => p.id))),
+                                  icon: Icon(Icons.done_all_rounded,
+                                      size: 16, color: gold),
+                                  label: Text('Select All',
                                       style: TextStyle(
                                           color: gold,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700)),
+                                ),
+                                TextButton.icon(
+                                  onPressed: _selected.isEmpty
+                                      ? null
+                                      : () =>
+                                          setState(() => _selected.clear()),
+                                  icon: Icon(Icons.remove_done_rounded,
+                                      size: 16,
+                                      color: context.colors.dangerRed),
+                                  label: Text('Clear All',
+                                      style: TextStyle(
+                                          color: context.colors.dangerRed,
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700)),
                                 ),

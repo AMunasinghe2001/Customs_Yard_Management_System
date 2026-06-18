@@ -571,11 +571,53 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
           return await _showDispositionDialog(ctx, held, type,
               preselectedQty: slots.length, packageNumbers: slots);
         },
-        // On a successful action the actions dialog pops itself, then this
-        // closes the details dialog too so we return to the previous screen.
-        onCompleted: () {
-          if (ctx.mounted) Navigator.of(ctx).pop();
-        },
+        // On a successful action: instead of closing the details dialog (which
+        // dumped the user back to the warehouse page, resetting it to the first
+        // tab), re-open the SAME package's details with fresh data so the
+        // action's result is reflected and the user stays in context.
+        onCompleted: () => _reopenWithFreshData(ctx, entry),
+      ),
+    );
+  }
+
+  /// Re-fetch the package after an in-dialog action and re-open the details
+  /// dialog so it reflects the change — without bouncing back to the warehouse
+  /// list (which would reset its tab/scroll).
+  Future<void> _reopenWithFreshData(
+      BuildContext ctx, WarehouseEntryModel oldEntry) async {
+    PackageModel? fresh;
+    try {
+      fresh = await ref
+          .read(packageServiceProvider)
+          .getPackageById(widget.package.id);
+    } catch (_) {
+      fresh = null;
+    }
+    if (!ctx.mounted) return;
+    // Close the current (stale) details dialog.
+    Navigator.of(ctx).pop();
+    if (fresh == null) return;
+    // Find the same entry in the refreshed data (it may now be returned/tagged);
+    // fall back to the package's first entry for the same item.
+    final freshEntry = fresh.warehouseEntries
+            .where((e) => e.id == oldEntry.id)
+            .firstOrNull ??
+        fresh.warehouseEntries
+            .where((e) => e.packageItemId == oldEntry.packageItemId)
+            .firstOrNull;
+    if (!ctx.mounted) return;
+    showDialog(
+      context: ctx,
+      builder: (_) => PackageDetailsDialog(
+        package: fresh!,
+        storageRate: widget.storageRate,
+        highlightEntry: freshEntry,
+        highlightItemId: widget.highlightItemId,
+        useLegacySummary: widget.useLegacySummary,
+        useWarehouseSummary: widget.useWarehouseSummary,
+        yardLabel: widget.yardLabel,
+        allowFinalDisposition: widget.allowFinalDisposition,
+        onSaleOrDestroyRequest: widget.onSaleOrDestroyRequest,
       ),
     );
   }
@@ -2164,12 +2206,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                       if (widget.highlightEntry != null &&
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
-                          message: isConfiscated
-                              ? 'Confiscated / Forfeited / Abandoned packages cannot be actioned'
-                              : '',
+                          message: isOfficer
+                              ? 'Actions are restricted to administrators only'
+                              : (isConfiscated
+                                  ? 'Confiscated / Forfeited / Abandoned packages cannot be actioned'
+                                  : ''),
                           child: ElevatedButton.icon(
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: isConfiscated
+                              backgroundColor: (isConfiscated || isOfficer)
                                   ? Colors.grey
                                   : const Color(0xFF5C6BC0),
                               foregroundColor: Colors.white,
@@ -2178,7 +2222,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                             ),
                             icon: const Icon(Icons.bolt_rounded, size: 18),
                             label: const Text('Actions'),
-                            onPressed: isConfiscated
+                            // Officers can view but not action (same as Update).
+                            onPressed: (isConfiscated || isOfficer)
                                 ? null
                                 : () => _showActionsDialog(
                                     context, widget.highlightEntry!,

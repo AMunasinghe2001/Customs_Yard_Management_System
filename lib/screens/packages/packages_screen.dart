@@ -41,6 +41,15 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
     super.dispose();
   }
 
+  /// Reset to the first page (called from a filter listener) — deferred so it
+  /// doesn't mutate provider state during the build/listen callback.
+  void _resetPage() {
+    if (ref.read(packagePageProvider) == 0) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(packagePageProvider.notifier).state = 0;
+    });
+  }
+
   void _onSrSubmitted(String val) {
     final sr = val.trim();
     if (sr.isEmpty) {
@@ -76,8 +85,13 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   @override
   Widget build(BuildContext context) {
     final filter = ref.watch(packageFilterProvider);
-    final packages = ref.watch(livePackagesProvider);
+    final pagedPackages = ref.watch(packagesPageProvider);
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ?? {DateTime(2020,1,1): 50.0};
+
+    // Any filter change resets the table back to the first page.
+    ref.listen(packageSearchProvider, (_, __) => _resetPage());
+    ref.listen(packageDateRangeProvider, (_, __) => _resetPage());
+    ref.listen(packageYearFilterProvider, (_, __) => _resetPage());
 
     return AppShell(
       currentRoute: '/packages',
@@ -338,18 +352,14 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                         // Year Filter Dropdown
                         Consumer(builder: (context, ref, _) {
                           final selectedYear = ref.watch(packageYearFilterProvider);
-                          final allPackages = ref.watch(livePackagesProvider).valueOrNull ?? [];
-                          // Extract unique years from SR numbers
-                          final yearRegex = RegExp(r'/(\d{4})$');
-                          final years = allPackages
-                              .map((p) {
-                                final match = yearRegex.firstMatch(p.srNumber);
-                                return match?.group(1);
-                              })
-                              .whereType<String>()
-                              .toSet()
-                              .toList()
-                            ..sort((a, b) => b.compareTo(a)); // newest first
+                          // Recent years (newest first). Avoids loading every
+                          // package just to list years — the server filters by
+                          // the chosen year via the SR-number suffix.
+                          final thisYear = DateTime.now().year;
+                          final years = [
+                            for (var y = thisYear; y >= thisYear - 6; y--)
+                              y.toString()
+                          ];
                           return Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
@@ -404,39 +414,29 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               ],
               const Gap(16),
               Expanded(
-                child: packages.when(
+                child: pagedPackages.when(
                   loading: () => Center(
                       child: CircularProgressIndicator(
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final dateRange = ref.watch(packageDateRangeProvider);
-                    final yearFilter = ref.watch(packageYearFilterProvider);
-                    final filteredList = list.where((p) {
-                      // Date range filter
-                      if (dateRange != null) {
-                        final date = p.entryDate ?? p.createdAt;
-                        final startOfDay = DateTime(dateRange.start.year,
-                            dateRange.start.month, dateRange.start.day);
-                        final endOfDay = DateTime(dateRange.end.year,
-                            dateRange.end.month, dateRange.end.day, 23, 59, 59);
-                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
-                          return false;
-                      }
-                      // Year filter from SR number suffix
-                      if (yearFilter != null) {
-                        final yearRegex = RegExp(r'/(\d{4})$');
-                        final match = yearRegex.firstMatch(p.srNumber);
-                        if (match == null || match.group(1) != yearFilter) {
-                          return false;
-                        }
-                      }
-                      return true;
-                    }).toList();
+                      onRetry: () => ref.refresh(packagesPageProvider)),
+                  data: (page) {
+                    // Rows come pre-filtered + pre-paged from the server.
+                    final filteredList = page.rows;
+                    final currentPage = ref.watch(packagePageProvider);
+                    final from = page.total == 0
+                        ? 0
+                        : currentPage * kPackagePageSize + 1;
+                    final to = currentPage * kPackagePageSize + filteredList.length;
+                    final hasPrev = currentPage > 0;
+                    final hasNext = to < page.total;
 
-                    return Container(
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
                           color: context.colors.cardDark,
@@ -513,6 +513,49 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               .toList(),
                         ),
                       ),
+                          ),
+                        ),
+                        // ── Pager bar ──
+                        Padding(
+                          padding: const EdgeInsets.only(top: 12),
+                          child: Row(
+                            children: [
+                              Text(
+                                  page.total == 0
+                                      ? 'No packages'
+                                      : 'Showing $from–$to of ${page.total}',
+                                  style: TextStyle(
+                                      color: context.colors.textSecondary,
+                                      fontSize: 13)),
+                              const Spacer(),
+                              IconButton(
+                                tooltip: 'Previous page',
+                                icon: const Icon(Icons.chevron_left_rounded),
+                                color: context.colors.primaryGold,
+                                onPressed: hasPrev
+                                    ? () => ref
+                                        .read(packagePageProvider.notifier)
+                                        .state = currentPage - 1
+                                    : null,
+                              ),
+                              Text('Page ${currentPage + 1}',
+                                  style: TextStyle(
+                                      color: context.colors.textPrimary,
+                                      fontWeight: FontWeight.w600)),
+                              IconButton(
+                                tooltip: 'Next page',
+                                icon: const Icon(Icons.chevron_right_rounded),
+                                color: context.colors.primaryGold,
+                                onPressed: hasNext
+                                    ? () => ref
+                                        .read(packagePageProvider.notifier)
+                                        .state = currentPage + 1
+                                    : null,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                     )
                         .animate()
                         .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
