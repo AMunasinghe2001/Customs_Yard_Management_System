@@ -6,11 +6,12 @@ import 'package:file_picker/file_picker.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
 import '../../core/theme.dart';
-import '../../services/services.dart';
 import '../../core/providers.dart';
 import '../../services/report_service.dart';
 import '../../models/models.dart';
-import '../../widgets/custom_dropdown.dart';
+import '../../widgets/print_barcode_dialog.dart';
+import '../../widgets/styled_dropdown.dart';
+import '../../widgets/date_range_picker_dialog.dart' as custom;
 import 'package:intl/intl.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -92,142 +93,126 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Widget _buildFilterSection() {
-    final warehouses = ref.watch(warehousesProvider);
+    final warehouses = ref.watch(warehousesProvider).valueOrNull ?? const [];
 
+    final hasDate = _startDate != null || _endDate != null;
+    final dateLabel = hasDate
+        ? '${_startDate != null ? DateFormat('MMM d').format(_startDate!) : '…'} - ${_endDate != null ? DateFormat('MMM d').format(_endDate!) : '…'}'
+        : 'Date Range';
+
+    // Same look as the other pages' filter bar: gold-tinted card holding a row
+    // of chip buttons + the shared StyledDropdownButton popups.
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: context.colors.cardDark,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.colors.primaryGold.withOpacity(0.35)),
+        border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
       ),
-      child: Column(
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: _buildDatePicker('Start Date', _startDate, (date) => setState(() => _startDate = date)),
-              ),
-              const Gap(12),
-              Expanded(
-                flex: 2,
-                child: _buildDatePicker('End Date', _endDate, (date) => setState(() => _endDate = date)),
-              ),
-              const Gap(12),
-              Expanded(
-                flex: 1,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Status', style: TextStyle(color: context.colors.textSecondary, fontSize: 11)),
-                    const Gap(4),
-                    DropdownButtonFormField<String>(
-                      value: _selectedStatus,
-                      isExpanded: true,
-                      dropdownColor: context.colors.cardDark,
-                      style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      // Package-level statuses the app actually stores (see
-                      // StatusChip). 'seized' was stale — packages never carry
-                      // it (forfeiture is item-level → forfeited_packages), so
-                      // it always returned an empty report. Removed.
-                      items: ['all', 'pending', 'held', 'cleared', 'returned'].map((s) {
-                        final label = s == 'returned' ? 'released' : s;
-                        return DropdownMenuItem(
-                          value: s,
-                          child: Text(label.toUpperCase(), style: const TextStyle(fontSize: 12)),
-                        );
-                      }).toList(),
-                      onChanged: (val) => setState(() => _selectedStatus = val!),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+          // ── Date Range ──
+          _filterChip(
+            icon: Icons.date_range_rounded,
+            label: dateLabel,
+            active: hasDate,
+            onTap: () async {
+              final initial = (_startDate != null && _endDate != null)
+                  ? DateTimeRange(start: _startDate!, end: _endDate!)
+                  : null;
+              final picked = await showDialog<dynamic>(
+                context: context,
+                builder: (_) =>
+                    custom.DateRangePickerDialog(initialRange: initial),
+              );
+              if (picked is DateTimeRange) {
+                setState(() {
+                  _startDate = picked.start;
+                  _endDate = picked.end;
+                });
+              } else if (picked == false) {
+                setState(() {
+                  _startDate = null;
+                  _endDate = null;
+                });
+              }
+            },
           ),
-          const Gap(12),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Warehouse Selection', style: TextStyle(color: context.colors.textSecondary, fontSize: 11)),
-                    const Gap(4),
-                    DropdownButtonFormField<String>(
-                      value: _selectedWarehouse,
-                      isExpanded: true,
-                      dropdownColor: context.colors.cardDark,
-                      style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        prefixIcon: Icon(Icons.warehouse_rounded, size: 16, color: context.colors.primaryGold),
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                      ),
-                      items: [
-                        const DropdownMenuItem(value: 'all', child: Text('ALL WAREHOUSES', style: TextStyle(fontSize: 12))),
-                        ...warehouses.maybeWhen(
-                          data: (list) => list.map((w) => DropdownMenuItem(
-                            value: w.id, 
-                            child: Text('${w.code} - ${w.name}'.toUpperCase(), style: const TextStyle(fontSize: 12))
-                          )).toList(),
-                          orElse: () => [],
-                        ),
-                      ],
-                      onChanged: (val) => setState(() => _selectedWarehouse = val!),
-                    ),
-                  ],
-                ),
-              ),
+          if (hasDate)
+            IconButton(
+              icon: Icon(Icons.clear_rounded,
+                  size: 16, color: context.colors.dangerRed),
+              tooltip: 'Clear date filter',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+              onPressed: () => setState(() {
+                _startDate = null;
+                _endDate = null;
+              }),
+            ),
+          // ── Status ── (null = All; styled popup like the other pages)
+          StyledDropdownButton<String>(
+            value: _selectedStatus == 'all' ? null : _selectedStatus,
+            allLabel: 'All Statuses',
+            icon: Icons.flag_rounded,
+            options: const [
+              StyledDropdownOption('pending', 'PENDING'),
+              StyledDropdownOption('held', 'HELD'),
+              StyledDropdownOption('cleared', 'CLEARED'),
+              StyledDropdownOption('returned', 'RELEASED'),
             ],
+            onChanged: (v) => setState(() => _selectedStatus = v ?? 'all'),
+          ),
+          // ── Warehouse ──
+          StyledDropdownButton<String>(
+            value: _selectedWarehouse == 'all' ? null : _selectedWarehouse,
+            allLabel: 'All Warehouses',
+            icon: Icons.warehouse_rounded,
+            menuWidth: 320,
+            options: warehouses
+                .map((w) =>
+                    StyledDropdownOption(w.id, '${w.code} - ${w.name}'))
+                .toList(),
+            onChanged: (v) => setState(() => _selectedWarehouse = v ?? 'all'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildDatePicker(String label, DateTime? value, Function(DateTime) onSelect) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: TextStyle(color: context.colors.textSecondary, fontSize: 11)),
-        const Gap(4),
-        InkWell(
-          onTap: () async {
-            final date = await showDatePicker(
-              context: context,
-              initialDate: value ?? DateTime.now(),
-              firstDate: DateTime(2020),
-              lastDate: DateTime.now(),
-            );
-            if (date != null) onSelect(date);
-          },
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            decoration: BoxDecoration(
-              border: Border.all(color: context.colors.borderColor),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.calendar_today_rounded, size: 14, color: context.colors.primaryGold),
-                const Gap(8),
-                Text(value != null ? DateFormat('yyyy-MM-dd').format(value) : 'Select Date',
-                    style: TextStyle(color: context.colors.textPrimary, fontSize: 13)),
-              ],
-            ),
-          ),
-        ),
-      ],
+  /// Outlined chip button (matches the other pages' Date Range / filter chips).
+  Widget _filterChip({
+    required IconData icon,
+    required String label,
+    required bool active,
+    required VoidCallback onTap,
+  }) {
+    final color =
+        active ? context.colors.primaryGold : context.colors.textSecondary;
+    return OutlinedButton.icon(
+      onPressed: onTap,
+      icon: Icon(icon, size: 16, color: color),
+      label: Text(label,
+          style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: active ? FontWeight.bold : FontWeight.normal)),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(
+            color: active
+                ? context.colors.primaryGold
+                : context.colors.borderColor),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
     );
   }
 
+  /// A chip that opens a popup menu of (value,label) choices — matches the
+  /// "All Reasons" / "All Years" style popups on the other pages.
   Widget _buildReportCards() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -289,6 +274,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       ),
                   ],
                 ),
+
+                // ── Section: QR Code Labels ──
+                const Gap(24),
+                _buildSectionHeader('QR Code Labels', Icons.qr_code_2_rounded),
+                const Gap(8),
+                _QrLabelCard(onTap: _openQrLabelGenerator)
+                    .animate()
+                    .fadeIn()
+                    .slideY(begin: 0.1),
 
                 // ── Section: Disposal Lifecycle Reports (yard pages) ──
                 const Gap(24),
@@ -653,6 +647,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       key: 'Forfeited Packages',
       title: 'FORFEITED PACKAGES',
       fileBase: 'Forfeited_Packages',
+      dateHeader: 'Forfeited On',
       format: format,
       fetch: () =>
           ref.read(forfeitedPackageServiceProvider).getForfeitedPackages(),
@@ -666,6 +661,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       key: label,
       title: label.toUpperCase(),
       fileBase: label.replaceAll(' ', '_'),
+      dateHeader: source == 'abandoned' ? 'Abandoned On' : 'Recorded On',
       format: format,
       fetch: () => ref
           .read(forfeitedPackageServiceProvider)
@@ -680,6 +676,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     required String fileBase,
     required String format,
     required Future<List<ForfeitedPackageModel>> Function() fetch,
+    String dateHeader = 'Date',
   }) async {
     final loadKey = '${key}_$format';
     _setLoading(loadKey, true);
@@ -694,8 +691,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           : 'Full Historical Report';
       if (format == 'pdf') {
         _showPdfPreview(
-          (_) => ReportService()
-              .generateForfeitedPdf(list, title: title, subTitle: dateRange),
+          (_) => ReportService().generateForfeitedPdf(list,
+              title: title, subTitle: dateRange, dateHeader: dateHeader),
           '${fileBase}_Report.pdf',
         );
       } else if (mounted) {
@@ -705,8 +702,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             title: 'Export $key',
             recordCount: list.length,
             fileName: '${fileBase}_Report.xlsx',
-            onExport: () =>
-                ReportService().exportForfeitedToExcel(list, title: title),
+            onExport: () => ReportService()
+                .exportForfeitedToExcel(list, title: title, dateHeader: dateHeader),
             onSave: (bytes) => _handleFileSave(bytes, fileBase, 'xlsx'),
           ),
         );
@@ -783,6 +780,38 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     } finally {
       _setLoading(loadKey, false);
     }
+  }
+
+  /// Opens the QR-label generator: pick one/several packages, then print or
+  /// download their QR-code labels (regenerated live from the package data, so
+  /// any previously registered package's labels can be produced again anytime).
+  Future<void> _openQrLabelGenerator() async {
+    const key = 'QR Code Labels';
+    _setLoading(key, true);
+    List<PackageModel> all;
+    try {
+      all = await ref.read(packageServiceProvider).getAllPackages();
+    } catch (e) {
+      _showError(e.toString());
+      return;
+    } finally {
+      _setLoading(key, false);
+    }
+    if (!mounted) return;
+    if (all.isEmpty) {
+      _showNoDataMessage();
+      return;
+    }
+    final selected = await showDialog<List<PackageModel>>(
+      context: context,
+      builder: (_) => _QrLabelPickerDialog(packages: all),
+    );
+    if (selected == null || selected.isEmpty || !mounted) return;
+    // Reuse the existing print/save dialog for the chosen packages.
+    showDialog(
+      context: context,
+      builder: (_) => PrintBarcodeDialog(packages: selected),
+    );
   }
 
   void _showPdfPreview(
@@ -1929,6 +1958,378 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
         Text(label, style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
         Text(value, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
       ],
+    );
+  }
+}
+
+/// A wide call-to-action card for the QR Code Labels generator.
+class _QrLabelCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _QrLabelCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = const Color(0xFF00897B); // teal
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [accent.withOpacity(0.10), context.colors.cardDark],
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: accent.withOpacity(0.35)),
+        ),
+        child: Row(children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.15),
+              shape: BoxShape.circle,
+              border: Border.all(color: accent.withOpacity(0.4)),
+            ),
+            child: Icon(Icons.qr_code_2_rounded, color: accent, size: 26),
+          ),
+          const Gap(16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Generate QR Code Labels',
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800)),
+                const Gap(3),
+                Text(
+                    'Pick one or more registered packages and print or download their QR-code labels anytime.',
+                    style: TextStyle(
+                        color: context.colors.textSecondary, fontSize: 12.5)),
+              ],
+            ),
+          ),
+          const Gap(12),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+                backgroundColor: accent, foregroundColor: Colors.white),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
+            label: const Text('Open'),
+            onPressed: onTap,
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Searchable multi-select package picker. Returns the chosen packages (or null
+/// if cancelled) so the caller can generate their QR labels.
+class _QrLabelPickerDialog extends StatefulWidget {
+  final List<PackageModel> packages;
+  const _QrLabelPickerDialog({required this.packages});
+
+  @override
+  State<_QrLabelPickerDialog> createState() => _QrLabelPickerDialogState();
+}
+
+class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
+  final _selected = <String>{};
+  String _query = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final gold = context.colors.primaryGold;
+    final q = _query.trim().toLowerCase();
+    final filtered = q.isEmpty
+        ? widget.packages
+        : widget.packages.where((p) {
+            final items = p.items.map((i) => i.itemName).join(' ').toLowerCase();
+            return p.srNumber.toLowerCase().contains(q) ||
+                p.consigneeName.toLowerCase().contains(q) ||
+                items.contains(q);
+          }).toList();
+    final allShownSelected = filtered.isNotEmpty &&
+        filtered.every((p) => _selected.contains(p.id));
+
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: Container(
+        width: 720,
+        decoration: BoxDecoration(
+          color: context.colors.scaffoldBg,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.4),
+                blurRadius: 40,
+                offset: const Offset(0, 15)),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Header (matches the New Disposal Request dialog) ──
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: isDark
+                      ? [context.colors.surfaceDark, context.colors.cardDark]
+                      : [
+                          context.colors.customsBlue,
+                          context.colors.customsBlueDark
+                        ],
+                ),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.qr_code_2_rounded, color: gold, size: 24),
+                ),
+                const Gap(16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('QR CODE LABELS',
+                          style: TextStyle(
+                              color: gold,
+                              fontSize: 11,
+                              letterSpacing: 1.2,
+                              fontWeight: FontWeight.w800)),
+                      const Text('Select Packages',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, color: Colors.white70),
+                  onPressed: () => Navigator.pop(context),
+                ),
+              ]),
+            ),
+            // ── Body ──
+            Flexible(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Search
+                    TextField(
+                      decoration: InputDecoration(
+                        isDense: true,
+                        hintText: 'Search SR #, consignee or item…',
+                        prefixIcon: Icon(Icons.search_rounded,
+                            color: context.colors.textMuted),
+                        border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      onChanged: (v) => setState(() => _query = v),
+                    ),
+                    const Gap(14),
+                    // Section card (matches the disposal dialog's list card)
+                    Flexible(
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: context.colors.cardDark,
+                          borderRadius: BorderRadius.circular(14),
+                          border:
+                              Border.all(color: context.colors.borderColor),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Card header: count + Select/Clear all
+                            Padding(
+                              padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+                              child: Row(children: [
+                                Text(
+                                    '${_selected.length} of ${widget.packages.length} selected',
+                                    style: TextStyle(
+                                        color: context.colors.textSecondary,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600)),
+                                const Spacer(),
+                                TextButton.icon(
+                                  onPressed: () => setState(() {
+                                    if (allShownSelected) {
+                                      _selected.removeAll(
+                                          filtered.map((p) => p.id));
+                                    } else {
+                                      _selected
+                                          .addAll(filtered.map((p) => p.id));
+                                    }
+                                  }),
+                                  icon: Icon(
+                                      allShownSelected
+                                          ? Icons.remove_done_rounded
+                                          : Icons.done_all_rounded,
+                                      size: 16,
+                                      color: gold),
+                                  label: Text(
+                                      allShownSelected
+                                          ? 'Clear All'
+                                          : 'Select All',
+                                      style: TextStyle(
+                                          color: gold,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700)),
+                                ),
+                              ]),
+                            ),
+                            Divider(
+                                height: 1, color: context.colors.borderColor),
+                            // List
+                            Flexible(
+                              child: filtered.isEmpty
+                                  ? Padding(
+                                      padding: const EdgeInsets.all(28),
+                                      child: Text('No matching packages',
+                                          style: TextStyle(
+                                              color:
+                                                  context.colors.textMuted)),
+                                    )
+                                  : ListView.separated(
+                                      shrinkWrap: true,
+                                      itemCount: filtered.length,
+                                      separatorBuilder: (_, __) => Divider(
+                                          height: 1,
+                                          color: context.colors.borderColor
+                                              .withOpacity(0.5)),
+                                      itemBuilder: (context, i) {
+                                        final p = filtered[i];
+                                        return _QrPackageRow(
+                                          package: p,
+                                          isSelected:
+                                              _selected.contains(p.id),
+                                          onToggle: () => setState(() {
+                                            if (_selected.contains(p.id)) {
+                                              _selected.remove(p.id);
+                                            } else {
+                                              _selected.add(p.id);
+                                            }
+                                          }),
+                                        );
+                                      },
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // ── Footer ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 18),
+              child: Row(children: [
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text('Cancel',
+                      style: TextStyle(color: context.colors.textSecondary)),
+                ),
+                const Gap(8),
+                ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                      backgroundColor: gold,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 14)),
+                  icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                  label: Text('Generate (${_selected.length})'),
+                  onPressed: _selected.isEmpty
+                      ? null
+                      : () => Navigator.pop(
+                            context,
+                            widget.packages
+                                .where((p) => _selected.contains(p.id))
+                                .toList(),
+                          ),
+                ),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One package row in the QR picker — styled like the disposal-request rows:
+/// leading gold checkbox, accent SR number, item · consignee subline, and a
+/// gold tint when selected.
+class _QrPackageRow extends StatelessWidget {
+  final PackageModel package;
+  final bool isSelected;
+  final VoidCallback onToggle;
+  const _QrPackageRow({
+    required this.package,
+    required this.isSelected,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final itemLabel = package.items.isEmpty
+        ? '—'
+        : (package.items.length == 1
+            ? package.items.first.itemName
+            : '${package.items.first.itemName} +${package.items.length - 1}');
+    return InkWell(
+      onTap: onToggle,
+      child: Container(
+        color: isSelected
+            ? context.colors.primaryGold.withOpacity(0.06)
+            : Colors.transparent,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        child: Row(children: [
+          Checkbox(
+            activeColor: context.colors.primaryGold,
+            value: isSelected,
+            onChanged: (_) => onToggle(),
+          ),
+          const Gap(4),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(package.srNumber,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: context.colors.accentLightBlue)),
+                Text('$itemLabel · ${package.consigneeName}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 12, color: context.colors.textSecondary)),
+              ],
+            ),
+          ),
+        ]),
+      ),
     );
   }
 }

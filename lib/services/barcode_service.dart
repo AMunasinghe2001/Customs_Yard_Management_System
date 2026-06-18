@@ -206,6 +206,9 @@ class BarcodeService {
             unitOfMeasure: item.unitOfMeasure,
             warehouseAndZone: whZone,
             consigneePhone: package.consigneePhone ?? 'N/A',
+            hsCode: (item.hsCode?.trim().isNotEmpty == true)
+                ? item.hsCode!.trim()
+                : 'N/A',
           ));
         }
       }
@@ -318,6 +321,7 @@ class BarcodeService {
       '--- SL CUSTOMS ---',
       'SR No: ${label.srNumber}',
       'Item Name: ${label.itemName}',
+      'HS Code: ${label.hsCode ?? 'N/A'}',
       'Category: ${label.category}',
       'Quantity: ${label.index} of ${label.total} ${label.unitOfMeasure}',
       'Package # : ${label.index} / ${label.total}',
@@ -364,6 +368,7 @@ class BarcodeService {
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
                     _detailRow('Item', label.itemName, fontSize: 8),
+                    _detailRow('HS Code', label.hsCode ?? 'N/A', fontSize: 7),
                     _detailRow('Category', label.category ?? 'N/A', fontSize: 7),
                     _detailRow('Unit', label.unitOfMeasure ?? 'Pieces', fontSize: 7),
                     _detailRow('Cusdec', label.cusdecNo ?? 'N/A', fontSize: 7),
@@ -412,6 +417,7 @@ class _ItemLabel {
   final String? unitOfMeasure;
   final String? warehouseAndZone;
   final String? consigneePhone;
+  final String? hsCode;
 
   _ItemLabel({
     required this.srNumber,
@@ -430,5 +436,6 @@ class _ItemLabel {
     this.unitOfMeasure,
     this.warehouseAndZone,
     this.consigneePhone,
+    this.hsCode,
   });
 }

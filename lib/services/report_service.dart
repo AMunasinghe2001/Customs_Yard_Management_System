@@ -47,61 +47,123 @@ class ReportService {
     return 'Multiple';
   }
 
+  /// Warehouse label(s) a forfeited package is/was held in — distinct warehouse
+  /// codes from its (joined) warehouse entries. '—' when none recorded.
+  static String warehouseLabel(ForfeitedPackageModel f) {
+    final entries = f.packageDetails?.warehouseEntries ?? const [];
+    final codes = entries
+        .map((e) => e.warehouseCode.trim())
+        .where((c) => c.isNotEmpty)
+        .toSet()
+        .toList();
+    if (codes.isEmpty) return '—';
+    if (codes.length == 1) return codes.first;
+    return codes.join(', ');
+  }
+
   /// Generates a PDF report for report items with category summary and zone summary
   Future<Uint8List> generateCategoryAndZonePdf(List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
-    // Grouping by Category
+    // Grouping by Category (total item quantity per category), sorted desc.
     final categoryCounts = <String, int>{};
     for (var pkg in packages) {
       for (var item in pkg.items) {
-        final cat = item.category ?? 'Uncategorized';
+        final cat = (item.category?.trim().isNotEmpty == true)
+            ? item.category!.trim()
+            : 'Uncategorized';
         categoryCounts[cat] = (categoryCounts[cat] ?? 0) + item.quantity;
       }
     }
+    final catSorted = categoryCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final catTotal = categoryCounts.values.fold(0, (s, v) => s + v);
 
-    // Grouping by Zone (only for current entries)
+    // Grouping by Warehouse + Zone (current/held entries only), sorted desc.
+    // Keyed "WH · Zone" so a bare zone like "7" reads with its warehouse.
     final zoneCounts = <String, int>{};
     for (var entry in entries) {
       if (!entry.isReturned) {
-        final zone = entry.zone ?? 'No Zone';
-        zoneCounts[zone] = (zoneCounts[zone] ?? 0) + 1;
+        final zone = (entry.zone?.trim().isNotEmpty == true)
+            ? entry.zone!.trim()
+            : 'No Zone';
+        final key = '${entry.warehouseCode} · Zone $zone';
+        zoneCounts[key] = (zoneCounts[key] ?? 0) + entry.itemCount;
       }
     }
+    final zoneSorted = zoneCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final zoneTotal = zoneCounts.values.fold(0, (s, v) => s + v);
+
+    String pct(int v, int total) =>
+        total == 0 ? '0%' : '${(v * 100 / total).toStringAsFixed(1)}%';
 
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader('Packaging & Distribution Audit', dateStr, ''),
-          pw.SizedBox(height: 20),
-          
-          pw.Text('Inventory by Item Category', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
-          pw.SizedBox(height: 10),
+          _buildHeader('Category & Zone Summary', dateStr,
+              'How held inventory is distributed across item categories and warehouse zones'),
+          pw.SizedBox(height: 18),
+
+          // ── Category section ──
+          pw.Text('Inventory by Item Category',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
+          pw.Text('Total item quantity registered under each category (all items).',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+          pw.SizedBox(height: 8),
           pw.TableHelper.fromTextArray(
-            headers: ['Category', 'Total Items'],
-            data: categoryCounts.entries.map((e) => [e.key, e.value.toString()]).toList(),
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headers: ['#', 'Category', 'Total Qty', 'Share'],
+            data: [
+              for (var i = 0; i < catSorted.length; i++)
+                [
+                  '${i + 1}',
+                  catSorted[i].key,
+                  NumberFormat('#,##0').format(catSorted[i].value),
+                  pct(catSorted[i].value, catTotal),
+                ],
+              ['', 'TOTAL', NumberFormat('#,##0').format(catTotal), '100%'],
+            ],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+            cellStyle: const pw.TextStyle(fontSize: 9),
             headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
-            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.center},
+            rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
+            columnWidths: {0: const pw.FixedColumnWidth(28)},
+            cellAlignments: {0: pw.Alignment.center, 1: pw.Alignment.centerLeft, 2: pw.Alignment.centerRight, 3: pw.Alignment.centerRight},
           ),
-          
-          pw.SizedBox(height: 30),
-          
-          pw.Text('Active Inventory by Warehouse Zone', style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
-          pw.SizedBox(height: 10),
+
+          pw.SizedBox(height: 26),
+
+          // ── Zone section ──
+          pw.Text('Active Inventory by Warehouse Zone',
+              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
+          pw.Text('Currently held item quantity per warehouse zone (released items excluded).',
+              style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
+          pw.SizedBox(height: 8),
           pw.TableHelper.fromTextArray(
-            headers: ['Zone', 'Package Count'],
-            data: zoneCounts.entries.map((e) => [e.key, e.value.toString()]).toList(),
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headers: ['#', 'Warehouse · Zone', 'Held Qty', 'Share'],
+            data: [
+              for (var i = 0; i < zoneSorted.length; i++)
+                [
+                  '${i + 1}',
+                  zoneSorted[i].key,
+                  NumberFormat('#,##0').format(zoneSorted[i].value),
+                  pct(zoneSorted[i].value, zoneTotal),
+                ],
+              ['', 'TOTAL', NumberFormat('#,##0').format(zoneTotal), '100%'],
+            ],
+            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+            cellStyle: const pw.TextStyle(fontSize: 9),
             headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
-            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.center},
+            rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
+            columnWidths: {0: const pw.FixedColumnWidth(28)},
+            cellAlignments: {0: pw.Alignment.center, 1: pw.Alignment.centerLeft, 2: pw.Alignment.centerRight, 3: pw.Alignment.centerRight},
           ),
-          
-          pw.SizedBox(height: 20),
-          _buildFooter(packages.length),
+
+          pw.SizedBox(height: 18),
+          _buildFooter(packages.length, label: 'Packages Scanned:'),
         ],
       ),
     );
@@ -114,33 +176,75 @@ class ReportService {
     var excel = Excel.createExcel();
     excel.delete('Sheet1');
 
-    // Category Sheet
+    String pct(int v, int total) =>
+        total == 0 ? '0%' : '${(v * 100 / total).toStringAsFixed(1)}%';
+
+    // Category Sheet (sorted desc, with Share % and a TOTAL row).
     Sheet catSheet = excel['Category Summary'];
     catSheet.appendRow([TextCellValue('CATEGORY INVENTORY SUMMARY')]);
-    catSheet.appendRow([TextCellValue('Item Category'), TextCellValue('Total Quantity')]);
-    
+    catSheet.appendRow([
+      TextCellValue('#'), TextCellValue('Item Category'),
+      TextCellValue('Total Quantity'), TextCellValue('Share')
+    ]);
+
     final categoryCounts = <String, int>{};
     for (var pkg in packages) {
       for (var item in pkg.items) {
-        final cat = item.category ?? 'Uncategorized';
+        final cat = (item.category?.trim().isNotEmpty == true)
+            ? item.category!.trim()
+            : 'Uncategorized';
         categoryCounts[cat] = (categoryCounts[cat] ?? 0) + item.quantity;
       }
     }
-    categoryCounts.forEach((cat, qty) => catSheet.appendRow([TextCellValue(cat), IntCellValue(qty)]));
+    final catSorted = categoryCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final catTotal = categoryCounts.values.fold(0, (s, v) => s + v);
+    for (var i = 0; i < catSorted.length; i++) {
+      catSheet.appendRow([
+        IntCellValue(i + 1),
+        TextCellValue(catSorted[i].key),
+        IntCellValue(catSorted[i].value),
+        TextCellValue(pct(catSorted[i].value, catTotal)),
+      ]);
+    }
+    catSheet.appendRow([
+      TextCellValue(''), TextCellValue('TOTAL'),
+      IntCellValue(catTotal), TextCellValue('100%')
+    ]);
 
-    // Zone Sheet
+    // Zone Sheet (warehouse · zone, held qty, sorted desc, Share + TOTAL).
     Sheet zoneSheet = excel['Zone Summary'];
-    zoneSheet.appendRow([TextCellValue('WAREHOUSE ZONE OCCUPANCY')]);
-    zoneSheet.appendRow([TextCellValue('Zone'), TextCellValue('Active Packages')]);
-    
+    zoneSheet.appendRow([TextCellValue('WAREHOUSE ZONE OCCUPANCY (HELD)')]);
+    zoneSheet.appendRow([
+      TextCellValue('#'), TextCellValue('Warehouse · Zone'),
+      TextCellValue('Held Quantity'), TextCellValue('Share')
+    ]);
+
     final zoneCounts = <String, int>{};
     for (var entry in entries) {
       if (!entry.isReturned) {
-        final zone = entry.zone ?? 'No Zone';
-        zoneCounts[zone] = (zoneCounts[zone] ?? 0) + 1;
+        final zone = (entry.zone?.trim().isNotEmpty == true)
+            ? entry.zone!.trim()
+            : 'No Zone';
+        final key = '${entry.warehouseCode} · Zone $zone';
+        zoneCounts[key] = (zoneCounts[key] ?? 0) + entry.itemCount;
       }
     }
-    zoneCounts.forEach((zone, count) => zoneSheet.appendRow([TextCellValue(zone), IntCellValue(count)]));
+    final zoneSorted = zoneCounts.entries.toList()
+      ..sort((a, b) => b.value.compareTo(a.value));
+    final zoneTotal = zoneCounts.values.fold(0, (s, v) => s + v);
+    for (var i = 0; i < zoneSorted.length; i++) {
+      zoneSheet.appendRow([
+        IntCellValue(i + 1),
+        TextCellValue(zoneSorted[i].key),
+        IntCellValue(zoneSorted[i].value),
+        TextCellValue(pct(zoneSorted[i].value, zoneTotal)),
+      ]);
+    }
+    zoneSheet.appendRow([
+      TextCellValue(''), TextCellValue('TOTAL'),
+      IntCellValue(zoneTotal), TextCellValue('100%')
+    ]);
 
     return Uint8List.fromList(excel.encode()!);
   }
@@ -347,10 +451,10 @@ class ReportService {
       sheetObject.appendRow([TextCellValue('')]);
     }
 
-    // Add Headers
+    // Add Headers (one row per item)
     List<String> headers = [
-      'SR Number', 'Item', 'HS Code', 'Date', 'Consignee', 'NIC', 'Status',
-      'Weight (kg)', 'Value (LKR)', 'Cusdec No', 'Origin', 'Description'
+      'SR Number', 'Item', 'HS Code', 'Qty', 'Date', 'Consignee', 'NIC',
+      'Status', 'Value (LKR)', 'Cusdec No', 'Description'
     ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
@@ -365,22 +469,26 @@ class ReportService {
       if (cell != null) cell.cellStyle = cellStyle;
     }
 
-    // Add Data
+    // Add Data — one row per item (same SR repeats for each of its items).
     for (var p in packages) {
-      sheetObject.appendRow([
-        TextCellValue(p.srNumber),
-        TextCellValue(itemLabel(p.items)),
-        TextCellValue(hsLabel(p.items)),
-        TextCellValue(p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : ''),
-        TextCellValue(p.consigneeName),
-        TextCellValue(p.consigneeNic ?? ''),
-        TextCellValue(p.status.toUpperCase()),
-        DoubleCellValue(p.weightKg),
-        DoubleCellValue(p.declaredValue),
-        TextCellValue(p.cusdecNo ?? ''),
-        TextCellValue(p.originCountry),
-        TextCellValue(p.description ?? ''),
-      ]);
+      final dateStr =
+          p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : '';
+      final items = p.items.isEmpty ? [null] : p.items;
+      for (final it in items) {
+        sheetObject.appendRow([
+          TextCellValue(p.srNumber),
+          TextCellValue(it?.itemName ?? '—'),
+          TextCellValue((it?.hsCode?.trim().isNotEmpty == true) ? it!.hsCode!.trim() : '—'),
+          IntCellValue(it?.quantity ?? 0),
+          TextCellValue(dateStr),
+          TextCellValue(p.consigneeName),
+          TextCellValue(p.consigneeNic ?? ''),
+          TextCellValue((it?.status.isNotEmpty == true ? it!.status : p.status).toUpperCase()),
+          DoubleCellValue(it?.unitValue ?? p.declaredValue),
+          TextCellValue(p.cusdecNo ?? ''),
+          TextCellValue(it?.goodsDescription ?? p.description ?? ''),
+        ]);
+      }
     }
 
     return Uint8List.fromList(excel.encode()!);
@@ -868,23 +976,41 @@ class ReportService {
 
   pw.Widget _buildPackageTable(List<PackageModel> packages) {
     const headers = [
-      'SR Number', 'Item', 'HS Code', 'Consignee', 'Status', 'Date',
-      'Weight', 'Value', 'Origin'
+      'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Status', 'Date',
+      'Value (LKR)'
     ];
+
+    // One row PER ITEM (an SR with several items shows several rows under the
+    // same SR number). Packages with no items still get a single fallback row.
+    final rows = <List<String>>[];
+    for (final p in packages) {
+      final dateStr =
+          p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : '-';
+      if (p.items.isEmpty) {
+        rows.add([
+          p.srNumber, '—', '—', '—', p.consigneeName,
+          p.status.toUpperCase(), dateStr,
+          NumberFormat('#,##0').format(p.declaredValue),
+        ]);
+      } else {
+        for (final it in p.items) {
+          rows.add([
+            p.srNumber,
+            it.itemName,
+            (it.hsCode?.trim().isNotEmpty == true) ? it.hsCode!.trim() : '—',
+            '${it.quantity}',
+            p.consigneeName,
+            (it.status.isNotEmpty ? it.status : p.status).toUpperCase(),
+            dateStr,
+            NumberFormat('#,##0').format(it.unitValue),
+          ]);
+        }
+      }
+    }
 
     return pw.TableHelper.fromTextArray(
       headers: headers,
-      data: packages.map((p) => [
-        p.srNumber,
-        itemLabel(p.items),
-        hsLabel(p.items),
-        p.consigneeName,
-        p.status.toUpperCase(),
-        p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : '-',
-        p.weightKg.toStringAsFixed(1),
-        NumberFormat.currency(symbol: '', decimalDigits: 0).format(p.declaredValue),
-        p.originCountry,
-      ]).toList(),
+      data: rows,
       headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
       cellStyle: const pw.TextStyle(fontSize: 7),
       headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
@@ -894,12 +1020,11 @@ class ReportService {
         0: pw.Alignment.centerLeft,
         1: pw.Alignment.centerLeft,
         2: pw.Alignment.center,
-        3: pw.Alignment.centerLeft,
-        4: pw.Alignment.center,
+        3: pw.Alignment.center,
+        4: pw.Alignment.centerLeft,
         5: pw.Alignment.center,
-        6: pw.Alignment.centerRight,
+        6: pw.Alignment.center,
         7: pw.Alignment.centerRight,
-        8: pw.Alignment.center,
       },
     );
   }
@@ -973,6 +1098,7 @@ class ReportService {
     List<ForfeitedPackageModel> packages, {
     required String title,
     String subTitle = '',
+    String dateHeader = 'Date',
   }) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
@@ -984,15 +1110,17 @@ class ReportService {
           _buildHeader(title, dateStr, subTitle),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headers: const [
+            // No "Source" column — the report title already says which action
+            // this is (FORFEITED / ABANDONED / OTHER), and it was identical on
+            // every row. Yard replaced by Warehouse.
+            headers: [
               'SR Number',
               'Item',
               'HS Code',
               'Consignee',
-              'Yard',
-              'Source',
+              'Warehouse',
               'Reason',
-              'Forfeited On',
+              dateHeader,
             ],
             headerStyle: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
@@ -1008,8 +1136,7 @@ class ReportService {
                 name,
                 hsLabel(items),
                 f.consigneeName,
-                f.yard ?? '—',
-                f.source.toUpperCase(),
+                warehouseLabel(f),
                 f.reason,
                 DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
               ];
@@ -1027,6 +1154,7 @@ class ReportService {
   Future<Uint8List?> exportForfeitedToExcel(
     List<ForfeitedPackageModel> packages, {
     required String title,
+    String dateHeader = 'Date',
   }) async {
     final excel = Excel.createExcel();
     final sheet = excel['Report'];
@@ -1042,10 +1170,9 @@ class ReportService {
       'Item',
       'HS Code',
       'Consignee',
-      'Yard',
-      'Source',
+      'Warehouse',
       'Reason',
-      'Forfeited On',
+      dateHeader,
     ];
     sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
     for (final f in packages) {
@@ -1056,8 +1183,7 @@ class ReportService {
         TextCellValue(name),
         TextCellValue(items.isEmpty ? '' : hsLabel(items)),
         TextCellValue(f.consigneeName),
-        TextCellValue(f.yard ?? ''),
-        TextCellValue(f.source.toUpperCase()),
+        TextCellValue(warehouseLabel(f)),
         TextCellValue(f.reason),
         TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
       ]);

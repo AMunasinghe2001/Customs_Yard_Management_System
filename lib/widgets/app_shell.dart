@@ -21,6 +21,7 @@ const _officerNav = [
   NavItem('Dashboard', Icons.dashboard_rounded, '/dashboard'),
   NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
+  NavItem('Zone Capacity', Icons.donut_large_rounded, '/zone-capacity'),
   NavItem('Packages', Icons.inventory_2_rounded, '/packages'),
   NavItem('Released Packages', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Abandoned Packages', Icons.inbox_rounded, '/abandoned-packages'),

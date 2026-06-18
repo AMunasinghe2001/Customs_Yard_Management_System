@@ -1792,7 +1792,11 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                 controller: widget.row.hsCodeCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'HS Code', isDense: true, helperText: ' '),
+                    labelText: 'HS Code *', isDense: true, helperText: ' '),
+                validator: (v) => widget.showValidationErrors &&
+                        (v == null || v.trim().isEmpty)
+                    ? 'Required'
+                    : null,
                 onChanged: (_) => widget.onChanged(),
               ),
             ),
@@ -1801,7 +1805,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                 controller: widget.row.valueCtrl,
                 decoration: const InputDecoration(
-                    labelText: 'Value',
+                    labelText: 'Value *',
                     isDense: true,
                     helperText: ' ',
                     prefixText: 'LKR '),
@@ -1810,6 +1814,13 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 inputFormatters: [
                   FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
                 ],
+                validator: (v) {
+                  if (!widget.showValidationErrors) return null;
+                  if (v == null || v.trim().isEmpty) return 'Required';
+                  final parsed = double.tryParse(v.trim());
+                  if (parsed == null || parsed <= 0) return 'Enter a value';
+                  return null;
+                },
                 onChanged: (_) => widget.onChanged(),
               ),
             ),
