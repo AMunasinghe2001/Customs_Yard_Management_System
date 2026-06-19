@@ -392,6 +392,15 @@ class AppealDashboardScreen extends ConsumerWidget {
       builder: (_) => PackageDetailsDialog(
         package: f.packageDetails!,
         storageRate: storageRate,
+        // Single-item view (like the Yard's Forfeited popup) — show only this
+        // row's item, not the whole package's disposition breakdown.
+        useLegacySummary: true,
+        highlightItemId: f.itemId ??
+            (f.packageDetails!.items.isNotEmpty
+                ? f.packageDetails!.items.first.id
+                : null),
+        yardLabel: f.yard != null ? yardName(f.yard!) : null,
+        // Appeal Directorate actions: Hold Appeal / Release Hold.
         footerActionLabel: label,
         footerActionIcon: icon,
         footerActionColor: color,

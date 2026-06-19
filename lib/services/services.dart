@@ -2233,13 +2233,16 @@ class ForfeitedPackageService {
     // Packages already SOLD or DESTROYED can't be requested again — drop them.
     final goneIds = await _soldOrDestroyedForfeitedIds();
 
+    // Pull all (non-hold) genuine forfeits; the appeal-window / decision gate is
+    // applied client-side via [ForfeitedPackageModel.isActionable] so packages
+    // that received an appeal DECISION are requestable immediately (no need to
+    // wait out the 30-day window).
     final fpData = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .eq('source', 'forfeit')
         .eq('appeal_hold', false)
-        .lt('appeal_deadline', DateTime.now().toIso8601String())
         .order('appeal_deadline', ascending: true));
 
     const _nonDisposalDecisions = {'RELEASE', 'RE-EXPORT', 'OTHER'};
@@ -2249,6 +2252,8 @@ class ForfeitedPackageService {
         .where((e) => !_nonDisposalDecisions
             .contains(((e['appeal_decision'] as String?) ?? '').toUpperCase()))
         .map((e) => ForfeitedPackageModel.fromJson(e))
+        // Actionable = window passed OR a (disposal) appeal decision received.
+        .where((f) => f.isActionable)
         .toList();
 
     // ── 2. Abandoned packages (no appeal — requestable immediately) ──────────

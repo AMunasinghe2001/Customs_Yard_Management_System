@@ -806,6 +806,12 @@ class ForfeitedPackageModel {
   bool get hasAppealDecision =>
       appealDecision != null && appealDecision!.trim().isNotEmpty;
 
+  /// Whether the yard may now act on this package (Send Disposal Request /
+  /// Final Disposition). Allowed once the 30-day appeal window has passed OR
+  /// the Appeal Directorate has already returned a decision (no need to wait
+  /// out the 30 days in that case).
+  bool get isActionable => isAppealExpired || hasAppealDecision;
+
   /// The disposal-request disposition this package's appeal decision implies,
   /// as the code the request form uses ('destruction' | 'sale'), or null when
   /// the decision isn't a disposal outcome (RELEASE / RE-EXPORT / OTHER).

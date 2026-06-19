@@ -243,6 +243,11 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                   final expiredCount = headerRows
                       .where((r) => r.forfeited.isAppealExpired)
                       .length;
+                  // The Send-Disposal button enables once ANY package is
+                  // actionable: window passed OR an appeal decision is in.
+                  final actionableCount = headerRows
+                      .where((r) => r.forfeited.isActionable)
+                      .length;
 
                   return SizedBox(
                     width: double.infinity,
@@ -275,13 +280,13 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                               icon: const Icon(Icons.local_shipping_rounded, size: 16),
                               label: const Text('Send Disposal Request'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: expiredCount > 0 ? context.colors.primaryGold : context.colors.textMuted.withOpacity(0.2),
-                                foregroundColor: expiredCount > 0 ? Colors.white : context.colors.textMuted,
+                                backgroundColor: actionableCount > 0 ? context.colors.primaryGold : context.colors.textMuted.withOpacity(0.2),
+                                foregroundColor: actionableCount > 0 ? Colors.white : context.colors.textMuted,
                                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                elevation: expiredCount > 0 ? 2 : 0,
+                                elevation: actionableCount > 0 ? 2 : 0,
                               ),
-                              onPressed: expiredCount > 0
+                              onPressed: actionableCount > 0
                                   ? () => showDialog(
                                         context: context,
                                         builder: (ctx) => DisposalRequestDialog(
@@ -625,10 +630,11 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                     pkg.hasAppealDecision
                                                         ? pkg.appealDecisionLabel
                                                         : null,
-                                                // Final disposition only once the
-                                                // appeal window has passed.
+                                                // Final disposition once the
+                                                // window has passed OR an appeal
+                                                // decision has been received.
                                                 allowFinalDisposition:
-                                                    pkg.isAppealExpired,
+                                                    pkg.isActionable,
                                                 // Sale / Destroy → disposal
                                                 // request to Central Disposal.
                                                 onSaleOrDestroyRequest:
