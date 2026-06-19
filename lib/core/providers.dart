@@ -150,7 +150,7 @@ final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
 
 // ── Package History server-side pagination ─────────────────────────────────
 /// Rows per page on the Package History table.
-const int kPackagePageSize = 50;
+const int kPackagePageSize = 20;
 
 /// Current zero-based page index for the Package History table.
 final packagePageProvider = StateProvider<int>((ref) => 0);
@@ -400,11 +400,52 @@ final selectedTenderPackagesProvider = StateProvider<Set<String>>((ref) => {});
 final disposalSelectedYardProvider =
     StateProvider<String>((ref) => kYards.first.code);
 
+// Sold / Destroyed cross-yard tabs use their own nullable yard filter so they
+// can show "All Yards" (null) — independent of the single-yard tabs above.
+final disposalSoldYardFilterProvider = StateProvider<String?>((ref) => null);
+final disposalDestroyedYardFilterProvider =
+    StateProvider<String?>((ref) => null);
+
 final disposalSoldPackagesProvider =
     FutureProvider<List<PackageModel>>((ref) async {
   ref.watch(packagesChangeTriggerProvider); // refresh on package changes
-  final yard = ref.watch(disposalSelectedYardProvider);
+  final yard = ref.watch(disposalSoldYardFilterProvider); // null = all yards
   return ref.read(disposalServiceProvider).getSoldPackages(yard: yard);
+});
+
+/// Destroyed packages across yards (null filter = all). Refreshes the moment a
+/// yard marks a package destroyed (a warehouse_entries write → packages trigger).
+final disposalDestroyedPackagesProvider =
+    FutureProvider<List<PackageModel>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  final yard = ref.watch(disposalDestroyedYardFilterProvider); // null = all
+  return ref.read(disposalServiceProvider).getDestroyedPackages(yard: yard);
+});
+
+/// package_id → delivered (bool) across all tender sale items. Lets the Sold
+/// Packages tab filter Delivered / Pending synchronously. Refreshes on any
+/// tender_sale_items realtime change (a Mark-Delivered in any session).
+final packageDeliveredMapProvider =
+    FutureProvider<Map<String, bool>>((ref) async {
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getDeliveryStatusByPackageId();
+});
+
+/// package_id → delivered (bool) for DESTROYED packages. Mirrors the sold map.
+final packageDestroyedDeliveredMapProvider =
+    FutureProvider<Map<String, bool>>((ref) async {
+  ref.watch(destructionsChangeTriggerProvider);
+  return ref
+      .read(disposalServiceProvider)
+      .getDestroyedDeliveryStatusByPackageId();
+});
+
+/// The destruction item (delivery state) for a package id. Re-fetches on
+/// destructions realtime so every session stays in sync after a Mark-Delivered.
+final destructionItemForPackageProvider =
+    FutureProvider.family<DestructionItemModel?, String>((ref, packageId) async {
+  ref.watch(destructionsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getDestructionItemForPackage(packageId);
 });
 
 final disposalForfeitedPackagesProvider =

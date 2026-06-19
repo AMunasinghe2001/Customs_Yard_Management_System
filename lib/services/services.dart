@@ -1819,8 +1819,10 @@ class AuditLogService {
   static final Random _rand = Random();
 
   Future<List<AuditLogModel>> getAllLogs() async {
-    // Admins only see activity from their OWN yard (the directorate accounts
-    // live in a head-office yard, so their actions are excluded automatically).
+    // Admins only see activity from their OWN yard, and ONLY from the yard's own
+    // staff — yard admins and officers. Directorate accounts (disposal / appeal
+    // / valuation) are head-office and must NOT appear here even if they share a
+    // yard code; we filter them out by joining the actor's role.
     // Retention: only the last 12 months are kept on screen — older rows are
     // pruned from the table by purge_old_audit_logs() (migration
     // 20260615_audit_log_retention.sql).
@@ -1828,8 +1830,9 @@ class AuditLogService {
         DateTime.now().subtract(const Duration(days: 365)).toIso8601String();
     final data = await supabase
         .from('audit_logs')
-        .select('*, profiles(full_name)')
+        .select('*, profiles!inner(full_name, role)')
         .eq('yard', AppSession.currentYard)
+        .inFilter('profiles.role', ['admin', 'officer'])
         .gte('created_at', oneYearAgo)
         .order('created_at', ascending: false);
     return data.map((e) => AuditLogModel.fromJson(e)).toList();
@@ -2855,7 +2858,14 @@ class TendersService {
 class DisposalService {
   /// Sold packages for a specific yard. The caller (disposal role) has
   /// cross-yard read access via RLS; the UI filters the [FINAL:SOLD] entries.
-  Future<List<PackageModel>> getSoldPackages({required String yard}) async {
+  /// Sold packages for a yard, or — when [yard] is null — across ALL yards.
+  Future<List<PackageModel>> getSoldPackages({String? yard}) async {
+    return PackageService().getAllPackages(yard: yard);
+  }
+
+  /// Destroyed packages for a yard, or — when [yard] is null — across ALL yards.
+  /// Mirrors [getSoldPackages]; the screen filters to "[FINAL:DESTROYED]" entries.
+  Future<List<PackageModel>> getDestroyedPackages({String? yard}) async {
     return PackageService().getAllPackages(yard: yard);
   }
 
@@ -3211,6 +3221,58 @@ class DisposalService {
         ));
   }
 
+  /// Flip a destroyed package's delivery flag (yard OR Central Disposal).
+  Future<void> toggleDestructionDelivery(
+      String destructionItemId, bool delivered) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'disposal_toggle_destruction_delivery',
+          params: {
+            'p_item_id': destructionItemId,
+            'p_delivered': delivered,
+          },
+        ));
+  }
+
+  /// The destruction item for a given package id (delivery state). Mirrors
+  /// [getTenderSaleItemForPackage]. Used by the Destroyed tables + popup.
+  Future<DestructionItemModel?> getDestructionItemForPackage(
+      String packageId) async {
+    final fpkgs = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('id')
+        .eq('package_id', packageId));
+    final ids = (fpkgs as List).map((e) => e['id'] as String).toList();
+    if (ids.isEmpty) return null;
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('destruction_items')
+        .select()
+        .inFilter('forfeited_package_id', ids)
+        .eq('destroyed', true)
+        .order('destroyed_at', ascending: false)
+        .limit(1)
+        .maybeSingle());
+    if (data == null) return null;
+    return DestructionItemModel.fromJson(data);
+  }
+
+  /// Bulk delivery-status map for DESTROYED packages, keyed by package id:
+  /// package_id → delivered (bool). Mirrors [getDeliveryStatusByPackageId].
+  Future<Map<String, bool>> getDestroyedDeliveryStatusByPackageId() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('destruction_items')
+        .select('delivered, destroyed_at, forfeited_packages(package_id)')
+        .eq('destroyed', true)
+        .order('destroyed_at', ascending: true));
+    final out = <String, bool>{};
+    for (final e in (data as List)) {
+      final fp = e['forfeited_packages'] as Map<String, dynamic>?;
+      final pkgId = fp?['package_id']?.toString();
+      if (pkgId == null) continue;
+      out[pkgId] = (e['delivered'] as bool?) ?? false;
+    }
+    return out;
+  }
+
   // --- Destructions ---
 
   Future<List<DestructionModel>> getDestructions() async {
@@ -3432,6 +3494,27 @@ class DisposalService {
   Future<void> deleteTax(String id) async {
     await AuthService._withNetworkRetry(
         () => supabase.from('disposal_taxes').delete().eq('id', id));
+  }
+
+  /// Bulk delivery-status map keyed by the underlying package id:
+  /// package_id → delivered (bool), across every tender_sale_item. Used by the
+  /// Sold Packages tab to filter rows by Delivered / Pending in one query
+  /// instead of one per row. When a package has multiple sale items, the most
+  /// recent (last seen) wins.
+  Future<Map<String, bool>> getDeliveryStatusByPackageId() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_items')
+        .select('is_delivered, created_at, forfeited_packages(package_id)')
+        .order('created_at', ascending: true));
+    final out = <String, bool>{};
+    for (final e in (data as List)) {
+      final fp = e['forfeited_packages'] as Map<String, dynamic>?;
+      final pkgId = fp?['package_id']?.toString();
+      if (pkgId == null) continue;
+      // ascending order → the last row written per package wins (latest).
+      out[pkgId] = (e['is_delivered'] as bool?) ?? false;
+    }
+    return out;
   }
 }
 

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/theme.dart';
 
 /// Default rows shown per page on the client-paged disposition tables.
-const int kClientPageSize = 50;
+const int kClientPageSize = 20;
 
 /// A compact "Showing X–Y of N · ‹ Page n ›" pager bar shown under a table.
 /// Used by the client-paged lists (Released / Sold / Destroyed / Re-exported)

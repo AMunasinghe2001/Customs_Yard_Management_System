@@ -15,6 +15,7 @@ import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 class AdminScreen extends ConsumerWidget {
@@ -132,10 +133,19 @@ class AdminScreen extends ConsumerWidget {
 
 // ── Officers Tab ───────────────────────────────────────────────
 
-class _OfficersTab extends ConsumerWidget {
+class _OfficersTab extends ConsumerStatefulWidget {
   const _OfficersTab();
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_OfficersTab> createState() => _OfficersTabState();
+}
+
+class _OfficersTabState extends ConsumerState<_OfficersTab> {
+  int _page = 0;
+  // null = All, true = Active, false = Inactive/Expired
+  bool? _statusFilter;
+
+  @override
+  Widget build(BuildContext context) {
     // Admins manage only their own yard's staff. [myYardProfilesProvider]
     // filters to the current admin's yard and drops the head-office Appeal /
     // Disposal directorate accounts.
@@ -160,7 +170,16 @@ class _OfficersTab extends ConsumerWidget {
             onPressed: () => _showCreateOfficerDialog(context, ref),
           ),
         ]),
-        const Gap(16),
+        const Gap(12),
+        // ── Status filter chips ──────────────────────────────────
+        Row(children: [
+          _statusChip('All', null),
+          const Gap(8),
+          _statusChip('Active', true),
+          const Gap(8),
+          _statusChip('Inactive', false),
+        ]),
+        const Gap(12),
         Expanded(
           child: profiles.when(
             // Keep the table visible while the realtime/heartbeat refresh
@@ -171,7 +190,17 @@ class _OfficersTab extends ConsumerWidget {
                     color: context.colors.primaryGold)),
             error: (e, _) => ErrorView(
                 error: e, onRetry: () => ref.refresh(myYardProfilesProvider)),
-            data: (list) => Container(
+            data: (list) {
+              // Apply status filter
+              final filtered = _statusFilter == null
+                  ? list
+                  : list.where((p) {
+                      final isActive = p.isActive && !p.isExpired;
+                      return _statusFilter! ? isActive : !isActive;
+                    }).toList();
+              final pageItems = pageSlice(filtered, _page, kClientPageSize);
+              return Column(children: [
+              Expanded(child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
                   color: context.colors.cardDark,
@@ -219,7 +248,7 @@ class _OfficersTab extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 130),
                   ],
-                  rows: list
+                  rows: pageItems
                       .map((p) => DataRow(cells: [
                             DataCell(Text(p.fullName,
                                 style: TextStyle(
@@ -236,13 +265,50 @@ class _OfficersTab extends ConsumerWidget {
                       .toList(),
                 ),
               ),
-            )
-                .animate()
-                .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
-                .fadeIn(),
+              ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn()),
+              TablePager(
+                total: filtered.length,
+                page: _page,
+                pageSize: kClientPageSize,
+                onPageChanged: (p) => setState(() => _page = p),
+              ),
+              ]);
+            },
           ),
         ),
       ]),
+    );
+  }
+
+  Widget _statusChip(String label, bool? value) {
+    final selected = _statusFilter == value;
+    Color color;
+    if (value == true) {
+      color = context.colors.successGreen;
+    } else if (value == false) {
+      color = context.colors.dangerRed;
+    } else {
+      color = context.colors.primaryGold;
+    }
+    return GestureDetector(
+      onTap: () => setState(() { _statusFilter = value; _page = 0; }),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? color.withOpacity(0.15) : Colors.transparent,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: selected ? color : context.colors.borderColor,
+            width: selected ? 1.5 : 1,
+          ),
+        ),
+        child: Text(label,
+            style: TextStyle(
+                color: selected ? color : context.colors.textSecondary,
+                fontSize: 12,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
+      ),
     );
   }
 
@@ -261,7 +327,7 @@ class _OfficersTab extends ConsumerWidget {
 
     showDialog(
       context: context,
-      barrierDismissible: false,
+      barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setState) {
           Future<void> sendOtp() async {
@@ -1227,10 +1293,17 @@ class _WarehousesTab extends ConsumerWidget {
 
 // ── Categories Tab ──────────────────────────────────────────────
 
-class _CategoriesTab extends ConsumerWidget {
+class _CategoriesTab extends ConsumerStatefulWidget {
   const _CategoriesTab();
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CategoriesTab> createState() => _CategoriesTabState();
+}
+
+class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final categories = ref.watch(packageCategoriesProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
@@ -1261,7 +1334,10 @@ class _CategoriesTab extends ConsumerWidget {
             error: (e, _) => Center(
                 child: Text('Error: $e',
                     style: TextStyle(color: context.colors.dangerRed))),
-            data: (list) => Container(
+            data: (list) {
+              final pageItems = pageSlice(list, _page, kClientPageSize);
+              return Column(children: [
+              Expanded(child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
                   color: context.colors.cardDark,
@@ -1316,7 +1392,7 @@ class _CategoriesTab extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 120),
                   ],
-                  rows: list
+                  rows: pageItems
                       .map((c) => DataRow(cells: [
                             DataCell(Text(c.name,
                                 style: TextStyle(
@@ -1398,10 +1474,15 @@ class _CategoriesTab extends ConsumerWidget {
                       .toList(),
                 ),
               ),
-            )
-                .animate()
-                .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
-                .fadeIn(),
+              ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn()),
+              TablePager(
+                total: list.length,
+                page: _page,
+                pageSize: kClientPageSize,
+                onPageChanged: (p) => setState(() => _page = p),
+              ),
+              ]);
+            },
           ),
         ),
       ]),
@@ -1786,8 +1867,14 @@ class _StatusToggleState extends State<_StatusToggle> {
 
 // ── Logs Tab ──────────────────────────────────────────────────
 
-class _LogsTab extends ConsumerWidget {
+class _LogsTab extends ConsumerStatefulWidget {
   const _LogsTab();
+  @override
+  ConsumerState<_LogsTab> createState() => _LogsTabState();
+}
+
+class _LogsTabState extends ConsumerState<_LogsTab> {
+  int _page = 0;
 
   String _formatEntity(String entityType) {
     if (entityType.isEmpty) return '—';
@@ -1832,7 +1919,7 @@ class _LogsTab extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final logs = ref.watch(allLogsProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
@@ -1851,7 +1938,10 @@ class _LogsTab extends ConsumerWidget {
             error: (e, _) => Center(
                 child: Text('Error: $e',
                     style: TextStyle(color: context.colors.dangerRed))),
-            data: (list) => Container(
+            data: (list) {
+              final pageItems = pageSlice(list, _page, kClientPageSize);
+              return Column(children: [
+              Expanded(child: Container(
               width: double.infinity,
               decoration: BoxDecoration(
                   color: context.colors.cardDark,
@@ -1863,7 +1953,7 @@ class _LogsTab extends ConsumerWidget {
                   horizontalMargin: 24,
                   columnSpacing: 20,
                   fixedTopRows: 1,
-                  isHorizontalScrollBarVisible: false, // No horizontal scroll
+                  isHorizontalScrollBarVisible: false,
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   headingRowColor:
                       WidgetStateProperty.all(context.colors.surfaceDark),
@@ -1906,7 +1996,7 @@ class _LogsTab extends ConsumerWidget {
                                 fontSize: 13)),
                         size: ColumnSize.L),
                   ],
-                  rows: list.map((l) {
+                  rows: pageItems.map((l) {
                     final timeStr =
                       DateFormat('dd MMM yyyy, HH:mm').format(l.createdAt);
                     return DataRow(cells: [
@@ -1934,10 +2024,15 @@ class _LogsTab extends ConsumerWidget {
                   }).toList(),
                 ),
               ),
-            )
-                .animate()
-                .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
-                .fadeIn(),
+              ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn()),
+              TablePager(
+                total: list.length,
+                page: _page,
+                pageSize: kClientPageSize,
+                onPageChanged: (p) => setState(() => _page = p),
+              ),
+              ]);
+            },
           ),
         ),
       ]),

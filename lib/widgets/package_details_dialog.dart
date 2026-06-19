@@ -2164,6 +2164,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         ),
                       if (p.status?.toLowerCase() == 'sold' || p.items.any((i) => i.status?.toLowerCase() == 'sold') || widget.highlightEntry?.returnNotes?.contains('SOLD') == true)
                         _SaleFinancialsSection(package: p),
+                      // Destroyed packages can also be delivered out — show a
+                      // Delivered/Pending section with a Mark Delivered button
+                      // (yard-side), mirroring the Sale & Financial section.
+                      if (isDestroyedEntry)
+                        _DestructionDeliverySection(package: p),
                     ],
                   ),
                 ),
@@ -3036,6 +3041,128 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                     child: OutlinedButton.icon(
                       onPressed:
                           _toggling ? null : () => _toggleDelivery(saleItem),
+                      icon: _toggling
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.local_shipping_rounded, size: 18),
+                      label: const Text('Mark Delivered'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: actionColor,
+                        side: BorderSide(color: actionColor.withOpacity(0.6)),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Delivery section for a DESTROYED package — Delivered/Pending status + a
+/// yard-side "Mark Delivered" button, mirroring the Sale & Financial section.
+class _DestructionDeliverySection extends ConsumerStatefulWidget {
+  final PackageModel package;
+  const _DestructionDeliverySection({required this.package});
+  @override
+  ConsumerState<_DestructionDeliverySection> createState() =>
+      _DestructionDeliverySectionState();
+}
+
+class _DestructionDeliverySectionState
+    extends ConsumerState<_DestructionDeliverySection> {
+  bool _toggling = false;
+
+  Future<void> _toggle(DestructionItemModel item) async {
+    setState(() => _toggling = true);
+    final newValue = !item.delivered;
+    try {
+      await ref
+          .read(disposalServiceProvider)
+          .toggleDestructionDelivery(item.id, newValue);
+      ref.read(destructionsRefreshProvider.notifier).trigger();
+      ref.invalidate(destructionItemForPackageProvider(widget.package.id));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(material.SnackBar(
+          content: material.Text(
+              newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
+          backgroundColor: newValue
+              ? context.colors.successGreen
+              : context.colors.warningAmber,
+        ));
+        Navigator.of(context).pop();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(material.SnackBar(
+          content: material.Text('Error: $e'),
+          backgroundColor: context.colors.dangerRed,
+        ));
+      }
+    } finally {
+      if (mounted) setState(() => _toggling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(destructionItemForPackageProvider(widget.package.id));
+    return async.when(
+      loading: () => const material.Center(
+        child: material.Padding(
+            padding: EdgeInsets.all(16),
+            child: material.CircularProgressIndicator()),
+      ),
+      error: (_, __) => const material.SizedBox.shrink(),
+      data: (item) {
+        if (item == null) return const material.SizedBox.shrink();
+        final profile = ref.watch(currentProfileProvider);
+        // Only a yard (admin/officer) confirms delivery; Central Disposal views.
+        final canEdit = profile != null && !profile.isDisposal;
+        final delivered = item.delivered;
+        final actionColor = delivered
+            ? context.colors.warningAmber
+            : context.colors.successGreen;
+        return _DetailSection(
+          title: 'Destruction & Delivery',
+          icon: Icons.delete_forever_rounded,
+          delay: 650,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: context.colors.surfaceDark,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.colors.borderColor),
+            ),
+            child: Column(
+              children: [
+                _DetailItem(
+                  icon: Icons.delete_forever_rounded,
+                  label: 'Status',
+                  value: 'Destroyed',
+                  valueColor: context.colors.dangerRed,
+                ),
+                _DetailItem(
+                  icon: Icons.local_shipping_rounded,
+                  label: 'Delivery Status',
+                  value: delivered ? 'Delivered' : 'Pending',
+                  valueColor: delivered
+                      ? context.colors.successGreen
+                      : context.colors.dangerRed,
+                ),
+                if (canEdit && !delivered) ...[
+                  const Gap(10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _toggling ? null : () => _toggle(item),
                       icon: _toggling
                           ? const SizedBox(
                               width: 16,

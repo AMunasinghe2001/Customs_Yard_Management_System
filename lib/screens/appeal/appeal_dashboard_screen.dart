@@ -17,6 +17,7 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/table_pager.dart';
 
 final _appealSearchProvider = StateProvider<String>((ref) => '');
 final _appealYardProvider = StateProvider<String?>((ref) => null); // null = all
@@ -24,8 +25,30 @@ final _appealYardProvider = StateProvider<String?>((ref) => null); // null = all
 /// Appeal Directorate dashboard: a cross-yard list of forfeited packages, where
 /// the directorate can place / lift an appeal hold while the 30-day window is
 /// still open. A held package can no longer be sold or destroyed.
-class AppealDashboardScreen extends ConsumerWidget {
+class AppealDashboardScreen extends ConsumerStatefulWidget {
   const AppealDashboardScreen({super.key});
+  @override
+  ConsumerState<AppealDashboardScreen> createState() =>
+      _AppealDashboardScreenState();
+}
+
+class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+  int _activePage = 0;
+  int _decidedPage = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
 
   String _itemName(ForfeitedPackageModel f) {
     final items = f.packageDetails?.items ?? const [];
@@ -35,12 +58,20 @@ class AppealDashboardScreen extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final accent = context.colors.accentBlue;
     final profile = ref.watch(currentProfileProvider);
     final async = ref.watch(appealForfeitedPackagesProvider);
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
+
+    // Pre-compute counts for tab labels
+    final allList = async.valueOrNull ?? [];
+    final activeCount = allList
+        .where((f) => !f.hasAppealDecision &&
+            (!f.isAppealExpired || f.isAppealHeld))
+        .length;
+    final decidedCount = allList.where((f) => f.hasAppealDecision).length;
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -150,191 +181,91 @@ class AppealDashboardScreen extends ConsumerWidget {
             ]),
           ).animate().fadeIn(duration: 350.ms).slideY(begin: -0.15),
 
-          // ── Body ─────────────────────────────────────────────
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Text('Forfeited Packages',
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700)),
-                    const Spacer(),
-                    SizedBox(
-                      width: 320,
-                      child: TextField(
-                        onChanged: (v) => ref
-                            .read(_appealSearchProvider.notifier)
-                            .state = v,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          hintText: 'Search SR / item / consignee…',
-                          prefixIcon:
-                              const Icon(Icons.search_rounded, size: 18),
-                          filled: true,
-                          fillColor: accent.withOpacity(0.06),
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide:
-                                  BorderSide(color: accent.withOpacity(0.4))),
-                          enabledBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide:
-                                  BorderSide(color: accent.withOpacity(0.4))),
-                          focusedBorder: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(14),
-                              borderSide:
-                                  BorderSide(color: accent, width: 1.5)),
-                        ),
-                      ),
-                    ),
-                    const Gap(12),
-                    _AppealYardFilter(
-                      accent: accent,
-                      value: ref.watch(_appealYardProvider),
-                      onChanged: (v) =>
-                          ref.read(_appealYardProvider.notifier).state = v,
-                    ),
-                  ]).animate().fadeIn(duration: 300.ms),
-                  const Gap(14),
-                  // Stat chips
-                  async.maybeWhen(
-                    data: (list) {
-                      final held = list.where((f) => f.isAppealHeld).length;
-                      final openWindow = list
-                          .where((f) => !f.isAppealExpired && !f.isAppealHeld)
-                          .length;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 14),
-                        child: Row(children: [
-                          _StatChip(
-                              label: 'Total',
-                              value: '${list.length}',
-                              color: context.colors.accentLightBlue),
-                          const Gap(12),
-                          _StatChip(
-                              label: 'In Appeal Window',
-                              value: '$openWindow',
-                              color: context.colors.successGreen),
-                          const Gap(12),
-                          _StatChip(
-                              label: 'On Appeal Hold',
-                              value: '$held',
-                              color: context.colors.warningAmber),
-                        ]),
-                      ).animate().fadeIn(duration: 300.ms);
-                    },
-                    orElse: () => const SizedBox.shrink(),
+          // ── Tab bar ───────────────────────────────────────────
+          Container(
+            color: context.colors.cardDark,
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: context.colors.surfaceDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStateProperty.all(Colors.transparent),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicatorPadding: const EdgeInsets.all(4),
+                dividerColor: Colors.transparent,
+                indicator: BoxDecoration(
+                  color: accent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: accent.withOpacity(0.5)),
+                ),
+                labelColor: accent,
+                unselectedLabelColor: context.colors.textMuted,
+                labelStyle: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13),
+                tabs: [
+                  Tab(
+                    height: 44,
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const Icon(Icons.balance_rounded, size: 18),
+                      const Gap(8),
+                      const Flexible(child: Text('Active Appeals', overflow: TextOverflow.ellipsis)),
+                      if (activeCount > 0) ...[
+                        const Gap(6),
+                        _TabBadge(activeCount, accent),
+                      ],
+                    ]),
                   ),
-                  Expanded(
-                    child: async.when(
-                      skipLoadingOnReload: true,
-                      loading: () =>
-                          Center(child: CircularProgressIndicator(color: accent)),
-                      error: (e, _) => ErrorView(
-                          error: e,
-                          onRetry: () =>
-                              ref.refresh(appealForfeitedPackagesProvider)),
-                      data: (list) {
-                        final q = ref
-                            .watch(_appealSearchProvider)
-                            .toLowerCase();
-                        final yard = ref.watch(_appealYardProvider);
-                        var rows = list;
-                        if (yard != null) {
-                          rows =
-                              rows.where((f) => f.yard == yard).toList();
-                        }
-                        if (q.isNotEmpty) {
-                          rows = rows
-                              .where((f) =>
-                                  f.srNumber.toLowerCase().contains(q) ||
-                                  f.consigneeName.toLowerCase().contains(q) ||
-                                  _itemName(f).toLowerCase().contains(q))
-                              .toList();
-                        }
-                        return _listCard(
-                          context,
-                          DataTable2(
-                            columnSpacing: 12,
-                            horizontalMargin: 16,
-                            fixedTopRows: 1,
-                            minWidth: 1000,
-                            empty: const EmptyTableState(
-                                message: 'No forfeited packages'),
-                            headingRowColor: WidgetStateProperty.all(
-                                context.colors.surfaceDark),
-                            columns: const [
-                              DataColumn2(
-                                  label: Text('SR Number'), size: ColumnSize.M),
-                              DataColumn2(
-                                  label: Text('Item'), size: ColumnSize.M),
-                              DataColumn2(
-                                  label: Text('Consignee'), size: ColumnSize.M),
-                              DataColumn2(
-                                  label: Text('Yard'),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 110),
-                              DataColumn2(
-                                  label: Text('Appeal Deadline'),
-                                  size: ColumnSize.S),
-                              DataColumn2(
-                                  label: Text('Status'),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 140),
-                              DataColumn2(
-                                  label: Center(child: Text('Details')),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 70),
-                            ],
-                            rows: rows
-                                .map((f) => DataRow(cells: [
-                                      DataCell(Text(f.srNumber,
-                                          style: TextStyle(
-                                              color: context
-                                                  .colors.accentLightBlue,
-                                              fontWeight: FontWeight.w600))),
-                                      DataCell(Text(_itemName(f),
-                                          overflow: TextOverflow.ellipsis)),
-                                      DataCell(Text(f.consigneeName,
-                                          overflow: TextOverflow.ellipsis)),
-                                      DataCell(Text(yardName(f.yard),
-                                          overflow: TextOverflow.ellipsis)),
-                                      DataCell(Text(
-                                          DateFormat('yyyy-MM-dd')
-                                              .format(f.appealDeadline),
-                                          style: TextStyle(
-                                              color: f.isAppealExpired
-                                                  ? context.colors.dangerRed
-                                                  : context
-                                                      .colors.textSecondary,
-                                              fontWeight: FontWeight.w600))),
-                                      DataCell(_statusChip(context, f)),
-                                      DataCell(Center(
-                                        child: IconButton(
-                                          icon: Icon(Icons.info_outline_rounded,
-                                              color:
-                                                  context.colors.accentLightBlue,
-                                              size: 18),
-                                          onPressed: f.packageDetails == null
-                                              ? null
-                                              : () => _openDetails(
-                                                  context, ref, f, storageRate),
-                                        ),
-                                      )),
-                                    ]))
-                                .toList(),
-                          ),
-                        );
-                      },
-                    ),
+                  Tab(
+                    height: 44,
+                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                      const Icon(Icons.gavel_rounded, size: 18),
+                      const Gap(8),
+                      const Flexible(child: Text('Decided Packages', overflow: TextOverflow.ellipsis)),
+                      if (decidedCount > 0) ...[
+                        const Gap(6),
+                        _TabBadge(decidedCount, accent),
+                      ],
+                    ]),
                   ),
                 ],
               ),
+            ),
+          ),
+
+          // ── Tab views ─────────────────────────────────────────
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: [
+                _ActiveTab(
+                  async: async,
+                  accent: accent,
+                  storageRate: storageRate,
+                  page: _activePage,
+                  onPageChanged: (p) => setState(() => _activePage = p),
+                  onPageReset: () => setState(() => _activePage = 0),
+                  itemName: _itemName,
+                  buildRow: _buildRow,
+                  openDetails: _openDetails,
+                  listCard: _listCard,
+                ),
+                _DecidedTab(
+                  async: async,
+                  accent: accent,
+                  storageRate: storageRate,
+                  page: _decidedPage,
+                  onPageChanged: (p) => setState(() => _decidedPage = p),
+                  onPageReset: () => setState(() => _decidedPage = 0),
+                  itemName: _itemName,
+                  buildDecidedRow: _buildDecidedRow,
+                  listCard: _listCard,
+                ),
+              ],
             ),
           ),
         ],
@@ -365,28 +296,99 @@ class AppealDashboardScreen extends ConsumerWidget {
     );
   }
 
+  DataRow _buildRow(BuildContext context, ForfeitedPackageModel f,
+      Map<DateTime, double> storageRate) {
+    return DataRow(cells: [
+      DataCell(Text(f.srNumber,
+          style: TextStyle(
+              color: context.colors.accentLightBlue,
+              fontWeight: FontWeight.w600))),
+      DataCell(Text(_itemName(f), overflow: TextOverflow.ellipsis)),
+      DataCell(Text(f.consigneeName, overflow: TextOverflow.ellipsis)),
+      DataCell(Text(yardName(f.yard), overflow: TextOverflow.ellipsis)),
+      DataCell(Text(DateFormat('yyyy-MM-dd').format(f.appealDeadline),
+          style: TextStyle(
+              color: f.isAppealExpired
+                  ? context.colors.dangerRed
+                  : context.colors.textSecondary,
+              fontWeight: FontWeight.w600))),
+      DataCell(_statusChip(context, f)),
+      DataCell(Center(
+        child: IconButton(
+          icon: Icon(Icons.info_outline_rounded,
+              color: context.colors.accentLightBlue, size: 18),
+          onPressed: f.packageDetails == null
+              ? null
+              : () => _openDetails(context, f, storageRate),
+        ),
+      )),
+    ]);
+  }
+
+  DataRow _buildDecidedRow(BuildContext context, ForfeitedPackageModel f,
+      Map<DateTime, double> storageRate) {
+    final decisionColor = context.colors.accentLightBlue;
+    return DataRow(cells: [
+      DataCell(Text(f.srNumber,
+          style: TextStyle(
+              color: context.colors.textSecondary,
+              fontWeight: FontWeight.w600))),
+      DataCell(Text(_itemName(f), overflow: TextOverflow.ellipsis)),
+      DataCell(Text(f.consigneeName, overflow: TextOverflow.ellipsis)),
+      DataCell(Text(yardName(f.yard), overflow: TextOverflow.ellipsis)),
+      DataCell(Text(DateFormat('yyyy-MM-dd').format(f.appealDeadline),
+          style: TextStyle(
+              color: context.colors.textMuted,
+              fontWeight: FontWeight.w500))),
+      DataCell(Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: decisionColor.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: decisionColor.withOpacity(0.4)),
+        ),
+        child: Text('Decided · ${f.appealDecisionLabel ?? ''}',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+                color: decisionColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700)),
+      )),
+      DataCell(Center(
+        child: IconButton(
+          icon: Icon(Icons.info_outline_rounded,
+              color: context.colors.accentLightBlue, size: 18),
+          onPressed: f.packageDetails == null
+              ? null
+              : () => _openDetails(context, f, storageRate),
+        ),
+      )),
+    ]);
+  }
+
   // Opens the package details popup with a footer Hold-Appeal / Release action.
-  void _openDetails(BuildContext context, WidgetRef ref,
-      ForfeitedPackageModel f, Map<DateTime, double> storageRate) {
-    // Can place a hold only while the appeal window is open; can always release.
-    final canHold = !f.isAppealExpired;
+  void _openDetails(BuildContext context, ForfeitedPackageModel f,
+      Map<DateTime, double> storageRate) {
     String? label;
     IconData? icon;
     Color? color;
     String? hint;
     VoidCallback? action;
-    if (f.isAppealHeld) {
-      label = 'Release Hold & Decide';
-      icon = Icons.gavel_rounded;
-      color = context.colors.successGreen;
-      hint = 'Lift the hold and record what the yard should do with this package';
-      action = () => _showDecisionDialog(context, ref, f);
-    } else if (canHold) {
-      label = 'Hold Appeal';
-      icon = Icons.gavel_rounded;
-      color = context.colors.warningAmber;
-      hint = 'Place an appeal hold — blocks sale/destruction of this package';
-      action = () => _setHold(context, ref, f, true);
+    // No action buttons for packages that already have a decision.
+    if (!f.hasAppealDecision) {
+      if (f.isAppealHeld) {
+        label = 'Release Hold & Decide';
+        icon = Icons.gavel_rounded;
+        color = context.colors.successGreen;
+        hint = 'Lift the hold and record what the yard should do with this package';
+        action = () => _showDecisionDialog(context, f);
+      } else if (!f.isAppealExpired) {
+        label = 'Hold Appeal';
+        icon = Icons.gavel_rounded;
+        color = context.colors.warningAmber;
+        hint = 'Place an appeal hold — blocks sale/destruction of this package';
+        action = () => _setHold(context, f, true);
+      }
     }
     showDialog(
       context: context,
@@ -394,15 +396,12 @@ class AppealDashboardScreen extends ConsumerWidget {
         package: f.packageDetails!,
         storageRate: storageRate,
         headerAccentColor: context.colors.accentBlue,
-        // Single-item view (like the Yard's Forfeited popup) — show only this
-        // row's item, not the whole package's disposition breakdown.
         useLegacySummary: true,
         highlightItemId: f.itemId ??
             (f.packageDetails!.items.isNotEmpty
                 ? f.packageDetails!.items.first.id
                 : null),
         yardLabel: f.yard != null ? yardName(f.yard!) : null,
-        // Appeal Directorate actions: Hold Appeal / Release Hold.
         footerActionLabel: label,
         footerActionIcon: icon,
         footerActionColor: color,
@@ -412,8 +411,8 @@ class AppealDashboardScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _setHold(BuildContext context, WidgetRef ref,
-      ForfeitedPackageModel f, bool hold) async {
+  Future<void> _setHold(
+      BuildContext context, ForfeitedPackageModel f, bool hold) async {
     try {
       await ref.read(appealServiceProvider).setAppealHold(f.id, hold);
       ref.invalidate(appealForfeitedPackagesProvider);
@@ -440,15 +439,13 @@ class AppealDashboardScreen extends ConsumerWidget {
     }
   }
 
-  // Asks the directorate which disposition the yard should carry out, then
-  // lifts the hold and records the decision.
   Future<void> _showDecisionDialog(
-      BuildContext context, WidgetRef ref, ForfeitedPackageModel f) async {
+      BuildContext context, ForfeitedPackageModel f) async {
     final result = await showDialog<_AppealDecisionResult>(
       context: context,
       builder: (_) => _AppealDecisionDialog(srNumber: f.srNumber),
     );
-    if (result == null) return; // cancelled
+    if (result == null) return;
     if (!context.mounted) return;
     try {
       await ref.read(appealServiceProvider).releaseAppealWithDecision(
@@ -484,6 +481,331 @@ class AppealDashboardScreen extends ConsumerWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: child,
+      ),
+    );
+  }
+}
+
+// ── Small badge shown on tab labels ──────────────────────────────────────────
+class _TabBadge extends StatelessWidget {
+  final int count;
+  final Color color;
+  const _TabBadge(this.count, this.color);
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text('$count',
+          style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+// ── Active Appeals tab ────────────────────────────────────────────────────────
+class _ActiveTab extends ConsumerStatefulWidget {
+  final AsyncValue<List<ForfeitedPackageModel>> async;
+  final Color accent;
+  final Map<DateTime, double> storageRate;
+  final int page;
+  final ValueChanged<int> onPageChanged;
+  final VoidCallback onPageReset;
+  final String Function(ForfeitedPackageModel) itemName;
+  final DataRow Function(BuildContext, ForfeitedPackageModel, Map<DateTime, double>) buildRow;
+  final void Function(BuildContext, ForfeitedPackageModel, Map<DateTime, double>) openDetails;
+  final Widget Function(BuildContext, Widget) listCard;
+
+  const _ActiveTab({
+    required this.async,
+    required this.accent,
+    required this.storageRate,
+    required this.page,
+    required this.onPageChanged,
+    required this.onPageReset,
+    required this.itemName,
+    required this.buildRow,
+    required this.openDetails,
+    required this.listCard,
+  });
+
+  @override
+  ConsumerState<_ActiveTab> createState() => _ActiveTabState();
+}
+
+class _ActiveTabState extends ConsumerState<_ActiveTab> {
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Search + yard filter row
+          Row(children: [
+            Text('Active Appeals',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700)),
+            const Spacer(),
+            SizedBox(
+              width: 320,
+              child: TextField(
+                onChanged: (v) {
+                  ref.read(_appealSearchProvider.notifier).state = v;
+                  widget.onPageReset();
+                },
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Search SR / item / consignee…',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                  filled: true,
+                  fillColor: accent.withOpacity(0.06),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent, width: 1.5)),
+                ),
+              ),
+            ),
+            const Gap(12),
+            _AppealYardFilter(
+              accent: accent,
+              value: ref.watch(_appealYardProvider),
+              onChanged: (v) {
+                ref.read(_appealYardProvider.notifier).state = v;
+                widget.onPageReset();
+              },
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(14),
+          // Stat chips
+          widget.async.maybeWhen(
+            data: (list) {
+              final active = list
+                  .where((f) => !f.hasAppealDecision &&
+                      (!f.isAppealExpired || f.isAppealHeld))
+                  .toList();
+              final held = active.where((f) => f.isAppealHeld).length;
+              final openWindow = active.where((f) => !f.isAppealHeld).length;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 14),
+                child: Row(children: [
+                  _StatChip(label: 'Active', value: '${active.length}', color: context.colors.accentLightBlue),
+                  const Gap(12),
+                  _StatChip(label: 'In Appeal Window', value: '$openWindow', color: context.colors.successGreen),
+                  const Gap(12),
+                  _StatChip(label: 'On Appeal Hold', value: '$held', color: context.colors.warningAmber),
+                ]),
+              ).animate().fadeIn(duration: 300.ms);
+            },
+            orElse: () => const SizedBox.shrink(),
+          ),
+          Expanded(
+            child: widget.async.when(
+              skipLoadingOnReload: true,
+              loading: () => Center(child: CircularProgressIndicator(color: accent)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () => ref.refresh(appealForfeitedPackagesProvider)),
+              data: (list) {
+                final q = ref.watch(_appealSearchProvider).toLowerCase();
+                final yard = ref.watch(_appealYardProvider);
+                var rows = list
+                    .where((f) => !f.hasAppealDecision &&
+                        (!f.isAppealExpired || f.isAppealHeld))
+                    .toList();
+                if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
+                if (q.isNotEmpty) {
+                  rows = rows.where((f) =>
+                      f.srNumber.toLowerCase().contains(q) ||
+                      f.consigneeName.toLowerCase().contains(q) ||
+                      widget.itemName(f).toLowerCase().contains(q)).toList();
+                }
+                return Column(children: [
+                  Expanded(
+                    child: widget.listCard(context,
+                      DataTable2(
+                        columnSpacing: 12,
+                        horizontalMargin: 16,
+                        fixedTopRows: 1,
+                        minWidth: 1000,
+                        empty: const EmptyTableState(message: 'No active forfeited packages'),
+                        headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                        columns: const [
+                          DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
+                          DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.S),
+                          DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 140),
+                          DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
+                        ],
+                        rows: pageSlice(rows, widget.page, kClientPageSize)
+                            .map((f) => widget.buildRow(context, f, widget.storageRate))
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                  TablePager(
+                    total: rows.length,
+                    page: widget.page,
+                    pageSize: kClientPageSize,
+                    onPageChanged: widget.onPageChanged,
+                  ),
+                ]);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Decided Packages tab ──────────────────────────────────────────────────────
+class _DecidedTab extends ConsumerStatefulWidget {
+  final AsyncValue<List<ForfeitedPackageModel>> async;
+  final Color accent;
+  final Map<DateTime, double> storageRate;
+  final int page;
+  final ValueChanged<int> onPageChanged;
+  final VoidCallback onPageReset;
+  final String Function(ForfeitedPackageModel) itemName;
+  final DataRow Function(BuildContext, ForfeitedPackageModel, Map<DateTime, double>) buildDecidedRow;
+  final Widget Function(BuildContext, Widget) listCard;
+
+  const _DecidedTab({
+    required this.async,
+    required this.accent,
+    required this.storageRate,
+    required this.page,
+    required this.onPageChanged,
+    required this.onPageReset,
+    required this.itemName,
+    required this.buildDecidedRow,
+    required this.listCard,
+  });
+
+  @override
+  ConsumerState<_DecidedTab> createState() => _DecidedTabState();
+}
+
+class _DecidedTabState extends ConsumerState<_DecidedTab> {
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text('Decided Packages',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700)),
+            const Spacer(),
+            SizedBox(
+              width: 320,
+              child: TextField(
+                onChanged: (v) {
+                  ref.read(_appealSearchProvider.notifier).state = v;
+                  widget.onPageReset();
+                },
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Search SR / item / consignee…',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
+                  filled: true,
+                  fillColor: accent.withOpacity(0.06),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent, width: 1.5)),
+                ),
+              ),
+            ),
+            const Gap(12),
+            _AppealYardFilter(
+              accent: accent,
+              value: ref.watch(_appealYardProvider),
+              onChanged: (v) {
+                ref.read(_appealYardProvider.notifier).state = v;
+                widget.onPageReset();
+              },
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(14),
+          Expanded(
+            child: widget.async.when(
+              skipLoadingOnReload: true,
+              loading: () => Center(child: CircularProgressIndicator(color: accent)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () => ref.refresh(appealForfeitedPackagesProvider)),
+              data: (list) {
+                final q = ref.watch(_appealSearchProvider).toLowerCase();
+                final yard = ref.watch(_appealYardProvider);
+                var rows = list.where((f) => f.hasAppealDecision).toList();
+                if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
+                if (q.isNotEmpty) {
+                  rows = rows.where((f) =>
+                      f.srNumber.toLowerCase().contains(q) ||
+                      f.consigneeName.toLowerCase().contains(q) ||
+                      widget.itemName(f).toLowerCase().contains(q)).toList();
+                }
+                return Column(children: [
+                  Expanded(
+                    child: widget.listCard(context,
+                      DataTable2(
+                        columnSpacing: 12,
+                        horizontalMargin: 16,
+                        fixedTopRows: 1,
+                        minWidth: 1000,
+                        empty: const EmptyTableState(message: 'No decided packages'),
+                        headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+                        columns: const [
+                          DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
+                          DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.S),
+                          DataColumn2(label: Text('Decision'), size: ColumnSize.S, fixedWidth: 160),
+                          DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
+                        ],
+                        rows: pageSlice(rows, widget.page, kClientPageSize)
+                            .map((f) => widget.buildDecidedRow(context, f, widget.storageRate))
+                            .toList(),
+                      ),
+                    ),
+                  ),
+                  TablePager(
+                    total: rows.length,
+                    page: widget.page,
+                    pageSize: kClientPageSize,
+                    onPageChanged: widget.onPageChanged,
+                  ),
+                ]);
+              },
+            ),
+          ),
+        ],
       ),
     );
   }

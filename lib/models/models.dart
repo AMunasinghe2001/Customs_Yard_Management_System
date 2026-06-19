@@ -1165,6 +1165,8 @@ class DestructionItemModel {
   final String yard;
   final bool destroyed;
   final DateTime? destroyedAt;
+  final bool delivered;
+  final DateTime? deliveredAt;
   final String? notes;
   final ForfeitedPackageModel? forfeited;
 
@@ -1175,6 +1177,8 @@ class DestructionItemModel {
     required this.yard,
     this.destroyed = false,
     this.destroyedAt,
+    this.delivered = false,
+    this.deliveredAt,
     this.notes,
     this.forfeited,
   });
@@ -1188,6 +1192,10 @@ class DestructionItemModel {
       destroyed: json['destroyed'] as bool? ?? false,
       destroyedAt: json['destroyed_at'] != null
           ? DateTime.tryParse(json['destroyed_at'].toString())
+          : null,
+      delivered: json['delivered'] as bool? ?? false,
+      deliveredAt: json['delivered_at'] != null
+          ? DateTime.tryParse(json['delivered_at'].toString())
           : null,
       notes: json['notes'] as String?,
       forfeited: json['forfeited_packages'] != null

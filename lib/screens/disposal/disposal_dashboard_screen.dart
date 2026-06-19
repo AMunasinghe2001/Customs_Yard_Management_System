@@ -18,6 +18,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
+import '../../widgets/table_pager.dart';
 
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
@@ -27,7 +28,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 7,
+      length: 8,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -195,6 +196,13 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     Tab(
                         height: 44,
                         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.delete_forever_rounded, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Destroyed Packages', overflow: TextOverflow.ellipsis)),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.assignment_turned_in_rounded, size: 18),
                           Gap(8),
                           Flexible(child: Text('Disposal Requests', overflow: TextOverflow.ellipsis)),
@@ -241,6 +249,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
             const Expanded(
               child: TabBarView(children: [
                 _SoldPackagesTab(),
+                _DestroyedPackagesTab(),
                 _DisposalRequestsTab(),
                 _TenderSalesTab(),
                 _UnsoldReTenderTab(),
@@ -391,8 +400,31 @@ class _YardFilter extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedYard = ref.watch(disposalSelectedYardProvider);
+    return _StyledYardPicker(
+      value: selectedYard,
+      onChanged: (v) => ref.read(disposalSelectedYardProvider.notifier).state =
+          v ?? kYards.first.code,
+    );
+  }
+}
+
+/// A single-yard picker styled exactly like the page header's Yard dropdown
+/// (gold fill, rounded border, styled options menu). Reused by the header
+/// filter AND the Tender / Destruction forms so they share one look.
+class _StyledYardPicker extends StatelessWidget {
+  final String value;
+  final ValueChanged<String?> onChanged;
+  final double width;
+  const _StyledYardPicker({
+    required this.value,
+    required this.onChanged,
+    this.width = 240,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return SizedBox(
-      width: 240,
+      width: width,
       child: Theme(
         data: Theme.of(context).copyWith(
           inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
@@ -410,19 +442,18 @@ class _YardFilter extends ConsumerWidget {
           ),
         ),
         child: StyledDropdownFormField<String>(
-          value: selectedYard,
+          value: value,
           label: 'Yard',
           helperText: null,
           isDense: true,
-          menuWidth: 240,
+          menuWidth: width,
           contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           prefixIcon:
               Icon(Icons.warehouse_rounded, color: context.colors.primaryGold, size: 20),
           options: [
             for (final y in kYards) StyledDropdownOption(y.code, y.name),
           ],
-          onChanged: (v) => ref.read(disposalSelectedYardProvider.notifier).state =
-              v ?? kYards.first.code,
+          onChanged: onChanged,
         ),
       ),
     );
@@ -495,8 +526,18 @@ class _SoldRow {
   const _SoldRow(this.package, this.entry, this.itemName, this.officer);
 }
 
-class _SoldPackagesTab extends ConsumerWidget {
+/// Sold-tab delivery sub-filter: null = all, true = delivered, false = pending.
+final _soldDeliveryFilterProvider = StateProvider<bool?>((ref) => null);
+
+class _SoldPackagesTab extends ConsumerStatefulWidget {
   const _SoldPackagesTab();
+  @override
+  ConsumerState<_SoldPackagesTab> createState() => _SoldPackagesTabState();
+}
+
+class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
+  static const int _pageSize = 20;
+  int _page = 0;
 
   List<_SoldRow> _rows(List<PackageModel> packages) {
     final rows = <_SoldRow>[];
@@ -519,12 +560,16 @@ class _SoldPackagesTab extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final green = context.colors.successGreen;
-    final selectedYard = ref.watch(disposalSelectedYardProvider);
+    final yardFilter = ref.watch(disposalSoldYardFilterProvider);
     final sold = ref.watch(disposalSoldPackagesProvider);
+    final deliveryFilter = ref.watch(_soldDeliveryFilterProvider);
+    final deliveredMap =
+        ref.watch(packageDeliveredMapProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
+    final yardLabel = yardFilter == null ? 'all yards' : yardName(yardFilter);
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -541,24 +586,24 @@ class _SoldPackagesTab extends ConsumerWidget {
             const _DisposalSearch(
                 tabKey: 'sold', hint: 'Search SR / item / sold by…'),
             const Gap(12),
-            const _YardFilter(),
+            _YardAllFilter(
+              value: yardFilter,
+              onChanged: (v) {
+                ref.read(disposalSoldYardFilterProvider.notifier).state = v;
+                setState(() => _page = 0);
+              },
+            ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
-          sold.maybeWhen(
-            data: (packages) {
-              final count = _rows(packages).length;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Row(children: [
-                  _StatChip(
-                      label: 'Sold in ${yardName(selectedYard)}',
-                      value: '$count',
-                      color: green),
-                ]),
-              ).animate().fadeIn(duration: 300.ms);
+          const Gap(12),
+          // Delivered / Pending segmented filter.
+          _DeliverySegmentedFilter(
+            value: deliveryFilter,
+            onChanged: (v) {
+              ref.read(_soldDeliveryFilterProvider.notifier).state = v;
+              setState(() => _page = 0);
             },
-            orElse: () => const SizedBox.shrink(),
           ),
+          const Gap(14),
           Expanded(
             child: sold.when(
               skipLoadingOnReload: true,
@@ -579,69 +624,108 @@ class _SoldPackagesTab extends ConsumerWidget {
                           r.officer.toLowerCase().contains(q))
                       .toList();
                 }
-                return _listCard(
-                  context,
-                  DataTable2(
-                    columnSpacing: 12,
-                    horizontalMargin: 16,
-                    fixedTopRows: 1,
-                    empty: EmptyTableState(
-                        message:
-                            'No sold packages in ${yardName(selectedYard)}'),
-                    headingRowColor: _headingColor(context),
-                    columns: const [
-                      DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Text('Qty'),
-                          size: ColumnSize.S,
-                          fixedWidth: 60),
-                      DataColumn2(label: Text('Sold Date'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Sold By'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Financials'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Delivery'), fixedWidth: 120),
-                      DataColumn2(
-                          label: Center(child: Text('Details')),
-                          size: ColumnSize.S,
-                          fixedWidth: 70),
-                    ],
-                    rows: rows
-                        .map((r) => DataRow(cells: [
-                              DataCell(Text(r.package.srNumber,
-                                  style: TextStyle(
-                                      color: context.colors.accentLightBlue,
-                                      fontWeight: FontWeight.w600))),
-                              DataCell(Text(r.itemName,
-                                  overflow: TextOverflow.ellipsis)),
-                              DataCell(Text('${r.entry.itemCount}')),
-                              DataCell(Text(r.entry.returnedAt != null
-                                  ? DateFormat('yyyy-MM-dd')
-                                      .format(r.entry.returnedAt!)
-                                  : '—')),
-                              DataCell(Text(r.officer,
-                                  overflow: TextOverflow.ellipsis)),
-                              DataCell(_SaleFinancialsCell(package: r.package)),
-                              DataCell(_DeliveryStatusCell(package: r.package)),
-                              DataCell(Center(
-                                child: IconButton(
-                                  icon: Icon(Icons.info_outline_rounded,
-                                      color: context.colors.accentLightBlue,
-                                      size: 18),
-                                  onPressed: () => showDialog(
-                                    context: context,
-                                    builder: (_) => PackageDetailsDialog(
-                                      package: r.package,
-                                      storageRate: storageRate,
-                                      headerAccentColor: context.colors.successGreen,
-                                      highlightEntry: r.entry,
-                                      useLegacySummary: true,
-                                    ),
-                                  ),
-                                ),
-                              )),
-                            ]))
-                        .toList(),
-                  ),
+                if (deliveryFilter != null) {
+                  rows = rows
+                      .where((r) =>
+                          (deliveredMap[r.package.id] ?? false) ==
+                          deliveryFilter)
+                      .toList();
+                }
+                final total = rows.length;
+                if (_page * _pageSize >= total && _page > 0) _page = 0;
+                final pageRows = pageSlice(rows, _page, _pageSize);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: _StatChip(
+                          label: 'Sold in $yardLabel',
+                          value: '$total',
+                          color: green),
+                    ),
+                    Expanded(
+                      child: _listCard(
+                        context,
+                        DataTable2(
+                          columnSpacing: 12,
+                          horizontalMargin: 16,
+                          fixedTopRows: 1,
+                          empty: EmptyTableState(
+                              message: 'No sold packages in $yardLabel'),
+                          headingRowColor: _headingColor(context),
+                          columns: const [
+                            DataColumn2(
+                                label: Text('SR Number'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Qty'),
+                                size: ColumnSize.S,
+                                fixedWidth: 60),
+                            DataColumn2(
+                                label: Text('Sold Date'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Sold By'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Financials'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Delivery'), fixedWidth: 120),
+                            DataColumn2(
+                                label: Center(child: Text('Details')),
+                                size: ColumnSize.S,
+                                fixedWidth: 70),
+                          ],
+                          rows: pageRows
+                              .map((r) => DataRow(cells: [
+                                    DataCell(Text(r.package.srNumber,
+                                        style: TextStyle(
+                                            color:
+                                                context.colors.accentLightBlue,
+                                            fontWeight: FontWeight.w600))),
+                                    DataCell(Text(r.itemName,
+                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(Text('${r.entry.itemCount}')),
+                                    DataCell(Text(r.entry.returnedAt != null
+                                        ? DateFormat('yyyy-MM-dd')
+                                            .format(r.entry.returnedAt!)
+                                        : '—')),
+                                    DataCell(Text(r.officer,
+                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(
+                                        _SaleFinancialsCell(package: r.package)),
+                                    DataCell(
+                                        _DeliveryStatusCell(package: r.package)),
+                                    DataCell(Center(
+                                      child: IconButton(
+                                        icon: Icon(Icons.info_outline_rounded,
+                                            color:
+                                                context.colors.accentLightBlue,
+                                            size: 18),
+                                        onPressed: () => showDialog(
+                                          context: context,
+                                          builder: (_) => PackageDetailsDialog(
+                                            package: r.package,
+                                            storageRate: storageRate,
+                                            headerAccentColor:
+                                                context.colors.successGreen,
+                                            highlightEntry: r.entry,
+                                            useLegacySummary: true,
+                                          ),
+                                        ),
+                                      ),
+                                    )),
+                                  ]))
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                    TablePager(
+                      total: total,
+                      page: _page,
+                      pageSize: _pageSize,
+                      onPageChanged: (p) => setState(() => _page = p),
+                    ),
+                  ],
                 );
               },
             ),
@@ -651,6 +735,300 @@ class _SoldPackagesTab extends ConsumerWidget {
     );
   }
 }
+
+/// A compact "All · Delivered · Pending" segmented filter for the Sold tab.
+class _DeliverySegmentedFilter extends StatelessWidget {
+  final bool? value; // null = all
+  final ValueChanged<bool?> onChanged;
+  const _DeliverySegmentedFilter(
+      {required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget seg(String label, bool? v, IconData icon) {
+      final selected = value == v;
+      final color = context.colors.primaryGold;
+      return InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: () => onChanged(v),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? color.withOpacity(0.15) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: selected
+                    ? color.withOpacity(0.6)
+                    : context.colors.borderColor),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon,
+                size: 15,
+                color: selected ? color : context.colors.textSecondary),
+            const Gap(6),
+            Text(label,
+                style: TextStyle(
+                    color: selected ? color : context.colors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+          ]),
+        ),
+      );
+    }
+
+    return Row(children: [
+      seg('All', null, Icons.all_inbox_rounded),
+      const Gap(8),
+      seg('Delivered', true, Icons.check_circle_rounded),
+      const Gap(8),
+      seg('Pending', false, Icons.schedule_rounded),
+    ]);
+  }
+}
+
+// ── Destroyed Packages (cross-yard, yard dropdown) ────────────────
+// Mirrors the Sold Packages tab. A yard/Central marking a package destroyed
+// writes a "[FINAL:DESTROYED]" warehouse entry (see disposal_mark_destruction_
+// item_destroyed), which this tab surfaces — auto-updating via realtime.
+
+bool _isDestroyedEntry(WarehouseEntryModel e) {
+  final notes = (e.returnNotes ?? '').trim().toUpperCase();
+  final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
+  if (m == null) return false;
+  final tag = m.group(1)!.trim();
+  return tag == 'FINAL:DESTROYED' || tag == 'DESTROYED' || tag == 'DESTROY';
+}
+
+class _DestroyedPackagesTab extends ConsumerStatefulWidget {
+  const _DestroyedPackagesTab();
+  @override
+  ConsumerState<_DestroyedPackagesTab> createState() =>
+      _DestroyedPackagesTabState();
+}
+
+class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
+  static const int _pageSize = 20;
+  int _page = 0;
+
+  List<_SoldRow> _rows(List<PackageModel> packages) {
+    final rows = <_SoldRow>[];
+    for (final p in packages) {
+      for (final e in p.warehouseEntries) {
+        if (!_isDestroyedEntry(e)) continue;
+        final item =
+            p.items.where((i) => i.id == e.packageItemId).firstOrNull;
+        rows.add(_SoldRow(
+          p,
+          e,
+          item?.itemName ?? (p.items.isNotEmpty ? p.items.first.itemName : '—'),
+          e.returnedByName ?? e.returnedByBadge ?? '—',
+        ));
+      }
+    }
+    rows.sort((a, b) => (b.entry.returnedAt ?? b.entry.admittedAt)
+        .compareTo(a.entry.returnedAt ?? a.entry.admittedAt));
+    return rows;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Central Disposal's accent is green — keep the Destroyed tab on-brand
+    // (loading spinner, stat chip, popup header) rather than danger-red.
+    final green = context.colors.successGreen;
+    final yardFilter = ref.watch(disposalDestroyedYardFilterProvider);
+    final destroyed = ref.watch(disposalDestroyedPackagesProvider);
+    final deliveryFilter = ref.watch(_destroyedDeliveryFilterProvider);
+    final deliveredMap =
+        ref.watch(packageDestroyedDeliveredMapProvider).valueOrNull ?? const {};
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        {DateTime(2020, 1, 1): 50.0};
+    final yardLabel = yardFilter == null ? 'all yards' : yardName(yardFilter);
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text('Destroyed Packages',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700)),
+            const Spacer(),
+            const _DisposalSearch(
+                tabKey: 'destroyed', hint: 'Search SR / item / by…'),
+            const Gap(12),
+            _YardAllFilter(
+              value: yardFilter,
+              onChanged: (v) {
+                ref.read(disposalDestroyedYardFilterProvider.notifier).state =
+                    v;
+                setState(() => _page = 0);
+              },
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(12),
+          _DeliverySegmentedFilter(
+            value: deliveryFilter,
+            onChanged: (v) {
+              ref.read(_destroyedDeliveryFilterProvider.notifier).state = v;
+              setState(() => _page = 0);
+            },
+          ),
+          const Gap(14),
+          Expanded(
+            child: destroyed.when(
+              skipLoadingOnReload: true,
+              loading: () =>
+                  Center(child: CircularProgressIndicator(color: green)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () =>
+                      ref.refresh(disposalDestroyedPackagesProvider)),
+              data: (packages) {
+                final q = ref
+                    .watch(_disposalSearchProvider('destroyed'))
+                    .toLowerCase();
+                var rows = _rows(packages);
+                if (q.isNotEmpty) {
+                  rows = rows
+                      .where((r) =>
+                          r.package.srNumber.toLowerCase().contains(q) ||
+                          r.itemName.toLowerCase().contains(q) ||
+                          r.officer.toLowerCase().contains(q))
+                      .toList();
+                }
+                if (deliveryFilter != null) {
+                  rows = rows
+                      .where((r) =>
+                          (deliveredMap[r.package.id] ?? false) ==
+                          deliveryFilter)
+                      .toList();
+                }
+                final total = rows.length;
+                if (_page * _pageSize >= total && _page > 0) _page = 0;
+                final pageRows = pageSlice(rows, _page, _pageSize);
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: _StatChip(
+                          label: 'Destroyed in $yardLabel',
+                          value: '$total',
+                          color: green),
+                    ),
+                    Expanded(
+                      child: _listCard(
+                        context,
+                        DataTable2(
+                          columnSpacing: 12,
+                          horizontalMargin: 16,
+                          fixedTopRows: 1,
+                          empty: EmptyTableState(
+                              message: 'No destroyed packages in $yardLabel'),
+                          headingRowColor: _headingColor(context),
+                          columns: const [
+                            DataColumn2(
+                                label: Text('SR Number'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Qty'),
+                                size: ColumnSize.S,
+                                fixedWidth: 60),
+                            DataColumn2(
+                                label: Text('Destroyed Date'),
+                                size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Destroyed By'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Delivery'), fixedWidth: 130),
+                            DataColumn2(
+                                label: Center(child: Text('Details')),
+                                size: ColumnSize.S,
+                                fixedWidth: 70),
+                          ],
+                          rows: pageRows
+                              .map((r) => DataRow(cells: [
+                                    DataCell(Text(r.package.srNumber,
+                                        style: TextStyle(
+                                            color:
+                                                context.colors.accentLightBlue,
+                                            fontWeight: FontWeight.w600))),
+                                    DataCell(Text(r.itemName,
+                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(Text('${r.entry.itemCount}')),
+                                    DataCell(Text(r.entry.returnedAt != null
+                                        ? DateFormat('yyyy-MM-dd')
+                                            .format(r.entry.returnedAt!)
+                                        : '—')),
+                                    DataCell(Text(r.officer,
+                                        overflow: TextOverflow.ellipsis)),
+                                    DataCell(_DestroyedDeliveryCell(
+                                        package: r.package)),
+                                    DataCell(Center(
+                                      child: IconButton(
+                                        icon: Icon(Icons.info_outline_rounded,
+                                            color:
+                                                context.colors.accentLightBlue,
+                                            size: 18),
+                                        onPressed: () => showDialog(
+                                          context: context,
+                                          builder: (_) => PackageDetailsDialog(
+                                            package: r.package,
+                                            storageRate: storageRate,
+                                            headerAccentColor: green,
+                                            highlightEntry: r.entry,
+                                            useLegacySummary: true,
+                                          ),
+                                        ),
+                                      ),
+                                    )),
+                                  ]))
+                              .toList(),
+                        ),
+                      ),
+                    ),
+                    TablePager(
+                      total: total,
+                      page: _page,
+                      pageSize: _pageSize,
+                      onPageChanged: (p) => setState(() => _page = p),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Destroyed-tab delivery sub-filter: null = all, true = delivered, false = pending.
+final _destroyedDeliveryFilterProvider = StateProvider<bool?>((ref) => null);
+
+/// Read-only Delivered/Pending chip for a destroyed package (watches the
+/// per-package destruction-item provider so it stays live across sessions).
+class _DestroyedDeliveryCell extends ConsumerWidget {
+  final PackageModel package;
+  const _DestroyedDeliveryCell({required this.package});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(destructionItemForPackageProvider(package.id));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) =>
+          DeliveryStatusChip(delivered: item?.delivered ?? false),
+    );
+  }
+}
+
 
 // Read-only sold price + tax total (watches the shared per-package provider).
 class _SaleFinancialsCell extends ConsumerWidget {
@@ -1872,10 +2250,14 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   bool _loading = false;
   // forfeited_package_id → yard
   final Map<String, String> _selected = {};
+  // The yard this tender sale belongs to. The package pool is filtered to this
+  // yard's forwarded requests, and the created sale is assigned to it.
+  late String _formYard;
 
   @override
   void initState() {
     super.initState();
+    _formYard = ref.read(disposalSelectedYardProvider);
     _yearC.addListener(_onYearChanged);
     _serialC.addListener(_updateSaleNumber);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1936,18 +2318,21 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   Widget build(BuildContext context) {
     final green = context.colors.successGreen;
     // Fresh sale → "Sale"-tagged requests. Re-tender → only the unsold packages
-    // shown on the Unsold Tenders page.
-    final AsyncValue<List<DisposalRequestItemModel>> pool = widget.reTender
-        ? ref.watch(unsoldTenderSalesProvider).whenData((list) => list
-            .map((info) => DisposalRequestItemModel(
-                  id: info.forfeited.id,
-                  requestId: '',
-                  forfeitedPackageId: info.forfeited.id,
-                  disposition: 'sale',
-                  forfeited: info.forfeited,
-                ))
-            .toList())
-        : ref.watch(saleRequestItemsProvider);
+    // shown on the Unsold Tenders page. Either way, only the packages belonging
+    // to the yard selected in this form are shown (and tendered).
+    final AsyncValue<List<DisposalRequestItemModel>> pool = (widget.reTender
+            ? ref.watch(unsoldTenderSalesProvider).whenData((list) => list
+                .map((info) => DisposalRequestItemModel(
+                      id: info.forfeited.id,
+                      requestId: '',
+                      forfeitedPackageId: info.forfeited.id,
+                      disposition: 'sale',
+                      forfeited: info.forfeited,
+                    ))
+                .toList())
+            : ref.watch(saleRequestItemsProvider))
+        .whenData((list) =>
+            list.where((it) => it.forfeited?.yard == _formYard).toList());
     return StyledFormDialog(
       label: 'Tender Sale',
       title: widget.reTender ? 'Re-tender Sale' : 'New Tender Sale',
@@ -1961,6 +2346,18 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
             title: 'Sale Details',
             icon: Icons.receipt_long_rounded,
             children: [
+              _StyledYardPicker(
+                value: _formYard,
+                width: double.infinity,
+                onChanged: (v) {
+                  if (v == null) return;
+                  // Switching yards clears any selection from the previous yard.
+                  setState(() {
+                    _formYard = v;
+                    _selected.clear();
+                  });
+                },
+              ),
               TextField(
                 controller: _numberC,
                 readOnly: true,
@@ -2001,16 +2398,17 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                   ),
                 ),
               ]),
-              DropdownButtonFormField<String>(
+              StyledDropdownFormField<String>(
                 value: _tenderType,
-                isExpanded: true,
-                decoration:
-                    const InputDecoration(labelText: 'Tender Sale Type'),
-                items: [
+                label: 'Tender Sale Type',
+                helperText: null,
+                isDense: true,
+                menuWidth: 400,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                options: [
                   for (final e in kTenderSaleTypes.entries)
-                    DropdownMenuItem(
-                        value: e.key,
-                        child: Text(e.value, overflow: TextOverflow.ellipsis)),
+                    StyledDropdownOption(e.key, e.value),
                 ],
                 onChanged: (v) {
                   setState(() => _tenderType = v);
@@ -2192,7 +2590,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                         _serialC.text.trim().isEmpty ? null : _serialC.text.trim(),
                     year: int.tryParse(_yearC.text.trim()),
                     tenderType: _tenderType,
-                    yard: ref.read(disposalSelectedYardProvider),
+                    yard: _formYard,
                     packageYards: Map<String, String>.from(_selected),
                   );
               // New sale → its items leave the request pool; refresh both.
@@ -2699,18 +3097,11 @@ class _MarkDestroyedDialog extends StatefulWidget {
 }
 
 class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
-  final _receiptC = TextEditingController();
   bool _loading = false;
 
   @override
-  void dispose() {
-    _receiptC.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    // Destruction is not a sale — no price or taxes apply, just a receipt.
+    // Destruction is not a sale — no price, taxes or receipt. Confirmation only.
     return StyledFormDialog(
       label: 'Destruction',
       title: 'Mark Package Destroyed',
@@ -2719,17 +3110,13 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
       width: 460,
       child: StyledFormSection(
         title: 'Destruction Confirmation',
-        icon: Icons.receipt_rounded,
+        icon: Icons.delete_forever_rounded,
         children: [
           Text(
             '${widget.item.forfeited?.srNumber ?? 'Package'} — ${yardName(widget.item.yard)}. '
             'This records the package as DESTROYED.',
             style: TextStyle(
               color: context.colors.textSecondary, fontSize: 13)
-          ),
-          TextField(
-            controller: _receiptC,
-            decoration: const InputDecoration(labelText: 'Receipt Number (optional)'),
           ),
         ],
       ),
@@ -2747,7 +3134,7 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             try {
               await widget.ref.read(disposalServiceProvider).markDestructionItemDestroyed(
                 destructionItemId: widget.item.id,
-                receipt: _receiptC.text,
+                receipt: '',
               );
               widget.ref.read(destructionsRefreshProvider.notifier).trigger();
               widget.ref.read(packagesRefreshTriggerProvider.notifier).trigger();
@@ -2797,10 +3184,14 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
   bool _loading = false;
   // forfeited_package_id → yard
   final Map<String, String> _selected = {};
+  // The yard this destruction belongs to. The package pool is filtered to this
+  // yard's forwarded requests, and the created destruction is assigned to it.
+  late String _formYard;
 
   @override
   void initState() {
     super.initState();
+    _formYard = ref.read(disposalSelectedYardProvider);
     _yearC.addListener(_onYearChanged);
     _serialC.addListener(_updateSaleNumber);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2862,17 +3253,21 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
     final green = context.colors.successGreen;
     // Fresh destruction → "Destruction"-tagged requests. Re-destruction → only
     // the undestroyed packages shown on the Undestroyed Destructions page.
-    final AsyncValue<List<DisposalRequestItemModel>> pool = widget.reDestruction
-        ? ref.watch(undestroyedDestructionsProvider).whenData((list) => list
-            .map((info) => DisposalRequestItemModel(
-                  id: info.forfeited.id,
-                  requestId: '',
-                  forfeitedPackageId: info.forfeited.id,
-                  disposition: 'destruction',
-                  forfeited: info.forfeited,
-                ))
-            .toList())
-        : ref.watch(destructionRequestItemsProvider);
+    // Either way, only the packages belonging to the yard selected in this form
+    // are shown (and destroyed).
+    final AsyncValue<List<DisposalRequestItemModel>> pool = (widget.reDestruction
+            ? ref.watch(undestroyedDestructionsProvider).whenData((list) => list
+                .map((info) => DisposalRequestItemModel(
+                      id: info.forfeited.id,
+                      requestId: '',
+                      forfeitedPackageId: info.forfeited.id,
+                      disposition: 'destruction',
+                      forfeited: info.forfeited,
+                    ))
+                .toList())
+            : ref.watch(destructionRequestItemsProvider))
+        .whenData((list) =>
+            list.where((it) => it.forfeited?.yard == _formYard).toList());
     return StyledFormDialog(
       label: 'Destruction Sale',
       title: widget.reDestruction ? 'Re-destruction Sale' : 'New Destruction Sale',
@@ -2886,6 +3281,18 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
             title: 'Sale Details',
             icon: Icons.receipt_long_rounded,
             children: [
+              _StyledYardPicker(
+                value: _formYard,
+                width: double.infinity,
+                onChanged: (v) {
+                  if (v == null) return;
+                  // Switching yards clears any selection from the previous yard.
+                  setState(() {
+                    _formYard = v;
+                    _selected.clear();
+                  });
+                },
+              ),
               TextField(
                 controller: _numberC,
                 readOnly: true,
@@ -2926,16 +3333,17 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                   ),
                 ),
               ]),
-              DropdownButtonFormField<String>(
+              StyledDropdownFormField<String>(
                 value: _destructionType,
-                isExpanded: true,
-                decoration:
-                    const InputDecoration(labelText: 'Destruction Sale Type'),
-                items: [
+                label: 'Destruction Sale Type',
+                helperText: null,
+                isDense: true,
+                menuWidth: 400,
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                options: [
                   for (final e in kDestructionTypes.entries)
-                    DropdownMenuItem(
-                        value: e.key,
-                        child: Text(e.value, overflow: TextOverflow.ellipsis)),
+                    StyledDropdownOption(e.key, e.value),
                 ],
                 onChanged: (v) {
                   setState(() => _destructionType = v);
@@ -3117,7 +3525,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                         _serialC.text.trim().isEmpty ? null : _serialC.text.trim(),
                     year: int.tryParse(_yearC.text.trim()),
                     tenderType: _destructionType,
-                    yard: ref.read(disposalSelectedYardProvider),
+                    yard: _formYard,
                     packageYards: Map<String, String>.from(_selected),
                   );
               ref.read(destructionsRefreshProvider.notifier).trigger();

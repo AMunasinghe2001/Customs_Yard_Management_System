@@ -13,6 +13,7 @@ import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/supabase_client.dart';
 
@@ -133,9 +134,18 @@ class WarehousesScreen extends ConsumerWidget {
   }
 }
 
-class _WarehouseTab extends ConsumerWidget {
+class _WarehouseTab extends ConsumerStatefulWidget {
   final WarehouseModel warehouse;
   const _WarehouseTab({required this.warehouse});
+
+  @override
+  ConsumerState<_WarehouseTab> createState() => _WarehouseTabState();
+}
+
+class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
+  int _page = 0;
+
+  WarehouseModel get warehouse => widget.warehouse;
 
   String _formatWarehouseName(String name) {
     final regex = RegExp(r'(\d+)');
@@ -150,7 +160,7 @@ class _WarehouseTab extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final entries = ref.watch(liveWarehouseEntriesProvider(warehouse.id));
     return entries.when(
       loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
@@ -237,7 +247,10 @@ class _WarehouseTab extends ConsumerWidget {
                       Expanded(
                         child: TextField(
                           style: TextStyle(color: context.colors.textPrimary),
-                          onChanged: (v) => ref.read(warehouseSearchProvider(warehouse.id).notifier).state = v,
+                          onChanged: (v) {
+                            ref.read(warehouseSearchProvider(warehouse.id).notifier).state = v;
+                            setState(() => _page = 0);
+                          },
                           decoration: InputDecoration(
                             hintText: 'Search SR #, consignee or reason...',
                             prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
@@ -255,7 +268,10 @@ class _WarehouseTab extends ConsumerWidget {
                         ...['all', 'Detain', 'Forfeit', 'Abandoned'].map((s) => FilterChip(
                           label: Text(s == 'all' ? 'ALL' : s.toUpperCase()),
                           selected: filter == s,
-                          onSelected: (_) => ref.read(warehouseStatusFilterProvider(warehouse.id).notifier).state = s,
+                          onSelected: (_) {
+                            ref.read(warehouseStatusFilterProvider(warehouse.id).notifier).state = s;
+                            setState(() => _page = 0);
+                          },
                           selectedColor: context.colors.primaryGold.withOpacity(0.2),
                           checkmarkColor: context.colors.primaryGold,
                           labelStyle: TextStyle(
@@ -275,8 +291,10 @@ class _WarehouseTab extends ConsumerWidget {
                                   );
                                   if (picked is DateTimeRange) {
                                     ref.read(warehouseDateRangeProvider(warehouse.id).notifier).state = picked;
+                                    setState(() => _page = 0);
                                   } else if (picked == false) {
                                     ref.read(warehouseDateRangeProvider(warehouse.id).notifier).state = null;
+                                    setState(() => _page = 0);
                                   }
                                 },
                                 icon: Icon(Icons.date_range_rounded, size: 16, color: dateRange != null ? context.colors.primaryGold : context.colors.textSecondary),
@@ -296,7 +314,10 @@ class _WarehouseTab extends ConsumerWidget {
                                 const Gap(8),
                                 IconButton(
                                   icon: Icon(Icons.clear_rounded, size: 16, color: context.colors.dangerRed),
-                                  onPressed: () => ref.read(warehouseDateRangeProvider(warehouse.id).notifier).state = null,
+                                  onPressed: () {
+                                    ref.read(warehouseDateRangeProvider(warehouse.id).notifier).state = null;
+                                    setState(() => _page = 0);
+                                  },
                                   tooltip: 'Clear Date Filter',
                                   padding: EdgeInsets.zero,
                                   constraints: const BoxConstraints(),
@@ -320,11 +341,14 @@ class _WarehouseTab extends ConsumerWidget {
                                     .map((r) => StyledDropdownOption(
                                         r.reasonText, r.reasonText))
                                     .toList(),
-                                onChanged: (v) => ref
-                                    .read(warehouseReasonFilterProvider(
-                                            warehouse.id)
-                                        .notifier)
-                                    .state = v ?? 'all',
+                                onChanged: (v) {
+                                  ref
+                                      .read(warehouseReasonFilterProvider(
+                                              warehouse.id)
+                                          .notifier)
+                                      .state = v ?? 'all';
+                                  setState(() => _page = 0);
+                                },
                               );
                             },
                           );
@@ -336,7 +360,9 @@ class _WarehouseTab extends ConsumerWidget {
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
                 const Gap(16),
                 Expanded(
-                  child: Container(
+                  child: Column(
+                    children: [
+                  Expanded(child: Container(
                     decoration: BoxDecoration(color: context.colors.cardDark, borderRadius: BorderRadius.circular(14),
                         border: Border.all(color: context.colors.borderColor)),
                     child: ClipRRect(
@@ -356,7 +382,7 @@ class _WarehouseTab extends ConsumerWidget {
                             DataColumn2(label: Center(child: Text('Entry Date')), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 60),
                           ],
-                          rows: filteredList.map((e) {
+                          rows: pageSlice(filteredList, _page, kClientPageSize).map((e) {
                             final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
                             String status = e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held');
                               if (pkg != null && e.packageItemId != null) {
@@ -468,7 +494,15 @@ class _WarehouseTab extends ConsumerWidget {
                           }).toList(),
                         ),
                     ),
-                  ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+                  ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn()),
+                  TablePager(
+                    total: filteredList.length,
+                    page: _page,
+                    pageSize: kClientPageSize,
+                    onPageChanged: (p) => setState(() => _page = p),
+                  ),
+                    ],
+                  ),
                 ),
               ]),
             );

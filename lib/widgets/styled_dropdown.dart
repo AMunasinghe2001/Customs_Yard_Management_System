@@ -36,6 +36,14 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
   if (renderBox == null || overlayBox == null) return null;
 
   final offset = renderBox.localToGlobal(Offset.zero, ancestor: overlayBox);
+  // Match the popup width to the anchor button so the option cells fill the
+  // whole width — no dead white space to the right of the list — but cap it so
+  // a full-width form field doesn't open a page-wide, unbalanced menu.
+  const double kMaxMenuWidth = 460;
+  final anchorWidth = renderBox.size.width;
+  final effectiveWidth =
+      (menuWidth < anchorWidth ? anchorWidth : menuWidth)
+          .clamp(0.0, kMaxMenuWidth);
   final position = RelativeRect.fromLTRB(
     offset.dx,
     offset.dy + renderBox.size.height + 6,
@@ -48,6 +56,7 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
     position: position,
     color: anchorContext.colors.surfaceDark,
     elevation: 8,
+    constraints: BoxConstraints.tightFor(width: effectiveWidth),
     shape: RoundedRectangleBorder(
       borderRadius: BorderRadius.circular(12),
       side: BorderSide(color: anchorContext.colors.borderColor),
@@ -63,7 +72,7 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
           columns: columns,
           perPage: perPage,
           includeAll: includeAll,
-          menuWidth: menuWidth,
+          menuWidth: effectiveWidth,
         ),
       ),
     ],

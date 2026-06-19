@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../screens/home/home_screen.dart';
+import '../screens/home/yard_access_screen.dart';
 import '../screens/login/login_screen.dart';
 import '../screens/admin/admin_login_screen.dart';
 import '../screens/admin/admin_signup_screen.dart';
@@ -41,6 +42,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       final isLoggedIn = user != null;
       final publicRoutes = [
         '/',
+        '/yard-access',
         '/login',
         '/admin/login',
         '/admin/signup',
@@ -76,6 +78,7 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+      GoRoute(path: '/yard-access', builder: (_, __) => const YardAccessScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
       GoRoute(path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
       GoRoute(path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),

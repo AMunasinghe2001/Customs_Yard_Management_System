@@ -45,6 +45,12 @@ class _DispositionCategoryScreenState
   DateTimeRange? _dateRange;
   String? _yearFilter;
   int _page = 0;
+  // Delivery sub-filter (Sold / Destroyed pages): null = all, true = delivered,
+  // false = pending.
+  bool? _deliveryFilter;
+
+  bool get _hasDelivery =>
+      widget.finalTag == 'SOLD' || widget.finalTag == 'DESTROYED';
 
   @override
   void dispose() {
@@ -110,11 +116,47 @@ class _DispositionCategoryScreenState
     return rows;
   }
 
+  /// A compact pill for the Delivered / Pending / All delivery sub-filter,
+  /// styled like the date/year filter chips beside it.
+  Widget _deliveryFilterChip(String label, bool? value, IconData icon) {
+    final selected = _deliveryFilter == value;
+    final color = context.colors.primaryGold;
+    return OutlinedButton.icon(
+      onPressed: () => setState(() {
+        _deliveryFilter = value;
+        _page = 0;
+      }),
+      icon: Icon(icon,
+          size: 16, color: selected ? color : context.colors.textSecondary),
+      label: Text(label,
+          style: TextStyle(
+              color: selected ? color : context.colors.textSecondary,
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
+      style: OutlinedButton.styleFrom(
+        side: BorderSide(
+            color: selected ? color : context.colors.borderColor),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final packages = ref.watch(livePackagesProvider);
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
+    // Delivery map for filtering (Sold uses tender-sale items; Destroyed uses
+    // destruction items). Empty until loaded — rows then treated as Pending.
+    final deliveredMap = !_hasDelivery
+        ? const <String, bool>{}
+        : (widget.finalTag == 'SOLD'
+                ? ref.watch(packageDeliveredMapProvider)
+                : ref.watch(packageDestroyedDeliveredMapProvider))
+            .valueOrNull ??
+            const <String, bool>{};
 
     return AppShell(
       currentRoute: widget.route,
@@ -277,6 +319,14 @@ class _DispositionCategoryScreenState
                             _page = 0;
                           }),
                         ),
+                        // Delivery filter — Sold / Destroyed pages only.
+                        if (_hasDelivery) ...[
+                          _deliveryFilterChip('All', null, Icons.all_inbox_rounded),
+                          _deliveryFilterChip(
+                              'Delivered', true, Icons.check_circle_rounded),
+                          _deliveryFilterChip(
+                              'Pending', false, Icons.schedule_rounded),
+                        ],
                       ],
                     ),
                   ],
@@ -324,6 +374,11 @@ class _DispositionCategoryScreenState
                       }
                       if (!srYearMatches(row.package.srNumber, _yearFilter)) {
                         return false;
+                      }
+                      if (_hasDelivery && _deliveryFilter != null) {
+                        final delivered =
+                            deliveredMap[row.package.id] ?? false;
+                        if (delivered != _deliveryFilter) return false;
                       }
                       return true;
                     }).toList();
@@ -383,7 +438,7 @@ class _DispositionCategoryScreenState
                               const DataColumn2(
                                   label: Text('Financials'),
                                   size: ColumnSize.M),
-                            if (widget.finalTag == 'SOLD')
+                            if (_hasDelivery)
                               const DataColumn2(
                                   label: Text('Delivery'), fixedWidth: 120),
                             const DataColumn2(
@@ -427,7 +482,11 @@ class _DispositionCategoryScreenState
                                       DataCell(_SaleFinancialsCell(
                                           package: row.package)),
                                     if (widget.finalTag == 'SOLD')
-                                      DataCell(_DeliveryStatusCell(package: row.package)),
+                                      DataCell(_DeliveryStatusCell(
+                                          package: row.package)),
+                                    if (widget.finalTag == 'DESTROYED')
+                                      DataCell(_DestroyedDeliveryStatusCell(
+                                          package: row.package)),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
@@ -505,6 +564,24 @@ class _DeliveryStatusCell extends ConsumerWidget {
       data: (item) => item == null
           ? const Text('—')
           : _DeliveryStatusChip(delivered: item.isDelivered),
+    );
+  }
+}
+
+// Read-only delivery STATUS chip for a DESTROYED package (mirrors
+// _DeliveryStatusCell but reads the destruction item).
+class _DestroyedDeliveryStatusCell extends ConsumerWidget {
+  final PackageModel package;
+  const _DestroyedDeliveryStatusCell({required this.package});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(destructionItemForPackageProvider(package.id));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) =>
+          _DeliveryStatusChip(delivered: item?.delivered ?? false),
     );
   }
 }

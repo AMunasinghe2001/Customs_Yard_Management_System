@@ -461,19 +461,65 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section: QR Code Labels (kept at the very bottom) ──
+                // ── Section: QR Code Labels ──
                 const Gap(24),
                 _buildSectionHeader('QR Code Labels', Icons.qr_code_2_rounded),
                 const Gap(8),
-                _QrLabelCard(onTap: _openQrLabelGenerator)
-                    .animate()
-                    .fadeIn()
-                    .slideY(begin: 0.1),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 2.3,
+                  children: [
+                    _buildQrCard(),
+                  ],
+                ),
               ],
             ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn();
           },
         );
       },
+    );
+  }
+
+  Widget _buildQrCard() {
+    const color = Color(0xFF00897B);
+    const key = 'QR Code Labels';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.qr_code_2_rounded, color: color, size: 18),
+            const Gap(8),
+            Expanded(child: Text('Generate QR Labels',
+                style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14))),
+          ]),
+          const Gap(4),
+          Text('Pick packages and print or download their QR-code labels.',
+              style: TextStyle(color: context.colors.textMuted, fontSize: 11),
+              maxLines: 1, overflow: TextOverflow.ellipsis),
+          const Spacer(),
+          SizedBox(
+            width: double.infinity,
+            child: _buildActionButton(
+              label: 'Open',
+              icon: Icons.open_in_new_rounded,
+              color: color,
+              isLoading: _isLoading(key),
+              onTap: _openQrLabelGenerator,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -14,6 +14,7 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
+import '../../widgets/table_pager.dart';
 import '../disposal/disposal_dashboard_screen.dart';
 import 'tender_placement_dialog.dart';
 
@@ -82,6 +83,7 @@ class _TenderDisposalScreenState
   final _searchCtrl = TextEditingController();
   DateTimeRange? _dateRange;
   String? _yearFilter;
+  int _page = 0;
 
   @override
   void initState() {
@@ -161,6 +163,7 @@ class _TenderDisposalScreenState
                       ),
                       onChanged: (v) {
                         ref.read(tenderSearchProvider.notifier).state = v;
+                        setState(() => _page = 0);
                       },
                     ),
                     const Gap(8),
@@ -177,9 +180,9 @@ class _TenderDisposalScreenState
                                   initialRange: _dateRange),
                             );
                             if (picked is DateTimeRange) {
-                              setState(() => _dateRange = picked);
+                              setState(() { _dateRange = picked; _page = 0; });
                             } else if (picked == false) {
-                              setState(() => _dateRange = null);
+                              setState(() { _dateRange = null; _page = 0; });
                             }
                           },
                           icon: Icon(Icons.date_range_rounded,
@@ -214,7 +217,7 @@ class _TenderDisposalScreenState
                           IconButton(
                             icon: Icon(Icons.clear_rounded,
                                 size: 16, color: context.colors.dangerRed),
-                            onPressed: () => setState(() => _dateRange = null),
+                            onPressed: () => setState(() { _dateRange = null; _page = 0; }),
                             tooltip: 'Clear Date Filter',
                             padding: EdgeInsets.zero,
                             constraints: const BoxConstraints(),
@@ -229,7 +232,7 @@ class _TenderDisposalScreenState
                               .toSet()
                               .toList()
                             ..sort((a, b) => b.compareTo(a))),
-                          onChanged: (v) => setState(() => _yearFilter = v),
+                          onChanged: (v) => setState(() { _yearFilter = v; _page = 0; }),
                         ),
                       ],
                     ),
@@ -319,15 +322,32 @@ class _TenderDisposalScreenState
                       );
                     }
 
-                    return ListView.separated(
-                      itemCount: visible.length,
-                      separatorBuilder: (_, __) => const Gap(16),
-                      itemBuilder: (context, i) =>
-                          TenderSaleCard(sale: visible[i], readOnly: true),
-                    )
-                        .animate()
-                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
-                        .fadeIn();
+                    final pageItems =
+                        pageSlice(visible, _page, kClientPageSize);
+                    return Column(
+                      children: [
+                        Expanded(
+                          child: ListView.separated(
+                            itemCount: pageItems.length,
+                            separatorBuilder: (_, __) => const Gap(16),
+                            itemBuilder: (context, i) => TenderSaleCard(
+                                sale: pageItems[i], readOnly: true),
+                          )
+                              .animate()
+                              .slideY(
+                                  begin: 0.1,
+                                  duration: 400.ms,
+                                  delay: 300.ms)
+                              .fadeIn(),
+                        ),
+                        TablePager(
+                          total: visible.length,
+                          page: _page,
+                          pageSize: kClientPageSize,
+                          onPageChanged: (p) => setState(() => _page = p),
+                        ),
+                      ],
+                    );
                   },
                 ),
               ),
