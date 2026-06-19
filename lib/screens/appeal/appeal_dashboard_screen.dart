@@ -16,6 +16,7 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/styled_form_dialog.dart';
 
 final _appealSearchProvider = StateProvider<String>((ref) => '');
 final _appealYardProvider = StateProvider<String?>((ref) => null); // null = all
@@ -392,6 +393,7 @@ class AppealDashboardScreen extends ConsumerWidget {
       builder: (_) => PackageDetailsDialog(
         package: f.packageDetails!,
         storageRate: storageRate,
+        headerAccentColor: context.colors.accentBlue,
         // Single-item view (like the Yard's Forfeited popup) — show only this
         // row's item, not the whole package's disposition breakdown.
         useLegacySummary: true,
@@ -632,205 +634,130 @@ class _AppealDecisionDialogState extends State<_AppealDecisionDialog> {
     final canConfirm = _selected != null &&
         (!isOther || _otherCtrl.text.trim().isNotEmpty);
 
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      child: Container(
-        width: 520,
-        constraints: const BoxConstraints(maxHeight: 720),
-        decoration: BoxDecoration(
-          color: context.colors.scaffoldBg,
-          borderRadius: BorderRadius.circular(20),
+    return StyledFormDialog(
+      label: 'APPEAL DECISION',
+      title: widget.srNumber,
+      icon: Icons.gavel_rounded,
+      headerAccentColor: accent,
+      width: 520,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-              decoration: BoxDecoration(
-                color: accent,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
+        ElevatedButton.icon(
+          icon: const Icon(Icons.check_rounded, size: 18),
+          label: const Text('Confirm & Release Hold'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: accent,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor:
+                context.colors.textMuted.withOpacity(0.3),
+            padding: const EdgeInsets.symmetric(
+                horizontal: 20, vertical: 14),
+          ),
+          onPressed: !canConfirm
+              ? null
+              : () {
+                  final opt = _options
+                      .firstWhere((o) => o.key == _selected);
+                  final note = isOther
+                      ? _otherCtrl.text.trim()
+                      : null;
+                  final label =
+                      isOther ? _otherCtrl.text.trim() : opt.label;
+                  Navigator.pop(
+                      context,
+                      _AppealDecisionResult(opt.key, label,
+                          note: note));
+                },
+        ),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'The appeal has been processed. Choose what the owning yard '
+            'should do with this package — the yard will act on this decision.',
+            style: TextStyle(
+                color: context.colors.textSecondary, fontSize: 13),
+          ),
+          const Gap(16),
+          ..._options.map((o) {
+            final selected = _selected == o.key;
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => setState(() => _selected = o.key),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 14, vertical: 12),
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
+                    color: o.color
+                        .withOpacity(selected ? 0.10 : 0.04),
                     borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: const Icon(Icons.gavel_rounded,
-                      color: Colors.white, size: 22),
-                ),
-                const Gap(14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('APPEAL DECISION',
-                          style: TextStyle(
-                              color: Colors.white70,
-                              fontSize: 11,
-                              letterSpacing: 1.2,
-                              fontWeight: FontWeight.w800)),
-                      Text(widget.srNumber,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold)),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close_rounded,
-                      color: Colors.white.withOpacity(0.8)),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ]),
-            ),
-            // Body
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'The appeal has been processed. Choose what the owning yard '
-                      'should do with this package — the yard will act on this decision.',
-                      style: TextStyle(
-                          color: context.colors.textSecondary, fontSize: 13),
+                    border: Border.all(
+                      color: o.color.withOpacity(selected ? 0.7 : 0.2),
+                      width: selected ? 1.6 : 1,
                     ),
-                    const Gap(16),
-                    ..._options.map((o) {
-                      final selected = _selected == o.key;
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(12),
-                          onTap: () => setState(() => _selected = o.key),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: o.color
-                                  .withOpacity(selected ? 0.10 : 0.04),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: o.color.withOpacity(selected ? 0.7 : 0.2),
-                                width: selected ? 1.6 : 1,
-                              ),
-                            ),
-                            child: Row(children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: o.color.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(o.icon, color: o.color, size: 20),
-                              ),
-                              const Gap(14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Text(o.label,
-                                        style: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                            color: o.color)),
-                                    const Gap(2),
-                                    Text(o.description,
-                                        style: TextStyle(
-                                            fontSize: 12,
-                                            color: context.colors.textMuted)),
-                                  ],
-                                ),
-                              ),
-                              Icon(
-                                selected
-                                    ? Icons.radio_button_checked_rounded
-                                    : Icons.radio_button_unchecked_rounded,
-                                color: selected
-                                    ? o.color
-                                    : context.colors.textMuted,
-                                size: 20,
-                              ),
-                            ]),
-                          ),
-                        ),
-                      );
-                    }),
-                    if (isOther) ...[
-                      const Gap(4),
-                      TextField(
-                        controller: _otherCtrl,
-                        autofocus: true,
-                        onChanged: (_) => setState(() {}),
-                        decoration: const InputDecoration(
-                          labelText: 'Describe the outcome *',
-                          hintText: 'e.g. Transfer to another authority',
-                          isDense: true,
-                        ),
+                  ),
+                  child: Row(children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: o.color.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    ],
-                  ],
+                      child: Icon(o.icon, color: o.color, size: 20),
+                    ),
+                    const Gap(14),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment:
+                            CrossAxisAlignment.start,
+                        children: [
+                          Text(o.label,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: o.color)),
+                          const Gap(2),
+                          Text(o.description,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.colors.textMuted)),
+                        ],
+                      ),
+                    ),
+                    Icon(
+                      selected
+                          ? Icons.radio_button_checked_rounded
+                          : Icons.radio_button_unchecked_rounded,
+                      color: selected
+                          ? o.color
+                          : context.colors.textMuted,
+                      size: 20,
+                    ),
+                  ]),
                 ),
               ),
-            ),
-            // Footer
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: context.colors.surfaceDark,
-                borderRadius:
-                    const BorderRadius.vertical(bottom: Radius.circular(20)),
-                border:
-                    Border(top: BorderSide(color: context.colors.borderColor)),
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context),
-                    child: const Text('Cancel'),
-                  ),
-                  const Gap(8),
-                  ElevatedButton.icon(
-                    icon: const Icon(Icons.check_rounded, size: 18),
-                    label: const Text('Confirm & Release Hold'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: accent,
-                      foregroundColor: Colors.white,
-                      disabledBackgroundColor:
-                          context.colors.textMuted.withOpacity(0.3),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 14),
-                    ),
-                    onPressed: !canConfirm
-                        ? null
-                        : () {
-                            final opt = _options
-                                .firstWhere((o) => o.key == _selected);
-                            final note = isOther
-                                ? _otherCtrl.text.trim()
-                                : null;
-                            final label =
-                                isOther ? _otherCtrl.text.trim() : opt.label;
-                            Navigator.pop(
-                                context,
-                                _AppealDecisionResult(opt.key, label,
-                                    note: note));
-                          },
-                  ),
-                ],
+            );
+          }),
+          if (isOther) ...[
+            const Gap(4),
+            TextField(
+              controller: _otherCtrl,
+              autofocus: true,
+              onChanged: (_) => setState(() {}),
+              decoration: const InputDecoration(
+                labelText: 'Describe the outcome *',
+                hintText: 'e.g. Transfer to another authority',
+                isDense: true,
               ),
             ),
           ],
-        ),
+        ],
       ),
     );
   }

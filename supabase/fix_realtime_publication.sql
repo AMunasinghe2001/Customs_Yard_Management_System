@@ -1,26 +1,28 @@
 -- ============================================================================
---  FIX: cross-directorate tables not auto-updating (e.g. forwarding a request
---  from the Valuation Directorate doesn't appear in Central Disposal until a
---  manual reload).
+--  FIX: cross-directorate / cross-session tables not auto-updating.
+--
+--  Symptoms this fixes:
+--    • Admin sends a disposal request (or forwards one) → it does NOT appear
+--      automatically in the Central Disposal / Valuation Directorate tables in
+--      another open session until that page is manually reloaded.
+--    • Any table that should "live-update" in one session after a change made in
+--      another session stays stale.
 --
 --  Root cause: Supabase Realtime only broadcasts row changes for tables that are
 --  members of the `supabase_realtime` publication. The app subscribes to these
---  tables via onPostgresChanges, but if a table is NOT in the publication the
---  callback never fires, so dependent dashboards in OTHER sessions don't refresh.
+--  tables via onPostgresChanges, but:
+--    (a) if a table is NOT in the publication, the callback never fires; and
+--    (b) for UPDATE/DELETE events the table needs REPLICA IDENTITY FULL, otherwise
+--        an update that changes only e.g. `valuation_status` may not surface as a
+--        usable realtime payload.
 --
---  This script (idempotent — safe to re-run):
---    1. PREVIEW: shows which app tables are currently published.
---    2. Adds every channelled table to the publication if missing.
---    3. Sets REPLICA IDENTITY FULL so UPDATE/DELETE payloads carry the full row
---       (needed so e.g. a valuation_status change broadcasts as a real event).
---
---  Run in the Supabase SQL Editor. No app-close needed (no exclusive table
---  locks beyond the ALTER PUBLICATION add, which is quick). Relaunch / refresh
---  the app afterwards and forwarding will live-update both dashboards.
+--  This script is IDEMPOTENT (safe to re-run). Run it in the Supabase SQL Editor.
+--  ⚠️  CLOSE THE RUNNING APP FIRST — the ALTER statements take a brief lock and an
+--      open app's realtime read locks can deadlock. Close app → Run → relaunch.
 -- ============================================================================
 
--- 1. ── PREVIEW: which of the app's realtime tables are published? ────────────
---    Anything showing published = false is the problem.
+-- 1. ── PREVIEW (BEFORE): which of the app's realtime tables are published? ────
+--    Anything showing published = false is a problem this script will fix.
 with app_tables(tablename) as (
   values
     ('packages'), ('package_items'), ('warehouse_entries'), ('profiles'),
@@ -28,7 +30,8 @@ with app_tables(tablename) as (
     ('destructions'), ('destruction_items'),
     ('disposal_requests'), ('disposal_request_items'), ('tender_sale_items')
 )
-select a.tablename,
+select 'BEFORE' as phase,
+       a.tablename,
        (pt.tablename is not null) as published
   from app_tables a
   left join pg_publication_tables pt
@@ -60,15 +63,35 @@ begin
 end $$;
 
 -- 3. ── REPLICA IDENTITY FULL so UPDATE/DELETE broadcast the whole row ─────────
---    Without this, an UPDATE that changes only e.g. valuation_status may not
---    surface as a usable realtime event. Cheap for these low-write tables.
-alter table public.disposal_requests       replica identity full;
-alter table public.disposal_request_items  replica identity full;
-alter table public.forfeited_packages      replica identity full;
-alter table public.tender_sale_items       replica identity full;
-alter table public.destructions            replica identity full;
-alter table public.destruction_items       replica identity full;
+--    Needed so e.g. a `valuation_status` / request-status UPDATE surfaces as a
+--    real realtime event (not just INSERTs). Cheap for these low-write tables.
+alter table public.packages                 replica identity full;
+alter table public.package_items            replica identity full;
+alter table public.warehouse_entries        replica identity full;
+alter table public.forfeited_packages       replica identity full;
+alter table public.disposal_requests        replica identity full;
+alter table public.disposal_request_items   replica identity full;
+alter table public.tender_sale_items        replica identity full;
+alter table public.destructions             replica identity full;
+alter table public.destruction_items        replica identity full;
 
--- 4. ── VERIFY: re-run the preview from step 1 — every row should be true now.
+-- 4. ── PREVIEW (AFTER): re-run the check — every row should now be published. ─
+with app_tables(tablename) as (
+  values
+    ('packages'), ('package_items'), ('warehouse_entries'), ('profiles'),
+    ('package_categories'), ('audit_logs'), ('forfeited_packages'),
+    ('destructions'), ('destruction_items'),
+    ('disposal_requests'), ('disposal_request_items'), ('tender_sale_items')
+)
+select 'AFTER' as phase,
+       a.tablename,
+       (pt.tablename is not null) as published
+  from app_tables a
+  left join pg_publication_tables pt
+    on pt.pubname = 'supabase_realtime'
+   and pt.schemaname = 'public'
+   and pt.tablename = a.tablename
+ order by published, a.tablename;
 
--- Done.
+-- Done. After running, relaunch the app — sending / forwarding a request now
+-- live-updates the Central Disposal and Valuation tables in every open session.

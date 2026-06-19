@@ -236,6 +236,7 @@ class _TaxDialogState extends State<_TaxDialog> {
     return StyledFormDialog(
       label: 'Tax Configuration',
       title: isEdit ? 'Edit Tax' : 'Add Tax',
+      headerAccentColor: context.colors.successGreen,
       icon: Icons.receipt_long_rounded,
       width: 460,
       child: Form(

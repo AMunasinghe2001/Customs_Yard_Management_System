@@ -632,6 +632,7 @@ class _SoldPackagesTab extends ConsumerWidget {
                                     builder: (_) => PackageDetailsDialog(
                                       package: r.package,
                                       storageRate: storageRate,
+                                      headerAccentColor: context.colors.successGreen,
                                       highlightEntry: r.entry,
                                       useLegacySummary: true,
                                     ),
@@ -1016,6 +1017,7 @@ class _RequestCard extends ConsumerWidget {
                                     builder: (_) => PackageDetailsDialog(
                                       package: f!.packageDetails!,
                                       storageRate: storageRate,
+                                      headerAccentColor: context.colors.successGreen,
                                       useLegacySummary: true,
                                       // Show only THIS request row's item: the
                                       // forfeited row's own item if it names one,
@@ -1748,6 +1750,7 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
     return StyledFormDialog(
       label: 'Tender Sale',
       title: 'Mark Package Sold',
+      headerAccentColor: context.colors.successGreen,
       icon: Icons.sell_rounded,
       width: 460,
       child: StyledFormSection(
@@ -1948,6 +1951,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
     return StyledFormDialog(
       label: 'Tender Sale',
       title: widget.reTender ? 'Re-tender Sale' : 'New Tender Sale',
+      headerAccentColor: context.colors.successGreen,
       icon: Icons.gavel_rounded,
       width: 720,
       child: Column(
@@ -2228,6 +2232,7 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
     return StyledFormDialog(
       label: 'Tender Sale History',
       title: info.forfeited.srNumber,
+      headerAccentColor: context.colors.successGreen,
       icon: Icons.history_rounded,
       width: 540,
       child: StyledFormSection(
@@ -2709,6 +2714,7 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
     return StyledFormDialog(
       label: 'Destruction',
       title: 'Mark Package Destroyed',
+      headerAccentColor: context.colors.successGreen,
       icon: Icons.delete_forever_rounded,
       width: 460,
       child: StyledFormSection(
@@ -2870,6 +2876,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
     return StyledFormDialog(
       label: 'Destruction Sale',
       title: widget.reDestruction ? 'Re-destruction Sale' : 'New Destruction Sale',
+      headerAccentColor: context.colors.successGreen,
       icon: Icons.gavel_rounded,
       width: 720,
       child: Column(
@@ -3148,6 +3155,7 @@ class _DestructionSaleHistoryDialog extends StatelessWidget {
     return StyledFormDialog(
       label: 'Destruction Sale History',
       title: info.forfeited.srNumber,
+      headerAccentColor: context.colors.successGreen,
       icon: Icons.history_rounded,
       width: 540,
       child: StyledFormSection(

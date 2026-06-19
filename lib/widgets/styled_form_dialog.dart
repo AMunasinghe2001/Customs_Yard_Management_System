@@ -14,6 +14,7 @@ class StyledFormDialog extends StatelessWidget {
   final double width;
   final Widget child; // body content (usually a Column of StyledFormSections)
   final List<Widget> actions; // footer buttons (right-aligned)
+  final Color? headerAccentColor;
 
   const StyledFormDialog({
     super.key,
@@ -23,11 +24,14 @@ class StyledFormDialog extends StatelessWidget {
     required this.child,
     required this.actions,
     this.width = 460,
+    this.headerAccentColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final accent = headerAccentColor ?? context.colors.primaryGold;
+    
     return Dialog(
       backgroundColor: isDark ? context.colors.cardDark : context.colors.scaffoldBg,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
@@ -46,14 +50,19 @@ class StyledFormDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: isDark
-                      ? [context.colors.surfaceDark, context.colors.cardDark]
-                      : [
-                          context.colors.customsBlue,
-                          context.colors.customsBlueDark
-                        ],
-                ),
+                gradient: headerAccentColor != null
+                    ? LinearGradient(colors: [
+                        headerAccentColor!.withOpacity(0.15),
+                        context.colors.cardDark,
+                      ])
+                    : LinearGradient(
+                        colors: isDark
+                            ? [context.colors.surfaceDark, context.colors.cardDark]
+                            : [
+                                context.colors.customsBlue,
+                                context.colors.customsBlueDark
+                              ],
+                      ),
               ),
               child: Row(
                 children: [
@@ -63,7 +72,7 @@ class StyledFormDialog extends StatelessWidget {
                       color: Colors.white.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Icon(icon, color: context.colors.primaryGold, size: 24),
+                    child: Icon(icon, color: accent, size: 24),
                   ),
                   const Gap(16),
                   Expanded(
@@ -73,7 +82,7 @@ class StyledFormDialog extends StatelessWidget {
                         Text(
                           label.toUpperCase(),
                           style: TextStyle(
-                            color: context.colors.primaryGold,
+                            color: accent,
                             fontSize: 11,
                             letterSpacing: 1.2,
                             fontWeight: FontWeight.w800,

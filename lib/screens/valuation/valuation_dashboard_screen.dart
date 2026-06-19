@@ -14,6 +14,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/disposal_profile_dialog.dart';
+import '../../widgets/styled_form_dialog.dart';
 
 /// Valuation Directorate (DC / SDDC) portal. Standalone scaffold (not AppShell).
 /// Lists every yard's disposal requests that are still awaiting valuation; the
@@ -430,6 +431,7 @@ class _ValuationRequestCard extends ConsumerWidget {
                                     builder: (_) => PackageDetailsDialog(
                                       package: f!.packageDetails!,
                                       storageRate: storageRate,
+                                      headerAccentColor: context.colors.primaryGold,
                                       useLegacySummary: true,
                                       // Single item for this request row + yard.
                                       highlightItemId: f.itemId ??
@@ -567,188 +569,131 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
     final items = widget.request.items;
-    return Dialog(
-      backgroundColor: context.colors.scaffoldBg,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 560, maxHeight: 680),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
+    return StyledFormDialog(
+      label: 'SET VALUATION',
+      title: '${yardName(widget.request.yard)} · ${items.length} item(s)',
+      icon: Icons.calculate_rounded,
+      headerAccentColor: gold,
+      // Match the Central Disposal / Appeal package-detail popups (width 900) so
+      // the Set Valuation dialog has the same large, full-style presentation.
+      width: 900,
+      actions: [
+        Expanded(
+          child: Text(
+              'Forwarding requires a cost for every item.',
+              style: TextStyle(
+                  color: context.colors.textMuted, fontSize: 11)),
+        ),
+        TextButton(
+          onPressed: _isLoading ? null : () => _submit(forward: false),
+          child: const Text('Save Draft'),
+        ),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+              backgroundColor: gold, foregroundColor: Colors.white),
+          icon: _isLoading
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.send_rounded, size: 16),
+          label: const Text('Forward to Central Disposal'),
+          onPressed: _isLoading ? null : () => _submit(forward: true),
+        ),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (_error != null) ...[
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [
-                  gold.withOpacity(0.15),
-                  context.colors.cardDark,
-                ]),
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(18)),
+                color: context.colors.dangerRed.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: context.colors.dangerRed.withOpacity(0.4)),
               ),
               child: Row(children: [
-                Icon(Icons.calculate_rounded, color: gold, size: 22),
-                const Gap(12),
+                Icon(Icons.error_outline,
+                    color: context.colors.dangerRed, size: 18),
+                const Gap(10),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Set Valuation',
-                          style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w800)),
-                      Text(
-                          '${yardName(widget.request.yard)} · ${items.length} item(s)',
-                          style: TextStyle(
-                              color: context.colors.textMuted, fontSize: 12)),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  icon: Icon(Icons.close_rounded,
-                      color: context.colors.textMuted),
-                  onPressed: () => Navigator.pop(context),
-                ),
+                    child: Text(_error!,
+                        style: TextStyle(
+                            color: context.colors.dangerRed,
+                            fontSize: 13))),
               ]),
             ),
-            Flexible(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 8),
+            const Gap(16),
+          ],
+          for (final it in items) ...[
+            Row(children: [
+              Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (_error != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: context.colors.dangerRed.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                              color:
-                                  context.colors.dangerRed.withOpacity(0.4)),
-                        ),
-                        child: Row(children: [
-                          Icon(Icons.error_outline,
-                              color: context.colors.dangerRed, size: 18),
-                          const Gap(10),
-                          Expanded(
-                              child: Text(_error!,
-                                  style: TextStyle(
-                                      color: context.colors.dangerRed,
-                                      fontSize: 13))),
-                        ]),
-                      ),
-                      const Gap(16),
-                    ],
-                    for (final it in items) ...[
-                      Row(children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(it.forfeited?.srNumber ?? '—',
-                                  style: TextStyle(
-                                      color: context.colors.accentLightBlue,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 13)),
-                              Text(_itemName(it),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.colors.textSecondary,
-                                      fontSize: 12)),
-                              const Gap(4),
-                              Row(children: [
-                                Icon(Icons.tag_rounded,
-                                    size: 12, color: context.colors.textMuted),
-                                const Gap(4),
-                                Text('HS ${it.hsCodeLabel ?? '—'}',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 11)),
-                                const Gap(10),
-                                Icon(Icons.inventory_2_rounded,
-                                    size: 12, color: context.colors.textMuted),
-                                const Gap(4),
-                                Text('Qty ${it.totalQuantity}',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 11)),
-                              ]),
-                            ],
-                          ),
-                        ),
-                        const Gap(8),
-                        _DispoChip(disposition: it.disposition),
-                        const Gap(12),
-                        SizedBox(
-                          width: 150,
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              TextField(
-                                controller: _ctrls[it.id],
-                                keyboardType:
-                                    const TextInputType.numberWithOptions(
-                                        decimal: true),
-                                decoration: const InputDecoration(
-                                  labelText: 'Cost / item (LKR)',
-                                  isDense: true,
-                                  prefixText: 'LKR ',
-                                ),
-                              ),
-                              const Gap(6),
-                              _LiveTotal(item: it, controller: _ctrls[it.id]!),
-                            ],
-                          ),
-                        ),
-                      ]),
-                      const Divider(height: 24),
-                    ],
+                    Text(it.forfeited?.srNumber ?? '—',
+                        style: TextStyle(
+                            color: context.colors.accentLightBlue,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13)),
+                    Text(_itemName(it),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: context.colors.textSecondary,
+                            fontSize: 12)),
+                    const Gap(4),
+                    Row(children: [
+                      Icon(Icons.tag_rounded,
+                          size: 12, color: context.colors.textMuted),
+                      const Gap(4),
+                      Text('HS ${it.hsCodeLabel ?? '—'}',
+                          style: TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 11)),
+                      const Gap(10),
+                      Icon(Icons.inventory_2_rounded,
+                          size: 12, color: context.colors.textMuted),
+                      const Gap(4),
+                      Text('Qty ${it.totalQuantity}',
+                          style: TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 11)),
+                    ]),
                   ],
                 ),
               ),
-            ),
-            // Footer
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-              decoration: BoxDecoration(
-                border:
-                    Border(top: BorderSide(color: context.colors.borderColor)),
+              const Gap(8),
+              _DispoChip(disposition: it.disposition),
+              const Gap(12),
+              SizedBox(
+                width: 150,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    TextField(
+                      controller: _ctrls[it.id],
+                      keyboardType:
+                          const TextInputType.numberWithOptions(
+                              decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Cost / item (LKR)',
+                        isDense: true,
+                        prefixText: 'LKR ',
+                      ),
+                    ),
+                    const Gap(6),
+                    _LiveTotal(item: it, controller: _ctrls[it.id]!),
+                  ],
+                ),
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                        'Forwarding requires a cost for every item.',
-                        style: TextStyle(
-                            color: context.colors.textMuted, fontSize: 11)),
-                  ),
-                  TextButton(
-                    onPressed: _isLoading ? null : () => _submit(forward: false),
-                    child: const Text('Save Draft'),
-                  ),
-                  const Gap(8),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: gold, foregroundColor: Colors.white),
-                    icon: _isLoading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.send_rounded, size: 16),
-                    label: const Text('Forward to Central Disposal'),
-                    onPressed: _isLoading ? null : () => _submit(forward: true),
-                  ),
-                ],
-              ),
-            ),
+            ]),
+            const Divider(height: 24),
           ],
-        ),
+        ],
       ),
     );
   }

@@ -2977,11 +2977,15 @@ class DisposalService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
+    // Only items whose parent request the Valuation Directorate has FORWARDED
+    // are saleable — same gate the Disposal Requests feed uses. A request still
+    // awaiting valuation must NOT surface in the tender-sale pool.
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_request_items')
         .select(
-            '*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
-        .eq('disposition', 'sale'));
+            '*, disposal_requests!inner(valuation_status), forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+        .eq('disposition', 'sale')
+        .eq('disposal_requests.valuation_status', 'forwarded'));
 
     final items = (data as List)
         .map((e) => DisposalRequestItemModel.fromJson(e))
@@ -3003,11 +3007,15 @@ class DisposalService {
         .map((e) => e.toString())
         .toSet();
 
+    // Only items whose parent request the Valuation Directorate has FORWARDED
+    // are tenderable — same gate the Disposal Requests feed uses. A request
+    // still awaiting valuation must NOT surface in the Place-Tender pool.
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_request_items')
         .select(
-            '*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
-        .eq('disposition', 'sale'));
+            '*, disposal_requests!inner(valuation_status), forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+        .eq('disposition', 'sale')
+        .eq('disposal_requests.valuation_status', 'forwarded'));
 
     final items = (data as List)
         .map((e) => DisposalRequestItemModel.fromJson(e))
@@ -3265,11 +3273,15 @@ class DisposalService {
         .map((e) => e['forfeited_package_id'].toString())
         .toSet();
 
+    // Only items whose parent request the Valuation Directorate has FORWARDED
+    // are destructible — same gate the Disposal Requests feed uses. A request
+    // still awaiting valuation must NOT surface in the Destruction pool.
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_request_items')
         .select(
-            '*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
-        .eq('disposition', 'destruction'));
+            '*, disposal_requests!inner(valuation_status), forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+        .eq('disposition', 'destruction')
+        .eq('disposal_requests.valuation_status', 'forwarded'));
 
     final items = (data as List)
         .map((e) => DisposalRequestItemModel.fromJson(e))

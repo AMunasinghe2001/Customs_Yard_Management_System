@@ -126,6 +126,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final Color? footerActionColor;
   final String? footerActionHint;
   final VoidCallback? onFooterAction;
+  final Color? headerAccentColor;
 
   // Appeal Directorate decision banner. When [appealDecisionLabel] is set, a
   // prominent banner is shown at the top of the body telling the owning yard
@@ -158,6 +159,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.footerActionColor,
     this.footerActionHint,
     this.onFooterAction,
+    this.headerAccentColor,
     this.appealDecisionLabel,
     this.allowFinalDisposition = true,
     this.onSaleOrDestroyRequest,
@@ -908,14 +910,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isDark
-                        ? [context.colors.surfaceDark, context.colors.cardDark]
-                        : [
-                            context.colors.customsBlue,
-                            context.colors.customsBlueDark
-                          ],
-                  ),
+                  gradient: widget.headerAccentColor != null
+                      ? LinearGradient(colors: [
+                          widget.headerAccentColor!.withOpacity(0.15),
+                          context.colors.cardDark,
+                        ])
+                      : LinearGradient(
+                          colors: isDark
+                              ? [context.colors.surfaceDark, context.colors.cardDark]
+                              : [
+                                  context.colors.customsBlue,
+                                  context.colors.customsBlueDark
+                                ],
+                        ),
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(23)),
                 ),
@@ -928,7 +935,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(Icons.inventory_2_rounded,
-                          color: context.colors.primaryGold, size: 24),
+                          color: widget.headerAccentColor ?? context.colors.primaryGold, size: 24),
                     )
                         .animate()
                         .scale(duration: 400.ms, curve: Curves.easeOutBack),
@@ -940,7 +947,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
                           Text(
                             'SR REGISTER ENTRY',
                             style: material.TextStyle(
-                              color: context.colors.primaryGold,
+                              color: widget.headerAccentColor ?? context.colors.primaryGold,
                               fontSize: 11,
                               letterSpacing: 1.2,
                               fontWeight: FontWeight.w800,
