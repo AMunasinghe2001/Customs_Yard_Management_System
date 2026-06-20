@@ -2249,15 +2249,72 @@ class ForfeitedPackageService {
         .order('appeal_deadline', ascending: true));
 
     const _nonDisposalDecisions = {'RELEASE', 'RE-EXPORT', 'OTHER'};
-    final result = (fpData as List)
+    final baseForfeit = (fpData as List)
         .where((e) => !requestedIds.contains(e['id']))
         .where((e) => !goneIds.contains(e['id'].toString()))
         .where((e) => !_nonDisposalDecisions
             .contains(((e['appeal_decision'] as String?) ?? '').toUpperCase()))
         .map((e) => ForfeitedPackageModel.fromJson(e))
-        // Actionable = window passed OR a (disposal) appeal decision received.
         .where((f) => f.isActionable)
         .toList();
+
+    // Expand multi-item forfeited packages into per-item rows so every item
+    // can be individually tagged for Destruction or Sale.
+    final result = <ForfeitedPackageModel>[];
+    for (final f in baseForfeit) {
+      final items = f.packageDetails?.items ?? const [];
+      if (items.length <= 1) {
+        // Single-item (or no details): keep as-is, populate itemName if known.
+        final itemName = items.isNotEmpty ? items.first.itemName : f.itemName;
+        result.add(ForfeitedPackageModel(
+          id: items.isNotEmpty ? '${f.id}:${items.first.id}:forfeit' : f.id,
+          packageId: f.packageId,
+          srNumber: f.srNumber,
+          consigneeName: f.consigneeName,
+          forfeitedAt: f.forfeitedAt,
+          appealDeadline: f.appealDeadline,
+          reason: f.reason,
+          yard: f.yard,
+          source: f.source,
+          appealHold: f.appealHold,
+          appealHoldNote: f.appealHoldNote,
+          appealHeldAt: f.appealHeldAt,
+          heldItemIds: f.heldItemIds,
+          appealDecision: f.appealDecision,
+          appealDecisionNote: f.appealDecisionNote,
+          appealDecidedAt: f.appealDecidedAt,
+          packageDetails: f.packageDetails,
+          itemId: items.isNotEmpty ? items.first.id : f.itemId,
+          itemName: itemName,
+        ));
+      } else {
+        // Multi-item: one row per item with a synthetic composite id so each
+        // can be independently selected in the disposal request form.
+        for (final item in items) {
+          result.add(ForfeitedPackageModel(
+            id: '${f.id}:${item.id}:forfeit',
+            packageId: f.packageId,
+            srNumber: f.srNumber,
+            consigneeName: f.consigneeName,
+            forfeitedAt: f.forfeitedAt,
+            appealDeadline: f.appealDeadline,
+            reason: f.reason,
+            yard: f.yard,
+            source: f.source,
+            appealHold: f.appealHold,
+            appealHoldNote: f.appealHoldNote,
+            appealHeldAt: f.appealHeldAt,
+            heldItemIds: f.heldItemIds,
+            appealDecision: f.appealDecision,
+            appealDecisionNote: f.appealDecisionNote,
+            appealDecidedAt: f.appealDecidedAt,
+            packageDetails: f.packageDetails,
+            itemId: item.id,
+            itemName: item.itemName,
+          ));
+        }
+      }
+    }
 
     // ── 2. Abandoned packages (no appeal — requestable immediately) ──────────
     // Abandoned packages live in `packages`/`package_items`; they have no
@@ -2297,27 +2354,49 @@ class ForfeitedPackageService {
       final alreadyAbandoned = abandonedFpPkgIds.contains(pkg.id);
       final alreadyOther = otherFpPkgIds.contains(pkg.id);
 
-      // One requestable row PER qualifying ITEM (an SR can have several abandoned
-      // / "Other" items at once). Each row's synthetic id is
-      // "<pkgId>:<itemId>:<source>" so selecting one in the dialog never toggles
-      // another, and `createDisposalRequest` can map it back to the package.
+      // One requestable row PER qualifying ITEM+EVENT:
+      //   • Abandoned: one row per [ABANDONED] warehouse entry event, id =
+      //     "<pkgId>:<itemId>:<entryId>:abandoned" — mirrors the Abandoned
+      //     Packages screen which shows one row per event (partial qty events).
+      //   • Other: one row per item, id = "<pkgId>:<itemId>:other".
       for (final item in pkg.items) {
-        if (!alreadyAbandoned && _itemIsRequestableAbandoned(pkg, item)) {
-          result.add(ForfeitedPackageModel(
-            id: '${pkg.id}:${item.id}:abandoned',
-            packageId: pkg.id,
-            srNumber: pkg.srNumber,
-            consigneeName: pkg.consigneeName,
-            forfeitedAt: pkg.createdAt,
-            // No appeal for abandoned goods → already-passed deadline.
-            appealDeadline: expiredDeadline,
-            reason: _abandonReasonFor(pkg),
-            yard: AppSession.currentYard,
-            source: 'abandoned',
-            packageDetails: pkg,
-            itemId: item.id,
-            itemName: item.itemName,
-          ));
+        if (!alreadyAbandoned) {
+          final abandonedEntries = _abandonedEntriesForItem(pkg, item);
+          for (final entry in abandonedEntries) {
+            result.add(ForfeitedPackageModel(
+              id: '${pkg.id}:${item.id}:${entry.id}:abandoned',
+              packageId: pkg.id,
+              srNumber: pkg.srNumber,
+              consigneeName: pkg.consigneeName,
+              forfeitedAt: pkg.createdAt,
+              // No appeal for abandoned goods → already-passed deadline.
+              appealDeadline: expiredDeadline,
+              reason: _abandonReasonFor(pkg),
+              yard: AppSession.currentYard,
+              source: 'abandoned',
+              packageDetails: pkg,
+              itemId: item.id,
+              itemName: item.itemName,
+            ));
+          }
+          // Form-level abandoned (status='abandoned', no warehouse entry event).
+          if (abandonedEntries.isEmpty &&
+              _itemIsRequestableAbandoned(pkg, item)) {
+            result.add(ForfeitedPackageModel(
+              id: '${pkg.id}:${item.id}:abandoned',
+              packageId: pkg.id,
+              srNumber: pkg.srNumber,
+              consigneeName: pkg.consigneeName,
+              forfeitedAt: pkg.createdAt,
+              appealDeadline: expiredDeadline,
+              reason: _abandonReasonFor(pkg),
+              yard: AppSession.currentYard,
+              source: 'abandoned',
+              packageDetails: pkg,
+              itemId: item.id,
+              itemName: item.itemName,
+            ));
+          }
         }
 
         if (!alreadyOther && _itemIsRequestableOther(pkg, item)) {
@@ -2441,6 +2520,22 @@ class ForfeitedPackageService {
       return true;
     }
     return false;
+  }
+
+  /// Returns all [ABANDONED] warehouse entry events for a single item that are
+  /// not already finalised — one entry per partial-qty abandonment event.
+  List<WarehouseEntryModel> _abandonedEntriesForItem(
+      PackageModel p, PackageItem item) {
+    final entries =
+        p.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+    final hasFinal = entries.any((e) =>
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+    if (hasFinal) return const [];
+    return entries
+        .where((e) =>
+            e.isReturned &&
+            (e.returnNotes ?? '').trim().toUpperCase().startsWith('[ABANDONED]'))
+        .toList();
   }
 
   String _abandonReasonFor(PackageModel p) {
@@ -2567,30 +2662,36 @@ class ForfeitedPackageService {
 
     final requestId = header['id'] as String;
 
-    // Selected keys are either a genuine forfeited_packages id (plain UUID) or a
-    // synthetic abandoned/"Other" key. Synthetic keys are per-item —
-    // "<packageId>:<itemId>:<source>" — but the older 2-part form
-    // "<packageId>:<source>" is still accepted (itemId null). Real forfeit keys
-    // carry no ':'. We now keep the itemId so each item of a package+source gets
-    // its OWN forfeited_packages row (item_id stored) — no more aggregation.
-    (String pkgId, String? itemId, String source) parseSynthetic(String key) {
+    // Key formats in [dispositions]:
+    //   • Plain UUID                       → genuine forfeited_package id
+    //   • "<fpId>:<itemId>:forfeit"        → per-item expanded forfeit row
+    //   • "<pkgId>:<itemId>:abandoned"     → synthetic (form-level abandoned)
+    //   • "<pkgId>:<itemId>:<entryId>:abandoned" → per-entry abandoned event
+    //   • "<pkgId>:<itemId>:other"         → synthetic Other row
+    // The forfeit variants already have a real FP row — map them directly.
+    // Abandoned/Other synthetic rows need a new FP row created on the fly.
+    (String packageId, String? itemId, String source) parseSynthetic(String key) {
       final parts = key.split(':');
-      if (parts.length >= 3) return (parts.first, parts[1], parts.last);
+      // 4-part: pkgId:itemId:entryId:source
+      if (parts.length == 4) return (parts[0], parts[1], parts[3]);
+      // 3-part: pkgId:itemId:source  OR  fpId:itemId:forfeit
+      if (parts.length == 3) return (parts[0], parts[1], parts[2]);
       if (parts.length == 2) return (parts[0], null, parts[1]);
       return (key, null, 'abandoned');
     }
 
     final selectedKeys = dispositions.keys.toList();
-    final realForfeitKeys =
-        selectedKeys.where((k) => !k.contains(':')).toList();
-    final existingFp = realForfeitKeys.isEmpty
-        ? const []
-        : await AuthService._withNetworkRetry(() => supabase
-            .from('forfeited_packages')
-            .select('id')
-            .inFilter('id', realForfeitKeys));
-    final realFpIds =
-        (existingFp as List).map((e) => e['id'].toString()).toSet();
+    // All keys without ':' are plain forfeited_package UUIDs.
+    // Keys ending in ':forfeit' are per-item expanded rows — the first part IS
+    // the real forfeited_package id.
+    final directFpKeys = selectedKeys
+        .where((k) => !k.contains(':') || k.endsWith(':forfeit'))
+        .toList();
+    final directFpIds = directFpKeys.map((k) {
+      if (!k.contains(':')) return k;
+      return k.split(':').first; // fpId from "<fpId>:<itemId>:forfeit"
+    }).toSet();
+    final realFpIds = directFpIds; // they're all real FP rows
 
     // key (selection id) → forfeited_packages id to store on the request item.
     final forfeitedIdFor = <String, String>{};
@@ -2599,12 +2700,22 @@ class ForfeitedPackageService {
     // the package's other items.
     final fpIdByPkgItemSource = <String, String>{};
     for (final key in selectedKeys) {
-      if (realFpIds.contains(key)) {
-        forfeitedIdFor[key] = key; // genuine forfeit
+      // Plain UUID → already a real FP row.
+      if (!key.contains(':')) {
+        forfeitedIdFor[key] = key;
+        continue;
+      }
+      // Per-item forfeit synthetic key: "<fpId>:<itemId>:forfeit"
+      // The fpId IS the real forfeited_packages row — no insert needed.
+      if (key.endsWith(':forfeit')) {
+        final fpId = key.split(':').first;
+        forfeitedIdFor[key] = fpId;
         continue;
       }
       final (packageId, itemId, source) = parseSynthetic(key);
-      final cacheKey = '$packageId:${itemId ?? '-'}:$source';
+      // Use the full key as cache key so per-entry abandoned rows (same
+      // pkg+item but different warehouse entry) each get their own FP row.
+      final cacheKey = key;
       final cached = fpIdByPkgItemSource[cacheKey];
       if (cached != null) {
         forfeitedIdFor[key] = cached;
@@ -3534,10 +3645,46 @@ class AppealService {
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .eq('source', 'forfeit')
         .order('appeal_deadline', ascending: true));
-    return (data as List)
+
+    final packageRows = (data as List)
         .map((e) => ForfeitedPackageModel.fromJson(e))
         .where((f) => !_isFullyFinalised(f.packageDetails))
         .toList();
+
+    // Expand each forfeited record into one row per package item so the Appeal
+    // Directorate sees every item separately (same SR can appear N times).
+    final expanded = <ForfeitedPackageModel>[];
+    for (final f in packageRows) {
+      final items = f.packageDetails?.items ?? const [];
+      if (items.length <= 1) {
+        expanded.add(f);
+      } else {
+        for (final item in items) {
+          expanded.add(ForfeitedPackageModel(
+            id: f.id,
+            packageId: f.packageId,
+            srNumber: f.srNumber,
+            consigneeName: f.consigneeName,
+            forfeitedAt: f.forfeitedAt,
+            appealDeadline: f.appealDeadline,
+            reason: f.reason,
+            yard: f.yard,
+            source: f.source,
+            appealHold: f.appealHold,
+            appealHoldNote: f.appealHoldNote,
+            appealHeldAt: f.appealHeldAt,
+            heldItemIds: f.heldItemIds,
+            appealDecision: f.appealDecision,
+            appealDecisionNote: f.appealDecisionNote,
+            appealDecidedAt: f.appealDecidedAt,
+            packageDetails: f.packageDetails,
+            itemId: item.id,
+            itemName: item.itemName,
+          ));
+        }
+      }
+    }
+    return expanded;
   }
 
   /// True if every package item has moved on to a final disposition
@@ -3555,14 +3702,15 @@ class AppealService {
         terminal.contains((it.status ?? '').trim().toLowerCase()));
   }
 
-  /// Place (or lift) an appeal hold. Blocked server-side once the window passes.
+  /// Place (or lift) an appeal hold on a specific item (or all items if itemId null).
   Future<void> setAppealHold(String forfeitedId, bool hold,
-      {String? note}) async {
+      {String? note, String? itemId}) async {
     await AuthService._withNetworkRetry(() => supabase.rpc('set_appeal_hold',
         params: {
           'p_forfeited_id': forfeitedId,
           'p_hold': hold,
           'p_note': note,
+          'p_item_id': itemId,
         }));
     final user = supabase.auth.currentUser;
     if (user != null) {

@@ -763,6 +763,9 @@ class ForfeitedPackageModel {
   final bool appealHold;
   final String? appealHoldNote;
   final DateTime? appealHeldAt;
+  /// Per-item hold: IDs of specific package_items currently on hold.
+  /// Empty = no per-item holds (falls back to appealHold for legacy rows).
+  final List<String> heldItemIds;
   /// Recorded by the Appeal Directorate when an appeal hold is lifted — the
   /// decision the owning yard should act on: 'RELEASE', 'SALE', 'DESTROY',
   /// 'RE-EXPORT' or 'OTHER' (custom outcome carried in [appealDecisionNote]).
@@ -790,6 +793,7 @@ class ForfeitedPackageModel {
     this.appealHold = false,
     this.appealHoldNote,
     this.appealHeldAt,
+    this.heldItemIds = const [],
     this.appealDecision,
     this.appealDecisionNote,
     this.appealDecidedAt,
@@ -802,7 +806,15 @@ class ForfeitedPackageModel {
   int get daysUntilDeadline => appealDeadline.difference(DateTime.now()).inDays;
   bool get isAbandonedSource => source == 'abandoned';
   bool get isOtherSource => source == 'other';
-  bool get isAppealHeld => appealHold;
+
+  /// True if THIS specific item (identified by [itemId]) is on hold.
+  /// Falls back to package-level [appealHold] for single-item / legacy rows.
+  bool get isAppealHeld {
+    if (itemId != null && heldItemIds.isNotEmpty) {
+      return heldItemIds.contains(itemId);
+    }
+    return appealHold;
+  }
   bool get hasAppealDecision =>
       appealDecision != null && appealDecision!.trim().isNotEmpty;
 
@@ -863,6 +875,10 @@ class ForfeitedPackageModel {
       appealHeldAt: json['appeal_held_at'] != null
           ? DateTime.parse(json['appeal_held_at'] as String).toLocal()
           : null,
+      heldItemIds: (json['held_item_ids'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
       appealDecision: json['appeal_decision'] as String?,
       appealDecisionNote: json['appeal_decision_note'] as String?,
       appealDecidedAt: json['appeal_decided_at'] != null

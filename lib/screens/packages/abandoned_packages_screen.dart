@@ -678,8 +678,6 @@ class _AbandonedPackagesScreenState
                                             highlightEntry: row.entry,
                                             highlightItemId: row.item.id,
                                             useLegacySummary: true,
-                                            // Abandoned goods have no appeal —
-                                            // disposition allowed immediately.
                                             onSaleOrDestroyRequest:
                                                 (disposition) =>
                                                     _requestSingleDisposal(

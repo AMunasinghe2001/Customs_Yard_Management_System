@@ -84,6 +84,19 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
     return '${items.first.itemName} +${items.length - 1}';
   }
 
+  /// Quantity for a disposal request row.
+  /// For per-item synthetic rows (itemId set), returns that specific item's qty.
+  /// For plain forfeit rows with one item, returns that item's qty.
+  int? _itemQty(ForfeitedPackageModel f) {
+    final items = f.packageDetails?.items ?? const [];
+    if (f.itemId != null) {
+      final match = items.where((i) => i.id == f.itemId).firstOrNull;
+      if (match != null) return match.quantity;
+    }
+    if (items.length == 1) return items.first.quantity;
+    return null; // multi-item row without per-item expansion
+  }
+
   Future<void> _submit() async {
     final selected = ref.read(selectedRequestDispositionsProvider);
     if (selected.isEmpty) {
@@ -463,6 +476,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                         return _PackageRequestRow(
                                           srNumber: pkg.srNumber,
                                           itemName: _itemSummary(pkg),
+                                          quantity: _itemQty(pkg),
                                           consignee: pkg.consigneeName,
                                           source: pkg.source,
                                           deadline: pkg.appealDeadline,
@@ -561,6 +575,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
 class _PackageRequestRow extends StatelessWidget {
   final String srNumber;
   final String itemName;
+  final int? quantity;
   final String consignee;
   final String source; // 'forfeit' | 'abandoned'
   final DateTime deadline;
@@ -572,6 +587,7 @@ class _PackageRequestRow extends StatelessWidget {
   const _PackageRequestRow({
     required this.srNumber,
     required this.itemName,
+    this.quantity,
     required this.consignee,
     required this.source,
     required this.deadline,
@@ -615,12 +631,37 @@ class _PackageRequestRow extends StatelessWidget {
                     const Gap(8),
                     _SourceChip(source: source),
                   ]),
-                  Text(itemName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          fontSize: 12,
-                          color: context.colors.textSecondary)),
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(itemName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: context.colors.textSecondary)),
+                      ),
+                      if (quantity != null) ...[
+                        const Gap(6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: context.colors.primaryGold.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Qty $quantity',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: context.colors.primaryGold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             ),

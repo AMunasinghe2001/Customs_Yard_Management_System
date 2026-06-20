@@ -51,6 +51,8 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
   }
 
   String _itemName(ForfeitedPackageModel f) {
+    // If expanded per-item row, show exact item name
+    if (f.itemName != null) return f.itemName!;
     final items = f.packageDetails?.items ?? const [];
     if (items.isEmpty) return 'Multiple/Unspecified';
     if (items.length == 1) return items.first.itemName;
@@ -414,7 +416,11 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
   Future<void> _setHold(
       BuildContext context, ForfeitedPackageModel f, bool hold) async {
     try {
-      await ref.read(appealServiceProvider).setAppealHold(f.id, hold);
+      await ref.read(appealServiceProvider).setAppealHold(
+            f.id,
+            hold,
+            itemId: f.itemId, // per-item hold — only this item affected
+          );
       ref.invalidate(appealForfeitedPackagesProvider);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -448,6 +454,12 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
     if (result == null) return;
     if (!context.mounted) return;
     try {
+      // First release the per-item hold for this specific item
+      await ref.read(appealServiceProvider).setAppealHold(
+            f.id,
+            false,
+            itemId: f.itemId,
+          );
       await ref.read(appealServiceProvider).releaseAppealWithDecision(
             f.id,
             result.decision,

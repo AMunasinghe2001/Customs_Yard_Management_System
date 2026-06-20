@@ -653,15 +653,35 @@ final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async 
 });
 
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
-  ref.watch(packagesChangeTriggerProvider); // Refresh list on package changes
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider); // also refresh on WH actions
   final today = DateTime.now();
   final startOfDay = DateTime(today.year, today.month, today.day);
   final all = await ref.read(packageServiceProvider).getAllPackages();
-  final todayActivity = all.where((p) => 
-    p.updatedAt.isAfter(startOfDay) || p.createdAt.isAfter(startOfDay)
-  ).toList();
-  
-  todayActivity.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+  // A package is "active today" if the package row itself was touched today OR
+  // any of its warehouse entries were admitted / returned today (covers Release,
+  // Re-export, Forfeit, etc. which only write to warehouse_entries, not packages).
+  final todayActivity = all.where((p) {
+    if (p.updatedAt.isAfter(startOfDay) || p.createdAt.isAfter(startOfDay)) {
+      return true;
+    }
+    return p.warehouseEntries.any((e) =>
+        e.admittedAt.isAfter(startOfDay) ||
+        (e.returnedAt != null && e.returnedAt!.isAfter(startOfDay)));
+  }).toList();
+
+  // Sort by the most recent touch across the package and its WH entries
+  DateTime _latestTouch(PackageModel p) {
+    var t = p.updatedAt;
+    for (final e in p.warehouseEntries) {
+      if (e.admittedAt.isAfter(t)) t = e.admittedAt;
+      if (e.returnedAt != null && e.returnedAt!.isAfter(t)) t = e.returnedAt!;
+    }
+    return t;
+  }
+
+  todayActivity.sort((a, b) => _latestTouch(b).compareTo(_latestTouch(a)));
   return todayActivity.take(20).toList();
 });
 

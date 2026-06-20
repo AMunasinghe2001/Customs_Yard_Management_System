@@ -48,6 +48,11 @@ import 'package:flutter/material.dart'
         Dialog,
         Tween,
         TweenAnimationBuilder,
+        AnimationController,
+        Animation,
+        CurvedAnimation,
+        AnimatedBuilder,
+        SingleTickerProviderStateMixin,
         Transform,
         Opacity,
         Curves,
@@ -170,13 +175,22 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
       _PackageDetailsDialogState();
 }
 
-class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
+class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
+    with SingleTickerProviderStateMixin {
   String? _creatorFallback;
   bool _isLoadingCreator = false;
+  late final AnimationController _animCtrl;
+  late final Animation<double> _anim;
 
   @override
   void initState() {
     super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _anim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutBack);
+    _animCtrl.forward();
     if (widget.package.inspectedBy == null) {
       _lookupCreator();
     }
@@ -190,6 +204,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       if (mounted) setState(() => _creatorFallback = creator);
     } catch (_) {}
     if (mounted) setState(() => _isLoadingCreator = false);
+  }
+
+  @override
+  void dispose() {
+    _animCtrl.dispose();
+    super.dispose();
   }
 
   Future<bool> _showReleaseConfirmation(
@@ -582,46 +602,16 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
     );
   }
 
-  /// Re-fetch the package after an in-dialog action and re-open the details
-  /// dialog so it reflects the change — without bouncing back to the warehouse
-  /// list (which would reset its tab/scroll).
-  Future<void> _reopenWithFreshData(
-      BuildContext ctx, WarehouseEntryModel oldEntry) async {
-    PackageModel? fresh;
-    try {
-      fresh = await ref
-          .read(packageServiceProvider)
-          .getPackageById(widget.package.id);
-    } catch (_) {
-      fresh = null;
-    }
-    if (!ctx.mounted) return;
-    // Close the current (stale) details dialog.
-    Navigator.of(ctx).pop();
-    if (fresh == null) return;
-    // Find the same entry in the refreshed data (it may now be returned/tagged);
-    // fall back to the package's first entry for the same item.
-    final freshEntry = fresh.warehouseEntries
-            .where((e) => e.id == oldEntry.id)
-            .firstOrNull ??
-        fresh.warehouseEntries
-            .where((e) => e.packageItemId == oldEntry.packageItemId)
-            .firstOrNull;
-    if (!ctx.mounted) return;
-    showDialog(
-      context: ctx,
-      builder: (_) => PackageDetailsDialog(
-        package: fresh!,
-        storageRate: widget.storageRate,
-        highlightEntry: freshEntry,
-        highlightItemId: widget.highlightItemId,
-        useLegacySummary: widget.useLegacySummary,
-        useWarehouseSummary: widget.useWarehouseSummary,
-        yardLabel: widget.yardLabel,
-        allowFinalDisposition: widget.allowFinalDisposition,
-        onSaleOrDestroyRequest: widget.onSaleOrDestroyRequest,
-      ),
-    );
+  /// Refresh providers after an in-dialog action so the warehouse list
+  /// (behind the dialog) stays in sync. The dialog itself stays open and alive —
+  /// no pop/re-open so the entry animation does not replay.
+  void _reopenWithFreshData(BuildContext ctx, WarehouseEntryModel oldEntry) {
+    ref.read(packagesRefreshTriggerProvider.notifier).trigger();
+    ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+    ref.invalidate(packageDataProvider(oldEntry.packageId));
+    ref.invalidate(liveWarehouseEntriesProvider(oldEntry.warehouseId));
+    ref.invalidate(livePackagesProvider);
+    ref.invalidate(allWarehouseEntriesProvider);
   }
 
   /// Opens the final-disposition picker for an abandoned/forfeit item.
@@ -879,14 +869,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
       backgroundColor: Colors.transparent,
       elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: TweenAnimationBuilder<double>(
-        duration: const Duration(milliseconds: 400),
-        tween: Tween(begin: 0.0, end: 1.0),
-        curve: Curves.easeOutBack,
-        builder: (context, value, child) {
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (context, child) {
+          final v = _anim.value;
           return Transform.scale(
-            scale: value,
-            child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
+            scale: v,
+            child: Opacity(opacity: v.clamp(0.0, 1.0), child: child),
           );
         },
         child: material.Container(
@@ -2257,7 +2246,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog> {
               // Central Disposal / Valuation pass no callback → no button.
               if (widget.allowFinalDisposition &&
                   widget.onSaleOrDestroyRequest != null &&
-                  widget.useLegacySummary &&
+                  (widget.useLegacySummary || widget.highlightItemId != null) &&
                   highlightedItem != null &&
                   !_hasFinalDisposition(p, highlightedItem.id))
                 material.Container(
@@ -3480,8 +3469,11 @@ class _ItemRow {
   final List<String?> selectedReasons = [null];
 }
 
-class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
+class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
+    with SingleTickerProviderStateMixin {
   late final _formKey = GlobalKey<FormState>();
+  late final AnimationController _animCtrl;
+  late final Animation<double> _anim;
   late final TextEditingController _consigneeCtrl;
   late final TextEditingController _consigneeNicCtrl;
   late final TextEditingController _consigneePhoneCtrl;
@@ -3505,6 +3497,12 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
   @override
   void initState() {
     super.initState();
+    _animCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 350),
+    );
+    _anim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutBack);
+    _animCtrl.forward();
     _consigneeCtrl = TextEditingController(text: widget.package.consigneeName);
     _consigneeNicCtrl =
         TextEditingController(text: widget.package.consigneeNic ?? '');
@@ -3658,6 +3656,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
       item.categoryCtrl.dispose();
       item.otherStatusCtrl.dispose();
     }
+    _animCtrl.dispose();
     super.dispose();
   }
 
@@ -3821,11 +3820,10 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog> {
       backgroundColor: Colors.transparent,
       elevation: 0,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      child: TweenAnimationBuilder<double>(
-        duration: const Duration(milliseconds: 400),
-        tween: Tween(begin: 0.0, end: 1.0),
-        curve: Curves.easeOutBack,
-        builder: (context, value, child) {
+      child: AnimatedBuilder(
+        animation: _anim,
+        builder: (context, child) {
+          final value = _anim.value;
           return Transform.scale(
             scale: value,
             child: Opacity(opacity: value.clamp(0.0, 1.0), child: child),
