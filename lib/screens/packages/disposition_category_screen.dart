@@ -88,14 +88,27 @@ class _DispositionCategoryScreenState
     return returnNotes.substring(idx + 1).trim();
   }
 
+  // Maps finalTag → the item statuses that correspond to it.
+  static const Map<String, Set<String>> _statusForTag = {
+    'RE-EXPORTED': {'re-exported'},
+    'DESTROYED': {'destroyed'},
+    'SOLD': {'sold'},
+    'OTHER': {'other'},
+  };
+
   List<_CategoryRow> _buildRows(List<PackageModel> packages) {
     final rows = <_CategoryRow>[];
     for (final package in packages) {
+      // Track which items already have a tagged warehouse entry row so we
+      // don't double-count them in the status fallback pass below.
+      final coveredItemIds = <String>{};
+
       for (final entry in package.warehouseEntries) {
         if (!_matchesTag(entry)) continue;
         final item = package.items
             .where((i) => i.id == entry.packageItemId)
             .firstOrNull;
+        if (entry.packageItemId != null) coveredItemIds.add(entry.packageItemId!);
         rows.add(_CategoryRow(
           package: package,
           entry: entry,
@@ -107,10 +120,27 @@ class _DispositionCategoryScreenState
           officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
         ));
       }
+
+      // Fallback: items whose status matches this category but have no
+      // tagged warehouse entry (e.g. items that were never warehouse-admitted
+      // and whose Final Disposition was recorded via status-only update).
+      final matchingStatuses = _statusForTag[widget.finalTag] ?? {};
+      for (final item in package.items) {
+        if (coveredItemIds.contains(item.id)) continue;
+        if (!matchingStatuses.contains(item.status?.toLowerCase())) continue;
+        rows.add(_CategoryRow(
+          package: package,
+          entry: null,
+          item: item,
+          itemName: item.itemName,
+          note: '',
+          officer: '—',
+        ));
+      }
     }
     rows.sort((a, b) {
-      final aDate = a.entry.returnedAt ?? a.entry.admittedAt;
-      final bDate = b.entry.returnedAt ?? b.entry.admittedAt;
+      final aDate = a.entry?.returnedAt ?? a.entry?.admittedAt ?? a.package.updatedAt;
+      final bDate = b.entry?.returnedAt ?? b.entry?.admittedAt ?? b.package.updatedAt;
       return bDate.compareTo(aDate);
     });
     return rows;
@@ -358,8 +388,9 @@ class _DispositionCategoryScreenState
                         }
                       }
                       if (_dateRange != null) {
-                        final date =
-                            row.entry.returnedAt ?? row.entry.admittedAt;
+                        final date = row.entry?.returnedAt ??
+                            row.entry?.admittedAt ??
+                            row.package.updatedAt;
                         final startOfDay = DateTime(_dateRange!.start.year,
                             _dateRange!.start.month, _dateRange!.start.day);
                         final endOfDay = DateTime(
@@ -456,9 +487,10 @@ class _DispositionCategoryScreenState
                                     DataCell(Text(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(Text((() {
+                                      final itemId = row.entry?.packageItemId ??
+                                          row.item?.id;
                                       final hs = row.package.items
-                                          .where((i) =>
-                                              i.id == row.entry.packageItemId)
+                                          .where((i) => i.id == itemId)
                                           .firstOrNull
                                           ?.hsCode;
                                       return (hs != null && hs.isNotEmpty)
@@ -467,11 +499,11 @@ class _DispositionCategoryScreenState
                                     })(),
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontSize: 12))),
-                                    DataCell(
-                                        Text('${row.entry.itemCount}')),
-                                    DataCell(Text(row.entry.returnedAt != null
+                                    DataCell(Text(
+                                        '${row.entry?.itemCount ?? row.item?.quantity ?? 0}')),
+                                    DataCell(Text(row.entry?.returnedAt != null
                                         ? DateFormat('yyyy-MM-dd')
-                                            .format(row.entry.returnedAt!)
+                                            .format(row.entry!.returnedAt!)
                                         : '—')),
                                     DataCell(Text(row.officer,
                                         overflow: TextOverflow.ellipsis)),
@@ -480,13 +512,19 @@ class _DispositionCategoryScreenState
                                         overflow: TextOverflow.ellipsis)),
                                     if (widget.finalTag == 'SOLD')
                                       DataCell(_SaleFinancialsCell(
-                                          package: row.package)),
+                                        package: row.package,
+                                        packageItemId: row.entry?.packageItemId,
+                                      )),
                                     if (widget.finalTag == 'SOLD')
                                       DataCell(_DeliveryStatusCell(
-                                          package: row.package)),
+                                        package: row.package,
+                                        packageItemId: row.entry?.packageItemId,
+                                      )),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(_DestroyedDeliveryStatusCell(
-                                          package: row.package)),
+                                        package: row.package,
+                                        packageItemId: row.entry?.packageItemId,
+                                      )),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
@@ -501,6 +539,7 @@ class _DispositionCategoryScreenState
                                             package: row.package,
                                             storageRate: storageRateHistory,
                                             highlightEntry: row.entry,
+                                            highlightItemId: row.entry?.packageItemId ?? row.item?.id,
                                             useLegacySummary: true,
                                           ),
                                         );
@@ -535,28 +574,33 @@ class _DispositionCategoryScreenState
 
 class _CategoryRow {
   final PackageModel package;
-  final WarehouseEntryModel entry;
+  final WarehouseEntryModel? entry;
   final String itemName;
   final String note;
   final String officer;
+  // For status-only rows (no warehouse entry): the package item itself.
+  final PackageItem? item;
 
   const _CategoryRow({
     required this.package,
-    required this.entry,
+    this.entry,
     required this.itemName,
     required this.note,
     required this.officer,
+    this.item,
   });
 }
 
 // Read-only delivery STATUS chip (the action button is in the details dialog,
-// enabled for yards). Watches the shared per-package provider.
+// enabled for yards). Uses per-item provider so each row shows its own status.
 class _DeliveryStatusCell extends ConsumerWidget {
   final PackageModel package;
-  const _DeliveryStatusCell({required this.package});
+  final String? packageItemId;
+  const _DeliveryStatusCell({required this.package, this.packageItemId});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(saleItemForPackageProvider(package.id));
+    final key = '${package.id}|${packageItemId ?? ''}';
+    final async = ref.watch(saleItemForPackageItemProvider(key));
     return async.when(
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -572,10 +616,13 @@ class _DeliveryStatusCell extends ConsumerWidget {
 // _DeliveryStatusCell but reads the destruction item).
 class _DestroyedDeliveryStatusCell extends ConsumerWidget {
   final PackageModel package;
-  const _DestroyedDeliveryStatusCell({required this.package});
+  final String? packageItemId;
+  const _DestroyedDeliveryStatusCell(
+      {required this.package, this.packageItemId});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(destructionItemForPackageProvider(package.id));
+    final key = '${package.id}|${packageItemId ?? ''}';
+    final async = ref.watch(destructionItemForPackageItemProvider(key));
     return async.when(
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -612,13 +659,15 @@ class _DeliveryStatusChip extends StatelessWidget {
   }
 }
 
-/// Read-only sold price + tax total for a sold package (watches the provider).
+/// Read-only sold price + tax total for a sold package. Uses per-item provider.
 class _SaleFinancialsCell extends ConsumerWidget {
   final PackageModel package;
-  const _SaleFinancialsCell({required this.package});
+  final String? packageItemId;
+  const _SaleFinancialsCell({required this.package, this.packageItemId});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(saleItemForPackageProvider(package.id));
+    final key = '${package.id}|${packageItemId ?? ''}';
+    final async = ref.watch(saleItemForPackageItemProvider(key));
     return async.when(
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),

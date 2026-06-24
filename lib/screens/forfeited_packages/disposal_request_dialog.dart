@@ -85,9 +85,10 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
   }
 
   /// Quantity for a disposal request row.
-  /// For per-item synthetic rows (itemId set), returns that specific item's qty.
-  /// For plain forfeit rows with one item, returns that item's qty.
+  /// Per-entry abandoned rows carry the exact abandoned qty in [entryQty];
+  /// otherwise falls back to the matching PackageItem.quantity.
   int? _itemQty(ForfeitedPackageModel f) {
+    if (f.entryQty != null) return f.entryQty;
     final items = f.packageDetails?.items ?? const [];
     if (f.itemId != null) {
       final match = items.where((i) => i.id == f.itemId).firstOrNull;

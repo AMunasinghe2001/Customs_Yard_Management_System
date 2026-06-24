@@ -779,6 +779,9 @@ class ForfeitedPackageModel {
   /// each item separately. Null for genuine package-level forfeit rows.
   final String? itemId;
   final String? itemName;
+  /// For per-entry abandoned rows: the quantity actually abandoned in that
+  /// warehouse entry event (entry.itemCount), not the total item quantity.
+  final int? entryQty;
 
   const ForfeitedPackageModel({
     required this.id,
@@ -800,6 +803,7 @@ class ForfeitedPackageModel {
     this.packageDetails,
     this.itemId,
     this.itemName,
+    this.entryQty,
   });
 
   bool get isAppealExpired => DateTime.now().isAfter(appealDeadline);
@@ -890,6 +894,8 @@ class ForfeitedPackageModel {
       // Per-item pin for synthetic abandoned/"Other" rows (null for genuine
       // package-level forfeits). Lets request rows show exactly their item.
       itemId: json['item_id'] as String?,
+      // Exact abandoned qty for per-entry abandoned rows (null otherwise).
+      entryQty: json['entry_qty'] as int?,
     );
   }
 }
@@ -1336,9 +1342,13 @@ class DisposalRequestItemModel {
     return all;
   }
 
-  /// Total quantity across the covered package items (defaults to 1 when no
-  /// item detail is available, so a cost × qty total is never zeroed out).
+  /// Total quantity for this disposal row.
+  /// Per-entry abandoned rows store the exact abandoned qty in [entryQty]
+  /// (e.g. 15 or 19 for two partial-qty events); falls back to the sum of
+  /// covered PackageItem quantities for all other row types.
   int get totalQuantity {
+    final entryQty = forfeited?.entryQty;
+    if (entryQty != null) return entryQty;
     final items = coveredItems;
     if (items.isEmpty) return 1;
     return items.fold(0, (sum, i) => sum + i.quantity);

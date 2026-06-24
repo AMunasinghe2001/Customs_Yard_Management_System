@@ -154,13 +154,16 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
   /// createDisposalRequest creates the synthetic source='other' forfeited_packages
   /// row automatically.
   Future<void> _requestSingleDisposal(
-      PackageModel pkg, String disposition) async {
+      PackageModel pkg, String disposition, {String? itemId}) async {
     try {
+      final key = itemId != null
+          ? '${pkg.id}:$itemId:other'
+          : '${pkg.id}:other';
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
             requestDate: DateTime.now(),
-            // ":other" suffix tells createDisposalRequest to tag the synthetic
-            // forfeited_packages row source='other' (not the abandoned default).
-            dispositions: {'${pkg.id}:other': disposition},
+            // item-level key: "pkgId:itemId:other" ensures each item gets its
+            // own forfeited_packages row and is not blocked by sibling items.
+            dispositions: {key: disposition},
           );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
@@ -187,10 +190,16 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
   /// (set on the SR form), and once per partial "[OTHER]" disposition event
   /// recorded from the warehouse Actions dialog (these don't change the item
   /// status, so they must be surfaced from the warehouse entries directly).
-  List<_OtherRow> _buildRows(List<PackageModel> packages) {
+  /// [sentKeys] — "pkgId:itemId" keys for items already sent in a disposal
+  /// request; those rows are hidden from the table.
+  List<_OtherRow> _buildRows(List<PackageModel> packages,
+      {Set<String> sentKeys = const {}}) {
     final rows = <_OtherRow>[];
     for (final package in packages) {
       for (final item in package.items) {
+        // Skip items already sent in a disposal request.
+        if (sentKeys.contains('${package.id}:${item.id}')) continue;
+
         final itemEntries = package.warehouseEntries
             .where((e) => e.packageItemId == item.id)
             .toList();
@@ -261,6 +270,8 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
         {DateTime(2020, 1, 1): 50.0};
     final search = ref.watch(otherPackageSearchProvider);
     final dateRange = ref.watch(otherPackageDateRangeProvider);
+    final sentKeys =
+        ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
 
     return AppShell(
       currentRoute: '/other-packages',
@@ -296,10 +307,15 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                         Consumer(
                           builder: (context, ref, child) {
                             final pkgs = ref.watch(livePackagesProvider);
+                            final sk = ref
+                                    .watch(sentAbandonedOtherFpKeysProvider)
+                                    .valueOrNull ??
+                                {};
                             return pkgs.when(
                               data: (list) => _OtherStatChip(
                                   label: 'Other',
-                                  value: '${_buildRows(list).length}',
+                                  value:
+                                      '${_buildRows(list, sentKeys: sk).length}',
                                   color: context.colors.accentLightBlue),
                               loading: () => const SizedBox(),
                               error: (_, __) => const SizedBox(),
@@ -582,8 +598,9 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: srYears(_buildRows(packages.valueOrNull ??
-                                  const <PackageModel>[])
+                          years: srYears(_buildRows(
+                                  packages.valueOrNull ?? const <PackageModel>[],
+                                  sentKeys: sentKeys)
                               .map((r) => r.package.srNumber)),
                           onChanged: (v) => setState(() => _yearFilter = v),
                         ),
@@ -606,7 +623,8 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                       error: e,
                       onRetry: () => ref.refresh(livePackagesProvider)),
                   data: (list) {
-                    final rows = _buildRows(list).where((row) {
+                    final rows =
+                        _buildRows(list, sentKeys: sentKeys).where((row) {
                       if (search.isNotEmpty) {
                         final s = search.toLowerCase();
                         final itemName = row.itemName.toLowerCase();
@@ -717,11 +735,15 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                             useLegacySummary: true,
                                             // "Other" goods have no appeal —
                                             // disposition allowed immediately.
+                                            // Every listed row is actionable —
+                                            // force the Final Disposition button.
+                                            forceFinalDisposition: true,
                                             onSaleOrDestroyRequest:
                                                 (disposition) =>
                                                     _requestSingleDisposal(
                                                         row.package,
-                                                        disposition),
+                                                        disposition,
+                                                        itemId: row.item.id),
                                           ),
                                         );
                                       },

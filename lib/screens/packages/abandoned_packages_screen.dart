@@ -77,12 +77,13 @@ class _AbandonedPackagesScreenState
   /// Sale/Destroy buttons. createDisposalRequest creates the synthetic
   /// forfeited_packages row for abandoned goods automatically.
   Future<void> _requestSingleDisposal(
-      PackageModel pkg, String disposition) async {
+      PackageModel pkg, PackageItem item, String disposition) async {
     try {
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
             requestDate: DateTime.now(),
-            // ":abandoned" suffix tags the synthetic forfeited_packages row.
-            dispositions: {'${pkg.id}:abandoned': disposition},
+            // "pkgId:itemId:abandoned" — per-item key so sentAbandonedOtherFpKeysProvider
+            // can match "pkgId:itemId" and hide the row after submission.
+            dispositions: {'${pkg.id}:${item.id}:abandoned': disposition},
           );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
@@ -107,12 +108,17 @@ class _AbandonedPackagesScreenState
   /// Builds one row per abandonment — broken down per package item.
   /// A single SR can appear on multiple lines: once per abandoned item, and
   /// once per separate abandonment event (e.g. detained → partly abandoned).
-  List<_AbandonedRow> _buildRows(List<PackageModel> packages) {
+  /// [sentKeys] — "pkgId:itemId" keys for items already sent in a disposal
+  /// request; those rows are hidden from the table.
+  List<_AbandonedRow> _buildRows(List<PackageModel> packages,
+      {Set<String> sentKeys = const {}}) {
     final rows = <_AbandonedRow>[];
     for (final package in packages) {
       for (final item in package.items) {
         // Skip items that have already moved to a final disposition.
         if (_itemHasFinalDisposition(package, item.id)) continue;
+        // Skip items already sent in a disposal request.
+        if (sentKeys.contains('${package.id}:${item.id}')) continue;
 
         final itemEntries = package.warehouseEntries
             .where((e) => e.packageItemId == item.id)
@@ -182,6 +188,8 @@ class _AbandonedPackagesScreenState
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final search = ref.watch(abandonedPackageSearchProvider);
+    final sentKeys =
+        ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
     final dateRange = ref.watch(abandonedPackageDateRangeProvider);
     final rFilter = ref.watch(abandonedPackageReasonFilterProvider);
 
@@ -219,10 +227,15 @@ class _AbandonedPackagesScreenState
                         Consumer(
                           builder: (context, ref, child) {
                             final pkgs = ref.watch(livePackagesProvider);
+                            final sk = ref
+                                    .watch(sentAbandonedOtherFpKeysProvider)
+                                    .valueOrNull ??
+                                {};
                             return pkgs.when(
                               data: (list) => _AbandonedStatChip(
                                   label: 'Abandoned',
-                                  value: '${_buildRows(list).length}',
+                                  value:
+                                      '${_buildRows(list, sentKeys: sk).length}',
                                   color: context.colors.accentLightBlue),
                               loading: () => const SizedBox(),
                               error: (_, __) => const SizedBox(),
@@ -537,8 +550,9 @@ class _AbandonedPackagesScreenState
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: srYears(_buildRows(packages.valueOrNull ??
-                                  const <PackageModel>[])
+                          years: srYears(_buildRows(
+                                  packages.valueOrNull ?? const <PackageModel>[],
+                                  sentKeys: sentKeys)
                               .map((r) => r.package.srNumber)),
                           onChanged: (v) => setState(() => _yearFilter = v),
                         ),
@@ -561,7 +575,8 @@ class _AbandonedPackagesScreenState
                       error: e,
                       onRetry: () => ref.refresh(livePackagesProvider)),
                   data: (list) {
-                    final rows = _buildRows(list).where((row) {
+                    final rows =
+                        _buildRows(list, sentKeys: sentKeys).where((row) {
                       if (search.isNotEmpty) {
                         final s = search.toLowerCase();
                         final itemName = row.itemName.toLowerCase();
@@ -678,10 +693,15 @@ class _AbandonedPackagesScreenState
                                             highlightEntry: row.entry,
                                             highlightItemId: row.item.id,
                                             useLegacySummary: true,
+                                            // Every row in this table is an
+                                            // actionable abandoned item — force
+                                            // the Final Disposition button.
+                                            forceFinalDisposition: true,
                                             onSaleOrDestroyRequest:
                                                 (disposition) =>
                                                     _requestSingleDisposal(
                                                         row.package,
+                                                        row.item,
                                                         disposition),
                                           ),
                                         );

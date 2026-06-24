@@ -524,6 +524,9 @@ class _SoldRow {
   final String itemName;
   final String officer;
   const _SoldRow(this.package, this.entry, this.itemName, this.officer);
+
+  /// Key for saleItemForPackageItemProvider: "packageId|packageItemId".
+  String get saleItemKey => '${package.id}|${entry.packageItemId ?? ''}';
 }
 
 /// Sold-tab delivery sub-filter: null = all, true = delivered, false = pending.
@@ -627,7 +630,9 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                 if (deliveryFilter != null) {
                   rows = rows
                       .where((r) =>
-                          (deliveredMap[r.package.id] ?? false) ==
+                          (deliveredMap[r.saleItemKey] ??
+                              deliveredMap[r.package.id] ??
+                              false) ==
                           deliveryFilter)
                       .toList();
                 }
@@ -692,9 +697,9 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                     DataCell(Text(r.officer,
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(
-                                        _SaleFinancialsCell(package: r.package)),
+                                        _SaleFinancialsCell(saleItemKey: r.saleItemKey)),
                                     DataCell(
-                                        _DeliveryStatusCell(package: r.package)),
+                                        _DeliveryStatusCell(package: r.package, saleItemKey: r.saleItemKey)),
                                     DataCell(Center(
                                       child: IconButton(
                                         icon: Icon(Icons.info_outline_rounded,
@@ -1030,13 +1035,14 @@ class _DestroyedDeliveryCell extends ConsumerWidget {
 }
 
 
-// Read-only sold price + tax total (watches the shared per-package provider).
+// Read-only sold price + tax total (watches the per-item provider so each sold
+// row shows its own price when a package has multiple separately-priced items).
 class _SaleFinancialsCell extends ConsumerWidget {
-  final PackageModel package;
-  const _SaleFinancialsCell({required this.package});
+  final String saleItemKey;
+  const _SaleFinancialsCell({required this.saleItemKey});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(saleItemForPackageProvider(package.id));
+    final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
     return async.when(
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -1063,13 +1069,15 @@ class _SaleFinancialsCell extends ConsumerWidget {
 }
 
 // Read-only delivery STATUS chip (the action button lives in the details
-// dialog, enabled for yards only). Watches the shared per-package provider.
+// dialog, enabled for yards only). Watches the per-item provider so delivery
+// state matches the specific sold row.
 class _DeliveryStatusCell extends ConsumerWidget {
   final PackageModel package;
-  const _DeliveryStatusCell({required this.package});
+  final String saleItemKey;
+  const _DeliveryStatusCell({required this.package, required this.saleItemKey});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(saleItemForPackageProvider(package.id));
+    final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
     return async.when(
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -1202,6 +1210,11 @@ class _RequestCard extends ConsumerWidget {
   String _itemName(DisposalRequestItemModel it) {
     final items = it.forfeited?.packageDetails?.items ?? const [];
     if (items.isEmpty) return 'Multiple/Unspecified';
+    final itemId = it.forfeited?.itemId;
+    if (itemId != null) {
+      final match = items.where((i) => i.id == itemId).firstOrNull;
+      if (match != null) return match.itemName;
+    }
     if (items.length == 1) return items.first.itemName;
     return '${items.first.itemName} +${items.length - 1}';
   }
@@ -1213,6 +1226,20 @@ class _RequestCard extends ConsumerWidget {
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final items = request.items;
+
+    // Expand package-level FP rows (itemId==null, multiple pkg items) so each
+    // item appears as its own table row.
+    final expandedRows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+    for (final it in items) {
+      final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+      if (it.forfeited?.itemId == null && fpItems.length > 1) {
+        for (final pkgItem in fpItems) {
+          expandedRows.add((it: it, pkgItem: pkgItem));
+        }
+      } else {
+        expandedRows.add((it: it, pkgItem: null));
+      }
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -1271,7 +1298,7 @@ class _RequestCard extends ConsumerWidget {
                       ],
                     ]),
                     const Gap(2),
-                    Text('${items.length} package${items.length == 1 ? '' : 's'} requested',
+                    Text('${expandedRows.length} package${expandedRows.length == 1 ? '' : 's'} requested',
                         style: TextStyle(
                             color: context.colors.textMuted, fontSize: 11)),
                   ],
@@ -1295,7 +1322,7 @@ class _RequestCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Container(
-              height: (items.length * 48.0 + 52).clamp(100, 320),
+              height: (expandedRows.length * 48.0 + 52).clamp(100, 320),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
@@ -1339,23 +1366,32 @@ class _RequestCard extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 70),
                   ],
-                  rows: items.map((it) {
+                  rows: expandedRows.map((row) {
+                    final it = row.it;
+                    final pkgItem = row.pkgItem;
                     final f = it.forfeited;
+                    final displayName = pkgItem?.itemName ?? _itemName(it);
+                    final displayHs = pkgItem?.hsCode ?? it.hsCodeLabel;
+                    final displayQty = pkgItem != null ? pkgItem.quantity : it.totalQuantity;
+                    final highlightId = pkgItem?.id ?? f?.itemId ??
+                        (f?.packageDetails?.items.isNotEmpty == true
+                            ? f!.packageDetails!.items.first.id
+                            : null);
                     return DataRow(cells: [
                       DataCell(Text(f?.srNumber ?? '—',
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(_itemName(it),
+                      DataCell(Text(displayName,
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(f?.consigneeName ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(it.hsCodeLabel ?? '—',
+                      DataCell(Text(displayHs ?? '—',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(Text('${it.totalQuantity}',
+                      DataCell(Text('$displayQty',
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,
@@ -1369,13 +1405,13 @@ class _RequestCard extends ConsumerWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                    'LKR ${NumberFormat('#,##0').format(it.totalCost)}',
+                                    'LKR ${NumberFormat('#,##0').format((it.unitCost ?? 0) * displayQty)}',
                                     style: TextStyle(
                                         color: context.colors.primaryGold,
                                         fontWeight: FontWeight.w700,
                                         fontSize: 12)),
                                 Text(
-                                    '@ ${NumberFormat('#,##0').format(it.unitCost)} × ${it.totalQuantity}',
+                                    '@ ${NumberFormat('#,##0').format(it.unitCost)} × $displayQty',
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 10)),
@@ -1397,18 +1433,12 @@ class _RequestCard extends ConsumerWidget {
                                       storageRate: storageRate,
                                       headerAccentColor: context.colors.successGreen,
                                       useLegacySummary: true,
-                                      // Show only THIS request row's item: the
-                                      // forfeited row's own item if it names one,
-                                      // else the package's first item.
-                                      highlightItemId: f.itemId ??
-                                          (f.packageDetails!.items.isNotEmpty
-                                              ? f.packageDetails!.items.first.id
-                                              : null),
+                                      highlightItemId: highlightId,
                                       yardLabel: yardName(
                                           f.yard ?? request.yard),
                                       valuationUnitCost: it.unitCost,
                                       valuationTotalCost: it.totalCost,
-                                      valuationQty: it.totalQuantity,
+                                      valuationQty: displayQty,
                                     ),
                                   ),
                         ),
@@ -1522,6 +1552,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
   String _itemName(ForfeitedPackageModel f) {
     final items = f.packageDetails?.items ?? const [];
     if (items.isEmpty) return 'Multiple/Unspecified';
+    if (f.itemId != null) {
+      final match = items.where((i) => i.id == f.itemId).firstOrNull;
+      if (match != null) return match.itemName;
+    }
     if (items.length == 1) return items.first.itemName;
     return '${items.first.itemName} +${items.length - 1}';
   }
@@ -1831,11 +1865,17 @@ class TenderSaleCard extends ConsumerWidget {
         readOnly ? sale.items : sale.items.where((s) => !s.sold);
     for (final si in source) {
       final pkg = si.forfeited?.packageDetails;
-      final items = pkg?.items ?? const [];
-      if (items.isEmpty) {
+      final pkgItems = pkg?.items ?? const [];
+      final fpItemId = si.forfeited?.itemId;
+      if (pkgItems.isEmpty) {
         rows.add(_TsRow(si, null, '—'));
+      } else if (fpItemId != null) {
+        // Per-item FP row — show only the specific item it refers to.
+        final match = pkgItems.where((i) => i.id == fpItemId).firstOrNull;
+        rows.add(_TsRow(si, match, match != null ? _warehouseFor(pkg, match.id) : '—'));
       } else {
-        for (final it in items) {
+        // Package-level FP row — show one row per package item (legacy data).
+        for (final it in pkgItems) {
           rows.add(_TsRow(si, it, _warehouseFor(pkg, it.id)));
         }
       }
@@ -2248,11 +2288,20 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   TimeOfDay? _saleTime;
   String? _tenderType;
   bool _loading = false;
+  String? _error;
   // forfeited_package_id → yard
   final Map<String, String> _selected = {};
   // The yard this tender sale belongs to. The package pool is filtered to this
   // yard's forwarded requests, and the created sale is assigned to it.
   late String _formYard;
+
+  String? _validate() {
+    if (_saleDate == null) return 'Tender Sale Date is required.';
+    if (_saleTime == null) return 'Sale Start Time is required.';
+    if (_tenderType == null || _tenderType!.isEmpty) return 'Tender Sale Type is required.';
+    if (_selected.isEmpty) return 'Select at least one package.';
+    return null;
+  }
 
   @override
   void initState() {
@@ -2308,10 +2357,15 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   }
 
   String _summary(DisposalRequestItemModel it) {
-    final items = it.forfeited?.packageDetails?.items ?? const [];
-    if (items.isEmpty) return 'Multiple/Unspecified';
-    if (items.length == 1) return items.first.itemName;
-    return '${items.first.itemName} +${items.length - 1}';
+    final pkgItems = it.forfeited?.packageDetails?.items ?? const [];
+    if (pkgItems.isEmpty) return 'Multiple/Unspecified';
+    final itemId = it.forfeited?.itemId;
+    if (itemId != null) {
+      final match = pkgItems.where((i) => i.id == itemId).firstOrNull;
+      if (match != null) return match.itemName;
+    }
+    if (pkgItems.length == 1) return pkgItems.first.itemName;
+    return '${pkgItems.first.itemName} +${pkgItems.length - 1}';
   }
 
   @override
@@ -2342,6 +2396,22 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_error != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: context.colors.dangerRed.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+              ),
+              child: Row(children: [
+                Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
+                const Gap(10),
+                Expanded(child: Text(_error!, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
+              ]),
+            ),
+            const Gap(12),
+          ],
           StyledFormSection(
             title: 'Sale Details',
             icon: Icons.receipt_long_rounded,
@@ -2447,17 +2517,32 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                       ),
                     );
                   }
+                  // Expand package-level DR items (itemId==null, multiple pkg
+                  // items) so each item appears as its own selectable row.
+                  final rows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+                  for (final it in items) {
+                    final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+                    if (it.forfeited?.itemId == null && fpItems.length > 1) {
+                      for (final pkgItem in fpItems) {
+                        rows.add((it: it, pkgItem: pkgItem));
+                      }
+                    } else {
+                      rows.add((it: it, pkgItem: null));
+                    }
+                  }
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _SelectAllBar(
                         selectedCount: _selected.length,
-                        totalCount: items.length,
+                        totalCount: rows.length,
                         onSelectAll: () => setState(() {
-                          for (final it in items) {
-                            _selected[it.forfeitedPackageId] =
-                                it.forfeited?.yard ?? '';
+                          for (final r in rows) {
+                            final rowKey = r.pkgItem != null
+                                ? '${r.it.id}_${r.pkgItem!.id}'
+                                : r.it.id;
+                            _selected[rowKey] = r.it.forfeited?.yard ?? '';
                           }
                         }),
                         onClearAll: () => setState(_selected.clear),
@@ -2467,21 +2552,26 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     constraints: const BoxConstraints(maxHeight: 280),
                     child: ListView.separated(
                       shrinkWrap: true,
-                      itemCount: items.length,
+                      itemCount: rows.length,
                       separatorBuilder: (_, __) => Divider(
                           height: 1,
                           color: context.colors.borderColor.withOpacity(0.5)),
                       itemBuilder: (context, i) {
-                        final it = items[i];
-                        final id = it.forfeitedPackageId;
+                        final r = rows[i];
+                        final it = r.it;
+                        final pkgItem = r.pkgItem;
+                        final rowKey = pkgItem != null
+                            ? '${it.id}_${pkgItem.id}'
+                            : it.id;
                         final yard = it.forfeited?.yard ?? '';
-                        final selected = _selected.containsKey(id);
+                        final selected = _selected.containsKey(rowKey);
+                        final displayName = pkgItem?.itemName ?? _summary(it);
                         return InkWell(
                           onTap: () => setState(() {
                             if (selected) {
-                              _selected.remove(id);
+                              _selected.remove(rowKey);
                             } else {
-                              _selected[id] = yard;
+                              _selected[rowKey] = yard;
                             }
                           }),
                           child: Padding(
@@ -2493,9 +2583,9 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                                 value: selected,
                                 onChanged: (_) => setState(() {
                                   if (selected) {
-                                    _selected.remove(id);
+                                    _selected.remove(rowKey);
                                   } else {
-                                    _selected[id] = yard;
+                                    _selected[rowKey] = yard;
                                   }
                                 }),
                               ),
@@ -2521,7 +2611,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                                           source:
                                               it.forfeited?.source ?? 'forfeit'),
                                     ]),
-                                    Text(_summary(it),
+                                    Text(displayName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -2580,7 +2670,27 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
           icon: Icons.save_rounded,
           loading: _loading,
           onPressed: () async {
-            setState(() => _loading = true);
+            final err = _validate();
+            if (err != null) {
+              setState(() => _error = err);
+              return;
+            }
+            setState(() { _loading = true; _error = null; });
+            // Build forfeitedPackageId→yard from composite _selected keys.
+            final allDrItems = ref
+                .read(saleRequestItemsProvider)
+                .valueOrNull ?? const [];
+            final packageYards = <String, String>{};
+            for (final key in _selected.keys) {
+              final drItemId = key.contains('_') ? key.split('_').first : key;
+              final drItem = allDrItems
+                  .where((it) => it.id == drItemId)
+                  .firstOrNull;
+              if (drItem != null) {
+                packageYards[drItem.forfeitedPackageId] =
+                    drItem.forfeited?.yard ?? _formYard;
+              }
+            }
             try {
               await ref.read(disposalServiceProvider).createTenderSale(
                     saleNumber: _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
@@ -2591,7 +2701,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     year: int.tryParse(_yearC.text.trim()),
                     tenderType: _tenderType,
                     yard: _formYard,
-                    packageYards: Map<String, String>.from(_selected),
+                    packageYards: packageYards,
                   );
               // New sale → its items leave the request pool; refresh both.
               ref.read(tenderSalesRefreshProvider.notifier).trigger();
@@ -2853,11 +2963,17 @@ class _DestructionCard extends ConsumerWidget {
     // Destroyed items leave the Destruction Sales page (they move to Destroyed Packages).
     for (final si in sale.items.where((s) => !s.destroyed)) {
       final pkg = si.forfeited?.packageDetails;
-      final items = pkg?.items ?? const [];
-      if (items.isEmpty) {
+      final pkgItems = pkg?.items ?? const [];
+      final fpItemId = si.forfeited?.itemId;
+      if (pkgItems.isEmpty) {
         rows.add(_DestRow(si, null, '—'));
+      } else if (fpItemId != null) {
+        // Per-item FP row — show only the specific item it refers to.
+        final match = pkgItems.where((i) => i.id == fpItemId).firstOrNull;
+        rows.add(_DestRow(si, match, match != null ? _warehouseFor(pkg, match.id) : '—'));
       } else {
-        for (final it in items) {
+        // Package-level FP row — show one row per package item (legacy data).
+        for (final it in pkgItems) {
           rows.add(_DestRow(si, it, _warehouseFor(pkg, it.id)));
         }
       }
@@ -3182,11 +3298,20 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
   TimeOfDay? _saleTime;
   String? _destructionType;
   bool _loading = false;
+  String? _error;
   // forfeited_package_id → yard
   final Map<String, String> _selected = {};
   // The yard this destruction belongs to. The package pool is filtered to this
   // yard's forwarded requests, and the created destruction is assigned to it.
   late String _formYard;
+
+  String? _validate() {
+    if (_saleDate == null) return 'Destruction Sale Date is required.';
+    if (_saleTime == null) return 'Sale Start Time is required.';
+    if (_destructionType == null || _destructionType!.isEmpty) return 'Destruction Sale Type is required.';
+    if (_selected.isEmpty) return 'Select at least one package.';
+    return null;
+  }
 
   @override
   void initState() {
@@ -3242,10 +3367,15 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
   }
 
   String _summary(DisposalRequestItemModel it) {
-    final items = it.forfeited?.packageDetails?.items ?? const [];
-    if (items.isEmpty) return 'Multiple/Unspecified';
-    if (items.length == 1) return items.first.itemName;
-    return '${items.first.itemName} +${items.length - 1}';
+    final pkgItems = it.forfeited?.packageDetails?.items ?? const [];
+    if (pkgItems.isEmpty) return 'Multiple/Unspecified';
+    final itemId = it.forfeited?.itemId;
+    if (itemId != null) {
+      final match = pkgItems.where((i) => i.id == itemId).firstOrNull;
+      if (match != null) return match.itemName;
+    }
+    if (pkgItems.length == 1) return pkgItems.first.itemName;
+    return '${pkgItems.first.itemName} +${pkgItems.length - 1}';
   }
 
   @override
@@ -3277,6 +3407,22 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_error != null) ...[
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: context.colors.dangerRed.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+              ),
+              child: Row(children: [
+                Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
+                const Gap(10),
+                Expanded(child: Text(_error!, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
+              ]),
+            ),
+            const Gap(12),
+          ],
           StyledFormSection(
             title: 'Sale Details',
             icon: Icons.receipt_long_rounded,
@@ -3382,17 +3528,32 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                       ),
                     );
                   }
+                  // Expand package-level DR items (itemId==null, multiple pkg
+                  // items) so each item appears as its own selectable row.
+                  final rows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+                  for (final it in items) {
+                    final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+                    if (it.forfeited?.itemId == null && fpItems.length > 1) {
+                      for (final pkgItem in fpItems) {
+                        rows.add((it: it, pkgItem: pkgItem));
+                      }
+                    } else {
+                      rows.add((it: it, pkgItem: null));
+                    }
+                  }
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _SelectAllBar(
                         selectedCount: _selected.length,
-                        totalCount: items.length,
+                        totalCount: rows.length,
                         onSelectAll: () => setState(() {
-                          for (final it in items) {
-                            _selected[it.forfeitedPackageId] =
-                                it.forfeited?.yard ?? '';
+                          for (final r in rows) {
+                            final rowKey = r.pkgItem != null
+                                ? '${r.it.id}_${r.pkgItem!.id}'
+                                : r.it.id;
+                            _selected[rowKey] = r.it.forfeited?.yard ?? '';
                           }
                         }),
                         onClearAll: () => setState(_selected.clear),
@@ -3402,21 +3563,26 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                     constraints: const BoxConstraints(maxHeight: 280),
                     child: ListView.separated(
                       shrinkWrap: true,
-                      itemCount: items.length,
+                      itemCount: rows.length,
                       separatorBuilder: (_, __) => Divider(
                           height: 1,
                           color: context.colors.borderColor.withOpacity(0.5)),
                       itemBuilder: (context, i) {
-                        final it = items[i];
-                        final id = it.forfeitedPackageId;
+                        final r = rows[i];
+                        final it = r.it;
+                        final pkgItem = r.pkgItem;
+                        final rowKey = pkgItem != null
+                            ? '${it.id}_${pkgItem.id}'
+                            : it.id;
                         final yard = it.forfeited?.yard ?? '';
-                        final selected = _selected.containsKey(id);
+                        final selected = _selected.containsKey(rowKey);
+                        final displayName = pkgItem?.itemName ?? _summary(it);
                         return InkWell(
                           onTap: () => setState(() {
                             if (selected) {
-                              _selected.remove(id);
+                              _selected.remove(rowKey);
                             } else {
-                              _selected[id] = yard;
+                              _selected[rowKey] = yard;
                             }
                           }),
                           child: Padding(
@@ -3428,9 +3594,9 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                                 value: selected,
                                 onChanged: (_) => setState(() {
                                   if (selected) {
-                                    _selected.remove(id);
+                                    _selected.remove(rowKey);
                                   } else {
-                                    _selected[id] = yard;
+                                    _selected[rowKey] = yard;
                                   }
                                 }),
                               ),
@@ -3456,7 +3622,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                                           source:
                                               it.forfeited?.source ?? 'forfeit'),
                                     ]),
-                                    Text(_summary(it),
+                                    Text(displayName,
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
@@ -3515,7 +3681,30 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
           icon: Icons.save_rounded,
           loading: _loading,
           onPressed: () async {
-            setState(() => _loading = true);
+            final err = _validate();
+            if (err != null) {
+              setState(() => _error = err);
+              return;
+            }
+            setState(() { _loading = true; _error = null; });
+            // Build forfeitedPackageId→yard map from _selected keys.
+            // Keys are either plain it.id or "${it.id}_${pkgItem.id}" for
+            // expanded per-item rows — both cases point to the same
+            // forfeitedPackageId on the DR item.
+            final allDrItems = ref
+                .read(destructionRequestItemsProvider)
+                .valueOrNull ?? const [];
+            final packageYards = <String, String>{};
+            for (final key in _selected.keys) {
+              final drItemId = key.contains('_') ? key.split('_').first : key;
+              final drItem = allDrItems
+                  .where((it) => it.id == drItemId)
+                  .firstOrNull;
+              if (drItem != null) {
+                packageYards[drItem.forfeitedPackageId] =
+                    drItem.forfeited?.yard ?? _formYard;
+              }
+            }
             try {
               await ref.read(disposalServiceProvider).createDestruction(
                     saleNumber: _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
@@ -3526,7 +3715,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                     year: int.tryParse(_yearC.text.trim()),
                     tenderType: _destructionType,
                     yard: _formYard,
-                    packageYards: Map<String, String>.from(_selected),
+                    packageYards: packageYards,
                   );
               ref.read(destructionsRefreshProvider.notifier).trigger();
               if (mounted) Navigator.pop(context);

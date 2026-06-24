@@ -448,6 +448,20 @@ final destructionItemForPackageProvider =
   return ref.read(disposalServiceProvider).getDestructionItemForPackage(packageId);
 });
 
+/// Per-item variant keyed by "$packageId|$packageItemId". Finds the destruction
+/// item whose forfeited_package.item_id matches the specific package item so the
+/// details popup toggles delivery only for that item, not all items on the package.
+final destructionItemForPackageItemProvider =
+    FutureProvider.family<DestructionItemModel?, String>((ref, key) async {
+  ref.watch(destructionsChangeTriggerProvider);
+  final parts = key.split('|');
+  final packageId = parts[0];
+  final packageItemId = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null;
+  return ref
+      .read(disposalServiceProvider)
+      .getDestructionItemForPackageItem(packageId, packageItemId);
+});
+
 final disposalForfeitedPackagesProvider =
     FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
@@ -529,6 +543,26 @@ final requestableForfeitedPackagesProvider =
   ref.watch(tenderSaleItemsChangeTriggerProvider);
   ref.watch(destructionsChangeTriggerProvider);
   return ref.read(forfeitedPackageServiceProvider).getRequestableExpiredPackages();
+});
+
+/// Yard-side: set of "pkgId:itemId" keys for abandoned/other packages that
+/// already have a forfeited_packages row — i.e. a disposal request has been
+/// sent. Used by the Abandoned and Other table screens to hide rows that have
+/// already been sent for disposal.
+final sentAbandonedOtherFpKeysProvider =
+    FutureProvider<Set<String>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  ref.watch(packagesChangeTriggerProvider);
+  final data = await supabase
+      .from('forfeited_packages')
+      .select('package_id, item_id')
+      .inFilter('source', ['abandoned', 'other']);
+  return (data as List).map((e) {
+    final pkgId = e['package_id'].toString();
+    final itemId = e['item_id']?.toString();
+    return itemId != null ? '$pkgId:$itemId' : pkgId;
+  }).toSet();
 });
 
 // Yard-side request form selection: forfeited_package_id → 'destruction' | 'sale'.
@@ -614,6 +648,21 @@ final saleItemForPackageProvider =
     FutureProvider.family<TenderSaleItemModel?, String>((ref, packageId) async {
   ref.watch(tenderSaleItemsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getTenderSaleItemForPackage(packageId);
+});
+
+// Per-item variant: keyed by "$packageId|$packageItemId" (or "$packageId|" when
+// packageItemId is null). Uses per-item forfeited_package lookup so each sold
+// row in the Sold Packages table can show its own price when one package has
+// multiple sold items that were each priced separately.
+final saleItemForPackageItemProvider =
+    FutureProvider.family<TenderSaleItemModel?, String>((ref, key) async {
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  final parts = key.split('|');
+  final packageId = parts[0];
+  final packageItemId = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null;
+  return ref
+      .read(disposalServiceProvider)
+      .getTenderSaleItemForPackageItem(packageId, packageItemId);
 });
 
 // Disposal-side: "sale"-tagged request items available to add to a tender sale.

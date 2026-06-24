@@ -237,6 +237,11 @@ class _ValuationRequestCard extends ConsumerWidget {
   String _itemName(DisposalRequestItemModel it) {
     final items = it.forfeited?.packageDetails?.items ?? const [];
     if (items.isEmpty) return 'Multiple/Unspecified';
+    final itemId = it.forfeited?.itemId;
+    if (itemId != null) {
+      final match = items.where((i) => i.id == itemId).firstOrNull;
+      if (match != null) return match.itemName;
+    }
     if (items.length == 1) return items.first.itemName;
     return '${items.first.itemName} +${items.length - 1}';
   }
@@ -247,6 +252,19 @@ class _ValuationRequestCard extends ConsumerWidget {
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final items = request.items;
+    // Expand package-level FP rows (itemId==null, multiple pkg items) so each
+    // item appears as its own table row — same as the Set Valuation form.
+    final expandedRows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+    for (final it in items) {
+      final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+      if (it.forfeited?.itemId == null && fpItems.length > 1) {
+        for (final pkgItem in fpItems) {
+          expandedRows.add((it: it, pkgItem: pkgItem));
+        }
+      } else {
+        expandedRows.add((it: it, pkgItem: null));
+      }
+    }
     final valuedCount =
         items.where((i) => i.valuationCost != null).length;
 
@@ -308,7 +326,7 @@ class _ValuationRequestCard extends ConsumerWidget {
                     ]),
                     const Gap(2),
                     Text(
-                        '$valuedCount of ${items.length} item(s) valued',
+                        '$valuedCount of ${expandedRows.length} item(s) valued',
                         style: TextStyle(
                             color: context.colors.textMuted, fontSize: 11)),
                   ],
@@ -335,7 +353,7 @@ class _ValuationRequestCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Container(
-              height: (items.length * 48.0 + 52).clamp(100, 320),
+              height: (expandedRows.length * 48.0 + 52).clamp(100, 320),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
@@ -374,23 +392,34 @@ class _ValuationRequestCard extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 70),
                   ],
-                  rows: items.map((it) {
+                  rows: expandedRows.map((row) {
+                    final it = row.it;
+                    final pkgItem = row.pkgItem;
                     final f = it.forfeited;
+                    final displayName = pkgItem?.itemName ?? _itemName(it);
+                    final displayHs = pkgItem?.hsCode ?? it.hsCodeLabel;
+                    final displayQty = pkgItem != null
+                        ? pkgItem.quantity
+                        : it.totalQuantity;
+                    final highlightId = pkgItem?.id ?? f?.itemId ??
+                        (f?.packageDetails?.items.isNotEmpty == true
+                            ? f!.packageDetails!.items.first.id
+                            : null);
                     return DataRow(cells: [
                       DataCell(Text(f?.srNumber ?? '—',
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(_itemName(it),
+                      DataCell(Text(displayName,
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(f?.consigneeName ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(it.hsCodeLabel ?? '—',
+                      DataCell(Text(displayHs ?? '—',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(Text('${it.totalQuantity}',
+                      DataCell(Text('$displayQty',
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,
@@ -403,13 +432,13 @@ class _ValuationRequestCard extends ConsumerWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 Text(
-                                    'LKR ${NumberFormat('#,##0').format(it.totalCost)}',
+                                    'LKR ${NumberFormat('#,##0').format((it.unitCost ?? 0) * displayQty)}',
                                     style: TextStyle(
                                         color: gold,
                                         fontWeight: FontWeight.w700,
                                         fontSize: 12)),
                                 Text(
-                                    '@ ${NumberFormat('#,##0').format(it.unitCost)} × ${it.totalQuantity}',
+                                    '@ ${NumberFormat('#,##0').format(it.unitCost)} × $displayQty',
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 10)),
@@ -433,16 +462,12 @@ class _ValuationRequestCard extends ConsumerWidget {
                                       storageRate: storageRate,
                                       headerAccentColor: context.colors.primaryGold,
                                       useLegacySummary: true,
-                                      // Single item for this request row + yard.
-                                      highlightItemId: f.itemId ??
-                                          (f.packageDetails!.items.isNotEmpty
-                                              ? f.packageDetails!.items.first.id
-                                              : null),
+                                      highlightItemId: highlightId,
                                       yardLabel: yardName(
                                           f.yard ?? request.yard),
                                       valuationUnitCost: it.unitCost,
                                       valuationTotalCost: it.totalCost,
-                                      valuationQty: it.totalQuantity,
+                                      valuationQty: displayQty,
                                     ),
                                   ),
                         ),
@@ -479,13 +504,27 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
   @override
   void initState() {
     super.initState();
-    _ctrls = {
-      for (final it in widget.request.items)
-        it.id: TextEditingController(
+    // Build one controller per *display row* (composite key = itemId_pkgItemId)
+    // so that expanded per-item rows from the same FP row each have an
+    // independent text field rather than sharing one controller.
+    _ctrls = {};
+    for (final it in widget.request.items) {
+      final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+      if (it.forfeited?.itemId == null && fpItems.length > 1) {
+        for (final pkgItem in fpItems) {
+          final key = '${it.id}_${pkgItem.id}';
+          _ctrls[key] = TextEditingController(
+              text: it.valuationCost != null
+                  ? it.valuationCost!.toStringAsFixed(0)
+                  : '');
+        }
+      } else {
+        _ctrls[it.id] = TextEditingController(
             text: it.valuationCost != null
                 ? it.valuationCost!.toStringAsFixed(0)
-                : ''),
-    };
+                : '');
+      }
+    }
     // Rebuild on every keystroke so each item's live total (cost × qty)
     // updates as the directorate types.
     for (final c in _ctrls.values) {
@@ -509,17 +548,32 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
   String _itemName(DisposalRequestItemModel it) {
     final items = it.forfeited?.packageDetails?.items ?? const [];
     if (items.isEmpty) return it.forfeited?.srNumber ?? 'Item';
+    final itemId = it.forfeited?.itemId;
+    if (itemId != null) {
+      final match = items.where((i) => i.id == itemId).firstOrNull;
+      if (match != null) return match.itemName;
+    }
     if (items.length == 1) return items.first.itemName;
     return '${items.first.itemName} +${items.length - 1}';
   }
 
-  /// Collect the currently entered, valid (>0) costs keyed by item id.
+  /// Composite controller key for a display row.
+  String _ctrlKey(DisposalRequestItemModel it, PackageItem? pkgItem) =>
+      pkgItem != null ? '${it.id}_${pkgItem.id}' : it.id;
+
+  /// Collect costs keyed by disposal_request_items.id.
+  /// For expanded rows (multiple pkgItems from same it.id), each pkgItem has
+  /// its own controller; we map them back to it.id by taking the value from
+  /// whichever controller was filled (last non-empty wins — for now they're
+  /// independent fields but the backend stores one cost per DR item row).
   Map<String, double> _collectCosts() {
     final out = <String, double>{};
-    _ctrls.forEach((id, c) {
-      final v = double.tryParse(c.text.trim());
-      if (v != null && v >= 0) out[id] = v;
-    });
+    final expandedRows = _expandRows();
+    for (final row in expandedRows) {
+      final key = _ctrlKey(row.it, row.pkgItem);
+      final v = double.tryParse(_ctrls[key]?.text.trim() ?? '');
+      if (v != null && v >= 0) out[row.it.id] = v;
+    }
     return out;
   }
 
@@ -530,6 +584,7 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
           'Enter a cost for every item before forwarding to Central Disposal.');
       return;
     }
+
     if (costs.isEmpty) {
       setState(() => _error = 'Enter at least one cost.');
       return;
@@ -565,13 +620,32 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
     }
   }
 
+  // Expand package-level FP rows (itemId==null, multiple items) into per-item
+  // display rows. Each sub-row shares the same disposal_request_items.id (and
+  // thus the same cost field) since the directorate sets one unit price for the
+  // item type; the total = unitCost × that item's qty.
+  List<({DisposalRequestItemModel it, PackageItem? pkgItem})> _expandRows() {
+    final out = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+    for (final it in widget.request.items) {
+      final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+      if (it.forfeited?.itemId == null && fpItems.length > 1) {
+        for (final pkgItem in fpItems) {
+          out.add((it: it, pkgItem: pkgItem));
+        }
+      } else {
+        out.add((it: it, pkgItem: null));
+      }
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
-    final items = widget.request.items;
+    final expandedRows = _expandRows();
     return StyledFormDialog(
       label: 'SET VALUATION',
-      title: '${yardName(widget.request.yard)} · ${items.length} item(s)',
+      title: '${yardName(widget.request.yard)} · ${expandedRows.length} item(s)',
       icon: Icons.calculate_rounded,
       headerAccentColor: gold,
       // Match the Central Disposal / Appeal package-detail popups (width 900) so
@@ -627,70 +701,81 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
             ),
             const Gap(16),
           ],
-          for (final it in items) ...[
-            Row(children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(it.forfeited?.srNumber ?? '—',
-                        style: TextStyle(
-                            color: context.colors.accentLightBlue,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13)),
-                    Text(_itemName(it),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: context.colors.textSecondary,
-                            fontSize: 12)),
-                    const Gap(4),
-                    Row(children: [
-                      Icon(Icons.tag_rounded,
-                          size: 12, color: context.colors.textMuted),
-                      const Gap(4),
-                      Text('HS ${it.hsCodeLabel ?? '—'}',
+          for (final row in expandedRows) ...[
+            Builder(builder: (context) {
+              final it = row.it;
+              final pkgItem = row.pkgItem;
+              final displayName = pkgItem?.itemName ?? _itemName(it);
+              final displayHs = pkgItem?.hsCode ?? it.hsCodeLabel;
+              final displayQty = pkgItem != null
+                  ? pkgItem.quantity
+                  : it.totalQuantity;
+              return Row(children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(it.forfeited?.srNumber ?? '—',
                           style: TextStyle(
-                              color: context.colors.textMuted,
-                              fontSize: 11)),
-                      const Gap(10),
-                      Icon(Icons.inventory_2_rounded,
-                          size: 12, color: context.colors.textMuted),
-                      const Gap(4),
-                      Text('Qty ${it.totalQuantity}',
+                              color: context.colors.accentLightBlue,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                      Text(displayName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              color: context.colors.textMuted,
-                              fontSize: 11)),
-                    ]),
-                  ],
+                              color: context.colors.textSecondary,
+                              fontSize: 12)),
+                      const Gap(4),
+                      Row(children: [
+                        Icon(Icons.tag_rounded,
+                            size: 12, color: context.colors.textMuted),
+                        const Gap(4),
+                        Text('HS ${displayHs ?? '—'}',
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 11)),
+                        const Gap(10),
+                        Icon(Icons.inventory_2_rounded,
+                            size: 12, color: context.colors.textMuted),
+                        const Gap(4),
+                        Text('Qty $displayQty',
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 11)),
+                      ]),
+                    ],
+                  ),
                 ),
-              ),
-              const Gap(8),
-              _DispoChip(disposition: it.disposition),
-              const Gap(12),
-              SizedBox(
-                width: 150,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    TextField(
-                      controller: _ctrls[it.id],
-                      keyboardType:
-                          const TextInputType.numberWithOptions(
-                              decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Cost / item (LKR)',
-                        isDense: true,
-                        prefixText: 'LKR ',
+                const Gap(8),
+                _DispoChip(disposition: it.disposition),
+                const Gap(12),
+                SizedBox(
+                  width: 150,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      TextField(
+                        controller: _ctrls[_ctrlKey(it, pkgItem)],
+                        keyboardType:
+                            const TextInputType.numberWithOptions(
+                                decimal: true),
+                        decoration: const InputDecoration(
+                          labelText: 'Cost / item (LKR)',
+                          isDense: true,
+                          prefixText: 'LKR ',
+                        ),
                       ),
-                    ),
-                    const Gap(6),
-                    _LiveTotal(item: it, controller: _ctrls[it.id]!),
-                  ],
+                      const Gap(6),
+                      _LiveTotal(
+                          qty: displayQty,
+                          controller: _ctrls[_ctrlKey(it, pkgItem)]!),
+                    ],
+                  ),
                 ),
-              ),
-            ]),
+              ]);
+            }),
             const Divider(height: 24),
           ],
         ],
@@ -703,13 +788,12 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
 /// dialog. The dialog rebuilds on every keystroke, so reading the controller
 /// here is enough to keep it current.
 class _LiveTotal extends StatelessWidget {
-  final DisposalRequestItemModel item;
+  final int qty;
   final TextEditingController controller;
-  const _LiveTotal({required this.item, required this.controller});
+  const _LiveTotal({required this.qty, required this.controller});
 
   @override
   Widget build(BuildContext context) {
-    final qty = item.totalQuantity;
     final unit = double.tryParse(controller.text.trim());
     if (unit == null || unit < 0) {
       return Text('× $qty',

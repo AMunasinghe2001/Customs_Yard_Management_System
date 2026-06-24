@@ -1119,30 +1119,30 @@ class WarehouseService {
         .order('admitted_at', ascending: false)
         .limit(1)
         .maybeSingle();
-    if (refEntry == null) {
-      throw Exception('No warehouse record found for this item');
-    }
-
     final tag = dispositionType.toUpperCase();
     final returnNotes =
         '[FINAL:$tag]${notes != null && notes.isNotEmpty ? ' — $notes' : ''}';
 
-    await supabase.from('warehouse_entries').insert({
-      'package_id': refEntry['package_id'],
-      'yard': AppSession.currentYard,
-      'package_item_id': packageItemId,
-      'warehouse_id': refEntry['warehouse_id'],
-      'zone': refEntry['zone'],
-      'hold_reason': refEntry['hold_reason'],
-      'item_count': qty,
-      'admitted_by': refEntry['admitted_by'],
-      'admitted_at': refEntry['admitted_at'],
-      'daily_rate': refEntry['daily_rate'],
-      'is_returned': true,
-      'returned_at': DateTime.now().toIso8601String(),
-      'returned_by': user?.id,
-      'return_notes': returnNotes,
-    });
+    if (refEntry != null) {
+      await supabase.from('warehouse_entries').insert({
+        'package_id': refEntry['package_id'],
+        'yard': AppSession.currentYard,
+        'package_item_id': packageItemId,
+        'warehouse_id': refEntry['warehouse_id'],
+        'zone': refEntry['zone'],
+        'hold_reason': refEntry['hold_reason'],
+        'item_count': qty,
+        'admitted_by': refEntry['admitted_by'],
+        'admitted_at': refEntry['admitted_at'],
+        'daily_rate': refEntry['daily_rate'],
+        'is_returned': true,
+        'returned_at': DateTime.now().toIso8601String(),
+        'returned_by': user?.id,
+        'return_notes': returnNotes,
+      });
+    }
+    // If no warehouse entry exists (item was never admitted), skip the
+    // warehouse_entries insert — just update the item status below.
 
     const statusMap = {
       'RELEASED': 'released',
@@ -2337,22 +2337,23 @@ class ForfeitedPackageService {
         .toSet();
 
     // ── 3. "Other"-status packages (no appeal — requestable immediately) ─────
-    // Same synthetic-row trick as abandoned goods, with source='other'. A
-    // package that already has a source='other' FP row was requested already.
+    // Track at item level so that only the specific item that was already
+    // requested is excluded — other items in the same package remain requestable.
     final existingOtherFp = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
-        .select('package_id')
+        .select('package_id, item_id')
         .eq('source', 'other'));
-    final otherFpPkgIds = (existingOtherFp as List)
-        .map((e) => e['package_id'].toString())
-        .toSet();
+    final otherFpItemKeys = (existingOtherFp as List).map((e) {
+      final pkgId = e['package_id'].toString();
+      final itemId = e['item_id']?.toString();
+      return itemId != null ? '$pkgId:$itemId' : pkgId;
+    }).toSet();
 
     final expiredDeadline = DateTime.now().subtract(const Duration(days: 1));
 
     for (final raw in (pkgData as List)) {
       final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
       final alreadyAbandoned = abandonedFpPkgIds.contains(pkg.id);
-      final alreadyOther = otherFpPkgIds.contains(pkg.id);
 
       // One requestable row PER qualifying ITEM+EVENT:
       //   • Abandoned: one row per [ABANDONED] warehouse entry event, id =
@@ -2360,6 +2361,9 @@ class ForfeitedPackageService {
       //     Packages screen which shows one row per event (partial qty events).
       //   • Other: one row per item, id = "<pkgId>:<itemId>:other".
       for (final item in pkg.items) {
+        // Check at item level so only the already-requested item is excluded.
+        final alreadyOther = otherFpItemKeys.contains('${pkg.id}:${item.id}') ||
+            otherFpItemKeys.contains(pkg.id);
         if (!alreadyAbandoned) {
           final abandonedEntries = _abandonedEntriesForItem(pkg, item);
           for (final entry in abandonedEntries) {
@@ -2377,6 +2381,7 @@ class ForfeitedPackageService {
               packageDetails: pkg,
               itemId: item.id,
               itemName: item.itemName,
+              entryQty: entry.itemCount,
             ));
           }
           // Form-level abandoned (status='abandoned', no warehouse entry event).
@@ -2670,14 +2675,15 @@ class ForfeitedPackageService {
     //   • "<pkgId>:<itemId>:other"         → synthetic Other row
     // The forfeit variants already have a real FP row — map them directly.
     // Abandoned/Other synthetic rows need a new FP row created on the fly.
-    (String packageId, String? itemId, String source) parseSynthetic(String key) {
+    (String packageId, String? itemId, String? entryId, String source)
+        parseSynthetic(String key) {
       final parts = key.split(':');
       // 4-part: pkgId:itemId:entryId:source
-      if (parts.length == 4) return (parts[0], parts[1], parts[3]);
+      if (parts.length == 4) return (parts[0], parts[1], parts[2], parts[3]);
       // 3-part: pkgId:itemId:source  OR  fpId:itemId:forfeit
-      if (parts.length == 3) return (parts[0], parts[1], parts[2]);
-      if (parts.length == 2) return (parts[0], null, parts[1]);
-      return (key, null, 'abandoned');
+      if (parts.length == 3) return (parts[0], parts[1], null, parts[2]);
+      if (parts.length == 2) return (parts[0], null, null, parts[1]);
+      return (key, null, null, 'abandoned');
     }
 
     final selectedKeys = dispositions.keys.toList();
@@ -2706,13 +2712,53 @@ class ForfeitedPackageService {
         continue;
       }
       // Per-item forfeit synthetic key: "<fpId>:<itemId>:forfeit"
-      // The fpId IS the real forfeited_packages row — no insert needed.
+      // Create a new per-item FP row (copying the parent FP's fields but with
+      // item_id set) so Valuation / Central Disposal can show each item
+      // separately with the correct name, HS code, and quantity.
       if (key.endsWith(':forfeit')) {
-        final fpId = key.split(':').first;
-        forfeitedIdFor[key] = fpId;
+        final cached = fpIdByPkgItemSource[key];
+        if (cached != null) {
+          forfeitedIdFor[key] = cached;
+          continue;
+        }
+        final parts = key.split(':');
+        final parentFpId = parts[0];
+        final itemId = parts[1];
+        // Fetch the parent FP row to copy its fields.
+        final parentRaw = await AuthService._withNetworkRetry(() => supabase
+            .from('forfeited_packages')
+            .select(
+                '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+            .eq('id', parentFpId)
+            .single());
+        final parentFp = ForfeitedPackageModel.fromJson(
+            parentRaw as Map<String, dynamic>);
+        final newFp = await AuthService._withNetworkRetry(() => supabase
+            .from('forfeited_packages')
+            .insert({
+              'package_id': parentFp.packageId,
+              'item_id': itemId,
+              'sr_number': parentFp.srNumber,
+              'consignee_name': parentFp.consigneeName,
+              'forfeited_at': parentFp.forfeitedAt.toIso8601String(),
+              'appeal_deadline': parentFp.appealDeadline?.toIso8601String() ??
+                  DateTime.now()
+                      .subtract(const Duration(days: 1))
+                      .toIso8601String(),
+              'reason': parentFp.reason ?? 'Forfeited',
+              'yard': parentFp.yard ?? AppSession.currentYard,
+              'source': 'forfeit',
+              if (parentFp.appealDecision != null)
+                'appeal_decision': parentFp.appealDecision,
+            })
+            .select('id')
+            .single());
+        final newId = newFp['id'] as String;
+        fpIdByPkgItemSource[key] = newId;
+        forfeitedIdFor[key] = newId;
         continue;
       }
-      final (packageId, itemId, source) = parseSynthetic(key);
+      final (packageId, itemId, entryId, source) = parseSynthetic(key);
       // Use the full key as cache key so per-entry abandoned rows (same
       // pkg+item but different warehouse entry) each get their own FP row.
       final cacheKey = key;
@@ -2729,11 +2775,21 @@ class ForfeitedPackageService {
       final pkg = PackageModel.fromJson(pkgRaw);
       final reason =
           source == 'other' ? _otherReasonFor(pkg) : _abandonReasonFor(pkg);
+      // For per-entry abandoned rows, store the exact abandoned qty from the
+      // originating warehouse entry so the Valuation / Central Disposal screens
+      // price against that quantity (15 / 19) rather than the full item qty.
+      int? entryQty;
+      if (entryId != null) {
+        final matches =
+            pkg.warehouseEntries.where((e) => e.id == entryId).toList();
+        if (matches.isNotEmpty) entryQty = matches.first.itemCount;
+      }
       final newFp = await AuthService._withNetworkRetry(() => supabase
           .from('forfeited_packages')
           .insert({
             'package_id': packageId,
             if (itemId != null) 'item_id': itemId,
+            if (entryQty != null) 'entry_qty': entryQty,
             'sr_number': pkg.srNumber,
             'consignee_name': pkg.consigneeName,
             'forfeited_at': DateTime.now().toIso8601String(),
@@ -3113,9 +3169,10 @@ class DisposalService {
         .where((i) => !usedIds.contains(i.forfeitedPackageId))
         .toList();
 
-    // De-duplicate by forfeited package (a package could be requested twice).
+    // De-duplicate by disposal_request_items.id (not forfeitedPackageId) so
+    // multi-item packages each appear as their own row in the picker.
     final seen = <String>{};
-    return items.where((i) => seen.add(i.forfeitedPackageId)).toList();
+    return items.where((i) => seen.add(i.id)).toList();
   }
 
   /// "Sale"-tagged disposal-request items NOT yet placed in a tender — the pool
@@ -3366,6 +3423,34 @@ class DisposalService {
     return DestructionItemModel.fromJson(data);
   }
 
+  /// Per-item variant: finds the destruction_item whose forfeited_package has
+  /// item_id == [packageItemId]. Falls back to package-level when null.
+  Future<DestructionItemModel?> getDestructionItemForPackageItem(
+      String packageId, String? packageItemId) async {
+    if (packageItemId == null) {
+      return getDestructionItemForPackage(packageId);
+    }
+    final fpkgItem = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('id')
+        .eq('package_id', packageId)
+        .eq('item_id', packageItemId)
+        .maybeSingle());
+    if (fpkgItem != null) {
+      final fpId = fpkgItem['id'] as String;
+      final data = await AuthService._withNetworkRetry(() => supabase
+          .from('destruction_items')
+          .select()
+          .eq('forfeited_package_id', fpId)
+          .eq('destroyed', true)
+          .order('destroyed_at', ascending: false)
+          .limit(1)
+          .maybeSingle());
+      if (data != null) return DestructionItemModel.fromJson(data);
+    }
+    return getDestructionItemForPackage(packageId);
+  }
+
   /// Bulk delivery-status map for DESTROYED packages, keyed by package id:
   /// package_id → delivered (bool). Mirrors [getDeliveryStatusByPackageId].
   Future<Map<String, bool>> getDestroyedDeliveryStatusByPackageId() async {
@@ -3460,8 +3545,10 @@ class DisposalService {
         .map((e) => DisposalRequestItemModel.fromJson(e))
         .where((i) => !destsIds.contains(i.forfeitedPackageId))
         .toList();
+    // De-duplicate by disposal_request_items.id so multi-item packages each
+    // appear as their own row in the picker.
     final seen = <String>{};
-    return items.where((i) => seen.add(i.forfeitedPackageId)).toList();
+    return items.where((i) => seen.add(i.id)).toList();
   }
 
   Future<int> getNextDestructionSerial(int year) async {
@@ -3602,28 +3689,83 @@ class DisposalService {
     return TenderSaleItemModel.fromJson(data);
   }
 
+  /// Like [getTenderSaleItemForPackage] but scoped to a specific package item.
+  /// First tries the per-item TSI row (package_item_id column added in
+  /// 20260622_tender_sale_item_per_item.sql), then falls back to FP-level lookup,
+  /// then to package-level. Falls back to package-level when [packageItemId] is null.
+  Future<TenderSaleItemModel?> getTenderSaleItemForPackageItem(
+      String packageId, String? packageItemId) async {
+    if (packageItemId == null) {
+      return getTenderSaleItemForPackage(packageId);
+    }
+
+    // 1. Direct per-item TSI lookup (new schema: package_item_id on TSI row).
+    final fpkgs = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('id')
+        .eq('package_id', packageId));
+    final fpIds = (fpkgs as List).map((e) => e['id'] as String).toList();
+    if (fpIds.isNotEmpty) {
+      final perItem = await AuthService._withNetworkRetry(() => supabase
+          .from('tender_sale_items')
+          .select()
+          .inFilter('forfeited_package_id', fpIds)
+          .eq('package_item_id', packageItemId)
+          .order('created_at', ascending: false)
+          .limit(1)
+          .maybeSingle());
+      if (perItem != null) return TenderSaleItemModel.fromJson(perItem);
+    }
+
+    // 2. Try per-item FP row (old schema: item_id on forfeited_packages).
+    if (fpIds.isNotEmpty) {
+      final fpkgItem = await AuthService._withNetworkRetry(() => supabase
+          .from('forfeited_packages')
+          .select('id')
+          .eq('package_id', packageId)
+          .eq('item_id', packageItemId)
+          .maybeSingle());
+      if (fpkgItem != null) {
+        final fpId = fpkgItem['id'] as String;
+        final data = await AuthService._withNetworkRetry(() => supabase
+            .from('tender_sale_items')
+            .select()
+            .eq('forfeited_package_id', fpId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle());
+        if (data != null) return TenderSaleItemModel.fromJson(data);
+      }
+    }
+
+    // 3. Fall back to package-level lookup.
+    return getTenderSaleItemForPackage(packageId);
+  }
+
   Future<void> deleteTax(String id) async {
     await AuthService._withNetworkRetry(
         () => supabase.from('disposal_taxes').delete().eq('id', id));
   }
 
-  /// Bulk delivery-status map keyed by the underlying package id:
-  /// package_id → delivered (bool), across every tender_sale_item. Used by the
-  /// Sold Packages tab to filter rows by Delivered / Pending in one query
-  /// instead of one per row. When a package has multiple sale items, the most
-  /// recent (last seen) wins.
+  /// Bulk delivery-status map keyed by "packageId|packageItemId" (or
+  /// "packageId|" when package_item_id is null). Matches the saleItemKey used
+  /// by _SoldRow so the Delivered/Pending filter works per-item when a package
+  /// has multiple sold items priced and delivered independently.
   Future<Map<String, bool>> getDeliveryStatusByPackageId() async {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')
-        .select('is_delivered, created_at, forfeited_packages(package_id)')
+        .select(
+            'is_delivered, created_at, package_item_id, forfeited_packages(package_id)')
         .order('created_at', ascending: true));
     final out = <String, bool>{};
     for (final e in (data as List)) {
       final fp = e['forfeited_packages'] as Map<String, dynamic>?;
       final pkgId = fp?['package_id']?.toString();
       if (pkgId == null) continue;
-      // ascending order → the last row written per package wins (latest).
-      out[pkgId] = (e['is_delivered'] as bool?) ?? false;
+      final itemId = e['package_item_id']?.toString() ?? '';
+      final key = '$pkgId|$itemId';
+      // ascending order → the last row written per key wins (latest).
+      out[key] = (e['is_delivered'] as bool?) ?? false;
     }
     return out;
   }

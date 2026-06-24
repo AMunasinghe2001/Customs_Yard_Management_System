@@ -147,6 +147,13 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final bool allowFinalDisposition;
   final void Function(String disposition)? onSaleOrDestroyRequest;
 
+  // When true, the Final Disposition footer is shown unconditionally (skips the
+  // [_hasFinalDisposition] heuristic). Callers that already guarantee the item
+  // is actionable — e.g. the Abandoned / Other tables, which exclude finalised
+  // items when building their rows — pass this so EVERY listed package gets the
+  // button in its details popup.
+  final bool forceFinalDisposition;
+
   const PackageDetailsDialog({
     super.key,
     required this.package,
@@ -168,6 +175,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.appealDecisionLabel,
     this.allowFinalDisposition = true,
     this.onSaleOrDestroyRequest,
+    this.forceFinalDisposition = false,
   });
 
   @override
@@ -565,6 +573,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     ref.invalidate(packageDataProvider(entry.packageId));
     ref.invalidate(liveWarehouseEntriesProvider(entry.warehouseId));
     ref.invalidate(livePackagesProvider);
+    // When forfeited: refresh the Forfeited Packages page too so the new row appears.
+    if (_isForfeitStatusLocal(dispositionType)) {
+      ref.invalidate(forfeitedPackagesProvider);
+      ref.invalidate(requestableForfeitedPackagesProvider);
+    }
     return true;
   }
 
@@ -708,17 +721,18 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Filter to find the highlighted entry's specific item if needed. Falls
-    // back to [highlightItemId] when there's no warehouse entry (a form-level
-    // abandoned/"Other" item never admitted to a warehouse) so it still gets
-    // item details + the Final Disposition button.
-    final highlightedItem = widget.highlightEntry != null
-        ? p.items.firstWhere(
-            (i) => i.id == widget.highlightEntry!.packageItemId,
-            orElse: () => p.items.first)
-        : (widget.highlightItemId != null
+    // Resolve which package item this popup is about. [highlightItemId] is the
+    // caller's explicit choice (e.g. the Abandoned/Other table row's own item)
+    // and takes priority — it's authoritative even when a [highlightEntry] is
+    // also supplied, because an entry may be package-level (packageItemId null)
+    // or reference a sibling item, which would otherwise resolve to the WRONG
+    // item via the orElse fallback and break the Final Disposition gating.
+    final highlightedItem = (widget.highlightItemId != null &&
+            p.items.any((i) => i.id == widget.highlightItemId))
+        ? p.items.firstWhere((i) => i.id == widget.highlightItemId)
+        : (widget.highlightEntry != null
             ? p.items.firstWhere(
-                (i) => i.id == widget.highlightItemId,
+                (i) => i.id == widget.highlightEntry!.packageItemId,
                 orElse: () => p.items.first)
             : null);
 
@@ -2152,12 +2166,18 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           ),
                         ),
                       if (p.status?.toLowerCase() == 'sold' || p.items.any((i) => i.status?.toLowerCase() == 'sold') || widget.highlightEntry?.returnNotes?.contains('SOLD') == true)
-                        _SaleFinancialsSection(package: p),
+                        _SaleFinancialsSection(
+                          package: p,
+                          packageItemId: widget.highlightEntry?.packageItemId,
+                        ),
                       // Destroyed packages can also be delivered out — show a
                       // Delivered/Pending section with a Mark Delivered button
                       // (yard-side), mirroring the Sale & Financial section.
                       if (isDestroyedEntry)
-                        _DestructionDeliverySection(package: p),
+                        _DestructionDeliverySection(
+                          package: p,
+                          packageItemId: widget.highlightEntry?.packageItemId,
+                        ),
                     ],
                   ),
                 ),
@@ -2248,7 +2268,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   widget.onSaleOrDestroyRequest != null &&
                   (widget.useLegacySummary || widget.highlightItemId != null) &&
                   highlightedItem != null &&
-                  !_hasFinalDisposition(p, highlightedItem.id))
+                  (widget.forceFinalDisposition ||
+                      !_hasFinalDisposition(p, highlightedItem.id)))
                 material.Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -2919,13 +2940,17 @@ class _SystemEntrySection extends StatelessWidget {
 
 class _SaleFinancialsSection extends ConsumerStatefulWidget {
   final PackageModel package;
-  const _SaleFinancialsSection({required this.package});
+  final String? packageItemId;
+  const _SaleFinancialsSection({required this.package, this.packageItemId});
   @override
   ConsumerState<_SaleFinancialsSection> createState() => _SaleFinancialsSectionState();
 }
 
 class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> {
   bool _toggling = false;
+
+  String get _saleItemKey =>
+      '${widget.package.id}|${widget.packageItemId ?? ''}';
 
   Future<void> _toggleDelivery(TenderSaleItemModel item) async {
     setState(() => _toggling = true);
@@ -2935,6 +2960,7 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
           .read(disposalServiceProvider)
           .toggleDeliveryStatus(item.id, newValue);
       ref.invalidate(saleItemForPackageProvider(widget.package.id));
+      ref.invalidate(saleItemForPackageItemProvider(_saleItemKey));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
@@ -2959,7 +2985,7 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(saleItemForPackageProvider(widget.package.id));
+    final async = ref.watch(saleItemForPackageItemProvider(_saleItemKey));
     return async.when(
       loading: () => const material.Center(
         child: material.Padding(
@@ -3059,7 +3085,9 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
 /// yard-side "Mark Delivered" button, mirroring the Sale & Financial section.
 class _DestructionDeliverySection extends ConsumerStatefulWidget {
   final PackageModel package;
-  const _DestructionDeliverySection({required this.package});
+  final String? packageItemId;
+  const _DestructionDeliverySection(
+      {required this.package, this.packageItemId});
   @override
   ConsumerState<_DestructionDeliverySection> createState() =>
       _DestructionDeliverySectionState();
@@ -3068,6 +3096,8 @@ class _DestructionDeliverySection extends ConsumerStatefulWidget {
 class _DestructionDeliverySectionState
     extends ConsumerState<_DestructionDeliverySection> {
   bool _toggling = false;
+
+  String get _key => '${widget.package.id}|${widget.packageItemId ?? ''}';
 
   Future<void> _toggle(DestructionItemModel item) async {
     setState(() => _toggling = true);
@@ -3078,6 +3108,7 @@ class _DestructionDeliverySectionState
           .toggleDestructionDelivery(item.id, newValue);
       ref.read(destructionsRefreshProvider.notifier).trigger();
       ref.invalidate(destructionItemForPackageProvider(widget.package.id));
+      ref.invalidate(destructionItemForPackageItemProvider(_key));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(material.SnackBar(
           content: material.Text(
@@ -3102,7 +3133,7 @@ class _DestructionDeliverySectionState
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(destructionItemForPackageProvider(widget.package.id));
+    final async = ref.watch(destructionItemForPackageItemProvider(_key));
     return async.when(
       loading: () => const material.Center(
         child: material.Padding(
@@ -4772,11 +4803,11 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
 
     // Role-based action permissions.
     // - Officers: no disposition actions enabled at all.
-    // - Admins: only Release, Re-export, Abandoned and Other are enabled.
-    //   Forfeit and Destroy are disabled for everyone.
+    // - Admins: Release, Re-export, Abandoned, Forfeit and Other are enabled.
+    //   Destroy remains disabled for everyone.
     final isOfficer =
         ref.watch(currentProfileProvider)?.role == 'officer';
-    const _disabledForAll = {'Forfeit', 'Destroy'};
+    const _disabledForAll = {'Destroy'};
     bool isActionEnabled(String key) =>
         !isOfficer && !_disabledForAll.contains(key);
 
@@ -5196,6 +5227,11 @@ bool _hasFinalDisposition(PackageModel pkg, String itemId) {
         notes.startsWith('[DESTROY') ||
         notes.startsWith('[SOLD');
   });
+}
+
+bool _isForfeitStatusLocal(String? s) {
+  final v = (s ?? '').trim().toLowerCase();
+  return v == 'forfeit' || v == 'forfeited' || v == 'forfiet';
 }
 
 /// True if the highlighted entry is itself an abandon/forfeit disposition —
