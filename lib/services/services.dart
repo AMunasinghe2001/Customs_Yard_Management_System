@@ -3782,7 +3782,7 @@ class DisposalService {
   /// 20260622_tender_sale_item_per_item.sql), then falls back to FP-level lookup,
   /// then to package-level. Falls back to package-level when [packageItemId] is null.
   Future<TenderSaleItemModel?> getTenderSaleItemForPackageItem(
-      String packageId, String? packageItemId) async {
+      String packageId, String? packageItemId, {String? receipt}) async {
     if (packageItemId == null) {
       return getTenderSaleItemForPackage(packageId);
     }
@@ -3794,6 +3794,21 @@ class DisposalService {
         .eq('package_id', packageId));
     final fpIds = (fpkgs as List).map((e) => e['id'] as String).toList();
     if (fpIds.isNotEmpty) {
+      // When a receipt is given, pin the exact TSI row for THIS partial sale
+      // (an item sold across several tenders shares one package_item_id but has
+      // a distinct receipt / price per sale). Falls back to the latest row.
+      if (receipt != null && receipt.isNotEmpty) {
+        final byReceipt = await AuthService._withNetworkRetry(() => supabase
+            .from('tender_sale_items')
+            .select()
+            .inFilter('forfeited_package_id', fpIds)
+            .eq('package_item_id', packageItemId)
+            .eq('receipt_number', receipt)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle());
+        if (byReceipt != null) return TenderSaleItemModel.fromJson(byReceipt);
+      }
       final perItem = await AuthService._withNetworkRetry(() => supabase
           .from('tender_sale_items')
           .select()
@@ -3843,7 +3858,7 @@ class DisposalService {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')
         .select(
-            'is_delivered, created_at, package_item_id, forfeited_packages(package_id)')
+            'is_delivered, created_at, package_item_id, receipt_number, forfeited_packages(package_id)')
         .order('created_at', ascending: true));
     final out = <String, bool>{};
     for (final e in (data as List)) {
@@ -3851,9 +3866,14 @@ class DisposalService {
       final pkgId = fp?['package_id']?.toString();
       if (pkgId == null) continue;
       final itemId = e['package_item_id']?.toString() ?? '';
-      final key = '$pkgId|$itemId';
-      // ascending order → the last row written per key wins (latest).
-      out[key] = (e['is_delivered'] as bool?) ?? false;
+      final receipt = e['receipt_number']?.toString() ?? '';
+      final delivered = (e['is_delivered'] as bool?) ?? false;
+      // Package-level + per-item keys (latest wins) for legacy callers.
+      out['$pkgId|$itemId'] = delivered;
+      out[pkgId] = delivered;
+      // Receipt-pinned key so a single item sold across several partial tenders
+      // exposes each sale's own delivery state (matches the table/cell keys).
+      if (receipt.isNotEmpty) out['$pkgId|$itemId|$receipt'] = delivered;
     }
     return out;
   }

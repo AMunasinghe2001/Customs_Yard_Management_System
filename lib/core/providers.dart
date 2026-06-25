@@ -347,6 +347,10 @@ final forfeitedPackagesChangeTriggerProvider = StreamProvider<int>((ref) async* 
 final forfeitedPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(disposalRequestsChangeTriggerProvider);
+  // Sending a disposal request consumes the package, so it must drop off the
+  // Forfeited list immediately — watch the manual refresh signal too (realtime
+  // alone can lag, and same-session submits fire this trigger).
+  ref.watch(disposalRequestsRefreshProvider);
   // A package becoming SOLD / DESTROYED removes it from this list, so refresh
   // when tender_sale_items / destruction_items change in any session.
   ref.watch(tenderSaleItemsChangeTriggerProvider);
@@ -357,6 +361,7 @@ final forfeitedPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((r
 final expiredAppealPackagesProvider = FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(disposalRequestsChangeTriggerProvider);
+  ref.watch(disposalRequestsRefreshProvider);
   return ref.read(forfeitedPackageServiceProvider).getExpiredAppealPackages();
 });
 
@@ -535,6 +540,9 @@ final requestableForfeitedPackagesProvider =
   // _items realtime subscription is active on yard pages too — a request sent
   // or forwarded in any session live-drops it from the requestable list.
   ref.watch(disposalRequestsChangeTriggerProvider);
+  // Also watch the manual refresh signal so a same-session submit drops the
+  // requested item from the form pool immediately (realtime can lag).
+  ref.watch(disposalRequestsRefreshProvider);
   // Abandoned / "Other" requestable packages are synthesised from the `packages`
   // table, so a newly registered (or re-statused) package must refresh this too.
   ref.watch(packagesChangeTriggerProvider);
@@ -664,9 +672,13 @@ final saleItemForPackageItemProvider =
   final parts = key.split('|');
   final packageId = parts[0];
   final packageItemId = parts.length > 1 && parts[1].isNotEmpty ? parts[1] : null;
+  // Optional 3rd part: the receipt number of THIS sale, used to pick the exact
+  // TSI row when an item was sold across several partial tenders.
+  final receipt = parts.length > 2 && parts[2].isNotEmpty ? parts[2] : null;
   return ref
       .read(disposalServiceProvider)
-      .getTenderSaleItemForPackageItem(packageId, packageItemId);
+      .getTenderSaleItemForPackageItem(packageId, packageItemId,
+          receipt: receipt);
 });
 
 // Disposal-side: "sale"-tagged request items available to add to a tender sale.

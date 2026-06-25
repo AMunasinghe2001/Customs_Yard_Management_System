@@ -551,8 +551,21 @@ class _SoldRow {
   final String officer;
   const _SoldRow(this.package, this.entry, this.itemName, this.officer);
 
-  /// Key for saleItemForPackageItemProvider: "packageId|packageItemId".
-  String get saleItemKey => '${package.id}|${entry.packageItemId ?? ''}';
+  /// The receipt number this specific [FINAL:SOLD] entry recorded — parsed from
+  /// its "[FINAL:SOLD] — Receipt: <no>" note. Disambiguates which of an item's
+  /// several partial-sale TSI rows (same package_item_id) this row maps to.
+  String get receiptNo {
+    final notes = entry.returnNotes ?? '';
+    final m = RegExp(r'Receipt:\s*([^\|—]+)', caseSensitive: false)
+        .firstMatch(notes);
+    return m == null ? '' : m.group(1)!.trim();
+  }
+
+  /// Key for saleItemForPackageItemProvider:
+  /// "packageId|packageItemId|receiptNo" — the receipt pins the exact TSI row
+  /// (price/taxes) for this partial sale.
+  String get saleItemKey =>
+      '${package.id}|${entry.packageItemId ?? ''}|$receiptNo';
 }
 
 /// Sold-tab delivery sub-filter: null = all, true = delivered, false = pending.

@@ -2207,6 +2207,16 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           package: p,
                           packageItemId: widget.highlightEntry?.packageItemId ??
                               widget.highlightItemId,
+                          // Parse "[FINAL:SOLD] — Receipt: <no>" so the correct
+                          // TSI row (price/taxes) is shown when an item was sold
+                          // across several partial tenders.
+                          receipt: (() {
+                            final m = RegExp(r'Receipt:\s*([^\|—]+)',
+                                    caseSensitive: false)
+                                .firstMatch(
+                                    widget.highlightEntry?.returnNotes ?? '');
+                            return m?.group(1)?.trim();
+                          }()),
                         ),
                       // Destroyed packages can also be delivered out — show a
                       // Delivered/Pending section with a Mark Delivered button
@@ -2979,7 +2989,11 @@ class _SystemEntrySection extends StatelessWidget {
 class _SaleFinancialsSection extends ConsumerStatefulWidget {
   final PackageModel package;
   final String? packageItemId;
-  const _SaleFinancialsSection({required this.package, this.packageItemId});
+  /// Receipt number of THIS sale — pins the exact TSI row when one item was
+  /// sold across several partial tenders (same package_item_id, distinct prices).
+  final String? receipt;
+  const _SaleFinancialsSection(
+      {required this.package, this.packageItemId, this.receipt});
   @override
   ConsumerState<_SaleFinancialsSection> createState() => _SaleFinancialsSectionState();
 }
@@ -2988,7 +3002,7 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
   bool _toggling = false;
 
   String get _saleItemKey =>
-      '${widget.package.id}|${widget.packageItemId ?? ''}';
+      '${widget.package.id}|${widget.packageItemId ?? ''}|${widget.receipt ?? ''}';
 
   Future<void> _toggleDelivery(TenderSaleItemModel item) async {
     setState(() => _toggling = true);

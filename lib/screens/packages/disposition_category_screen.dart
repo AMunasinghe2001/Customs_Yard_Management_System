@@ -407,8 +407,16 @@ class _DispositionCategoryScreenState
                         return false;
                       }
                       if (_hasDelivery && _deliveryFilter != null) {
-                        final delivered =
-                            deliveredMap[row.package.id] ?? false;
+                        // Match the per-SALE delivery state (receipt-pinned),
+                        // falling back to the per-item / package-level value.
+                        final itemId = row.entry?.packageItemId ?? '';
+                        final receipt =
+                            _parseSaleReceipt(row.entry?.returnNotes) ?? '';
+                        final delivered = deliveredMap[
+                                '${row.package.id}|$itemId|$receipt'] ??
+                            deliveredMap['${row.package.id}|$itemId'] ??
+                            deliveredMap[row.package.id] ??
+                            false;
                         if (delivered != _deliveryFilter) return false;
                       }
                       return true;
@@ -514,11 +522,15 @@ class _DispositionCategoryScreenState
                                       DataCell(_SaleFinancialsCell(
                                         package: row.package,
                                         packageItemId: row.entry?.packageItemId,
+                                        receipt: _parseSaleReceipt(
+                                            row.entry?.returnNotes),
                                       )),
                                     if (widget.finalTag == 'SOLD')
                                       DataCell(_DeliveryStatusCell(
                                         package: row.package,
                                         packageItemId: row.entry?.packageItemId,
+                                        receipt: _parseSaleReceipt(
+                                            row.entry?.returnNotes),
                                       )),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(_DestroyedDeliveryStatusCell(
@@ -596,10 +608,13 @@ class _CategoryRow {
 class _DeliveryStatusCell extends ConsumerWidget {
   final PackageModel package;
   final String? packageItemId;
-  const _DeliveryStatusCell({required this.package, this.packageItemId});
+  /// Pins the exact TSI row when an item was sold across several partial sales.
+  final String? receipt;
+  const _DeliveryStatusCell(
+      {required this.package, this.packageItemId, this.receipt});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}';
+    final key = '${package.id}|${packageItemId ?? ''}|${receipt ?? ''}';
     final async = ref.watch(saleItemForPackageItemProvider(key));
     return async.when(
       loading: () => const SizedBox(
@@ -659,14 +674,29 @@ class _DeliveryStatusChip extends StatelessWidget {
   }
 }
 
+/// Parse the receipt number from a "[FINAL:SOLD] — Receipt: <no>" warehouse
+/// note. Used to pin the exact TSI row for an item sold across several partial
+/// tenders (same package_item_id, distinct prices/receipts).
+String? _parseSaleReceipt(String? returnNotes) {
+  if (returnNotes == null) return null;
+  final m = RegExp(r'Receipt:\s*([^\|—]+)', caseSensitive: false)
+      .firstMatch(returnNotes);
+  return m?.group(1)?.trim();
+}
+
 /// Read-only sold price + tax total for a sold package. Uses per-item provider.
 class _SaleFinancialsCell extends ConsumerWidget {
   final PackageModel package;
   final String? packageItemId;
-  const _SaleFinancialsCell({required this.package, this.packageItemId});
+  /// Receipt of THIS sale — pins the exact TSI row when an item was sold across
+  /// several partial tenders (same package_item_id, distinct prices).
+  final String? receipt;
+  const _SaleFinancialsCell(
+      {required this.package, this.packageItemId, this.receipt});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}';
+    final key =
+        '${package.id}|${packageItemId ?? ''}|${receipt ?? ''}';
     final async = ref.watch(saleItemForPackageItemProvider(key));
     return async.when(
       loading: () => const SizedBox(
