@@ -31,16 +31,16 @@ declare
   v_fp_item_id    uuid;   -- FP's specific item_id (null = package-level row)
   v_fp_entry_qty  int;    -- FP's actual abandoned/forfeited qty
   v_tsi_item_id   uuid;   -- the TSI row's own package_item_id (per-item sales)
-  v_target_item   uuid;   -- the item we will actually sell (or null = all)
+  v_target_item   uuid;   -- the item we will actually sell
   v_target_qty    int;    -- qty to record for a single-item sale
-  r               record;
+  v_unfinalised   int;    -- count of un-finalised items in the package
+  v_only_item     uuid;   -- the sole un-finalised item id (when count = 1)
   v_wh    uuid;
   v_zone  text;
   v_hold  text;
   v_adm   uuid;
   v_admat timestamptz;
   v_rate  numeric;
-  v_inserted int := 0;
   v_note  text;
 begin
   if not public.auth_user_is_disposal() then
@@ -63,99 +63,79 @@ begin
     raise exception 'appeal_hold_active';
   end if;
 
-  -- The item to sell: the TSI row's own item wins, then the FP's item; null =
-  -- whole package (true legacy package-level sale only).
+  -- The item to sell: the TSI row's own item wins, then the FP's item.
   v_target_item := coalesce(v_tsi_item_id, v_fp_item_id);
   -- The qty to record for a single-item sale: the FP's recorded entry_qty.
   v_target_qty  := v_fp_entry_qty;
+
+  -- Safety net: if we couldn't resolve a specific item AND the package has more
+  -- than one un-finalised item, refuse rather than bulk-selling every item
+  -- (which is the bug that sold Palm Oil alongside Jasmine Rice). Auto-pick the
+  -- item only when the package has exactly one un-finalised item.
+  if v_target_item is null then
+    select count(*), min(pi.id)
+      into strict v_unfinalised, v_only_item
+      from public.package_items pi
+     where pi.package_id = v_package
+       and lower(pi.status) not in
+           ('sold', 'destroyed', 'released', 're-exported', 'other');
+    if v_unfinalised > 1 then
+      raise exception 'ambiguous_sale_item: tender_sale_item % covers a package '
+        'with % un-finalised items but names no package_item_id', p_item_id,
+        v_unfinalised;
+    end if;
+    v_target_item := v_only_item;  -- the single item (or null when none left)
+  end if;
 
   v_note := '[FINAL:SOLD]' ||
     case when coalesce(p_receipt, '') <> ''
          then ' — Receipt: ' || p_receipt else '' end;
 
-  -- Insert a [FINAL:SOLD] warehouse entry for the relevant package item(s).
-  for r in
-    select pi.id as item_id, pi.quantity as qty
-      from public.package_items pi
-     where pi.package_id = v_package
-       and lower(pi.status) not in
-           ('sold', 'destroyed', 'released', 're-exported', 'other')
-       and (v_target_item is null or pi.id = v_target_item)
-  loop
+  -- At this point v_target_item is a single resolved item id (or null only when
+  -- the package genuinely has no un-finalised items). Record EXACTLY ONE
+  -- [FINAL:SOLD] entry for it — directly, not via a loop over package_items, so
+  -- that:
+  --   • we never bulk-sell sibling items (the Palm-Oil bug), and
+  --   • partial sales of the SAME item still record (no status gate that would
+  --     otherwise force a bogus NULL-item fallback entry on the 2nd partial).
+  if v_target_item is not null then
+    -- Warehouse context: prefer an entry already on this item, else any on the
+    -- package, else any warehouse.
     select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
       into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
       from public.warehouse_entries
      where package_id = v_package
-     order by (package_item_id = r.item_id) desc nulls last, admitted_at desc
+     order by (package_item_id = v_target_item) desc nulls last, admitted_at desc
      limit 1;
-
-    if v_wh is not null then
-      insert into public.warehouse_entries(
-        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
-        item_count, admitted_by, admitted_at, daily_rate,
-        is_returned, returned_at, returned_by, return_notes)
-      values (
-        v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
-        -- single-item sale → prefer the resolved target qty; whole-package
-        -- legacy sale → fall back to the item's own quantity.
-        coalesce(v_target_qty, r.qty), v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
-
-      update public.package_items set status = 'sold' where id = r.item_id;
-
-      delete from public.warehouse_entries
-       where package_item_id = r.item_id and is_returned = false;
-
-      -- Upsert a per-item TSI row (copies price/taxes from the package-level row).
-      insert into public.tender_sale_items(
-        tender_sale_id, forfeited_package_id, package_item_id,
-        yard, sold, sold_at, receipt_number,
-        sold_price, applied_taxes)
-      select
-        tsi.tender_sale_id, tsi.forfeited_package_id, r.item_id,
-        tsi.yard, true, now(), p_receipt,
-        p_price, p_taxes
-      from public.tender_sale_items tsi
-      where tsi.id = p_item_id
-      on conflict (forfeited_package_id, package_item_id)
-      do update set
-        sold          = true,
-        sold_at       = now(),
-        receipt_number = p_receipt,
-        sold_price    = p_price,
-        applied_taxes = p_taxes;
-
-      v_inserted := v_inserted + 1;
-    end if;
-  end loop;
-
-  -- Fallback: package has no individual items linkable to a warehouse entry.
-  if v_inserted = 0 then
-    select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
-      into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
-      from public.warehouse_entries
-     where package_id = v_package
-     order by admitted_at desc
-     limit 1;
-
     if v_wh is null then
       select id into v_wh from public.warehouses order by created_at limit 1;
       v_hold := 'Forfeit';
     end if;
 
-    if v_wh is not null then
-      insert into public.warehouse_entries(
-        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
-        item_count, admitted_by, admitted_at, daily_rate,
-        is_returned, returned_at, returned_by, return_notes)
-      values (
-        v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
-        coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-        coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
+    -- Qty: the disposition's recorded qty, else the item's registered quantity.
+    if v_target_qty is null then
+      select pi.quantity into v_target_qty
+        from public.package_items pi where pi.id = v_target_item;
     end if;
+
+    insert into public.warehouse_entries(
+      package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
+      item_count, admitted_by, admitted_at, daily_rate,
+      is_returned, returned_at, returned_by, return_notes)
+    values (
+      v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
+      coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
+      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
+
+    update public.package_items set status = 'sold' where id = v_target_item;
+
+    -- Clear any lingering ACTIVE (un-returned) entry for this item so it leaves
+    -- the live warehouse view; the [FINAL:SOLD] row above is the record of sale.
+    delete from public.warehouse_entries
+     where package_item_id = v_target_item and is_returned = false;
   end if;
 
-  -- Mark the original package-level TSI row sold too (keeps backward compat).
+  -- Mark this tender_sale_item row sold (price/taxes/receipt recorded on it).
   update public.tender_sale_items
      set sold = true, sold_at = now(), receipt_number = p_receipt,
          sold_price = p_price, applied_taxes = p_taxes

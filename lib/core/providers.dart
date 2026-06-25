@@ -606,6 +606,10 @@ final disposalRequestsChangeTriggerProvider = StreamProvider<int>((ref) async* {
 final disposalRequestsProvider =
     FutureProvider<List<DisposalRequestModel>>((ref) async {
   ref.watch(disposalRequestsChangeTriggerProvider);
+  // A new tender / destruction sale consumes request items, so they must drop
+  // off this feed immediately — watch those refresh signals too.
+  ref.watch(tenderSalesRefreshProvider);
+  ref.watch(destructionsRefreshProvider);
   return ref.read(disposalServiceProvider).getDisposalRequests();
 });
 

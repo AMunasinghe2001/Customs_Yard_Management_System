@@ -518,6 +518,12 @@ bool _isSoldEntry(WarehouseEntryModel e) {
   return tag == 'FINAL:SOLD' || tag == 'SOLD';
 }
 
+/// Format a [TimeOfDay] as a locale-independent 24-hour "HH:mm" string for the
+/// DB. (TimeOfDay.format() yields a localized 12-hour string like "3:30 PM"
+/// which the sale-time parser cannot read, leaving Mark Sold always unlocked.)
+String _timeOfDayToHHmm(TimeOfDay t) =>
+    '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
+
 /// The reason shown in the disposal tables' "Forfeit Reason" column. Prefers
 /// the item's own SR-form hold reasons (the clean text the officer entered,
 /// e.g. "No phytosanitary certificate"); falls back to the forfeited package's
@@ -569,10 +575,17 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
         if (!_isSoldEntry(e)) continue;
         final item =
             p.items.where((i) => i.id == e.packageItemId).firstOrNull;
+        // Resolve the item name from the entry's own package_item_id. NEVER fall
+        // back to items.first for a multi-item package — that mislabels an
+        // un-linked (legacy NULL-item) entry as the wrong product (the old
+        // "Palm Oil" bug). Only a single-item package can safely use its sole
+        // item's name.
+        final itemName = item?.itemName ??
+            (p.items.length == 1 ? p.items.first.itemName : '—');
         rows.add(_SoldRow(
           p,
           e,
-          item?.itemName ?? (p.items.isNotEmpty ? p.items.first.itemName : '—'),
+          itemName,
           e.returnedByName ?? e.returnedByBadge ?? '—',
         ));
       }
@@ -848,10 +861,14 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
         if (!_isDestroyedEntry(e)) continue;
         final item =
             p.items.where((i) => i.id == e.packageItemId).firstOrNull;
+        // Never mislabel an un-linked entry as items.first in a multi-item
+        // package (see the Sold tab note).
+        final itemName = item?.itemName ??
+            (p.items.length == 1 ? p.items.first.itemName : '—');
         rows.add(_SoldRow(
           p,
           e,
-          item?.itemName ?? (p.items.isNotEmpty ? p.items.first.itemName : '—'),
+          itemName,
           e.returnedByName ?? e.returnedByBadge ?? '—',
         ));
       }
@@ -2912,7 +2929,8 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               await ref.read(disposalServiceProvider).createTenderSale(
                     saleNumber: _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
                     saleDate: _saleDate,
-                    saleTime: _saleTime?.format(context),
+                    saleTime:
+                        _saleTime == null ? null : _timeOfDayToHHmm(_saleTime!),
                     serial:
                         _serialC.text.trim().isEmpty ? null : _serialC.text.trim(),
                     year: int.tryParse(_yearC.text.trim()),
@@ -4014,7 +4032,8 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
               await ref.read(disposalServiceProvider).createDestruction(
                     saleNumber: _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
                     saleDate: _saleDate,
-                    saleTime: _saleTime?.format(context),
+                    saleTime:
+                        _saleTime == null ? null : _timeOfDayToHHmm(_saleTime!),
                     serial:
                         _serialC.text.trim().isEmpty ? null : _serialC.text.trim(),
                     year: int.tryParse(_yearC.text.trim()),

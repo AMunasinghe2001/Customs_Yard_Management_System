@@ -3298,6 +3298,13 @@ class DisposalService {
     for (final e in (saleItems as List)) {
       tenderedIds.add(e['forfeited_package_id'].toString());
     }
+    // Packages placed in a DESTRUCTION sale also leave the requests view (they
+    // move on to the Destructions tab) — same as tendered packages.
+    final destItems = await AuthService._withNetworkRetry(() =>
+        supabase.from('destruction_items').select('forfeited_package_id'));
+    for (final e in (destItems as List)) {
+      tenderedIds.add(e['forfeited_package_id'].toString());
+    }
 
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_requests')

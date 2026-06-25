@@ -50,16 +50,16 @@ declare
   v_fp_item_id   uuid;   -- FP row's item_id (null = package-level row)
   v_fp_entry_qty int;    -- FP row's recorded forfeited/abandoned qty
   v_di_item_id   uuid;   -- the destruction_items row's own package_item_id
-  v_target_item  uuid;   -- item we will actually destroy (null = whole package)
+  v_target_item  uuid;   -- item we will actually destroy
   v_target_qty   int;    -- qty to record for a single-item destruction
-  r             record;
+  v_unfinalised  int;    -- count of un-finalised items in the package
+  v_only_item    uuid;   -- the sole un-finalised item id (when count = 1)
   v_wh    uuid;
   v_zone  text;
   v_hold  text;
   v_adm   uuid;
   v_admat timestamptz;
   v_rate  numeric;
-  v_inserted int := 0;
   v_note  text;
 begin
   if not public.auth_user_is_disposal() then
@@ -83,72 +83,65 @@ begin
     from public.forfeited_packages
    where id = v_forfeited;
 
-  -- The item to destroy: the DI row's own item wins, then the FP's item;
-  -- null = whole package (true legacy package-level destruction only).
+  -- The item to destroy: the DI row's own item wins, then the FP's item.
   v_target_item := coalesce(v_di_item_id, v_fp_item_id);
   v_target_qty  := v_fp_entry_qty;
+
+  -- Safety net: if no specific item resolved AND the package has >1 un-finalised
+  -- item, refuse rather than bulk-destroying every item. Auto-pick only when the
+  -- package has exactly one un-finalised item.
+  if v_target_item is null then
+    select count(*), min(pi.id)
+      into strict v_unfinalised, v_only_item
+      from public.package_items pi
+     where pi.package_id = v_package
+       and lower(pi.status) not in
+           ('sold', 'destroyed', 'released', 're-exported', 'other');
+    if v_unfinalised > 1 then
+      raise exception 'ambiguous_destruction_item: destruction_item % covers a '
+        'package with % un-finalised items but names no package_item_id',
+        p_item_id, v_unfinalised;
+    end if;
+    v_target_item := v_only_item;
+  end if;
 
   v_note := '[FINAL:DESTROYED]' ||
     case when coalesce(p_receipt, '') <> ''
          then ' — Receipt/Notes: ' || p_receipt else '' end;
 
-  for r in
-    select pi.id as item_id, pi.quantity as qty
-      from public.package_items pi
-     where pi.package_id = v_package
-       and lower(pi.status) not in
-           ('sold', 'destroyed', 'released', 're-exported', 'other')
-       and (v_target_item is null or pi.id = v_target_item)
-  loop
+  -- Record EXACTLY ONE [FINAL:DESTROYED] entry for the resolved item — directly,
+  -- not via a loop — so we never bulk-destroy siblings and partial destructions
+  -- of the same item still record (no status gate / NULL-item fallback).
+  if v_target_item is not null then
     select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
       into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
       from public.warehouse_entries
      where package_id = v_package
-     order by (package_item_id = r.item_id) desc nulls last, admitted_at desc
+     order by (package_item_id = v_target_item) desc nulls last, admitted_at desc
      limit 1;
-
-    if v_wh is not null then
-      insert into public.warehouse_entries(
-        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
-        item_count, admitted_by, admitted_at, daily_rate,
-        is_returned, returned_at, returned_by, return_notes)
-      values (
-        v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
-        coalesce(v_target_qty, r.qty), v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note);
-
-      update public.package_items set status = 'destroyed' where id = r.item_id;
-
-      delete from public.warehouse_entries
-       where package_item_id = r.item_id and is_returned = false;
-
-      v_inserted := v_inserted + 1;
-    end if;
-  end loop;
-
-  if v_inserted = 0 then
-    select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
-      into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
-      from public.warehouse_entries
-     where package_id = v_package
-     order by admitted_at desc
-     limit 1;
-
     if v_wh is null then
       select id into v_wh from public.warehouses order by created_at limit 1;
       v_hold := 'Forfeit';
     end if;
 
-    if v_wh is not null then
-      insert into public.warehouse_entries(
-        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
-        item_count, admitted_by, admitted_at, daily_rate,
-        is_returned, returned_at, returned_by, return_notes)
-      values (
-        v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
-        coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-        coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
+    if v_target_qty is null then
+      select pi.quantity into v_target_qty
+        from public.package_items pi where pi.id = v_target_item;
     end if;
+
+    insert into public.warehouse_entries(
+      package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
+      item_count, admitted_by, admitted_at, daily_rate,
+      is_returned, returned_at, returned_by, return_notes)
+    values (
+      v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
+      coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
+      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
+
+    update public.package_items set status = 'destroyed' where id = v_target_item;
+
+    delete from public.warehouse_entries
+     where package_item_id = v_target_item and is_returned = false;
   end if;
 
   update public.destruction_items
