@@ -2405,21 +2405,46 @@ class ForfeitedPackageService {
         }
 
         if (!alreadyOther && _itemIsRequestableOther(pkg, item)) {
-          result.add(ForfeitedPackageModel(
-            id: '${pkg.id}:${item.id}:other',
-            packageId: pkg.id,
-            srNumber: pkg.srNumber,
-            consigneeName: pkg.consigneeName,
-            forfeitedAt: pkg.createdAt,
-            // No appeal for "Other" goods → already-passed deadline.
-            appealDeadline: expiredDeadline,
-            reason: _otherReasonFor(pkg),
-            yard: AppSession.currentYard,
-            source: 'other',
-            packageDetails: pkg,
-            itemId: item.id,
-            itemName: item.itemName,
-          ));
+          // One row PER "[OTHER]" disposition event (partial qty), id =
+          // "<pkgId>:<itemId>:<entryId>:other" — mirrors the Other Packages
+          // screen which shows a separate row, with its own qty, per event.
+          final otherEntries = _otherEntriesForItem(pkg, item);
+          for (final entry in otherEntries) {
+            result.add(ForfeitedPackageModel(
+              id: '${pkg.id}:${item.id}:${entry.id}:other',
+              packageId: pkg.id,
+              srNumber: pkg.srNumber,
+              consigneeName: pkg.consigneeName,
+              forfeitedAt: pkg.createdAt,
+              appealDeadline: expiredDeadline,
+              reason: _otherReasonFor(pkg),
+              yard: AppSession.currentYard,
+              source: 'other',
+              packageDetails: pkg,
+              itemId: item.id,
+              itemName: item.itemName,
+              entryQty: entry.itemCount,
+            ));
+          }
+          // Form-level "Other" status with no "[OTHER]" disposition event —
+          // a single row for the whole item.
+          if (otherEntries.isEmpty) {
+            result.add(ForfeitedPackageModel(
+              id: '${pkg.id}:${item.id}:other',
+              packageId: pkg.id,
+              srNumber: pkg.srNumber,
+              consigneeName: pkg.consigneeName,
+              forfeitedAt: pkg.createdAt,
+              // No appeal for "Other" goods → already-passed deadline.
+              appealDeadline: expiredDeadline,
+              reason: _otherReasonFor(pkg),
+              yard: AppSession.currentYard,
+              source: 'other',
+              packageDetails: pkg,
+              itemId: item.id,
+              itemName: item.itemName,
+            ));
+          }
         }
       }
     }
@@ -2541,6 +2566,26 @@ class ForfeitedPackageService {
             e.isReturned &&
             (e.returnNotes ?? '').trim().toUpperCase().startsWith('[ABANDONED]'))
         .toList();
+  }
+
+  /// Partial/full "[OTHER]" disposition events for an item — one per event, so
+  /// the disposal-request list mirrors the Other Packages table (which shows a
+  /// separate row, with its own qty, per "[OTHER: …]" warehouse event). Skipped
+  /// once any final disposition ([FINAL:…]) exists for the item.
+  List<WarehouseEntryModel> _otherEntriesForItem(
+      PackageModel p, PackageItem item) {
+    final entries =
+        p.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+    final hasFinal = entries.any((e) =>
+        (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+    if (hasFinal) return const [];
+    return entries.where((e) {
+      if (!e.isReturned) return false;
+      final notes = (e.returnNotes ?? '').trim().toUpperCase();
+      return notes.startsWith('[OTHER:') ||
+          notes.startsWith('[OTHER]') ||
+          notes.startsWith('[OTHER ');
+    }).toList();
   }
 
   String _abandonReasonFor(PackageModel p) {
@@ -2711,10 +2756,15 @@ class ForfeitedPackageService {
         forfeitedIdFor[key] = key;
         continue;
       }
-      // Per-item forfeit synthetic key: "<fpId>:<itemId>:forfeit"
+      // Per-item forfeit synthetic key:
+      //   3-part: "<fpId>:<itemId>:forfeit"            (full-item forfeit)
+      //   4-part: "<fpId>:<itemId>:<entryId>:forfeit"  (partial forfeit event)
       // Create a new per-item FP row (copying the parent FP's fields but with
       // item_id set) so Valuation / Central Disposal can show each item
-      // separately with the correct name, HS code, and quantity.
+      // separately with the correct name, HS code, and quantity. For the 4-part
+      // variant we also store the partial forfeit warehouse entry's itemCount as
+      // entry_qty, so Valuation/Central Disposal price the partial qty (e.g. 2)
+      // rather than the full registered item quantity (e.g. 48).
       if (key.endsWith(':forfeit')) {
         final cached = fpIdByPkgItemSource[key];
         if (cached != null) {
@@ -2724,6 +2774,8 @@ class ForfeitedPackageService {
         final parts = key.split(':');
         final parentFpId = parts[0];
         final itemId = parts[1];
+        // 4-part key carries the originating forfeit warehouse entry id.
+        final forfeitEntryId = parts.length == 4 ? parts[2] : null;
         // Fetch the parent FP row to copy its fields.
         final parentRaw = await AuthService._withNetworkRetry(() => supabase
             .from('forfeited_packages')
@@ -2733,11 +2785,20 @@ class ForfeitedPackageService {
             .single());
         final parentFp = ForfeitedPackageModel.fromJson(
             parentRaw as Map<String, dynamic>);
+        // Resolve the partial forfeit qty from the named warehouse entry.
+        int? forfeitEntryQty;
+        if (forfeitEntryId != null) {
+          final matches = (parentFp.packageDetails?.warehouseEntries ?? const [])
+              .where((e) => e.id == forfeitEntryId)
+              .toList();
+          if (matches.isNotEmpty) forfeitEntryQty = matches.first.itemCount;
+        }
         final newFp = await AuthService._withNetworkRetry(() => supabase
             .from('forfeited_packages')
             .insert({
               'package_id': parentFp.packageId,
               'item_id': itemId,
+              if (forfeitEntryQty != null) 'entry_qty': forfeitEntryQty,
               'sr_number': parentFp.srNumber,
               'consignee_name': parentFp.consigneeName,
               'forfeited_at': parentFp.forfeitedAt.toIso8601String(),
@@ -3090,7 +3151,7 @@ class DisposalService {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sales')
         .select(
-            '*, profiles!created_by(full_name), tender_sale_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+            '*, profiles!created_by(full_name), tender_sale_items(*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
         .order('created_at', ascending: false));
     return (data as List).map((e) => TenderSaleModel.fromJson(e)).toList();
   }
@@ -3273,11 +3334,15 @@ class DisposalService {
   }
 
   /// Get the next serial number for tender sales in a given year.
-  Future<int> getNextTenderSaleSerial(int year) async {
-    final data = await AuthService._withNetworkRetry(() => supabase
-        .from('tender_sales')
-        .select('serial')
-        .eq('year', year));
+  /// Next tender-sale serial for a [year], scoped to a [yard] when given so each
+  /// yard keeps its own running sequence (GL1's 6th sale is serial 6 even if
+  /// GL2 already has 3). A null [yard] falls back to the global max.
+  Future<int> getNextTenderSaleSerial(int year, {String? yard}) async {
+    final data = await AuthService._withNetworkRetry(() {
+      var q = supabase.from('tender_sales').select('serial').eq('year', year);
+      if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+      return q;
+    });
     if (data == null) return 1;
     int maxSerial = 0;
     for (var row in data as List) {
@@ -3289,6 +3354,9 @@ class DisposalService {
 
   /// Create a tender sale. [packageYards] maps each selected forfeited-package
   /// id → its yard; one `tender_sale_items` row is created per entry.
+  /// [packageItems] maps each forfeited-package id → the specific package_item
+  /// id it covers (when known) so the TSI row is item-scoped — this lets
+  /// Mark Sold sell exactly that item instead of the whole package.
   Future<void> createTenderSale({
     String? saleNumber,
     DateTime? saleDate,
@@ -3298,6 +3366,7 @@ class DisposalService {
     String? tenderType,
     String? yard,
     Map<String, String> packageYards = const {},
+    Map<String, String?> packageItems = const {},
   }) async {
     final user = supabase.auth.currentUser;
     final sale = await AuthService._withNetworkRetry(() => supabase
@@ -3324,6 +3393,10 @@ class DisposalService {
           .map((e) => {
                 'tender_sale_id': saleId,
                 'forfeited_package_id': e.key,
+                // Item-scope the row so Mark Sold sells exactly this item, not
+                // the whole package. Falls back to the FP's own item_id in the
+                // RPC when null (legacy package-level rows).
+                'package_item_id': packageItems[e.key],
                 'yard': e.value,
                 // Re-tendering an unsold package moves it to this new sale and
                 // resets its sale state (upsert on the unique forfeited id).
@@ -3333,7 +3406,7 @@ class DisposalService {
           .toList();
       await AuthService._withNetworkRetry(() => supabase
           .from('tender_sale_items')
-          .upsert(rows, onConflict: 'forfeited_package_id'));
+          .upsert(rows, onConflict: 'forfeited_package_id,package_item_id'));
     }
 
     if (user != null) {
@@ -3363,8 +3436,8 @@ class DisposalService {
             'p_receipt': (receipt == null || receipt.trim().isEmpty)
                 ? null
                 : receipt.trim(),
-            'p_sold_price': soldPrice,
-            'p_applied_taxes': appliedTaxes,
+            'p_price': soldPrice,
+            'p_taxes': appliedTaxes,
           },
         ));
     final user = supabase.auth.currentUser;
@@ -3475,7 +3548,7 @@ class DisposalService {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('destructions')
         .select(
-            '*, profiles!created_by(full_name), destruction_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+            '*, profiles!created_by(full_name), destruction_items(*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
         .order('created_at', ascending: false));
     return (data as List).map((e) => DestructionModel.fromJson(e)).toList();
   }
@@ -3551,11 +3624,15 @@ class DisposalService {
     return items.where((i) => seen.add(i.id)).toList();
   }
 
-  Future<int> getNextDestructionSerial(int year) async {
-    final data = await AuthService._withNetworkRetry(() => supabase
-        .from('destructions')
-        .select('serial')
-        .eq('year', year));
+  /// Next destruction serial for a [year], scoped to a [yard] when given so each
+  /// yard keeps its own running sequence. A null [yard] falls back to the
+  /// global max.
+  Future<int> getNextDestructionSerial(int year, {String? yard}) async {
+    final data = await AuthService._withNetworkRetry(() {
+      var q = supabase.from('destructions').select('serial').eq('year', year);
+      if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+      return q;
+    });
     if (data == null) return 1;
     int maxSerial = 0;
     for (var row in data as List) {
@@ -3574,6 +3651,7 @@ class DisposalService {
     String? tenderType,
     String? yard,
     Map<String, String> packageYards = const {},
+    Map<String, String?> packageItems = const {},
   }) async {
     final user = supabase.auth.currentUser;
     final dest = await AuthService._withNetworkRetry(() => supabase
@@ -3600,6 +3678,9 @@ class DisposalService {
           .map((e) => {
                 'destruction_id': destId,
                 'forfeited_package_id': e.key,
+                // Item-scope the row so Mark Destroyed destroys exactly this
+                // item, not the whole package.
+                'package_item_id': packageItems[e.key],
                 'yard': e.value,
                 'destroyed': false,
                 'destroyed_at': null,
@@ -3607,7 +3688,7 @@ class DisposalService {
           .toList();
       await AuthService._withNetworkRetry(() => supabase
           .from('destruction_items')
-          .upsert(rows, onConflict: 'forfeited_package_id'));
+          .upsert(rows, onConflict: 'forfeited_package_id,package_item_id'));
     }
 
     if (user != null) {

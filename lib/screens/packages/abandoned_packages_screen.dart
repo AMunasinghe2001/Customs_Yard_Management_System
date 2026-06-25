@@ -77,13 +77,18 @@ class _AbandonedPackagesScreenState
   /// Sale/Destroy buttons. createDisposalRequest creates the synthetic
   /// forfeited_packages row for abandoned goods automatically.
   Future<void> _requestSingleDisposal(
-      PackageModel pkg, PackageItem item, String disposition) async {
+      PackageModel pkg, PackageItem item, String disposition,
+      {WarehouseEntryModel? entry}) async {
     try {
+      // Include the entry ID when a warehouse entry exists so createDisposalRequest
+      // can store entry.itemCount as entry_qty on the FP row — giving Tender Sales
+      // the correct qty (e.g. 6 or 5) instead of the full registered quantity.
+      final key = entry != null
+          ? '${pkg.id}:${item.id}:${entry.id}:abandoned'
+          : '${pkg.id}:${item.id}:abandoned';
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
             requestDate: DateTime.now(),
-            // "pkgId:itemId:abandoned" — per-item key so sentAbandonedOtherFpKeysProvider
-            // can match "pkgId:itemId" and hide the row after submission.
-            dispositions: {'${pkg.id}:${item.id}:abandoned': disposition},
+            dispositions: {key: disposition},
           );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
@@ -702,7 +707,8 @@ class _AbandonedPackagesScreenState
                                                     _requestSingleDisposal(
                                                         row.package,
                                                         row.item,
-                                                        disposition),
+                                                        disposition,
+                                                        entry: row.entry),
                                           ),
                                         );
                                       },

@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -409,7 +409,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     onDetails: () => showDialog(
                           context: context,
                           builder: (_) => PackageDetailsDialog(
-                              package: _srResult!, storageRate: storageRateHistory),
+                              package: _srResult!,
+                              storageRate: storageRateHistory),
                         )).animate().fadeIn(),
               ],
               const Gap(16),

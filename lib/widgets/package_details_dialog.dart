@@ -154,6 +154,11 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // button in its details popup.
   final bool forceFinalDisposition;
 
+  // When true, the dialog is opened from the Sold Packages page, so the
+  // Sale & Financial Information section is always shown. When false
+  // (default), the section only shows if the highlighted entry is sold.
+  final bool isSoldPage;
+
   const PackageDetailsDialog({
     super.key,
     required this.package,
@@ -176,6 +181,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.allowFinalDisposition = true,
     this.onSaleOrDestroyRequest,
     this.forceFinalDisposition = false,
+    this.isSoldPage = false,
   });
 
   @override
@@ -1372,6 +1378,27 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                 ),
                                               ],
                                             ),
+                                            if (highlightedItem
+                                                    .goodsDescription
+                                                    ?.isNotEmpty ==
+                                                true)
+                                              _DetailItem(
+                                                icon:
+                                                    Icons.description_rounded,
+                                                label: 'Goods Description',
+                                                value: highlightedItem
+                                                    .goodsDescription!,
+                                              ),
+                                            if (highlightedItem
+                                                    .reasons?.isNotEmpty ==
+                                                true)
+                                              _DetailItem(
+                                                icon: Icons
+                                                    .warning_amber_rounded,
+                                                label: 'Hold Reasons',
+                                                value:
+                                                    highlightedItem.reasons!,
+                                              ),
                                           ],
                                         ),
                                 ),
@@ -2165,10 +2192,21 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             ],
                           ),
                         ),
-                      if (p.status?.toLowerCase() == 'sold' || p.items.any((i) => i.status?.toLowerCase() == 'sold') || widget.highlightEntry?.returnNotes?.contains('SOLD') == true)
+                      if (() {
+                            // Sold Packages page: always show Sale & Financial.
+                            if (widget.isSoldPage) return true;
+
+                            // All other pages: only show if entry is SOLD.
+                            final entryNotes =
+                                widget.highlightEntry?.returnNotes ?? '';
+                            return entryNotes
+                                .toUpperCase()
+                                .contains('SOLD');
+                          }())
                         _SaleFinancialsSection(
                           package: p,
-                          packageItemId: widget.highlightEntry?.packageItemId,
+                          packageItemId: widget.highlightEntry?.packageItemId ??
+                              widget.highlightItemId,
                         ),
                       // Destroyed packages can also be delivered out — show a
                       // Delivered/Pending section with a Mark Delivered button
@@ -3021,6 +3059,12 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
             ),
             child: Column(
               children: [
+                if (saleItem.receiptNumber?.trim().isNotEmpty == true)
+                  _DetailItem(
+                    icon: Icons.receipt_long_rounded,
+                    label: 'Receipt No',
+                    value: saleItem.receiptNumber!.trim(),
+                  ),
                 _DetailItem(
                   icon: Icons.payments_rounded,
                   label: 'Sold Price (Rs)',
@@ -3365,6 +3409,12 @@ class _NoEntryItemCard extends StatelessWidget {
               ),
             ],
           ),
+          if (item.goodsDescription?.isNotEmpty == true)
+            _DetailItem(
+              icon: Icons.description_rounded,
+              label: 'Goods Description',
+              value: item.goodsDescription!,
+            ),
           if (item.reasons?.isNotEmpty == true)
             _DetailItem(
               icon: Icons.warning_amber_rounded,

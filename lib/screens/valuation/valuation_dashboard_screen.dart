@@ -252,13 +252,31 @@ class _ValuationRequestCard extends ConsumerWidget {
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final items = request.items;
+    // Items handled by a per-item (itemId-specific) request row — keyed by
+    // "<packageId>:<itemId>". When the same item also appears inside a
+    // package-level (itemId==null) row, the package-level row must NOT expand
+    // that item again, or its full registered qty (e.g. 200) duplicates the
+    // partial-qty per-item rows (e.g. 3+2+5+2) the yard actually requested.
+    final perItemKeys = <String>{};
+    for (final it in items) {
+      final iid = it.forfeited?.itemId;
+      final pid = it.forfeited?.packageId;
+      if (iid != null && pid != null) perItemKeys.add('$pid:$iid');
+    }
     // Expand package-level FP rows (itemId==null, multiple pkg items) so each
     // item appears as its own table row — same as the Set Valuation form.
     final expandedRows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
     for (final it in items) {
       final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+      final pid = it.forfeited?.packageId;
       if (it.forfeited?.itemId == null && fpItems.length > 1) {
         for (final pkgItem in fpItems) {
+          // Skip items already covered by a dedicated per-item request row —
+          // those carry the correct partial quantity; the package-level row
+          // would otherwise re-add them at the full registered quantity.
+          if (pid != null && perItemKeys.contains('$pid:${pkgItem.id}')) {
+            continue;
+          }
           expandedRows.add((it: it, pkgItem: pkgItem));
         }
       } else {
@@ -506,24 +524,15 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
     super.initState();
     // Build one controller per *display row* (composite key = itemId_pkgItemId)
     // so that expanded per-item rows from the same FP row each have an
-    // independent text field rather than sharing one controller.
+    // independent text field rather than sharing one controller. Uses the same
+    // _expandRows() so skipped (duplicate) per-item rows get no orphan field.
     _ctrls = {};
-    for (final it in widget.request.items) {
-      final fpItems = it.forfeited?.packageDetails?.items ?? const [];
-      if (it.forfeited?.itemId == null && fpItems.length > 1) {
-        for (final pkgItem in fpItems) {
-          final key = '${it.id}_${pkgItem.id}';
-          _ctrls[key] = TextEditingController(
-              text: it.valuationCost != null
-                  ? it.valuationCost!.toStringAsFixed(0)
-                  : '');
-        }
-      } else {
-        _ctrls[it.id] = TextEditingController(
-            text: it.valuationCost != null
-                ? it.valuationCost!.toStringAsFixed(0)
-                : '');
-      }
+    for (final row in _expandRows()) {
+      final key = _ctrlKey(row.it, row.pkgItem);
+      _ctrls[key] = TextEditingController(
+          text: row.it.valuationCost != null
+              ? row.it.valuationCost!.toStringAsFixed(0)
+              : '');
     }
     // Rebuild on every keystroke so each item's live total (cost × qty)
     // updates as the directorate types.
@@ -626,10 +635,23 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
   // item type; the total = unitCost × that item's qty.
   List<({DisposalRequestItemModel it, PackageItem? pkgItem})> _expandRows() {
     final out = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+    // Items already covered by a dedicated per-item request row (correct
+    // partial qty) — keyed "<packageId>:<itemId>". A package-level row must not
+    // re-expand these at the full registered qty (mirrors the table builder).
+    final perItemKeys = <String>{};
+    for (final it in widget.request.items) {
+      final iid = it.forfeited?.itemId;
+      final pid = it.forfeited?.packageId;
+      if (iid != null && pid != null) perItemKeys.add('$pid:$iid');
+    }
     for (final it in widget.request.items) {
       final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+      final pid = it.forfeited?.packageId;
       if (it.forfeited?.itemId == null && fpItems.length > 1) {
         for (final pkgItem in fpItems) {
+          if (pid != null && perItemKeys.contains('$pid:${pkgItem.id}')) {
+            continue;
+          }
           out.add((it: it, pkgItem: pkgItem));
         }
       } else {

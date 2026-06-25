@@ -83,11 +83,23 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
   /// Disposition Sale/Destroy buttons. The package then leaves the Forfeited
   /// list (it is now "requested") and surfaces in the directorate's queue.
   Future<void> _requestSingleDisposal(
-      ForfeitedPackageModel fp, String disposition) async {
+      ForfeitedPackageModel fp, String disposition,
+      {PackageItem? item, WarehouseEntryModel? entry}) async {
     try {
+      // When this row represents a specific item + partial forfeit warehouse
+      // event, send a 4-part synthetic key so createDisposalRequest creates a
+      // per-item FP row carrying that entry's qty as entry_qty — Valuation /
+      // Central Disposal then price the partial forfeit qty (e.g. 2) instead of
+      // the full registered item quantity (e.g. 48). Otherwise fall back to the
+      // plain FP id (full-package forfeit).
+      final key = (item != null && entry != null)
+          ? '${fp.id}:${item.id}:${entry.id}:forfeit'
+          : (item != null)
+              ? '${fp.id}:${item.id}:forfeit'
+              : fp.id;
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
             requestDate: DateTime.now(),
-            dispositions: {fp.id: disposition},
+            dispositions: {key: disposition},
           );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(forfeitedPackagesProvider);
@@ -640,7 +652,9 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                 onSaleOrDestroyRequest:
                                                     (disposition) =>
                                                         _requestSingleDisposal(
-                                                            pkg, disposition),
+                                                            pkg, disposition,
+                                                            item: row.item,
+                                                            entry: row.entry),
                                               ),
                                             ),
                                   ),

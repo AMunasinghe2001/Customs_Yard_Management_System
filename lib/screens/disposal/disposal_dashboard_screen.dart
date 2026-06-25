@@ -518,6 +518,26 @@ bool _isSoldEntry(WarehouseEntryModel e) {
   return tag == 'FINAL:SOLD' || tag == 'SOLD';
 }
 
+/// The reason shown in the disposal tables' "Forfeit Reason" column. Prefers
+/// the item's own SR-form hold reasons (the clean text the officer entered,
+/// e.g. "No phytosanitary certificate"); falls back to the forfeited package's
+/// stored reason. Strips any synthetic "Held — " / "Held: " prefix that older
+/// disposition records prepended, so the table mirrors the SR form exactly.
+String _forfeitReasonText(PackageItem? item, ForfeitedPackageModel? f) {
+  String clean(String s) {
+    var t = s.trim();
+    // Remove a leading "Held" marker followed by a dash/colon separator.
+    final m = RegExp(r'^held\s*[—–:-]\s*', caseSensitive: false).firstMatch(t);
+    if (m != null) t = t.substring(m.end).trim();
+    return t;
+  }
+
+  final itemReasons = item?.reasons?.trim();
+  if (itemReasons != null && itemReasons.isNotEmpty) return clean(itemReasons);
+  final fpReason = f?.reason.trim() ?? '';
+  return clean(fpReason);
+}
+
 class _SoldRow {
   final PackageModel package;
   final WarehouseEntryModel entry;
@@ -672,6 +692,8 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                             DataColumn2(
                                 label: Text('Sold By'), size: ColumnSize.M),
                             DataColumn2(
+                                label: Text('Receipt No'), size: ColumnSize.S),
+                            DataColumn2(
                                 label: Text('Financials'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Delivery'), fixedWidth: 120),
@@ -697,6 +719,8 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                     DataCell(Text(r.officer,
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(
+                                        _SaleReceiptCell(saleItemKey: r.saleItemKey)),
+                                    DataCell(
                                         _SaleFinancialsCell(saleItemKey: r.saleItemKey)),
                                     DataCell(
                                         _DeliveryStatusCell(package: r.package, saleItemKey: r.saleItemKey)),
@@ -715,6 +739,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                                 context.colors.successGreen,
                                             highlightEntry: r.entry,
                                             useLegacySummary: true,
+                                            isSoldPage: true,
                                           ),
                                         ),
                                       ),
@@ -1037,6 +1062,29 @@ class _DestroyedDeliveryCell extends ConsumerWidget {
 
 // Read-only sold price + tax total (watches the per-item provider so each sold
 // row shows its own price when a package has multiple separately-priced items).
+// Receipt number for a sold package item (watches the same per-item provider
+// as the financials cell so it matches the specific sold row).
+class _SaleReceiptCell extends ConsumerWidget {
+  final String saleItemKey;
+  const _SaleReceiptCell({required this.saleItemKey});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) {
+        final receipt = item?.receiptNumber?.trim();
+        return Text(
+          (receipt != null && receipt.isNotEmpty) ? receipt : '—',
+          overflow: TextOverflow.ellipsis,
+        );
+      },
+    );
+  }
+}
+
 class _SaleFinancialsCell extends ConsumerWidget {
   final String saleItemKey;
   const _SaleFinancialsCell({required this.saleItemKey});
@@ -1227,13 +1275,26 @@ class _RequestCard extends ConsumerWidget {
         {DateTime(2020, 1, 1): 50.0};
     final items = request.items;
 
+    // Items already covered by a dedicated per-item request row (correct
+    // partial qty) — keyed "<packageId>:<itemId>". A package-level row must not
+    // re-expand these at the full registered qty (would duplicate the partials).
+    final perItemKeys = <String>{};
+    for (final it in items) {
+      final iid = it.forfeited?.itemId;
+      final pid = it.forfeited?.packageId;
+      if (iid != null && pid != null) perItemKeys.add('$pid:$iid');
+    }
     // Expand package-level FP rows (itemId==null, multiple pkg items) so each
     // item appears as its own table row.
     final expandedRows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
     for (final it in items) {
       final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+      final pid = it.forfeited?.packageId;
       if (it.forfeited?.itemId == null && fpItems.length > 1) {
         for (final pkgItem in fpItems) {
+          if (pid != null && perItemKeys.contains('$pid:${pkgItem.id}')) {
+            continue;
+          }
           expandedRows.add((it: it, pkgItem: pkgItem));
         }
       } else {
@@ -1564,6 +1625,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final async = ref.watch(unsoldTenderSalesProvider);
 
     return Padding(
@@ -1672,6 +1734,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                           label: Text('Source'),
                           size: ColumnSize.S,
                           fixedWidth: 110),
+                      DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
                       DataColumn2(
                           label: Center(child: Text('Times Tendered')),
                           size: ColumnSize.S,
@@ -1680,9 +1743,14 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                           label: Center(child: Text('Tenders')),
                           size: ColumnSize.S,
                           fixedWidth: 90),
+                      DataColumn2(
+                          label: Center(child: Text('Details')),
+                          size: ColumnSize.S,
+                          fixedWidth: 64),
                     ],
                     rows: list.map((info) {
                       final f = info.forfeited;
+                      final pkg = f.packageDetails;
                       return DataRow(cells: [
                         DataCell(Text(f.srNumber,
                             style: TextStyle(
@@ -1693,6 +1761,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                         DataCell(Text(f.consigneeName,
                             overflow: TextOverflow.ellipsis)),
                         DataCell(_SourceChip(source: f.source)),
+                        DataCell(_ValuationCell(f: f)),
                         DataCell(Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -1716,6 +1785,31 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                               builder: (_) => _TenderSaleHistoryDialog(info: info),
                             ),
                           ),
+                        )),
+                        DataCell(Center(
+                          child: pkg != null
+                              ? IconButton(
+                                  icon: Icon(Icons.info_outline_rounded,
+                                      color: context.colors.accentLightBlue,
+                                      size: 18),
+                                  onPressed: () => showDialog(
+                                    context: context,
+                                    builder: (_) => PackageDetailsDialog(
+                                      package: pkg,
+                                      storageRate: storageRate,
+                                      headerAccentColor: green,
+                                      useLegacySummary: true,
+                                      highlightItemId: f.itemId,
+                                      yardLabel: yardName(f.yard),
+                                      valuationUnitCost: f.valuationCost,
+                                      valuationTotalCost: f.valuationCost != null
+                                          ? f.valuationCost! * (f.entryQty ?? 1)
+                                          : null,
+                                      valuationQty: f.entryQty,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         )),
                       ]);
                     }).toList(),
@@ -1858,12 +1952,34 @@ class TenderSaleCard extends ConsumerWidget {
   }
 
   List<_TsRow> _rows() {
-    final rows = <_TsRow>[];
     // Central Disposal hides sold items (they move to Sold Packages); the
     // yard view-only page keeps them so the yard can see the full outcome.
     final source =
         readOnly ? sale.items : sale.items.where((s) => !s.sold);
+
+    // De-duplicate: same (forfeitedPackageId, packageItemId) may appear as
+    // multiple TSI rows when the per-item RPC created extra entries. Keep the
+    // sold row when one exists, otherwise the latest (highest soldAt / id).
+    final dedupMap = <String, TenderSaleItemModel>{};
     for (final si in source) {
+      final key = '${si.forfeitedPackageId}|${si.forfeited?.itemId ?? ''}';
+      final existing = dedupMap[key];
+      if (existing == null) {
+        dedupMap[key] = si;
+      } else {
+        // Prefer sold over pending; if both same, keep later soldAt.
+        if (si.sold && !existing.sold) {
+          dedupMap[key] = si;
+        } else if (si.sold == existing.sold) {
+          final siTime = si.soldAt ?? DateTime(2000);
+          final exTime = existing.soldAt ?? DateTime(2000);
+          if (siTime.isAfter(exTime)) dedupMap[key] = si;
+        }
+      }
+    }
+
+    final rows = <_TsRow>[];
+    for (final si in dedupMap.values) {
       final pkg = si.forfeited?.packageDetails;
       final pkgItems = pkg?.items ?? const [];
       final fpItemId = si.forfeited?.itemId;
@@ -1872,11 +1988,11 @@ class TenderSaleCard extends ConsumerWidget {
       } else if (fpItemId != null) {
         // Per-item FP row — show only the specific item it refers to.
         final match = pkgItems.where((i) => i.id == fpItemId).firstOrNull;
-        rows.add(_TsRow(si, match, match != null ? _warehouseFor(pkg, match.id) : '—'));
+        rows.add(_TsRow(si, match, match != null ? _warehouseFor(pkg!, match.id) : '—'));
       } else {
         // Package-level FP row — show one row per package item (legacy data).
         for (final it in pkgItems) {
-          rows.add(_TsRow(si, it, _warehouseFor(pkg, it.id)));
+          rows.add(_TsRow(si, it, _warehouseFor(pkg!, it.id)));
         }
       }
     }
@@ -1886,8 +2002,9 @@ class TenderSaleCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final rows = _rows();
-    final total = sale.items.length;
+    final total = sale.totalCount;
     final sold = sale.soldCount;
     final allSold = total > 0 && sold == total;
 
@@ -2003,10 +2120,15 @@ class TenderSaleCard extends ConsumerWidget {
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('Goods Description'), size: ColumnSize.L),
+                    DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
                     DataColumn2(
                         label: Center(child: Text('Status')),
                         size: ColumnSize.M,
                         fixedWidth: 140),
+                    DataColumn2(
+                        label: Center(child: Text('Details')),
+                        size: ColumnSize.S,
+                        fixedWidth: 64),
                   ],
                   rows: rows.map((r) {
                     final f = r.saleItem.forfeited;
@@ -2020,13 +2142,15 @@ class TenderSaleCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text('${r.item?.quantity ?? '—'}')),
-                      DataCell(Tooltip(
-                        message: f?.reason ?? '',
-                        child: Text(
-                            f?.reason.isNotEmpty == true ? f!.reason : '—',
-                            overflow: TextOverflow.ellipsis),
-                      )),
+                      DataCell(Text('${f?.entryQty ?? r.item?.quantity ?? '—'}')),
+                      DataCell(Builder(builder: (_) {
+                        final reason = _forfeitReasonText(r.item, f);
+                        return Tooltip(
+                          message: reason,
+                          child: Text(reason.isNotEmpty ? reason : '—',
+                              overflow: TextOverflow.ellipsis),
+                        );
+                      })),
                       DataCell(Text(
                           '${yardName(r.saleItem.yard)} / ${r.warehouse}',
                           overflow: TextOverflow.ellipsis,
@@ -2044,34 +2168,86 @@ class TenderSaleCard extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12)),
                       )),
+                      DataCell(_ValuationCell(f: f)),
                       DataCell(Center(
                         child: r.saleItem.sold
                             ? _statusChip(context, 'Sold',
                                 Icons.check_circle_rounded, green)
-                            // Yard view-only → read-only "Pending" chip; Central
-                            // Disposal keeps the actionable Mark-Sold button.
                             : readOnly
-                                ? _statusChip(context, 'Pending',
-                                    Icons.schedule_rounded,
-                                    context.colors.warningAmber)
-                                : OutlinedButton.icon(
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: green,
-                                      side: BorderSide(
-                                          color: green.withOpacity(0.5)),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 10, vertical: 6),
-                                      minimumSize: const Size(0, 32),
-                                    ),
-                                    icon:
-                                        const Icon(Icons.sell_rounded, size: 14),
-                                    label: const Text('Mark Sold',
-                                        style: TextStyle(
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w700)),
-                                    onPressed: () =>
-                                        _markSold(context, ref, r.saleItem),
+                                ? (() {
+                                    final saleDate = sale.saleDate;
+                                    final isUnsold = saleDate != null &&
+                                        DateTime.now().isAfter(
+                                            saleDate.add(const Duration(days: 1)));
+                                    return isUnsold
+                                        ? _statusChip(
+                                            context,
+                                            'Unsold',
+                                            Icons.cancel_outlined,
+                                            context.colors.dangerRed)
+                                        : _statusChip(
+                                            context,
+                                            'Pending',
+                                            Icons.schedule_rounded,
+                                            context.colors.warningAmber);
+                                  }())
+                                : (() {
+                                    // Mark Sold only unlocks once the scheduled
+                                    // sale moment (date + time) has passed.
+                                    final canSell = sale.saleTimePassed;
+                                    final btn = OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: green,
+                                        side: BorderSide(
+                                            color: green.withOpacity(0.5)),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 6),
+                                        minimumSize: const Size(0, 32),
+                                      ),
+                                      icon: const Icon(Icons.sell_rounded,
+                                          size: 14),
+                                      label: const Text('Mark Sold',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700)),
+                                      onPressed: canSell
+                                          ? () => _markSold(
+                                              context, ref, r.saleItem)
+                                          : null,
+                                    );
+                                    return canSell
+                                        ? btn
+                                        : Tooltip(
+                                            message: _saleLockMessage(sale),
+                                            child: btn);
+                                  }()),
+                      )),
+                      DataCell(Center(
+                        child: pkg != null
+                            ? IconButton(
+                                icon: Icon(Icons.info_outline_rounded,
+                                    color: context.colors.accentLightBlue,
+                                    size: 18),
+                                onPressed: () => showDialog(
+                                  context: context,
+                                  builder: (_) => PackageDetailsDialog(
+                                    package: pkg,
+                                    storageRate: storageRate,
+                                    headerAccentColor: green,
+                                    useLegacySummary: true,
+                                    highlightItemId: f?.itemId,
+                                    yardLabel: yardName(r.saleItem.yard),
+                                    valuationUnitCost: f?.valuationCost,
+                                    valuationTotalCost: f?.valuationCost != null
+                                        ? f!.valuationCost! *
+                                            (f.entryQty ?? r.item?.quantity ?? 1)
+                                        : null,
+                                    valuationQty:
+                                        f?.entryQty ?? r.item?.quantity,
                                   ),
+                                ),
+                              )
+                            : const SizedBox.shrink(),
                       )),
                     ]);
                   }).toList(),
@@ -2103,11 +2279,27 @@ class TenderSaleCard extends ConsumerWidget {
     );
   }
 
-  void _markSold(
-      BuildContext context, WidgetRef ref, TenderSaleItemModel item) {
+  /// Tooltip shown on a disabled Mark Sold button — tells the officer when the
+  /// scheduled sale moment unlocks the action.
+  String _saleLockMessage(TenderSaleModel sale) {
+    final moment = sale.saleMoment;
+    if (moment == null) return 'No sale date set yet';
+    final when = DateFormat('yyyy-MM-dd HH:mm').format(moment);
+    return 'Available after the scheduled sale time ($when)';
+  }
+
+  Future<void> _markSold(
+      BuildContext context, WidgetRef ref, TenderSaleItemModel item) async {
+    // Pre-load the active taxes BEFORE opening the dialog so the form renders
+    // once, fully (Sold Price + Taxes + Grand Total), instead of flickering in
+    // when the async tax fetch completes after the dialog is already shown.
+    final taxes = await ref.read(disposalServiceProvider).getTaxes();
+    final activeTaxes = taxes.where((t) => t.isActive).toList();
+    if (!context.mounted) return;
     showDialog(
       context: context,
-      builder: (ctx) => _MarkSoldDialog(item: item, ref: ref),
+      builder: (ctx) =>
+          _MarkSoldDialog(item: item, ref: ref, activeTaxes: activeTaxes),
     );
   }
 }
@@ -2115,7 +2307,9 @@ class TenderSaleCard extends ConsumerWidget {
 class _MarkSoldDialog extends StatefulWidget {
   final TenderSaleItemModel item;
   final WidgetRef ref;
-  const _MarkSoldDialog({required this.item, required this.ref});
+  final List<DisposalTaxModel> activeTaxes;
+  const _MarkSoldDialog(
+      {required this.item, required this.ref, required this.activeTaxes});
   @override
   State<_MarkSoldDialog> createState() => _MarkSoldDialogState();
 }
@@ -2124,18 +2318,13 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
   final _receiptC = TextEditingController();
   final _soldPriceC = TextEditingController();
   bool _loading = false;
-  List<DisposalTaxModel>? _activeTaxes;
+  // Active taxes are pre-loaded by _markSold and passed in, so the form renders
+  // complete on first frame (no flicker).
+  late final List<DisposalTaxModel> _activeTaxes = widget.activeTaxes;
 
   @override
   void initState() {
     super.initState();
-    widget.ref.read(disposalServiceProvider).getTaxes().then((taxes) {
-      if (mounted) {
-        setState(() {
-          _activeTaxes = taxes.where((t) => t.isActive).toList();
-        });
-      }
-    });
     _soldPriceC.addListener(() => setState(() {}));
   }
 
@@ -2151,17 +2340,15 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
     final price = double.tryParse(_soldPriceC.text) ?? 0.0;
     double totalTax = 0.0;
     final List<Map<String, dynamic>> appliedTaxesList = [];
-    if (_activeTaxes != null) {
-      for (var t in _activeTaxes!) {
-        final taxAmount = price * (t.percentage / 100);
-        totalTax += taxAmount;
-        appliedTaxesList.add({
-          'id': t.id,
-          'name': t.name,
-          'percentage': t.percentage,
-          'amount': taxAmount,
-        });
-      }
+    for (var t in _activeTaxes) {
+      final taxAmount = price * (t.percentage / 100);
+      totalTax += taxAmount;
+      appliedTaxesList.add({
+        'id': t.id,
+        'name': t.name,
+        'percentage': t.percentage,
+        'amount': taxAmount,
+      });
     }
     final double grandTotal = price + totalTax;
 
@@ -2191,10 +2378,10 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
             decoration: const InputDecoration(labelText: 'Sold Price', prefixText: 'Rs '),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
-          if (_activeTaxes != null && _activeTaxes!.isNotEmpty) ...[
+          if (_activeTaxes.isNotEmpty) ...[
             const Gap(16),
             const Text('Taxes:', style: TextStyle(fontWeight: FontWeight.bold)),
-            for (var t in _activeTaxes!)
+            for (var t in _activeTaxes)
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -2334,7 +2521,10 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
     final year = int.tryParse(_yearC.text);
     if (year == null) return;
     try {
-      final nextSerial = await ref.read(disposalServiceProvider).getNextTenderSaleSerial(year);
+      // Serial runs per-yard: GL1's 6th tender is serial 6 even if GL2 has 3.
+      final nextSerial = await ref
+          .read(disposalServiceProvider)
+          .getNextTenderSaleSerial(year, yard: _formYard);
       if (mounted) {
         _serialC.text = nextSerial.toString();
         _updateSaleNumber();
@@ -2348,7 +2538,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
     final year = _yearC.text;
     final serial = _serialC.text;
     if (year.isEmpty || serial.isEmpty) return;
-    
+
     String saleNum = 'CDU/TS/$year/$serial';
     if (_tenderType == 'special') {
       saleNum += '(Special)';
@@ -2421,11 +2611,13 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                 width: double.infinity,
                 onChanged: (v) {
                   if (v == null) return;
-                  // Switching yards clears any selection from the previous yard.
+                  // Switching yards clears any selection from the previous yard
+                  // and reloads the serial scoped to the newly selected yard.
                   setState(() {
                     _formYard = v;
                     _selected.clear();
                   });
+                  _loadSerialForYear();
                 },
               ),
               TextField(
@@ -2517,13 +2709,29 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                       ),
                     );
                   }
+                  // Items already covered by a dedicated per-item row (correct
+                  // partial qty) — a package-level row must not re-expand them
+                  // at the full registered qty.
+                  final perItemKeys = <String>{};
+                  for (final it in items) {
+                    final iid = it.forfeited?.itemId;
+                    final pid = it.forfeited?.packageId;
+                    if (iid != null && pid != null) {
+                      perItemKeys.add('$pid:$iid');
+                    }
+                  }
                   // Expand package-level DR items (itemId==null, multiple pkg
                   // items) so each item appears as its own selectable row.
                   final rows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
                   for (final it in items) {
                     final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+                    final pid = it.forfeited?.packageId;
                     if (it.forfeited?.itemId == null && fpItems.length > 1) {
                       for (final pkgItem in fpItems) {
+                        if (pid != null &&
+                            perItemKeys.contains('$pid:${pkgItem.id}')) {
+                          continue;
+                        }
                         rows.add((it: it, pkgItem: pkgItem));
                       }
                     } else {
@@ -2681,6 +2889,9 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                 .read(saleRequestItemsProvider)
                 .valueOrNull ?? const [];
             final packageYards = <String, String>{};
+            // forfeited_package_id → the specific package_item id it covers, so
+            // the TSI row is item-scoped (Mark Sold sells only that item).
+            final packageItems = <String, String?>{};
             for (final key in _selected.keys) {
               final drItemId = key.contains('_') ? key.split('_').first : key;
               final drItem = allDrItems
@@ -2689,6 +2900,12 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               if (drItem != null) {
                 packageYards[drItem.forfeitedPackageId] =
                     drItem.forfeited?.yard ?? _formYard;
+                // Resolve the item id: an expanded composite key carries the
+                // pkgItem id after '_'; otherwise the FP's own item_id.
+                final pkgItemId = key.contains('_')
+                    ? key.split('_').last
+                    : drItem.forfeited?.itemId;
+                packageItems[drItem.forfeitedPackageId] = pkgItemId;
               }
             }
             try {
@@ -2702,6 +2919,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     tenderType: _tenderType,
                     yard: _formYard,
                     packageYards: packageYards,
+                    packageItems: packageItems,
                   );
               // New sale → its items leave the request pool; refresh both.
               ref.read(tenderSalesRefreshProvider.notifier).trigger();
@@ -2984,6 +3202,7 @@ class _DestructionCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final rows = _rows();
     final total = sale.items.length;
     final destroyed = sale.destroyedCount;
@@ -3101,10 +3320,15 @@ class _DestructionCard extends ConsumerWidget {
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('Goods Description'), size: ColumnSize.L),
+                    DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
                     DataColumn2(
                         label: Center(child: Text('Status')),
                         size: ColumnSize.M,
                         fixedWidth: 140),
+                    DataColumn2(
+                        label: Center(child: Text('Details')),
+                        size: ColumnSize.S,
+                        fixedWidth: 64),
                   ],
                   rows: rows.map((r) {
                     final f = r.saleItem.forfeited;
@@ -3118,13 +3342,15 @@ class _DestructionCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text('${r.item?.quantity ?? '—'}')),
-                      DataCell(Tooltip(
-                        message: f?.reason ?? '',
-                        child: Text(
-                            f?.reason.isNotEmpty == true ? f!.reason : '—',
-                            overflow: TextOverflow.ellipsis),
-                      )),
+                      DataCell(Text('${f?.entryQty ?? r.item?.quantity ?? '—'}')),
+                      DataCell(Builder(builder: (_) {
+                        final reason = _forfeitReasonText(r.item, f);
+                        return Tooltip(
+                          message: reason,
+                          child: Text(reason.isNotEmpty ? reason : '—',
+                              overflow: TextOverflow.ellipsis),
+                        );
+                      })),
                       DataCell(Text(
                           '${yardName(r.saleItem.yard)} / ${r.warehouse}',
                           overflow: TextOverflow.ellipsis,
@@ -3142,6 +3368,7 @@ class _DestructionCard extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12)),
                       )),
+                      DataCell(_ValuationCell(f: f)),
                       DataCell(Center(
                         child: r.saleItem.destroyed
                             ? Container(
@@ -3166,23 +3393,63 @@ class _DestructionCard extends ConsumerWidget {
                                               fontWeight: FontWeight.w700)),
                                     ]),
                               )
-                            : OutlinedButton.icon(
-                                style: OutlinedButton.styleFrom(
-                                  foregroundColor: green,
-                                  side: BorderSide(
-                                      color: green.withOpacity(0.5)),
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10, vertical: 6),
-                                  minimumSize: const Size(0, 32),
+                            : (() {
+                                // Mark Destroyed only unlocks once the scheduled
+                                // destruction moment (date + time) has passed.
+                                final canDestroy = sale.saleTimePassed;
+                                final btn = OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: green,
+                                    side: BorderSide(
+                                        color: green.withOpacity(0.5)),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 6),
+                                    minimumSize: const Size(0, 32),
+                                  ),
+                                  icon:
+                                      const Icon(Icons.sell_rounded, size: 14),
+                                  label: const Text('Mark Destroyed',
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w700)),
+                                  onPressed: canDestroy
+                                      ? () => _markDestroyed(
+                                          context, ref, r.saleItem)
+                                      : null,
+                                );
+                                return canDestroy
+                                    ? btn
+                                    : Tooltip(
+                                        message: _destroyLockMessage(sale),
+                                        child: btn);
+                              }()),
+                      )),
+                      DataCell(Center(
+                        child: pkg != null
+                            ? IconButton(
+                                icon: Icon(Icons.info_outline_rounded,
+                                    color: context.colors.accentLightBlue,
+                                    size: 18),
+                                onPressed: () => showDialog(
+                                  context: context,
+                                  builder: (_) => PackageDetailsDialog(
+                                    package: pkg,
+                                    storageRate: storageRate,
+                                    headerAccentColor: green,
+                                    useLegacySummary: true,
+                                    highlightItemId: f?.itemId,
+                                    yardLabel: yardName(r.saleItem.yard),
+                                    valuationUnitCost: f?.valuationCost,
+                                    valuationTotalCost: f?.valuationCost != null
+                                        ? f!.valuationCost! *
+                                            (f.entryQty ?? r.item?.quantity ?? 1)
+                                        : null,
+                                    valuationQty:
+                                        f?.entryQty ?? r.item?.quantity,
+                                  ),
                                 ),
-                                icon: const Icon(Icons.sell_rounded, size: 14),
-                                label: const Text('Mark Destroyed',
-                                    style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700)),
-                                onPressed: () => _markDestroyed(
-                                    context, ref, r.saleItem),
-                              ),
+                              )
+                            : const SizedBox.shrink(),
                       )),
                     ]);
                   }).toList(),
@@ -3193,6 +3460,15 @@ class _DestructionCard extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Tooltip shown on a disabled Mark Destroyed button — tells the officer when
+  /// the scheduled destruction moment unlocks the action.
+  String _destroyLockMessage(DestructionModel sale) {
+    final moment = sale.saleMoment;
+    if (moment == null) return 'No destruction date set yet';
+    final when = DateFormat('yyyy-MM-dd HH:mm').format(moment);
+    return 'Available after the scheduled destruction time ($when)';
   }
 
   void _markDestroyed(
@@ -3344,7 +3620,10 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
     final year = int.tryParse(_yearC.text);
     if (year == null) return;
     try {
-      final nextSerial = await ref.read(disposalServiceProvider).getNextDestructionSerial(year);
+      // Serial runs per-yard: GL1's 6th destruction is serial 6 even if GL2 has 3.
+      final nextSerial = await ref
+          .read(disposalServiceProvider)
+          .getNextDestructionSerial(year, yard: _formYard);
       if (mounted) {
         _serialC.text = nextSerial.toString();
         _updateSaleNumber();
@@ -3432,11 +3711,13 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                 width: double.infinity,
                 onChanged: (v) {
                   if (v == null) return;
-                  // Switching yards clears any selection from the previous yard.
+                  // Switching yards clears any selection from the previous yard
+                  // and reloads the serial scoped to the newly selected yard.
                   setState(() {
                     _formYard = v;
                     _selected.clear();
                   });
+                  _loadSerialForYear();
                 },
               ),
               TextField(
@@ -3528,13 +3809,29 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                       ),
                     );
                   }
+                  // Items already covered by a dedicated per-item row (correct
+                  // partial qty) — a package-level row must not re-expand them
+                  // at the full registered qty.
+                  final perItemKeys = <String>{};
+                  for (final it in items) {
+                    final iid = it.forfeited?.itemId;
+                    final pid = it.forfeited?.packageId;
+                    if (iid != null && pid != null) {
+                      perItemKeys.add('$pid:$iid');
+                    }
+                  }
                   // Expand package-level DR items (itemId==null, multiple pkg
                   // items) so each item appears as its own selectable row.
                   final rows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
                   for (final it in items) {
                     final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+                    final pid = it.forfeited?.packageId;
                     if (it.forfeited?.itemId == null && fpItems.length > 1) {
                       for (final pkgItem in fpItems) {
+                        if (pid != null &&
+                            perItemKeys.contains('$pid:${pkgItem.id}')) {
+                          continue;
+                        }
                         rows.add((it: it, pkgItem: pkgItem));
                       }
                     } else {
@@ -3695,6 +3992,10 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                 .read(destructionRequestItemsProvider)
                 .valueOrNull ?? const [];
             final packageYards = <String, String>{};
+            // forfeited_package_id → the specific package_item id it covers, so
+            // the destruction row is item-scoped (Mark Destroyed destroys only
+            // that item, not the whole package).
+            final packageItems = <String, String?>{};
             for (final key in _selected.keys) {
               final drItemId = key.contains('_') ? key.split('_').first : key;
               final drItem = allDrItems
@@ -3703,6 +4004,10 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
               if (drItem != null) {
                 packageYards[drItem.forfeitedPackageId] =
                     drItem.forfeited?.yard ?? _formYard;
+                final pkgItemId = key.contains('_')
+                    ? key.split('_').last
+                    : drItem.forfeited?.itemId;
+                packageItems[drItem.forfeitedPackageId] = pkgItemId;
               }
             }
             try {
@@ -3716,6 +4021,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                     tenderType: _destructionType,
                     yard: _formYard,
                     packageYards: packageYards,
+                    packageItems: packageItems,
                   );
               ref.read(destructionsRefreshProvider.notifier).trigger();
               if (mounted) Navigator.pop(context);
@@ -3862,6 +4168,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final async = ref.watch(undestroyedDestructionsProvider);
 
     return Padding(
@@ -3970,6 +4277,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                           label: Text('Source'),
                           size: ColumnSize.S,
                           fixedWidth: 110),
+                      DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
                       DataColumn2(
                           label: Center(child: Text('Times Attempted')),
                           size: ColumnSize.S,
@@ -3978,9 +4286,14 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                           label: Center(child: Text('Destructions')),
                           size: ColumnSize.S,
                           fixedWidth: 100),
+                      DataColumn2(
+                          label: Center(child: Text('Details')),
+                          size: ColumnSize.S,
+                          fixedWidth: 64),
                     ],
                     rows: list.map((info) {
                       final f = info.forfeited;
+                      final pkg = f.packageDetails;
                       return DataRow(cells: [
                         DataCell(Text(f.srNumber,
                             style: TextStyle(
@@ -3991,6 +4304,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                         DataCell(Text(f.consigneeName,
                             overflow: TextOverflow.ellipsis)),
                         DataCell(_SourceChip(source: f.source)),
+                        DataCell(_ValuationCell(f: f)),
                         DataCell(Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -4014,6 +4328,31 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                               builder: (_) => _DestructionSaleHistoryDialog(info: info),
                             ),
                           ),
+                        )),
+                        DataCell(Center(
+                          child: pkg != null
+                              ? IconButton(
+                                  icon: Icon(Icons.info_outline_rounded,
+                                      color: context.colors.accentLightBlue,
+                                      size: 18),
+                                  onPressed: () => showDialog(
+                                    context: context,
+                                    builder: (_) => PackageDetailsDialog(
+                                      package: pkg,
+                                      storageRate: storageRate,
+                                      headerAccentColor: green,
+                                      useLegacySummary: true,
+                                      highlightItemId: f.itemId,
+                                      yardLabel: yardName(f.yard),
+                                      valuationUnitCost: f.valuationCost,
+                                      valuationTotalCost: f.valuationCost != null
+                                          ? f.valuationCost! * (f.entryQty ?? 1)
+                                          : null,
+                                      valuationQty: f.entryQty,
+                                    ),
+                                  ),
+                                )
+                              : const SizedBox.shrink(),
                         )),
                       ]);
                     }).toList(),
@@ -4145,6 +4484,54 @@ class _OneTapTimeField extends StatelessWidget {
               : null,
         ),
       ),
+    );
+  }
+}
+
+// ── Valuation Cell shared by Tender Sales, Destructions, Unsold, Undestroyed ──
+
+class _ValuationCell extends StatelessWidget {
+  final ForfeitedPackageModel? f;
+  const _ValuationCell({required this.f});
+
+  @override
+  Widget build(BuildContext context) {
+    final fp = f;
+    final unitCost = fp?.valuationCost;
+    if (unitCost == null || fp == null) {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final int qty;
+    if (fp.entryQty != null) {
+      qty = fp.entryQty!;
+    } else if (fp.itemId != null) {
+      qty = fp.packageDetails?.items
+              .where((i) => i.id == fp.itemId)
+              .firstOrNull
+              ?.quantity ??
+          1;
+    } else {
+      qty = fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
+    }
+    final total = unitCost * qty;
+    final fmt = NumberFormat('#,##0');
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          'LKR ${fmt.format(total)}',
+          style: TextStyle(
+              color: context.colors.primaryGold,
+              fontWeight: FontWeight.w700,
+              fontSize: 12),
+        ),
+        Text(
+          '@ ${fmt.format(unitCost)} × $qty',
+          style: TextStyle(color: context.colors.textMuted, fontSize: 10),
+        ),
+      ],
     );
   }
 }

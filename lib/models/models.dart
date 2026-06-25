@@ -782,6 +782,8 @@ class ForfeitedPackageModel {
   /// For per-entry abandoned rows: the quantity actually abandoned in that
   /// warehouse entry event (entry.itemCount), not the total item quantity.
   final int? entryQty;
+  /// Valuation unit cost set by the Valuation Directorate (LKR per unit).
+  final double? valuationCost;
 
   const ForfeitedPackageModel({
     required this.id,
@@ -804,6 +806,7 @@ class ForfeitedPackageModel {
     this.itemId,
     this.itemName,
     this.entryQty,
+    this.valuationCost,
   });
 
   bool get isAppealExpired => DateTime.now().isAfter(appealDeadline);
@@ -896,6 +899,22 @@ class ForfeitedPackageModel {
       itemId: json['item_id'] as String?,
       // Exact abandoned qty for per-entry abandoned rows (null otherwise).
       entryQty: json['entry_qty'] as int?,
+      // valuation_cost lives on disposal_request_items, not forfeited_packages.
+      // When this model is hydrated from a nested join (getTenderSales /
+      // getDestructions), the disposal_request_items list is included; pick the
+      // first non-null cost from it. Fall back to the direct column in case the
+      // column is ever added to the table in future.
+      valuationCost: (() {
+        final direct = (json['valuation_cost'] as num?)?.toDouble();
+        if (direct != null) return direct;
+        final items = json['disposal_request_items'] as List?;
+        if (items == null) return null;
+        for (final row in items) {
+          final cost = (row['valuation_cost'] as num?)?.toDouble();
+          if (cost != null) return cost;
+        }
+        return null;
+      })(),
     );
   }
 }
@@ -1144,7 +1163,53 @@ class TenderSaleModel {
   });
 
   String get typeLabel => tenderSaleTypeLabel(tenderType);
-  int get soldCount => items.where((i) => i.sold).length;
+
+  /// The exact moment the tender sale is scheduled to run — [saleDate] combined
+  /// with [saleTime] ("HH:mm" / "HH:mm:ss"). Falls back to the date's midnight
+  /// when no time is recorded. Null when there is no sale date at all.
+  DateTime? get saleMoment {
+    final d = saleDate;
+    if (d == null) return null;
+    final t = saleTime?.trim();
+    if (t == null || t.isEmpty) return d;
+    final parts = t.split(':');
+    final h = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0;
+    final m = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0;
+    final s = int.tryParse(parts.length > 2 ? parts[2] : '') ?? 0;
+    return DateTime(d.year, d.month, d.day, h, m, s);
+  }
+
+  /// True once the scheduled sale moment (date + time) has passed — only then
+  /// may items be marked Sold. A sale with no date is treated as not-yet-due.
+  bool get saleTimePassed {
+    final moment = saleMoment;
+    if (moment == null) return false;
+    return DateTime.now().isAfter(moment);
+  }
+
+  /// De-duplicated items: same (forfeited_package_id, fp.item_id) combination
+  /// may appear as multiple TSI rows when the per-item RPC created extra entries.
+  /// Prefer the sold row; if equal, keep the latest soldAt.
+  List<TenderSaleItemModel> get dedupedItems {
+    final map = <String, TenderSaleItemModel>{};
+    for (final si in items) {
+      final key = '${si.forfeitedPackageId}|${si.forfeited?.itemId ?? ''}';
+      final existing = map[key];
+      if (existing == null) {
+        map[key] = si;
+      } else if (si.sold && !existing.sold) {
+        map[key] = si;
+      } else if (si.sold == existing.sold) {
+        final siTime = si.soldAt ?? DateTime(2000);
+        final exTime = existing.soldAt ?? DateTime(2000);
+        if (siTime.isAfter(exTime)) map[key] = si;
+      }
+    }
+    return map.values.toList();
+  }
+
+  int get soldCount => dedupedItems.where((i) => i.sold).length;
+  int get totalCount => dedupedItems.length;
 
   factory TenderSaleModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['tender_sale_items'] as List? ?? const [];
@@ -1257,6 +1322,29 @@ class DestructionModel {
 
   String get typeLabel => destructionTypeLabel(tenderType);
   int get destroyedCount => items.where((i) => i.destroyed).length;
+
+  /// The scheduled destruction moment — [saleDate] combined with [saleTime].
+  /// Falls back to the date's midnight when no time is recorded; null when no
+  /// date at all.
+  DateTime? get saleMoment {
+    final d = saleDate;
+    if (d == null) return null;
+    final t = saleTime?.trim();
+    if (t == null || t.isEmpty) return d;
+    final parts = t.split(':');
+    final h = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0;
+    final m = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0;
+    final s = int.tryParse(parts.length > 2 ? parts[2] : '') ?? 0;
+    return DateTime(d.year, d.month, d.day, h, m, s);
+  }
+
+  /// True once the scheduled destruction moment (date + time) has passed — only
+  /// then may items be marked Destroyed. No date ⇒ not-yet-due.
+  bool get saleTimePassed {
+    final moment = saleMoment;
+    if (moment == null) return false;
+    return DateTime.now().isAfter(moment);
+  }
 
   factory DestructionModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['destruction_items'] as List? ?? const [];

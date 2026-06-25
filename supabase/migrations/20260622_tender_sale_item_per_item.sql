@@ -30,21 +30,18 @@ create index if not exists idx_tsi_package_item
 
 -- 2. ── Replace unique constraint ────────────────────────────────────────────
 -- Drop old unique(forfeited_package_id) — may have different name depending on
--- when the table was created. Try both the explicit and generated names.
-do $$
-begin
-  alter table public.tender_sale_items
-    drop constraint if exists tender_sale_items_forfeited_package_id_key;
-exception when others then null;
-end$$;
+-- when the table was created.
+alter table public.tender_sale_items
+  drop constraint if exists tender_sale_items_forfeited_package_id_key;
 
--- Add composite unique so (fp_id, null) is allowed once, and
--- (fp_id, item_id) is allowed once per item.
+-- Add composite unique with NULLS NOT DISTINCT so (fp_id, NULL) is treated as
+-- one slot — without this, every NULL package_item_id is considered distinct
+-- and ON CONFLICT can never match the package-level row.
 alter table public.tender_sale_items
   drop constraint if exists tender_sale_items_fp_item_unique;
 alter table public.tender_sale_items
   add constraint tender_sale_items_fp_item_unique
-    unique (forfeited_package_id, package_item_id);
+    unique nulls not distinct (forfeited_package_id, package_item_id);
 
 -- 3. ── Replace disposal_mark_sale_item_sold ──────────────────────────────────
 -- Must DROP first because the parameter names changed (p_sold_price → p_price,
@@ -63,10 +60,12 @@ security definer
 set search_path = public
 as $$
 declare
-  v_forfeited uuid;
-  v_package   uuid;
-  v_yard      text;
-  r           record;
+  v_forfeited    uuid;
+  v_package      uuid;
+  v_yard         text;
+  v_fp_item_id   uuid;   -- FP's specific item_id (null = package-level row)
+  v_fp_entry_qty int;    -- FP's actual abandoned/forfeited qty (null = use pi.quantity)
+  r              record;
   v_wh    uuid;
   v_zone  text;
   v_hold  text;
@@ -80,9 +79,9 @@ begin
     raise exception 'not authorized';
   end if;
 
-  -- Check appeal hold.
-  select fp.id, fp.package_id, tsi.yard
-    into v_forfeited, v_package, v_yard
+  -- Check appeal hold and read the FP's specific item_id and entry_qty.
+  select fp.id, fp.package_id, tsi.yard, fp.item_id, fp.entry_qty
+    into v_forfeited, v_package, v_yard, v_fp_item_id, v_fp_entry_qty
     from public.tender_sale_items tsi
     join public.forfeited_packages fp on fp.id = tsi.forfeited_package_id
    where tsi.id = p_item_id;
@@ -98,15 +97,17 @@ begin
     case when coalesce(p_receipt, '') <> ''
          then ' — Receipt: ' || p_receipt else '' end;
 
-  -- Insert a [FINAL:SOLD] warehouse entry for every un-finalised package item
-  -- and, for each one, upsert a per-item tender_sale_items row so delivery can
-  -- be tracked independently per item.
+  -- Insert a [FINAL:SOLD] warehouse entry for the relevant package item(s).
+  -- When the FP row is per-item (v_fp_item_id is not null) only that specific
+  -- item is sold.  When the FP row is package-level (v_fp_item_id is null) all
+  -- un-finalised items in the package are sold together (legacy behaviour).
   for r in
     select pi.id as item_id, pi.quantity as qty
       from public.package_items pi
      where pi.package_id = v_package
        and lower(pi.status) not in
            ('sold', 'destroyed', 'released', 're-exported', 'other')
+       and (v_fp_item_id is null or pi.id = v_fp_item_id)
   loop
     select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
       into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
@@ -122,7 +123,7 @@ begin
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
-        r.qty, v_adm, coalesce(v_admat, now()), v_rate,
+        coalesce(v_fp_entry_qty, r.qty), v_adm, coalesce(v_admat, now()), v_rate,
         true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;

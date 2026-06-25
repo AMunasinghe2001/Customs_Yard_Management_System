@@ -386,7 +386,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                             final pkg = ref.watch(packageDataProvider(e.packageId)).valueOrNull;
                             String status = e.isReturned ? 'returned' : (e.isPackageConfiscated ? 'confiscated' : 'held');
                               if (pkg != null && e.packageItemId != null) {
-                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull ?? 
+                                final item = pkg.items.where((i) => i.id == e.packageItemId).firstOrNull ??
                                              (pkg.items.length == 1 ? pkg.items.first : null);
                                 if (item != null && !e.isReturned) {
                                   status = item.status;

@@ -154,11 +154,18 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
   /// createDisposalRequest creates the synthetic source='other' forfeited_packages
   /// row automatically.
   Future<void> _requestSingleDisposal(
-      PackageModel pkg, String disposition, {String? itemId}) async {
+      PackageModel pkg, String disposition,
+      {String? itemId, WarehouseEntryModel? entry}) async {
     try {
-      final key = itemId != null
-          ? '${pkg.id}:$itemId:other'
-          : '${pkg.id}:other';
+      // Include the entry id when this row is a partial "[OTHER]" disposition
+      // event so createDisposalRequest stores entry.itemCount as entry_qty —
+      // Valuation / Central Disposal then price the partial qty (e.g. 4) rather
+      // than the full registered item quantity.
+      final key = (itemId != null && entry != null)
+          ? '${pkg.id}:$itemId:${entry.id}:other'
+          : itemId != null
+              ? '${pkg.id}:$itemId:other'
+              : '${pkg.id}:other';
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
             requestDate: DateTime.now(),
             // item-level key: "pkgId:itemId:other" ensures each item gets its
@@ -743,7 +750,8 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                                     _requestSingleDisposal(
                                                         row.package,
                                                         disposition,
-                                                        itemId: row.item.id),
+                                                        itemId: row.item.id,
+                                                        entry: row.entry),
                                           ),
                                         );
                                       },
