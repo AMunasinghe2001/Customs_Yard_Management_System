@@ -155,8 +155,30 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
       bool anyItemFinalized = false;
 
       for (final item in items) {
-        // Skip items that have moved to a final disposition.
-        if (pkg != null && _itemHasFinalDisposition(pkg, item.id)) {
+        // Does this forfeit FP cover this item? A per-item FP names it directly;
+        // a package-level FP (item_id == null) covers EVERY item in the package.
+        final fpCoversThisItem = fp.itemId == item.id || fp.itemId == null;
+        // The item's live status is still "held" (detain/held) — i.e. it has NOT
+        // genuinely been sold/destroyed/released/re-exported.
+        final st = (item.status ?? '').trim().toLowerCase();
+        final itemStatusLive = !{
+          'sold', 'destroyed', 'released', 'returned',
+          're-export', 're-exported', 'cleared',
+        }.contains(st);
+        // A held item of a forfeit FP still inside the appeal lifecycle (on hold,
+        // window open, or a decision in but no request sent) must stay on the
+        // table — even if a stale [FINAL:…] entry lingers from earlier testing.
+        final stillInAppealLifecycle = fpCoversThisItem &&
+            itemStatusLive &&
+            (fp.appealHold ||
+                !fp.isAppealExpired ||
+                fp.appealDecision != null);
+
+        // Skip items that have moved to a final disposition — unless a held item
+        // of this forfeit FP is still inside the appeal lifecycle (above).
+        if (pkg != null &&
+            _itemHasFinalDisposition(pkg, item.id) &&
+            !stillInAppealLifecycle) {
           anyItemFinalized = true;
           continue;
         }
@@ -181,8 +203,16 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
           addedAny = true;
         }
 
-        // 2. Form-level forfeit (item.status forfeit) with no disposition event
-        if (_isForfeitStatus(item.status) && forfeitEntries.isEmpty) {
+        // 2. Form-level forfeit, OR a forfeit FP row that covers THIS item
+        //    (per-item or package-level) — with no forfeit disposition event.
+        //    The second case covers a held / pending item whose item.status may
+        //    still read 'detain' yet belongs to a genuine forfeit FP, so it must
+        //    stay on the Forfeited table until the yard sends a disposal request.
+        //    Only LIVE (not finalised) items qualify, so genuinely sold/destroyed
+        //    items aren't resurrected by a package-level FP.
+        if ((_isForfeitStatus(item.status) ||
+                (fpCoversThisItem && itemStatusLive)) &&
+            forfeitEntries.isEmpty) {
           rows.add(_ForfeitRow(
             forfeited: fp,
             itemName: item.itemName,
@@ -471,7 +501,6 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                             DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(label: Text('Forfeited Date'), size: ColumnSize.M),
                             DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Days Remaining'), size: ColumnSize.S),
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
                             DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                           ],
@@ -501,13 +530,6 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                   style: TextStyle(
                                     color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
                                     fontWeight: isExpired ? FontWeight.bold : FontWeight.normal
-                                  ),
-                                )),
-                                DataCell(Text(
-                                  isExpired ? ' overdue' : '',
-                                  style: TextStyle(
-                                    color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
-                                    fontWeight: FontWeight.bold
                                   ),
                                 )),
                                 DataCell(Center(

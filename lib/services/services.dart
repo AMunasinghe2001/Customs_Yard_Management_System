@@ -2063,11 +2063,25 @@ class ForfeitedPackageService {
         .map((e) => e.toString())
         .toSet();
 
-    // 1b. Get IDs of packages already in a disposal request
-    final reqData = await supabase.from('disposal_request_items').select('forfeited_package_id');
-    final requestedIds = (reqData as List)
-        .map((e) => e['forfeited_package_id'].toString())
-        .toSet();
+    // 1b. Items already in a disposal request — keyed "<packageId>:<itemId>".
+    //     A request stores a forfeited_packages row that may be a synthetic
+    //     per-item row, so we match on the originating (package_id, item_id)
+    //     rather than the raw FP id, plus keep the raw ids for legacy matches.
+    final reqData = await supabase
+        .from('disposal_request_items')
+        .select(
+            'forfeited_package_id, forfeited_packages(package_id, item_id)');
+    final requestedIds = <String>{};
+    final requestedItemKeys = <String>{};
+    for (final e in (reqData as List)) {
+      requestedIds.add(e['forfeited_package_id'].toString());
+      final fp = e['forfeited_packages'] as Map<String, dynamic>?;
+      final pkgId = fp?['package_id']?.toString();
+      final itemId = fp?['item_id']?.toString();
+      if (pkgId != null && itemId != null) {
+        requestedItemKeys.add('$pkgId:$itemId');
+      }
+    }
 
     // 1c. Get IDs of packages that have already been SOLD or DESTROYED — these
     //     belong on the Sold / Destroyed pages, not the Forfeited list. Unsold
@@ -2083,13 +2097,23 @@ class ForfeitedPackageService {
         .eq('source', 'forfeit')
         .order('appeal_deadline', ascending: true);
 
-    // 3. Filter out tendered / requested / sold / destroyed and map to models
+    // 3. Filter out tendered / sold / destroyed at the FP level. Disposal
+    //    requests are NOT excluded at the FP level (a multi-item forfeit can
+    //    have one item requested while another is still pending / on appeal
+    //    hold) — that is handled item-by-item below.
     return (data as List)
         .where((e) =>
             !tenderedIds.contains(e['id']) &&
-            !requestedIds.contains(e['id']) &&
             !goneIds.contains(e['id'].toString()))
         .map((e) => ForfeitedPackageModel.fromJson(e))
+        .where((f) {
+          // Keep the FP only while it has at least one item NOT yet requested.
+          // Whole-FP legacy requests (no per-item key) are caught by the raw id.
+          final items = f.packageDetails?.items ?? const [];
+          if (items.isEmpty) return !requestedIds.contains(f.id);
+          return items.any(
+              (i) => !requestedItemKeys.contains('${f.packageId}:${i.id}'));
+        })
         .toList();
   }
 
@@ -2225,13 +2249,27 @@ class ForfeitedPackageService {
     //   • packages currently on an appeal hold,
     //   • packages the Appeal Directorate decided as RELEASE / RE-EXPORT / OTHER
     //     (those are handled directly by the yard, not via a request).
-    // Already-requested forfeited package ids (this yard, via RLS) — also used
-    // below to know which abandoned packages already have a synthetic FP row.
-    final requested = await AuthService._withNetworkRetry(() =>
-        supabase.from('disposal_request_items').select('forfeited_package_id'));
-    final requestedIds = (requested as List)
-        .map((e) => e['forfeited_package_id'].toString())
-        .toSet();
+    // Already-requested items (this yard, via RLS). A disposal request stores a
+    // forfeited_packages row that carries the originating (package_id, item_id);
+    // because forfeit rows in this list use a SYNTHETIC composite id
+    // ("<fpId>:<itemId>:forfeit"), matching on the raw FP id alone misses them.
+    // So we also build a set of "<packageId>:<itemId>" keys from the requested
+    // rows' forfeited package, and exclude any item that already has a request.
+    final requested = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_request_items')
+        .select(
+            'forfeited_package_id, forfeited_packages(package_id, item_id)'));
+    final requestedIds = <String>{};
+    final requestedItemKeys = <String>{};
+    for (final e in (requested as List)) {
+      requestedIds.add(e['forfeited_package_id'].toString());
+      final fp = e['forfeited_packages'] as Map<String, dynamic>?;
+      final pkgId = fp?['package_id']?.toString();
+      final itemId = fp?['item_id']?.toString();
+      if (pkgId != null && itemId != null) {
+        requestedItemKeys.add('$pkgId:$itemId');
+      }
+    }
 
     // Packages already SOLD or DESTROYED can't be requested again — drop them.
     final goneIds = await _soldOrDestroyedForfeitedIds();
@@ -2264,7 +2302,12 @@ class ForfeitedPackageService {
     for (final f in baseForfeit) {
       final items = f.packageDetails?.items ?? const [];
       if (items.length <= 1) {
-        // Single-item (or no details): keep as-is, populate itemName if known.
+        // Single-item (or no details): skip if this item already has a request.
+        if (items.isNotEmpty &&
+            requestedItemKeys.contains('${f.packageId}:${items.first.id}')) {
+          continue;
+        }
+        // Keep as-is, populate itemName if known.
         final itemName = items.isNotEmpty ? items.first.itemName : f.itemName;
         result.add(ForfeitedPackageModel(
           id: items.isNotEmpty ? '${f.id}:${items.first.id}:forfeit' : f.id,
@@ -2291,6 +2334,10 @@ class ForfeitedPackageService {
         // Multi-item: one row per item with a synthetic composite id so each
         // can be independently selected in the disposal request form.
         for (final item in items) {
+          // Skip items already sent in a disposal request.
+          if (requestedItemKeys.contains('${f.packageId}:${item.id}')) {
+            continue;
+          }
           result.add(ForfeitedPackageModel(
             id: '${f.id}:${item.id}:forfeit',
             packageId: f.packageId,
