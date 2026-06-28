@@ -1187,6 +1187,16 @@ class TenderSaleModel {
     return DateTime.now().isAfter(moment);
   }
 
+  /// The moment the package leaves this sale as UNSOLD: the END of the day AFTER
+  /// the sale date (i.e. the sale day + its following day). After this, an item
+  /// not yet marked sold drops to the Unsold Tenders pool. Null when no date.
+  DateTime? get unsoldDeadline {
+    final d = saleDate;
+    if (d == null) return null;
+    // End of (saleDate + 1 day): 23:59:59.999 of the day after the sale day.
+    return DateTime(d.year, d.month, d.day + 1, 23, 59, 59, 999);
+  }
+
   /// De-duplicated items: same (forfeited_package_id, fp.item_id) combination
   /// may appear as multiple TSI rows when the per-item RPC created extra entries.
   /// Prefer the sold row; if equal, keep the latest soldAt.
@@ -1344,6 +1354,15 @@ class DestructionModel {
     final moment = saleMoment;
     if (moment == null) return false;
     return DateTime.now().isAfter(moment);
+  }
+
+  /// The moment the package leaves this destruction as UNDESTROYED: the END of
+  /// the day AFTER the destruction date. After this, an item not yet marked
+  /// destroyed drops to the Undestroyed pool. Null when no date.
+  DateTime? get unsoldDeadline {
+    final d = saleDate;
+    if (d == null) return null;
+    return DateTime(d.year, d.month, d.day + 1, 23, 59, 59, 999);
   }
 
   factory DestructionModel.fromJson(Map<String, dynamic> json) {

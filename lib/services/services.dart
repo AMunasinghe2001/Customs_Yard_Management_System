@@ -3220,14 +3220,22 @@ class DisposalService {
     final eligible = <String, List<TenderSaleModel>>{};
     byPkg.forEach((id, ts) {
       if (soldIds.contains(id)) return;
-      
-      // Let's assume if it is in a sale and not sold, it's eligible if sale date has passed.
-      // If sale_date is null, we can consider it not passed yet or just include it. Let's include if sale_date <= today.
-      bool passed = true;
-      if (ts.first.saleDate != null) {
-        final saleDateEnd = ts.first.saleDate!.add(const Duration(days: 1));
-        if (DateTime.now().isBefore(saleDateEnd)) passed = false;
-      }
+
+      // A package can sit in SEVERAL tender sales (original + each re-tender).
+      // The CURRENT tender is the most-recently-CREATED sale (createdAt always
+      // increases; a re-tender with no date yet must still count as the latest).
+      // The package is "unsold / re-tenderable" only once that current sale's
+      // moment has passed AND it is not sold. A freshly placed re-tender's
+      // moment is in the future / unset, so the package is a PENDING tender on
+      // the Tender Sales page — it leaves this pool until it goes unsold again.
+      final latest = [...ts]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt)); // newest first
+      // Unsold only after the sale-day's GRACE window closes (sale date + the
+      // following day) — matches the "Sell within" countdown on the card. Until
+      // then the item is still markable on the Tender Sales page.
+      final deadline = latest.first.unsoldDeadline;
+      // No date ⇒ treat as not-yet-due (pending), so not unsold.
+      final passed = deadline != null && DateTime.now().isAfter(deadline);
       if (passed) eligible[id] = ts;
     });
 
@@ -3236,7 +3244,7 @@ class DisposalService {
     final fp = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
-            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+            '*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
         .inFilter('id', eligible.keys.toList()));
 
     final result = <ReTenderSaleInfo>[];
@@ -3622,12 +3630,17 @@ class DisposalService {
     final eligible = <String, List<DestructionModel>>{};
     byPkg.forEach((id, ts) {
       if (destroyedIds.contains(id)) return;
-      
-      bool passed = true;
-      if (ts.first.saleDate != null) {
-        final saleDateEnd = ts.first.saleDate!.add(const Duration(days: 1));
-        if (DateTime.now().isBefore(saleDateEnd)) passed = false;
-      }
+
+      // The current destruction is the most-recently-CREATED one (createdAt
+      // always increases). A freshly placed re-destruction's moment is future /
+      // unset, so the package is a PENDING destruction on the Destructions page;
+      // it leaves the Undestroyed pool until it genuinely goes undestroyed again.
+      final latest = [...ts]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt)); // newest first
+      // Undestroyed only after the destruction-day grace window closes (date +
+      // the following day) — matches the "Destroy within" countdown.
+      final deadline = latest.first.unsoldDeadline;
+      final passed = deadline != null && DateTime.now().isAfter(deadline);
       if (passed) eligible[id] = ts;
     });
 
@@ -3636,7 +3649,7 @@ class DisposalService {
     final fp = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
-            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+            '*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
         .inFilter('id', eligible.keys.toList()));
 
     final result = <ReDestructionInfo>[];

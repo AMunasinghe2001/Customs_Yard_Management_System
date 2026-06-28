@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -542,6 +543,119 @@ String _forfeitReasonText(PackageItem? item, ForfeitedPackageModel? f) {
   if (itemReasons != null && itemReasons.isNotEmpty) return clean(itemReasons);
   final fpReason = f?.reason.trim() ?? '';
   return clean(fpReason);
+}
+
+/// The warehouse · zone an item currently sits in (latest entry for the item,
+/// or the package's latest entry). Used by the Unsold / Undestroyed tables'
+/// "Location" column.
+String _warehouseLocation(PackageModel? pkg, String? itemId) {
+  if (pkg == null) return '—';
+  var entries = itemId != null
+      ? pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
+      : <WarehouseEntryModel>[];
+  if (entries.isEmpty) entries = [...pkg.warehouseEntries];
+  if (entries.isEmpty) return '—';
+  entries.sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
+  final w = entries.first;
+  return w.zone != null && w.zone!.isNotEmpty
+      ? '${w.warehouseName} · ${w.zone}'
+      : w.warehouseName;
+}
+
+/// A live countdown chip to a [deadline] — shown on the Tender / Destruction
+/// cards. Ticks every second; reads "Xd Yh", "Yh Zm", or "Zm Ws" as it nears 0.
+/// Once the deadline passes it shows "Window closed" (the package then drops to
+/// the Unsold / Undestroyed pool on the next refresh).
+class _DeadlineCountdown extends StatefulWidget {
+  final DateTime? deadline;
+  final String label; // e.g. 'Sell within' / 'Destroy within'
+  const _DeadlineCountdown({required this.deadline, required this.label});
+  @override
+  State<_DeadlineCountdown> createState() => _DeadlineCountdownState();
+}
+
+class _DeadlineCountdownState extends State<_DeadlineCountdown> {
+  Timer? _timer;
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  String _fmt(Duration d) {
+    if (d.inDays >= 1) return '${d.inDays}d ${d.inHours % 24}h';
+    if (d.inHours >= 1) return '${d.inHours}h ${d.inMinutes % 60}m';
+    if (d.inMinutes >= 1) return '${d.inMinutes}m ${d.inSeconds % 60}s';
+    return '${d.inSeconds}s';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final dl = widget.deadline;
+    if (dl == null) return const SizedBox.shrink();
+    final remaining = dl.difference(DateTime.now());
+    final closed = remaining.isNegative;
+    final color = closed
+        ? context.colors.dangerRed
+        : remaining.inHours < 6
+            ? context.colors.warningAmber
+            : context.colors.successGreen;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(closed ? Icons.timer_off_rounded : Icons.timer_rounded,
+            size: 13, color: color),
+        const Gap(5),
+        Text(
+          closed ? 'Window closed' : '${widget.label} ${_fmt(remaining)}',
+          style: TextStyle(
+              color: color, fontSize: 11.5, fontWeight: FontWeight.w700),
+        ),
+      ]),
+    );
+  }
+}
+
+/// A small coloured chip for a forfeited package's source — Forfeit / Abandoned
+/// / Other — used in the disposal tables' "Source" column.
+Widget _sourceChip(BuildContext context, String? source) {
+  final s = (source ?? '').trim().toLowerCase();
+  final (label, color) = switch (s) {
+    'abandoned' => ('Abandoned', context.colors.heldOrange),
+    'other' => ('Other', context.colors.warningAmber),
+    'forfeit' || 'forfeited' || 'forfiet' =>
+      ('Forfeit', context.colors.accentBlue),
+    _ => (source == null || source.isEmpty ? '—' : source,
+        context.colors.textMuted),
+  };
+  if (label == '—') {
+    return Text('—', style: TextStyle(color: context.colors.textMuted));
+  }
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withOpacity(0.4)),
+    ),
+    child: Text(label,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+            color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+  );
 }
 
 class _SoldRow {
@@ -1758,12 +1872,18 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     headingRowColor: _headingColor(context),
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Item'), size: ColumnSize.L),
-                      DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Case No'), size: ColumnSize.S),
+                      DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Source'), size: ColumnSize.S),
                       DataColumn2(
-                          label: Text('Source'),
+                          label: Text('Qty'),
                           size: ColumnSize.S,
-                          fixedWidth: 110),
+                          fixedWidth: 56),
+                      DataColumn2(
+                          label: Text('Forfeit Reason'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Text('Goods Description'), size: ColumnSize.L),
                       DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
                       DataColumn2(
                           label: Center(child: Text('Times Tendered')),
@@ -1781,16 +1901,43 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     rows: list.map((info) {
                       final f = info.forfeited;
                       final pkg = f.packageDetails;
+                      final item = f.itemId != null
+                          ? (pkg?.items
+                              .where((i) => i.id == f.itemId)
+                              .firstOrNull)
+                          : null;
                       return DataRow(cells: [
                         DataCell(Text(f.srNumber,
                             style: TextStyle(
                                 color: context.colors.accentLightBlue,
                                 fontWeight: FontWeight.w600))),
+                        DataCell(Text(pkg?.caseNumber ?? '—',
+                            overflow: TextOverflow.ellipsis)),
                         DataCell(Text(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(Text(f.consigneeName,
-                            overflow: TextOverflow.ellipsis)),
                         DataCell(_SourceChip(source: f.source)),
+                        DataCell(Text('${f.entryQty ?? item?.quantity ?? '—'}')),
+                        DataCell(Builder(builder: (_) {
+                          final reason = _forfeitReasonText(item, f);
+                          return Tooltip(
+                            message: reason,
+                            child: Text(reason.isNotEmpty ? reason : '—',
+                                overflow: TextOverflow.ellipsis),
+                          );
+                        })),
+                        DataCell(Text(_warehouseLocation(pkg, f.itemId),
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 12))),
+                        DataCell(Text(
+                            item?.goodsDescription?.isNotEmpty == true
+                                ? item!.goodsDescription!
+                                : '—',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 12))),
                         DataCell(_ValuationCell(f: f)),
                         DataCell(Center(
                           child: Container(
@@ -1984,8 +2131,16 @@ class TenderSaleCard extends ConsumerWidget {
   List<_TsRow> _rows() {
     // Central Disposal hides sold items (they move to Sold Packages); the
     // yard view-only page keeps them so the yard can see the full outcome.
-    final source =
-        readOnly ? sale.items : sale.items.where((s) => !s.sold);
+    // Once the sell window has CLOSED, the un-sold items have moved to the
+    // Unsold Tenders pool — drop them here too (Central Disposal view only).
+    final windowClosed = !readOnly &&
+        sale.unsoldDeadline != null &&
+        DateTime.now().isAfter(sale.unsoldDeadline!);
+    final Iterable<TenderSaleItemModel> source = readOnly
+        ? sale.items
+        : windowClosed
+            ? const []
+            : sale.items.where((s) => !s.sold);
 
     // De-duplicate: same (forfeitedPackageId, packageItemId) may appear as
     // multiple TSI rows when the per-item RPC created extra entries. Keep the
@@ -2034,6 +2189,10 @@ class TenderSaleCard extends ConsumerWidget {
     final green = context.colors.successGreen;
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final rows = _rows();
+    // Central Disposal: no actionable rows left (all sold, or the window closed
+    // and the un-sold items moved to Unsold Tenders) → drop the whole card. The
+    // yard view-only page (readOnly) keeps the card to show the full outcome.
+    if (!readOnly && rows.isEmpty) return const SizedBox.shrink();
     final total = sale.totalCount;
     final sold = sale.soldCount;
     final allSold = total > 0 && sold == total;
@@ -2096,6 +2255,14 @@ class TenderSaleCard extends ConsumerWidget {
                                 fontSize: 12)),
                       ),
                     ]),
+                    // Live "Sell within" countdown to the unsold deadline — once
+                    // it closes, the remaining items drop to Unsold Tenders.
+                    if (!allSold && sale.unsoldDeadline != null) ...[
+                      const Gap(6),
+                      _DeadlineCountdown(
+                          deadline: sale.unsoldDeadline,
+                          label: 'Sell within'),
+                    ],
                   ],
                 ),
               ),
@@ -2144,6 +2311,7 @@ class TenderSaleCard extends ConsumerWidget {
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Source'), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
                     DataColumn2(label: Text('Forfeit Reason'), size: ColumnSize.M),
@@ -2172,6 +2340,7 @@ class TenderSaleCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
+                      DataCell(_sourceChip(context, f?.source)),
                       DataCell(Text('${f?.entryQty ?? r.item?.quantity ?? '—'}')),
                       DataCell(Builder(builder: (_) {
                         final reason = _forfeitReasonText(r.item, f);
@@ -2915,9 +3084,21 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
             }
             setState(() { _loading = true; _error = null; });
             // Build forfeitedPackageId→yard from composite _selected keys.
-            final allDrItems = ref
-                .read(saleRequestItemsProvider)
-                .valueOrNull ?? const [];
+            // Re-tender picks from the UNSOLD pool (mapped the same way the form
+            // builds its rows); a fresh sale picks from the sale-request pool.
+            // Using the wrong pool here left packageYards empty so the re-tender
+            // created no tender_sale_items — the package never moved sales.
+            final allDrItems = widget.reTender
+                ? (ref.read(unsoldTenderSalesProvider).valueOrNull ?? const [])
+                    .map((info) => DisposalRequestItemModel(
+                          id: info.forfeited.id,
+                          requestId: '',
+                          forfeitedPackageId: info.forfeited.id,
+                          disposition: 'sale',
+                          forfeited: info.forfeited,
+                        ))
+                    .toList()
+                : (ref.read(saleRequestItemsProvider).valueOrNull ?? const []);
             final packageYards = <String, String>{};
             // forfeited_package_id → the specific package_item id it covers, so
             // the TSI row is item-scoped (Mark Sold sells only that item).
@@ -3209,8 +3390,15 @@ class _DestructionCard extends ConsumerWidget {
 
   List<_DestRow> _rows() {
     final rows = <_DestRow>[];
+    // Once the destroy window has CLOSED, items NOT yet destroyed have moved to
+    // the Undestroyed pool — they must leave this page too (only destroyed ones
+    // remain visible there, on the Destroyed Packages page). While the window is
+    // open, un-destroyed items stay here so they can be marked.
+    final windowClosed = sale.unsoldDeadline != null &&
+        DateTime.now().isAfter(sale.unsoldDeadline!);
     // Destroyed items leave the Destruction Sales page (they move to Destroyed Packages).
     for (final si in sale.items.where((s) => !s.destroyed)) {
+      if (windowClosed) continue; // dropped to Undestroyed
       final pkg = si.forfeited?.packageDetails;
       final pkgItems = pkg?.items ?? const [];
       final fpItemId = si.forfeited?.itemId;
@@ -3235,6 +3423,10 @@ class _DestructionCard extends ConsumerWidget {
     final green = context.colors.successGreen;
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final rows = _rows();
+    // No actionable rows left (all destroyed, or the window closed and the
+    // un-destroyed items moved to Undestroyed) → drop the whole card from the
+    // Destruction Sales page.
+    if (rows.isEmpty) return const SizedBox.shrink();
     final total = sale.items.length;
     final destroyed = sale.destroyedCount;
     final allDestroyed = total > 0 && destroyed == total;
@@ -3297,6 +3489,14 @@ class _DestructionCard extends ConsumerWidget {
                                 fontSize: 12)),
                       ),
                     ]),
+                    // Live "Destroy within" countdown to the undestroyed deadline
+                    // — once it closes, remaining items drop to Undestroyed.
+                    if (!allDestroyed && sale.unsoldDeadline != null) ...[
+                      const Gap(6),
+                      _DeadlineCountdown(
+                          deadline: sale.unsoldDeadline,
+                          label: 'Destroy within'),
+                    ],
                   ],
                 ),
               ),
@@ -3345,6 +3545,7 @@ class _DestructionCard extends ConsumerWidget {
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Source'), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
                     DataColumn2(label: Text('Forfeit Reason'), size: ColumnSize.M),
@@ -3373,6 +3574,7 @@ class _DestructionCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
+                      DataCell(_sourceChip(context, f?.source)),
                       DataCell(Text('${f?.entryQty ?? r.item?.quantity ?? '—'}')),
                       DataCell(Builder(builder: (_) {
                         final reason = _forfeitReasonText(r.item, f);
@@ -4019,9 +4221,22 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
             // Keys are either plain it.id or "${it.id}_${pkgItem.id}" for
             // expanded per-item rows — both cases point to the same
             // forfeitedPackageId on the DR item.
-            final allDrItems = ref
-                .read(destructionRequestItemsProvider)
-                .valueOrNull ?? const [];
+            // Re-destruction picks from the UNDESTROYED pool (mapped the same way
+            // the form builds its rows); a fresh destruction from the request
+            // pool. Wrong pool left packageYards empty so nothing moved sales.
+            final allDrItems = widget.reDestruction
+                ? (ref.read(undestroyedDestructionsProvider).valueOrNull ??
+                        const [])
+                    .map((info) => DisposalRequestItemModel(
+                          id: info.forfeited.id,
+                          requestId: '',
+                          forfeitedPackageId: info.forfeited.id,
+                          disposition: 'destruction',
+                          forfeited: info.forfeited,
+                        ))
+                    .toList()
+                : (ref.read(destructionRequestItemsProvider).valueOrNull ??
+                    const []);
             final packageYards = <String, String>{};
             // forfeited_package_id → the specific package_item id it covers, so
             // the destruction row is item-scoped (Mark Destroyed destroys only
@@ -4192,6 +4407,11 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
   String _itemName(ForfeitedPackageModel f) {
     final items = f.packageDetails?.items ?? const [];
     if (items.isEmpty) return 'Multiple/Unspecified';
+    // An item-scoped FP names its own item — show THAT, not "first +N".
+    if (f.itemId != null) {
+      final match = items.where((i) => i.id == f.itemId).firstOrNull;
+      if (match != null) return match.itemName;
+    }
     if (items.length == 1) return items.first.itemName;
     return '${items.first.itemName} +${items.length - 1}';
   }
@@ -4303,12 +4523,18 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     headingRowColor: _headingColor(context),
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Item'), size: ColumnSize.L),
-                      DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Case No'), size: ColumnSize.S),
+                      DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Source'), size: ColumnSize.S),
                       DataColumn2(
-                          label: Text('Source'),
+                          label: Text('Qty'),
                           size: ColumnSize.S,
-                          fixedWidth: 110),
+                          fixedWidth: 56),
+                      DataColumn2(
+                          label: Text('Forfeit Reason'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Text('Goods Description'), size: ColumnSize.L),
                       DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
                       DataColumn2(
                           label: Center(child: Text('Times Attempted')),
@@ -4326,16 +4552,43 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     rows: list.map((info) {
                       final f = info.forfeited;
                       final pkg = f.packageDetails;
+                      final item = f.itemId != null
+                          ? (pkg?.items
+                              .where((i) => i.id == f.itemId)
+                              .firstOrNull)
+                          : null;
                       return DataRow(cells: [
                         DataCell(Text(f.srNumber,
                             style: TextStyle(
                                 color: context.colors.accentLightBlue,
                                 fontWeight: FontWeight.w600))),
+                        DataCell(Text(pkg?.caseNumber ?? '—',
+                            overflow: TextOverflow.ellipsis)),
                         DataCell(Text(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(Text(f.consigneeName,
-                            overflow: TextOverflow.ellipsis)),
                         DataCell(_SourceChip(source: f.source)),
+                        DataCell(Text('${f.entryQty ?? item?.quantity ?? '—'}')),
+                        DataCell(Builder(builder: (_) {
+                          final reason = _forfeitReasonText(item, f);
+                          return Tooltip(
+                            message: reason,
+                            child: Text(reason.isNotEmpty ? reason : '—',
+                                overflow: TextOverflow.ellipsis),
+                          );
+                        })),
+                        DataCell(Text(_warehouseLocation(pkg, f.itemId),
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 12))),
+                        DataCell(Text(
+                            item?.goodsDescription?.isNotEmpty == true
+                                ? item!.goodsDescription!
+                                : '—',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 12))),
                         DataCell(_ValuationCell(f: f)),
                         DataCell(Center(
                           child: Container(
