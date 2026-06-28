@@ -629,6 +629,27 @@ class _DeadlineCountdownState extends State<_DeadlineCountdown> {
   }
 }
 
+/// A small status chip (icon + label) used in the disposal tables' Status
+/// column — e.g. read-only "Pending".
+Widget _statusChipWidget(
+    BuildContext context, String label, IconData icon, Color color) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withOpacity(0.4)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 13, color: color),
+      const Gap(5),
+      Text(label,
+          style: TextStyle(
+              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+    ]),
+  );
+}
+
 /// A small coloured chip for a forfeited package's source — Forfeit / Abandoned
 /// / Other — used in the disposal tables' "Source" column.
 Widget _sourceChip(BuildContext context, String? source) {
@@ -2257,7 +2278,9 @@ class TenderSaleCard extends ConsumerWidget {
                     ]),
                     // Live "Sell within" countdown to the unsold deadline — once
                     // it closes, the remaining items drop to Unsold Tenders.
-                    if (!allSold && sale.unsoldDeadline != null) ...[
+                    // Central Disposal only — the yard's read-only view never
+                    // shows the timer (the window is the directorate's concern).
+                    if (!readOnly && !allSold && sale.unsoldDeadline != null) ...[
                       const Gap(6),
                       _DeadlineCountdown(
                           deadline: sale.unsoldDeadline,
@@ -3352,7 +3375,7 @@ class _DestructionsTab extends ConsumerWidget {
                 return ListView.separated(
                   itemCount: visible.length,
                   separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) => _DestructionCard(sale: visible[i]),
+                  itemBuilder: (context, i) => DestructionCard(sale: visible[i]),
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
               },
             ),
@@ -3372,9 +3395,12 @@ class _DestRow {
   const _DestRow(this.saleItem, this.item, this.warehouse);
 }
 
-class _DestructionCard extends ConsumerWidget {
+class DestructionCard extends ConsumerWidget {
   final DestructionModel sale;
-  const _DestructionCard({required this.sale});
+  /// Yard view-only mode: hides the countdown timer, never drops rows when the
+  /// window closes, and disables Mark Destroyed (those are the directorate's).
+  final bool readOnly;
+  const DestructionCard({required this.sale, this.readOnly = false});
 
   String _warehouseFor(PackageModel? pkg, String itemId) {
     if (pkg == null) return '—';
@@ -3393,11 +3419,16 @@ class _DestructionCard extends ConsumerWidget {
     // Once the destroy window has CLOSED, items NOT yet destroyed have moved to
     // the Undestroyed pool — they must leave this page too (only destroyed ones
     // remain visible there, on the Destroyed Packages page). While the window is
-    // open, un-destroyed items stay here so they can be marked.
-    final windowClosed = sale.unsoldDeadline != null &&
+    // open, un-destroyed items stay here so they can be marked. The yard's
+    // read-only view keeps EVERY item (sold/unsold) so it can always be seen.
+    final windowClosed = !readOnly &&
+        sale.unsoldDeadline != null &&
         DateTime.now().isAfter(sale.unsoldDeadline!);
-    // Destroyed items leave the Destruction Sales page (they move to Destroyed Packages).
-    for (final si in sale.items.where((s) => !s.destroyed)) {
+    // Destroyed items leave the Destruction Sales page (they move to Destroyed
+    // Packages) — but stay on the yard's read-only view as the full outcome.
+    final source =
+        readOnly ? sale.items : sale.items.where((s) => !s.destroyed);
+    for (final si in source) {
       if (windowClosed) continue; // dropped to Undestroyed
       final pkg = si.forfeited?.packageDetails;
       final pkgItems = pkg?.items ?? const [];
@@ -3423,10 +3454,10 @@ class _DestructionCard extends ConsumerWidget {
     final green = context.colors.successGreen;
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final rows = _rows();
-    // No actionable rows left (all destroyed, or the window closed and the
-    // un-destroyed items moved to Undestroyed) → drop the whole card from the
-    // Destruction Sales page.
-    if (rows.isEmpty) return const SizedBox.shrink();
+    // Central Disposal: no actionable rows left (all destroyed, or window closed
+    // and items moved to Undestroyed) → drop the whole card. The yard read-only
+    // view keeps the card to show the full outcome.
+    if (!readOnly && rows.isEmpty) return const SizedBox.shrink();
     final total = sale.items.length;
     final destroyed = sale.destroyedCount;
     final allDestroyed = total > 0 && destroyed == total;
@@ -3491,7 +3522,10 @@ class _DestructionCard extends ConsumerWidget {
                     ]),
                     // Live "Destroy within" countdown to the undestroyed deadline
                     // — once it closes, remaining items drop to Undestroyed.
-                    if (!allDestroyed && sale.unsoldDeadline != null) ...[
+                    // Central Disposal only — the yard read-only view hides it.
+                    if (!readOnly &&
+                        !allDestroyed &&
+                        sale.unsoldDeadline != null) ...[
                       const Gap(6),
                       _DeadlineCountdown(
                           deadline: sale.unsoldDeadline,
@@ -3626,7 +3660,11 @@ class _DestructionCard extends ConsumerWidget {
                                               fontWeight: FontWeight.w700)),
                                     ]),
                               )
-                            : (() {
+                            : readOnly
+                                ? _statusChipWidget(context, 'Pending',
+                                    Icons.schedule_rounded,
+                                    context.colors.warningAmber)
+                                : (() {
                                 // Mark Destroyed only unlocks once the scheduled
                                 // destruction moment (date + time) has passed.
                                 final canDestroy = sale.saleTimePassed;

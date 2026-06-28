@@ -29,6 +29,7 @@ import '../screens/profile/edit_profile_screen.dart';
 import '../screens/reports/reports_screen.dart';
 import '../screens/forfeited_packages/forfeited_packages_screen.dart';
 import '../screens/forfeited_packages/tender_disposal_screen.dart';
+import '../screens/forfeited_packages/destruction_disposal_screen.dart';
 import '../widgets/app_shell.dart';
 import '../core/supabase_client.dart';
 import '../core/providers.dart';
@@ -106,6 +107,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/destroyed-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/destroyed-packages', title: 'Destroyed Packages', subtitle: 'Goods that have been destroyed', countLabel: 'Destroyed', finalTag: 'DESTROYED'))),
       GoRoute(path: '/reexported-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/reexported-packages', title: 'Re-exported Packages', subtitle: 'Goods sent back to country of origin', countLabel: 'Re-exported', finalTag: 'RE-EXPORTED'))),
       GoRoute(path: '/tender-disposals', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const TenderDisposalScreen())),
+      GoRoute(path: '/destruction-disposals', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DestructionDisposalScreen())),
       GoRoute(path: '/admin', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminDashboardScreen())),
       GoRoute(path: '/admin/panel', pageBuilder: (_, state) {
         final tabStr = state.uri.queryParameters['tab'];
