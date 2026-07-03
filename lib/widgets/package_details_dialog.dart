@@ -2217,6 +2217,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     widget.highlightEntry?.returnNotes ?? '');
                             return m?.group(1)?.trim();
                           }()),
+                          // Who recorded the sale — shown here instead of in the
+                          // Sold table.
+                          soldBy: widget.highlightEntry?.returnedByName ??
+                              widget.highlightEntry?.returnedByBadge,
                         ),
                       // Destroyed packages can also be delivered out — show a
                       // Delivered/Pending section with a Mark Delivered button
@@ -2992,8 +2996,10 @@ class _SaleFinancialsSection extends ConsumerStatefulWidget {
   /// Receipt number of THIS sale — pins the exact TSI row when one item was
   /// sold across several partial tenders (same package_item_id, distinct prices).
   final String? receipt;
+  /// Officer who recorded the sale (shown here, not in the Sold table).
+  final String? soldBy;
   const _SaleFinancialsSection(
-      {required this.package, this.packageItemId, this.receipt});
+      {required this.package, this.packageItemId, this.receipt, this.soldBy});
   @override
   ConsumerState<_SaleFinancialsSection> createState() => _SaleFinancialsSectionState();
 }
@@ -3078,6 +3084,37 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                     icon: Icons.receipt_long_rounded,
                     label: 'Receipt No',
                     value: saleItem.receiptNumber!.trim(),
+                  ),
+                if (widget.soldBy?.trim().isNotEmpty == true)
+                  _DetailItem(
+                    icon: Icons.person_rounded,
+                    label: 'Sold By',
+                    value: widget.soldBy!.trim(),
+                  ),
+                // Valuation Directorate's valuation, for comparison with the
+                // actual sold price below.
+                if (() {
+                  final fp = saleItem.forfeited;
+                  return fp?.valuationCost != null;
+                }())
+                  _DetailItem(
+                    icon: Icons.calculate_rounded,
+                    label: 'Valuation (Rs)',
+                    value: (() {
+                      final fp = saleItem.forfeited!;
+                      final unit = fp.valuationCost!;
+                      final qty = fp.entryQty ??
+                          (fp.itemId != null
+                              ? (fp.packageDetails?.items
+                                      .where((i) => i.id == fp.itemId)
+                                      .firstOrNull
+                                      ?.quantity ??
+                                  1)
+                              : (fp.packageDetails?.items
+                                      .fold<int>(0, (s, i) => s + i.quantity) ??
+                                  1));
+                      return (unit * qty).toStringAsFixed(2);
+                    }()),
                   ),
                 _DetailItem(
                   icon: Icons.payments_rounded,
@@ -3226,6 +3263,43 @@ class _DestructionDeliverySectionState
                   label: 'Status',
                   value: 'Destroyed',
                   valueColor: context.colors.dangerRed,
+                ),
+                if (item.notes?.trim().isNotEmpty == true)
+                  _DetailItem(
+                    icon: Icons.receipt_long_rounded,
+                    label: 'Receipt / Notes',
+                    value: item.notes!.trim(),
+                  ),
+                // Valuation Directorate valuation, for comparison.
+                if (() {
+                  final fp = item.forfeited;
+                  return fp?.valuationCost != null;
+                }())
+                  _DetailItem(
+                    icon: Icons.calculate_rounded,
+                    label: 'Valuation (Rs)',
+                    value: (() {
+                      final fp = item.forfeited!;
+                      final unit = fp.valuationCost!;
+                      final qty = fp.entryQty ??
+                          (fp.itemId != null
+                              ? (fp.packageDetails?.items
+                                      .where((i) => i.id == fp.itemId)
+                                      .firstOrNull
+                                      ?.quantity ??
+                                  1)
+                              : (fp.packageDetails?.items
+                                      .fold<int>(0, (s, i) => s + i.quantity) ??
+                                  1));
+                      return (unit * qty).toStringAsFixed(2);
+                    }()),
+                  ),
+                // Destruction records a price only — no taxes (unlike a sale).
+                _DetailItem(
+                  icon: Icons.payments_rounded,
+                  label: 'Destruction Price (Rs)',
+                  value: item.destroyedPrice.toStringAsFixed(2),
+                  valueColor: context.colors.primaryGold,
                 ),
                 _DetailItem(
                   icon: Icons.local_shipping_rounded,

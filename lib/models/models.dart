@@ -1265,6 +1265,10 @@ class DestructionItemModel {
   final bool delivered;
   final DateTime? deliveredAt;
   final String? notes;
+  /// Price recorded when the item was marked destroyed (0 until destroyed).
+  final double destroyedPrice;
+  /// Taxes applied to [destroyedPrice] — list of {name, percentage, amount}.
+  final List<dynamic> appliedTaxes;
   final ForfeitedPackageModel? forfeited;
 
   const DestructionItemModel({
@@ -1277,6 +1281,8 @@ class DestructionItemModel {
     this.delivered = false,
     this.deliveredAt,
     this.notes,
+    this.destroyedPrice = 0,
+    this.appliedTaxes = const [],
     this.forfeited,
   });
 
@@ -1295,6 +1301,8 @@ class DestructionItemModel {
           ? DateTime.tryParse(json['delivered_at'].toString())
           : null,
       notes: json['notes'] as String?,
+      destroyedPrice: (json['destroyed_price'] as num?)?.toDouble() ?? 0,
+      appliedTaxes: (json['applied_taxes'] as List?) ?? const [],
       forfeited: json['forfeited_packages'] != null
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)

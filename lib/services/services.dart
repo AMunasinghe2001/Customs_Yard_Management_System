@@ -3548,7 +3548,8 @@ class DisposalService {
     if (ids.isEmpty) return null;
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('destruction_items')
-        .select()
+        .select(
+            '*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
         .inFilter('forfeited_package_id', ids)
         .eq('destroyed', true)
         .order('destroyed_at', ascending: false)
@@ -3565,18 +3566,22 @@ class DisposalService {
     if (packageItemId == null) {
       return getDestructionItemForPackage(packageId);
     }
-    final fpkgItem = await AuthService._withNetworkRetry(() => supabase
+    // An item can have SEVERAL forfeited_packages rows (one per partial
+    // disposition), so we gather ALL of them — using maybeSingle() here was the
+    // bug that returned null when an item had multiple partial FP rows.
+    final fpkgItems = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select('id')
         .eq('package_id', packageId)
-        .eq('item_id', packageItemId)
-        .maybeSingle());
-    if (fpkgItem != null) {
-      final fpId = fpkgItem['id'] as String;
+        .eq('item_id', packageItemId));
+    final fpIds =
+        (fpkgItems as List).map((e) => e['id'] as String).toList();
+    if (fpIds.isNotEmpty) {
       final data = await AuthService._withNetworkRetry(() => supabase
           .from('destruction_items')
-          .select()
-          .eq('forfeited_package_id', fpId)
+          .select(
+              '*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+          .inFilter('forfeited_package_id', fpIds)
           .eq('destroyed', true)
           .order('destroyed_at', ascending: false)
           .limit(1)
@@ -3772,6 +3777,8 @@ class DisposalService {
   Future<void> markDestructionItemDestroyed({
     required String destructionItemId,
     String? receipt,
+    double destroyedPrice = 0.0,
+    List<dynamic> appliedTaxes = const [],
   }) async {
     await AuthService._withNetworkRetry(() => supabase.rpc(
           'disposal_mark_destruction_item_destroyed',
@@ -3780,6 +3787,8 @@ class DisposalService {
             'p_receipt': (receipt == null || receipt.trim().isEmpty)
                 ? null
                 : receipt.trim(),
+            'p_price': destroyedPrice,
+            'p_taxes': appliedTaxes,
           },
         ));
     final user = supabase.auth.currentUser;
@@ -3828,7 +3837,8 @@ class DisposalService {
 
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')
-        .select()
+        .select(
+            '*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost))')
         .inFilter('forfeited_package_id', ids)
         .order('created_at', ascending: false)
         .limit(1)
@@ -3860,7 +3870,8 @@ class DisposalService {
       if (receipt != null && receipt.isNotEmpty) {
         final byReceipt = await AuthService._withNetworkRetry(() => supabase
             .from('tender_sale_items')
-            .select()
+            .select(
+                '*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost))')
             .inFilter('forfeited_package_id', fpIds)
             .eq('package_item_id', packageItemId)
             .eq('receipt_number', receipt)
@@ -3871,7 +3882,8 @@ class DisposalService {
       }
       final perItem = await AuthService._withNetworkRetry(() => supabase
           .from('tender_sale_items')
-          .select()
+          .select(
+              '*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost))')
           .inFilter('forfeited_package_id', fpIds)
           .eq('package_item_id', packageItemId)
           .order('created_at', ascending: false)
@@ -3892,7 +3904,8 @@ class DisposalService {
         final fpId = fpkgItem['id'] as String;
         final data = await AuthService._withNetworkRetry(() => supabase
             .from('tender_sale_items')
-            .select()
+            .select(
+                '*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost))')
             .eq('forfeited_package_id', fpId)
             .order('created_at', ascending: false)
             .limit(1)

@@ -469,13 +469,24 @@ class _DispositionCategoryScreenState
                                 fixedWidth: 70),
                             const DataColumn2(
                                 label: Text('Date'), size: ColumnSize.M),
-                            const DataColumn2(
-                                label: Text('Officer'), size: ColumnSize.M),
-                            const DataColumn2(
-                                label: Text('Notes'), size: ColumnSize.M),
-                            if (widget.finalTag == 'SOLD')
+                            // Officer is hidden on the SOLD/DESTROYED tables —
+                            // who sold/destroyed it is shown in the details popup.
+                            if (!_hasDelivery)
                               const DataColumn2(
-                                  label: Text('Financials'),
+                                  label: Text('Officer'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text(widget.finalTag == 'SOLD'
+                                    ? 'Receipt No'
+                                    : 'Notes'),
+                                size: ColumnSize.M),
+                            if (_hasDelivery)
+                              const DataColumn2(
+                                  label: Text('Valuation'), size: ColumnSize.M),
+                            if (_hasDelivery)
+                              DataColumn2(
+                                  label: Text(widget.finalTag == 'SOLD'
+                                      ? 'Sold Price'
+                                      : 'Destruction Price'),
                                   size: ColumnSize.M),
                             if (_hasDelivery)
                               const DataColumn2(
@@ -513,11 +524,19 @@ class _DispositionCategoryScreenState
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.entry!.returnedAt!)
                                         : '—')),
-                                    DataCell(Text(row.officer,
-                                        overflow: TextOverflow.ellipsis)),
+                                    if (!_hasDelivery)
+                                      DataCell(Text(row.officer,
+                                          overflow: TextOverflow.ellipsis)),
                                     DataCell(Text(
                                         row.note.isEmpty ? '—' : row.note,
                                         overflow: TextOverflow.ellipsis)),
+                                    if (widget.finalTag == 'SOLD')
+                                      DataCell(_SaleValuationCell(
+                                        package: row.package,
+                                        packageItemId: row.entry?.packageItemId,
+                                        receipt: _parseSaleReceipt(
+                                            row.entry?.returnNotes),
+                                      )),
                                     if (widget.finalTag == 'SOLD')
                                       DataCell(_SaleFinancialsCell(
                                         package: row.package,
@@ -531,6 +550,16 @@ class _DispositionCategoryScreenState
                                         packageItemId: row.entry?.packageItemId,
                                         receipt: _parseSaleReceipt(
                                             row.entry?.returnNotes),
+                                      )),
+                                    if (widget.finalTag == 'DESTROYED')
+                                      DataCell(_DestructionFinancialsCell(
+                                        package: row.package,
+                                        packageItemId: row.entry?.packageItemId,
+                                      )),
+                                    if (widget.finalTag == 'DESTROYED')
+                                      DataCell(_DestructionPriceCell(
+                                        package: row.package,
+                                        packageItemId: row.entry?.packageItemId,
                                       )),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(_DestroyedDeliveryStatusCell(
@@ -629,6 +658,145 @@ class _DeliveryStatusCell extends ConsumerWidget {
 
 // Read-only delivery STATUS chip for a DESTROYED package (mirrors
 // _DeliveryStatusCell but reads the destruction item).
+/// The Valuation Directorate's valuation (unit cost × qty) for a SOLD item —
+/// shown alongside the actual sold price so both figures can be compared.
+class _SaleValuationCell extends ConsumerWidget {
+  final PackageModel package;
+  final String? packageItemId;
+  /// Pins the exact TSI row when an item was sold across several partial sales
+  /// (same package_item_id, distinct qty/valuation per sale).
+  final String? receipt;
+  const _SaleValuationCell(
+      {required this.package, this.packageItemId, this.receipt});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final key = '${package.id}|${packageItemId ?? ''}|${receipt ?? ''}';
+    final async = ref.watch(saleItemForPackageItemProvider(key));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
+      data: (item) {
+        final fp = item?.forfeited;
+        final unitCost = fp?.valuationCost;
+        if (unitCost == null || fp == null) {
+          return Text('—', style: TextStyle(color: context.colors.textMuted));
+        }
+        final int qty;
+        if (fp.entryQty != null) {
+          qty = fp.entryQty!;
+        } else if (fp.itemId != null) {
+          qty = fp.packageDetails?.items
+                  .where((i) => i.id == fp.itemId)
+                  .firstOrNull
+                  ?.quantity ??
+              1;
+        } else {
+          qty = fp.packageDetails?.items
+                  .fold<int>(0, (s, i) => s + i.quantity) ??
+              1;
+        }
+        final total = unitCost * qty;
+        final fmt = NumberFormat('#,##0');
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Rs ${fmt.format(total)}',
+                style: TextStyle(
+                    color: context.colors.primaryGold,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12)),
+            Text('@ ${fmt.format(unitCost)} × $qty',
+                style: TextStyle(
+                    fontSize: 10, color: context.colors.textMuted)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The actual destruction price + tax recorded when the item was destroyed.
+class _DestructionPriceCell extends ConsumerWidget {
+  final PackageModel package;
+  final String? packageItemId;
+  const _DestructionPriceCell({required this.package, this.packageItemId});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final key = '${package.id}|${packageItemId ?? ''}';
+    final async = ref.watch(destructionItemForPackageItemProvider(key));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
+      data: (item) {
+        if (item == null) {
+          return Text('—', style: TextStyle(color: context.colors.textMuted));
+        }
+        // Destruction records a price only — no taxes.
+        return Text('Rs ${item.destroyedPrice.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.bold));
+      },
+    );
+  }
+}
+
+/// Valuation total (unit cost × qty) for a DESTROYED item — destruction carries
+/// no sold price, so the figure shown is the Valuation Directorate's valuation.
+class _DestructionFinancialsCell extends ConsumerWidget {
+  final PackageModel package;
+  final String? packageItemId;
+  const _DestructionFinancialsCell(
+      {required this.package, this.packageItemId});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final key = '${package.id}|${packageItemId ?? ''}';
+    final async = ref.watch(destructionItemForPackageItemProvider(key));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
+      data: (item) {
+        final fp = item?.forfeited;
+        final unitCost = fp?.valuationCost;
+        if (unitCost == null || fp == null) {
+          return Text('—', style: TextStyle(color: context.colors.textMuted));
+        }
+        final int qty;
+        if (fp.entryQty != null) {
+          qty = fp.entryQty!;
+        } else if (fp.itemId != null) {
+          qty = fp.packageDetails?.items
+                  .where((i) => i.id == fp.itemId)
+                  .firstOrNull
+                  ?.quantity ??
+              1;
+        } else {
+          qty = fp.packageDetails?.items
+                  .fold<int>(0, (s, i) => s + i.quantity) ??
+              1;
+        }
+        final total = unitCost * qty;
+        final fmt = NumberFormat('#,##0');
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Rs ${fmt.format(total)}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+            Text('@ ${fmt.format(unitCost)} × $qty',
+                style: TextStyle(
+                    fontSize: 11, color: context.colors.textMuted)),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _DestroyedDeliveryStatusCell extends ConsumerWidget {
   final PackageModel package;
   final String? packageItemId;
