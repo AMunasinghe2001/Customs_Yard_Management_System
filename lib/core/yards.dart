@@ -13,15 +13,32 @@ class Yard {
   const Yard({required this.code, required this.name, required this.srPrefix});
 }
 
-/// The seven supported yards. The first one is the historical default.
+/// The supported customs yards. The first one (Grey Line 1) is the historical
+/// default used for existing data. Add new yards here — the whole app (login
+/// yard pickers, filters, SR-number prefixes, RLS `profiles.yard`) reads this
+/// single list, so nothing else needs editing.
 const List<Yard> kYards = [
   Yard(code: 'GL1', name: 'Grey Line 1', srPrefix: 'GL1'),
   Yard(code: 'GL2', name: 'Grey Line 2', srPrefix: 'GL2'),
   Yard(code: 'RCT', name: 'RCT', srPrefix: 'RCT'),
-  Yard(code: 'BQ', name: 'BQ', srPrefix: 'BQ'),
-  Yard(code: 'JCT', name: 'JCT', srPrefix: 'JCT'),
-  Yard(code: 'NNR', name: 'NNR', srPrefix: 'NNR'),
   Yard(code: 'CVT', name: 'CVT', srPrefix: 'CVT'),
+  Yard(code: 'BQ', name: 'BQ', srPrefix: 'BQ'),
+  Yard(code: 'NNR', name: 'NNR', srPrefix: 'NNR'),
+  Yard(code: 'JCT', name: 'JCT', srPrefix: 'JCT'),
+  Yard(code: 'PREV', name: 'Preventive', srPrefix: 'PREV'),
+  Yard(code: 'BAGG', name: 'Baggage Office', srPrefix: 'BAGG'),
+  Yard(code: 'RTF', name: 'RTF', srPrefix: 'RTF'),
+  Yard(code: 'BIA', name: 'BIA', srPrefix: 'BIA'),
+  Yard(code: 'HMB', name: 'HMB', srPrefix: 'HMB'),
+  Yard(code: 'TRINCO', name: 'Trinco', srPrefix: 'TRINCO'),
+  Yard(code: 'KURU', name: 'Kurunegala', srPrefix: 'KURU'),
+  Yard(code: 'CSL', name: 'CSL', srPrefix: 'CSL'),
+  Yard(code: 'DAMB', name: 'Dambulla', srPrefix: 'DAMB'),
+  Yard(code: 'MIDIGO', name: 'Midigo', srPrefix: 'MIDIGO'),
+  Yard(code: 'KALK', name: 'Kalkisiri', srPrefix: 'KALK'),
+  Yard(code: 'TRANSCO', name: 'Transco', srPrefix: 'TRANSCO'),
+  Yard(code: 'SEREN', name: 'Serendib', srPrefix: 'SEREN'),
+  Yard(code: 'TRIGO', name: 'Trigo', srPrefix: 'TRIGO'),
 ];
 
 /// The default yard used for existing data and as a fallback.

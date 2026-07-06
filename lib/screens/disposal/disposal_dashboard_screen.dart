@@ -1137,7 +1137,12 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                 label: Text('Destroyed Date'),
                                 size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Destroyed By'), size: ColumnSize.M),
+                                label: Text('Receipt No'), size: ColumnSize.S),
+                            DataColumn2(
+                                label: Text('Valuation'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Destruction Price'),
+                                size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Delivery'), fixedWidth: 130),
                             DataColumn2(
@@ -1159,8 +1164,17 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(r.entry.returnedAt!)
                                         : '—')),
-                                    DataCell(Text(r.officer,
+                                    DataCell(Text(
+                                        _parseDestroyReceipt(
+                                                r.entry.returnNotes) ??
+                                            '—',
                                         overflow: TextOverflow.ellipsis)),
+                                    DataCell(_DestructionValuationCell(
+                                        package: r.package,
+                                        packageItemId: r.entry.packageItemId)),
+                                    DataCell(_DestructionPriceCell(
+                                        package: r.package,
+                                        packageItemId: r.entry.packageItemId)),
                                     DataCell(_DestroyedDeliveryCell(
                                         package: r.package)),
                                     DataCell(Center(
@@ -1220,6 +1234,89 @@ class _DestroyedDeliveryCell extends ConsumerWidget {
       error: (_, __) => const Text('—'),
       data: (item) =>
           DeliveryStatusChip(delivered: item?.delivered ?? false),
+    );
+  }
+}
+
+/// Parse the receipt from a "[FINAL:DESTROYED] — Receipt/Notes: <no>" note.
+String? _parseDestroyReceipt(String? returnNotes) {
+  if (returnNotes == null) return null;
+  final m = RegExp(r'Receipt/Notes:\s*([^\|—]+)', caseSensitive: false)
+      .firstMatch(returnNotes);
+  return m?.group(1)?.trim();
+}
+
+/// The Valuation Directorate's valuation (unit × qty) for a destroyed item.
+class _DestructionValuationCell extends ConsumerWidget {
+  final PackageModel package;
+  final String? packageItemId;
+  const _DestructionValuationCell(
+      {required this.package, this.packageItemId});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final key = '${package.id}|${packageItemId ?? ''}';
+    final async = ref.watch(destructionItemForPackageItemProvider(key));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
+      data: (item) {
+        final fp = item?.forfeited;
+        final unitCost = fp?.valuationCost;
+        if (unitCost == null || fp == null) {
+          return Text('—', style: TextStyle(color: context.colors.textMuted));
+        }
+        final int qty;
+        if (fp.entryQty != null) {
+          qty = fp.entryQty!;
+        } else if (fp.itemId != null) {
+          qty = fp.packageDetails?.items
+                  .where((i) => i.id == fp.itemId)
+                  .firstOrNull
+                  ?.quantity ??
+              1;
+        } else {
+          qty = fp.packageDetails?.items
+                  .fold<int>(0, (s, i) => s + i.quantity) ??
+              1;
+        }
+        final total = unitCost * qty;
+        final fmt = NumberFormat('#,##0');
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text('Rs ${fmt.format(total)}',
+                style: TextStyle(
+                    color: context.colors.primaryGold,
+                    fontWeight: FontWeight.w700)),
+            Text('@ ${fmt.format(unitCost)} × $qty',
+                style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// The actual destruction price recorded when the item was destroyed (no taxes).
+class _DestructionPriceCell extends ConsumerWidget {
+  final PackageModel package;
+  final String? packageItemId;
+  const _DestructionPriceCell({required this.package, this.packageItemId});
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final key = '${package.id}|${packageItemId ?? ''}';
+    final async = ref.watch(destructionItemForPackageItemProvider(key));
+    return async.when(
+      loading: () => const SizedBox(
+          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) => const Text('—'),
+      data: (item) {
+        if (item == null) return const Text('—');
+        return Text('Rs ${item.destroyedPrice.toStringAsFixed(2)}',
+            style: const TextStyle(fontWeight: FontWeight.bold));
+      },
     );
   }
 }
@@ -2516,7 +2613,9 @@ class TenderSaleCard extends ConsumerWidget {
                                   builder: (_) => PackageDetailsDialog(
                                     package: pkg,
                                     storageRate: storageRate,
-                                    headerAccentColor: green,
+                                    // Yard (read-only) uses the default blue
+                                    // header like Forfeited; Central keeps green.
+                                    headerAccentColor: readOnly ? null : green,
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),
@@ -3793,7 +3892,9 @@ class DestructionCard extends ConsumerWidget {
                                   builder: (_) => PackageDetailsDialog(
                                     package: pkg,
                                     storageRate: storageRate,
-                                    headerAccentColor: green,
+                                    // Yard (read-only) uses the default blue
+                                    // header like Forfeited; Central keeps green.
+                                    headerAccentColor: readOnly ? null : green,
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),

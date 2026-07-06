@@ -3267,7 +3267,7 @@ class _DestructionDeliverySectionState
                 if (item.notes?.trim().isNotEmpty == true)
                   _DetailItem(
                     icon: Icons.receipt_long_rounded,
-                    label: 'Receipt / Notes',
+                    label: 'Receipt No',
                     value: item.notes!.trim(),
                   ),
                 // Valuation Directorate valuation, for comparison.

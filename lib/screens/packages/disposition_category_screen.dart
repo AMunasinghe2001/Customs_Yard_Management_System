@@ -475,9 +475,7 @@ class _DispositionCategoryScreenState
                               const DataColumn2(
                                   label: Text('Officer'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text(widget.finalTag == 'SOLD'
-                                    ? 'Receipt No'
-                                    : 'Notes'),
+                                label: Text(_hasDelivery ? 'Receipt No' : 'Notes'),
                                 size: ColumnSize.M),
                             if (_hasDelivery)
                               const DataColumn2(
@@ -528,7 +526,23 @@ class _DispositionCategoryScreenState
                                       DataCell(Text(row.officer,
                                           overflow: TextOverflow.ellipsis)),
                                     DataCell(Text(
-                                        row.note.isEmpty ? '—' : row.note,
+                                        (() {
+                                          // SOLD/DESTROYED: show the clean
+                                          // receipt number; other tags: notes.
+                                          if (widget.finalTag == 'SOLD') {
+                                            return _parseSaleReceipt(
+                                                    row.entry?.returnNotes) ??
+                                                '—';
+                                          }
+                                          if (widget.finalTag == 'DESTROYED') {
+                                            return _parseDestroyReceipt(
+                                                    row.entry?.returnNotes) ??
+                                                '—';
+                                          }
+                                          return row.note.isEmpty
+                                              ? '—'
+                                              : row.note;
+                                        })(),
                                         overflow: TextOverflow.ellipsis)),
                                     if (widget.finalTag == 'SOLD')
                                       DataCell(_SaleValuationCell(
@@ -848,6 +862,14 @@ class _DeliveryStatusChip extends StatelessWidget {
 String? _parseSaleReceipt(String? returnNotes) {
   if (returnNotes == null) return null;
   final m = RegExp(r'Receipt:\s*([^\|—]+)', caseSensitive: false)
+      .firstMatch(returnNotes);
+  return m?.group(1)?.trim();
+}
+
+/// Parse the receipt from a "[FINAL:DESTROYED] — Receipt/Notes: <no>" note.
+String? _parseDestroyReceipt(String? returnNotes) {
+  if (returnNotes == null) return null;
+  final m = RegExp(r'Receipt/Notes:\s*([^\|—]+)', caseSensitive: false)
       .firstMatch(returnNotes);
   return m?.group(1)?.trim();
 }
