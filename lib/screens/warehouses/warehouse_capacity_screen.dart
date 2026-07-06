@@ -6,7 +6,7 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../widgets/app_shell.dart';
-import '../../widgets/empty_table_state.dart';
+import '../../widgets/empty_state_card.dart';
 import '../../widgets/error_view.dart';
 
 /// Admin view of how full each warehouse in their own yard is — total capacity,
@@ -99,10 +99,12 @@ class WarehouseCapacityScreen extends ConsumerWidget {
                   ),
                   data: (rows) {
                     if (rows.isEmpty) {
-                      return const EmptyTableState(
-                              message: 'No active warehouse stock in your yard')
-                          .animate()
-                          .fadeIn();
+                      return const EmptyStateCard(
+                        icon: Icons.inventory_2_outlined,
+                        message: 'No active warehouse stock in your yard',
+                        subtitle:
+                            'Admitted packages for this yard will appear here.',
+                      );
                     }
                     return Container(
                       decoration: BoxDecoration(

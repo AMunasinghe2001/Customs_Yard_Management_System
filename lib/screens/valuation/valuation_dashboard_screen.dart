@@ -12,6 +12,7 @@ import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
+import '../../widgets/empty_state_card.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_form_dialog.dart';
@@ -196,19 +197,13 @@ class ValuationDashboardScreen extends ConsumerWidget {
                               ref.refresh(valuationRequestsProvider)),
                       data: (list) {
                         if (list.isEmpty) {
-                          return Container(
+                          return SizedBox(
                             width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: context.colors.cardDark,
-                              borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: context.colors.borderColor),
-                            ),
-                            child: const EmptyTableState(
+                            child: EmptyStateCard(
                                 icon: Icons.calculate_outlined,
                                 message: 'Nothing awaiting valuation',
                                 subtitle:
-                                    'New disposal requests from the yards will appear here for costing.'),
+                                    'Monitoring all ${kYards.length} yards — new disposal requests will appear here for costing.'),
                           );
                         }
                         return ListView.separated(

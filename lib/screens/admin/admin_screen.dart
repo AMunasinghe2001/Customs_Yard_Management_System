@@ -16,6 +16,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/table_pager.dart';
+import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
 
 class AdminScreen extends ConsumerWidget {
@@ -212,6 +213,10 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                   horizontalMargin: 24,
                   columnSpacing: 20,
                   fixedTopRows: 1,
+                  empty: const EmptyTableState(
+                      icon: Icons.people_outline_rounded,
+                      message: 'No officers yet',
+                      subtitle: 'Add an officer to your yard from here.'),
                   isHorizontalScrollBarVisible: false,
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   headingRowColor:
@@ -859,6 +864,10 @@ class _WarehousesTab extends ConsumerWidget {
                     horizontalMargin: 24,
                     columnSpacing: 20,
                     fixedTopRows: 1,
+                    empty: const EmptyTableState(
+                        icon: Icons.warehouse_outlined,
+                        message: 'No warehouses yet',
+                        subtitle: 'Add a warehouse to admit packages into.'),
                     isHorizontalScrollBarVisible: false,
                     dataRowColor: WidgetStateProperty.all(Colors.transparent),
                     headingRowColor:
@@ -1349,6 +1358,11 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                   horizontalMargin: 24,
                   columnSpacing: 20,
                   fixedTopRows: 1,
+                  empty: const EmptyTableState(
+                      icon: Icons.category_outlined,
+                      message: 'No item categories yet',
+                      subtitle:
+                          'Add a category to route items to a warehouse zone.'),
                   isHorizontalScrollBarVisible: false,
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   headingRowColor:
@@ -1953,6 +1967,10 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                   horizontalMargin: 24,
                   columnSpacing: 20,
                   fixedTopRows: 1,
+                  empty: const EmptyTableState(
+                      icon: Icons.request_quote_outlined,
+                      message: 'No storage rates yet',
+                      subtitle: 'Add a storage rate to charge warehouse holds.'),
                   isHorizontalScrollBarVisible: false,
                   dataRowColor: WidgetStateProperty.all(Colors.transparent),
                   headingRowColor:
@@ -2175,6 +2193,10 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
                     horizontalMargin: 24,
                     columnSpacing: 20,
                     fixedTopRows: 1,
+                    empty: const EmptyTableState(
+                        icon: Icons.history_rounded,
+                        message: 'No activity yet',
+                        subtitle: 'System actions will be logged here.'),
                     isHorizontalScrollBarVisible: false,
                     dataRowColor: WidgetStateProperty.all(Colors.transparent),
                     headingRowColor:
@@ -2327,6 +2349,10 @@ class _HoldReasonsTab extends ConsumerWidget {
                 child: DataTable2(
                   horizontalMargin: 24,
                   columnSpacing: 20,
+                  empty: const EmptyTableState(
+                      icon: Icons.label_important_outline_rounded,
+                      message: 'No hold reasons yet',
+                      subtitle: 'Add a hold reason to use it on the SR form.'),
                   headingRowColor:
                       WidgetStateProperty.all(context.colors.surfaceDark),
                   columns: [

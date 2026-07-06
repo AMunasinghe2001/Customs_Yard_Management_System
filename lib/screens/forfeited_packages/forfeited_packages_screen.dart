@@ -471,16 +471,6 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
 
                     final rows = _buildForfeitRows(filtered);
 
-                    if (rows.isEmpty) {
-                      return const EmptyTableState(
-                              icon: Icons.gavel_outlined,
-                              message: 'No forfeited packages found',
-                              subtitle:
-                                  'Try adjusting the search or date filters.')
-                          .animate()
-                          .fadeIn();
-                    }
-
                     return Container(
                       decoration: BoxDecoration(
                         color: context.colors.cardDark,
@@ -493,6 +483,13 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           columnSpacing: 10,
                           horizontalMargin: 16,
                           fixedTopRows: 1,
+                          // Keep the header + show a haloed empty state in the
+                          // rows area when there's nothing (Released-page style).
+                          empty: const EmptyTableState(
+                              icon: Icons.gavel_outlined,
+                              message: 'No forfeited packages found',
+                              subtitle:
+                                  'Try adjusting the search or date filters.'),
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(label: Text('Item Name'), size: ColumnSize.L),

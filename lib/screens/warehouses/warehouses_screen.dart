@@ -13,6 +13,8 @@ import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/empty_state_card.dart';
+import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/supabase_client.dart';
@@ -59,7 +61,52 @@ class WarehousesScreen extends ConsumerWidget {
     return warehouses.when(
       loading: () => _buildLoadingState(context),
       error: (e, _) => AppShell(currentRoute: '/warehouses', child: ErrorView(error: e, onRetry: () => ref.refresh(warehousesProvider))),
-      data: (ws) => DefaultTabController(
+      data: (ws) {
+        // No warehouses yet (e.g. a freshly-reset DB) — a TabController with
+        // length 0 throws RangeError, and _WarehousesHeaderWithStats reads
+        // DefaultTabController.of + warehouses[index], so neither can be used.
+        // Show a plain title + empty state instead.
+        if (ws.isEmpty) {
+          return AppShell(
+            currentRoute: '/warehouses',
+            child: Scaffold(
+              backgroundColor: context.colors.scaffoldBg,
+              body: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('SR Unit Warehouses',
+                            style: Theme.of(context).textTheme.headlineLarge),
+                        const Gap(4),
+                        Text('Track packages held in SR Unit facilities',
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 14)),
+                      ],
+                    ),
+                  ),
+                  const Gap(20),
+                  const Expanded(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(28, 0, 28, 28),
+                      child: EmptyStateCard(
+                        icon: Icons.warehouse_rounded,
+                        message: 'No warehouses yet',
+                        subtitle:
+                            'Add a warehouse from the Admin Panel to start admitting packages.',
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return DefaultTabController(
         length: ws.length,
         // Persisted so a data refresh (after a package action) keeps the tab.
         initialIndex:
@@ -119,7 +166,8 @@ class WarehousesScreen extends ConsumerWidget {
             ),
           ),
         ),
-      ),
+      );
+      },
     );
   }
 
@@ -218,14 +266,6 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
           }
           return true;
         }).toList();
-
-        if (list.isEmpty) {
-          return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.warehouse_rounded, size: 64, color: context.colors.textMuted.withOpacity(0.4)),
-            const Gap(16),
-            Text('${_formatWarehouseName(warehouse.name)} is empty', style: TextStyle(color: context.colors.textMuted, fontSize: 16)),
-          ]));
-        }
 
         return Padding(
               padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
@@ -371,6 +411,13 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                           columnSpacing: 10,
                           horizontalMargin: 12,
                           fixedTopRows: 1,
+                          empty: EmptyTableState(
+                            icon: Icons.warehouse_rounded,
+                            message:
+                                '${_formatWarehouseName(warehouse.name)} is empty',
+                            subtitle:
+                                'No packages are currently held in this warehouse.',
+                          ),
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
