@@ -410,7 +410,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           context: context,
                           builder: (_) => PackageDetailsDialog(
                               package: _srResult!,
-                              storageRate: storageRateHistory),
+                              storageRate: storageRateHistory,
+                              allowEdit: true),
                         )).animate().fadeIn(),
               ],
               const Gap(16),
@@ -507,7 +508,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                         context: context,
                                         builder: (_) => PackageDetailsDialog(
                                             package: p,
-                                            storageRate: storageRateHistory),
+                                            storageRate: storageRateHistory,
+                                            allowEdit: true),
                                       ),
                                     ))),
                                   ]))

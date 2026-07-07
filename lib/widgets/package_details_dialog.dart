@@ -159,6 +159,11 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // (default), the section only shows if the highlighted entry is sold.
   final bool isSoldPage;
 
+  // When true, show the admin-only "Update" (edit) footer even when this
+  // isn't the warehouse-summary layout — e.g. opened from the Packages page.
+  // The Update action itself remains admin-only regardless of this flag.
+  final bool allowEdit;
+
   const PackageDetailsDialog({
     super.key,
     required this.package,
@@ -182,6 +187,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.onSaleOrDestroyRequest,
     this.forceFinalDisposition = false,
     this.isSoldPage = false,
+    this.allowEdit = false,
   });
 
   @override
@@ -724,6 +730,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     // Get current user's role to conditionally disable update button
     final currentProfile = ref.watch(currentProfileProvider);
     final isOfficer = currentProfile?.role == 'officer';
+    // Editing a package is strictly admin-only.
+    final canUpdatePackage = currentProfile?.isAdmin ?? false;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -2234,7 +2242,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   ),
                 ),
               ),
-              if (widget.useWarehouseSummary)
+              if (widget.useWarehouseSummary || widget.allowEdit)
                 material.Container(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -2248,19 +2256,21 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   child: Row(
                     children: [
                       material.Tooltip(
-                        message: isOfficer
+                        message: !canUpdatePackage
                             ? 'Package updates are restricted to administrators only'
                             : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: context.colors.primaryGold,
+                            backgroundColor: canUpdatePackage
+                                ? context.colors.primaryGold
+                                : Colors.grey,
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 20, vertical: 12),
                           ),
                           icon: const Icon(Icons.edit_rounded, size: 18),
                           label: const Text('Update'),
-                          onPressed: isOfficer
+                          onPressed: !canUpdatePackage
                               ? null
                               : () {
                                   showDialog(
@@ -3723,6 +3733,9 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         'Boxes',
         'Bags',
         'Pallets',
+        'Rolls',
+        'Packages',
+        'No of',
         'KG',
         'Meters',
         'Other'
@@ -3770,6 +3783,9 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
           'Boxes',
           'Bags',
           'Pallets',
+          'Rolls',
+          'Packages',
+          'No of',
           'KG',
           'Meters',
           'Other'
@@ -4265,14 +4281,6 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                               ? 'ITEM DETAILS'
                               : 'Package Items',
                           icon: Icons.shopping_bag_rounded,
-                          headerTrailing: widget.highlightedItem != null
-                              ? null
-                              : TextButton.icon(
-                                  icon: const Icon(Icons.add, size: 16),
-                                  label: const Text('Add Item'),
-                                  onPressed: () =>
-                                      setState(() => _items.add(_ItemRow())),
-                                ),
                           children: [
                             Column(
                               children: List.generate(
@@ -4297,6 +4305,29 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                                         ),
                                       )),
                             ),
+                            // Add Item below the list (not in the header) so a
+                            // new item needs no scroll back to the top. Hidden
+                            // in single-item edit mode.
+                            if (widget.highlightedItem == null) ...[
+                              const Gap(4),
+                              material.Align(
+                                alignment: material.Alignment.centerLeft,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.add_rounded, size: 18),
+                                  label: const Text('Add Item'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.colors.primaryGold,
+                                    side: BorderSide(
+                                        color: context.colors.primaryGold
+                                            .withOpacity(0.5)),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 14),
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _items.add(_ItemRow())),
+                                ),
+                              ),
+                            ],
                           ],
                         ).animate().slideY(
                             begin: 0.1, duration: 400.ms, delay: 300.ms),
@@ -4473,6 +4504,9 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     'Boxes',
                     'Bags',
                     'Pallets',
+                    'Rolls',
+                    'Packages',
+                    'No of',
                     'KG',
                     'Meters',
                     'Other'
@@ -4485,6 +4519,9 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     'Boxes',
                     'Bags',
                     'Pallets',
+                    'Rolls',
+                    'Packages',
+                    'No of',
                     'KG',
                     'Meters',
                     'Other'

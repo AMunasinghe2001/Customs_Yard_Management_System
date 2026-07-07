@@ -1538,17 +1538,16 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             const InputDecoration(labelText: 'Description'),
                         maxLines: 3),
                     warehouses.when(
-                      data: (list) => DropdownButtonFormField<String>(
+                      data: (list) => StyledDropdownFormField<String?>(
                         value: selectedWarehouseId,
-                        decoration: const InputDecoration(
-                            labelText: 'Target Warehouse (Auto-assign)',
-                            isDense: true),
-                        items: [
-                          const DropdownMenuItem(
-                              value: null,
-                              child: Text('None: Do not auto-assign')),
-                          ...list.map((w) => DropdownMenuItem(
-                              value: w.id, child: Text(w.name)))
+                        label: 'Target Warehouse (Auto-assign)',
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 18),
+                        options: [
+                          const StyledDropdownOption<String?>(
+                              null, 'None: Do not auto-assign'),
+                          ...list.map((w) =>
+                              StyledDropdownOption<String?>(w.id, w.name)),
                         ],
                         onChanged: (v) => setState(() {
                           selectedWarehouseId = v;
@@ -1559,18 +1558,37 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                       error: (e, _) => Text('Error: $e'),
                     ),
                     if (selectedWarehouseId != null)
-                      DropdownButtonFormField<String>(
-                        value: selectedZone,
-                        decoration: const InputDecoration(
-                            labelText: 'Target Zone', isDense: true),
-                        items: [
-                          const DropdownMenuItem(
-                              value: null, child: Text('None')),
-                          ...availableZones.map((z) => DropdownMenuItem(
-                              value: z, child: Text('Zone $z')))
-                        ],
-                        onChanged: (v) => setState(() => selectedZone = v),
-                      ),
+                      Builder(builder: (_) {
+                        // Zones already assigned to another category in THIS
+                        // warehouse — shown but disabled so they can't be picked.
+                        final occupied = (ref
+                                    .watch(packageCategoriesProvider)
+                                    .value ??
+                                const [])
+                            .where((c) =>
+                                c.targetWarehouseId == selectedWarehouseId &&
+                                c.targetZone != null)
+                            .map((c) =>
+                                c.targetZone!.replaceAll('Zone ', ''))
+                            .toSet();
+                        return StyledDropdownFormField<String?>(
+                          value: selectedZone,
+                          label: 'Target Zone',
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 18),
+                          options: [
+                            const StyledDropdownOption<String?>(null, 'None'),
+                            ...availableZones.map((z) =>
+                                StyledDropdownOption<String?>(
+                                    z,
+                                    occupied.contains(z)
+                                        ? 'Zone $z (in use)'
+                                        : 'Zone $z',
+                                    enabled: !occupied.contains(z))),
+                          ],
+                          onChanged: (v) => setState(() => selectedZone = v),
+                        );
+                      }),
                   ],
                 ),
                 actions: [
@@ -1656,19 +1674,18 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                             const InputDecoration(labelText: 'Description'),
                         maxLines: 3),
                     warehouses.when(
-                      data: (list) => DropdownButtonFormField<String>(
+                      data: (list) => StyledDropdownFormField<String?>(
                         value: list.any((w) => w.id == selectedWarehouseId)
                             ? selectedWarehouseId
                             : null,
-                        decoration: const InputDecoration(
-                            labelText: 'Target Warehouse (Auto-assign)',
-                            isDense: true),
-                        items: [
-                          const DropdownMenuItem(
-                              value: null,
-                              child: Text('None: Do not auto-assign')),
-                          ...list.map((w) => DropdownMenuItem(
-                              value: w.id, child: Text(w.name)))
+                        label: 'Target Warehouse (Auto-assign)',
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 18),
+                        options: [
+                          const StyledDropdownOption<String?>(
+                              null, 'None: Do not auto-assign'),
+                          ...list.map((w) =>
+                              StyledDropdownOption<String?>(w.id, w.name)),
                         ],
                         onChanged: (v) => setState(() {
                           selectedWarehouseId = v;
@@ -1679,20 +1696,40 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                       error: (e, _) => Text('Error: $e'),
                     ),
                     if (selectedWarehouseId != null)
-                      DropdownButtonFormField<String>(
-                        value: availableZones.contains(selectedZone)
-                            ? selectedZone
-                            : null,
-                        decoration: const InputDecoration(
-                            labelText: 'Target Zone', isDense: true),
-                        items: [
-                          const DropdownMenuItem(
-                              value: null, child: Text('None')),
-                          ...availableZones.map((z) => DropdownMenuItem(
-                              value: z, child: Text('Zone $z')))
-                        ],
-                        onChanged: (v) => setState(() => selectedZone = v),
-                      ),
+                      Builder(builder: (_) {
+                        // Zones taken by OTHER categories in this warehouse
+                        // (exclude this category itself) — shown but disabled.
+                        final occupied = (ref
+                                    .watch(packageCategoriesProvider)
+                                    .value ??
+                                const [])
+                            .where((c) =>
+                                c.id != category.id &&
+                                c.targetWarehouseId == selectedWarehouseId &&
+                                c.targetZone != null)
+                            .map((c) =>
+                                c.targetZone!.replaceAll('Zone ', ''))
+                            .toSet();
+                        return StyledDropdownFormField<String?>(
+                          value: availableZones.contains(selectedZone)
+                              ? selectedZone
+                              : null,
+                          label: 'Target Zone',
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 18),
+                          options: [
+                            const StyledDropdownOption<String?>(null, 'None'),
+                            ...availableZones.map((z) =>
+                                StyledDropdownOption<String?>(
+                                    z,
+                                    occupied.contains(z)
+                                        ? 'Zone $z (in use)'
+                                        : 'Zone $z',
+                                    enabled: !occupied.contains(z))),
+                          ],
+                          onChanged: (v) => setState(() => selectedZone = v),
+                        );
+                      }),
                   ],
                 ),
                 actions: [

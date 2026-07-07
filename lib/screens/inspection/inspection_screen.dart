@@ -267,6 +267,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     if (!mounted) return;
     setState(() {});
     if (_tabController.indexIsChanging) return;
+    // While a Next/save is in flight, don't bounce the tab back — _checkPackage
+    // / the save will set the required state and move to the right tab itself.
+    // Otherwise tapping the Warehouse tab (which kicks off _checkPackage) would
+    // race: the tab index changes to 1 before _checkPackage finishes, this
+    // guard sees canGoToWarehouse still false, and bounces to 0 — forcing a
+    // second click.
+    if (_isChecking) return;
     final idx = _tabController.index;
     final canGoToWarehouse = _tempPackageData != null && _tempPackageItems != null;
     final canGoToQr = _warehouseConfirmedPackage != null;
@@ -465,6 +472,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _savedPackageId = null;
       _suggestedWarehouseId = null;
       _warehouseConfirmedPackage = null;
+      // Fresh form — don't show validation errors until the user tries to
+      // submit again (they linger as red "Required" from the previous entry).
+      _showValidationErrors = false;
     });
     _generateNextSr();
   }
@@ -740,7 +750,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   const Gap(16),
                                   Row(children: [
                                     Expanded(
-                                        child: TextFormField(
+                                        child: _CusdecAutocompleteField(
                                             controller: _cusdecCtrl,
                                             decoration: _fieldDecoration(
                                                 labelText: 'Cusdec No *'),
@@ -891,29 +901,46 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                             _SectionCard(
                               title: 'Package Items',
                               icon: Icons.list_alt_rounded,
-                              headerTrailing: TextButton.icon(
-                                icon: const Icon(Icons.add, size: 16),
-                                label: const Text('Add Item'),
-                                onPressed: () =>
-                                    setState(() => _items.add(_ItemRow())),
-                              ),
-                              children: List.generate(
-                                  _items.length,
-                                  (i) => Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 12),
-                                        child: _ItemRowWidget(
-                                          row: _items[i],
-                                          index: i + 1,
-                                          showValidationErrors:
-                                              _showValidationErrors,
-                                          onRemove: _items.length > 1
-                                              ? () => setState(
-                                                  () => _items.removeAt(i))
-                                              : null,
-                                          onChanged: () => setState(() {}),
-                                        ),
-                                      )),
+                              children: [
+                                ...List.generate(
+                                    _items.length,
+                                    (i) => Padding(
+                                          padding:
+                                              const EdgeInsets.only(bottom: 12),
+                                          child: _ItemRowWidget(
+                                            row: _items[i],
+                                            index: i + 1,
+                                            showValidationErrors:
+                                                _showValidationErrors,
+                                            onRemove: _items.length > 1
+                                                ? () => setState(
+                                                    () => _items.removeAt(i))
+                                                : null,
+                                            onChanged: () => setState(() {}),
+                                          ),
+                                        )),
+                                // Add Item below the list so registering a new
+                                // item needs no scroll back to the top; no item
+                                // count limit.
+                                const Gap(4),
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: OutlinedButton.icon(
+                                    icon: const Icon(Icons.add_rounded, size: 18),
+                                    label: const Text('Add Item'),
+                                    style: OutlinedButton.styleFrom(
+                                      foregroundColor: context.colors.primaryGold,
+                                      side: BorderSide(
+                                          color: context.colors.primaryGold
+                                              .withOpacity(0.5)),
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 20, vertical: 14),
+                                    ),
+                                    onPressed: () =>
+                                        setState(() => _items.add(_ItemRow())),
+                                  ),
+                                ),
+                              ],
                             )
                                 .animate()
                                 .slideY(
@@ -1361,7 +1388,52 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                         const Gap(12),
                         warehousesAsync.when(
                           loading: () => const LinearProgressIndicator(),
-                          error: (e, _) => Text('Error loading warehouses'),
+                          error: (e, _) {
+                            // Usually a transient network/DNS hiccup — the app
+                            // reached other data fine. Offer a Retry rather than
+                            // dead-ending the whole SR entry.
+                            final isNetwork = e
+                                    .toString()
+                                    .contains('SocketException') ||
+                                e.toString().contains('Failed host lookup') ||
+                                e.toString().contains('ClientException');
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(children: [
+                                  Icon(Icons.wifi_off_rounded,
+                                      size: 16,
+                                      color: context.colors.dangerRed),
+                                  const Gap(8),
+                                  Expanded(
+                                    child: Text(
+                                      isNetwork
+                                          ? 'Couldn\'t reach the server. Check your internet connection and try again.'
+                                          : 'Error loading warehouses: $e',
+                                      style: TextStyle(
+                                          color: context.colors.dangerRed,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                  ),
+                                ]),
+                                const Gap(10),
+                                OutlinedButton.icon(
+                                  icon: const Icon(Icons.refresh_rounded,
+                                      size: 16),
+                                  label: const Text('Retry'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.colors.primaryGold,
+                                    side: BorderSide(
+                                        color: context.colors.primaryGold
+                                            .withOpacity(0.5)),
+                                  ),
+                                  onPressed: () =>
+                                      ref.invalidate(warehousesProvider),
+                                ),
+                              ],
+                            );
+                          },
                           data: (ws) => Wrap(
                             spacing: 8,
                             runSpacing: 8,
@@ -1461,6 +1533,126 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
 }
 
 // ─── Helper Widgets ───
+
+/// Cusdec No input with prefix autocomplete. Common Cusdec numbers start with a
+/// fixed prefix (CBHQI / ECC / I) followed by a space and a number. As the user
+/// types, matching prefixes are suggested; picking one fills "<PREFIX> " so they
+/// only type the digits. It's still a free-text field — any other format can be
+/// typed directly (the suggestions just never match, so no menu shows).
+class _CusdecAutocompleteField extends StatefulWidget {
+  final TextEditingController controller;
+  final InputDecoration decoration;
+  final String? Function(String?)? validator;
+
+  const _CusdecAutocompleteField({
+    required this.controller,
+    required this.decoration,
+    this.validator,
+  });
+
+  static const List<String> _prefixes = ['CBHQI', 'ECC', 'I'];
+
+  @override
+  State<_CusdecAutocompleteField> createState() =>
+      _CusdecAutocompleteFieldState();
+}
+
+class _CusdecAutocompleteFieldState extends State<_CusdecAutocompleteField> {
+  final FocusNode _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return RawAutocomplete<String>(
+      textEditingController: widget.controller,
+      focusNode: _focusNode,
+      optionsBuilder: (TextEditingValue value) {
+        final text = value.text.trimLeft();
+        if (text.isEmpty) return const Iterable<String>.empty();
+        // Once a space (i.e. the number part) is typed, stop suggesting.
+        if (text.contains(' ')) return const Iterable<String>.empty();
+        final upper = text.toUpperCase();
+        final matches = _CusdecAutocompleteField._prefixes
+            .where((p) => p.startsWith(upper) && p != upper)
+            .map((p) => '$p ') // trailing space → caret lands on the number
+            .toList();
+        return matches;
+      },
+      onSelected: (selection) {
+        widget.controller.text = selection;
+        widget.controller.selection =
+            TextSelection.collapsed(offset: selection.length);
+      },
+      fieldViewBuilder:
+          (context, textController, focusNode, onFieldSubmitted) {
+        return TextFormField(
+          controller: textController,
+          focusNode: focusNode,
+          decoration: widget.decoration,
+          validator: widget.validator,
+          textCapitalization: TextCapitalization.characters,
+          onFieldSubmitted: (_) => onFieldSubmitted(),
+        );
+      },
+      optionsViewBuilder: (context, onSelected, options) {
+        final opts = options.toList();
+        return Align(
+          alignment: Alignment.topLeft,
+          child: Material(
+            elevation: 4,
+            borderRadius: BorderRadius.circular(10),
+            color: context.colors.surfaceDark,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220, maxWidth: 320),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: opts.length,
+                itemBuilder: (context, i) {
+                  final option = opts[i];
+                  return InkWell(
+                    onTap: () => onSelected(option),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border(
+                          bottom: BorderSide(
+                              color: context.colors.borderColor
+                                  .withOpacity(0.5)),
+                        ),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.tag_rounded,
+                            size: 16, color: context.colors.primaryGold),
+                        const Gap(10),
+                        Text(option.trim(),
+                            style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14)),
+                        const Gap(8),
+                        Text('+ number',
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 12)),
+                      ]),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 
 class _QrCodePage extends StatelessWidget {
   final PackageModel? package;
@@ -1625,7 +1817,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
-              flex: 3,
+              flex: 5,
               child: TextFormField(
                   controller: widget.row.nameCtrl,
                   decoration: const InputDecoration(
@@ -1668,6 +1860,9 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   'Boxes',
                   'Bags',
                   'Pallets',
+                  'Rolls',
+                  'Packages',
+                  'No of',
                   'KG',
                   'Meters',
                   'Other'
@@ -1680,6 +1875,9 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   'Boxes',
                   'Bags',
                   'Pallets',
+                  'Rolls',
+                  'Packages',
+                  'No of',
                   'KG',
                   'Meters',
                   'Other'

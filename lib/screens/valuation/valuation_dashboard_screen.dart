@@ -55,8 +55,13 @@ class ValuationDashboardScreen extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: gold.withOpacity(0.3)),
                 ),
+                // Flat gold tint (colorFilter, not currentColor) so at this tiny
+                // 30px size the inner ship/plane detail doesn't render as an ugly
+                // navy blob — the fine detail isn't legible here anyway.
                 child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                    width: 30, height: 30, theme: SvgTheme(currentColor: gold)),
+                    width: 30,
+                    height: 30,
+                    colorFilter: ColorFilter.mode(gold, BlendMode.srcIn)),
               ),
               const Gap(14),
               Column(

@@ -113,6 +113,44 @@ final categoryChangeTriggerProvider = StreamProvider<int>((ref) async* {
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
+// ── Realtime: Hold Reasons ──────────────────────────────────────
+// So adding/editing a hold reason in one session appears in every other
+// session without a manual refresh (Admin Panel + SR-form reason pickers).
+final holdReasonsRefreshTriggerProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+final holdReasonsChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  final trigger = ref.watch(holdReasonsRefreshTriggerProvider);
+  yield trigger;
+  final channel = supabase.channel('hold-reasons-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'hold_reasons',
+      callback: (_) =>
+          ref.read(holdReasonsRefreshTriggerProvider.notifier).trigger(),
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
+// ── Realtime: Storage Rates ─────────────────────────────────────
+final storageRatesRefreshTriggerProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+final storageRatesChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  final trigger = ref.watch(storageRatesRefreshTriggerProvider);
+  yield trigger;
+  final channel = supabase.channel('storage-rates-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'storage_rates',
+      callback: (_) =>
+          ref.read(storageRatesRefreshTriggerProvider.notifier).trigger(),
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
 // ── Shared Data Providers ──────────────────────────────────────
 final warehousesProvider = FutureProvider<List<WarehouseModel>>((ref) async {
   ref.watch(warehouseRefreshTriggerProvider);
@@ -201,6 +239,7 @@ final warehouseDateRangeProvider = StateProvider.family<DateTimeRange?, String>(
 final warehouseReasonFilterProvider = StateProvider.family<String, String>((ref, warehouseId) => 'all');
 
 final storageRateProvider = FutureProvider<Map<DateTime, double>>((ref) async {
+  ref.watch(storageRatesChangeTriggerProvider);
   final data = await supabase
       .from('storage_rates')
       .select('rate, effective_from')
@@ -232,6 +271,7 @@ final currentStorageRateProvider = FutureProvider<double>((ref) async {
 });
 
 final storageRateHistoryProvider = FutureProvider<List<AuditLogModel>>((ref) async {
+  ref.watch(storageRatesChangeTriggerProvider);
   final data = await supabase
       .from('storage_rates')
       .select('rate, effective_from, id')
@@ -325,6 +365,7 @@ final packageCategoriesProvider = FutureProvider<List<PackageCategory>>((ref) as
 });
 
 final holdReasonsProvider = FutureProvider<List<HoldReasonModel>>((ref) async {
+  ref.watch(holdReasonsChangeTriggerProvider);
   return ref.read(holdReasonServiceProvider).getReasons();
 });
 
