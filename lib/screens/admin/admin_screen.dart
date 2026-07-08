@@ -1055,6 +1055,9 @@ class _WarehousesTab extends ConsumerWidget {
               TextField(
                 controller: descC,
                 decoration: const InputDecoration(labelText: 'Description'),
+                maxLines: 3,
+                minLines: 2,
+                keyboardType: TextInputType.multiline,
               ),
               TextField(
                 controller: locC,
@@ -1171,6 +1174,9 @@ class _WarehousesTab extends ConsumerWidget {
               TextField(
                 controller: descC,
                 decoration: const InputDecoration(labelText: 'Description'),
+                maxLines: 3,
+                minLines: 2,
+                keyboardType: TextInputType.multiline,
               ),
               TextField(
                 controller: locC,

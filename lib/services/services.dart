@@ -566,6 +566,7 @@ class PackageService {
           srNumber: created.srNumber,
           consigneeName: created.consigneeName,
           reason: created.reason ?? 'Forfeited item added',
+          entryDate: created.entryDate,
         );
       }
     }
@@ -629,6 +630,29 @@ class PackageService {
                       })
                   .toList(),
             );
+
+        // Keep the warehouse held quantity in sync with the (possibly edited)
+        // item quantity, so the Warehouse table's "No. of Packages" and the
+        // "Currently Held" breakdown reflect the correction. Only safe when the
+        // item hasn't been partially disposed: if any of its entries are already
+        // returned (released/forfeited/…), we must not overwrite the held count
+        // and disturb those recorded quantities, so we skip such items.
+        for (final item in items) {
+          if (item.id.isEmpty) continue;
+          final entries = await supabase
+              .from('warehouse_entries')
+              .select('id, is_returned')
+              .eq('package_item_id', item.id);
+          final rows = entries as List;
+          final held =
+              rows.where((e) => e['is_returned'] != true).toList();
+          final anyDisposed = rows.any((e) => e['is_returned'] == true);
+          if (anyDisposed) continue; // partial disposal — leave counts alone
+          if (held.length == 1) {
+            await supabase.from('warehouse_entries').update(
+                {'item_count': item.quantity}).eq('id', held.first['id']);
+          }
+        }
       }
 
       final refreshed = await supabase
@@ -641,6 +665,19 @@ class PackageService {
 
       if (refreshed == null) return PackageModel.fromJson({}); // Fallback or handle null
       final result = PackageModel.fromJson(refreshed);
+
+      // Re-anchor any EXISTING forfeited record to the (possibly edited) Entry
+      // Date — independent of hasForfeit below, so simply editing the Entry Date
+      // on an already-forfeited package updates its forfeited date + 30-day
+      // appeal deadline in the Forfeited table.
+      if (result.entryDate != null) {
+        final anchor = result.entryDate!;
+        await supabase.from('forfeited_packages').update({
+          'forfeited_at': anchor.toIso8601String(),
+          'appeal_deadline':
+              anchor.add(const Duration(days: 30)).toIso8601String(),
+        }).eq('package_id', result.id);
+      }
 
       // Sync to Forfeited Packages if applicable
         final hasForfeit = _isForfeitStatus(pkg.status) ||
@@ -657,6 +694,7 @@ class PackageService {
             srNumber: result.srNumber,
             consigneeName: result.consigneeName,
             reason: result.reason ?? 'Item marked as forfeited',
+            entryDate: result.entryDate,
           );
         }
       } else {
@@ -690,7 +728,7 @@ class PackageService {
     if (isForfeited) {
       final pkgData = await supabase
           .from('packages')
-          .select('sr_number, consignee_name, reason')
+          .select('sr_number, consignee_name, reason, entry_date')
           .eq('id', id)
           .single();
       final existingForfeited = await supabase
@@ -704,6 +742,9 @@ class PackageService {
           srNumber: pkgData['sr_number'] as String,
           consigneeName: pkgData['consignee_name'] as String,
           reason: pkgData['reason'] as String? ?? 'Status updated to forfeited',
+          entryDate: pkgData['entry_date'] != null
+              ? DateTime.tryParse(pkgData['entry_date'] as String)
+              : null,
         );
       }
     } else {
@@ -855,8 +896,15 @@ class WarehouseService {
   }
 
   Future<void> markAsReturned(String entryId,
-      {String? returnNotes, int? returnQty, List<int>? packageNumbers}) async {
+      {String? returnNotes,
+      int? returnQty,
+      List<int>? packageNumbers,
+      DateTime? returnDate}) async {
     final user = supabase.auth.currentUser;
+    // The release date (defaults to now) — stored as returned_at so the
+    // warehouse charge and Released Packages date reflect the chosen date.
+    final returnedAtIso =
+        (returnDate ?? DateTime.now()).toIso8601String();
     // Append the specific released package numbers for accurate tracking.
     if (packageNumbers != null && packageNumbers.isNotEmpty) {
       final tag = 'pkgs:${packageNumbers.join(',')}';
@@ -923,7 +971,7 @@ class WarehouseService {
           'admitted_at': entryRes['admitted_at'],
           'daily_rate': entryRes['daily_rate'],
           'is_returned': true,
-          'returned_at': DateTime.now().toIso8601String(),
+          'returned_at': returnedAtIso,
           'returned_by': user?.id,
           'return_notes': returnNotes,
         });
@@ -951,7 +999,7 @@ class WarehouseService {
           'admitted_at': entryRes['admitted_at'],
           'daily_rate': entryRes['daily_rate'],
           'is_returned': true,
-          'returned_at': DateTime.now().toIso8601String(),
+          'returned_at': returnedAtIso,
           'returned_by': user?.id,
           'return_notes': returnNotes,
         });
@@ -986,6 +1034,7 @@ class WarehouseService {
     String? notes,
     int? qty,
     List<int>? packageNumbers,
+    DateTime? forfeitDate,
   }) async {
     final user = supabase.auth.currentUser;
 
@@ -1071,7 +1120,7 @@ class WarehouseService {
       if (existing == null) {
         final pkgRow = await supabase
             .from('packages')
-            .select('sr_number, consignee_name, reason')
+            .select('sr_number, consignee_name, reason, entry_date')
             .eq('id', pkgId)
             .maybeSingle();
         if (pkgRow != null) {
@@ -1082,6 +1131,12 @@ class WarehouseService {
             reason: (notes != null && notes.isNotEmpty)
                 ? notes
                 : (pkgRow['reason'] as String? ?? 'Forfeited via disposition'),
+            // The officer-chosen Forfeit Date wins; fall back to the SR Entry
+            // Date. Both forfeited_at and the 30-day appeal deadline anchor here.
+            entryDate: forfeitDate ??
+                (pkgRow['entry_date'] != null
+                    ? DateTime.tryParse(pkgRow['entry_date'] as String)
+                    : null),
           );
         }
       }
@@ -2179,14 +2234,21 @@ class ForfeitedPackageService {
         .toList();
   }
 
-  /// Create a forfeited package record
+  /// Create a forfeited package record.
+  ///
+  /// Both the forfeited date and the 30-day appeal window are anchored to the
+  /// package's SR-form Entry Date ([entryDate]) — not the moment of forfeiture —
+  /// so the deadline reflects when the goods actually entered. The appeal
+  /// deadline is Entry Date + 30 days. Falls back to now if no entry date.
   Future<ForfeitedPackageModel> createForfeitedPackage({
     required String packageId,
     required String srNumber,
     required String consigneeName,
     required String reason,
+    DateTime? entryDate,
   }) async {
-    final appealDeadline = DateTime.now().add(const Duration(days: 30));
+    final forfeitedAt = entryDate ?? DateTime.now();
+    final appealDeadline = forfeitedAt.add(const Duration(days: 30));
     final data = await supabase
         .from('forfeited_packages')
         .insert({
@@ -2194,7 +2256,7 @@ class ForfeitedPackageService {
           'yard': AppSession.currentYard,
           'sr_number': srNumber,
           'consignee_name': consigneeName,
-          'forfeited_at': DateTime.now().toIso8601String(),
+          'forfeited_at': forfeitedAt.toIso8601String(),
           'appeal_deadline': appealDeadline.toIso8601String(),
           'reason': reason,
         })

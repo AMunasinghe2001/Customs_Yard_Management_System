@@ -3980,6 +3980,9 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
           ),
           TextField(
             controller: _receiptC,
+            maxLines: 3,
+            minLines: 2,
+            keyboardType: TextInputType.multiline,
             decoration:
                 const InputDecoration(labelText: 'Receipt / Notes (optional)'),
           ),

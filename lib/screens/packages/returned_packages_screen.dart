@@ -553,15 +553,18 @@ class _ReturnedPackagesScreenState
                               DataColumn2(
                                 label: Text('Released Qty'),
                                 size: ColumnSize.S,
-                                fixedWidth: 120),
+                                fixedWidth: 110),
                               DataColumn2(
-                                label: Text('Charge'),
+                                label: Text('Entry Date'),
+                                size: ColumnSize.M),
+                              DataColumn2(
+                                label: Text('Release Date'),
+                                size: ColumnSize.M),
+                              DataColumn2(
+                                label: Text('Warehouse Charge'),
                                 size: ColumnSize.M),
                               DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.M),
-                              DataColumn2(
-                                label: Text('Receipt Date'),
-                                size: ColumnSize.M),
                               DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -591,22 +594,44 @@ class _ReturnedPackagesScreenState
                                     DataCell(Center(
                                         child: Text(
                                             '${row.entry.itemCount}'))),
+                                    // Entry Date (SR form) — falls back to the
+                                    // warehouse admit date.
                                     DataCell(Text((() {
-                                      return 'LKR ${NumberFormat('#,##0.00').format(row.entry.calculatePackageCharge(row.package.items, storageRateHistory))}';
+                                      final d = row.package.entryDate ??
+                                          row.entry.admittedAt;
+                                      return DateFormat('yyyy-MM-dd').format(d);
+                                    })())),
+                                    // Release Date = the entry's returned date.
+                                    DataCell(Text(row.entry.returnedAt != null
+                                        ? DateFormat('yyyy-MM-dd')
+                                            .format(row.entry.returnedAt!)
+                                        : '—')),
+                                    // Warehouse charge from the SR Entry Date →
+                                    // Release Date (not the warehouse admit date).
+                                    DataCell(Text((() {
+                                      final e = row.entry;
+                                      final chargeStart =
+                                          row.package.entryDate ?? e.admittedAt;
+                                      final tempEntry = WarehouseEntryModel(
+                                        id: e.id,
+                                        packageId: e.packageId,
+                                        packageItemId: e.packageItemId,
+                                        warehouseId: e.warehouseId,
+                                        warehouseName: e.warehouseName,
+                                        warehouseCode: e.warehouseCode,
+                                        holdReason: e.holdReason,
+                                        itemCount: e.itemCount,
+                                        admittedAt: chargeStart,
+                                        dailyRate: e.dailyRate,
+                                        returnedAt: e.returnedAt,
+                                      );
+                                      return 'LKR ${NumberFormat('#,##0.00').format(tempEntry.calculatePackageCharge(row.package.items, storageRateHistory))}';
                                     })(),
                                         style: TextStyle(
                                             color: context.colors.primaryGold,
                                             fontWeight: FontWeight.bold))),
                                     DataCell(Text(row.receiptNo ?? '—',
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text((() {
-                                      if (row.receiptDate != null)
-                                        return row.receiptDate!;
-                                      return row.entry.returnedAt != null
-                                          ? DateFormat('yyyy-MM-dd')
-                                              .format(row.entry.returnedAt!)
-                                          : '—';
-                                    })())),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,

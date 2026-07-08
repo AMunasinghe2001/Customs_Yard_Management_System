@@ -20,7 +20,6 @@ import 'package:flutter/material.dart'
         CircularProgressIndicator,
         ScaffoldMessenger,
         SnackBar,
-        showDatePicker,
         showDialog,
         BuildContext,
         Widget,
@@ -94,6 +93,7 @@ import '../core/theme.dart';
 import '../models/models.dart';
 import '../core/providers.dart';
 import 'styled_dropdown.dart';
+import 'one_tap_date_picker.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
@@ -239,6 +239,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     final receiptCtrl = TextEditingController();
     final dateCtrl = TextEditingController(
         text: DateFormat('yyyy-MM-dd').format(DateTime.now()));
+    // Release date drives the warehouse-charge calculation (entry date → this
+    // date). Defaults to today; editable (a back-date is allowed).
+    DateTime releaseDate = DateTime.now();
+    final releaseDateCtrl = TextEditingController(
+        text: DateFormat('yyyy-MM-dd').format(releaseDate));
 
     // Find the specific item this entry refers to
     final specificItem = widget.package.items.firstWhere(
@@ -260,8 +265,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         text: (preselectedQty ?? displayCount).toString());
     final formKey = GlobalKey<FormState>();
 
+    // Charge counts from the SR-form Entry Date (falling back to the warehouse
+    // admit date if the package has none), NOT the warehouse admit timestamp —
+    // that's what the officer sets on the SR form and expects to be billed from.
+    final chargeStart = widget.package.entryDate ?? entry.admittedAt;
+
     double getCharge(int count) {
-      // Create a temporary entry with the specified count to calculate charge accurately
+      // Temp entry with the release date as the exit date, so the charge covers
+      // SR entry date → release date (inclusive) at the historical daily rates.
       final tempEntry = WarehouseEntryModel(
         id: entry.id,
         packageId: entry.packageId,
@@ -271,8 +282,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         warehouseCode: entry.warehouseCode,
         holdReason: entry.holdReason,
         itemCount: count,
-        admittedAt: entry.admittedAt,
+        admittedAt: chargeStart,
         dailyRate: entry.dailyRate,
+        returnedAt: releaseDate,
       );
       return tempEntry
           .calculatePackageCharge([specificItem], widget.storageRate);
@@ -320,32 +332,52 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           ],
                         ),
                         const Gap(12),
+                        // Quantity is fixed to the packages selected in the
+                        // previous step — read-only so it can't diverge.
                         TextFormField(
                           controller: qtyCtrl,
+                          readOnly: true,
+                          enabled: false,
                           decoration: const material.InputDecoration(
                             labelText: 'Quantity to Release',
                             isDense: true,
                           ),
-                          keyboardType: TextInputType.number,
-                          validator: (value) {
-                            if (value == null || value.trim().isEmpty)
-                              return 'Enter quantity';
-                            final val = int.tryParse(value);
-                            if (val == null || val <= 0)
-                              return 'Enter valid quantity';
-                            if (val > displayCount)
-                              return 'Cannot exceed $displayCount packages';
-                            return null;
-                          },
-                          onChanged: (val) {
-                            setDialogState(() {});
+                        ),
+                        const Gap(12),
+                        // Release date — drives the charge below.
+                        TextFormField(
+                          controller: releaseDateCtrl,
+                          readOnly: true,
+                          decoration: material.InputDecoration(
+                            labelText: 'Release Date *',
+                            isDense: true,
+                            suffixIcon: Icon(Icons.calendar_month,
+                                size: 18, color: context.colors.primaryGold),
+                          ),
+                          onTap: () async {
+                            final picked = await showDialog<DateTime>(
+                              context: ctx,
+                              builder: (_) => OneTapDatePicker(
+                                initialDate: releaseDate,
+                                // Release can't be before the SR entry date.
+                                firstDate: chargeStart,
+                                lastDate: DateTime.now(),
+                              ),
+                            );
+                            if (picked != null) {
+                              setDialogState(() {
+                                releaseDate = picked;
+                                releaseDateCtrl.text =
+                                    DateFormat('yyyy-MM-dd').format(picked);
+                              });
+                            }
                           },
                         ),
                         const Gap(8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            const Text('Release Charge:'),
+                            const Text('Warehouse Charge:'),
                             Text(
                                 'LKR ${NumberFormat('#,##0.00').format(getCharge(int.tryParse(qtyCtrl.text) ?? 0))}',
                                 style: material.TextStyle(
@@ -353,6 +385,28 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     fontWeight: FontWeight.bold)),
                           ],
                         ),
+                        const Gap(4),
+                        material.Builder(builder: (_) {
+                          final startDay = DateTime(chargeStart.year,
+                              chargeStart.month, chargeStart.day);
+                          final endDay = DateTime(releaseDate.year,
+                              releaseDate.month, releaseDate.day);
+                          final days = endDay.difference(startDay).inDays + 1;
+                          final beforeEntry = endDay.isBefore(startDay);
+                          return material.Align(
+                            alignment: material.Alignment.centerLeft,
+                            child: Text(
+                              beforeEntry
+                                  ? 'Release date is before the entry date (${DateFormat('yyyy-MM-dd').format(chargeStart)}) — no charge.'
+                                  : 'Entry ${DateFormat('yyyy-MM-dd').format(chargeStart)} → Release · $days day(s)',
+                              style: TextStyle(
+                                  fontSize: 11,
+                                  color: beforeEntry
+                                      ? context.colors.dangerRed
+                                      : context.colors.textMuted),
+                            ),
+                          );
+                        }),
                       ],
                     ),
                   ),
@@ -384,11 +438,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             suffixIcon: Icon(Icons.calendar_today, size: 18),
                           ),
                           onTap: () async {
-                            final date = await showDatePicker(
+                            // Same custom picker as the SR form (consistent look).
+                            final existing =
+                                DateTime.tryParse(dateCtrl.text.trim());
+                            final date = await showDialog<DateTime>(
                               context: context,
-                              initialDate: DateTime.now(),
-                              firstDate: DateTime(2020),
-                              lastDate: DateTime(2100),
+                              builder: (_) => OneTapDatePicker(
+                                initialDate: existing ?? DateTime.now(),
+                                lastDate: DateTime.now(),
+                              ),
                             );
                             if (date != null) {
                               dateCtrl.text =
@@ -402,6 +460,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   const Gap(16),
                   material.TextField(
                     controller: notesCtrl,
+                    maxLines: 3,
+                    minLines: 2,
+                    keyboardType: TextInputType.multiline,
                     decoration: const material.InputDecoration(
                       labelText: 'Release Notes (Optional)',
                       hintText: 'Enter any additional details',
@@ -442,6 +503,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         returnNotes: finalNotes,
                         returnQty: releaseQty,
                         packageNumbers: packageNumbers,
+                        returnDate: releaseDate,
                       );
                   ref.read(packagesRefreshTriggerProvider.notifier).trigger();
                   ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
@@ -472,6 +534,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
       BuildContext context, WarehouseEntryModel entry, String dispositionType,
       {int? preselectedQty, List<int>? packageNumbers}) async {
     final notesCtrl = TextEditingController();
+    // Forfeit date — defaults to today, editable (a back-date is allowed). The
+    // forfeited date and its 30-day appeal deadline are anchored to this.
+    final isForfeit = _isForfeitStatusLocal(dispositionType);
+    DateTime forfeitDate = DateTime.now();
+    final forfeitDateCtrl = TextEditingController(
+        text:
+            '${forfeitDate.year}-${forfeitDate.month.toString().padLeft(2, '0')}-${forfeitDate.day.toString().padLeft(2, '0')}');
 
     final Map<String, _DispositionMeta> meta = {
       'Forfeit': _DispositionMeta(
@@ -515,7 +584,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           const Gap(10),
           Text('${m.label} Package Item'),
         ]),
-        content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        content: StatefulBuilder(
+          builder: (ctx, setLocalState) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -525,6 +595,36 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
             ),
             child: Text(m.description, style: TextStyle(color: m.color, fontSize: 13)),
           ),
+          // Forfeit date picker (Forfeit only). Defaults to today; a back-date is
+          // allowed. The 30-day appeal deadline is counted from this date.
+          if (isForfeit) ...[
+            const Gap(16),
+            TextFormField(
+              controller: forfeitDateCtrl,
+              readOnly: true,
+              decoration: InputDecoration(
+                labelText: 'Forfeit Date',
+                isDense: true,
+                suffixIcon: Icon(Icons.calendar_month, color: m.color),
+              ),
+              onTap: () async {
+                final picked = await showDialog<DateTime>(
+                  context: ctx,
+                  builder: (_) => OneTapDatePicker(
+                    initialDate: forfeitDate,
+                    lastDate: DateTime.now(),
+                  ),
+                );
+                if (picked != null) {
+                  setLocalState(() {
+                    forfeitDate = picked;
+                    forfeitDateCtrl.text =
+                        '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                  });
+                }
+              },
+            ),
+          ],
           if (preselectedQty != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -552,9 +652,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
               labelText: 'Notes / Remarks (optional)',
               isDense: true,
             ),
-            maxLines: 2,
+            maxLines: 3,
+            minLines: 2,
+            keyboardType: TextInputType.multiline,
           ),
-        ]),
+        ])),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
           ElevatedButton.icon(
@@ -578,6 +680,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
           qty: preselectedQty,
           packageNumbers: packageNumbers,
+          forfeitDate: isForfeit ? forfeitDate : null,
         );
     // Refresh so the (still open) actions dialog recomputes processed slots.
     ref.read(packagesRefreshTriggerProvider.notifier).trigger();
@@ -789,6 +892,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
 
     String? returnedReceiptNo;
     String? returnedReceiptDate;
+    String? releaseNotesText;
     final returnNotes = widget.highlightEntry?.returnNotes;
     if (returnNotes != null && returnNotes.trim().isNotEmpty) {
       for (final part in returnNotes.split('|')) {
@@ -799,8 +903,39 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         } else if (text.toLowerCase().startsWith('date:')) {
           final idx = text.indexOf(':');
           if (idx != -1) returnedReceiptDate = text.substring(idx + 1).trim();
+        } else if (text.toLowerCase().startsWith('notes:')) {
+          final idx = text.indexOf(':');
+          if (idx != -1) releaseNotesText = text.substring(idx + 1).trim();
         }
       }
+    }
+    // The actual release date is stored on the entry as returnedAt.
+    final String? releaseDateText = widget.highlightEntry?.returnedAt != null
+        ? DateFormat('yyyy-MM-dd')
+            .format(widget.highlightEntry!.returnedAt!)
+        : null;
+    // Warehouse charge counts from the SR-form Entry Date (not the warehouse
+    // admit timestamp) → the release date, so the popup matches the release
+    // dialog's figure. Falls back to admittedAt if the package has no entry date.
+    double? releasedCharge;
+    if (widget.highlightEntry != null && highlightedItem != null) {
+      final e = widget.highlightEntry!;
+      final chargeStart = p.entryDate ?? e.admittedAt;
+      final tempEntry = WarehouseEntryModel(
+        id: e.id,
+        packageId: e.packageId,
+        packageItemId: e.packageItemId,
+        warehouseId: e.warehouseId,
+        warehouseName: e.warehouseName,
+        warehouseCode: e.warehouseCode,
+        holdReason: e.holdReason,
+        itemCount: e.itemCount,
+        admittedAt: chargeStart,
+        dailyRate: e.dailyRate,
+        returnedAt: e.returnedAt,
+      );
+      releasedCharge =
+          tempEntry.calculatePackageCharge([highlightedItem], widget.storageRate);
     }
 
     final highlightReturnedById = widget.highlightEntry?.returnedBy;
@@ -1509,12 +1644,34 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         ),
                                         _DetailItem(
                                           icon: Icons.calendar_month_rounded,
-                                          label: 'Date Range',
-                                          value:
-                                              '${DateFormat('yyyy-MM-dd').format(legacyEntries.first.admittedAt)} to ${legacyEntries.first.returnedAt != null ? DateFormat('yyyy-MM-dd').format(legacyEntries.first.returnedAt!) : '—'}',
+                                          label: 'Entry Date',
+                                          value: (p.entryDate ??
+                                                      legacyEntries
+                                                          .first.admittedAt) !=
+                                                  null
+                                              ? DateFormat('yyyy-MM-dd').format(
+                                                  p.entryDate ??
+                                                      legacyEntries
+                                                          .first.admittedAt)
+                                              : '—',
                                         ),
+                                        if (releaseDateText != null)
+                                          _DetailItem(
+                                            icon: Icons.event_available_rounded,
+                                            label: 'Release Date',
+                                            value: releaseDateText,
+                                          ),
                                         if (!isNoChargeContext &&
                                             !isSoldContext) ...[
+                                          if (releasedCharge != null)
+                                            _DetailItem(
+                                              icon: Icons.payments_rounded,
+                                              label: 'Warehouse Charge',
+                                              value:
+                                                  'LKR ${NumberFormat('#,##0.00').format(releasedCharge)}',
+                                              valueColor:
+                                                  context.colors.successGreen,
+                                            ),
                                           _DetailItem(
                                             icon: Icons.receipt_long_rounded,
                                             label: 'Receipt No',
@@ -1526,6 +1683,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                             value: returnedReceiptDate ?? '—',
                                           ),
                                         ],
+                                        if (releaseNotesText != null &&
+                                            releaseNotesText.isNotEmpty)
+                                          _DetailItem(
+                                            icon: Icons.notes_rounded,
+                                            label: 'Release Notes',
+                                            value: releaseNotesText,
+                                          ),
                                       ],
                                     ),
                                   ),
@@ -1626,8 +1790,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     };
                                     final isItemOther = !isItemTerminal &&
                                         !_neutralStatuses.contains(_itemStatus);
+                                    // A fully-released item (all qty released, none
+                                    // held, no other disposition) shows a RELEASED
+                                    // badge instead of falling back to a neutral
+                                    // 'returned' status with no badge.
+                                    final isItemReleased = _releasedQty > 0 &&
+                                        heldQty == 0 &&
+                                        _dispoCounts.isEmpty;
                                     final showStatusBadge =
-                                        isItemTerminal || isItemOther;
+                                        isItemTerminal ||
+                                        isItemOther ||
+                                        isItemReleased;
 
                                     // Status-specific color
                                     Color _statusColor() {
@@ -1636,6 +1809,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                       if (isItemDetained) return const Color(0xFFFF8F00);
                                       if (isItemReexport) return const Color(0xFF00ACC1);
                                       if (isItemDestroy) return const Color(0xFFE64A19);
+                                      if (isItemReleased) return context.colors.successGreen;
                                       if (isItemOther) return context.colors.accentLightBlue;
                                       return context.colors.borderColor;
                                     }
@@ -1648,6 +1822,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                       if (isItemDetained) return 'DETAINED';
                                       if (isItemReexport) return 'RE-EXPORT';
                                       if (isItemDestroy) return 'DESTROYED';
+                                      if (isItemReleased) return 'RELEASED';
                                       if (isItemOther) {
                                         return (item.status ?? '').toUpperCase();
                                       }
@@ -1972,7 +2147,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               label: 'Current Warehouse',
                                               value: currentWarehouses.first,
                                             ),
-                                          if (isItemDetained) ...[
+                                          // Show the Disposition Breakdown whenever
+                                          // the item is still held (detained) OR has
+                                          // any released / disposed portion — so a
+                                          // released item shows "Released x20" even
+                                          // if its status isn't 'detained'.
+                                          if (isItemDetained ||
+                                              _releasedQty > 0 ||
+                                              _dispoCounts.isNotEmpty) ...[
                                             const Gap(16),
                                             material.Container(
                                               padding:
@@ -2142,7 +2324,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         const Gap(16),
                       ],
 
-                      if (!widget.useWarehouseSummary &&
+                      // Skip on legacy summary — Receipt No/Date already shown in
+                      // the Package Item Summary section above (avoids a duplicate).
+                      if (!widget.useLegacySummary &&
+                          !widget.useWarehouseSummary &&
                           widget.highlightEntry?.isReturned == true &&
                           (returnedReceiptNo != null ||
                               returnedReceiptDate != null)) ...[
@@ -2179,7 +2364,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
 
                       // Warehouse Charges Section — hidden for no-charge
                       // (abandoned / forfeit / destroy) items and sold items.
-                      if (widget.highlightEntry != null &&
+                      // Skipped on legacy summary (charge shown in the summary
+                      // above, entry-date based).
+                      if (!widget.useLegacySummary &&
+                          widget.highlightEntry != null &&
                           !isNoChargeContext &&
                           !isSoldContext)
                         _DetailSection(
@@ -3736,6 +3924,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         'Rolls',
         'Packages',
         'No of',
+        'Bottles',
         'KG',
         'Meters',
         'Other'
@@ -3786,6 +3975,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
           'Rolls',
           'Packages',
           'No of',
+          'Bottles',
           'KG',
           'Meters',
           'Other'
@@ -3846,11 +4036,16 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
   }
 
   Future<void> _selectDate(TextEditingController controller) async {
-    final DateTime? picked = await showDatePicker(
+    // Use the same custom picker as the SR form so the calendar looks identical
+    // (same look/size) and dates read as YYYY-MM-DD — not the Material picker's
+    // MM/DD/YYYY manual-entry box.
+    final existing = DateTime.tryParse(controller.text.trim());
+    final DateTime? picked = await showDialog<DateTime>(
       context: context,
-      initialDate: DateTime.now(),
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2050),
+      builder: (_) => OneTapDatePicker(
+        initialDate: existing ?? DateTime.now(),
+        lastDate: DateTime.now(),
+      ),
     );
     if (picked != null) {
       setState(() {
@@ -4507,6 +4702,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     'Rolls',
                     'Packages',
                     'No of',
+                    'Bottles',
                     'KG',
                     'Meters',
                     'Other'
@@ -4522,6 +4718,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     'Rolls',
                     'Packages',
                     'No of',
+                    'Bottles',
                     'KG',
                     'Meters',
                     'Other'

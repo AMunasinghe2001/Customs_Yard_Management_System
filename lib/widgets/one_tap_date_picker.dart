@@ -9,12 +9,19 @@ import '../core/theme.dart';
 /// the pencil icon switches to manual text entry. Returns the picked
 /// [DateTime] via `Navigator.pop`, or `null` if cancelled.
 ///
-/// Pass [lastDate] to disable dates after a cut-off (e.g. "no future dates").
+/// Pass [lastDate] to disable dates after a cut-off (e.g. "no future dates")
+/// and/or [firstDate] to disable dates before a cut-off (e.g. "not before the
+/// entry date").
 class OneTapDatePicker extends StatefulWidget {
   final DateTime initialDate;
   final DateTime? lastDate;
+  final DateTime? firstDate;
 
-  const OneTapDatePicker({super.key, required this.initialDate, this.lastDate});
+  const OneTapDatePicker(
+      {super.key,
+      required this.initialDate,
+      this.lastDate,
+      this.firstDate});
 
   @override
   State<OneTapDatePicker> createState() => _OneTapDatePickerState();
@@ -69,6 +76,12 @@ class _OneTapDatePickerState extends State<OneTapDatePicker> {
     final ld = widget.lastDate;
     if (ld != null && d.isAfter(ld)) {
       setState(() => _textError = 'Date must be before today');
+      return;
+    }
+    final fd = widget.firstDate;
+    if (fd != null && d.isBefore(DateTime(fd.year, fd.month, fd.day))) {
+      setState(() => _textError =
+          'Date must be on or after ${DateFormat('yyyy-MM-dd').format(fd)}');
       return;
     }
     Navigator.pop(context, d);
@@ -247,7 +260,9 @@ class _OneTapDatePickerState extends State<OneTapDatePicker> {
                       if (day < 1 || day > dayCount) return const SizedBox(height: 36);
                       final date = DateTime(_visibleMonth.year, _visibleMonth.month, day);
                       final selected = DateUtils.isSameDay(date, widget.initialDate);
-                      final isDisabled = widget.lastDate != null && date.isAfter(widget.lastDate!);
+                      final isDisabled =
+                          (widget.lastDate != null && date.isAfter(widget.lastDate!)) ||
+                          (widget.firstDate != null && date.isBefore(widget.firstDate!));
                       return Padding(
                         padding: const EdgeInsets.all(2),
                         child: GestureDetector(

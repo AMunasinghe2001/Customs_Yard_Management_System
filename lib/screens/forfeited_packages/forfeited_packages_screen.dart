@@ -195,7 +195,10 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
             itemName: item.itemName,
             hsCode: item.hsCode,
             qty: entry.itemCount,
-            forfeitedDate: entry.returnedAt ?? fp.forfeitedAt,
+            // Forfeited date is anchored to the SR Entry Date (fp.forfeitedAt is
+            // set to the package entry date on forfeiture), not the warehouse
+            // return date, so the 30-day appeal window counts from entry.
+            forfeitedDate: fp.forfeitedAt,
             officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
             item: item,
             entry: entry,

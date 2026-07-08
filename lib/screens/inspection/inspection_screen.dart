@@ -1863,6 +1863,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   'Rolls',
                   'Packages',
                   'No of',
+                  'Bottles',
                   'KG',
                   'Meters',
                   'Other'
@@ -1878,6 +1879,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   'Rolls',
                   'Packages',
                   'No of',
+                  'Bottles',
                   'KG',
                   'Meters',
                   'Other'
