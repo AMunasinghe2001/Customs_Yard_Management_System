@@ -306,7 +306,11 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   return all.where((p) {
     if (!p.isOnline) return false;
     if (p.lastSeenAt == null) return false;
-    return now.difference(p.lastSeenAt!).inMinutes < 5;
+    // AppShell sends a heartbeat every 2 minutes; treat anyone whose last
+    // heartbeat is older than ~3 minutes as offline. This drops sessions that
+    // closed/crashed without a clean sign-out (is_online can stay stuck true)
+    // shortly after the app stops beating, instead of lingering online.
+    return now.difference(p.lastSeenAt!).inSeconds < 180;
   }).toList();
 });
 
@@ -335,7 +339,9 @@ final myYardOnlineProfilesProvider =
   return mine.where((p) {
     if (!p.isOnline) return false;
     if (p.lastSeenAt == null) return false;
-    return now.difference(p.lastSeenAt!).inMinutes < 5;
+    // Heartbeat is every 2 min; anyone whose last beat is older than ~3 min is
+    // treated as offline (drops sessions that closed without a clean sign-out).
+    return now.difference(p.lastSeenAt!).inSeconds < 180;
   }).toList();
 });
 

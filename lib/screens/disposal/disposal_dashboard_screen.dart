@@ -2285,12 +2285,37 @@ class _TsRow {
   const _TsRow(this.saleItem, this.item, this.warehouse);
 }
 
-class TenderSaleCard extends ConsumerWidget {
+class TenderSaleCard extends ConsumerStatefulWidget {
   final TenderSaleModel sale;
   /// Yard-side, view-only mode: shows every item (sold included) with a
   /// read-only Sold/Pending status chip instead of the Mark-Sold action.
   final bool readOnly;
   const TenderSaleCard({required this.sale, this.readOnly = false});
+
+  @override
+  ConsumerState<TenderSaleCard> createState() => _TenderSaleCardState();
+}
+
+class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // The Mark-Sold button unlocks purely on the clock (widget.sale.saleTimePassed),
+    // so with no trigger the card never re-evaluates it. Rebuild every 20s so
+    // the button enables shortly after the scheduled sale time passes without a
+    // manual page refresh.
+    _tick = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
 
   String _warehouseFor(PackageModel? pkg, String itemId) {
     if (pkg == null) return '—';
@@ -2309,14 +2334,14 @@ class TenderSaleCard extends ConsumerWidget {
     // yard view-only page keeps them so the yard can see the full outcome.
     // Once the sell window has CLOSED, the un-sold items have moved to the
     // Unsold Tenders pool — drop them here too (Central Disposal view only).
-    final windowClosed = !readOnly &&
-        sale.unsoldDeadline != null &&
-        DateTime.now().isAfter(sale.unsoldDeadline!);
-    final Iterable<TenderSaleItemModel> source = readOnly
-        ? sale.items
+    final windowClosed = !widget.readOnly &&
+        widget.sale.unsoldDeadline != null &&
+        DateTime.now().isAfter(widget.sale.unsoldDeadline!);
+    final Iterable<TenderSaleItemModel> source = widget.readOnly
+        ? widget.sale.items
         : windowClosed
             ? const []
-            : sale.items.where((s) => !s.sold);
+            : widget.sale.items.where((s) => !s.sold);
 
     // De-duplicate: same (forfeitedPackageId, packageItemId) may appear as
     // multiple TSI rows when the per-item RPC created extra entries. Keep the
@@ -2361,16 +2386,16 @@ class TenderSaleCard extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final green = context.colors.successGreen;
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final rows = _rows();
     // Central Disposal: no actionable rows left (all sold, or the window closed
     // and the un-sold items moved to Unsold Tenders) → drop the whole card. The
-    // yard view-only page (readOnly) keeps the card to show the full outcome.
-    if (!readOnly && rows.isEmpty) return const SizedBox.shrink();
-    final total = sale.totalCount;
-    final sold = sale.soldCount;
+    // yard view-only page (widget.readOnly) keeps the card to show the full outcome.
+    if (!widget.readOnly && rows.isEmpty) return const SizedBox.shrink();
+    final total = widget.sale.totalCount;
+    final sold = widget.sale.soldCount;
     final allSold = total > 0 && sold == total;
 
     return Container(
@@ -2403,8 +2428,8 @@ class TenderSaleCard extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                        sale.saleNumber?.isNotEmpty == true
-                            ? sale.saleNumber!
+                        widget.sale.saleNumber?.isNotEmpty == true
+                            ? widget.sale.saleNumber!
                             : 'Tender Sale',
                         style: TextStyle(
                             color: context.colors.textPrimary,
@@ -2416,15 +2441,15 @@ class TenderSaleCard extends ConsumerWidget {
                           size: 12, color: context.colors.textMuted),
                       const Gap(4),
                       Text(
-                          sale.saleDate != null
-                              ? DateFormat('yyyy-MM-dd').format(sale.saleDate!)
+                          widget.sale.saleDate != null
+                              ? DateFormat('yyyy-MM-dd').format(widget.sale.saleDate!)
                               : '—',
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12)),
                       const Gap(12),
                       Flexible(
-                        child: Text(sale.typeLabel,
+                        child: Text(widget.sale.typeLabel,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 color: context.colors.textMuted,
@@ -2435,10 +2460,10 @@ class TenderSaleCard extends ConsumerWidget {
                     // it closes, the remaining items drop to Unsold Tenders.
                     // Central Disposal only — the yard's read-only view never
                     // shows the timer (the window is the directorate's concern).
-                    if (!readOnly && !allSold && sale.unsoldDeadline != null) ...[
+                    if (!widget.readOnly && !allSold && widget.sale.unsoldDeadline != null) ...[
                       const Gap(6),
                       _DeadlineCountdown(
-                          deadline: sale.unsoldDeadline,
+                          deadline: widget.sale.unsoldDeadline,
                           label: 'Sell within'),
                     ],
                   ],
@@ -2485,7 +2510,7 @@ class TenderSaleCard extends ConsumerWidget {
                   headingRowColor: _headingColor(context),
                   empty:
                       const EmptyTableState(message: 'No packages in this sale'),
-                  columns: const [
+                  columns: [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
@@ -2496,7 +2521,10 @@ class TenderSaleCard extends ConsumerWidget {
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('Goods Description'), size: ColumnSize.L),
-                    DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
+                    // Yard shows the SR item Value; Central shows the valuation.
+                    DataColumn2(
+                        label: Text(widget.readOnly ? 'Value' : 'Valuation'),
+                        size: ColumnSize.M),
                     DataColumn2(
                         label: Center(child: Text('Status')),
                         size: ColumnSize.M,
@@ -2545,18 +2573,18 @@ class TenderSaleCard extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12)),
                       )),
-                      DataCell(_ValuationCell(f: f)),
+                      DataCell(_ValuationCell(f: f, useItemValue: widget.readOnly)),
                       DataCell(Center(
                         child: r.saleItem.sold
                             ? _statusChip(context, 'Sold',
                                 Icons.check_circle_rounded, green)
-                            : readOnly
+                            : widget.readOnly
                                 ? (() {
                                     // Unsold only once the SAME window Central
                                     // Disposal uses has closed (sale date + the
                                     // following day's end). Until then it's still
                                     // markable centrally, so show "Pending".
-                                    final deadline = sale.unsoldDeadline;
+                                    final deadline = widget.sale.unsoldDeadline;
                                     final isUnsold = deadline != null &&
                                         DateTime.now().isAfter(deadline);
                                     return isUnsold
@@ -2574,7 +2602,7 @@ class TenderSaleCard extends ConsumerWidget {
                                 : (() {
                                     // Mark Sold only unlocks once the scheduled
                                     // sale moment (date + time) has passed.
-                                    final canSell = sale.saleTimePassed;
+                                    final canSell = widget.sale.saleTimePassed;
                                     final btn = OutlinedButton.icon(
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: green,
@@ -2598,7 +2626,7 @@ class TenderSaleCard extends ConsumerWidget {
                                     return canSell
                                         ? btn
                                         : Tooltip(
-                                            message: _saleLockMessage(sale),
+                                            message: _saleLockMessage(widget.sale),
                                             child: btn);
                                   }()),
                       )),
@@ -2615,17 +2643,24 @@ class TenderSaleCard extends ConsumerWidget {
                                     storageRate: storageRate,
                                     // Yard (read-only) uses the default blue
                                     // header like Forfeited; Central keeps green.
-                                    headerAccentColor: readOnly ? null : green,
+                                    headerAccentColor: widget.readOnly ? null : green,
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),
-                                    valuationUnitCost: f?.valuationCost,
-                                    valuationTotalCost: f?.valuationCost != null
+                                    // Valuation price is a Central-Disposal-only
+                                    // figure — never shown in the yard (widget.readOnly)
+                                    // view. Passing null hides the popup's
+                                    // Valuation section for yards.
+                                    valuationUnitCost:
+                                        widget.readOnly ? null : f?.valuationCost,
+                                    valuationTotalCost: (!widget.readOnly &&
+                                            f?.valuationCost != null)
                                         ? f!.valuationCost! *
                                             (f.entryQty ?? r.item?.quantity ?? 1)
                                         : null,
-                                    valuationQty:
-                                        f?.entryQty ?? r.item?.quantity,
+                                    valuationQty: widget.readOnly
+                                        ? null
+                                        : (f?.entryQty ?? r.item?.quantity),
                                   ),
                                 ),
                               )
@@ -2664,7 +2699,7 @@ class TenderSaleCard extends ConsumerWidget {
   /// Tooltip shown on a disabled Mark Sold button — tells the officer when the
   /// scheduled sale moment unlocks the action.
   String _saleLockMessage(TenderSaleModel sale) {
-    final moment = sale.saleMoment;
+    final moment = widget.sale.saleMoment;
     if (moment == null) return 'No sale date set yet';
     final when = DateFormat('yyyy-MM-dd HH:mm').format(moment);
     return 'Available after the scheduled sale time ($when)';
@@ -2700,6 +2735,7 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
   final _receiptC = TextEditingController();
   final _soldPriceC = TextEditingController();
   bool _loading = false;
+  String? _error;
   // Active taxes are pre-loaded by _markSold and passed in, so the form renders
   // complete on first frame (no flicker).
   late final List<DisposalTaxModel> _activeTaxes = widget.activeTaxes;
@@ -2752,12 +2788,13 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
           ),
           TextField(
             controller: _receiptC,
-            decoration: const InputDecoration(labelText: 'Receipt Number (optional)'),
+            decoration: const InputDecoration(labelText: 'Receipt Number *'),
           ),
           const Gap(16),
           TextField(
             controller: _soldPriceC,
-            decoration: const InputDecoration(labelText: 'Sold Price', prefixText: 'Rs '),
+            decoration: const InputDecoration(
+                labelText: 'Sold Price *', prefixText: 'Rs '),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           if (_activeTaxes.isNotEmpty) ...[
@@ -2780,6 +2817,12 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
               ],
             ),
           ],
+          if (_error != null) ...[
+            const Gap(12),
+            Text(_error!,
+                style: TextStyle(
+                    color: context.colors.dangerRed, fontSize: 12.5)),
+          ],
         ],
       ),
       actions: [
@@ -2792,12 +2835,27 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
           icon: Icons.check_circle_rounded,
           loading: _loading,
           onPressed: () async {
-            setState(() => _loading = true);
+            // Receipt Number and Sold Price are mandatory.
+            final receiptNo = _receiptC.text.trim();
+            final enteredPrice =
+                double.tryParse(_soldPriceC.text.trim()) ?? 0.0;
+            if (receiptNo.isEmpty) {
+              setState(() => _error = 'Receipt Number is required.');
+              return;
+            }
+            if (_soldPriceC.text.trim().isEmpty || enteredPrice <= 0) {
+              setState(() => _error = 'Enter a valid Sold Price.');
+              return;
+            }
+            setState(() {
+              _error = null;
+              _loading = true;
+            });
             try {
               await widget.ref.read(disposalServiceProvider).markTenderSaleItemSold(
                 tenderSaleItemId: widget.item.id,
-                receipt: _receiptC.text,
-                soldPrice: price,
+                receipt: receiptNo,
+                soldPrice: enteredPrice,
                 appliedTaxes: appliedTaxesList,
               );
               // Fire every related trigger so this session's views update
@@ -3745,7 +3803,7 @@ class DestructionCard extends ConsumerWidget {
                   headingRowColor: _headingColor(context),
                   empty:
                       const EmptyTableState(message: 'No packages in this sale'),
-                  columns: const [
+                  columns: [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
@@ -3756,7 +3814,10 @@ class DestructionCard extends ConsumerWidget {
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('Goods Description'), size: ColumnSize.L),
-                    DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
+                    // Yard shows the SR item Value; Central shows the valuation.
+                    DataColumn2(
+                        label: Text(readOnly ? 'Value' : 'Valuation'),
+                        size: ColumnSize.M),
                     DataColumn2(
                         label: Center(child: Text('Status')),
                         size: ColumnSize.M,
@@ -3805,7 +3866,7 @@ class DestructionCard extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12)),
                       )),
-                      DataCell(_ValuationCell(f: f)),
+                      DataCell(_ValuationCell(f: f, useItemValue: readOnly)),
                       DataCell(Center(
                         child: r.saleItem.destroyed
                             ? Container(
@@ -3898,13 +3959,20 @@ class DestructionCard extends ConsumerWidget {
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),
-                                    valuationUnitCost: f?.valuationCost,
-                                    valuationTotalCost: f?.valuationCost != null
+                                    // Valuation price is a Central-Disposal-only
+                                    // figure — never shown in the yard (readOnly)
+                                    // view. Passing null hides the popup's
+                                    // Valuation section for yards.
+                                    valuationUnitCost:
+                                        readOnly ? null : f?.valuationCost,
+                                    valuationTotalCost: (!readOnly &&
+                                            f?.valuationCost != null)
                                         ? f!.valuationCost! *
                                             (f.entryQty ?? r.item?.quantity ?? 1)
                                         : null,
-                                    valuationQty:
-                                        f?.entryQty ?? r.item?.quantity,
+                                    valuationQty: readOnly
+                                        ? null
+                                        : (f?.entryQty ?? r.item?.quantity),
                                   ),
                                 ),
                               )
@@ -3949,20 +4017,21 @@ class _MarkDestroyedDialog extends StatefulWidget {
 
 class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
   final _receiptC = TextEditingController();
+  final _notesC = TextEditingController();
   final _priceC = TextEditingController();
   bool _loading = false;
+  String? _error;
 
   @override
   void dispose() {
     _receiptC.dispose();
+    _notesC.dispose();
     _priceC.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final price = double.tryParse(_priceC.text) ?? 0.0;
-
     return StyledFormDialog(
       label: 'Destruction',
       title: 'Mark Package Destroyed',
@@ -3978,22 +4047,35 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             'This records the package as DESTROYED.',
             style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
           ),
+          // Receipt No and Destruction Price are required; Notes optional.
           TextField(
             controller: _receiptC,
+            decoration:
+                const InputDecoration(labelText: 'Receipt No *'),
+          ),
+          const Gap(16),
+          TextField(
+            controller: _notesC,
             maxLines: 3,
             minLines: 2,
             keyboardType: TextInputType.multiline,
             decoration:
-                const InputDecoration(labelText: 'Receipt / Notes (optional)'),
+                const InputDecoration(labelText: 'Notes (optional)'),
           ),
           const Gap(16),
           // Destruction records a price only — no taxes (unlike a tender sale).
           TextField(
             controller: _priceC,
             decoration: const InputDecoration(
-                labelText: 'Destruction Price', prefixText: 'Rs '),
+                labelText: 'Destruction Price *', prefixText: 'Rs '),
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
+          if (_error != null) ...[
+            const Gap(12),
+            Text(_error!,
+                style: TextStyle(
+                    color: context.colors.dangerRed, fontSize: 12.5)),
+          ],
         ],
       ),
       actions: [
@@ -4005,14 +4087,36 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
           icon: Icons.check_circle_rounded,
           loading: _loading,
           onPressed: () async {
-            setState(() => _loading = true);
+            // Receipt No and Destruction Price are mandatory; Notes optional.
+            // Parse the price fresh from the field (the build-time value is
+            // stale — the field has no onChanged, so it never rebuilt).
+            final receiptNo = _receiptC.text.trim();
+            final notes = _notesC.text.trim();
+            final enteredPrice =
+                double.tryParse(_priceC.text.trim()) ?? 0.0;
+            if (receiptNo.isEmpty) {
+              setState(() => _error = 'Receipt No is required.');
+              return;
+            }
+            if (_priceC.text.trim().isEmpty || enteredPrice <= 0) {
+              setState(
+                  () => _error = 'Enter a valid Destruction Price.');
+              return;
+            }
+            setState(() {
+              _error = null;
+              _loading = true;
+            });
             try {
               await widget.ref
                   .read(disposalServiceProvider)
                   .markDestructionItemDestroyed(
                     destructionItemId: widget.item.id,
-                    receipt: _receiptC.text.trim(),
-                    destroyedPrice: price,
+                    // Notes appended only when provided.
+                    receipt: notes.isEmpty
+                        ? 'Receipt No: $receiptNo'
+                        : 'Receipt No: $receiptNo | Notes: $notes',
+                    destroyedPrice: enteredPrice,
                   );
               widget.ref.read(destructionsRefreshProvider.notifier).trigger();
               widget.ref.read(packagesRefreshTriggerProvider.notifier).trigger();
@@ -4971,7 +5075,10 @@ class _OneTapDateField extends StatelessWidget {
       onTap: () async {
         final picked = await showDialog<DateTime>(
           context: context,
-          builder: (_) => OneTapDatePicker(initialDate: value ?? DateTime.now()),
+          // Tender / Disposal sale & destruction dates can be scheduled for the
+          // future, so no lastDate cap here (same custom picker, look identical).
+          builder: (_) =>
+              OneTapDatePicker(initialDate: value ?? DateTime.now()),
         );
         if (picked != null) onChanged(picked);
       },
@@ -5030,13 +5137,16 @@ class _OneTapTimeField extends StatelessWidget {
 
 class _ValuationCell extends StatelessWidget {
   final ForfeitedPackageModel? f;
-  const _ValuationCell({required this.f});
+  // In the yard (read-only) views the Valuation Directorate price must NOT be
+  // shown — instead this cell shows the SR-form package item's own declared
+  // Value. The valuation price is Central-Disposal-only.
+  final bool useItemValue;
+  const _ValuationCell({required this.f, this.useItemValue = false});
 
   @override
   Widget build(BuildContext context) {
     final fp = f;
-    final unitCost = fp?.valuationCost;
-    if (unitCost == null || fp == null) {
+    if (fp == null) {
       return Text('—', style: TextStyle(color: context.colors.textMuted));
     }
     final int qty;
@@ -5051,8 +5161,34 @@ class _ValuationCell extends StatelessWidget {
     } else {
       qty = fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
     }
-    final total = unitCost * qty;
     final fmt = NumberFormat('#,##0');
+
+    // Yard view → the SR-form item's own declared Value (unit value × qty),
+    // shown as a plain total (no "@ unit × qty" breakdown — that's the valuation
+    // style, which is Central-Disposal-only).
+    if (useItemValue) {
+      final item = fp.itemId != null
+          ? fp.packageDetails?.items
+              .where((i) => i.id == fp.itemId)
+              .firstOrNull
+          : fp.packageDetails?.items.firstOrNull;
+      final unitValue = item?.unitValue ?? 0;
+      final total = unitValue * qty;
+      return Text(
+        'LKR ${fmt.format(total)}',
+        style: TextStyle(
+            color: context.colors.textPrimary,
+            fontWeight: FontWeight.w700,
+            fontSize: 12),
+      );
+    }
+
+    // Central Disposal view → Valuation Directorate cost.
+    final unitCost = fp.valuationCost;
+    if (unitCost == null) {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final total = unitCost * qty;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,

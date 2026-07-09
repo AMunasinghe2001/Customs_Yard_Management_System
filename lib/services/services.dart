@@ -131,7 +131,7 @@ class AuthService {
       try {
         await supabase.from('profiles').update({
           'is_online': true,
-          'last_seen_at': DateTime.now().toIso8601String(),
+          'last_seen_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', profile.id);
       } catch (e) {
         print('DEBUG: AuthService.signIn - Status update failed: $e');
@@ -266,7 +266,7 @@ class AuthService {
     try {
       await supabase.from('profiles').update({
         'is_online': true,
-        'last_seen_at': DateTime.now().toIso8601String(),
+        'last_seen_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', profile.id);
     } catch (_) {}
     await AuditLogService().recordLog(
@@ -315,7 +315,7 @@ class AuthService {
     try {
       await supabase.from('profiles').update({
         'is_online': true,
-        'last_seen_at': DateTime.now().toIso8601String(),
+        'last_seen_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', profile.id);
     } catch (_) {}
     await AuditLogService().recordLog(
@@ -370,7 +370,7 @@ class AuthService {
     try {
       await supabase.from('profiles').update({
         'is_online': true,
-        'last_seen_at': DateTime.now().toIso8601String(),
+        'last_seen_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', user.id);
     } catch (e) {
       print('DEBUG: updateHeartbeat error: $e');

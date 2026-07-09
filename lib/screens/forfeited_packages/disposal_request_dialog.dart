@@ -268,7 +268,9 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                   final date = await showDialog<DateTime>(
                                     context: context,
                                     builder: (_) => OneTapDatePicker(
-                                        initialDate: _requestDate),
+                                        initialDate: _requestDate,
+                                        // Match the other pickers — no future dates.
+                                        lastDate: DateTime.now()),
                                   );
                                   if (date != null) {
                                     setState(() => _requestDate = date);

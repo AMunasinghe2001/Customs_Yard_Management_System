@@ -1,4 +1,5 @@
-﻿import 'dart:io';
+﻿import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
@@ -15,7 +16,7 @@ import '../../widgets/status_chip.dart';
 
 // Dashboard providers now moved to lib/core/providers.dart for shared access
 
-class AdminDashboardScreen extends ConsumerWidget {
+class AdminDashboardScreen extends ConsumerStatefulWidget {
   /// The nav route to highlight. Admins land here via `/admin`; officers reuse
   /// this exact dashboard from `/dashboard` (one shared dashboard for both), so
   /// the route is passed in to keep the correct nav item highlighted.
@@ -23,7 +24,36 @@ class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key, this.currentRoute = '/admin'});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AdminDashboardScreen> createState() =>
+      _AdminDashboardScreenState();
+}
+
+class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
+  Timer? _onlineRefreshTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    // The "online" list is time-based (last_seen_at cutoff), so it goes stale on
+    // its own without a trigger. Re-fetch it every 30s so a session that stopped
+    // beating drops off the dashboard shortly after its window lapses.
+    _onlineRefreshTimer =
+        Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) {
+        ref.invalidate(myYardOnlineProfilesProvider);
+        ref.invalidate(myYardProfilesProvider);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _onlineRefreshTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final pkgStats = ref.watch(dashboardStatsProvider);
     // Yard-scoped: only the admin's own yard (officers + admins), never
     // head-office (DC/SDDC) or other yards leaked by the cross-yard policy.
@@ -32,7 +62,7 @@ class AdminDashboardScreen extends ConsumerWidget {
     final myYard = ref.watch(currentProfileProvider)?.yard;
 
     return AppShell(
-      currentRoute: currentRoute,
+      currentRoute: widget.currentRoute,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Padding(

@@ -11,6 +11,7 @@ import '../../models/models.dart';
 import '../../services/report_service.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/one_tap_date_picker.dart';
 
 class TenderPlacementScreen extends ConsumerStatefulWidget {
   const TenderPlacementScreen({Key? key}) : super(key: key);
@@ -211,12 +212,14 @@ class _TenderPlacementScreenState
                                 Expanded(
                                   child: InkWell(
                                     onTap: () async {
-                                      final date = await showDatePicker(
+                                      // Same custom picker as everywhere else.
+                                      // Tender dates can be future (scheduling),
+                                      // so no lastDate cap.
+                                      final date = await showDialog<DateTime>(
                                         context: context,
-                                        initialDate:
-                                            _selectedDate ?? DateTime.now(),
-                                        firstDate: DateTime(2020),
-                                        lastDate: DateTime(2100),
+                                        builder: (_) => OneTapDatePicker(
+                                            initialDate:
+                                                _selectedDate ?? DateTime.now()),
                                       );
                                       if (date != null) {
                                         setState(
