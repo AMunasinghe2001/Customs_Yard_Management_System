@@ -10,7 +10,6 @@ import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
-import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
 
 
@@ -29,26 +28,36 @@ class AdminDashboardScreen extends ConsumerStatefulWidget {
 }
 
 class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
-  Timer? _onlineRefreshTimer;
+  Timer? _autoRefreshTimer;
 
   @override
   void initState() {
     super.initState();
-    // The "online" list is time-based (last_seen_at cutoff), so it goes stale on
-    // its own without a trigger. Re-fetch it every 30s so a session that stopped
-    // beating drops off the dashboard shortly after its window lapses.
-    _onlineRefreshTimer =
-        Timer.periodic(const Duration(seconds: 30), (_) {
-      if (mounted) {
-        ref.invalidate(myYardOnlineProfilesProvider);
-        ref.invalidate(myYardProfilesProvider);
-      }
+    // Auto-recover: if a weak signal made some panels fail, quietly re-fetch
+    // them every 25s so they fill in once the connection is back — without the
+    // user having to hit refresh. (Online staff self-polls separately.)
+    _autoRefreshTimer = Timer.periodic(const Duration(seconds: 25), (_) {
+      if (mounted) _refreshAll(silent: true);
     });
+  }
+
+  /// One place that reloads everything on the dashboard — used by the single
+  /// "Retry" button and by the silent auto-refresh timer.
+  void _refreshAll({bool silent = false}) {
+    ref.invalidate(dashboardStatsProvider);
+    ref.invalidate(allProfilesProvider);
+    ref.invalidate(myYardProfilesProvider);
+    ref.invalidate(forfeitLifecycleProvider);
+    ref.invalidate(currentStorageRateProvider);
+    ref.invalidate(currentWarehouseChargeProvider);
+    ref.invalidate(yardWarehouseCapacityProvider);
+    ref.invalidate(recentPackagesProvider);
+    if (!silent) ref.invalidate(myYardOnlineProfilesProvider);
   }
 
   @override
   void dispose() {
-    _onlineRefreshTimer?.cancel();
+    _autoRefreshTimer?.cancel();
     super.dispose();
   }
 
@@ -99,13 +108,26 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
               ).animate().fadeIn(),
               const Gap(20),
 
+              // ── ONE consolidated connection banner ──────────────────────
+              // If ANY dashboard panel failed to load (usually a weak signal),
+              // show a single banner with a single Retry — instead of every
+              // panel shouting its own error. Retry reloads them all at once.
+              if ([
+                pkgStats,
+                ref.watch(forfeitLifecycleProvider),
+                ref.watch(recentPackagesProvider),
+                ref.watch(yardWarehouseCapacityProvider),
+              ].any((a) => a.hasError)) ...[
+                _ConnectionBanner(onRetry: _refreshAll),
+                const Gap(16),
+              ],
+
               // â”€â”€ Operational stat cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
               pkgStats
                   .when(
                     loading: () => const _StatsLoadingRow(),
-                    error: (e, _) => ErrorView(
-                        error: e,
-                        onRetry: () => ref.refresh(dashboardStatsProvider)),
+                    // Quiet on error — the single top banner owns the retry.
+                    error: (e, _) => const _StatsLoadingRow(),
                     // Plain row: every card now has the SAME 2-line content
                     // (the W/H Rate card was flattened to match _StatCard), so
                     // they line up at equal height without any stretch/
@@ -301,7 +323,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
         ),
         const Gap(10),
         Container(
-          height: 156,
+          height: 172,
           decoration: BoxDecoration(
             color: context.colors.cardDark,
             borderRadius: BorderRadius.circular(16),
@@ -309,14 +331,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           ),
           child: online.when(
             loading: () => const Center(child: CircularProgressIndicator()),
-            error: (e, _) => ErrorView(
-                error: e,
-                onRetry: () => ref.refresh(myYardOnlineProfilesProvider)),
+            error: (e, _) => _buildEmptyOnline(context),
             data: (list) => list.isEmpty
                 ? _buildEmptyOnline(context)
                 : Scrollbar(
                     child: ListView.separated(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      padding: const EdgeInsets.symmetric(vertical: 2),
                       itemCount: list.length,
                       separatorBuilder: (_, __) => Divider(
                           height: 1,
@@ -350,6 +370,76 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 }
 
 // â”€â”€ Reusable bits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+/// A quiet in-panel placeholder shown when a single panel fails to load. It
+/// carries NO retry button — the one top banner owns the retry, so the user
+/// isn't faced with a dozen separate error boxes.
+class _QuietPanelError extends StatelessWidget {
+  const _QuietPanelError();
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.cloud_off_rounded,
+              size: 22, color: context.colors.textMuted.withOpacity(0.6)),
+          const Gap(6),
+          Text('Couldn\'t load',
+              style:
+                  TextStyle(color: context.colors.textMuted, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
+/// The single connection-error banner for the whole dashboard. Shown once at
+/// the top when any panel fails to load; its one Retry reloads everything.
+class _ConnectionBanner extends StatelessWidget {
+  final VoidCallback onRetry;
+  const _ConnectionBanner({required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.colors.warningAmber.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border:
+            Border.all(color: context.colors.warningAmber.withOpacity(0.4)),
+      ),
+      child: Row(children: [
+        Icon(Icons.wifi_off_rounded,
+            size: 18, color: context.colors.warningAmber),
+        const Gap(12),
+        Expanded(
+          child: Text(
+            "Couldn't load some data — check your internet connection.",
+            style: TextStyle(
+                color: context.colors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500),
+          ),
+        ),
+        const Gap(12),
+        OutlinedButton.icon(
+          onPressed: onRetry,
+          icon: const Icon(Icons.refresh_rounded, size: 16),
+          label: const Text('Retry'),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: context.colors.warningAmber,
+            side: BorderSide(
+                color: context.colors.warningAmber.withOpacity(0.5)),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+        ),
+      ]),
+    ).animate().fadeIn().slideY(begin: -0.2);
+  }
+}
+
 
 /// A left-aligned section title with an optional trailing widget (count chip,
 /// "View all" link). Keeps every section header on the dashboard consistent.
@@ -464,7 +554,11 @@ class _OnlineMemberTile extends StatelessWidget {
     final isRemote = hasImage && profile.profileImageUrl!.startsWith('http');
 
     return ListTile(
-      visualDensity: VisualDensity.compact,
+      dense: true,
+      visualDensity: const VisualDensity(horizontal: 0, vertical: -4),
+      minVerticalPadding: 0,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14),
+      horizontalTitleGap: 12,
       leading: Container(
         height: 32,
         width: 32,
@@ -562,9 +656,8 @@ class _ForfeitLifecycleSection extends StatelessWidget {
             loading: () => Center(
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
-            error: (e, _) => ErrorView(
-                error: e,
-                onRetry: () => ref.refresh(forfeitLifecycleProvider)),
+            // Quiet — the single top banner owns the retry.
+            error: (e, _) => const _QuietPanelError(),
             data: (d) {
               final next = d['nextTenderSaleDate'] as String?;
               return SingleChildScrollView(
@@ -920,9 +1013,7 @@ class _WarehouseCapacitySection extends StatelessWidget {
             loading: () => const SizedBox(
                 height: 80,
                 child: Center(child: CircularProgressIndicator())),
-            error: (e, _) => ErrorView(
-                error: e,
-                onRetry: () => ref.refresh(yardWarehouseCapacityProvider)),
+            error: (e, _) => const _QuietPanelError(),
             data: (rows) {
               if (rows.isEmpty) {
                 return _emptyHint(context, Icons.warehouse_rounded,
@@ -1017,8 +1108,7 @@ class _RecentActivitySection extends StatelessWidget {
             ),
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator()),
-              error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(recentPackagesProvider)),
+              error: (e, _) => const _QuietPanelError(),
               data: (list) {
                 if (list.isEmpty) {
                   return _emptyHint(context, Icons.history_rounded,

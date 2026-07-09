@@ -87,9 +87,12 @@ class _CustomsAppState extends ConsumerState<CustomsApp> with WindowListener {
           entityType: 'auth',
           entityId: user.id,
         );
-        // Direct database call skipping Riverpod providers entirely
+        // Direct database call skipping Riverpod providers entirely. Null
+        // last_seen_at too so the (heartbeat-based) online list drops them
+        // instantly instead of holding them online for ~90s after close.
         await supabase.from('profiles').update({
-          'is_online': false
+          'is_online': false,
+          'last_seen_at': null,
         }).eq('id', user.id).timeout(const Duration(seconds: 2));
         
         print('DEBUG: Successfully set user offline in Database directly.');

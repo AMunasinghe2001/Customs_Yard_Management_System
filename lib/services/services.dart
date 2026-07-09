@@ -337,9 +337,13 @@ class AuthService {
         entityId: user.id,
       );
       try {
-        await supabase
-            .from('profiles')
-            .update({'is_online': false}).eq('id', user.id);
+        // Null last_seen_at as well: the online list is judged purely by a
+        // fresh heartbeat, so leaving a recent last_seen would keep the user
+        // "online" for up to ~90s after signing out. Nulling it = instant off.
+        await supabase.from('profiles').update({
+          'is_online': false,
+          'last_seen_at': null,
+        }).eq('id', user.id);
       } catch (e) {
         print('DEBUG: AuthService.signOut - Status update failed: $e');
       }
@@ -383,6 +387,7 @@ class AuthService {
     try {
       await supabase.from('profiles').update({
         'is_online': false,
+        'last_seen_at': null, // instant offline (see signOut note)
       }).eq('id', user.id);
     } catch (e) {
       print('DEBUG: setUserOffline error: $e');

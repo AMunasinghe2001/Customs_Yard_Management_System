@@ -70,8 +70,9 @@ class _AppShellState extends ConsumerState<AppShell> {
   void initState() {
     super.initState();
 
-    // Start heartbeat: update status every 2 minutes
-    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
+    // Heartbeat every 45s. Combined with the ~90s online window, a session that
+    // dies without a clean close drops off within ~90s; a live session stays on.
+    _heartbeatTimer = Timer.periodic(const Duration(seconds: 45), (timer) {
       if (mounted) {
         ref.read(authServiceProvider).updateHeartbeat();
       }

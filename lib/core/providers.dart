@@ -304,13 +304,11 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   final all = await ref.watch(allProfilesProvider.future);
   final now = DateTime.now();
   return all.where((p) {
-    if (!p.isOnline) return false;
     if (p.lastSeenAt == null) return false;
-    // AppShell sends a heartbeat every 2 minutes; treat anyone whose last
-    // heartbeat is older than ~3 minutes as offline. This drops sessions that
-    // closed/crashed without a clean sign-out (is_online can stay stuck true)
-    // shortly after the app stops beating, instead of lingering online.
-    return now.difference(p.lastSeenAt!).inSeconds < 180;
+    // Recent PAST heartbeat only (0..90s). A future timestamp (from an old
+    // local-time-tagged-UTC row) must not count — it would pass `< 90` forever.
+    final diff = now.difference(p.lastSeenAt!).inSeconds;
+    return diff >= 0 && diff < 90;
   }).toList();
 });
 
@@ -331,18 +329,43 @@ final myYardProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   }).toList();
 });
 
-/// Online members (seen in the last 5 min) within the admin's own yard.
+/// Officers/admins in the admin's own yard who are online RIGHT NOW.
+///
+/// Self-polls the DB directly every 12s (no cached layers), so a session that
+/// stopped beating vanishes within ~12s. "Online" is judged PURELY by a fresh
+/// heartbeat — `last_seen_at` within 90s. The `is_online` boolean is ignored on
+/// purpose: it can get stuck `true` after an unclean close, which is exactly the
+/// bug that kept ghosts on the list. The current signed-in user is always
+/// included (they're online by definition — no dependence on their own row).
 final myYardOnlineProfilesProvider =
-    FutureProvider<List<ProfileModel>>((ref) async {
-  final mine = await ref.watch(myYardProfilesProvider.future);
-  final now = DateTime.now();
-  return mine.where((p) {
-    if (!p.isOnline) return false;
-    if (p.lastSeenAt == null) return false;
-    // Heartbeat is every 2 min; anyone whose last beat is older than ~3 min is
-    // treated as offline (drops sessions that closed without a clean sign-out).
-    return now.difference(p.lastSeenAt!).inSeconds < 180;
-  }).toList();
+    StreamProvider<List<ProfileModel>>((ref) async* {
+  final me = ref.watch(currentProfileProvider);
+  final myYard = me?.yard;
+  List<ProfileModel> last = const [];
+  while (true) {
+    try {
+      final data = await supabase.from('profiles').select();
+      final now = DateTime.now();
+      last = (data as List)
+          .map((j) => ProfileModel.fromJson(j as Map<String, dynamic>))
+          .where((p) {
+        if (!p.isYardStaff) return false; // officers + admins only
+        if (myYard != null && p.yard != myYard) return false;
+        if (me != null && p.id == me.id) return true; // always myself
+        if (p.lastSeenAt == null) return false;
+        final diff = now.difference(p.lastSeenAt!).inSeconds;
+        // Must be a RECENT past beat. A future timestamp (diff < 0) is bogus —
+        // e.g. an old row written as local-time-tagged-UTC — and would otherwise
+        // pass `< 90` forever, pinning a ghost online. Reject it.
+        return diff >= 0 && diff < 90;
+      }).toList();
+      yield last;
+    } catch (_) {
+      // Transient error — keep the previous list rather than flashing offline.
+      yield last;
+    }
+    await Future.delayed(const Duration(seconds: 12));
+  }
 });
 
 final auditLogsRefreshTriggerProvider = StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
