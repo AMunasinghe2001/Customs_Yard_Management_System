@@ -41,6 +41,9 @@ final routerProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) async {
       final user = supabase.auth.currentUser;
       final isLoggedIn = user != null;
+      // ignore: avoid_print
+      print('[ROUTER] redirect matched=${state.matchedLocation} loggedIn=$isLoggedIn '
+          'profileAdmin=${ref.read(currentProfileProvider)?.isAdmin}');
       final publicRoutes = [
         '/',
         '/yard-access',
@@ -61,6 +64,8 @@ final routerProvider = Provider<GoRouter>((ref) {
         try {
           await ref.read(authServiceProvider).verifyUserSession();
         } catch (e) {
+          // ignore: avoid_print
+          print('[ROUTER] verifyUserSession FAILED: $e → redirect /');
           // If verification fails (e.g. email not confirmed), redirect to home/login
           return '/';
         }

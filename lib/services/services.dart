@@ -44,12 +44,13 @@ class AuthService {
       throw Exception('email_not_confirmed');
     }
 
-    // 2. Check profile and role
-    final profileData = await supabase
-        .from('profiles')
-        .select()
-        .eq('id', user.id)
-        .maybeSingle();
+    // 2. Check profile and role. Retry transient failures — right after a fresh
+    // login the JWT can still be propagating, so the first profile query may
+    // momentarily return nothing/error; retrying avoids a spurious sign-out that
+    // bounced the user back to the portal on the first Sign In click.
+    final profileData = await _withNetworkRetry(
+      () => supabase.from('profiles').select().eq('id', user.id).maybeSingle(),
+    );
 
     if (profileData == null) {
       // If profile doesn't exist yet (first time login), it might need creation via trigger

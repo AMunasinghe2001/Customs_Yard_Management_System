@@ -114,6 +114,40 @@ class HomeScreen extends ConsumerWidget {
                   ),
                 ),
                 const Spacer(),
+                // ── Copyright / attribution ─────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16, top: 8),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.copyright_rounded,
+                              size: 13, color: context.colors.textMuted),
+                          const Gap(6),
+                          Text(
+                            '${DateTime.now().year} Anushanga Munasinghe · All rights reserved',
+                            style: TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const Gap(2),
+                      Text(
+                        'Designed & developed by Anushanga Munasinghe · Unauthorised copying or redistribution is prohibited.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: context.colors.textMuted.withOpacity(0.7),
+                          fontSize: 10.5,
+                        ),
+                      ),
+                    ],
+                  ).animate().fadeIn(delay: 1300.ms),
+                ),
               ]),
             ),
           ),

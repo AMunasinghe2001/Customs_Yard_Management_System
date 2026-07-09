@@ -1550,7 +1550,7 @@ class _CusdecAutocompleteField extends StatefulWidget {
     this.validator,
   });
 
-  static const List<String> _prefixes = ['CBHQI', 'ECC', 'I'];
+  static const List<String> _prefixes = ['CBHQI', 'CBMVI', 'ECC', 'I'];
 
   @override
   State<_CusdecAutocompleteField> createState() =>
@@ -1601,6 +1601,9 @@ class _CusdecAutocompleteFieldState extends State<_CusdecAutocompleteField> {
       },
       optionsViewBuilder: (context, onSelected, options) {
         final opts = options.toList();
+        // The index RawAutocomplete highlights as the user presses ↑/↓ (Enter
+        // then selects it). We mirror it visually and keep it scrolled into view.
+        final highlighted = AutocompleteHighlightedOption.of(context);
         return Align(
           alignment: Alignment.topLeft,
           child: Material(
@@ -1609,44 +1612,102 @@ class _CusdecAutocompleteFieldState extends State<_CusdecAutocompleteField> {
             color: context.colors.surfaceDark,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxHeight: 220, maxWidth: 320),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: opts.length,
-                itemBuilder: (context, i) {
-                  final option = opts[i];
-                  return InkWell(
-                    onTap: () => onSelected(option),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        border: Border(
-                          bottom: BorderSide(
-                              color: context.colors.borderColor
-                                  .withOpacity(0.5)),
-                        ),
-                      ),
-                      child: Row(children: [
-                        Icon(Icons.tag_rounded,
-                            size: 16, color: context.colors.primaryGold),
-                        const Gap(10),
-                        Text(option.trim(),
-                            style: TextStyle(
-                                color: context.colors.textPrimary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14)),
-                        const Gap(8),
-                        Text('+ number',
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 12)),
-                      ]),
-                    ),
-                  );
-                },
+              child: _CusdecOptionsList(
+                options: opts,
+                highlightedIndex: highlighted,
+                onSelected: onSelected,
               ),
             ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// The suggestion list for the Cusdec autocomplete. Highlights the option that
+/// RawAutocomplete has selected via ↑/↓ and scrolls it into view, so keyboard
+/// navigation is visible; Enter selects the highlighted one, tap selects any.
+class _CusdecOptionsList extends StatefulWidget {
+  final List<String> options;
+  final int highlightedIndex;
+  final AutocompleteOnSelected<String> onSelected;
+
+  const _CusdecOptionsList({
+    required this.options,
+    required this.highlightedIndex,
+    required this.onSelected,
+  });
+
+  @override
+  State<_CusdecOptionsList> createState() => _CusdecOptionsListState();
+}
+
+class _CusdecOptionsListState extends State<_CusdecOptionsList> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(_CusdecOptionsList old) {
+    super.didUpdateWidget(old);
+    if (old.highlightedIndex != widget.highlightedIndex) {
+      // Keep the highlighted row visible as the user arrows through the list.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollController.hasClients) return;
+        const rowHeight = 48.0;
+        final target = widget.highlightedIndex * rowHeight;
+        _scrollController.animateTo(
+          target.clamp(0.0, _scrollController.position.maxScrollExtent),
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOut,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      controller: _scrollController,
+      padding: EdgeInsets.zero,
+      shrinkWrap: true,
+      itemCount: widget.options.length,
+      itemBuilder: (context, i) {
+        final option = widget.options[i];
+        final isHighlighted = i == widget.highlightedIndex;
+        return InkWell(
+          onTap: () => widget.onSelected(option),
+          child: Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: isHighlighted
+                  ? context.colors.primaryGold.withOpacity(0.15)
+                  : null,
+              border: Border(
+                bottom: BorderSide(
+                    color: context.colors.borderColor.withOpacity(0.5)),
+              ),
+            ),
+            child: Row(children: [
+              Icon(Icons.tag_rounded,
+                  size: 16, color: context.colors.primaryGold),
+              const Gap(10),
+              Text(option.trim(),
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14)),
+              const Gap(8),
+              Text('+ number',
+                  style: TextStyle(
+                      color: context.colors.textMuted, fontSize: 12)),
+            ]),
           ),
         );
       },
