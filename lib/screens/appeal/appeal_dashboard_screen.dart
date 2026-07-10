@@ -464,6 +464,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
             f.id,
             result.decision,
             note: result.note,
+            itemId: f.itemId, // per-item decision — only this item is decided
           );
       ref.invalidate(appealForfeitedPackagesProvider);
       if (context.mounted) {

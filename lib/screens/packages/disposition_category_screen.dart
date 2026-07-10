@@ -530,19 +530,11 @@ class _DispositionCategoryScreenState
                                           // SOLD/DESTROYED: show the clean
                                           // receipt number; other tags: notes.
                                           if (widget.finalTag == 'SOLD') {
-                                            // TEMP DIAGNOSTIC — remove after check.
-                                            debugPrint('[receipt] SOLD raw='
-                                                '"${row.entry?.returnNotes}" '
-                                                'parsed="${_parseSaleReceipt(row.entry?.returnNotes)}"');
                                             return _parseSaleReceipt(
                                                     row.entry?.returnNotes) ??
                                                 '—';
                                           }
                                           if (widget.finalTag == 'DESTROYED') {
-                                            // TEMP DIAGNOSTIC — remove after check.
-                                            debugPrint('[receipt] raw returnNotes='
-                                                '"${row.entry?.returnNotes}" '
-                                                'parsed="${_parseDestroyReceipt(row.entry?.returnNotes)}"');
                                             return _parseDestroyReceipt(
                                                     row.entry?.returnNotes) ??
                                                 '—';

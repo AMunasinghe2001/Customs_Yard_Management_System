@@ -797,6 +797,11 @@ class ForfeitedPackageModel {
   final String? appealDecision;
   final String? appealDecisionNote;
   final DateTime? appealDecidedAt;
+  /// Per-item appeal decisions: itemId → {decision, note, decided_at, decided_by}.
+  /// The Appeal Directorate decides one item at a time, so a multi-item package
+  /// can have some items decided (e.g. SALE) while siblings are still in appeal.
+  /// Empty = no per-item decisions (falls back to package-level [appealDecision]).
+  final Map<String, dynamic> itemAppealDecisions;
   final PackageModel? packageDetails;
 
   /// For synthetic per-item requestable rows (abandoned / "Other") only: the
@@ -827,6 +832,7 @@ class ForfeitedPackageModel {
     this.appealDecision,
     this.appealDecisionNote,
     this.appealDecidedAt,
+    this.itemAppealDecisions = const {},
     this.packageDetails,
     this.itemId,
     this.itemName,
@@ -847,8 +853,54 @@ class ForfeitedPackageModel {
     }
     return appealHold;
   }
-  bool get hasAppealDecision =>
-      appealDecision != null && appealDecision!.trim().isNotEmpty;
+  // ── Per-item appeal-decision resolution ──────────────────────────────────
+  // A decision is stored per item in [itemAppealDecisions]; a package-level
+  // [appealDecision] is the legacy fallback. Callers that know the item (yard
+  // Forfeited table) pass its id; the expanded per-item rows (Appeal / disposal)
+  // resolve automatically through [itemId].
+
+  /// The decision code ('SALE' / 'DESTROY' / …) for a specific item, or the
+  /// package-level decision when this item has none. Null if neither exists.
+  ///
+  /// Crucially, a MULTI-ITEM package does NOT let its package-level
+  /// [appealDecision] bleed onto an item that has no per-item entry — otherwise
+  /// deciding one item (or a stale package-level value from the old flow) would
+  /// wrongly mark every sibling decided. Only single-item / unknown packages
+  /// fall back to the package-level column.
+  String? appealDecisionForItem(String? id) {
+    if (id != null) {
+      final entry = itemAppealDecisions[id];
+      if (entry is Map && entry['decision'] != null) {
+        final d = entry['decision'].toString().trim();
+        if (d.isNotEmpty) return d;
+      }
+      // Multi-item package with no per-item entry for THIS item → no decision.
+      final itemCount = packageDetails?.items.length;
+      if (itemCount != null && itemCount > 1) return null;
+    }
+    return (appealDecision != null && appealDecision!.trim().isNotEmpty)
+        ? appealDecision!.trim()
+        : null;
+  }
+
+  /// The decision note for a specific item (per-item note, else package-level).
+  String? appealDecisionNoteForItem(String? id) {
+    if (id != null) {
+      final entry = itemAppealDecisions[id];
+      if (entry is Map && entry['note'] != null) {
+        final n = entry['note'].toString().trim();
+        if (n.isNotEmpty) return n;
+      }
+    }
+    return appealDecisionNote;
+  }
+
+  bool hasAppealDecisionForItem(String? id) =>
+      appealDecisionForItem(id) != null;
+
+  /// Whether an appeal decision exists for THIS row — uses [itemId] when the
+  /// row is an expanded per-item row, else the package-level decision.
+  bool get hasAppealDecision => hasAppealDecisionForItem(itemId);
 
   /// Whether the yard may now act on this package (Send Disposal Request /
   /// Final Disposition). Allowed once the 30-day appeal window has passed OR
@@ -856,11 +908,10 @@ class ForfeitedPackageModel {
   /// out the 30 days in that case).
   bool get isActionable => isAppealExpired || hasAppealDecision;
 
-  /// The disposal-request disposition this package's appeal decision implies,
-  /// as the code the request form uses ('destruction' | 'sale'), or null when
-  /// the decision isn't a disposal outcome (RELEASE / RE-EXPORT / OTHER).
-  String? get appealRequestDisposition {
-    switch ((appealDecision ?? '').trim().toUpperCase()) {
+  /// The disposal-request disposition an item's appeal decision implies
+  /// ('destruction' | 'sale'), or null for non-disposal outcomes.
+  String? appealRequestDispositionForItem(String? id) {
+    switch ((appealDecisionForItem(id) ?? '').toUpperCase()) {
       case 'DESTROY':
         return 'destruction';
       case 'SALE':
@@ -870,10 +921,15 @@ class ForfeitedPackageModel {
     }
   }
 
-  /// Human-friendly label for [appealDecision] (falls back to the custom note
-  /// for 'OTHER').
-  String? get appealDecisionLabel {
-    switch ((appealDecision ?? '').trim().toUpperCase()) {
+  /// The disposal-request disposition this row's appeal decision implies.
+  String? get appealRequestDisposition =>
+      appealRequestDispositionForItem(itemId);
+
+  /// Human-friendly label for a specific item's decision (falls back to the
+  /// custom note for 'OTHER').
+  String? appealDecisionLabelForItem(String? id) {
+    final dec = appealDecisionForItem(id);
+    switch ((dec ?? '').toUpperCase()) {
       case 'RELEASE':
         return 'Release to owner';
       case 'SALE':
@@ -883,13 +939,15 @@ class ForfeitedPackageModel {
       case 'RE-EXPORT':
         return 'Re-export';
       case 'OTHER':
-        return (appealDecisionNote?.trim().isNotEmpty == true)
-            ? appealDecisionNote!.trim()
-            : 'Other';
+        final note = appealDecisionNoteForItem(id);
+        return (note?.trim().isNotEmpty == true) ? note!.trim() : 'Other';
       default:
-        return appealDecision;
+        return dec;
     }
   }
+
+  /// Human-friendly label for this row's decision.
+  String? get appealDecisionLabel => appealDecisionLabelForItem(itemId);
 
   factory ForfeitedPackageModel.fromJson(Map<String, dynamic> json) {
     return ForfeitedPackageModel(
@@ -916,6 +974,9 @@ class ForfeitedPackageModel {
       appealDecidedAt: json['appeal_decided_at'] != null
           ? DateTime.parse(json['appeal_decided_at'] as String).toLocal()
           : null,
+      itemAppealDecisions:
+          (json['item_appeal_decisions'] as Map?)?.cast<String, dynamic>() ??
+              const {},
       packageDetails: json['packages'] != null
           ? PackageModel.fromJson(json['packages'] as Map<String, dynamic>)
           : null,

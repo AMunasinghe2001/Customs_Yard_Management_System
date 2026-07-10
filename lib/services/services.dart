@@ -2362,13 +2362,36 @@ class ForfeitedPackageService {
         .order('appeal_deadline', ascending: true));
 
     const _nonDisposalDecisions = {'RELEASE', 'RE-EXPORT', 'OTHER'};
+    // An item is requestable when it can go to a disposal request: the window
+    // passed (yard picks the disposition) OR the Appeal Directorate gave it a
+    // SALE/DESTROY decision. A per-item RELEASE/RE-EXPORT/OTHER decision is
+    // handled directly by the yard, so such an item is NOT requestable.
+    bool itemRequestable(ForfeitedPackageModel f, String itemId) {
+      final dec = (f.appealDecisionForItem(itemId) ?? '').toUpperCase();
+      if (_nonDisposalDecisions.contains(dec)) return false;
+      return f.isAppealExpired || dec == 'SALE' || dec == 'DESTROY';
+    }
+
     final baseForfeit = (fpData as List)
         .where((e) => !requestedIds.contains(e['id']))
         .where((e) => !goneIds.contains(e['id'].toString()))
-        .where((e) => !_nonDisposalDecisions
-            .contains(((e['appeal_decision'] as String?) ?? '').toUpperCase()))
+        // Keep the package-level RELEASE/RE-EXPORT/OTHER exclusion only for the
+        // legacy package-level decision (no per-item map) — per-item outcomes are
+        // filtered per item during expansion below.
+        .where((e) {
+          final hasPerItem = (e['item_appeal_decisions'] as Map?)?.isNotEmpty
+              ?? false;
+          if (hasPerItem) return true;
+          return !_nonDisposalDecisions
+              .contains(((e['appeal_decision'] as String?) ?? '').toUpperCase());
+        })
         .map((e) => ForfeitedPackageModel.fromJson(e))
-        .where((f) => f.isActionable)
+        // Keep the package if the window passed OR any item carries a decision —
+        // per-item actionability is enforced during expansion.
+        .where((f) =>
+            f.isAppealExpired ||
+            f.itemAppealDecisions.isNotEmpty ||
+            f.hasAppealDecisionForItem(null))
         .toList();
 
     // Expand multi-item forfeited packages into per-item rows so every item
@@ -2380,6 +2403,10 @@ class ForfeitedPackageService {
         // Single-item (or no details): skip if this item already has a request.
         if (items.isNotEmpty &&
             requestedItemKeys.contains('${f.packageId}:${items.first.id}')) {
+          continue;
+        }
+        // Skip if this item is not (yet) requestable per-item.
+        if (items.isNotEmpty && !itemRequestable(f, items.first.id)) {
           continue;
         }
         // Keep as-is, populate itemName if known.
@@ -2401,6 +2428,7 @@ class ForfeitedPackageService {
           appealDecision: f.appealDecision,
           appealDecisionNote: f.appealDecisionNote,
           appealDecidedAt: f.appealDecidedAt,
+          itemAppealDecisions: f.itemAppealDecisions,
           packageDetails: f.packageDetails,
           itemId: items.isNotEmpty ? items.first.id : f.itemId,
           itemName: itemName,
@@ -2413,6 +2441,9 @@ class ForfeitedPackageService {
           if (requestedItemKeys.contains('${f.packageId}:${item.id}')) {
             continue;
           }
+          // Skip items not (yet) requestable — still in appeal with no decision,
+          // or given a non-disposal (RELEASE/RE-EXPORT/OTHER) decision.
+          if (!itemRequestable(f, item.id)) continue;
           result.add(ForfeitedPackageModel(
             id: '${f.id}:${item.id}:forfeit',
             packageId: f.packageId,
@@ -2430,6 +2461,7 @@ class ForfeitedPackageService {
             appealDecision: f.appealDecision,
             appealDecisionNote: f.appealDecisionNote,
             appealDecidedAt: f.appealDecidedAt,
+          itemAppealDecisions: f.itemAppealDecisions,
             packageDetails: f.packageDetails,
             itemId: item.id,
             itemName: item.itemName,
@@ -4051,11 +4083,50 @@ class AppealService {
 
     // Expand each forfeited record into one row per package item so the Appeal
     // Directorate sees every item separately (same SR can appear N times).
+    // A package-level forfeited_packages row (item_id == null) does NOT mean
+    // every item was forfeited — items are disposed individually, so only the
+    // items with genuine forfeit evidence (isItemForfeited) belong on appeal.
+    // This keeps the Appeal Directorate list in lock-step with the yard's
+    // Forfeited table (both use PackageModel.isItemForfeited).
     final expanded = <ForfeitedPackageModel>[];
     for (final f in packageRows) {
-      final items = f.packageDetails?.items ?? const [];
+      final pkg = f.packageDetails;
+      final allItems = pkg?.items ?? const [];
+      // For a package-level FP, restrict to genuinely-forfeited items; a per-item
+      // FP already names its single item so it is kept as-is.
+      final items = (f.itemId == null && allItems.length > 1)
+          ? allItems.where((i) => pkg!.isItemForfeited(i.id)).toList()
+          : allItems;
       if (items.length <= 1) {
-        expanded.add(f);
+        // Single genuinely-forfeited item → emit that one item's row (not the
+        // raw multi-item f, which would show the wrong item name/qty).
+        if (items.length == 1 && allItems.length > 1) {
+          final only = items.first;
+          expanded.add(ForfeitedPackageModel(
+            id: f.id,
+            packageId: f.packageId,
+            srNumber: f.srNumber,
+            consigneeName: f.consigneeName,
+            forfeitedAt: f.forfeitedAt,
+            appealDeadline: f.appealDeadline,
+            reason: f.reason,
+            yard: f.yard,
+            source: f.source,
+            appealHold: f.appealHold,
+            appealHoldNote: f.appealHoldNote,
+            appealHeldAt: f.appealHeldAt,
+            heldItemIds: f.heldItemIds,
+            appealDecision: f.appealDecision,
+            appealDecisionNote: f.appealDecisionNote,
+            appealDecidedAt: f.appealDecidedAt,
+          itemAppealDecisions: f.itemAppealDecisions,
+            packageDetails: f.packageDetails,
+            itemId: only.id,
+            itemName: only.itemName,
+          ));
+        } else {
+          expanded.add(f);
+        }
       } else {
         for (final item in items) {
           expanded.add(ForfeitedPackageModel(
@@ -4075,6 +4146,7 @@ class AppealService {
             appealDecision: f.appealDecision,
             appealDecisionNote: f.appealDecisionNote,
             appealDecidedAt: f.appealDecidedAt,
+          itemAppealDecisions: f.itemAppealDecisions,
             packageDetails: f.packageDetails,
             itemId: item.id,
             itemName: item.itemName,
@@ -4128,12 +4200,14 @@ class AppealService {
     String forfeitedId,
     String decision, {
     String? note,
+    String? itemId,
   }) async {
     await AuthService._withNetworkRetry(
         () => supabase.rpc('release_appeal_with_decision', params: {
               'p_forfeited_id': forfeitedId,
               'p_decision': decision,
               'p_note': note,
+              'p_item_id': itemId,
             }));
     final user = supabase.auth.currentUser;
     if (user != null) {

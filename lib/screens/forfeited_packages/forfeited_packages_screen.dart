@@ -148,17 +148,6 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
     for (final fp in packages) {
       final pkg = fp.packageDetails;
       final items = pkg?.items ?? [];
-      // TEMP DIAGNOSTIC — remove after confirming.
-      if (fp.srNumber.contains('/11/') || fp.srNumber.contains('/12/')) {
-        debugPrint('[yfp] sr=${fp.srNumber} fp.itemId=${fp.itemId} '
-            'items=${items.length} expired=${fp.isAppealExpired} '
-            'appealHold=${fp.appealHold} decision=${fp.appealDecision}');
-        for (final it in items) {
-          debugPrint('   item="${it.itemName}" id=${it.id} '
-              'status="${it.status}" '
-              'isForfeited=${pkg?.isItemForfeited(it.id)}');
-        }
-      }
       bool addedAny = false;
       // True once at least one item has been resolved to a final disposition
       // (sold / destroyed / re-exported / …). Such a package has left the
@@ -187,7 +176,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
             itemStatusLive &&
             (fp.appealHold ||
                 !fp.isAppealExpired ||
-                fp.appealDecision != null);
+                fp.hasAppealDecisionForItem(item.id));
 
         // Skip items that have moved to a final disposition — unless a held item
         // of this forfeit FP is still inside the appeal lifecycle (above).
@@ -247,11 +236,15 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
         }
       }
 
-      // The Appeal Directorate decided this package should be Sold / Destroyed
-      // but the yard admin hasn't sent the disposal request yet — it is still
-      // pending an admin action. Keep it on the table (even if some items carry
-      // an unrelated [FINAL:…] tag) so the admin can see and act on it.
-      final pendingAppealAction = fp.appealRequestDisposition != null;
+      // The Appeal Directorate decided one or more items should be Sold /
+      // Destroyed but the yard admin hasn't sent the disposal request yet — it
+      // is still pending an admin action. Keep it on the table (even if some
+      // items carry an unrelated [FINAL:…] tag) so the admin can see and act.
+      // Per-item aware: any item with a sale/destruction decision counts; the
+      // package-level fallback covers legacy rows.
+      final pendingAppealAction =
+          items.any((i) => fp.appealRequestDispositionForItem(i.id) != null) ||
+              fp.appealRequestDisposition != null;
 
       // 3. Legacy / no item detail — show a single summary row. Skipped when an
       //    item has already been finalized (sold / destroyed / …) AND there's no
@@ -522,6 +515,25 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           rows: rows.map((row) {
                             final pkg = row.forfeited;
                             final isExpired = pkg.isAppealExpired;
+                            // Appeal holds are PER ITEM: the directorate can hold
+                            // one item of a package while its siblings stay in the
+                            // normal appeal window. heldItemIds names the specific
+                            // items on hold; only fall back to the package-wide
+                            // appealHold flag for legacy rows that have no per-item
+                            // list. So this row shows "APPEAL HOLD" only when THIS
+                            // item is the one held — not every row of the package.
+                            final rowItemId = row.item?.id;
+                            final rowOnAppealHold = pkg.heldItemIds.isNotEmpty
+                                ? (rowItemId != null &&
+                                    pkg.heldItemIds.contains(rowItemId))
+                                : pkg.appealHold;
+                            // Appeal decisions are PER ITEM too — resolve this
+                            // row's item against the per-item decision map so
+                            // deciding one item doesn't mark its siblings.
+                            final rowHasDecision =
+                                pkg.hasAppealDecisionForItem(rowItemId);
+                            final rowDecisionLabel =
+                                pkg.appealDecisionLabelForItem(rowItemId);
 
                             return DataRow(
                               color: WidgetStateProperty.resolveWith<Color?>((states) {
@@ -548,9 +560,9 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                   ),
                                 )),
                                 DataCell(Center(
-                                  child: pkg.appealHold
-                                      // Appeal Directorate has placed a hold —
-                                      // this package must NOT be sold/destroyed.
+                                  child: rowOnAppealHold
+                                      // Appeal Directorate has placed a hold on
+                                      // THIS item — it must NOT be sold/destroyed.
                                       ? Tooltip(
                                           message: pkg.appealHoldNote?.isNotEmpty ==
                                                   true
@@ -592,12 +604,12 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                 ]),
                                           ),
                                         )
-                                      : pkg.hasAppealDecision
+                                      : rowHasDecision
                                           // Appeal processed — directorate told
-                                          // the yard what to do with this package.
+                                          // the yard what to do with this item.
                                           ? Tooltip(
                                               message:
-                                                  'Appeal decision: ${pkg.appealDecisionLabel}',
+                                                  'Appeal decision: $rowDecisionLabel',
                                               child: Container(
                                                 padding:
                                                     const EdgeInsets.symmetric(
@@ -625,7 +637,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                       const Gap(4),
                                                       Flexible(
                                                         child: Text(
-                                                            '→ ${pkg.appealDecisionLabel}',
+                                                            '→ $rowDecisionLabel',
                                                             overflow:
                                                                 TextOverflow
                                                                     .ellipsis,
