@@ -880,7 +880,8 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                     DataCell(
                                         _SaleReceiptCell(saleItemKey: r.saleItemKey)),
                                     DataCell(_SaleValuationCell(
-                                        saleItemKey: r.saleItemKey)),
+                                        saleItemKey: r.saleItemKey,
+                                        qty: r.entry.itemCount)),
                                     DataCell(
                                         _SaleFinancialsCell(saleItemKey: r.saleItemKey)),
                                     DataCell(
@@ -1171,7 +1172,8 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(_DestructionValuationCell(
                                         package: r.package,
-                                        packageItemId: r.entry.packageItemId)),
+                                        packageItemId: r.entry.packageItemId,
+                                        qty: r.entry.itemCount)),
                                     DataCell(_DestructionPriceCell(
                                         package: r.package,
                                         packageItemId: r.entry.packageItemId)),
@@ -1241,17 +1243,25 @@ class _DestroyedDeliveryCell extends ConsumerWidget {
 /// Parse the receipt from a "[FINAL:DESTROYED] — Receipt/Notes: <no>" note.
 String? _parseDestroyReceipt(String? returnNotes) {
   if (returnNotes == null) return null;
-  final m = RegExp(r'Receipt/Notes:\s*([^\|—]+)', caseSensitive: false)
-      .firstMatch(returnNotes);
-  return m?.group(1)?.trim();
+  var s = returnNotes;
+  final tag = RegExp(r'Receipt/Notes:\s*(.+)$', caseSensitive: false)
+      .firstMatch(s);
+  if (tag != null) s = tag.group(1)!;
+  // Peel an inner "Receipt No:" prefix and drop any "| Notes:" tail → just the no.
+  s = s.replaceFirst(RegExp(r'^\s*Receipt No:\s*', caseSensitive: false), '');
+  s = s.split(RegExp(r'\|?\s*Notes:', caseSensitive: false)).first.trim();
+  return s.isEmpty ? null : s;
 }
 
 /// The Valuation Directorate's valuation (unit × qty) for a destroyed item.
 class _DestructionValuationCell extends ConsumerWidget {
   final PackageModel package;
   final String? packageItemId;
+  /// The quantity shown in the row's Qty column — the valuation must multiply
+  /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
+  final int? qty;
   const _DestructionValuationCell(
-      {required this.package, this.packageItemId});
+      {required this.package, this.packageItemId, this.qty});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final key = '${package.id}|${packageItemId ?? ''}';
@@ -1266,21 +1276,23 @@ class _DestructionValuationCell extends ConsumerWidget {
         if (unitCost == null || fp == null) {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
-        final int qty;
-        if (fp.entryQty != null) {
-          qty = fp.entryQty!;
+        final int effQty;
+        if (qty != null && qty! > 0) {
+          effQty = qty!;
+        } else if (fp.entryQty != null) {
+          effQty = fp.entryQty!;
         } else if (fp.itemId != null) {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .where((i) => i.id == fp.itemId)
                   .firstOrNull
                   ?.quantity ??
               1;
         } else {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .fold<int>(0, (s, i) => s + i.quantity) ??
               1;
         }
-        final total = unitCost * qty;
+        final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1290,7 +1302,7 @@ class _DestructionValuationCell extends ConsumerWidget {
                 style: TextStyle(
                     color: context.colors.primaryGold,
                     fontWeight: FontWeight.w700)),
-            Text('@ ${fmt.format(unitCost)} × $qty',
+            Text('@ ${fmt.format(unitCost)} × $effQty',
                 style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
           ],
         );
@@ -1351,7 +1363,11 @@ class _SaleReceiptCell extends ConsumerWidget {
 // next to the actual Sold Price so both can be compared.
 class _SaleValuationCell extends ConsumerWidget {
   final String saleItemKey;
-  const _SaleValuationCell({required this.saleItemKey});
+  // The quantity actually sold (the table's Qty column). Valuation = unit × this
+  // — otherwise it wrongly falls back to the forfeited item's registered qty
+  // (often 1), showing e.g. "@120 × 1" for a row whose Qty is 5.
+  final int? qty;
+  const _SaleValuationCell({required this.saleItemKey, this.qty});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
@@ -1365,21 +1381,23 @@ class _SaleValuationCell extends ConsumerWidget {
         if (unitCost == null || fp == null) {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
-        final int qty;
-        if (fp.entryQty != null) {
-          qty = fp.entryQty!;
+        final int effQty;
+        if (qty != null && qty! > 0) {
+          effQty = qty!; // the sold qty from the table (source of truth)
+        } else if (fp.entryQty != null) {
+          effQty = fp.entryQty!;
         } else if (fp.itemId != null) {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .where((i) => i.id == fp.itemId)
                   .firstOrNull
                   ?.quantity ??
               1;
         } else {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .fold<int>(0, (s, i) => s + i.quantity) ??
               1;
         }
-        final total = unitCost * qty;
+        final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1389,7 +1407,7 @@ class _SaleValuationCell extends ConsumerWidget {
                 style: TextStyle(
                     color: context.colors.primaryGold,
                     fontWeight: FontWeight.w700)),
-            Text('@ ${fmt.format(unitCost)} × $qty',
+            Text('@ ${fmt.format(unitCost)} × $effQty',
                 style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
           ],
         );
@@ -2107,7 +2125,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
-                        DataCell(_ValuationCell(f: f)),
+                        DataCell(_ValuationCell(
+                            f: f, qty: f.entryQty ?? item?.quantity)),
                         DataCell(Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -2520,15 +2539,18 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     DataColumn2(label: Text('Forfeit Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Text('Goods Description'), size: ColumnSize.L),
+                        label: Text('Goods Description'), size: ColumnSize.M),
                     // Yard shows the SR item Value; Central shows the valuation.
+                    // Fixed + centered so it sits snug next to Status (no gap).
                     DataColumn2(
-                        label: Text(widget.readOnly ? 'Value' : 'Valuation'),
-                        size: ColumnSize.M),
+                        label: Center(
+                            child: Text(widget.readOnly ? 'Value' : 'Valuation')),
+                        size: ColumnSize.S,
+                        fixedWidth: 120),
                     DataColumn2(
                         label: Center(child: Text('Status')),
-                        size: ColumnSize.M,
-                        fixedWidth: 140),
+                        size: ColumnSize.S,
+                        fixedWidth: 120),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
@@ -2547,7 +2569,9 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                       DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
                       DataCell(_sourceChip(context, f?.source)),
-                      DataCell(Text('${f?.entryQty ?? r.item?.quantity ?? '—'}')),
+                      DataCell(Center(
+                          child:
+                              Text('${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
                       DataCell(Builder(builder: (_) {
                         final reason = _forfeitReasonText(r.item, f);
                         return Tooltip(
@@ -2573,7 +2597,11 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                 color: context.colors.textSecondary,
                                 fontSize: 12)),
                       )),
-                      DataCell(_ValuationCell(f: f, useItemValue: widget.readOnly)),
+                      DataCell(Center(
+                          child: _ValuationCell(
+                              f: f,
+                              useItemValue: widget.readOnly,
+                              qty: f?.entryQty ?? r.item?.quantity))),
                       DataCell(Center(
                         child: r.saleItem.sold
                             ? _statusChip(context, 'Sold',
@@ -3840,7 +3868,9 @@ class DestructionCard extends ConsumerWidget {
                       DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
                       DataCell(_sourceChip(context, f?.source)),
-                      DataCell(Text('${f?.entryQty ?? r.item?.quantity ?? '—'}')),
+                      DataCell(Center(
+                          child:
+                              Text('${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
                       DataCell(Builder(builder: (_) {
                         final reason = _forfeitReasonText(r.item, f);
                         return Tooltip(
@@ -3866,7 +3896,10 @@ class DestructionCard extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12)),
                       )),
-                      DataCell(_ValuationCell(f: f, useItemValue: readOnly)),
+                      DataCell(_ValuationCell(
+                          f: f,
+                          useItemValue: readOnly,
+                          qty: f?.entryQty ?? r.item?.quantity)),
                       DataCell(Center(
                         child: r.saleItem.destroyed
                             ? Container(
@@ -4047,11 +4080,19 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             'This records the package as DESTROYED.',
             style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
           ),
-          // Receipt No and Destruction Price are required; Notes optional.
+          // Order: Receipt No → Price → Notes. Receipt No + Price required.
           TextField(
             controller: _receiptC,
             decoration:
                 const InputDecoration(labelText: 'Receipt No *'),
+          ),
+          const Gap(16),
+          // Destruction records a price only — no taxes (unlike a tender sale).
+          TextField(
+            controller: _priceC,
+            decoration: const InputDecoration(
+                labelText: 'Destruction Price *', prefixText: 'Rs '),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           const Gap(16),
           TextField(
@@ -4061,14 +4102,6 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             keyboardType: TextInputType.multiline,
             decoration:
                 const InputDecoration(labelText: 'Notes (optional)'),
-          ),
-          const Gap(16),
-          // Destruction records a price only — no taxes (unlike a tender sale).
-          TextField(
-            controller: _priceC,
-            decoration: const InputDecoration(
-                labelText: 'Destruction Price *', prefixText: 'Rs '),
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
           ),
           if (_error != null) ...[
             const Gap(12),
@@ -4946,7 +4979,8 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
-                        DataCell(_ValuationCell(f: f)),
+                        DataCell(_ValuationCell(
+                            f: f, qty: f.entryQty ?? item?.quantity)),
                         DataCell(Center(
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -5141,7 +5175,10 @@ class _ValuationCell extends StatelessWidget {
   // shown — instead this cell shows the SR-form package item's own declared
   // Value. The valuation price is Central-Disposal-only.
   final bool useItemValue;
-  const _ValuationCell({required this.f, this.useItemValue = false});
+  /// The quantity shown in the row's Qty column — the valuation must multiply
+  /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
+  final int? qty;
+  const _ValuationCell({required this.f, this.useItemValue = false, this.qty});
 
   @override
   Widget build(BuildContext context) {
@@ -5149,17 +5186,20 @@ class _ValuationCell extends StatelessWidget {
     if (fp == null) {
       return Text('—', style: TextStyle(color: context.colors.textMuted));
     }
-    final int qty;
-    if (fp.entryQty != null) {
-      qty = fp.entryQty!;
+    final int effQty;
+    if (qty != null && qty! > 0) {
+      effQty = qty!;
+    } else if (fp.entryQty != null) {
+      effQty = fp.entryQty!;
     } else if (fp.itemId != null) {
-      qty = fp.packageDetails?.items
+      effQty = fp.packageDetails?.items
               .where((i) => i.id == fp.itemId)
               .firstOrNull
               ?.quantity ??
           1;
     } else {
-      qty = fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
+      effQty =
+          fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
     }
     final fmt = NumberFormat('#,##0');
 
@@ -5173,7 +5213,7 @@ class _ValuationCell extends StatelessWidget {
               .firstOrNull
           : fp.packageDetails?.items.firstOrNull;
       final unitValue = item?.unitValue ?? 0;
-      final total = unitValue * qty;
+      final total = unitValue * effQty;
       return Text(
         'LKR ${fmt.format(total)}',
         style: TextStyle(
@@ -5188,7 +5228,7 @@ class _ValuationCell extends StatelessWidget {
     if (unitCost == null) {
       return Text('—', style: TextStyle(color: context.colors.textMuted));
     }
-    final total = unitCost * qty;
+    final total = unitCost * effQty;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5202,7 +5242,7 @@ class _ValuationCell extends StatelessWidget {
               fontSize: 12),
         ),
         Text(
-          '@ ${fmt.format(unitCost)} × $qty',
+          '@ ${fmt.format(unitCost)} × $effQty',
           style: TextStyle(color: context.colors.textMuted, fontSize: 10),
         ),
       ],

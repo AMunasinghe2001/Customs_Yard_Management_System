@@ -3462,11 +3462,19 @@ class _DestructionDeliverySectionState
                   value: 'Destroyed',
                   valueColor: context.colors.dangerRed,
                 ),
-                if (item.notes?.trim().isNotEmpty == true)
+                // Receipt No + Notes are stored combined as
+                // "Receipt No: <no> | Notes: <notes>" — split into two rows.
+                if (_receiptNoOf(item.notes) != null)
                   _DetailItem(
                     icon: Icons.receipt_long_rounded,
                     label: 'Receipt No',
-                    value: item.notes!.trim(),
+                    value: _receiptNoOf(item.notes)!,
+                  ),
+                if (_notesOf(item.notes) != null)
+                  _DetailItem(
+                    icon: Icons.notes_rounded,
+                    label: 'Notes',
+                    value: _notesOf(item.notes)!,
                   ),
                 // Valuation Directorate valuation, for comparison.
                 if (() {
@@ -5604,6 +5612,32 @@ bool _hasFinalDisposition(PackageModel pkg, String itemId) {
 bool _isForfeitStatusLocal(String? s) {
   final v = (s ?? '').trim().toLowerCase();
   return v == 'forfeit' || v == 'forfeited' || v == 'forfiet';
+}
+
+/// Receipt/Notes are stored combined as "Receipt No: <no> | Notes: <notes>".
+/// [_receiptNoOf] returns just the number; [_notesOf] returns just the notes.
+/// Both handle a plain string (no prefix) gracefully.
+String? _receiptNoOf(String? raw) {
+  final s = raw?.trim();
+  if (s == null || s.isEmpty) return null;
+  final m = RegExp(r'Receipt No:\s*([^|]+)', caseSensitive: false)
+      .firstMatch(s);
+  if (m != null) {
+    final v = m.group(1)!.trim();
+    return v.isEmpty ? null : v;
+  }
+  // No "Receipt No:" prefix — treat the part before any "| Notes:" as the no.
+  final v = s.split(RegExp(r'\|?\s*Notes:', caseSensitive: false)).first.trim();
+  return v.isEmpty ? null : v;
+}
+
+String? _notesOf(String? raw) {
+  final s = raw?.trim();
+  if (s == null || s.isEmpty) return null;
+  final m =
+      RegExp(r'Notes:\s*(.+)$', caseSensitive: false).firstMatch(s);
+  final v = m?.group(1)?.trim();
+  return (v == null || v.isEmpty) ? null : v;
 }
 
 /// True if the highlighted entry is itself an abandon/forfeit disposition —

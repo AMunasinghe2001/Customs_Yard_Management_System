@@ -398,6 +398,10 @@ class _ValuationRequestCard extends ConsumerWidget {
                         fixedWidth: 64,
                         numeric: true),
                     DataColumn2(
+                        label: Center(child: Text('Value')),
+                        size: ColumnSize.S,
+                        fixedWidth: 130),
+                    DataColumn2(
                         label: Text('Disposition'),
                         size: ColumnSize.S,
                         fixedWidth: 130),
@@ -442,6 +446,18 @@ class _ValuationRequestCard extends ConsumerWidget {
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,
                               fontSize: 12))),
+                      DataCell(Center(child: Builder(builder: (_) {
+                        // SR-form declared value (unit value × qty) — reference
+                        // figure, distinct from the valuation cost set below.
+                        final srUnit = pkgItem?.unitValue ?? 0;
+                        final srTotal = srUnit * displayQty;
+                        return Text(
+                            'LKR ${NumberFormat('#,##0').format(srTotal)}',
+                            style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 12));
+                      }))),
                       DataCell(_DispoChip(disposition: it.disposition)),
                       DataCell(it.valuationCost != null
                           ? Column(
@@ -732,6 +748,11 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
               final displayQty = pkgItem != null
                   ? pkgItem.quantity
                   : it.totalQuantity;
+              // SR-form declared value (unit value × qty) — a reference for the
+              // valuation officer, distinct from the valuation cost they set.
+              final srUnitValue = pkgItem?.unitValue ?? 0;
+              final srTotalValue = srUnitValue * displayQty;
+              final valueFmt = NumberFormat('#,##0');
               return Row(children: [
                 Expanded(
                   child: Column(
@@ -764,6 +785,15 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
                         Text('Qty $displayQty',
                             style: TextStyle(
                                 color: context.colors.textMuted,
+                                fontSize: 11)),
+                        const Gap(10),
+                        Icon(Icons.sell_rounded,
+                            size: 12, color: context.colors.textMuted),
+                        const Gap(4),
+                        Text('Value LKR ${valueFmt.format(srTotalValue)}',
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontWeight: FontWeight.w600,
                                 fontSize: 11)),
                       ]),
                     ],

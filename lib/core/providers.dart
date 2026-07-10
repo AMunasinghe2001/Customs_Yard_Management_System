@@ -308,7 +308,7 @@ final onlineProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
     // Recent PAST heartbeat only (0..90s). A future timestamp (from an old
     // local-time-tagged-UTC row) must not count — it would pass `< 90` forever.
     final diff = now.difference(p.lastSeenAt!).inSeconds;
-    return diff >= 0 && diff < 90;
+    return diff >= 0 && diff < 150;
   }).toList();
 });
 
@@ -341,23 +341,33 @@ final myYardOnlineProfilesProvider =
     StreamProvider<List<ProfileModel>>((ref) async* {
   final me = ref.watch(currentProfileProvider);
   final myYard = me?.yard;
+  // Only the columns the online list needs (created_at/full_name/role are
+  // required by fromJson). Projecting keeps each poll tiny at scale.
+  const cols =
+      'id, full_name, role, yard, last_seen_at, profile_image_url, created_at';
   List<ProfileModel> last = const [];
   while (true) {
     try {
-      final data = await supabase.from('profiles').select();
+      // SERVER-SIDE filter to this yard + yard roles only, so with 300 users
+      // across 20 yards each client pulls just its own ~15 rows, not all 300.
+      final query = supabase
+          .from('profiles')
+          .select(cols)
+          .inFilter('role', ['admin', 'officer']);
+      final data = await (myYard != null
+          ? query.eq('yard', myYard)
+          : query);
       final now = DateTime.now();
       last = (data as List)
           .map((j) => ProfileModel.fromJson(j as Map<String, dynamic>))
           .where((p) {
-        if (!p.isYardStaff) return false; // officers + admins only
-        if (myYard != null && p.yard != myYard) return false;
         if (me != null && p.id == me.id) return true; // always myself
         if (p.lastSeenAt == null) return false;
         final diff = now.difference(p.lastSeenAt!).inSeconds;
         // Must be a RECENT past beat. A future timestamp (diff < 0) is bogus —
         // e.g. an old row written as local-time-tagged-UTC — and would otherwise
         // pass `< 90` forever, pinning a ghost online. Reject it.
-        return diff >= 0 && diff < 90;
+        return diff >= 0 && diff < 150;
       }).toList();
       yield last;
     } catch (_) {

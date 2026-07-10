@@ -550,6 +550,8 @@ class _DispositionCategoryScreenState
                                         packageItemId: row.entry?.packageItemId,
                                         receipt: _parseSaleReceipt(
                                             row.entry?.returnNotes),
+                                        qty: row.entry?.itemCount ??
+                                            row.item?.quantity,
                                       )),
                                     if (widget.finalTag == 'SOLD')
                                       DataCell(_SaleFinancialsCell(
@@ -569,6 +571,8 @@ class _DispositionCategoryScreenState
                                       DataCell(_DestructionFinancialsCell(
                                         package: row.package,
                                         packageItemId: row.entry?.packageItemId,
+                                        qty: row.entry?.itemCount ??
+                                            row.item?.quantity,
                                       )),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(_DestructionPriceCell(
@@ -680,8 +684,11 @@ class _SaleValuationCell extends ConsumerWidget {
   /// Pins the exact TSI row when an item was sold across several partial sales
   /// (same package_item_id, distinct qty/valuation per sale).
   final String? receipt;
+  /// The quantity shown in the table's Qty column — the valuation must multiply
+  /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
+  final int? qty;
   const _SaleValuationCell(
-      {required this.package, this.packageItemId, this.receipt});
+      {required this.package, this.packageItemId, this.receipt, this.qty});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final key = '${package.id}|${packageItemId ?? ''}|${receipt ?? ''}';
@@ -696,21 +703,23 @@ class _SaleValuationCell extends ConsumerWidget {
         if (unitCost == null || fp == null) {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
-        final int qty;
-        if (fp.entryQty != null) {
-          qty = fp.entryQty!;
+        final int effQty;
+        if (qty != null && qty! > 0) {
+          effQty = qty!;
+        } else if (fp.entryQty != null) {
+          effQty = fp.entryQty!;
         } else if (fp.itemId != null) {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .where((i) => i.id == fp.itemId)
                   .firstOrNull
                   ?.quantity ??
               1;
         } else {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .fold<int>(0, (s, i) => s + i.quantity) ??
               1;
         }
-        final total = unitCost * qty;
+        final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -722,7 +731,7 @@ class _SaleValuationCell extends ConsumerWidget {
                     color: context.colors.primaryGold,
                     fontWeight: FontWeight.w700,
                     fontSize: 12)),
-            Text('@ ${fmt.format(unitCost)} × $qty',
+            Text('@ ${fmt.format(unitCost)} × $effQty',
                 style: TextStyle(
                     fontSize: 10, color: context.colors.textMuted)),
           ],
@@ -762,8 +771,11 @@ class _DestructionPriceCell extends ConsumerWidget {
 class _DestructionFinancialsCell extends ConsumerWidget {
   final PackageModel package;
   final String? packageItemId;
+  /// The quantity shown in the table's Qty column — the valuation must multiply
+  /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
+  final int? qty;
   const _DestructionFinancialsCell(
-      {required this.package, this.packageItemId});
+      {required this.package, this.packageItemId, this.qty});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final key = '${package.id}|${packageItemId ?? ''}';
@@ -778,21 +790,23 @@ class _DestructionFinancialsCell extends ConsumerWidget {
         if (unitCost == null || fp == null) {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
-        final int qty;
-        if (fp.entryQty != null) {
-          qty = fp.entryQty!;
+        final int effQty;
+        if (qty != null && qty! > 0) {
+          effQty = qty!;
+        } else if (fp.entryQty != null) {
+          effQty = fp.entryQty!;
         } else if (fp.itemId != null) {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .where((i) => i.id == fp.itemId)
                   .firstOrNull
                   ?.quantity ??
               1;
         } else {
-          qty = fp.packageDetails?.items
+          effQty = fp.packageDetails?.items
                   .fold<int>(0, (s, i) => s + i.quantity) ??
               1;
         }
-        final total = unitCost * qty;
+        final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -801,7 +815,7 @@ class _DestructionFinancialsCell extends ConsumerWidget {
           children: [
             Text('Rs ${fmt.format(total)}',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('@ ${fmt.format(unitCost)} × $qty',
+            Text('@ ${fmt.format(unitCost)} × $effQty',
                 style: TextStyle(
                     fontSize: 11, color: context.colors.textMuted)),
           ],
@@ -866,12 +880,20 @@ String? _parseSaleReceipt(String? returnNotes) {
   return m?.group(1)?.trim();
 }
 
-/// Parse the receipt from a "[FINAL:DESTROYED] — Receipt/Notes: <no>" note.
+/// The receipt NUMBER only for the Destroyed table's "Receipt No" column.
+/// The stored note can be "[FINAL:DESTROYED] — Receipt/Notes: Receipt No: <no>
+/// | Notes: <notes>", so we peel the disposition tag AND the inner "Receipt No:"
+/// prefix, and drop any "| Notes:" tail — leaving just the number.
 String? _parseDestroyReceipt(String? returnNotes) {
   if (returnNotes == null) return null;
-  final m = RegExp(r'Receipt/Notes:\s*([^\|—]+)', caseSensitive: false)
-      .firstMatch(returnNotes);
-  return m?.group(1)?.trim();
+  var s = returnNotes;
+  final tag = RegExp(r'Receipt/Notes:\s*(.+)$', caseSensitive: false)
+      .firstMatch(s);
+  if (tag != null) s = tag.group(1)!;
+  // Strip a leading "Receipt No:" and anything from "| Notes:" onward.
+  s = s.replaceFirst(RegExp(r'^\s*Receipt No:\s*', caseSensitive: false), '');
+  s = s.split(RegExp(r'\|?\s*Notes:', caseSensitive: false)).first.trim();
+  return s.isEmpty ? null : s;
 }
 
 /// Read-only sold price + tax total for a sold package. Uses per-item provider.

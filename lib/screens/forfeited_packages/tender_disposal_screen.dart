@@ -260,7 +260,7 @@ class _TenderDisposalScreenState
                     var visible = sales
                         .where((s) =>
                             myYard == null ||
-                            s.items.any((i) => i.yard == myYard))
+                            s.items.any((i) => i.effectiveYard == myYard))
                         .toList();
 
                     final q = search.toLowerCase();

@@ -70,9 +70,11 @@ class _AppShellState extends ConsumerState<AppShell> {
   void initState() {
     super.initState();
 
-    // Heartbeat every 45s. Combined with the ~90s online window, a session that
-    // dies without a clean close drops off within ~90s; a live session stays on.
-    _heartbeatTimer = Timer.periodic(const Duration(seconds: 45), (timer) {
+    // Heartbeat every 2 minutes. Clean sign-out / window-close already null
+    // last_seen for INSTANT offline, so the heartbeat only exists to catch
+    // crashes/task-kills — it doesn't need to be frequent. Keeping it at 2 min
+    // (not seconds) cuts profile writes + realtime fan-out ~3x at 300 users.
+    _heartbeatTimer = Timer.periodic(const Duration(minutes: 2), (timer) {
       if (mounted) {
         ref.read(authServiceProvider).updateHeartbeat();
       }

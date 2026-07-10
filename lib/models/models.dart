@@ -1133,6 +1133,11 @@ class TenderSaleItemModel {
           : null,
     );
   }
+
+  /// The yard this tender item belongs to; falls back to the forfeited package's
+  /// yard when the `yard` column is empty (mirrors [DestructionItemModel]).
+  String? get effectiveYard =>
+      yard.isNotEmpty ? yard : forfeited?.yard;
 }
 
 class TenderSaleModel {
@@ -1309,6 +1314,13 @@ class DestructionItemModel {
           : null,
     );
   }
+
+  /// The yard this destruction item belongs to. Older `destruction_items` rows
+  /// may have an empty `yard` column, which would wrongly drop the item from a
+  /// yard's view-only Destruction Sale list — fall back to the forfeited
+  /// package's yard so those rows stay visible (mirrors the Tender Sale page).
+  String? get effectiveYard =>
+      yard.isNotEmpty ? yard : forfeited?.yard;
 }
 
 class DestructionModel {
