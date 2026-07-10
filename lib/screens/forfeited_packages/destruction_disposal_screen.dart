@@ -222,18 +222,6 @@ class _DestructionDisposalScreenState
                       error: e,
                       onRetry: () => ref.refresh(destructionsProvider)),
                   data: (sales) {
-                    // TEMP DIAGNOSTIC — remove after confirming yard matching.
-                    debugPrint('[destruction] myYard="$myYard" '
-                        'sales=${sales.length}');
-                    for (final s in sales) {
-                      for (final i in s.items) {
-                        debugPrint('  sale=${s.saleNumber} '
-                            'item.yard="${i.yard}" '
-                            'forfeited.yard="${i.forfeited?.yard}" '
-                            'effectiveYard="${i.effectiveYard}" '
-                            'destroyed=${i.destroyed}');
-                      }
-                    }
                     // Keep only sales with at least one package from this yard.
                     // Use effectiveYard so rows whose destruction_items.yard is
                     // empty (older data) still match via the forfeited package.

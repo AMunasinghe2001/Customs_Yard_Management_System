@@ -525,7 +525,9 @@ bool _isSoldEntry(WarehouseEntryModel e) {
 String _timeOfDayToHHmm(TimeOfDay t) =>
     '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-/// The reason shown in the disposal tables' "Forfeit Reason" column. Prefers
+/// The reason shown in the disposal tables' "Reason" column. The column is
+/// generic (not "Forfeit Reason") because an item's origin may be Forfeit,
+/// Abandoned or Other — the Source chip already conveys which. Prefers
 /// the item's own SR-form hold reasons (the clean text the officer entered,
 /// e.g. "No phytosanitary certificate"); falls back to the forfeited package's
 /// stored reason. Strips any synthetic "Held — " / "Held: " prefix that older
@@ -2067,7 +2069,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                           size: ColumnSize.S,
                           fixedWidth: 56),
                       DataColumn2(
-                          label: Text('Forfeit Reason'), size: ColumnSize.M),
+                          label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
                       DataColumn2(
                           label: Text('Goods Description'), size: ColumnSize.L),
@@ -2536,7 +2538,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     DataColumn2(label: Text('Source'), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
-                    DataColumn2(label: Text('Forfeit Reason'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('Goods Description'), size: ColumnSize.M),
@@ -3838,18 +3840,22 @@ class DestructionCard extends ConsumerWidget {
                     DataColumn2(label: Text('Source'), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
-                    DataColumn2(label: Text('Forfeit Reason'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Text('Goods Description'), size: ColumnSize.L),
+                        label: Text('Goods Description'), size: ColumnSize.M),
                     // Yard shows the SR item Value; Central shows the valuation.
+                    // Fixed + centered so it sits snug next to Status (no gap) —
+                    // mirrors the Tender Sale table for a consistent layout.
                     DataColumn2(
-                        label: Text(readOnly ? 'Value' : 'Valuation'),
-                        size: ColumnSize.M),
+                        label: Center(
+                            child: Text(readOnly ? 'Value' : 'Valuation')),
+                        size: ColumnSize.S,
+                        fixedWidth: 120),
                     DataColumn2(
                         label: Center(child: Text('Status')),
-                        size: ColumnSize.M,
-                        fixedWidth: 140),
+                        size: ColumnSize.S,
+                        fixedWidth: 120),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
@@ -3896,10 +3902,12 @@ class DestructionCard extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12)),
                       )),
-                      DataCell(_ValuationCell(
-                          f: f,
-                          useItemValue: readOnly,
-                          qty: f?.entryQty ?? r.item?.quantity)),
+                      DataCell(Center(
+                          child: _ValuationCell(
+                        f: f,
+                        useItemValue: readOnly,
+                        qty: f?.entryQty ?? r.item?.quantity,
+                      ))),
                       DataCell(Center(
                         child: r.saleItem.destroyed
                             ? Container(
@@ -4921,7 +4929,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                           size: ColumnSize.S,
                           fixedWidth: 56),
                       DataColumn2(
-                          label: Text('Forfeit Reason'), size: ColumnSize.M),
+                          label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
                       DataColumn2(
                           label: Text('Goods Description'), size: ColumnSize.L),

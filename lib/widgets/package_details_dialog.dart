@@ -534,13 +534,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
       BuildContext context, WarehouseEntryModel entry, String dispositionType,
       {int? preselectedQty, List<int>? packageNumbers}) async {
     final notesCtrl = TextEditingController();
-    // Forfeit date — defaults to today, editable (a back-date is allowed). The
-    // forfeited date and its 30-day appeal deadline are anchored to this.
+    // Every disposition captures the date the action took place — defaults to
+    // today, back-dating allowed, future dates blocked. For Forfeit this date
+    // also anchors the 30-day appeal deadline; for others it's the record date
+    // (Re-export date, Abandon date, Destroy date, …).
     final isForfeit = _isForfeitStatusLocal(dispositionType);
-    DateTime forfeitDate = DateTime.now();
-    final forfeitDateCtrl = TextEditingController(
+    DateTime dispositionDate = DateTime.now();
+    final dispositionDateCtrl = TextEditingController(
         text:
-            '${forfeitDate.year}-${forfeitDate.month.toString().padLeft(2, '0')}-${forfeitDate.day.toString().padLeft(2, '0')}');
+            '${dispositionDate.year}-${dispositionDate.month.toString().padLeft(2, '0')}-${dispositionDate.day.toString().padLeft(2, '0')}');
+    // The date field's label follows the action, e.g. "Re-export Date".
+    final dateLabel = isForfeit ? 'Forfeit Date' : '$dispositionType Date';
 
     final Map<String, _DispositionMeta> meta = {
       'Forfeit': _DispositionMeta(
@@ -597,34 +601,34 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           ),
           // Forfeit date picker (Forfeit only). Defaults to today; a back-date is
           // allowed. The 30-day appeal deadline is counted from this date.
-          if (isForfeit) ...[
-            const Gap(16),
-            TextFormField(
-              controller: forfeitDateCtrl,
-              readOnly: true,
-              decoration: InputDecoration(
-                labelText: 'Forfeit Date',
-                isDense: true,
-                suffixIcon: Icon(Icons.calendar_month, color: m.color),
-              ),
-              onTap: () async {
-                final picked = await showDialog<DateTime>(
-                  context: ctx,
-                  builder: (_) => OneTapDatePicker(
-                    initialDate: forfeitDate,
-                    lastDate: DateTime.now(),
-                  ),
-                );
-                if (picked != null) {
-                  setLocalState(() {
-                    forfeitDate = picked;
-                    forfeitDateCtrl.text =
-                        '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                  });
-                }
-              },
+          // Date picker for EVERY disposition — defaults to today, future dates
+          // blocked (lastDate = now), same one-tap calendar as the SR form.
+          const Gap(16),
+          TextFormField(
+            controller: dispositionDateCtrl,
+            readOnly: true,
+            decoration: InputDecoration(
+              labelText: dateLabel,
+              isDense: true,
+              suffixIcon: Icon(Icons.calendar_month, color: m.color),
             ),
-          ],
+            onTap: () async {
+              final picked = await showDialog<DateTime>(
+                context: ctx,
+                builder: (_) => OneTapDatePicker(
+                  initialDate: dispositionDate,
+                  lastDate: DateTime.now(),
+                ),
+              );
+              if (picked != null) {
+                setLocalState(() {
+                  dispositionDate = picked;
+                  dispositionDateCtrl.text =
+                      '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                });
+              }
+            },
+          ),
           if (preselectedQty != null)
             Padding(
               padding: const EdgeInsets.only(bottom: 4),
@@ -680,7 +684,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           notes: notesCtrl.text.trim().isEmpty ? null : notesCtrl.text.trim(),
           qty: preselectedQty,
           packageNumbers: packageNumbers,
-          forfeitDate: isForfeit ? forfeitDate : null,
+          // Every disposition now carries its chosen date (stored as returned_at;
+          // for Forfeit it also anchors the appeal deadline).
+          forfeitDate: dispositionDate,
         );
     // Refresh so the (still open) actions dialog recomputes processed slots.
     ref.read(packagesRefreshTriggerProvider.notifier).trigger();
@@ -909,11 +915,25 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         }
       }
     }
-    // The actual release date is stored on the entry as returnedAt.
+    // The actual disposition date is stored on the entry as returnedAt.
     final String? releaseDateText = widget.highlightEntry?.returnedAt != null
         ? DateFormat('yyyy-MM-dd')
             .format(widget.highlightEntry!.returnedAt!)
         : null;
+    // Label that date by the disposition it records — the return_notes carry a
+    // "[FINAL:RE-EXPORTED]" / "[FINAL:DESTROYED]" / "[RELEASED]" … tag, so the
+    // popup reads "Re-export Date" / "Destroyed Date" instead of always
+    // "Release Date".
+    final String dispoDateLabel = (() {
+      final n = widget.highlightEntry?.returnNotes?.toUpperCase() ?? '';
+      if (n.contains('RE-EXPORT')) return 'Re-export Date';
+      if (n.contains('DESTROY')) return 'Destroyed Date';
+      if (n.contains('SOLD') || n.contains('SALE')) return 'Sold Date';
+      if (n.contains('FORFEIT')) return 'Forfeit Date';
+      if (n.contains('ABANDON')) return 'Abandoned Date';
+      if (n.contains('OTHER')) return 'Disposition Date';
+      return 'Release Date';
+    })();
     // Warehouse charge counts from the SR-form Entry Date (not the warehouse
     // admit timestamp) → the release date, so the popup matches the release
     // dialog's figure. Falls back to admittedAt if the package has no entry date.
@@ -1658,7 +1678,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         if (releaseDateText != null)
                                           _DetailItem(
                                             icon: Icons.event_available_rounded,
-                                            label: 'Release Date',
+                                            label: dispoDateLabel,
                                             value: releaseDateText,
                                           ),
                                         if (!isNoChargeContext &&
@@ -3340,6 +3360,16 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                       ? context.colors.successGreen
                       : context.colors.dangerRed,
                 ),
+                // Delivery date shown ONLY once delivered — the timestamp is
+                // captured automatically when Mark Delivered is pressed.
+                if (delivered && saleItem.deliveredAt != null)
+                  _DetailItem(
+                    icon: Icons.event_available_rounded,
+                    label: 'Delivery Date',
+                    value: DateFormat('yyyy-MM-dd')
+                        .format(saleItem.deliveredAt!),
+                    valueColor: context.colors.successGreen,
+                  ),
                 // Only show the action while the package is still pending —
                 // once delivered there is no "Mark as Not Delivered" revert.
                 if (canEdit && !delivered) ...[
@@ -3515,6 +3545,16 @@ class _DestructionDeliverySectionState
                       ? context.colors.successGreen
                       : context.colors.dangerRed,
                 ),
+                // Delivery date shown ONLY once delivered — captured
+                // automatically when Mark Delivered is pressed.
+                if (delivered && item.deliveredAt != null)
+                  _DetailItem(
+                    icon: Icons.event_available_rounded,
+                    label: 'Delivery Date',
+                    value: DateFormat('yyyy-MM-dd')
+                        .format(item.deliveredAt!),
+                    valueColor: context.colors.successGreen,
+                  ),
                 if (canEdit && !delivered) ...[
                   const Gap(10),
                   SizedBox(

@@ -1040,9 +1040,16 @@ class WarehouseService {
     String? notes,
     int? qty,
     List<int>? packageNumbers,
+    // The date the disposition took place (chosen in the dialog, defaults to
+    // today). Stored as returned_at; for Forfeit it also anchors the appeal
+    // deadline. Falls back to now when not provided.
     DateTime? forfeitDate,
   }) async {
     final user = supabase.auth.currentUser;
+    // returned_at reflects the officer-chosen disposition date (not the moment
+    // the button was pressed), so back-dated actions record correctly.
+    final returnedAtIso =
+        (forfeitDate ?? DateTime.now()).toIso8601String();
 
     final entryRes = await supabase
         .from('warehouse_entries')
@@ -1077,7 +1084,7 @@ class WarehouseService {
         'admitted_at': entryRes['admitted_at'],
         'daily_rate': entryRes['daily_rate'],
         'is_returned': true,
-        'returned_at': DateTime.now().toIso8601String(),
+        'returned_at': returnedAtIso,
         'returned_by': user?.id,
         'return_notes': returnNotes,
       });
@@ -1103,7 +1110,7 @@ class WarehouseService {
         'admitted_at': entryRes['admitted_at'],
         'daily_rate': entryRes['daily_rate'],
         'is_returned': true,
-        'returned_at': DateTime.now().toIso8601String(),
+        'returned_at': returnedAtIso,
         'returned_by': user?.id,
         'return_notes': returnNotes,
       });

@@ -230,6 +230,31 @@ class PackageModel {
         .map((e) => e.returnedAt!)
         .reduce((a, b) => a.isAfter(b) ? a : b);
   }
+
+  /// Whether a SPECIFIC package item has genuinely been forfeited — used to
+  /// filter multi-item packages whose forfeited_packages row is package-level
+  /// (item_id == null) so it doesn't blanket-cover items that are still on
+  /// Detain. An item counts as forfeited when EITHER its live status is a
+  /// forfeit status, OR it has a warehouse entry tagged "[FORFEIT" / "[CONFISCAT".
+  /// The single source of truth for "which items of this package are forfeited",
+  /// shared by the yard Forfeited table and the Appeal Directorate list.
+  bool isItemForfeited(String itemId) {
+    final item = items.where((i) => i.id == itemId).firstOrNull;
+    final st = (item?.status ?? '').trim().toLowerCase();
+    if (st == 'forfeit' || st == 'forfeited' || st == 'forfiet' ||
+        st == 'confiscated') {
+      return true;
+    }
+    return warehouseEntries.any((e) {
+      if (e.packageItemId != itemId || !e.isReturned) return false;
+      final n = (e.returnNotes ?? '').trim().toUpperCase();
+      return n.startsWith('[FORFEIT') || n.startsWith('[CONFISCAT');
+    });
+  }
+
+  /// The subset of item ids that are genuinely forfeited (see [isItemForfeited]).
+  List<String> get forfeitedItemIds =>
+      items.where((i) => isItemForfeited(i.id)).map((i) => i.id).toList();
 }
 
 class PackageItem {

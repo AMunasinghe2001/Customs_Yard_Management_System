@@ -148,6 +148,17 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
     for (final fp in packages) {
       final pkg = fp.packageDetails;
       final items = pkg?.items ?? [];
+      // TEMP DIAGNOSTIC — remove after confirming.
+      if (fp.srNumber.contains('/11/') || fp.srNumber.contains('/12/')) {
+        debugPrint('[yfp] sr=${fp.srNumber} fp.itemId=${fp.itemId} '
+            'items=${items.length} expired=${fp.isAppealExpired} '
+            'appealHold=${fp.appealHold} decision=${fp.appealDecision}');
+        for (final it in items) {
+          debugPrint('   item="${it.itemName}" id=${it.id} '
+              'status="${it.status}" '
+              'isForfeited=${pkg?.isItemForfeited(it.id)}');
+        }
+      }
       bool addedAny = false;
       // True once at least one item has been resolved to a final disposition
       // (sold / destroyed / re-exported / …). Such a package has left the
@@ -155,9 +166,13 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
       bool anyItemFinalized = false;
 
       for (final item in items) {
-        // Does this forfeit FP cover this item? A per-item FP names it directly;
-        // a package-level FP (item_id == null) covers EVERY item in the package.
-        final fpCoversThisItem = fp.itemId == item.id || fp.itemId == null;
+        // Does this forfeit FP cover this item? A per-item FP names it directly.
+        // A package-level FP (item_id == null) is legacy and must NOT blanket
+        // every item — items are disposed individually, so one can be forfeited
+        // while a sibling stays on Detain. A package-level FP therefore only
+        // covers items with genuine forfeit evidence (isItemForfeited).
+        final fpCoversThisItem = fp.itemId == item.id ||
+            (fp.itemId == null && (pkg?.isItemForfeited(item.id) ?? false));
         // The item's live status is still "held" (detain/held) — i.e. it has NOT
         // genuinely been sold/destroyed/released/re-exported.
         final st = (item.status ?? '').trim().toLowerCase();
