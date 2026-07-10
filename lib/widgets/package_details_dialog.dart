@@ -773,7 +773,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                 Navigator.pop(ctx); // close the details dialog
                 widget.onSaleOrDestroyRequest!(disposition);
               },
-        onConfirm: (String type, String? notes) async {
+        onConfirm: (String type, String? notes, DateTime date) async {
           Navigator.pop(dialogCtx);
           try {
             await ref.read(warehouseServiceProvider).recordFinalDisposition(
@@ -781,7 +781,16 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   dispositionType: type,
                   qty: qty,
                   notes: notes,
+                  dispositionDate: date,
                 );
+            // Refresh every affected view so the item leaves the Forfeited /
+            // Other-manageable list and appears on its outcome page — the item's
+            // status just changed but no realtime fires on package_items alone.
+            ref.read(packagesRefreshTriggerProvider.notifier).trigger();
+            ref.invalidate(livePackagesProvider);
+            ref.invalidate(packageDataProvider(widget.package.id));
+            ref.invalidate(forfeitedPackagesProvider);
+            ref.invalidate(requestableForfeitedPackagesProvider);
             if (mounted) {
               material.ScaffoldMessenger.of(ctx).showSnackBar(
                 material.SnackBar(
@@ -859,10 +868,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                 orElse: () => p.items.first)
             : null);
 
+    // Show ONLY the item this popup is about whenever it's known (via
+    // highlightItemId OR a highlightEntry) — a decided/forfeited item may have
+    // no warehouse entry, so relying on highlightEntry alone would fall back to
+    // listing every sibling item. If no specific item is known, show all.
     final legacyItems =
-        (widget.highlightEntry != null && highlightedItem != null)
-            ? [highlightedItem]
-            : p.items;
+        highlightedItem != null ? [highlightedItem] : p.items;
     final legacyEntries =
         (widget.useLegacySummary && widget.highlightEntry != null)
             ? [widget.highlightEntry!]
@@ -5736,6 +5747,158 @@ Set<int> _computeProcessedSlots(
 
 // ── Final Disposition Dialog ──────────────────────────────────────────────────
 
+/// Result of the per-action final-disposition confirm dialog.
+class _FinalActionConfirmResult {
+  final DateTime date;
+  final String notes;
+  const _FinalActionConfirmResult(this.date, this.notes);
+}
+
+/// Per-action confirmation for a Release / Re-export / Other final disposition —
+/// mirrors the warehouse action final step: a date picker (defaults to today,
+/// future blocked, same one-tap calendar as the SR form) plus optional notes.
+class _FinalActionConfirmDialog extends StatefulWidget {
+  final String label; // 'Release' / 'Re-export' / 'Other: nnn'
+  final IconData icon;
+  final Color color;
+  final String description;
+  final int qty;
+  const _FinalActionConfirmDialog({
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.description,
+    required this.qty,
+  });
+
+  @override
+  State<_FinalActionConfirmDialog> createState() =>
+      _FinalActionConfirmDialogState();
+}
+
+class _FinalActionConfirmDialogState extends State<_FinalActionConfirmDialog> {
+  DateTime _date = DateTime.now();
+  late final TextEditingController _dateCtrl;
+  final _notesCtrl = TextEditingController();
+
+  String _fmt(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  @override
+  void initState() {
+    super.initState();
+    _dateCtrl = TextEditingController(text: _fmt(_date));
+  }
+
+  @override
+  void dispose() {
+    _dateCtrl.dispose();
+    _notesCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return material.AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Row(children: [
+        Icon(widget.icon, color: widget.color, size: 22),
+        const Gap(10),
+        Flexible(child: Text('${widget.label} Package Item')),
+      ]),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: widget.color.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: widget.color.withOpacity(0.3)),
+            ),
+            child: Text(widget.description,
+                style: TextStyle(color: widget.color, fontSize: 13)),
+          ),
+          const Gap(16),
+          // Date — defaults to today, future blocked, one-tap calendar.
+          TextFormField(
+            controller: _dateCtrl,
+            readOnly: true,
+            decoration: InputDecoration(
+              labelText: '${widget.label} Date',
+              isDense: true,
+              suffixIcon: Icon(Icons.calendar_month, color: widget.color),
+            ),
+            onTap: () async {
+              final picked = await showDialog<DateTime>(
+                context: context,
+                builder: (_) => OneTapDatePicker(
+                  initialDate: _date,
+                  lastDate: DateTime.now(),
+                ),
+              );
+              if (picked != null) {
+                setState(() {
+                  _date = picked;
+                  _dateCtrl.text = _fmt(picked);
+                });
+              }
+            },
+          ),
+          const Gap(12),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: widget.color.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Packages selected:',
+                    style: TextStyle(
+                        fontSize: 12, color: widget.color.withOpacity(0.7))),
+                Text('${widget.qty}',
+                    style: TextStyle(
+                        fontWeight: FontWeight.bold, color: widget.color)),
+              ],
+            ),
+          ),
+          const Gap(12),
+          TextFormField(
+            controller: _notesCtrl,
+            decoration: const InputDecoration(
+              labelText: 'Notes / Remarks (optional)',
+              isDense: true,
+            ),
+            maxLines: 3,
+            minLines: 2,
+            keyboardType: TextInputType.multiline,
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        ElevatedButton.icon(
+          icon: Icon(widget.icon, size: 16),
+          label: Text('Confirm ${widget.label}'),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: widget.color,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: () => Navigator.pop(
+            context,
+            _FinalActionConfirmResult(_date, _notesCtrl.text.trim()),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _FinalActionDef {
   final String type; // RELEASED, SOLD, DESTROYED, RE-EXPORTED, OTHER
   final IconData icon;
@@ -5757,7 +5920,8 @@ class _FinalDispositionDialog extends StatefulWidget {
   final PackageItem item;
   final int qty;
   final bool isOfficer;
-  final Future<void> Function(String type, String? notes) onConfirm;
+  final Future<void> Function(String type, String? notes, DateTime date)
+      onConfirm;
   // When supplied (Forfeited screen), Sale → 'sale' and Destroy → 'destruction'
   // route here to open the Central Disposal request flow instead of writing a
   // [FINAL:…] entry. When null, Sale / Destroy stay disabled.
@@ -5841,6 +6005,35 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
     if (widget.isOfficer) return false;
     if (_requestActions.contains(a.type)) return false;
     return true;
+  }
+
+  /// Opens the per-action confirmation dialog (date + notes) — mirroring the
+  /// warehouse action final step — then records the disposition on that date.
+  /// [otherDetail] carries the custom outcome text for the OTHER action.
+  Future<void> _confirmFinalAction(_FinalActionDef a,
+      {String? otherDetail}) async {
+    final label = otherDetail != null ? 'Other: $otherDetail' : a.label;
+    final result = await showDialog<_FinalActionConfirmResult>(
+      context: context,
+      builder: (_) => _FinalActionConfirmDialog(
+        label: label,
+        icon: a.icon,
+        color: a.color,
+        description: a.description,
+        qty: widget.qty,
+      ),
+    );
+    if (result == null) return;
+    // For OTHER the outcome detail is the note; append any extra remarks.
+    final String? notes;
+    if (otherDetail != null) {
+      notes = result.notes.isEmpty
+          ? otherDetail
+          : '$otherDetail — ${result.notes}';
+    } else {
+      notes = result.notes.isEmpty ? null : result.notes;
+    }
+    await widget.onConfirm(a.type, notes, result.date);
   }
 
   @override
@@ -6025,7 +6218,10 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                             widget.onRequestDisposal!(
                                 a.type == 'SOLD' ? 'sale' : 'destruction');
                           } else {
-                            widget.onConfirm(a.type, null);
+                            // Release / Re-export → per-action confirm dialog
+                            // (date + notes) before recording, like the
+                            // warehouse action final step.
+                            _confirmFinalAction(a);
                           }
                         },
                         child: Padding(
@@ -6134,7 +6330,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                               onPressed: () {
                                 final t = _otherCtrl.text.trim();
                                 if (t.isEmpty) return;
-                                widget.onConfirm('OTHER', t);
+                                _confirmFinalAction(a, otherDetail: t);
                               },
                             ),
                           ],

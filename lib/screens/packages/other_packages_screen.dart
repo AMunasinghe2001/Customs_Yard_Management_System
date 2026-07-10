@@ -72,6 +72,28 @@ bool _isOtherEntry(WarehouseEntryModel e) {
       notes.startsWith('[OTHER ');
 }
 
+/// True if a warehouse entry is a FINAL "Other" disposition ("[FINAL:OTHER]"),
+/// i.e. the terminal custom outcome recorded from the Final Disposition dialog.
+/// These are completed records (read-only) shown in this page's list.
+bool _isFinalOtherEntry(WarehouseEntryModel e) {
+  if (!e.isReturned) return false;
+  final notes = (e.returnNotes ?? '').trim().toUpperCase();
+  return notes.startsWith('[FINAL:OTHER]');
+}
+
+/// The custom outcome label from a "[FINAL:OTHER] — <text>" entry (the text
+/// after the marker, falls back to 'Other').
+String _finalOtherLabel(WarehouseEntryModel e) {
+  final notes = (e.returnNotes ?? '').trim();
+  final m = RegExp(r'^\[FINAL:OTHER\]\s*—\s*(.+)$', caseSensitive: false)
+      .firstMatch(notes);
+  if (m != null) {
+    final t = m.group(1)!.trim();
+    if (t.isNotEmpty) return t;
+  }
+  return 'Other';
+}
+
 /// The custom label from an "[OTHER: <text>] — notes" disposition entry — the
 /// text inside the brackets after the "OTHER:" marker (falls back to 'Other').
 String _otherEntryLabel(WarehouseEntryModel e) {
@@ -244,6 +266,26 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
             reason: ctx?.holdReason ??
                 (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
             officer: ctx?.admittedByName ?? '—',
+          ));
+        }
+
+        // 3. FINAL "Other" outcomes ([FINAL:OTHER]) — the terminal custom
+        //    disposition recorded from the Final Disposition dialog. Shown as
+        //    completed, read-only records (like Released/Sold on their pages).
+        final finalOtherEntries =
+            itemEntries.where(_isFinalOtherEntry).toList();
+        for (final entry in finalOtherEntries) {
+          rows.add(_OtherRow(
+            package: package,
+            item: item,
+            entry: entry,
+            qty: entry.itemCount,
+            date: entry.returnedAt ?? entry.admittedAt,
+            disposition: _finalOtherLabel(entry),
+            reason: entry.holdReason ??
+                (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
+            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
+            completed: true,
           ));
         }
       }
@@ -740,13 +782,16 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                             highlightEntry: row.entry,
                                             highlightItemId: row.item.id,
                                             useLegacySummary: true,
-                                            // "Other" goods have no appeal —
-                                            // disposition allowed immediately.
-                                            // Every listed row is actionable —
-                                            // force the Final Disposition button.
-                                            forceFinalDisposition: true,
-                                            onSaleOrDestroyRequest:
-                                                (disposition) =>
+                                            // Manageable "Other" goods have no
+                                            // appeal — disposition allowed
+                                            // immediately. Completed [FINAL:OTHER]
+                                            // outcomes are read-only (no actions).
+                                            forceFinalDisposition: !row.completed,
+                                            allowFinalDisposition:
+                                                !row.completed,
+                                            onSaleOrDestroyRequest: row.completed
+                                                ? null
+                                                : (disposition) =>
                                                     _requestSingleDisposal(
                                                         row.package,
                                                         disposition,
@@ -843,6 +888,9 @@ class _OtherRow {
   final String disposition; // custom "Other Status" label, or 'Other'
   final String reason;
   final String officer;
+  /// True for a FINAL "Other" outcome ([FINAL:OTHER]) — a completed record that
+  /// is read-only (no further disposal actions).
+  final bool completed;
 
   const _OtherRow({
     required this.package,
@@ -853,6 +901,7 @@ class _OtherRow {
     required this.disposition,
     required this.reason,
     required this.officer,
+    this.completed = false,
   });
 
   String get itemName => item.itemName;

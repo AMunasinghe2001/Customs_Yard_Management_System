@@ -163,12 +163,15 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
         final fpCoversThisItem = fp.itemId == item.id ||
             (fp.itemId == null && (pkg?.isItemForfeited(item.id) ?? false));
         // The item's live status is still "held" (detain/held) — i.e. it has NOT
-        // genuinely been sold/destroyed/released/re-exported.
+        // genuinely reached a final disposition. 'other' is terminal too (a
+        // final "Other" disposition sets status='other'), so a finalised-Other
+        // item leaves the Forfeited table like Sold/Destroyed/etc.
         final st = (item.status ?? '').trim().toLowerCase();
-        final itemStatusLive = !{
-          'sold', 'destroyed', 'released', 'returned',
-          're-export', 're-exported', 'cleared',
-        }.contains(st);
+        final itemStatusLive = !({
+              'sold', 'destroyed', 'released', 'returned',
+              're-export', 're-exported', 'cleared', 'other',
+            }.contains(st) ||
+            st.startsWith('other:'));
         // A held item of a forfeit FP still inside the appeal lifecycle (on hold,
         // window open, or a decision in but no request sent) must stay on the
         // table — even if a stale [FINAL:…] entry lingers from earlier testing.
@@ -686,16 +689,22 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                 package: pkg.packageDetails!,
                                                 storageRate: storageRate,
                                                 highlightEntry: row.entry,
+                                                // Pin the exact item this row is
+                                                // about so the popup shows only
+                                                // it (not every sibling) even
+                                                // when the item has no entry.
+                                                highlightItemId: rowItemId,
                                                 useLegacySummary: true,
                                                 appealDecisionLabel:
-                                                    pkg.hasAppealDecision
-                                                        ? pkg.appealDecisionLabel
+                                                    rowHasDecision
+                                                        ? rowDecisionLabel
                                                         : null,
                                                 // Final disposition once the
-                                                // window has passed OR an appeal
-                                                // decision has been received.
+                                                // window has passed OR a per-item
+                                                // appeal decision was received.
                                                 allowFinalDisposition:
-                                                    pkg.isActionable,
+                                                    pkg.isAppealExpired ||
+                                                        rowHasDecision,
                                                 // Sale / Destroy → disposal
                                                 // request to Central Disposal.
                                                 onSaleOrDestroyRequest:

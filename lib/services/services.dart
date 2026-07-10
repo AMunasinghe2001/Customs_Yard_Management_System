@@ -1175,8 +1175,13 @@ class WarehouseService {
     required String dispositionType, // RELEASED, SOLD, DESTROYED, RE-EXPORTED, OTHER
     required int qty,
     String? notes,
+    // The date the disposition took place (chosen in the confirm dialog).
+    // Stored as returned_at; defaults to now when not supplied.
+    DateTime? dispositionDate,
   }) async {
     final user = supabase.auth.currentUser;
+    final returnedAtIso =
+        (dispositionDate ?? DateTime.now()).toIso8601String();
 
     // Copy package/warehouse context from the item's most recent entry.
     final refEntry = await supabase
@@ -1204,7 +1209,7 @@ class WarehouseService {
         'admitted_at': refEntry['admitted_at'],
         'daily_rate': refEntry['daily_rate'],
         'is_returned': true,
-        'returned_at': DateTime.now().toIso8601String(),
+        'returned_at': returnedAtIso,
         'returned_by': user?.id,
         'return_notes': returnNotes,
       });
@@ -2353,20 +2358,27 @@ class ForfeitedPackageService {
     // applied client-side via [ForfeitedPackageModel.isActionable] so packages
     // that received an appeal DECISION are requestable immediately (no need to
     // wait out the 30-day window).
+    // NOTE: we do NOT filter appeal_hold at the SQL level. The flag is
+    // package-level, so a single held item would wrongly exclude the WHOLE
+    // package — hiding its decided/expired siblings. Holds are enforced PER ITEM
+    // in itemRequestable below instead.
     final fpData = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
             '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
         .eq('source', 'forfeit')
-        .eq('appeal_hold', false)
         .order('appeal_deadline', ascending: true));
 
     const _nonDisposalDecisions = {'RELEASE', 'RE-EXPORT', 'OTHER'};
     // An item is requestable when it can go to a disposal request: the window
     // passed (yard picks the disposition) OR the Appeal Directorate gave it a
-    // SALE/DESTROY decision. A per-item RELEASE/RE-EXPORT/OTHER decision is
-    // handled directly by the yard, so such an item is NOT requestable.
+    // SALE/DESTROY decision. NOT requestable when: it is on appeal hold, or it
+    // has a per-item RELEASE/RE-EXPORT/OTHER decision (handled directly).
     bool itemRequestable(ForfeitedPackageModel f, String itemId) {
+      final held = f.heldItemIds.isNotEmpty
+          ? f.heldItemIds.contains(itemId)
+          : f.appealHold;
+      if (held) return false;
       final dec = (f.appealDecisionForItem(itemId) ?? '').toUpperCase();
       if (_nonDisposalDecisions.contains(dec)) return false;
       return f.isAppealExpired || dec == 'SALE' || dec == 'DESTROY';
