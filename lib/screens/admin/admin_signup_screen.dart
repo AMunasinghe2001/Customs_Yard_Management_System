@@ -271,8 +271,11 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
             ),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 200, height: 200,
-              colorFilter: ColorFilter.mode(context.colors.primaryGold, BlendMode.srcIn),
+            SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+              width: 200, height: 200,
+              // Tinted + currentColor keeps the ship/plane cut-out visible
+              // (colorFilter srcIn would flatten the whole logo to one colour).
+              theme: SvgTheme(currentColor: context.colors.primaryGold),
             ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
             const Gap(36),
             Text('Sri Lanka Customs',
@@ -291,7 +294,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.person_add_rounded, color: context.colors.primaryGold, size: 16),
                 const Gap(8),
-                Text('Admin • Create Account',
+                Text('DC / SDDC • Create Account',
                     style: TextStyle(color: context.colors.primaryGold, fontSize: 14, fontWeight: FontWeight.w600)),
               ]),
             ),
@@ -313,12 +316,12 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                     onPressed: () => context.go('/admin/login'),
                   ),
                   const Gap(8),
-                  Text('Admin Sign Up', style: Theme.of(context).textTheme.headlineMedium),
+                  Text('DC / SDDC Sign Up', style: Theme.of(context).textTheme.headlineMedium),
                 ]).animate().fadeIn(duration: 400.ms),
                 const Gap(4),
                 Padding(
                   padding: const EdgeInsets.only(left: 48),
-                  child: Text('Create an administrator account',
+                  child: Text('Create a DC / SDDC account',
                       style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
                 ).animate().fadeIn(delay: 100.ms),
                 const Gap(8),

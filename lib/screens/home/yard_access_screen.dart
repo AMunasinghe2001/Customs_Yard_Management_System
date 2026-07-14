@@ -146,12 +146,12 @@ class YardAccessScreen extends ConsumerWidget {
 
                       const Gap(14),
 
-                      // Admin tile
+                      // DC / SDDC tile
                       _RoleTile(
                         icon: Icons.admin_panel_settings_rounded,
-                        title: 'Administrator',
+                        title: 'DC / SDDC',
                         subtitle:
-                            'Manage yard operations, officers & system settings',
+                            'Deputy / Senior Deputy Commissioner — full yard control',
                         tag: 'Full yard control',
                         accent: context.colors.primaryGold,
                         onSignIn: () => context.go('/admin/login'),

@@ -190,7 +190,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.admin_panel_settings_rounded, color: context.colors.primaryGold, size: 16),
                 const Gap(8),
-                Text('Admin Portal',
+                Text('DC / SDDC Portal',
                     style: TextStyle(color: context.colors.primaryGold, fontSize: 14, fontWeight: FontWeight.w600)),
               ]),
             ).animate().fadeIn(delay: 300.ms),
@@ -209,15 +209,16 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                   Row(children: [
                     IconButton(
                       icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
-                      onPressed: () => context.go('/'),
+                      // Back to the Yard Access page (Officer / DC-SDDC tiles).
+                      onPressed: () => context.go('/yard-access'),
                     ),
                     const Gap(8),
-                    Text('Admin Sign In', style: Theme.of(context).textTheme.headlineMedium),
+                    Text('DC / SDDC Sign In', style: Theme.of(context).textTheme.headlineMedium),
                   ]).animate().fadeIn(duration: 400.ms),
                   const Gap(8),
                   Padding(
                     padding: const EdgeInsets.only(left: 48),
-                    child: Text('Restricted to administrators only',
+                    child: Text('Restricted to DC / SDDC officers only',
                         style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
                   ).animate().fadeIn(delay: 100.ms),
                   const Gap(40),

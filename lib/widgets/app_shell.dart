@@ -173,7 +173,12 @@ class _AppShellState extends ConsumerState<AppShell> {
                         Text(profile.fullName,
                             style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
                             overflow: TextOverflow.ellipsis),
-                        Text(profile.role.toUpperCase(),
+                        Text(
+                            // Admins are the yard's DC / SDDC officers — show
+                            // that title instead of the raw 'ADMIN' role.
+                            profile.isAdmin
+                                ? 'DC / SDDC'
+                                : profile.role.toUpperCase(),
                             style: TextStyle(color: context.colors.primaryGold, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1)),
                           Text('Salary No: ${profile.badgeNumber}',
                               style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11)),

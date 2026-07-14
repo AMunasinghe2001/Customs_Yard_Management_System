@@ -144,7 +144,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [context.colors.primaryNavy, context.colors.customsBlue, context.colors.customsBlueLight],
+              // Match the dark navy used by the other login screens (admin /
+              // disposal / appeal) instead of the lighter customsBlueLight.
+              colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.customsBlueDark],
             ),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -191,7 +193,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Row(children: [
                     IconButton(
                       icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
-                      onPressed: () => context.go('/'),
+                      // Back to the Yard Access page (Officer / DC-SDDC tiles),
+                      // not the portal home.
+                      onPressed: () => context.go('/yard-access'),
                     ),
                     const Gap(8),
                     Text('Officer Sign In', style: Theme.of(context).textTheme.headlineMedium),
