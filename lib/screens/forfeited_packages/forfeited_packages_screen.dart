@@ -14,6 +14,7 @@ import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'disposal_request_dialog.dart';
+import '../../widgets/tooltip_text.dart';
 
 class _StatChip extends StatelessWidget {
   final String label;
@@ -544,18 +545,18 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                 return null;
                               }),
                               cells: [
-                                DataCell(Text(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
-                                DataCell(Text(row.itemName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500))),
-                                DataCell(Text(
+                                DataCell(TooltipText(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
+                                DataCell(TooltipText(row.itemName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500))),
+                                DataCell(TooltipText(
                                     (row.hsCode != null && row.hsCode!.isNotEmpty)
                                         ? row.hsCode!
                                         : '—',
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 12))),
-                                DataCell(Text('${row.qty}')),
-                                DataCell(Text(pkg.consigneeName, overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(DateFormat('yyyy-MM-dd').format(row.forfeitedDate))),
-                                DataCell(Text(
+                                DataCell(TooltipText('${row.qty}')),
+                                DataCell(TooltipText(pkg.consigneeName, overflow: TextOverflow.ellipsis)),
+                                DataCell(TooltipText(DateFormat('yyyy-MM-dd').format(row.forfeitedDate))),
+                                DataCell(TooltipText(
                                   DateFormat('yyyy-MM-dd').format(pkg.appealDeadline),
                                   style: TextStyle(
                                     color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
@@ -699,6 +700,12 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                     rowHasDecision
                                                         ? rowDecisionLabel
                                                         : null,
+                                                // Restrict the Final Disposition
+                                                // dialog to the decided action.
+                                                appealDecisionCode: rowHasDecision
+                                                    ? pkg.appealDecisionForItem(
+                                                        rowItemId)
+                                                    : null,
                                                 // Final disposition once the
                                                 // window has passed OR a per-item
                                                 // appeal decision was received.

@@ -16,6 +16,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/tooltip_text.dart';
 
 final abandonedPackageSearchProvider = StateProvider<String>((ref) => '');
 final abandonedPackageReasonFilterProvider =
@@ -657,14 +658,14 @@ class _AbandonedPackagesScreenState
                           ],
                           rows: rows
                               .map((row) => DataRow(cells: [
-                                    DataCell(Text(row.package.srNumber,
+                                    DataCell(TooltipText(row.package.srNumber,
                                         style: TextStyle(
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                    DataCell(Text(row.itemName,
+                                    DataCell(TooltipText(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text(
+                                    DataCell(TooltipText(
                                         (row.item.hsCode != null &&
                                                 row.item.hsCode!.isNotEmpty)
                                             ? row.item.hsCode!
@@ -673,13 +674,13 @@ class _AbandonedPackagesScreenState
                                         style: const TextStyle(fontSize: 12))),
                                     DataCell(Center(
                                         child: Text('${row.qty}'))),
-                                    DataCell(Text(row.reason,
+                                    DataCell(TooltipText(row.reason,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text(row.date != null
+                                    DataCell(TooltipText(row.date != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.date!)
                                         : '—')),
-                                    DataCell(Text(
+                                    DataCell(TooltipText(
                                         row.package.consigneeName.isNotEmpty
                                             ? row.package.consigneeName
                                             : '—',

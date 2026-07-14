@@ -8,6 +8,7 @@ import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/tooltip_text.dart';
 
 final taxesProvider = FutureProvider<List<DisposalTaxModel>>((ref) async {
   return DisposalService().getTaxes();
@@ -93,8 +94,8 @@ class TaxesTab extends ConsumerWidget {
       ],
       rows: taxes.map((tax) {
         return DataRow(cells: [
-          DataCell(Text(tax.name)),
-          DataCell(Text('${tax.percentage}%')),
+          DataCell(TooltipText(tax.name)),
+          DataCell(TooltipText('${tax.percentage}%')),
           DataCell(
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),

@@ -15,6 +15,7 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/tooltip_text.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
   const PackagesScreen({super.key});
@@ -478,14 +479,14 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                             ],
                           rows: filteredList
                               .map((p) => DataRow(cells: [
-                                    DataCell(Text(p.srNumber,
+                                    DataCell(TooltipText(p.srNumber,
                                         style: TextStyle(
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                DataCell(Text(p.cusdecNo ?? 'â€”',
+                                DataCell(TooltipText(p.cusdecNo ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.cusdecDate ?? 'â€”',
+                                DataCell(TooltipText(p.cusdecDate ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
                                 DataCell(Center(
                                   child: Text(p.entryDate != null
@@ -493,11 +494,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                       .format(p.entryDate!)
                                     : DateFormat('yyyy-MM-dd')
                                       .format(p.createdAt)))),
-                                DataCell(Text(p.consigneeName,
+                                DataCell(TooltipText(p.consigneeName,
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.declarantName ?? 'â€”',
+                                DataCell(TooltipText(p.declarantName ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(Text(p.consigneePhone ?? 'â€”',
+                                DataCell(TooltipText(p.consigneePhone ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: IconButton(

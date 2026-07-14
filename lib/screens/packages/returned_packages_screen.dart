@@ -16,6 +16,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/tooltip_text.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
 final returnedPackageReasonFilterProvider =
@@ -572,14 +573,14 @@ class _ReturnedPackagesScreenState
                             ],
                             rows: pageRows
                               .map((row) => DataRow(cells: [
-                                    DataCell(Text(row.package.srNumber,
+                                    DataCell(TooltipText(row.package.srNumber,
                                         style: TextStyle(
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                    DataCell(Text(row.itemName,
+                                    DataCell(TooltipText(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text((() {
+                                    DataCell(TooltipText((() {
                                       final hs = row.package.items
                                           .where((i) =>
                                               i.id == row.entry.packageItemId)
@@ -596,19 +597,19 @@ class _ReturnedPackagesScreenState
                                             '${row.entry.itemCount}'))),
                                     // Entry Date (SR form) — falls back to the
                                     // warehouse admit date.
-                                    DataCell(Text((() {
+                                    DataCell(TooltipText((() {
                                       final d = row.package.entryDate ??
                                           row.entry.admittedAt;
                                       return DateFormat('yyyy-MM-dd').format(d);
                                     })())),
                                     // Release Date = the entry's returned date.
-                                    DataCell(Text(row.entry.returnedAt != null
+                                    DataCell(TooltipText(row.entry.returnedAt != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.entry.returnedAt!)
                                         : '—')),
                                     // Warehouse charge from the SR Entry Date →
                                     // Release Date (not the warehouse admit date).
-                                    DataCell(Text((() {
+                                    DataCell(TooltipText((() {
                                       final e = row.entry;
                                       final chargeStart =
                                           row.package.entryDate ?? e.admittedAt;
@@ -630,7 +631,7 @@ class _ReturnedPackagesScreenState
                                         style: TextStyle(
                                             color: context.colors.primaryGold,
                                             fontWeight: FontWeight.bold))),
-                                    DataCell(Text(row.receiptNo ?? '—',
+                                    DataCell(TooltipText(row.receiptNo ?? '—',
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: IconButton(

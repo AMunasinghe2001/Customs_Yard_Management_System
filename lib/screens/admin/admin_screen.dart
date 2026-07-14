@@ -18,6 +18,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/tooltip_text.dart';
 
 class AdminScreen extends ConsumerWidget {
   final int initialIndex;
@@ -255,12 +256,12 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                   ],
                   rows: pageItems
                       .map((p) => DataRow(cells: [
-                            DataCell(Text(p.fullName,
+                            DataCell(TooltipText(p.fullName,
                                 style: TextStyle(
                                     color: context.colors.textPrimary,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13))),
-                            DataCell(Text(p.badgeNumber ?? '—',
+                            DataCell(TooltipText(p.badgeNumber ?? '—',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 13))),
@@ -935,8 +936,7 @@ class _WarehousesTab extends ConsumerWidget {
                         .map(
                           (w) => DataRow(
                             cells: [
-                              DataCell(
-                                Text(
+                              DataCell(TooltipText(
                                   w.name,
                                   style: TextStyle(
                                     color: context.colors.textPrimary,
@@ -945,8 +945,7 @@ class _WarehousesTab extends ConsumerWidget {
                                   ),
                                 ),
                               ),
-                              DataCell(
-                                Text(
+                              DataCell(TooltipText(
                                   w.code,
                                   style: TextStyle(
                                     color: context.colors.textMuted,
@@ -955,8 +954,7 @@ class _WarehousesTab extends ConsumerWidget {
                                   ),
                                 ),
                               ),
-                              DataCell(
-                                Text(
+                              DataCell(TooltipText(
                                   w.location ?? '—',
                                   style: TextStyle(
                                     color: context.colors.textMuted,
@@ -964,8 +962,7 @@ class _WarehousesTab extends ConsumerWidget {
                                   ),
                                 ),
                               ),
-                              DataCell(
-                                Text(
+                              DataCell(TooltipText(
                                   w.capacity.toString(),
                                   style: TextStyle(
                                     color: context.colors.textMuted,
@@ -1414,20 +1411,20 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                   ],
                   rows: pageItems
                       .map((c) => DataRow(cells: [
-                            DataCell(Text(c.name,
+                            DataCell(TooltipText(c.name,
                                 style: TextStyle(
                                     color: context.colors.textPrimary,
                                     fontWeight: FontWeight.w600,
                                     fontSize: 13))),
-                            DataCell(Text(c.targetWarehouseName ?? '—',
+                            DataCell(TooltipText(c.targetWarehouseName ?? '—',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
-                            DataCell(Text(c.targetZone ?? '—',
+                            DataCell(TooltipText(c.targetZone ?? '—',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
-                            DataCell(Text(c.description ?? '—',
+                            DataCell(TooltipText(c.description ?? '—',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
@@ -2061,22 +2058,22 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                     final timeStr =
                       DateFormat('dd MMM yyyy, HH:mm').format(l.createdAt);
                     return DataRow(cells: [
-                      DataCell(Text(timeStr,
+                      DataCell(TooltipText(timeStr,
                           style: TextStyle(
                               color: context.colors.textMuted, fontSize: 13))),
-                      DataCell(Text(l.userFullName ?? 'Unknown',
+                      DataCell(TooltipText(l.userFullName ?? 'Unknown',
                           style: TextStyle(
                               color: context.colors.textPrimary,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(_formatAction(l),
+                      DataCell(TooltipText(_formatAction(l),
                           style: TextStyle(
                               color: context.colors.accentLightBlue))),
-                      DataCell(Text(_formatEntity(l.entityType),
+                      DataCell(TooltipText(_formatEntity(l.entityType),
                           style: TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
                               fontWeight: FontWeight.w700))),
-                      DataCell(Text(_formatDetails(l),
+                      DataCell(TooltipText(_formatDetails(l),
                           overflow: TextOverflow.ellipsis,
                           maxLines: 1,
                           style: TextStyle(
@@ -2269,19 +2266,19 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
                     ],
                     rows: list
                         .map((h) => DataRow(cells: [
-                              DataCell(Text(
+                              DataCell(TooltipText(
                                   DateFormat('dd MMM yyyy, HH:mm')
                                       .format(h.createdAt),
                                   style: TextStyle(
                                       color: context.colors.textMuted,
                                       fontSize: 13))),
-                              DataCell(Text(
+                              DataCell(TooltipText(
                                   h.userId == 'system'
                                       ? 'System'
                                       : (h.userFullName ?? 'Admin'),
                                   style: const TextStyle(
                                       fontWeight: FontWeight.w600))),
-                              DataCell(Text(
+                              DataCell(TooltipText(
                                   h.action == 'RATE_UPDATE'
                                       ? 'Rate Set: LKR ${NumberFormat('#,##0.00').format(h.details?['rate'] ?? 0)}'
                                       : h.action,
@@ -2432,11 +2429,11 @@ class _HoldReasonsTab extends ConsumerWidget {
                   ],
                   rows: list
                       .map((r) => DataRow(cells: [
-                            DataCell(Text(r.reasonText,
+                            DataCell(TooltipText(r.reasonText,
                                 style: TextStyle(
                                     color: context.colors.textPrimary,
                                     fontWeight: FontWeight.w500))),
-                            DataCell(Text(r.description ?? '—',
+                            DataCell(TooltipText(r.description ?? '—',
                                 overflow: TextOverflow.ellipsis,
                                 maxLines: 1,
                                 style: TextStyle(

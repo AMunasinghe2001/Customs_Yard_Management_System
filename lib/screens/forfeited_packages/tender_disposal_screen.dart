@@ -17,6 +17,7 @@ import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
 import '../disposal/disposal_dashboard_screen.dart';
 import 'tender_placement_dialog.dart';
+import '../../widgets/tooltip_text.dart';
 
 // ── Local providers ────────────────────────────────────────────
 
@@ -324,6 +325,7 @@ class _TenderDisposalScreenState
 
                     final pageItems =
                         pageSlice(visible, _page, kClientPageSize);
+                    final retenderIds = retenderTenderSaleIds(visible);
                     return Column(
                       children: [
                         Expanded(
@@ -331,7 +333,10 @@ class _TenderDisposalScreenState
                             itemCount: pageItems.length,
                             separatorBuilder: (_, __) => const Gap(16),
                             itemBuilder: (context, i) => TenderSaleCard(
-                                sale: pageItems[i], readOnly: true),
+                                sale: pageItems[i],
+                                readOnly: true,
+                                isRetender:
+                                    retenderIds.contains(pageItems[i].id)),
                           )
                               .animate()
                               .slideY(
@@ -590,19 +595,19 @@ class _TenderPackagesTable extends ConsumerWidget {
           ],
           rows: rows.map((row) => DataRow2(
             cells: [
-              DataCell(Text(
+              DataCell(TooltipText(
                 row.forfeited?.srNumber ?? row.forfeitedPackageId.substring(0, 8),
                 style: TextStyle(
                   color: context.colors.accentLightBlue,
                   fontWeight: FontWeight.w600,
                 ),
               )),
-              DataCell(Text(
+              DataCell(TooltipText(
                 row.item?.itemName ?? 'Multiple/Unspecified',
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontWeight: FontWeight.w500),
               )),
-              DataCell(Text(
+              DataCell(TooltipText(
                 row.forfeited?.consigneeName ?? '—',
                 overflow: TextOverflow.ellipsis,
               )),
@@ -611,13 +616,13 @@ class _TenderPackagesTable extends ConsumerWidget {
                   : Text('—',
                       style:
                           TextStyle(color: context.colors.textMuted))),
-              DataCell(Text(
+              DataCell(TooltipText(
                 _receiptOrDetails(row.disposal),
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                     color: context.colors.textSecondary, fontSize: 13),
               )),
-              DataCell(Text(
+              DataCell(TooltipText(
                 row.disposal?.disposedByName ?? '—',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
@@ -1540,13 +1545,13 @@ class UnsoldReTenderDialog extends ConsumerWidget {
                     rows: list.map((info) {
                       final f = info.forfeited;
                       return DataRow(cells: [
-                        DataCell(Text(f.srNumber,
+                        DataCell(TooltipText(f.srNumber,
                             style: TextStyle(
                                 color: context.colors.accentLightBlue,
                                 fontWeight: FontWeight.w600))),
-                        DataCell(Text(_itemName(f),
+                        DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(Text(f.consigneeName,
+                        DataCell(TooltipText(f.consigneeName,
                             overflow: TextOverflow.ellipsis)),
                         DataCell(Center(
                           child: Container(

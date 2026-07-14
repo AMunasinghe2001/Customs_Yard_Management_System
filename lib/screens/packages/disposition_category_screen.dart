@@ -14,6 +14,7 @@ import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/tooltip_text.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
 /// Re-exported / Other). Reads warehouse entries tagged "[FINAL:<TAG>]".
@@ -496,14 +497,14 @@ class _DispositionCategoryScreenState
                           ],
                           rows: pageRows
                               .map((row) => DataRow(cells: [
-                                    DataCell(Text(row.package.srNumber,
+                                    DataCell(TooltipText(row.package.srNumber,
                                         style: TextStyle(
                                             color: context
                                                 .colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                    DataCell(Text(row.itemName,
+                                    DataCell(TooltipText(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text((() {
+                                    DataCell(TooltipText((() {
                                       final itemId = row.entry?.packageItemId ??
                                           row.item?.id;
                                       final hs = row.package.items
@@ -516,16 +517,16 @@ class _DispositionCategoryScreenState
                                     })(),
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontSize: 12))),
-                                    DataCell(Text(
+                                    DataCell(TooltipText(
                                         '${row.entry?.itemCount ?? row.item?.quantity ?? 0}')),
-                                    DataCell(Text(row.entry?.returnedAt != null
+                                    DataCell(TooltipText(row.entry?.returnedAt != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.entry!.returnedAt!)
                                         : '—')),
                                     if (!_hasDelivery)
-                                      DataCell(Text(row.officer,
+                                      DataCell(TooltipText(row.officer,
                                           overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text(
+                                    DataCell(TooltipText(
                                         (() {
                                           // SOLD/DESTROYED: show the clean
                                           // receipt number; other tags: notes.

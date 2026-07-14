@@ -12,6 +12,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/tooltip_text.dart';
 
 final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async {
   return await ref.read(packageServiceProvider).getDashboardStats();
@@ -654,18 +655,17 @@ class _RecentPackagesTable extends ConsumerWidget {
                 if (p.items.isEmpty) {
                   return [
                     DataRow(cells: [
-                      DataCell(Text(p.srNumber,
+                      DataCell(TooltipText(p.srNumber,
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600,
                               fontSize: 13))),
-                      const DataCell(
-                          Text('No items', style: TextStyle(fontSize: 13))),
-                      const DataCell(Text('0',
+                      const DataCell(TooltipText('No items', style: TextStyle(fontSize: 13))),
+                      const DataCell(TooltipText('0',
                           style: TextStyle(
                               fontSize: 13, fontWeight: FontWeight.bold))),
                       DataCell(Center(child: StatusChip(status: p.status))),
-                      DataCell(Text(
+                      DataCell(TooltipText(
                           DateFormat('dd/MM HH:mm').format(p.updatedAt),
                           style: TextStyle(
                               color: context.colors.textMuted, fontSize: 13))),
@@ -680,19 +680,19 @@ class _RecentPackagesTable extends ConsumerWidget {
                           : p.status;
 
                   return DataRow(cells: [
-                    DataCell(Text(p.srNumber,
+                    DataCell(TooltipText(p.srNumber,
                         style: TextStyle(
                             color: context.colors.accentLightBlue,
                             fontWeight: FontWeight.w600,
                             fontSize: 13))),
-                    DataCell(Text(item.itemName,
+                    DataCell(TooltipText(item.itemName,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontSize: 13))),
-                    DataCell(Text(item.quantity.toString(),
+                    DataCell(TooltipText(item.quantity.toString(),
                         style: const TextStyle(
                             fontSize: 13, fontWeight: FontWeight.bold))),
                     DataCell(Center(child: StatusChip(status: effectiveStatus))),
-                    DataCell(Text(DateFormat('dd/MM HH:mm').format(p.updatedAt),
+                    DataCell(TooltipText(DateFormat('dd/MM HH:mm').format(p.updatedAt),
                         style: TextStyle(
                             color: context.colors.textMuted, fontSize: 13))),
                   ]);
@@ -701,23 +701,23 @@ class _RecentPackagesTable extends ConsumerWidget {
             },
             loading: () => [
               const DataRow(cells: [
-                DataCell(Text('')),
+                DataCell(TooltipText('')),
                 DataCell(SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2))),
-                DataCell(Text('')),
-                DataCell(Text('')),
-                DataCell(Text('')),
+                DataCell(TooltipText('')),
+                DataCell(TooltipText('')),
+                DataCell(TooltipText('')),
               ])
             ],
             error: (e, _) => [
               DataRow(cells: [
-                const DataCell(Text('Error')),
-                DataCell(Text(e.toString())),
-                const DataCell(Text('')),
-                const DataCell(Text('')),
-                const DataCell(Text('')),
+                const DataCell(TooltipText('Error')),
+                DataCell(TooltipText(e.toString())),
+                const DataCell(TooltipText('')),
+                const DataCell(TooltipText('')),
+                const DataCell(TooltipText('')),
               ])
             ],
           ),

@@ -18,6 +18,7 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/supabase_client.dart';
+import '../../widgets/tooltip_text.dart';
 
 
 /// Item statuses whose goods have permanently left the yard — these must not
@@ -451,7 +452,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                 return null;
                               }),
                               cells: [
-                                DataCell(Text(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
+                                DataCell(TooltipText(e.srNumber ?? e.packageId.substring(0, 8).toUpperCase(),
                                     style: TextStyle(
                                       color: isItemConfiscated ? context.colors.textMuted : context.colors.accentLightBlue, 
                                       fontWeight: FontWeight.bold,
@@ -499,7 +500,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     overflow: TextOverflow.ellipsis,
                                   );
                                 })),
-                                DataCell(Text('${e.itemCount}', style: TextStyle(color: isItemConfiscated ? context.colors.textMuted : null))),
+                                DataCell(TooltipText('${e.itemCount}', style: TextStyle(color: isItemConfiscated ? context.colors.textMuted : null))),
                                 DataCell(Center(child: Text(
                                   pkg == null ? '—' : (isFree ? '—' : 'LKR ${NumberFormat('#,##0.00').format(charge)}'),
                                   style: TextStyle(
@@ -509,7 +510,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                   ),
                                 ))),
                                 DataCell(Center(child: StatusChip(status: status))),
-                                DataCell(Text(e.holdReason, 
+                                DataCell(TooltipText(e.holdReason, 
                                     style: TextStyle(
                                       fontStyle: FontStyle.italic, 
                                       fontSize: 12,

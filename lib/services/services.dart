@@ -3579,15 +3579,18 @@ class DisposalService {
                 // RPC when null (legacy package-level rows).
                 'package_item_id': packageItems[e.key],
                 'yard': e.value,
-                // Re-tendering an unsold package moves it to this new sale and
-                // resets its sale state (upsert on the unique forfeited id).
                 'sold': false,
                 'sold_at': null,
               })
           .toList();
+      // Scope the conflict key to THIS sale so re-tendering an unsold item
+      // INSERTS a new row here and leaves the original sale's row untouched
+      // (the item stays Unsold there and shows Pending here).
       await AuthService._withNetworkRetry(() => supabase
           .from('tender_sale_items')
-          .upsert(rows, onConflict: 'forfeited_package_id,package_item_id'));
+          .upsert(rows,
+              onConflict:
+                  'tender_sale_id,forfeited_package_id,package_item_id'));
     }
 
     if (user != null) {
@@ -3877,9 +3880,13 @@ class DisposalService {
                 'destroyed_at': null,
               })
           .toList();
+      // Scope the conflict key to THIS destruction so re-scheduling an
+      // undestroyed item INSERTS here and keeps the original sale's row.
       await AuthService._withNetworkRetry(() => supabase
           .from('destruction_items')
-          .upsert(rows, onConflict: 'forfeited_package_id,package_item_id'));
+          .upsert(rows,
+              onConflict:
+                  'destruction_id,forfeited_package_id,package_item_id'));
     }
 
     if (user != null) {

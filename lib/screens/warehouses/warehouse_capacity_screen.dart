@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/empty_state_card.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/tooltip_text.dart';
 
 /// Admin view of how full each warehouse in their own yard is — total capacity,
 /// the quantity currently held, the fill percentage, and which zones are in use.
@@ -156,15 +157,15 @@ class WarehouseCapacityScreen extends ConsumerWidget {
                                           color: context.colors.textMuted)),
                                 ],
                               )),
-                              DataCell(Text(
+                              DataCell(TooltipText(
                                   zones.isEmpty ? '—' : zones.join(', '),
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(fontSize: 12))),
-                              DataCell(Text('$used',
+                              DataCell(TooltipText('$used',
                                   style: TextStyle(
                                       fontWeight: FontWeight.bold,
                                       color: context.colors.accentLightBlue))),
-                              DataCell(Text('$capacity')),
+                              DataCell(TooltipText('$capacity')),
                               DataCell(_UtilisationBar(
                                   percent: percent, color: color)),
                             ]);

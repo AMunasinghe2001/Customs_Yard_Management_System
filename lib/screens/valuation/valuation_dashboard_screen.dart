@@ -16,6 +16,7 @@ import '../../widgets/empty_state_card.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/tooltip_text.dart';
 
 /// Valuation Directorate (DC / SDDC) portal. Standalone scaffold (not AppShell).
 /// Lists every yard's disposal requests that are still awaiting valuation; the
@@ -428,20 +429,20 @@ class _ValuationRequestCard extends ConsumerWidget {
                             ? f!.packageDetails!.items.first.id
                             : null);
                     return DataRow(cells: [
-                      DataCell(Text(f?.srNumber ?? '—',
+                      DataCell(TooltipText(f?.srNumber ?? '—',
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(displayName,
+                      DataCell(TooltipText(displayName,
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(f?.consigneeName ?? '—',
+                      DataCell(TooltipText(f?.consigneeName ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(displayHs ?? '—',
+                      DataCell(TooltipText(displayHs ?? '—',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(Text('$displayQty',
+                      DataCell(TooltipText('$displayQty',
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,

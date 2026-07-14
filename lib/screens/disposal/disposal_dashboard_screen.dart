@@ -20,6 +20,7 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/table_pager.dart';
+import '../../widgets/tooltip_text.dart';
 
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
@@ -867,15 +868,15 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                           ],
                           rows: pageRows
                               .map((r) => DataRow(cells: [
-                                    DataCell(Text(r.package.srNumber,
+                                    DataCell(TooltipText(r.package.srNumber,
                                         style: TextStyle(
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                    DataCell(Text(r.itemName,
+                                    DataCell(TooltipText(r.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text('${r.entry.itemCount}')),
-                                    DataCell(Text(r.entry.returnedAt != null
+                                    DataCell(TooltipText('${r.entry.itemCount}')),
+                                    DataCell(TooltipText(r.entry.returnedAt != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(r.entry.returnedAt!)
                                         : '—')),
@@ -1155,19 +1156,19 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                           ],
                           rows: pageRows
                               .map((r) => DataRow(cells: [
-                                    DataCell(Text(r.package.srNumber,
+                                    DataCell(TooltipText(r.package.srNumber,
                                         style: TextStyle(
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                    DataCell(Text(r.itemName,
+                                    DataCell(TooltipText(r.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(Text('${r.entry.itemCount}')),
-                                    DataCell(Text(r.entry.returnedAt != null
+                                    DataCell(TooltipText('${r.entry.itemCount}')),
+                                    DataCell(TooltipText(r.entry.returnedAt != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(r.entry.returnedAt!)
                                         : '—')),
-                                    DataCell(Text(
+                                    DataCell(TooltipText(
                                         _parseDestroyReceipt(
                                                 r.entry.returnNotes) ??
                                             '—',
@@ -1772,20 +1773,20 @@ class _RequestCard extends ConsumerWidget {
                             ? f!.packageDetails!.items.first.id
                             : null);
                     return DataRow(cells: [
-                      DataCell(Text(f?.srNumber ?? '—',
+                      DataCell(TooltipText(f?.srNumber ?? '—',
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(displayName,
+                      DataCell(TooltipText(displayName,
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(f?.consigneeName ?? '—',
+                      DataCell(TooltipText(f?.consigneeName ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(displayHs ?? '—',
+                      DataCell(TooltipText(displayHs ?? '—',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(Text('$displayQty',
+                      DataCell(TooltipText('$displayQty',
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,
@@ -2096,16 +2097,16 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                               .firstOrNull)
                           : null;
                       return DataRow(cells: [
-                        DataCell(Text(f.srNumber,
+                        DataCell(TooltipText(f.srNumber,
                             style: TextStyle(
                                 color: context.colors.accentLightBlue,
                                 fontWeight: FontWeight.w600))),
-                        DataCell(Text(pkg?.caseNumber ?? '—',
+                        DataCell(TooltipText(pkg?.caseNumber ?? '—',
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(Text(_itemName(f),
+                        DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
                         DataCell(_SourceChip(source: f.source)),
-                        DataCell(Text('${f.entryQty ?? item?.quantity ?? '—'}')),
+                        DataCell(TooltipText('${f.entryQty ?? item?.quantity ?? '—'}')),
                         DataCell(Builder(builder: (_) {
                           final reason = _forfeitReasonText(item, f);
                           return Tooltip(
@@ -2114,12 +2115,12 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis),
                           );
                         })),
-                        DataCell(Text(_warehouseLocation(pkg, f.itemId),
+                        DataCell(TooltipText(_warehouseLocation(pkg, f.itemId),
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
-                        DataCell(Text(
+                        DataCell(TooltipText(
                             item?.goodsDescription?.isNotEmpty == true
                                 ? item!.goodsDescription!
                                 : '—',
@@ -2283,10 +2284,13 @@ class _TenderSalesTab extends ConsumerWidget {
                             'Create a tender sale, or check the Unsold Tenders tab for items whose window has closed.'),
                   );
                 }
+                final retenderIds = retenderTenderSaleIds(visible);
                 return ListView.separated(
                   itemCount: visible.length,
                   separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) => TenderSaleCard(sale: visible[i]),
+                  itemBuilder: (context, i) => TenderSaleCard(
+                      sale: visible[i],
+                      isRetender: retenderIds.contains(visible[i].id)),
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
               },
             ),
@@ -2306,12 +2310,79 @@ class _TsRow {
   const _TsRow(this.saleItem, this.item, this.warehouse);
 }
 
+// A re-tender reuses the SAME package ITEM (a fresh forfeited_packages row is
+// created, so its id changes — but it still points to the same package_item).
+// Match on the specific item id so re-tender is detected per item, NOT per
+// package: two DIFFERENT items of one SR in two sales are not a re-tender.
+// Falls back to the (per-sale, unique) forfeited id when no item id exists, so
+// such rows never falsely match across sales.
+String _tenderItemKey(TenderSaleItemModel i) =>
+    i.forfeited?.itemId ?? i.forfeitedPackageId;
+String _destItemKey(DestructionItemModel i) =>
+    i.forfeited?.itemId ?? i.forfeitedPackageId;
+
+/// Ids of tender sales that RE-TENDER an item — i.e. a sale that shares a
+/// package (SR) with an EARLIER-created tender sale (the item went unsold there
+/// and was placed in this newer sale).
+Set<String> retenderTenderSaleIds(List<TenderSaleModel> sales) {
+  final ids = <String>{};
+  for (final s in sales) {
+    final keys = s.items.map(_tenderItemKey).toSet();
+    final isRe = sales.any((o) =>
+        o.id != s.id &&
+        o.createdAt.isBefore(s.createdAt) &&
+        o.items.any((i) => keys.contains(_tenderItemKey(i))));
+    if (isRe) ids.add(s.id);
+  }
+  return ids;
+}
+
+/// Same as [retenderTenderSaleIds] but for destruction sales (re-destruction).
+Set<String> retenderDestructionIds(List<DestructionModel> sales) {
+  final ids = <String>{};
+  for (final s in sales) {
+    final keys = s.items.map(_destItemKey).toSet();
+    final isRe = sales.any((o) =>
+        o.id != s.id &&
+        o.createdAt.isBefore(s.createdAt) &&
+        o.items.any((i) => keys.contains(_destItemKey(i))));
+    if (isRe) ids.add(s.id);
+  }
+  return ids;
+}
+
+/// A small amber "Re-tender" pill shown in a sale card header when the sale
+/// re-tenders (or re-schedules destruction for) an item that went unsold /
+/// undestroyed in an earlier sale.
+Widget _retenderBadge(BuildContext context, {String label = 'Re-tender'}) {
+  final c = context.colors.warningAmber;
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: c.withOpacity(0.14),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: c.withOpacity(0.45)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(Icons.repeat_rounded, size: 12, color: c),
+      const Gap(4),
+      Text(label,
+          style: TextStyle(
+              color: c, fontSize: 10.5, fontWeight: FontWeight.w800)),
+    ]),
+  );
+}
+
 class TenderSaleCard extends ConsumerStatefulWidget {
   final TenderSaleModel sale;
   /// Yard-side, view-only mode: shows every item (sold included) with a
   /// read-only Sold/Pending status chip instead of the Mark-Sold action.
   final bool readOnly;
-  const TenderSaleCard({required this.sale, this.readOnly = false});
+  /// True when this sale re-tenders an item that went unsold in an earlier
+  /// tender sale — shown as a "Re-tender" badge in the card header.
+  final bool isRetender;
+  const TenderSaleCard(
+      {required this.sale, this.readOnly = false, this.isRetender = false});
 
   @override
   ConsumerState<TenderSaleCard> createState() => _TenderSaleCardState();
@@ -2448,14 +2519,23 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                        widget.sale.saleNumber?.isNotEmpty == true
-                            ? widget.sale.saleNumber!
-                            : 'Tender Sale',
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16)),
+                    Row(children: [
+                      Flexible(
+                        child: Text(
+                            widget.sale.saleNumber?.isNotEmpty == true
+                                ? widget.sale.saleNumber!
+                                : 'Tender Sale',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16)),
+                      ),
+                      if (widget.isRetender) ...[
+                        const Gap(8),
+                        _retenderBadge(context),
+                      ],
+                    ]),
                     const Gap(2),
                     Row(children: [
                       Icon(Icons.calendar_today_rounded,
@@ -2562,13 +2642,13 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     final f = r.saleItem.forfeited;
                     final pkg = f?.packageDetails;
                     return DataRow(cells: [
-                      DataCell(Text(f?.srNumber ?? '—',
+                      DataCell(TooltipText(f?.srNumber ?? '—',
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(pkg?.caseNumber ?? '—',
+                      DataCell(TooltipText(pkg?.caseNumber ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
+                      DataCell(TooltipText(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
                       DataCell(_sourceChip(context, f?.source)),
                       DataCell(Center(
@@ -2582,7 +2662,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                               overflow: TextOverflow.ellipsis),
                         );
                       })),
-                      DataCell(Text(
+                      DataCell(TooltipText(
                           '${yardName(r.saleItem.yard)} / ${r.warehouse}',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -3630,10 +3710,13 @@ class _DestructionsTab extends ConsumerWidget {
                             'Create a destruction sale, or check the Undestroyed tab for items whose window has closed.'),
                   );
                 }
+                final retenderIds = retenderDestructionIds(visible);
                 return ListView.separated(
                   itemCount: visible.length,
                   separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) => DestructionCard(sale: visible[i]),
+                  itemBuilder: (context, i) => DestructionCard(
+                      sale: visible[i],
+                      isRetender: retenderIds.contains(visible[i].id)),
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
               },
             ),
@@ -3658,7 +3741,11 @@ class DestructionCard extends ConsumerWidget {
   /// Yard view-only mode: hides the countdown timer, never drops rows when the
   /// window closes, and disables Mark Destroyed (those are the directorate's).
   final bool readOnly;
-  const DestructionCard({required this.sale, this.readOnly = false});
+  /// True when this destruction re-schedules an item left undestroyed by an
+  /// earlier destruction sale — shown as a "Re-tender" badge in the header.
+  final bool isRetender;
+  const DestructionCard(
+      {required this.sale, this.readOnly = false, this.isRetender = false});
 
   String _warehouseFor(PackageModel? pkg, String itemId) {
     if (pkg == null) return '—';
@@ -3749,14 +3836,23 @@ class DestructionCard extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                        sale.saleNumber?.isNotEmpty == true
-                            ? sale.saleNumber!
-                            : 'Destruction Sale',
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 16)),
+                    Row(children: [
+                      Flexible(
+                        child: Text(
+                            sale.saleNumber?.isNotEmpty == true
+                                ? sale.saleNumber!
+                                : 'Destruction Sale',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 16)),
+                      ),
+                      if (isRetender) ...[
+                        const Gap(8),
+                        _retenderBadge(context),
+                      ],
+                    ]),
                     const Gap(2),
                     Row(children: [
                       Icon(Icons.calendar_today_rounded,
@@ -3865,13 +3961,13 @@ class DestructionCard extends ConsumerWidget {
                     final f = r.saleItem.forfeited;
                     final pkg = f?.packageDetails;
                     return DataRow(cells: [
-                      DataCell(Text(f?.srNumber ?? '—',
+                      DataCell(TooltipText(f?.srNumber ?? '—',
                           style: TextStyle(
                               color: context.colors.accentLightBlue,
                               fontWeight: FontWeight.w600))),
-                      DataCell(Text(pkg?.caseNumber ?? '—',
+                      DataCell(TooltipText(pkg?.caseNumber ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(Text(r.item?.itemName ?? 'Multiple/Unspecified',
+                      DataCell(TooltipText(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
                       DataCell(_sourceChip(context, f?.source)),
                       DataCell(Center(
@@ -3885,7 +3981,7 @@ class DestructionCard extends ConsumerWidget {
                               overflow: TextOverflow.ellipsis),
                         );
                       })),
-                      DataCell(Text(
+                      DataCell(TooltipText(
                           '${yardName(r.saleItem.yard)} / ${r.warehouse}',
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
@@ -4956,16 +5052,16 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                               .firstOrNull)
                           : null;
                       return DataRow(cells: [
-                        DataCell(Text(f.srNumber,
+                        DataCell(TooltipText(f.srNumber,
                             style: TextStyle(
                                 color: context.colors.accentLightBlue,
                                 fontWeight: FontWeight.w600))),
-                        DataCell(Text(pkg?.caseNumber ?? '—',
+                        DataCell(TooltipText(pkg?.caseNumber ?? '—',
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(Text(_itemName(f),
+                        DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
                         DataCell(_SourceChip(source: f.source)),
-                        DataCell(Text('${f.entryQty ?? item?.quantity ?? '—'}')),
+                        DataCell(TooltipText('${f.entryQty ?? item?.quantity ?? '—'}')),
                         DataCell(Builder(builder: (_) {
                           final reason = _forfeitReasonText(item, f);
                           return Tooltip(
@@ -4974,12 +5070,12 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis),
                           );
                         })),
-                        DataCell(Text(_warehouseLocation(pkg, f.itemId),
+                        DataCell(TooltipText(_warehouseLocation(pkg, f.itemId),
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
-                        DataCell(Text(
+                        DataCell(TooltipText(
                             item?.goodsDescription?.isNotEmpty == true
                                 ? item!.goodsDescription!
                                 : '—',

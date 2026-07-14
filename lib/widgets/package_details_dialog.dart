@@ -137,6 +137,10 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // prominent banner is shown at the top of the body telling the owning yard
   // what to do with the package (e.g. "Release to owner", "Destroy").
   final String? appealDecisionLabel;
+  // The raw decision CODE ('RELEASE' | 'SALE' | 'DESTROY' | 'RE-EXPORT' |
+  // 'OTHER'). When set, the Final Disposition dialog enables ONLY the matching
+  // action — the yard must proceed exactly as the Appeal Directorate decided.
+  final String? appealDecisionCode;
 
   // Final-disposition gating (Forfeited screen). The footer "Final Disposition"
   // button is shown ONLY when [allowFinalDisposition] is true — i.e. the appeal
@@ -183,6 +187,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.onFooterAction,
     this.headerAccentColor,
     this.appealDecisionLabel,
+    this.appealDecisionCode,
     this.allowFinalDisposition = true,
     this.onSaleOrDestroyRequest,
     this.forceFinalDisposition = false,
@@ -763,6 +768,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         item: item,
         qty: qty,
         isOfficer: isOfficer,
+        // Restrict the enabled action to the Appeal Directorate's decision.
+        decisionCode: widget.appealDecisionCode,
         // When a Sale/Destroy request handler is supplied (Forfeited screen),
         // those two route to the Central Disposal request flow instead of
         // writing a [FINAL:…] entry directly.
@@ -1487,43 +1494,60 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               label: 'Item Name',
                                               value: highlightedItem.itemName,
                                             ),
-                                            if (!isSoldContext)
-                                              Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: _DetailItem(
-                                                      icon: Icons
-                                                          .view_in_ar_rounded,
-                                                      label: 'Total Packages',
-                                                      value:
-                                                          '${highlightedItem.quantity}',
-                                                    ),
+                                            // Total Packages + Unit — always
+                                            // shown (incl. Sold context) so the
+                                            // popup lists the full item detail.
+                                            Row(
+                                              children: [
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .view_in_ar_rounded,
+                                                    label: 'Total Packages',
+                                                    value:
+                                                        '${highlightedItem.quantity}',
                                                   ),
-                                                  const Gap(12),
-                                                  Expanded(
-                                                    child: _DetailItem(
-                                                      icon: widget
-                                                              .useWarehouseSummary
-                                                          ? Icons
-                                                              .inventory_2_rounded
-                                                          : Icons
-                                                              .keyboard_return_rounded,
-                                                      label: widget
-                                                              .useWarehouseSummary
-                                                          ? 'Remaining (Current)'
-                                                          : (_actionCountLabel ??
-                                                              'Released (This Receipt)'),
-                                                      value:
-                                                          '${widget.highlightEntry!.itemCount}',
-                                                      valueColor: widget
-                                                              .useWarehouseSummary
-                                                          ? context
-                                                              .colors.primaryGold
-                                                          : context.colors
-                                                              .successGreen,
-                                                    ),
+                                                ),
+                                                const Gap(12),
+                                                Expanded(
+                                                  child: _DetailItem(
+                                                    icon: Icons
+                                                        .straighten_rounded,
+                                                    label: 'Unit',
+                                                    value: highlightedItem
+                                                                .unitOfMeasure ==
+                                                            'Other'
+                                                        ? (highlightedItem
+                                                                .unitOther ??
+                                                            'Other')
+                                                        : highlightedItem
+                                                            .unitOfMeasure,
                                                   ),
-                                                ],
+                                                ),
+                                              ],
+                                            ),
+                                            // Warehouse-entry count (Remaining /
+                                            // Released) only when an entry exists
+                                            // (never in the Sold context).
+                                            if (!isSoldContext &&
+                                                widget.highlightEntry != null)
+                                              _DetailItem(
+                                                icon: widget.useWarehouseSummary
+                                                    ? Icons.inventory_2_rounded
+                                                    : Icons
+                                                        .keyboard_return_rounded,
+                                                label: widget.useWarehouseSummary
+                                                    ? 'Remaining (Current)'
+                                                    : (_actionCountLabel ??
+                                                        'Released (This Receipt)'),
+                                                value:
+                                                    '${widget.highlightEntry!.itemCount}',
+                                                valueColor:
+                                                    widget.useWarehouseSummary
+                                                        ? context
+                                                            .colors.primaryGold
+                                                        : context
+                                                            .colors.successGreen,
                                               ),
                                             Row(
                                               children: [
@@ -2476,8 +2500,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                     children: [
                       material.Tooltip(
                         message: !canUpdatePackage
-                            ? 'Package updates are restricted to administrators only'
-                            : '',
+                          ? 'Package updates are restricted to DC / SDDC officers only'
+                          : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: canUpdatePackage
@@ -2508,8 +2532,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       if (widget.highlightEntry != null &&
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
-                          message: isOfficer
-                              ? 'Actions are restricted to administrators only'
+                            message: isOfficer
+                              ? 'Actions are restricted to DC / SDDC officers only'
                               : (isConfiscated
                                   ? 'Confiscated / Forfeited / Abandoned packages cannot be actioned'
                                   : ''),
@@ -2570,20 +2594,32 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               color: context.colors.textMuted, fontSize: 12),
                         ),
                       ),
-                      ElevatedButton.icon(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF5C6BC0),
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 12),
-                        ),
-                        icon: const Icon(Icons.outbound_rounded, size: 18),
-                        label: const Text('Final Disposition'),
-                        onPressed: () => _showFinalDispositionDialog(
-                          context,
-                          item: highlightedItem,
-                          entry: widget.highlightEntry,
-                          isOfficer: isOfficer,
+                      material.Tooltip(
+                        message: isOfficer
+                            ? 'Only DC / SDDC can record the final disposition'
+                            : '',
+                        child: ElevatedButton.icon(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF5C6BC0),
+                            foregroundColor: Colors.white,
+                            disabledBackgroundColor:
+                                context.colors.textMuted.withOpacity(0.25),
+                            disabledForegroundColor: context.colors.textMuted,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 12),
+                          ),
+                          icon: const Icon(Icons.outbound_rounded, size: 18),
+                          label: const Text('Final Disposition'),
+                          // Officers may view but never record the final
+                          // disposition — the action is DC / SDDC only.
+                          onPressed: isOfficer
+                              ? null
+                              : () => _showFinalDispositionDialog(
+                                    context,
+                                    item: highlightedItem,
+                                    entry: widget.highlightEntry,
+                                    isOfficer: isOfficer,
+                                  ),
                         ),
                       ),
                     ],
@@ -5926,6 +5962,9 @@ class _FinalDispositionDialog extends StatefulWidget {
   // route here to open the Central Disposal request flow instead of writing a
   // [FINAL:…] entry. When null, Sale / Destroy stay disabled.
   final void Function(String disposition)? onRequestDisposal;
+  // Appeal Directorate decision code — when set, ONLY the matching action is
+  // enabled (the yard must proceed exactly as decided).
+  final String? decisionCode;
 
   const _FinalDispositionDialog({
     required this.item,
@@ -5933,6 +5972,7 @@ class _FinalDispositionDialog extends StatefulWidget {
     required this.isOfficer,
     required this.onConfirm,
     this.onRequestDisposal,
+    this.decisionCode,
   });
 
   @override
@@ -5955,7 +5995,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'RELEASED',
       icon: Icons.assignment_return_rounded,
       label: 'Release',
-      description: 'Return the goods to the owner. Admin approval required.',
+      description: 'Return the goods to the owner. DC / SDDC approval required.',
       color: Color(0xFF43A047),
       adminOnly: true,
     ),
@@ -5979,7 +6019,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'RE-EXPORTED',
       icon: Icons.flight_takeoff_rounded,
       label: 'Re-export',
-      description: 'Goods sent back to origin. Admin approval required.',
+      description: 'Goods sent back to origin. DC / SDDC approval required.',
       color: Color(0xFF00ACC1),
       adminOnly: true,
     ),
@@ -5987,7 +6027,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'OTHER',
       icon: Icons.more_horiz_rounded,
       label: 'Other',
-      description: 'Custom outcome. Admin approval required.',
+      description: 'Custom outcome. DC / SDDC approval required.',
       color: Color(0xFF7E57C2),
       adminOnly: true,
     ),
@@ -5997,13 +6037,37 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
   // Central Disposal Directorate, not from this dialog.
   static const _requestActions = {'SOLD', 'DESTROYED'};
 
+  // The final-action type that matches an Appeal Directorate decision code.
+  static String? _typeForDecision(String code) {
+    switch (code.trim().toUpperCase()) {
+      case 'RELEASE':
+        return 'RELEASED';
+      case 'SALE':
+        return 'SOLD';
+      case 'DESTROY':
+        return 'DESTROYED';
+      case 'RE-EXPORT':
+        return 'RE-EXPORTED';
+      case 'OTHER':
+        return 'OTHER';
+      default:
+        return null;
+    }
+  }
+
   // Whether THIS user may trigger the given action.
   // - Officers: nothing is enabled.
-  // - Sale / Destroy: disabled for everyone (greyed out).
-  // - Admins: Release / Re-export / Other.
+  // - Sale / Destroy: disabled here (they go to Central Disposal as a request).
+  // - When the Appeal Directorate has DECIDED, only the matching action is
+  //   enabled (the yard must proceed exactly as decided).
+  // - Otherwise (window passed, no decision): Release / Re-export / Other.
   bool _isActionEnabled(_FinalActionDef a) {
     if (widget.isOfficer) return false;
     if (_requestActions.contains(a.type)) return false;
+    final code = widget.decisionCode;
+    if (code != null && code.trim().isNotEmpty) {
+      return a.type == _typeForDecision(code);
+    }
     return true;
   }
 
@@ -6165,7 +6229,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       if (widget.isOfficer) ...[
                         const Gap(6),
                         Text(
-                          'Final disposition is restricted to administrators.',
+                          'Final disposition is restricted to DC / SDDC officers.',
                           style: material.TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
@@ -6274,7 +6338,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                           borderRadius:
                                               BorderRadius.circular(4),
                                         ),
-                                        child: Text('ADMIN',
+                                        child: Text('DC / SDDC',
                                             style: material.TextStyle(
                                                 fontSize: 8,
                                                 fontWeight: FontWeight.w800,

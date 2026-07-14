@@ -294,6 +294,7 @@ class _DestructionDisposalScreenState
 
                     final pageItems =
                         pageSlice(visible, _page, kClientPageSize);
+                    final retenderIds = retenderDestructionIds(visible);
                     return Column(
                       children: [
                         Expanded(
@@ -301,7 +302,10 @@ class _DestructionDisposalScreenState
                             itemCount: pageItems.length,
                             separatorBuilder: (_, __) => const Gap(16),
                             itemBuilder: (context, i) => DestructionCard(
-                                sale: pageItems[i], readOnly: true),
+                                sale: pageItems[i],
+                                readOnly: true,
+                                isRetender:
+                                    retenderIds.contains(pageItems[i].id)),
                           )
                               .animate()
                               .slideY(

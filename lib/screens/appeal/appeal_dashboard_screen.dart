@@ -18,6 +18,7 @@ import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/table_pager.dart';
+import '../../widgets/tooltip_text.dart';
 
 final _appealSearchProvider = StateProvider<String>((ref) => '');
 final _appealYardProvider = StateProvider<String?>((ref) => null); // null = all
@@ -301,14 +302,14 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
   DataRow _buildRow(BuildContext context, ForfeitedPackageModel f,
       Map<DateTime, double> storageRate) {
     return DataRow(cells: [
-      DataCell(Text(f.srNumber,
+      DataCell(TooltipText(f.srNumber,
           style: TextStyle(
               color: context.colors.accentLightBlue,
               fontWeight: FontWeight.w600))),
-      DataCell(Text(_itemName(f), overflow: TextOverflow.ellipsis)),
-      DataCell(Text(f.consigneeName, overflow: TextOverflow.ellipsis)),
-      DataCell(Text(yardName(f.yard), overflow: TextOverflow.ellipsis)),
-      DataCell(Text(DateFormat('yyyy-MM-dd').format(f.appealDeadline),
+      DataCell(TooltipText(_itemName(f), overflow: TextOverflow.ellipsis)),
+      DataCell(TooltipText(f.consigneeName, overflow: TextOverflow.ellipsis)),
+      DataCell(TooltipText(yardName(f.yard), overflow: TextOverflow.ellipsis)),
+      DataCell(TooltipText(DateFormat('yyyy-MM-dd').format(f.appealDeadline),
           style: TextStyle(
               color: f.isAppealExpired
                   ? context.colors.dangerRed
@@ -331,14 +332,14 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
       Map<DateTime, double> storageRate) {
     final decisionColor = context.colors.accentLightBlue;
     return DataRow(cells: [
-      DataCell(Text(f.srNumber,
+      DataCell(TooltipText(f.srNumber,
           style: TextStyle(
               color: context.colors.textSecondary,
               fontWeight: FontWeight.w600))),
-      DataCell(Text(_itemName(f), overflow: TextOverflow.ellipsis)),
-      DataCell(Text(f.consigneeName, overflow: TextOverflow.ellipsis)),
-      DataCell(Text(yardName(f.yard), overflow: TextOverflow.ellipsis)),
-      DataCell(Text(DateFormat('yyyy-MM-dd').format(f.appealDeadline),
+      DataCell(TooltipText(_itemName(f), overflow: TextOverflow.ellipsis)),
+      DataCell(TooltipText(f.consigneeName, overflow: TextOverflow.ellipsis)),
+      DataCell(TooltipText(yardName(f.yard), overflow: TextOverflow.ellipsis)),
+      DataCell(TooltipText(DateFormat('yyyy-MM-dd').format(f.appealDeadline),
           style: TextStyle(
               color: context.colors.textMuted,
               fontWeight: FontWeight.w500))),
