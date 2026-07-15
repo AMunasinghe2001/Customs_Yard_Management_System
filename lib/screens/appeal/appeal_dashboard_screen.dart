@@ -62,7 +62,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.colors.accentBlue;
+    final accent = AppTheme.appealPurple;
     final profile = ref.watch(currentProfileProvider);
     final async = ref.watch(appealForfeitedPackagesProvider);
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
@@ -398,7 +398,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
       builder: (_) => PackageDetailsDialog(
         package: f.packageDetails!,
         storageRate: storageRate,
-        headerAccentColor: context.colors.accentBlue,
+        headerAccentColor: AppTheme.appealPurple,
         useLegacySummary: true,
         highlightItemId: f.itemId ??
             (f.packageDetails!.items.isNotEmpty
@@ -965,7 +965,7 @@ class _AppealDecisionDialogState extends State<_AppealDecisionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.colors.accentBlue;
+    final accent = AppTheme.appealPurple;
     final isOther = _selected == 'OTHER';
     final canConfirm = _selected != null &&
         (!isOther || _otherCtrl.text.trim().isNotEmpty);

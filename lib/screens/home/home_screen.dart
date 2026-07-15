@@ -95,7 +95,7 @@ class HomeScreen extends ConsumerWidget {
                       icon: Icons.balance_rounded,
                       title: 'Appeal Directorate',
                       subtitle: 'Review forfeited packages\n& hold appeals before disposal',
-                      accentColor: context.colors.accentBlue,
+                      accentColor: AppTheme.appealPurple,
                       onLogin: (ctx) => ctx.go('/appeal/login'),
                       onSignup: (ctx) => ctx.go('/appeal/signup'),
                       delay: 950,

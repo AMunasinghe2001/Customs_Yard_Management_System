@@ -168,6 +168,9 @@ class AppTheme {
   static const Color warningAmber = Color(0xFFF57F17);
   static const Color dangerRed = Color(0xFFC62828);
   static const Color heldOrange = Color(0xFFE65100);
+  /// Appeal Directorate accent – deep purple for strong contrast against the
+  /// dark navy scaffold, and a royal/legal feel that pairs well with gold.
+  static const Color appealPurple = Color(0xFF7B1FA2);
   
   // Custom Dark Colors
   static const Color _customsBlue = Color(0xFF231f87);

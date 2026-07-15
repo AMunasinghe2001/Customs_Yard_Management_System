@@ -289,7 +289,7 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.colors.accentBlue;
+    final accent = AppTheme.appealPurple;
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
       body: Row(children: [
