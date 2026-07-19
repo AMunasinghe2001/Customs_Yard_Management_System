@@ -859,8 +859,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                 label: Text('Valuation'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Sold Price'), size: ColumnSize.M),
-                            DataColumn2(
-                                label: Text('Delivery'), fixedWidth: 120),
+                            DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -887,8 +886,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                         qty: r.entry.itemCount)),
                                     DataCell(
                                         _SaleFinancialsCell(saleItemKey: r.saleItemKey)),
-                                    DataCell(
-                                        _DeliveryStatusCell(package: r.package, saleItemKey: r.saleItemKey)),
+                                    DataCell(Center(child: _DeliveryStatusCell(package: r.package, saleItemKey: r.saleItemKey))),
                                     DataCell(Center(
                                       child: IconButton(
                                         icon: Icon(Icons.info_outline_rounded,
@@ -1147,8 +1145,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                             DataColumn2(
                                 label: Text('Destruction Price'),
                                 size: ColumnSize.M),
-                            DataColumn2(
-                                label: Text('Delivery'), fixedWidth: 130),
+                            DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 130),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -1180,8 +1177,8 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                     DataCell(_DestructionPriceCell(
                                         package: r.package,
                                         packageItemId: r.entry.packageItemId)),
-                                    DataCell(_DestroyedDeliveryCell(
-                                        package: r.package)),
+                                    DataCell(Center(child: _DestroyedDeliveryCell(
+                                        package: r.package))),
                                     DataCell(Center(
                                       child: IconButton(
                                         icon: Icon(Icons.info_outline_rounded,
@@ -1744,12 +1741,11 @@ class _RequestCard extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 64,
                         numeric: true),
-                    DataColumn2(
-                        label: Text('Source'),
+                    DataColumn2(label: Center(child: Text('Source')),
                         size: ColumnSize.S,
                         fixedWidth: 110),
                     DataColumn2(
-                        label: Text('Disposition'),
+                        label: Center(child: Text('Disposition')),
                         size: ColumnSize.S,
                         fixedWidth: 130),
                     DataColumn2(
@@ -1791,8 +1787,8 @@ class _RequestCard extends ConsumerWidget {
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,
                               fontSize: 12))),
-                      DataCell(_SourceChip(source: f?.source ?? 'forfeit')),
-                      DataCell(_DispositionChip(disposition: it.disposition)),
+                      DataCell(Center(child: _SourceChip(source: f?.source ?? 'forfeit'))),
+                      DataCell(Center(child: _DispositionChip(disposition: it.disposition))),
                       DataCell(it.valuationCost != null
                           ? Column(
                               mainAxisSize: MainAxisSize.min,
@@ -2064,7 +2060,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                       DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Source'), size: ColumnSize.S),
+                      DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                       DataColumn2(
                           label: Text('Qty'),
                           size: ColumnSize.S,
@@ -2105,7 +2101,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                             overflow: TextOverflow.ellipsis)),
                         DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(_SourceChip(source: f.source)),
+                        DataCell(Center(child: _SourceChip(source: f.source))),
                         DataCell(TooltipText('${f.entryQty ?? item?.quantity ?? '—'}')),
                         DataCell(Builder(builder: (_) {
                           final reason = _forfeitReasonText(item, f);
@@ -2615,7 +2611,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Source'), size: ColumnSize.S),
+                    DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
@@ -2650,7 +2646,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(TooltipText(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(_sourceChip(context, f?.source)),
+                      DataCell(Center(child: _sourceChip(context, f?.source))),
                       DataCell(Center(
                           child:
                               Text('${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
@@ -3933,7 +3929,7 @@ class DestructionCard extends ConsumerWidget {
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Source'), size: ColumnSize.S),
+                    DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
@@ -3969,7 +3965,7 @@ class DestructionCard extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis)),
                       DataCell(TooltipText(r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(_sourceChip(context, f?.source)),
+                      DataCell(Center(child: _sourceChip(context, f?.source))),
                       DataCell(Center(
                           child:
                               Text('${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
@@ -5019,7 +5015,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                       DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Source'), size: ColumnSize.S),
+                      DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                       DataColumn2(
                           label: Text('Qty'),
                           size: ColumnSize.S,
@@ -5060,7 +5056,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                             overflow: TextOverflow.ellipsis)),
                         DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
-                        DataCell(_SourceChip(source: f.source)),
+                        DataCell(Center(child: _SourceChip(source: f.source))),
                         DataCell(TooltipText('${f.entryQty ?? item?.quantity ?? '—'}')),
                         DataCell(Builder(builder: (_) {
                           final reason = _forfeitReasonText(item, f);

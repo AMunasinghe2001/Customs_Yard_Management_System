@@ -488,8 +488,7 @@ class _DispositionCategoryScreenState
                                       : 'Destruction Price'),
                                   size: ColumnSize.M),
                             if (_hasDelivery)
-                              const DataColumn2(
-                                  label: Text('Delivery'), fixedWidth: 120),
+                              const DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
                             const DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -562,12 +561,12 @@ class _DispositionCategoryScreenState
                                             row.entry?.returnNotes),
                                       )),
                                     if (widget.finalTag == 'SOLD')
-                                      DataCell(_DeliveryStatusCell(
+                                      DataCell(Center(child: _DeliveryStatusCell(
                                         package: row.package,
                                         packageItemId: row.entry?.packageItemId,
                                         receipt: _parseSaleReceipt(
                                             row.entry?.returnNotes),
-                                      )),
+                                      ))),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(_DestructionFinancialsCell(
                                         package: row.package,
@@ -581,10 +580,10 @@ class _DispositionCategoryScreenState
                                         packageItemId: row.entry?.packageItemId,
                                       )),
                                     if (widget.finalTag == 'DESTROYED')
-                                      DataCell(_DestroyedDeliveryStatusCell(
+                                      DataCell(Center(child: _DestroyedDeliveryStatusCell(
                                         package: row.package,
                                         packageItemId: row.entry?.packageItemId,
-                                      )),
+                                      ))),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,

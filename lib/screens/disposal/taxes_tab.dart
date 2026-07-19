@@ -89,7 +89,7 @@ class TaxesTab extends ConsumerWidget {
       columns: const [
         DataColumn2(label: Text('Name'), size: ColumnSize.L),
         DataColumn2(label: Text('Percentage (%)'), size: ColumnSize.S),
-        DataColumn2(label: Text('Status'), size: ColumnSize.S),
+        DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
         DataColumn2(label: Text('Actions'), size: ColumnSize.S),
       ],
       rows: taxes.map((tax) {
@@ -97,7 +97,7 @@ class TaxesTab extends ConsumerWidget {
           DataCell(TooltipText(tax.name)),
           DataCell(TooltipText('${tax.percentage}%')),
           DataCell(
-            Container(
+            Center(child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
                 color: tax.isActive
@@ -113,7 +113,7 @@ class TaxesTab extends ConsumerWidget {
                   fontWeight: FontWeight.bold,
                 ),
               ),
-            ),
+            )),
           ),
           DataCell(Row(
             mainAxisSize: MainAxisSize.min,

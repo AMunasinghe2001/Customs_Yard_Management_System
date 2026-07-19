@@ -731,7 +731,7 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                 size: ColumnSize.S,
                                 fixedWidth: 70),
                             DataColumn2(
-                                label: Text('Disposition'), size: ColumnSize.M),
+                                label: Center(child: Text('Disposition')), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Date'), size: ColumnSize.M),
                             DataColumn2(

@@ -315,7 +315,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                   ? context.colors.dangerRed
                   : context.colors.textSecondary,
               fontWeight: FontWeight.w600))),
-      DataCell(_statusChip(context, f)),
+      DataCell(Center(child: _statusChip(context, f))),
       DataCell(Center(
         child: IconButton(
           icon: Icon(Icons.info_outline_rounded,
@@ -343,7 +343,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
           style: TextStyle(
               color: context.colors.textMuted,
               fontWeight: FontWeight.w500))),
-      DataCell(Container(
+      DataCell(Center(child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: decisionColor.withOpacity(0.12),
@@ -356,7 +356,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                 color: decisionColor,
                 fontSize: 11,
                 fontWeight: FontWeight.w700)),
-      )),
+      ))),
       DataCell(Center(
         child: IconButton(
           icon: Icon(Icons.info_outline_rounded,
@@ -661,7 +661,7 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                           DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                           DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
                           DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.S),
-                          DataColumn2(label: Text('Status'), size: ColumnSize.S, fixedWidth: 140),
+                          DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S, fixedWidth: 140),
                           DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                         ],
                         rows: pageSlice(rows, widget.page, kClientPageSize)
@@ -800,7 +800,7 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                           DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                           DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
                           DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.S),
-                          DataColumn2(label: Text('Decision'), size: ColumnSize.S, fixedWidth: 160),
+                          DataColumn2(label: Center(child: Text('Decision')), size: ColumnSize.S, fixedWidth: 160),
                           DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                         ],
                         rows: pageSlice(rows, widget.page, kClientPageSize)

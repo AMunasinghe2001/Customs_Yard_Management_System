@@ -403,7 +403,7 @@ class _ValuationRequestCard extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 130),
                     DataColumn2(
-                        label: Text('Disposition'),
+                        label: Center(child: Text('Disposition')),
                         size: ColumnSize.S,
                         fixedWidth: 130),
                     DataColumn2(
