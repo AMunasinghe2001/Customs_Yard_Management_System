@@ -3,6 +3,9 @@ import 'dart:convert';
 class PackageModel {
   final String id;
   final String srNumber;
+  // For "Old Entry" registrations only: the SR number the goods carried in the
+  // previous/legacy register. NULL for normal (new) registrations.
+  final String? oldSrNumber;
   final String? caseNumber;
   final String originCountry;
   final double declaredValue;
@@ -34,6 +37,7 @@ class PackageModel {
   const PackageModel({
     required this.id,
     required this.srNumber,
+    this.oldSrNumber,
     this.caseNumber,
     this.originCountry = '',
     this.declaredValue = 0,
@@ -78,6 +82,7 @@ class PackageModel {
     return PackageModel(
       id: json['id'] as String,
       srNumber: json['sr_number'] as String,
+      oldSrNumber: json['old_sr_number'] as String?,
       caseNumber: json['case_number'] as String?,
       originCountry: json['origin_country'] as String? ?? '',
       declaredValue: (json['declared_value'] as num?)?.toDouble() ?? 0,
@@ -128,6 +133,7 @@ class PackageModel {
   Map<String, dynamic> toInsertJson() {
     return {
       'sr_number': srNumber,
+      'old_sr_number': oldSrNumber,
       'case_number': caseNumber,
       'origin_country': originCountry,
       'declared_value': declaredValue,
@@ -153,6 +159,7 @@ class PackageModel {
 
   PackageModel copyWith({
     String? srNumber,
+    String? oldSrNumber,
     String? caseNumber,
     String? originCountry,
     double? declaredValue,
@@ -182,6 +189,7 @@ class PackageModel {
     return PackageModel(
       id: id,
       srNumber: srNumber ?? this.srNumber,
+      oldSrNumber: oldSrNumber ?? this.oldSrNumber,
       caseNumber: caseNumber ?? this.caseNumber,
       originCountry: originCountry ?? this.originCountry,
       declaredValue: declaredValue ?? this.declaredValue,
@@ -265,6 +273,9 @@ class PackageItem {
   final int quantity;
   final String unitOfMeasure;
   final String? unitOther;
+  // Cartons only: what each carton holds (inner unit type) and how many.
+  final String? innerUnit;
+  final int? innerQuantity;
   final double unitValue;
   final String? hsCode;
   final String? category;
@@ -281,6 +292,8 @@ class PackageItem {
     required this.quantity,
     this.unitOfMeasure = 'Pieces',
     this.unitOther,
+    this.innerUnit,
+    this.innerQuantity,
     this.unitValue = 0,
     this.hsCode,
     this.category,
@@ -299,6 +312,8 @@ class PackageItem {
       quantity: json['quantity'] as int,
       unitOfMeasure: json['unit_of_measure'] as String? ?? 'Pieces',
       unitOther: json['unit_other'] as String?,
+      innerUnit: json['inner_unit'] as String?,
+      innerQuantity: json['inner_quantity'] as int?,
       unitValue: (json['unit_value'] as num?)?.toDouble() ?? 0,
       hsCode: json['hs_code'] as String?,
       category: json['category'] as String?,
@@ -318,6 +333,8 @@ class PackageItem {
       'quantity': quantity,
       'unit_of_measure': unitOfMeasure,
       'unit_other': unitOther,
+      'inner_unit': innerUnit,
+      'inner_quantity': innerQuantity,
       'unit_value': unitValue,
       'hs_code': hsCode,
       'category': category,
@@ -336,6 +353,8 @@ class PackageItem {
     int? quantity,
     String? unitOfMeasure,
     String? unitOther,
+    String? innerUnit,
+    int? innerQuantity,
     double? unitValue,
     String? hsCode,
     String? category,
@@ -352,6 +371,8 @@ class PackageItem {
       quantity: quantity ?? this.quantity,
       unitOfMeasure: unitOfMeasure ?? this.unitOfMeasure,
       unitOther: unitOther ?? this.unitOther,
+      innerUnit: innerUnit ?? this.innerUnit,
+      innerQuantity: innerQuantity ?? this.innerQuantity,
       unitValue: unitValue ?? this.unitValue,
       hsCode: hsCode ?? this.hsCode,
       category: category ?? this.category,

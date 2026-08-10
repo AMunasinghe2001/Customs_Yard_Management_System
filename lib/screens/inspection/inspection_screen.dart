@@ -32,6 +32,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     with TickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
   final _srNumberCtrl = TextEditingController();
+  // Registration mode: 'new' = a fresh SR entry (default), 'old' = migrating a
+  // legacy package — captures its previous SR number in [_oldSrNumberCtrl].
+  String _entryMode = 'new';
+  final _oldSrNumberCtrl = TextEditingController();
   // Yard this SR is being registered under. Defaults to the signed-in user's
   // yard; the prefix of the generated SR number follows this selection.
   // Normalised through yardByCode so it always matches a dropdown item.
@@ -128,7 +132,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _containerNumberCtrl.text = pkg.containerNumber ?? '';
       _reasonCtrlMain.text = pkg.reason ?? '';
       _notesCtrl.text = pkg.notes ?? '';
+      _oldSrNumberCtrl.text = pkg.oldSrNumber ?? '';
       setState(() {
+        _entryMode = (pkg.oldSrNumber != null && pkg.oldSrNumber!.isNotEmpty)
+            ? 'old'
+            : 'new';
         _statusValue = (pkg.status == 'detained' || pkg.status == 'forfeited')
             ? 'held'
             : pkg.status;
@@ -142,6 +150,14 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             row.nameCtrl.text = item.itemName;
             row.goodsDescriptionCtrl.text = item.goodsDescription ?? '';
             row.qtyCtrl.text = item.quantity.toString();
+            row.unitOfMeasureCtrl.text = item.unitOfMeasure;
+            if (item.unitOfMeasure == 'Other') {
+              row.unitOtherCtrl.text = item.unitOther ?? '';
+            }
+            if (item.unitOfMeasure == 'Cartons') {
+              row.innerUnitCtrl.text = item.innerUnit ?? 'Pieces';
+              row.innerQtyCtrl.text = (item.innerQuantity ?? 1).toString();
+            }
             row.valueCtrl.text = item.unitValue.toString();
             row.hsCodeCtrl.text = item.hsCode ?? '';
             row.categoryCtrl.text = item.category ?? '';
@@ -306,6 +322,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _tabController.removeListener(_handleTabChange);
     _tabController.dispose();
     _srNumberCtrl.dispose();
+    _oldSrNumberCtrl.dispose();
     _originCtrl.dispose();
     _valueCtrl.dispose();
     _weightCtrl.dispose();
@@ -337,6 +354,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     // SR-B — so we never create two packages under one SR or silently clobber
     // another package.
     final sr = _srNumberCtrl.text.trim();
+    if (_entryMode == 'old' && _oldSrNumberCtrl.text.trim().isEmpty) {
+      setState(() => _showValidationErrors = true);
+      context.showError('Old SR number is required for an Old Entry.');
+      return;
+    }
     final isEditingThisSr = _isUpdate && _loadedSrNumber == sr;
     if (!isEditingThisSr) {
       try {
@@ -373,6 +395,13 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 unitOther: r.unitOfMeasureCtrl.text == 'Other'
                     ? r.unitOtherCtrl.text
                     : null,
+                // Cartons only: inner unit type + inner quantity per carton.
+                innerUnit: r.unitOfMeasureCtrl.text == 'Cartons'
+                    ? r.innerUnitCtrl.text
+                    : null,
+                innerQuantity: r.unitOfMeasureCtrl.text == 'Cartons'
+                    ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                    : null,
                 unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
                 hsCode: r.hsCodeCtrl.text.trim().isEmpty
                     ? null
@@ -393,6 +422,11 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       final pkg = PackageModel(
         id: '',
         srNumber: _srNumberCtrl.text.trim(),
+        // Old Entry mode: keep the legacy SR number; NULL for new entries.
+        oldSrNumber: _entryMode == 'old' &&
+                _oldSrNumberCtrl.text.trim().isNotEmpty
+            ? _oldSrNumberCtrl.text.trim()
+            : null,
         originCountry: _originCtrl.text.trim(),
         declaredValue: double.tryParse(_valueCtrl.text) ?? 0,
         weightKg: double.tryParse(_weightCtrl.text) ?? 0,
@@ -445,6 +479,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   void _reset() {
     _formKey.currentState?.reset();
     _srNumberCtrl.clear();
+    _oldSrNumberCtrl.clear();
+    _entryMode = 'new';
     _originCtrl.clear();
     _valueCtrl.clear();
     _weightCtrl.clear();
@@ -643,6 +679,47 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                     title: 'SR Register Information',
                                     icon: Icons.inventory_2_rounded,
                                     children: [
+                                  // ── Registration type: New Entry / Old Entry ──
+                                  StyledDropdownFormField<String>(
+                                    label: 'Registration Type',
+                                    menuWidth: 260,
+                                    // Match the roomier (non-dense) section
+                                    // fields below (Old SR Number / SR Number).
+                                    isDense: false,
+                                    contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 16),
+                                    value: _entryMode,
+                                    options: const [
+                                      StyledDropdownOption('new', 'New Entry'),
+                                      StyledDropdownOption('old', 'Old Entry'),
+                                    ],
+                                    onChanged: (v) => setState(
+                                        () => _entryMode = v ?? 'new'),
+                                  ),
+                                  const Gap(12),
+                                  // Old Entry: capture the previous register SR.
+                                  if (_entryMode == 'old') ...[
+                                    TextFormField(
+                                      controller: _oldSrNumberCtrl,
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(
+                                            RegExp(r'[a-zA-Z0-9/ ]')),
+                                        LengthLimitingTextInputFormatter(30),
+                                      ],
+                                      style: TextStyle(
+                                          color: context.colors.textPrimary),
+                                      decoration: _fieldDecoration(
+                                        labelText: 'Old SR Number *',
+                                        hintText:
+                                            'SR number from the previous register',
+                                      ),
+                                      validator: (v) => _entryMode == 'old' &&
+                                              (v == null || v.trim().isEmpty)
+                                          ? 'Old SR number is required'
+                                          : null,
+                                    ),
+                                    const Gap(12),
+                                  ],
                                   if (_isUpdate)
                                     Container(
                                       padding: const EdgeInsets.symmetric(
@@ -1811,6 +1888,9 @@ class _ItemRow {
   final qtyCtrl = TextEditingController(text: '1');
   final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
   final unitOtherCtrl = TextEditingController();
+  // Cartons only: inner unit type + inner quantity per carton.
+  final innerUnitCtrl = TextEditingController(text: 'Pieces');
+  final innerQtyCtrl = TextEditingController(text: '1');
   final valueCtrl = TextEditingController(text: '0');
   final hsCodeCtrl = TextEditingController();
   final categoryCtrl = TextEditingController();
@@ -1882,37 +1962,22 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                   controller: widget.row.nameCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Item Name *', isDense: true, helperText: ' '),
+                      labelText: 'Item Name *',
+                      isDense: true,
+                      helperText: ' ',
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
                   validator: (v) => widget.showValidationErrors &&
                           (v == null || v.trim().isEmpty)
                       ? 'Required'
                       : null,
                   onChanged: (_) => widget.onChanged()),
             ),
-            const Gap(12),
-            Expanded(
-              flex: 1,
-              child: TextFormField(
-                controller: widget.row.qtyCtrl,
-                decoration: const InputDecoration(
-                    labelText: 'Pkgs *', isDense: true, helperText: ' '),
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                validator: (v) {
-                  if (!widget.showValidationErrors) return null;
-                  if (v == null || v.trim().isEmpty) return 'Req';
-                  if (int.tryParse(v) == null || int.tryParse(v)! <= 0)
-                    return 'Err';
-                  return null;
-                },
-                onChanged: (_) => widget.onChanged(),
-              ),
-            ),
             const Gap(10),
             Expanded(
               flex: 2,
               child: StyledDropdownFormField<String>(
-                label: 'Unit *',
+                label: 'Unit Type *',
                 menuWidth: 220,
                 columns: 2,
                 value: const [
@@ -1960,12 +2025,105 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 child: TextFormField(
                   controller: widget.row.unitOtherCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Name *', isDense: true, helperText: ' '),
+                      labelText: 'Name *',
+                      isDense: true,
+                      helperText: ' ',
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
                   validator: (v) => widget.showValidationErrors &&
                           widget.row.unitOfMeasureCtrl.text == 'Other' &&
                           (v == null || v.trim().isEmpty)
                       ? 'Req'
                       : null,
+                  onChanged: (_) => widget.onChanged(),
+                ),
+              ),
+            ],
+            // Quantity of the selected unit type — shown right beside Unit Type.
+            const Gap(10),
+            Expanded(
+              flex: 1,
+              child: TextFormField(
+                controller: widget.row.qtyCtrl,
+                decoration: const InputDecoration(
+                    labelText: 'Quantity *',
+                    isDense: true,
+                    helperText: ' ',
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                validator: (v) {
+                  if (!widget.showValidationErrors) return null;
+                  if (v == null || v.trim().isEmpty) return 'Req';
+                  if (int.tryParse(v) == null || int.tryParse(v)! <= 0)
+                    return 'Err';
+                  return null;
+                },
+                onChanged: (_) => widget.onChanged(),
+              ),
+            ),
+            // Cartons only: inner unit + its quantity, shown right after Qty.
+            if (widget.row.unitOfMeasureCtrl.text == 'Cartons') ...[
+              const Gap(10),
+              Expanded(
+                flex: 2,
+                child: StyledDropdownFormField<String>(
+                  label: 'Inner Unit *',
+                  menuWidth: 220,
+                  columns: 2,
+                  value: const [
+                    'Pieces',
+                    'Boxes',
+                    'Bags',
+                    'Pallets',
+                    'Rolls',
+                    'Packages',
+                    'No of',
+                    'Bottles',
+                    'KG',
+                    'Meters',
+                  ].contains(widget.row.innerUnitCtrl.text)
+                      ? widget.row.innerUnitCtrl.text
+                      : 'Pieces',
+                  options: const [
+                    'Pieces',
+                    'Boxes',
+                    'Bags',
+                    'Pallets',
+                    'Rolls',
+                    'Packages',
+                    'No of',
+                    'Bottles',
+                    'KG',
+                    'Meters',
+                  ].map((u) => StyledDropdownOption(u, u)).toList(),
+                  onChanged: (v) {
+                    setState(() =>
+                        widget.row.innerUnitCtrl.text = v ?? 'Pieces');
+                    widget.onChanged();
+                  },
+                ),
+              ),
+              const Gap(8),
+              Expanded(
+                flex: 1,
+                child: TextFormField(
+                  controller: widget.row.innerQtyCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Inner Qty *',
+                      isDense: true,
+                      helperText: ' ',
+                      contentPadding:
+                          EdgeInsets.symmetric(horizontal: 12, vertical: 12)),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (v) {
+                    if (!widget.showValidationErrors) return null;
+                    if (widget.row.unitOfMeasureCtrl.text == 'Cartons' &&
+                        (v == null || v.trim().isEmpty)) return 'Req';
+                    return null;
+                  },
                   onChanged: (_) => widget.onChanged(),
                 ),
               ),
@@ -1999,6 +2157,8 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     labelText: 'Other Status *',
                     isDense: true,
                     helperText: ' ',
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                   ),
                   validator: (v) => widget.showValidationErrors &&
                           widget.row.status == 'Other' &&

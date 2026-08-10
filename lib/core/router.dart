@@ -22,6 +22,7 @@ import '../screens/packages/packages_screen.dart';
 import '../screens/packages/returned_packages_screen.dart';
 import '../screens/packages/abandoned_packages_screen.dart';
 import '../screens/packages/other_packages_screen.dart';
+import '../screens/packages/old_entries_screen.dart';
 import '../screens/packages/disposition_category_screen.dart';
 import '../screens/admin/admin_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
@@ -104,6 +105,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),
       GoRoute(path: '/zone-capacity', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehouseCapacityScreen())),
       GoRoute(path: '/packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const PackagesScreen())),
+      GoRoute(path: '/old-entries', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const OldEntriesScreen())),
       GoRoute(path: '/returned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ReturnedPackagesScreen())),
       GoRoute(path: '/abandoned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AbandonedPackagesScreen())),
       GoRoute(path: '/forfeited-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ForfeitedPackagesScreen())),
