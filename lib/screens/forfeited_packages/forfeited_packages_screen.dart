@@ -466,7 +466,15 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                   ),
                   data: (packages) {
                     final filtered = packages.where((pkg) {
-                      final srMatch = pkg.srNumber.toLowerCase().contains(_searchQuery);
+                      final srLower = pkg.srNumber.toLowerCase();
+                      // Token match so a partial SR like "GL1/13" still finds
+                      // "GL1/SR/13/2026" (every "/"- or space-separated piece of
+                      // the query must appear somewhere in the SR number).
+                      final srTokens = _searchQuery
+                          .split(RegExp(r'[\s/]+'))
+                          .where((t) => t.isNotEmpty);
+                      final srMatch = srLower.contains(_searchQuery) ||
+                          srTokens.every((t) => srLower.contains(t));
                       final consigneeMatch = pkg.consigneeName.toLowerCase().contains(_searchQuery);
                       if (!srMatch && !consigneeMatch) return false;
                       if (_dateRange != null) {

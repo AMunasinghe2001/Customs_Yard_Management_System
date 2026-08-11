@@ -175,16 +175,20 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                       label: Text('New SR Number'),
                                       size: ColumnSize.M),
                                   DataColumn2(
-                                      label: Text('Consignee'),
-                                      size: ColumnSize.M),
+                                      label: Text('Cusdec No'),
+                                      size: ColumnSize.S,
+                                      fixedWidth: 130),
+                                  DataColumn2(
+                                      label: Text('Cusdec Date'),
+                                      size: ColumnSize.S,
+                                      fixedWidth: 120),
                                   DataColumn2(
                                       label: Text('Entry Date'),
                                       size: ColumnSize.S,
                                       fixedWidth: 120),
                                   DataColumn2(
-                                      label: Text('Items'),
-                                      size: ColumnSize.S,
-                                      fixedWidth: 70),
+                                      label: Text('Consignee'),
+                                      size: ColumnSize.M),
                                   DataColumn2(
                                       label: Center(child: Text('Details')),
                                       size: ColumnSize.S,
@@ -206,17 +210,26 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                                   fontWeight:
                                                       FontWeight.w600))),
                                           DataCell(TooltipText(
-                                              p.consigneeName,
+                                              (p.cusdecNo == null ||
+                                                      p.cusdecNo!.isEmpty)
+                                                  ? '—'
+                                                  : p.cusdecNo!,
                                               overflow:
                                                   TextOverflow.ellipsis)),
+                                          DataCell(TooltipText(
+                                              (p.cusdecDate == null ||
+                                                      p.cusdecDate!.isEmpty)
+                                                  ? '—'
+                                                  : p.cusdecDate!)),
                                           DataCell(TooltipText(p.entryDate !=
                                                   null
                                               ? DateFormat('yyyy-MM-dd')
                                                   .format(p.entryDate!)
                                               : '—')),
-                                          DataCell(Center(
-                                              child: Text(
-                                                  '${p.totalItemCount}'))),
+                                          DataCell(TooltipText(
+                                              p.consigneeName,
+                                              overflow:
+                                                  TextOverflow.ellipsis)),
                                           DataCell(Center(
                                               child: IconButton(
                                             icon: Icon(

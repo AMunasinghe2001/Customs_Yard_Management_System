@@ -84,18 +84,36 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
     return '${items.first.itemName} +${items.length - 1}';
   }
 
+  /// A returned warehouse entry that represents a forfeit / confiscation event.
+  /// Its [itemCount] is the quantity actually forfeited in that event.
+  bool _isForfeitEntry(WarehouseEntryModel e) {
+    if (!e.isReturned) return false;
+    final notes = (e.returnNotes ?? '').trim().toUpperCase();
+    return notes.startsWith('[FORFEIT') || notes.startsWith('[CONFISCATED');
+  }
+
   /// Quantity for a disposal request row.
-  /// Per-entry abandoned rows carry the exact abandoned qty in [entryQty];
-  /// otherwise falls back to the matching PackageItem.quantity.
+  /// Per-entry abandoned/other rows carry the exact qty in [entryQty]. For a
+  /// forfeited item we show the quantity actually FORFEITED (sum of the forfeit
+  /// warehouse-entry counts, e.g. 5 of 20) — matching the Forfeited table —
+  /// rather than the full registered item quantity. Falls back to the item's
+  /// (effective) quantity when there is no forfeit event.
   int? _itemQty(ForfeitedPackageModel f) {
     if (f.entryQty != null) return f.entryQty;
-    final items = f.packageDetails?.items ?? const [];
+    final pkg = f.packageDetails;
+    final items = pkg?.items ?? const [];
+    PackageItem? target;
     if (f.itemId != null) {
-      final match = items.where((i) => i.id == f.itemId).firstOrNull;
-      if (match != null) return match.quantity;
+      target = items.where((i) => i.id == f.itemId).firstOrNull;
     }
-    if (items.length == 1) return items.first.quantity;
-    return null; // multi-item row without per-item expansion
+    target ??= items.length == 1 ? items.first : null;
+    if (target == null) return null; // multi-item row without per-item expansion
+
+    final forfeitQty = (pkg?.warehouseEntries ?? const [])
+        .where((e) => e.packageItemId == target!.id && _isForfeitEntry(e))
+        .fold<int>(0, (s, e) => s + e.itemCount);
+    if (forfeitQty > 0) return forfeitQty;
+    return target.effectiveQuantity;
   }
 
   Future<void> _submit() async {

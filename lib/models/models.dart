@@ -67,6 +67,13 @@ class PackageModel {
     this.warehouseEntries = const [],
   });
 
+  /// Total inner-item count across all items — Cartons expand to their inner
+  /// (per-carton contents) count, not the carton count. Falls back to the
+  /// stored [totalItemCount] when the item list isn't loaded.
+  int get effectiveItemCount => items.isEmpty
+      ? totalItemCount
+      : items.fold(0, (s, i) => s + i.effectiveQuantity);
+
   /// Combined cusdec number & date display
   String? get cusdecNoDate {
     if (cusdecNo == null && cusdecDate == null) return null;
@@ -302,6 +309,28 @@ class PackageItem {
     this.reasons,
     this.notes,
   });
+
+  // Cartons registration is stored "inverted": [quantity]/[unitOfMeasure] hold
+  // the INNER contents (e.g. 1176 Pieces) — the operational count used across
+  // the whole app (warehouse, release, disposal, totals) — while the outer
+  // packaging (e.g. 20 Cartons) is kept in [innerUnit]/[innerQuantity] purely
+  // for display. So no special-casing is needed for counts: quantity already
+  // reflects the goods inside.
+
+  /// The operational item count (already the inner contents count).
+  int get effectiveQuantity => quantity;
+
+  /// The unit that [effectiveQuantity] is counted in.
+  String get effectiveUnit => unitOfMeasure;
+
+  /// Packaging note, e.g. "20 Cartons" (null when the item has no packaging
+  /// wrapper). Read from [innerUnit]/[innerQuantity].
+  String? get packagingLabel => (innerUnit != null &&
+          innerUnit!.trim().isNotEmpty &&
+          innerQuantity != null &&
+          innerQuantity! > 0)
+      ? '$innerQuantity $innerUnit'
+      : null;
 
   factory PackageItem.fromJson(Map<String, dynamic> json) {
     return PackageItem(

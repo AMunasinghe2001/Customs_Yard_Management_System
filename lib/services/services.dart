@@ -685,9 +685,21 @@ class PackageService {
         }).eq('package_id', result.id);
       }
 
-      // Sync to Forfeited Packages if applicable
-        final hasForfeit = _isForfeitStatus(pkg.status) ||
-          items.any((i) => _isForfeitStatus(i.status));
+      // Sync to Forfeited Packages if applicable.
+      // A PARTIAL forfeit is recorded as a returned "[FORFEIT]/[CONFISCATED]"
+      // warehouse entry while the item's own status stays 'detain' (part of it
+      // is still held). So we must also treat a forfeit warehouse event as
+      // "has forfeit" — otherwise editing such a package (e.g. its Entry Date)
+      // would wrongly delete its forfeited_packages row below and drop it from
+      // the Forfeited table.
+      final hasForfeitEntry = result.warehouseEntries.any((e) {
+        if (!e.isReturned) return false;
+        final n = (e.returnNotes ?? '').trim().toUpperCase();
+        return n.startsWith('[FORFEIT') || n.startsWith('[CONFISCATED');
+      });
+      final hasForfeit = _isForfeitStatus(pkg.status) ||
+          items.any((i) => _isForfeitStatus(i.status)) ||
+          hasForfeitEntry;
       if (hasForfeit) {
         final existingForfeited = await supabase
             .from('forfeited_packages')

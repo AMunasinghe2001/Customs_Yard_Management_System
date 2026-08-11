@@ -181,6 +181,8 @@ class StyledDropdownFormField<T> extends StatelessWidget {
   final Color? fillColor;
   final Widget? prefixIcon;
   final EdgeInsetsGeometry? contentPadding;
+  final TextStyle? valueStyle;
+  final TextStyle? labelStyle;
 
   const StyledDropdownFormField({
     super.key,
@@ -197,6 +199,8 @@ class StyledDropdownFormField<T> extends StatelessWidget {
     this.fillColor,
     this.prefixIcon,
     this.contentPadding,
+    this.valueStyle,
+    this.labelStyle,
   });
 
   String _selectedLabel() {
@@ -242,7 +246,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
               isEmpty: value == null,
               decoration: InputDecoration(
                 labelText: label,
-                labelStyle: const TextStyle(fontSize: 12),
+                labelStyle: labelStyle ?? const TextStyle(fontSize: 12),
                 isDense: isDense,
                 helperText: helperText,
                 filled: fillColor != null,
@@ -257,8 +261,9 @@ class StyledDropdownFormField<T> extends StatelessWidget {
               ),
               child: Text(
                 _selectedLabel(),
-                style: TextStyle(
-                    fontSize: 13, color: context.colors.textPrimary),
+                style: valueStyle ??
+                    TextStyle(
+                        fontSize: 13, color: context.colors.textPrimary),
                 overflow: TextOverflow.ellipsis,
                 maxLines: 1,
               ),

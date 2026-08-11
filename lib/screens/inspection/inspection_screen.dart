@@ -149,14 +149,20 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
             row.itemId = item.id;
             row.nameCtrl.text = item.itemName;
             row.goodsDescriptionCtrl.text = item.goodsDescription ?? '';
-            row.qtyCtrl.text = item.quantity.toString();
-            row.unitOfMeasureCtrl.text = item.unitOfMeasure;
-            if (item.unitOfMeasure == 'Other') {
-              row.unitOtherCtrl.text = item.unitOther ?? '';
-            }
-            if (item.unitOfMeasure == 'Cartons') {
-              row.innerUnitCtrl.text = item.innerUnit ?? 'Pieces';
-              row.innerQtyCtrl.text = (item.innerQuantity ?? 1).toString();
+            // Reconstruct the form from the inverted Cartons storage: a packaged
+            // item keeps 'Cartons' + carton count in innerUnit/innerQuantity and
+            // the inner contents in quantity/unitOfMeasure.
+            if (item.innerUnit == 'Cartons' && item.innerQuantity != null) {
+              row.unitOfMeasureCtrl.text = 'Cartons';
+              row.qtyCtrl.text = (item.innerQuantity ?? 1).toString();
+              row.innerUnitCtrl.text = item.unitOfMeasure;
+              row.innerQtyCtrl.text = item.quantity.toString();
+            } else {
+              row.qtyCtrl.text = item.quantity.toString();
+              row.unitOfMeasureCtrl.text = item.unitOfMeasure;
+              if (item.unitOfMeasure == 'Other') {
+                row.unitOtherCtrl.text = item.unitOther ?? '';
+              }
             }
             row.valueCtrl.text = item.unitValue.toString();
             row.hsCodeCtrl.text = item.hsCode ?? '';
@@ -390,17 +396,23 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 goodsDescription: r.goodsDescriptionCtrl.text.trim().isEmpty
                     ? null
                     : r.goodsDescriptionCtrl.text.trim(),
-                quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
-                unitOfMeasure: r.unitOfMeasureCtrl.text,
+                // Cartons are stored "inverted": the operational quantity/unit
+                // become the INNER contents (e.g. 1176 Pieces), and the outer
+                // packaging (20 Cartons) is kept in innerUnit/innerQuantity.
+                quantity: r.unitOfMeasureCtrl.text == 'Cartons'
+                    ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                    : (int.tryParse(r.qtyCtrl.text) ?? 1),
+                unitOfMeasure: r.unitOfMeasureCtrl.text == 'Cartons'
+                    ? r.innerUnitCtrl.text
+                    : r.unitOfMeasureCtrl.text,
                 unitOther: r.unitOfMeasureCtrl.text == 'Other'
                     ? r.unitOtherCtrl.text
                     : null,
-                // Cartons only: inner unit type + inner quantity per carton.
                 innerUnit: r.unitOfMeasureCtrl.text == 'Cartons'
-                    ? r.innerUnitCtrl.text
+                    ? r.unitOfMeasureCtrl.text // 'Cartons' (packaging unit)
                     : null,
                 innerQuantity: r.unitOfMeasureCtrl.text == 'Cartons'
-                    ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                    ? (int.tryParse(r.qtyCtrl.text) ?? 1) // carton count
                     : null,
                 unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
                 hsCode: r.hsCodeCtrl.text.trim().isEmpty
@@ -430,7 +442,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         originCountry: _originCtrl.text.trim(),
         declaredValue: double.tryParse(_valueCtrl.text) ?? 0,
         weightKg: double.tryParse(_weightCtrl.text) ?? 0,
-        totalItemCount: items.fold(0, (sum, i) => sum + i.quantity),
+        totalItemCount: items.fold(0, (sum, i) => sum + i.effectiveQuantity),
         description: _descCtrl.text,
         containerNumber: _containerNumberCtrl.text.trim().isEmpty
             ? null
@@ -688,6 +700,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                     isDense: false,
                                     contentPadding: const EdgeInsets.symmetric(
                                         horizontal: 12, vertical: 16),
+                                    valueStyle: TextStyle(
+                                        fontSize: 16,
+                                        color: context.colors.textPrimary),
+                                    labelStyle: const TextStyle(fontSize: 14),
                                     value: _entryMode,
                                     options: const [
                                       StyledDropdownOption('new', 'New Entry'),
@@ -697,29 +713,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                         () => _entryMode = v ?? 'new'),
                                   ),
                                   const Gap(12),
-                                  // Old Entry: capture the previous register SR.
-                                  if (_entryMode == 'old') ...[
-                                    TextFormField(
-                                      controller: _oldSrNumberCtrl,
-                                      inputFormatters: [
-                                        FilteringTextInputFormatter.allow(
-                                            RegExp(r'[a-zA-Z0-9/ ]')),
-                                        LengthLimitingTextInputFormatter(30),
-                                      ],
-                                      style: TextStyle(
-                                          color: context.colors.textPrimary),
-                                      decoration: _fieldDecoration(
-                                        labelText: 'Old SR Number *',
-                                        hintText:
-                                            'SR number from the previous register',
-                                      ),
-                                      validator: (v) => _entryMode == 'old' &&
-                                              (v == null || v.trim().isEmpty)
-                                          ? 'Old SR number is required'
-                                          : null,
-                                    ),
-                                    const Gap(12),
-                                  ],
                                   if (_isUpdate)
                                     Container(
                                       padding: const EdgeInsets.symmetric(
@@ -835,44 +828,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                     const Gap(12),
                                     Expanded(
                                         child: TextFormField(
-                                            controller: _entryDateCtrl,
-                                            readOnly: true,
-                                            onTap: () => _selectDate(
-                                                _entryDateCtrl,
-                                                lastDate: DateTime.now()),
-                                            inputFormatters: [
-                                              MaskTextInputFormatter(
-                                                mask: '####-##-##',
-                                                filter: {"#": RegExp(r'[0-9]')},
-                                                type:
-                                                    MaskAutoCompletionType.lazy,
-                                              )
-                                            ],
-                                            decoration: _fieldDecoration(
-                                              labelText: 'Entry Date *',
-                                              hintText: 'YYYY-MM-DD',
-                                              suffixIcon: IconButton(
-                                                icon: Icon(Icons.calendar_month,
-                                                    color: context
-                                                        .colors.primaryGold),
-                                                onPressed: () => _selectDate(
-                                                    _entryDateCtrl,
-                                                    lastDate: DateTime.now()),
-                                              ),
-                                            ),
-                                            validator: _dateValidator)),
-                                  ]),
-                                  const Gap(16),
-                                  Row(children: [
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _caseNumberCtrl,
-                                            decoration: _fieldDecoration(
-                                                labelText: 'Case Number'),
-                                            validator: (v) => null)),
-                                    const Gap(12),
-                                    Expanded(
-                                        child: TextFormField(
                                             controller: _cusdecDateCtrl,
                                             readOnly: true,
                                             onTap: () => _selectDate(
@@ -901,14 +856,90 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                             validator: _dateValidator)),
                                   ]),
                                   const Gap(16),
-                                  TextFormField(
-                                    controller: _containerNumberCtrl,
-                                    decoration: _fieldDecoration(
-                                      labelText: 'Container Number',
+                                  Row(children: [
+                                    Expanded(
+                                        child: TextFormField(
+                                            controller: _caseNumberCtrl,
+                                            decoration: _fieldDecoration(
+                                                labelText: 'Case Number'),
+                                            validator: (v) => null)),
+                                    const Gap(12),
+                                    Expanded(
+                                        child: TextFormField(
+                                            controller: _entryDateCtrl,
+                                            readOnly: true,
+                                            onTap: () => _selectDate(
+                                                _entryDateCtrl,
+                                                lastDate: DateTime.now()),
+                                            inputFormatters: [
+                                              MaskTextInputFormatter(
+                                                mask: '####-##-##',
+                                                filter: {"#": RegExp(r'[0-9]')},
+                                                type:
+                                                    MaskAutoCompletionType.lazy,
+                                              )
+                                            ],
+                                            decoration: _fieldDecoration(
+                                              labelText: 'Entry Date *',
+                                              hintText: 'YYYY-MM-DD',
+                                              suffixIcon: IconButton(
+                                                icon: Icon(Icons.calendar_month,
+                                                    color: context
+                                                        .colors.primaryGold),
+                                                onPressed: () => _selectDate(
+                                                    _entryDateCtrl,
+                                                    lastDate: DateTime.now()),
+                                              ),
+                                            ),
+                                            validator: _dateValidator)),
+                                  ]),
+                                  const Gap(16),
+                                  // Old SR Number (Old Entry only) + Container
+                                  // Number — half width each so the row is filled
+                                  // and neither field runs full-width.
+                                  Row(children: [
+                                    if (_entryMode == 'old') ...[
+                                      Expanded(
+                                        child: TextFormField(
+                                          controller: _oldSrNumberCtrl,
+                                          autovalidateMode: AutovalidateMode
+                                              .onUserInteraction,
+                                          inputFormatters: [
+                                            FilteringTextInputFormatter.allow(
+                                                RegExp(r'[a-zA-Z0-9/ ]')),
+                                            LengthLimitingTextInputFormatter(30),
+                                          ],
+                                          style: TextStyle(
+                                              color: context.colors.textPrimary),
+                                          decoration: _fieldDecoration(
+                                            labelText: 'Old SR Number *',
+                                            hintText: 'Previous register SR',
+                                          ),
+                                          validator: (v) =>
+                                              _entryMode == 'old' &&
+                                                      (v == null ||
+                                                          v.trim().isEmpty)
+                                                  ? 'Old SR number is required'
+                                                  : null,
+                                        ),
+                                      ),
+                                      const Gap(12),
+                                    ],
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _containerNumberCtrl,
+                                        decoration: _fieldDecoration(
+                                          labelText: 'Container Number',
+                                        ),
+                                        textCapitalization:
+                                            TextCapitalization.characters,
+                                      ),
                                     ),
-                                    textCapitalization:
-                                        TextCapitalization.characters,
-                                  ),
+                                    if (_entryMode != 'old') ...[
+                                      const Gap(12),
+                                      const Expanded(child: SizedBox()),
+                                    ],
+                                  ]),
                                   const Gap(16),
                                   TextFormField(
                                       controller: _descCtrl,

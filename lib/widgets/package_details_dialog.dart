@@ -761,7 +761,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     required WarehouseEntryModel? entry,
     required bool isOfficer,
   }) {
-    final qty = entry?.itemCount ?? item.quantity;
+    final qty = entry?.itemCount ?? item.effectiveQuantity;
     showDialog(
       context: ctx,
       builder: (dialogCtx) => _FinalDispositionDialog(
@@ -1391,7 +1391,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                         .view_in_ar_rounded,
                                                     label: 'Total Packages',
                                                     value:
-                                                        '${highlightedItem.quantity}',
+                                                        '${highlightedItem.effectiveQuantity}',
                                                   ),
                                                 ),
                                                 const Gap(12),
@@ -1422,8 +1422,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                         ? (highlightedItem
                                                                 .unitOther ??
                                                             'Other')
-                                                        : highlightedItem
-                                                            .unitOfMeasure,
+                                                        : (highlightedItem
+                                                                    .packagingLabel !=
+                                                                null
+                                                            ? '${highlightedItem.effectiveQuantity} ${highlightedItem.effectiveUnit} (in ${highlightedItem.packagingLabel})'
+                                                            : highlightedItem
+                                                                .effectiveUnit),
                                                   ),
                                                 ),
                                                 const Gap(12),
@@ -1505,7 +1509,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                         .view_in_ar_rounded,
                                                     label: 'Total Packages',
                                                     value:
-                                                        '${highlightedItem.quantity}',
+                                                        '${highlightedItem.effectiveQuantity}',
                                                   ),
                                                 ),
                                                 const Gap(12),
@@ -1520,8 +1524,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                         ? (highlightedItem
                                                                 .unitOther ??
                                                             'Other')
-                                                        : highlightedItem
-                                                            .unitOfMeasure,
+                                                        : (highlightedItem
+                                                                    .packagingLabel !=
+                                                                null
+                                                            ? '${highlightedItem.effectiveQuantity} ${highlightedItem.effectiveUnit} (in ${highlightedItem.packagingLabel})'
+                                                            : highlightedItem
+                                                                .effectiveUnit),
                                                   ),
                                                 ),
                                               ],
@@ -2022,7 +2030,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                         const Gap(8),
                                                       ],
                                                       Text(
-                                                        'x${item.quantity}',
+                                                        'x${item.effectiveQuantity}',
                                                         style: material.TextStyle(
                                                           color: isItemTerminal
                                                               ? context.colors.textMuted
@@ -2048,7 +2056,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                   icon:
                                                       Icons.straighten_rounded,
                                                   label: 'Unit',
-                                                  value: item.unitOfMeasure,
+                                                  value: item.packagingLabel !=
+                                                          null
+                                                      ? '${item.effectiveQuantity} ${item.effectiveUnit} (in ${item.packagingLabel})'
+                                                      : item.effectiveUnit,
                                                 ),
                                               ),
                                               // Detain → show storage charges paid for
@@ -3755,7 +3766,7 @@ class _NoEntryItemCard extends StatelessWidget {
                 child: _DetailItem(
                   icon: Icons.view_in_ar_rounded,
                   label: 'Total Packages',
-                  value: '${item.quantity}',
+                  value: '${item.effectiveQuantity}',
                 ),
               ),
               const Gap(12),
@@ -3765,7 +3776,9 @@ class _NoEntryItemCard extends StatelessWidget {
                   label: 'Unit',
                   value: item.unitOfMeasure == 'Other'
                       ? (item.unitOther ?? 'Other')
-                      : item.unitOfMeasure,
+                      : (item.packagingLabel != null
+                          ? '${item.effectiveQuantity} ${item.effectiveUnit} (in ${item.packagingLabel})'
+                          : item.effectiveUnit),
                 ),
               ),
             ],
@@ -3923,6 +3936,9 @@ class _ItemRow {
   final qtyCtrl = TextEditingController(text: '1');
   final unitOfMeasureCtrl = TextEditingController(text: 'Pieces');
   final unitOtherCtrl = TextEditingController();
+  // Cartons only: inner unit type + inner quantity per carton.
+  final innerUnitCtrl = TextEditingController(text: 'Pieces');
+  final innerQtyCtrl = TextEditingController(text: '1');
   final valueCtrl = TextEditingController(text: '0');
   final hsCodeCtrl = TextEditingController();
   final categoryCtrl = TextEditingController();
@@ -4007,25 +4023,32 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
       row.nameCtrl.text = widget.highlightedItem!.itemName;
       row.goodsDescriptionCtrl.text =
           widget.highlightedItem!.goodsDescription ?? '';
-      row.qtyCtrl.text = widget.highlightedItem!.quantity.toString();
-
-      row.unitOfMeasureCtrl.text = widget.highlightedItem!.unitOfMeasure;
-      if (![
-        'Pieces',
-        'Cartons',
-        'Boxes',
-        'Bags',
-        'Pallets',
-        'Rolls',
-        'Packages',
-        'No of',
-        'Bottles',
-        'KG',
-        'Meters',
-        'Other'
-      ].contains(row.unitOfMeasureCtrl.text)) {
-        row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
-        row.unitOfMeasureCtrl.text = 'Other';
+      final hi = widget.highlightedItem!;
+      if (hi.innerUnit == 'Cartons' && hi.innerQuantity != null) {
+        row.unitOfMeasureCtrl.text = 'Cartons';
+        row.qtyCtrl.text = (hi.innerQuantity ?? 1).toString();
+        row.innerUnitCtrl.text = hi.unitOfMeasure;
+        row.innerQtyCtrl.text = hi.quantity.toString();
+      } else {
+        row.qtyCtrl.text = hi.quantity.toString();
+        row.unitOfMeasureCtrl.text = hi.unitOfMeasure;
+        if (![
+          'Pieces',
+          'Cartons',
+          'Boxes',
+          'Bags',
+          'Pallets',
+          'Rolls',
+          'Packages',
+          'No of',
+          'Bottles',
+          'KG',
+          'Meters',
+          'Other'
+        ].contains(row.unitOfMeasureCtrl.text)) {
+          row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
+          row.unitOfMeasureCtrl.text = 'Other';
+        }
       }
 
       row.valueCtrl.text = widget.highlightedItem!.unitValue.toString();
@@ -4058,25 +4081,34 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         row.id = item.id;
         row.nameCtrl.text = item.itemName;
         row.goodsDescriptionCtrl.text = item.goodsDescription ?? '';
-        row.qtyCtrl.text = item.quantity.toString();
-
-        row.unitOfMeasureCtrl.text = item.unitOfMeasure;
-        if (![
-          'Pieces',
-          'Cartons',
-          'Boxes',
-          'Bags',
-          'Pallets',
-          'Rolls',
-          'Packages',
-          'No of',
-          'Bottles',
-          'KG',
-          'Meters',
-          'Other'
-        ].contains(row.unitOfMeasureCtrl.text)) {
-          row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
-          row.unitOfMeasureCtrl.text = 'Other';
+        // Reconstruct the inverted Cartons storage: a packaged item keeps
+        // 'Cartons' + carton count in innerUnit/innerQuantity and the inner
+        // contents in quantity/unitOfMeasure.
+        if (item.innerUnit == 'Cartons' && item.innerQuantity != null) {
+          row.unitOfMeasureCtrl.text = 'Cartons';
+          row.qtyCtrl.text = (item.innerQuantity ?? 1).toString();
+          row.innerUnitCtrl.text = item.unitOfMeasure;
+          row.innerQtyCtrl.text = item.quantity.toString();
+        } else {
+          row.qtyCtrl.text = item.quantity.toString();
+          row.unitOfMeasureCtrl.text = item.unitOfMeasure;
+          if (![
+            'Pieces',
+            'Cartons',
+            'Boxes',
+            'Bags',
+            'Pallets',
+            'Rolls',
+            'Packages',
+            'No of',
+            'Bottles',
+            'KG',
+            'Meters',
+            'Other'
+          ].contains(row.unitOfMeasureCtrl.text)) {
+            row.unitOtherCtrl.text = row.unitOfMeasureCtrl.text;
+            row.unitOfMeasureCtrl.text = 'Other';
+          }
         }
 
         row.valueCtrl.text = item.unitValue.toString();
@@ -4182,15 +4214,26 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
               goodsDescription: row.goodsDescriptionCtrl.text.trim().isEmpty
                   ? null
                   : row.goodsDescriptionCtrl.text.trim(),
-              quantity: int.tryParse(row.qtyCtrl.text) ?? 1,
+              // Cartons stored inverted: quantity/unit hold the inner contents;
+              // packaging (Cartons + count) goes to innerUnit/innerQuantity.
+              quantity: row.unitOfMeasureCtrl.text == 'Cartons'
+                  ? (int.tryParse(row.innerQtyCtrl.text) ?? 1)
+                  : (int.tryParse(row.qtyCtrl.text) ?? 1),
               unitValue: double.tryParse(row.valueCtrl.text) ?? 0,
               hsCode: row.hsCodeCtrl.text.trim().isEmpty
                   ? null
                   : row.hsCodeCtrl.text.trim(),
               category: row.categoryCtrl.text,
-              unitOfMeasure: row.unitOfMeasureCtrl.text == 'Other'
-                  ? row.unitOtherCtrl.text
-                  : row.unitOfMeasureCtrl.text,
+              unitOfMeasure: row.unitOfMeasureCtrl.text == 'Cartons'
+                  ? row.innerUnitCtrl.text
+                  : (row.unitOfMeasureCtrl.text == 'Other'
+                      ? row.unitOtherCtrl.text
+                      : row.unitOfMeasureCtrl.text),
+              innerUnit:
+                  row.unitOfMeasureCtrl.text == 'Cartons' ? 'Cartons' : null,
+              innerQuantity: row.unitOfMeasureCtrl.text == 'Cartons'
+                  ? (int.tryParse(row.qtyCtrl.text) ?? 1)
+                  : null,
               status: _rowStatus(row),
               reasons:
                   row.selectedReasons.where((res) => res != null).join(', '),
@@ -4209,15 +4252,24 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                   goodsDescription: r.goodsDescriptionCtrl.text.trim().isEmpty
                       ? null
                       : r.goodsDescriptionCtrl.text.trim(),
-                  quantity: int.tryParse(r.qtyCtrl.text) ?? 1,
+                  quantity: r.unitOfMeasureCtrl.text == 'Cartons'
+                      ? (int.tryParse(r.innerQtyCtrl.text) ?? 1)
+                      : (int.tryParse(r.qtyCtrl.text) ?? 1),
                   unitValue: double.tryParse(r.valueCtrl.text) ?? 0,
                   hsCode: r.hsCodeCtrl.text.trim().isEmpty
                       ? null
                       : r.hsCodeCtrl.text.trim(),
                   category: r.categoryCtrl.text,
-                  unitOfMeasure: r.unitOfMeasureCtrl.text == 'Other'
-                      ? r.unitOtherCtrl.text
-                      : r.unitOfMeasureCtrl.text,
+                  unitOfMeasure: r.unitOfMeasureCtrl.text == 'Cartons'
+                      ? r.innerUnitCtrl.text
+                      : (r.unitOfMeasureCtrl.text == 'Other'
+                          ? r.unitOtherCtrl.text
+                          : r.unitOfMeasureCtrl.text),
+                  innerUnit:
+                      r.unitOfMeasureCtrl.text == 'Cartons' ? 'Cartons' : null,
+                  innerQuantity: r.unitOfMeasureCtrl.text == 'Cartons'
+                      ? (int.tryParse(r.qtyCtrl.text) ?? 1)
+                      : null,
                   status: _rowStatus(r),
                   reasons:
                       r.selectedReasons.where((res) => res != null).join(', '),
@@ -4763,29 +4815,11 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   onChanged: (_) => widget.onChanged(),
                 ),
               ),
-              const Gap(12),
-              Expanded(
-                flex: 1,
-                child: TextFormField(
-                  controller: widget.row.qtyCtrl,
-                  decoration:
-                      const InputDecoration(labelText: 'Pkgs *', isDense: true),
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  validator: (v) {
-                    if (v == null || v.trim().isEmpty) return 'Req';
-                    if (int.tryParse(v) == null || int.tryParse(v)! <= 0)
-                      return 'Err';
-                    return null;
-                  },
-                  onChanged: (_) => widget.onChanged(),
-                ),
-              ),
               const Gap(10),
               Expanded(
                 flex: 2,
                 child: StyledDropdownFormField<String>(
-                  label: 'Unit *',
+                  label: 'Unit Type *',
                   menuWidth: 220,
                   columns: 2,
                   value: const [
@@ -4836,6 +4870,83 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                         labelText: 'Name *', isDense: true),
                     validator: (v) =>
                         widget.row.unitOfMeasureCtrl.text == 'Other' &&
+                                (v == null || v.trim().isEmpty)
+                            ? 'Req'
+                            : null,
+                    onChanged: (_) => widget.onChanged(),
+                  ),
+                ),
+              ],
+              const Gap(10),
+              Expanded(
+                flex: 1,
+                child: TextFormField(
+                  controller: widget.row.qtyCtrl,
+                  decoration: const InputDecoration(
+                      labelText: 'Quantity *', isDense: true),
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) return 'Req';
+                    if (int.tryParse(v) == null || int.tryParse(v)! <= 0)
+                      return 'Err';
+                    return null;
+                  },
+                  onChanged: (_) => widget.onChanged(),
+                ),
+              ),
+              if (widget.row.unitOfMeasureCtrl.text == 'Cartons') ...[
+                const Gap(10),
+                Expanded(
+                  flex: 2,
+                  child: StyledDropdownFormField<String>(
+                    label: 'Inner Unit *',
+                    menuWidth: 220,
+                    columns: 2,
+                    value: const [
+                      'Pieces',
+                      'Boxes',
+                      'Bags',
+                      'Pallets',
+                      'Rolls',
+                      'Packages',
+                      'No of',
+                      'Bottles',
+                      'KG',
+                      'Meters',
+                    ].contains(widget.row.innerUnitCtrl.text)
+                        ? widget.row.innerUnitCtrl.text
+                        : 'Pieces',
+                    options: const [
+                      'Pieces',
+                      'Boxes',
+                      'Bags',
+                      'Pallets',
+                      'Rolls',
+                      'Packages',
+                      'No of',
+                      'Bottles',
+                      'KG',
+                      'Meters',
+                    ].map((u) => StyledDropdownOption(u, u)).toList(),
+                    onChanged: (v) {
+                      setState(() =>
+                          widget.row.innerUnitCtrl.text = v ?? 'Pieces');
+                      widget.onChanged();
+                    },
+                  ),
+                ),
+                const Gap(8),
+                Expanded(
+                  flex: 1,
+                  child: TextFormField(
+                    controller: widget.row.innerQtyCtrl,
+                    decoration: const InputDecoration(
+                        labelText: 'Inner Qty *', isDense: true),
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    validator: (v) =>
+                        widget.row.unitOfMeasureCtrl.text == 'Cartons' &&
                                 (v == null || v.trim().isEmpty)
                             ? 'Req'
                             : null,
@@ -6621,6 +6732,10 @@ class _PackageSelectionDialog extends StatefulWidget {
 class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
   late Set<int> _selectedSlots;
   late final List<int> _heldSlots;
+  // For large item counts (e.g. 1176 pieces) a tile-per-unit grid is unusable,
+  // so we switch to a plain "how many to release" number field instead.
+  late final bool _useQtyInput;
+  final _qtyCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -6631,6 +6746,14 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
     ];
     // By default, select all available (held) slots.
     _selectedSlots = _heldSlots.toSet();
+    _useQtyInput = widget.totalQty > 50;
+    _qtyCtrl.text = '${_heldSlots.length}';
+  }
+
+  @override
+  void dispose() {
+    _qtyCtrl.dispose();
+    super.dispose();
   }
 
   void _toggleSlot(int slot) {
@@ -6643,8 +6766,20 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
     });
   }
 
-  void _selectAll() => setState(() => _selectedSlots = _heldSlots.toSet());
-  void _clearAll() => setState(() => _selectedSlots.clear());
+  // Quantity-input mode: select the first [n] available (held) slots.
+  void _setQty(int n) {
+    final clamped = n.clamp(0, _heldSlots.length);
+    setState(() => _selectedSlots = _heldSlots.take(clamped).toSet());
+  }
+
+  void _selectAll() => setState(() {
+        _selectedSlots = _heldSlots.toSet();
+        _qtyCtrl.text = '${_heldSlots.length}';
+      });
+  void _clearAll() => setState(() {
+        _selectedSlots.clear();
+        _qtyCtrl.text = '0';
+      });
 
   @override
   Widget build(BuildContext context) {
@@ -6704,25 +6839,53 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
                 ],
               ),
               const Gap(12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: List.generate(widget.totalQty, (index) {
-                  final slotNumber = index + 1;
-                  final isProcessed =
-                      widget.processedSlots.contains(slotNumber);
-                  final isSelected = _selectedSlots.contains(slotNumber);
+              if (_useQtyInput)
+                // Large counts → a single quantity field ("release N of M").
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 120,
+                      child: material.TextField(
+                        controller: _qtyCtrl,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: 'Quantity',
+                          isDense: true,
+                          contentPadding: EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 12),
+                        ),
+                        onChanged: (v) => _setQty(int.tryParse(v) ?? 0),
+                      ),
+                    ),
+                    const Gap(12),
+                    Text('of ${_heldSlots.length} available',
+                        style:
+                            TextStyle(color: context.colors.textSecondary)),
+                  ],
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: List.generate(widget.totalQty, (index) {
+                    final slotNumber = index + 1;
+                    final isProcessed =
+                        widget.processedSlots.contains(slotNumber);
+                    final isSelected = _selectedSlots.contains(slotNumber);
 
-                  return _PackageSlotChip(
-                    slotNumber: slotNumber,
-                    totalQty: widget.totalQty,
-                    isProcessed: isProcessed,
-                    isSelected: isSelected,
-                    activeColor: widget.actionColor,
-                    onTap: isProcessed ? null : () => _toggleSlot(slotNumber),
-                  );
-                }),
-              ),
+                    return _PackageSlotChip(
+                      slotNumber: slotNumber,
+                      totalQty: widget.totalQty,
+                      isProcessed: isProcessed,
+                      isSelected: isSelected,
+                      activeColor: widget.actionColor,
+                      onTap: isProcessed ? null : () => _toggleSlot(slotNumber),
+                    );
+                  }),
+                ),
             ],
           ),
         ),
