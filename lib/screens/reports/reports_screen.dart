@@ -1031,9 +1031,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
 
     if (result != null) {
-      final file = File(result);
+      // Windows' save dialog doesn't auto-append the extension, so force it.
+      var path = result;
+      if (!path.toLowerCase().endsWith('.${extension.toLowerCase()}')) {
+        path = '$path.$extension';
+      }
+      final file = File(path);
       await file.writeAsBytes(bytes);
-      _showSuccess('Report saved successfully to ${result.split(Platform.pathSeparator).last}');
+      _showSuccess('Report saved successfully to ${path.split(Platform.pathSeparator).last}');
     }
   }
 

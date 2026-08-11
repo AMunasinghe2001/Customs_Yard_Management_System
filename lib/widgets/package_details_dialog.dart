@@ -1534,6 +1534,21 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                 ),
                                               ],
                                             ),
+                                            // Valuation / disposal context: how
+                                            // many of the total were actually
+                                            // sent for disposal (e.g. 6 of 10).
+                                            if (widget.valuationQty != null &&
+                                                widget.valuationQty !=
+                                                    highlightedItem
+                                                        .effectiveQuantity)
+                                              _DetailItem(
+                                                icon: Icons.outbound_rounded,
+                                                label: 'Sent for Disposal',
+                                                value:
+                                                    '${widget.valuationQty} of ${highlightedItem.effectiveQuantity}',
+                                                valueColor:
+                                                    context.colors.primaryGold,
+                                              ),
                                             // Warehouse-entry count (Remaining /
                                             // Released) only when an entry exists
                                             // (never in the Sold context).

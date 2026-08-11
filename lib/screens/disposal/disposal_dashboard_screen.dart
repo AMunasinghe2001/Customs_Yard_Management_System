@@ -22,6 +22,23 @@ import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 
+/// The quantity actually forfeited & sent for disposal for a request row.
+/// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
+/// warehouse entries ([FORFEIT]/[CONFISCATED]) — so a partial forfeit (e.g. 6
+/// of 10) is priced/shown on 6, not the full item quantity. Null if unknown.
+int? _disposalForfeitedQty(DisposalRequestItemModel it, PackageItem? pkgItem) {
+  if (it.forfeited?.entryQty != null) return it.forfeited!.entryQty;
+  final pkg = it.forfeited?.packageDetails;
+  final targetId = pkgItem?.id ?? it.forfeited?.itemId;
+  if (pkg == null || targetId == null) return null;
+  final q = pkg.warehouseEntries.where((e) {
+    if (!e.isReturned || e.packageItemId != targetId) return false;
+    final n = (e.returnNotes ?? '').trim().toUpperCase();
+    return n.startsWith('[FORFEIT') || n.startsWith('[CONFISCATED');
+  }).fold<int>(0, (s, e) => s + e.itemCount);
+  return q > 0 ? q : null;
+}
+
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
 
@@ -1763,7 +1780,9 @@ class _RequestCard extends ConsumerWidget {
                     final f = it.forfeited;
                     final displayName = pkgItem?.itemName ?? _itemName(it);
                     final displayHs = pkgItem?.hsCode ?? it.hsCodeLabel;
-                    final displayQty = pkgItem != null ? pkgItem.quantity : it.totalQuantity;
+                    // Show/price only the forfeited quantity (e.g. 6 of 10).
+                    final displayQty = _disposalForfeitedQty(it, pkgItem) ??
+                        (pkgItem != null ? pkgItem.quantity : it.totalQuantity);
                     final highlightId = pkgItem?.id ?? f?.itemId ??
                         (f?.packageDetails?.items.isNotEmpty == true
                             ? f!.packageDetails!.items.first.id
@@ -3320,6 +3339,11 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                         final yard = it.forfeited?.yard ?? '';
                         final selected = _selected.containsKey(rowKey);
                         final displayName = pkgItem?.itemName ?? _summary(it);
+                        // Show the forfeited quantity (e.g. 6 of 10).
+                        final qty = _disposalForfeitedQty(it, pkgItem) ??
+                            (pkgItem != null
+                                ? pkgItem.quantity
+                                : it.totalQuantity);
                         return InkWell(
                           onTap: () => setState(() {
                             if (selected) {
@@ -3385,6 +3409,12 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                                         fontSize: 13,
                                         color: context.colors.textPrimary)),
                               ),
+                              const Gap(10),
+                              Text('Qty $qty',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: context.colors.textMuted)),
                               const Gap(8),
                               Container(
                                 padding: const EdgeInsets.symmetric(
@@ -4597,6 +4627,11 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                         final yard = it.forfeited?.yard ?? '';
                         final selected = _selected.containsKey(rowKey);
                         final displayName = pkgItem?.itemName ?? _summary(it);
+                        // Show the forfeited quantity (e.g. 6 of 10).
+                        final qty = _disposalForfeitedQty(it, pkgItem) ??
+                            (pkgItem != null
+                                ? pkgItem.quantity
+                                : it.totalQuantity);
                         return InkWell(
                           onTap: () => setState(() {
                             if (selected) {
@@ -4662,6 +4697,12 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                                         fontSize: 13,
                                         color: context.colors.textPrimary)),
                               ),
+                              const Gap(10),
+                              Text('Qty $qty',
+                                  style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: context.colors.textMuted)),
                               const Gap(8),
                               Container(
                                 padding: const EdgeInsets.symmetric(

@@ -149,6 +149,13 @@ class BarcodeService {
         return false;
       }
 
+      // On Windows the save dialog does NOT auto-append the extension even with
+      // allowedExtensions set, so the file can end up without ".pdf" (unopenable
+      // as a PDF). Force the extension when it's missing.
+      if (!outputFile.toLowerCase().endsWith('.pdf')) {
+        outputFile = '$outputFile.pdf';
+      }
+
       final file = File(outputFile);
       await file.writeAsBytes(bytes);
       return true;

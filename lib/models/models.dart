@@ -735,6 +735,14 @@ class ProfileModel {
   /// past its 8-month auto-deactivation window.
   bool get isEffectivelyActive => isActive && !isExpired;
 
+  /// Whole days until the account auto-deactivates (its 8-month lifetime).
+  /// Negative once already expired. `null` for institutional directorate
+  /// accounts (Disposal / Appeal / Valuation) that never auto-expire.
+  int? get daysUntilExpiry {
+    if (isDisposal || isAppeal || isValuation) return null;
+    return expiresAt.difference(DateTime.now()).inDays;
+  }
+
   // ── Password expiry (90-day rotation policy) ───────────────────────────
   /// Passwords must be rotated every 90 days. The clock starts from
   /// [passwordUpdatedAt] (set by the auth.users trigger), falling back to

@@ -18,6 +18,24 @@ import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
 
+/// The quantity actually forfeited & sent for disposal for a valuation row.
+/// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
+/// warehouse entries ([FORFEIT]/[CONFISCATED]) — so a partial forfeit (e.g. 6
+/// of 10) is valued on 6, not the full item quantity. Returns null if it can't
+/// be determined (caller then falls back to the full quantity).
+int? _forfeitedQtyFor(DisposalRequestItemModel it, PackageItem? pkgItem) {
+  if (it.forfeited?.entryQty != null) return it.forfeited!.entryQty;
+  final pkg = it.forfeited?.packageDetails;
+  final targetId = pkgItem?.id ?? it.forfeited?.itemId;
+  if (pkg == null || targetId == null) return null;
+  final q = pkg.warehouseEntries.where((e) {
+    if (!e.isReturned || e.packageItemId != targetId) return false;
+    final n = (e.returnNotes ?? '').trim().toUpperCase();
+    return n.startsWith('[FORFEIT') || n.startsWith('[CONFISCATED');
+  }).fold<int>(0, (s, e) => s + e.itemCount);
+  return q > 0 ? q : null;
+}
+
 /// Valuation Directorate (DC / SDDC) portal. Standalone scaffold (not AppShell).
 /// Lists every yard's disposal requests that are still awaiting valuation; the
 /// directorate sets a cost per package item and forwards the request to the
@@ -421,9 +439,15 @@ class _ValuationRequestCard extends ConsumerWidget {
                     final f = it.forfeited;
                     final displayName = pkgItem?.itemName ?? _itemName(it);
                     final displayHs = pkgItem?.hsCode ?? it.hsCodeLabel;
-                    final displayQty = pkgItem != null
-                        ? pkgItem.quantity
-                        : it.totalQuantity;
+                    // Value only the quantity actually forfeited & sent for
+                    // disposal (e.g. 6 of 10) — not the full item qty.
+                    final forfeitQty = _forfeitedQtyFor(it, pkgItem);
+                    final displayQty = forfeitQty ??
+                        (pkgItem != null ? pkgItem.quantity : it.totalQuantity);
+                    // Carton packaging only makes sense for the whole item, not
+                    // a partial-forfeit quantity.
+                    final showPackaging =
+                        forfeitQty == null && pkgItem?.packagingLabel != null;
                     final highlightId = pkgItem?.id ?? f?.itemId ??
                         (f?.packageDetails?.items.isNotEmpty == true
                             ? f!.packageDetails!.items.first.id
@@ -442,7 +466,10 @@ class _ValuationRequestCard extends ConsumerWidget {
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(TooltipText('$displayQty',
+                      DataCell(TooltipText(
+                          showPackaging
+                              ? '$displayQty (in ${pkgItem!.packagingLabel})'
+                              : '$displayQty',
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,
@@ -746,9 +773,12 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
               final pkgItem = row.pkgItem;
               final displayName = pkgItem?.itemName ?? _itemName(it);
               final displayHs = pkgItem?.hsCode ?? it.hsCodeLabel;
-              final displayQty = pkgItem != null
-                  ? pkgItem.quantity
-                  : it.totalQuantity;
+              // Value only the forfeited quantity (e.g. 6 of 10).
+              final forfeitQty = _forfeitedQtyFor(it, pkgItem);
+              final displayQty = forfeitQty ??
+                  (pkgItem != null ? pkgItem.quantity : it.totalQuantity);
+              final showPackaging =
+                  forfeitQty == null && pkgItem?.packagingLabel != null;
               // SR-form declared value (unit value × qty) — a reference for the
               // valuation officer, distinct from the valuation cost they set.
               final srUnitValue = pkgItem?.unitValue ?? 0;
@@ -783,7 +813,10 @@ class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
                         Icon(Icons.inventory_2_rounded,
                             size: 12, color: context.colors.textMuted),
                         const Gap(4),
-                        Text('Qty $displayQty',
+                        Text(
+                            showPackaging
+                                ? 'Qty $displayQty (in ${pkgItem!.packagingLabel})'
+                                : 'Qty $displayQty',
                             style: TextStyle(
                                 color: context.colors.textMuted,
                                 fontSize: 11)),

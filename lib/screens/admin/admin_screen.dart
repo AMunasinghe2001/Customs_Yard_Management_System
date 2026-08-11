@@ -193,13 +193,26 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
             error: (e, _) => ErrorView(
                 error: e, onRetry: () => ref.refresh(myYardProfilesProvider)),
             data: (list) {
-              // Apply status filter
-              final filtered = _statusFilter == null
-                  ? list
-                  : list.where((p) {
-                      final isActive = p.isActive && !p.isExpired;
-                      return _statusFilter! ? isActive : !isActive;
-                    }).toList();
+              // Apply status filter (copy so the sort below doesn't mutate the
+              // provider's cached list).
+              final filtered = [
+                ...(_statusFilter == null
+                    ? list
+                    : list.where((p) {
+                        final isActive = p.isActive && !p.isExpired;
+                        return _statusFilter! ? isActive : !isActive;
+                      }))
+              ];
+              // Fewest days-until-disable first (most urgent on top); accounts
+              // that never auto-expire (directorate) sink to the bottom.
+              filtered.sort((a, b) {
+                final da = a.daysUntilExpiry;
+                final db = b.daysUntilExpiry;
+                if (da == null && db == null) return 0;
+                if (da == null) return 1;
+                if (db == null) return -1;
+                return da.compareTo(db);
+              });
               final pageItems = pageSlice(filtered, _page, kClientPageSize);
               return Column(children: [
               Expanded(child: Container(
@@ -246,6 +259,14 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                         size: ColumnSize.S,
                         fixedWidth: 100),
                     DataColumn2(
+                        label: Text('Disables In',
+                            style: TextStyle(
+                                color: context.colors.primaryGold,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13)),
+                        size: ColumnSize.S,
+                        fixedWidth: 120),
+                    DataColumn2(
                         label: Text('Status',
                             style: TextStyle(
                                 color: context.colors.primaryGold,
@@ -266,6 +287,7 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     color: context.colors.textMuted,
                                     fontSize: 13))),
                             DataCell(_RoleChip(role: p.role)),
+                            DataCell(_ExpiresInCell(profile: p)),
                             DataCell(_AccountStatusChip(profile: p)),
                           ]))
                       .toList(),
@@ -762,6 +784,38 @@ class _RoleChip extends StatelessWidget {
               fontSize: 11,
               fontWeight: FontWeight.w700)),
     );
+  }
+}
+
+/// How long until the account auto-deactivates (its 8-month lifetime).
+/// "Never" for directorate accounts, "Expired" once past, and a red countdown
+/// in the last 2 weeks so admins can renew in time.
+class _ExpiresInCell extends StatelessWidget {
+  final ProfileModel profile;
+  const _ExpiresInCell({required this.profile});
+
+  @override
+  Widget build(BuildContext context) {
+    final days = profile.daysUntilExpiry;
+    if (days == null) {
+      return Text('Never',
+          style: TextStyle(color: context.colors.textMuted, fontSize: 12));
+    }
+    if (days < 0) {
+      return Text('Expired',
+          style: TextStyle(
+              color: context.colors.dangerRed,
+              fontWeight: FontWeight.w700,
+              fontSize: 12));
+    }
+    final soon = days <= 14;
+    final label = days == 0 ? 'Today' : '$days day${days == 1 ? '' : 's'}';
+    return Text(label,
+        style: TextStyle(
+            color:
+                soon ? context.colors.dangerRed : context.colors.textPrimary,
+            fontWeight: soon ? FontWeight.w700 : FontWeight.w600,
+            fontSize: 12));
   }
 }
 

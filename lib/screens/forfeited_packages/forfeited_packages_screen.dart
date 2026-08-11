@@ -493,6 +493,14 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                     }).toList();
 
                     final rows = _buildForfeitRows(filtered);
+                    // Most-recently forfeited first: use the actual forfeit
+                    // moment (the warehouse entry's returned date) when we have
+                    // it, else the anchored forfeited date.
+                    rows.sort((a, b) {
+                      final da = a.entry?.returnedAt ?? a.forfeitedDate;
+                      final db = b.entry?.returnedAt ?? b.forfeitedDate;
+                      return db.compareTo(da);
+                    });
 
                     return Container(
                       decoration: BoxDecoration(
