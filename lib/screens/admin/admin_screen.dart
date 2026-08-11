@@ -388,6 +388,10 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                   await ref.read(adminServiceProvider).verifyAndCreateOfficer(
                         email: emailC.text.trim(),
                         otp: otpC.text.trim(),
+                        fullName:
+                            '${firstC.text.trim()} ${lastC.text.trim()}',
+                        mobileNumber: mobileC.text.trim(),
+                        badgeNumber: salaryC.text.trim(),
                       );
               ref.invalidate(allProfilesProvider);
               if (ctx.mounted) Navigator.pop(ctx);

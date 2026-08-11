@@ -6,4 +6,4 @@
 /// this is a convenience for the testing period, not an auth removal.
 ///
 /// ➜ To re-enable OTP once testing is over: set this to `false` (one line).
-const bool kDevSkipOtp = true;
+const bool kDevSkipOtp = false;

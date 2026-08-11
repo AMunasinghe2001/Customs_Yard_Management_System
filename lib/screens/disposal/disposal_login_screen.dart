@@ -214,7 +214,8 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     try {
       final profile = await ref
           .read(authServiceProvider)
-          .finishOtpLogin(_resolvedEmail, _otpCtrl.text.trim());
+          .finishOtpLogin(_resolvedEmail, _otpCtrl.text.trim(),
+              _passwordCtrl.text);
       if (profile == null) {
         setState(() => _error = 'Verification failed. Please try again.');
         return;

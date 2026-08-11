@@ -5,6 +5,7 @@ import '../core/supabase_client.dart';
 import '../core/app_session.dart';
 import '../core/yards.dart';
 import '../models/models.dart';
+import 'otp_service.dart';
 
 bool _isForfeitStatus(String? status) {
   if (status == null) return false;
@@ -232,21 +233,20 @@ class AuthService {
     await _withNetworkRetry(() =>
         supabase.auth.signInWithPassword(email: email, password: password));
     await supabase.auth.signOut();
-    await _withNetworkRetry(() =>
-        supabase.auth.signInWithOtp(email: email, shouldCreateUser: false));
+    // Issue our own 6-digit code and e-mail it via Gmail (not Supabase).
+    await GmailOtpService.instance.sendCode(email);
     return email;
   }
 
-  /// Step 2 of OTP-gated login: verify the emailed code and finish signing in.
-  Future<ProfileModel?> finishOtpLogin(String email, String otp) async {
-    AuthResponse response;
-    try {
-      response = await supabase.auth
-          .verifyOTP(email: email, token: otp, type: OtpType.email);
-    } on AuthException {
-      response = await supabase.auth
-          .verifyOTP(email: email, token: otp, type: OtpType.magiclink);
-    }
+  /// Step 2 of OTP-gated login: verify the Gmail code, then create the session
+  /// with the already-verified [password].
+  Future<ProfileModel?> finishOtpLogin(
+      String email, String otp, String password) async {
+    // Verify the self-issued code (throws on bad/expired code).
+    GmailOtpService.instance.verifyCode(email, otp);
+    // Code is good — sign in with the password checked in startOtpLogin.
+    final response = await _withNetworkRetry(() =>
+        supabase.auth.signInWithPassword(email: email, password: password));
     final user = response.user ?? supabase.auth.currentUser;
     if (user == null) throw Exception('otp_failed');
 
@@ -1629,23 +1629,10 @@ class AdminService {
     String? yard,
     String? profileImageUrl,
   }) async {
-    final cleanEmail = email.trim();
-    print('DEBUG: Requesting OTP for clean email: "$cleanEmail"');
-    await supabase.auth.signInWithOtp(
-      email: cleanEmail,
-      shouldCreateUser: true,
-      data: {
-        'full_name': fullName,
-        'role': role,
-        'badge_number': badgeNumber,
-        if (username != null) 'username': username,
-        if (mobileNumber != null) 'mobile_number': mobileNumber,
-        if (jobRole != null) 'job_role': jobRole,
-        if (department != null) 'department': department,
-        if (yard != null) 'yard': yard,
-        if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
-      },
-    );
+    // E-mail a self-issued code via Gmail (not Supabase). The account itself is
+    // created only after the code is verified, in [verifySignupOtp].
+    await GmailOtpService.instance
+        .sendCode(email.trim(), recipientName: fullName);
   }
 
   Future<void> verifySignupOtp({
@@ -1662,27 +1649,8 @@ class AdminService {
     String? yard,
     String? profileImageUrl,
   }) async {
-    // `signInWithOtp` issues an email OTP code. Verify it as `email`; fall back
-    // to `signup`/`magiclink` so it works regardless of how the project's email
-    // template/OTP is configured.
-    AuthResponse response;
-    try {
-      response = await AuthService._withNetworkRetry(() => supabase.auth
-          .verifyOTP(email: email, token: otp, type: OtpType.email));
-    } on AuthException {
-      try {
-        response = await AuthService._withNetworkRetry(() => supabase.auth
-            .verifyOTP(email: email, token: otp, type: OtpType.signup));
-      } on AuthException {
-        response = await AuthService._withNetworkRetry(() => supabase.auth
-            .verifyOTP(email: email, token: otp, type: OtpType.magiclink));
-      }
-    }
-
-    final user = response.user ?? supabase.auth.currentUser;
-    if (user == null) {
-      throw Exception('OTP verification failed. Please try again.');
-    }
+    // Verify our self-issued Gmail code (throws on bad/expired code).
+    GmailOtpService.instance.verifyCode(email.trim(), otp);
 
     final metadata = <String, dynamic>{
       'full_name': fullName,
@@ -1695,19 +1663,36 @@ class AdminService {
       if (yard != null) 'yard': yard,
       if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
     };
+
+    // Create the account now (the Gmail code was our e-mail verification).
+    // Requires Supabase → Authentication → Providers → Email → "Confirm email"
+    // to be OFF, so signUp yields a usable account without Supabase e-mailing
+    // its own confirmation link.
+    User? user;
     try {
-      await supabase.auth
-          .updateUser(UserAttributes(password: password, data: metadata));
+      final res = await AuthService._withNetworkRetry(() => supabase.auth
+          .signUp(email: email.trim(), password: password, data: metadata));
+      user = res.user;
     } on AuthException catch (e) {
-      // The account already existed with this exact password (re-verifying a
-      // previously half-created account). Keep the password and just refresh
-      // the metadata so the rest of setup (profile/username) still completes.
       final m = e.message.toLowerCase();
-      if (e.code == 'same_password' || m.contains('different from the old')) {
-        await supabase.auth.updateUser(UserAttributes(data: metadata));
+      final exists = e.code == 'user_already_exists' ||
+          m.contains('already registered') ||
+          m.contains('already been registered') ||
+          m.contains('user already');
+      if (exists) {
+        // Half-created / re-verified account: sign in and refresh metadata.
+        final res = await AuthService._withNetworkRetry(() => supabase.auth
+            .signInWithPassword(email: email.trim(), password: password));
+        user = res.user;
+        try {
+          await supabase.auth.updateUser(UserAttributes(data: metadata));
+        } catch (_) {}
       } else {
         rethrow;
       }
+    }
+    if (user == null) {
+      throw Exception('Sign-up failed. Please try again.');
     }
 
     try {
@@ -1832,69 +1817,162 @@ class AdminService {
     }
   }
 
-  // ── Officer creation via Edge Function (service_role) ─────────
-  // The `admin-officers` Edge Function creates the auth user, generates a
-  // random username/password and emails the credentials, so the admin keeps
-  // their own session. See supabase/functions/admin-officers/index.ts.
+  // ── Officer creation (client-side, Gmail OTP — no Supabase OTP / no Edge
+  //    Function). The OTP is e-mailed via Gmail; on verify we create the auth
+  //    account with signUp, then restore the admin's session so the admin stays
+  //    logged in, and e-mail the generated credentials via Gmail.
 
-  Future<Map<String, dynamic>> _invokeAdminOfficers(
-      Map<String, dynamic> body) async {
-    try {
-      final res =
-          await supabase.functions.invoke('admin-officers', body: body);
-      final data = res.data;
-      if (data is Map && data['error'] != null) {
-        throw Exception(data['error'].toString());
-      }
-      return data is Map
-          ? data.cast<String, dynamic>()
-          : <String, dynamic>{};
-    } on FunctionException catch (e) {
-      final details = e.details;
-      if (details is Map && details['error'] != null) {
-        throw Exception(details['error'].toString());
-      }
-      throw Exception(details?.toString() ?? 'Request failed. Please try again.');
+  static String _randomOfficerPassword([int len = 12]) {
+    const upper = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+    const lower = 'abcdefghijkmnpqrstuvwxyz';
+    const digits = '23456789';
+    const symbols = '@#%&*!?';
+    const all = upper + lower + digits + symbols;
+    final r = Random.secure();
+    String pick(String s) => s[r.nextInt(s.length)];
+    var pw = pick(upper) + pick(lower) + pick(digits) + pick(symbols);
+    for (var i = pw.length; i < len; i++) {
+      pw += pick(all);
     }
+    final chars = pw.split('')..shuffle(r);
+    return chars.join();
   }
 
-  /// Step 1: email an OTP to the prospective officer for verification.
+  static String _slug(String s) =>
+      s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+  Future<String> _uniqueUsername(String fullName) async {
+    final parts = fullName.trim().split(RegExp(r'\s+'));
+    final base = (_slug(parts.first) +
+            (parts.length > 1 ? '.${_slug(parts[1])}' : ''))
+        .replaceAll(RegExp(r'^\.+|\.+$'), '');
+    final seed = base.isEmpty ? 'officer' : base;
+    final r = Random.secure();
+    for (var i = 0; i < 12; i++) {
+      final candidate = i == 0
+          ? '$seed${100 + r.nextInt(900)}'
+          : '$seed${1000 + r.nextInt(9000)}';
+      final clash = await supabase
+          .from('profiles')
+          .select('id')
+          .ilike('username', candidate)
+          .maybeSingle();
+      if (clash == null) return candidate;
+    }
+    return 'officer${DateTime.now().millisecondsSinceEpoch}';
+  }
+
+  /// Step 1: e-mail an OTP (via Gmail) to the prospective officer.
   Future<void> requestOfficerOtp({
     required String email,
     required String fullName,
     String? mobileNumber,
     String? badgeNumber,
   }) async {
-    await _invokeAdminOfficers({
-      'action': 'request-otp',
-      'email': email.trim(),
-      'fullName': fullName.trim(),
-      'mobileNumber': mobileNumber?.trim(),
-      'badgeNumber': badgeNumber?.trim(),
-    });
+    await GmailOtpService.instance
+        .sendCode(email.trim(), recipientName: fullName.trim());
   }
 
-  /// Step 2: verify the OTP, create the officer account and email credentials.
-  /// Returns the function payload, e.g. { ok, emailed, username, password? }.
+  /// Step 2: verify the Gmail OTP, create the officer account (keeping the
+  /// admin signed in) and e-mail the generated credentials.
+  /// Returns { ok, emailed, username, password }.
   Future<Map<String, dynamic>> verifyAndCreateOfficer({
     required String email,
     required String otp,
+    required String fullName,
+    String? mobileNumber,
+    String? badgeNumber,
   }) async {
-    final result = await _invokeAdminOfficers({
-      'action': 'verify-create',
-      'email': email.trim(),
-      'otp': otp.trim(),
-    });
-    final admin = supabase.auth.currentUser;
-    if (admin != null) {
+    GmailOtpService.instance.verifyCode(email.trim(), otp);
+
+    // Remember the admin's session + yard so we can restore them afterwards
+    // (signUp switches the active session to the new officer).
+    final adminSession = supabase.auth.currentSession;
+    final adminId = supabase.auth.currentUser?.id;
+    final officerYard = AppSession.currentYard;
+
+    final username = await _uniqueUsername(fullName);
+    final password = _randomOfficerPassword();
+
+    final metadata = <String, dynamic>{
+      'full_name': fullName.trim(),
+      'role': 'officer',
+      'badge_number': badgeNumber?.trim(),
+      'mobile_number': mobileNumber?.trim(),
+      'yard': officerYard,
+      'username': username,
+    };
+
+    // Create the officer account (Confirm email must be OFF in Supabase).
+    final String officerId;
+    try {
+      final res = await AuthService._withNetworkRetry(() => supabase.auth
+          .signUp(email: email.trim(), password: password, data: metadata));
+      final u = res.user;
+      if (u == null) throw Exception('Could not create the officer account.');
+      officerId = u.id;
+    } on AuthException catch (e) {
+      final m = e.message.toLowerCase();
+      if (e.code == 'user_already_exists' ||
+          m.contains('already registered') ||
+          m.contains('already been registered')) {
+        // Restore the admin before surfacing the error.
+        if (adminSession != null) {
+          try {
+            await supabase.auth.setSession(adminSession.refreshToken!);
+          } catch (_) {}
+        }
+        throw Exception('This email is already registered.');
+      }
+      rethrow;
+    }
+
+    // Write the officer's profile while their session is active (self-insert).
+    try {
+      await supabase.from('profiles').upsert({
+        'id': officerId,
+        'full_name': fullName.trim(),
+        'username': username,
+        'badge_number': badgeNumber?.trim(),
+        'mobile_number': mobileNumber?.trim(),
+        'role': 'officer',
+        'is_active': true,
+        'yard': officerYard,
+      });
+    } catch (_) {}
+
+    // Restore the admin's own session so they stay logged in.
+    if (adminSession != null) {
+      try {
+        await supabase.auth.setSession(adminSession.refreshToken!);
+      } catch (_) {}
+    }
+
+    // E-mail the credentials via Gmail. If it fails, hand them back so the
+    // admin can relay them manually.
+    bool emailed = true;
+    try {
+      await GmailOtpService.instance
+          .sendCredentials(email.trim(), fullName.trim(), username, password);
+    } catch (_) {
+      emailed = false;
+    }
+
+    if (adminId != null) {
       await AuditLogService().recordLog(
-        userId: admin.id,
-        action: 'Created officer account (${result['username'] ?? email})',
+        userId: adminId,
+        action: 'Created officer account ($username)',
         entityType: 'profile',
-        entityId: 'new',
+        entityId: officerId,
       );
     }
-    return result;
+
+    return {
+      'ok': true,
+      'emailed': emailed,
+      'username': username,
+      'password': password,
+    };
   }
 }
 
