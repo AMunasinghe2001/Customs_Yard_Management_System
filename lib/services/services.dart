@@ -3478,6 +3478,128 @@ class DisposalService {
     return result;
   }
 
+  // ── Tender bids (recorded per tender ROUND on unsold packages) ────────────
+
+  /// Bids recorded for an unsold tender package, grouped by tender round
+  /// (tender_sale_id → amounts, oldest first). Bids saved before the round
+  /// key existed group under the empty-string key ''.
+  Future<Map<String, List<double>>> getTenderBidsByRound(
+      String forfeitedPackageId) async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_bids')
+        .select('tender_sale_id, amount')
+        .eq('forfeited_package_id', forfeitedPackageId)
+        .order('created_at', ascending: true));
+    final byRound = <String, List<double>>{};
+    for (final e in (rows as List)) {
+      byRound
+          .putIfAbsent((e['tender_sale_id'] as String?) ?? '', () => [])
+          .add((e['amount'] as num).toDouble());
+    }
+    return byRound;
+  }
+
+  /// Replace the bids of ONE tender round with [amounts] (blanks/zeros skipped).
+  /// Other rounds' bids for the same package are untouched.
+  Future<void> saveTenderRoundBids(
+      String forfeitedPackageId, String tenderSaleId, List<double> amounts,
+      {String? yard}) async {
+    await AuthService._withNetworkRetry(() => supabase
+        .from('tender_bids')
+        .delete()
+        .eq('forfeited_package_id', forfeitedPackageId)
+        .eq('tender_sale_id', tenderSaleId));
+    final clean = amounts.where((a) => a > 0).toList();
+    if (clean.isEmpty) return;
+    final uid = supabase.auth.currentUser?.id;
+    await AuthService._withNetworkRetry(() => supabase.from('tender_bids').insert([
+          for (final a in clean)
+            {
+              'forfeited_package_id': forfeitedPackageId,
+              'tender_sale_id': tenderSaleId,
+              'amount': a,
+              'yard': yard,
+              'created_by': uid,
+            }
+        ]));
+  }
+
+  /// For the Appeal portal: every forfeited package that has ≥1 recorded bid,
+  /// hydrated with its package details, the recorded rounds (each a tender sale
+  /// + its bid amounts, highest first) newest round first.
+  Future<
+      List<
+          ({
+            ForfeitedPackageModel forfeited,
+            List<({TenderSaleModel? sale, List<double> bids})> rounds
+          })>> getPackagesWithBids() async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_bids')
+        .select('forfeited_package_id, tender_sale_id, amount')
+        .order('created_at', ascending: true));
+    // fp id → (round key → amounts)
+    final byPkg = <String, Map<String, List<double>>>{};
+    for (final e in (rows as List)) {
+      byPkg
+          .putIfAbsent(e['forfeited_package_id'] as String, () => {})
+          .putIfAbsent((e['tender_sale_id'] as String?) ?? '', () => [])
+          .add((e['amount'] as num).toDouble());
+    }
+    if (byPkg.isEmpty) return [];
+
+    final saleIds = <String>{};
+    for (final rounds in byPkg.values) {
+      for (final k in rounds.keys) {
+        if (k.isNotEmpty) saleIds.add(k);
+      }
+    }
+
+    // Hydrate the tender sales referenced by the bids (for round labels/dates).
+    final saleById = <String, TenderSaleModel>{};
+    if (saleIds.isNotEmpty) {
+      final sr = await AuthService._withNetworkRetry(() => supabase
+          .from('tender_sales')
+          .select('*, tender_sale_items(*)')
+          .inFilter('id', saleIds.toList()));
+      for (final e in (sr as List)) {
+        final s = TenderSaleModel.fromJson(e as Map<String, dynamic>);
+        saleById[s.id] = s;
+      }
+    }
+
+    final fp = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .inFilter('id', byPkg.keys.toList()));
+
+    final result = <({
+      ForfeitedPackageModel forfeited,
+      List<({TenderSaleModel? sale, List<double> bids})> rounds
+    })>[];
+    for (final e in (fp as List)) {
+      final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
+      final roundMap = byPkg[f.id] ?? const {};
+      final rounds = <({TenderSaleModel? sale, List<double> bids})>[];
+      roundMap.forEach((k, amounts) {
+        final bids = [...amounts]..sort((a, b) => b.compareTo(a));
+        rounds.add((sale: k.isEmpty ? null : saleById[k], bids: bids));
+      });
+      // Newest round first (by sale date/createdAt; null-round last).
+      rounds.sort((a, b) {
+        final da = a.sale?.createdAt;
+        final db = b.sale?.createdAt;
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return db.compareTo(da);
+      });
+      result.add((forfeited: f, rounds: rounds));
+    }
+    result.sort((a, b) => a.forfeited.srNumber.compareTo(b.forfeited.srNumber));
+    return result;
+  }
+
   /// "Sale"-tagged disposal-request items that are not yet in a tender sale —
   /// the pool the Tender Sale form can pick from. Cross-yard via RLS; each
   /// carries the forfeited package (incl. yard, items, warehouse location).

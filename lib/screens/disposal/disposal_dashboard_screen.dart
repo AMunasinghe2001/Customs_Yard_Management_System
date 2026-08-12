@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
@@ -2099,6 +2100,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                           size: ColumnSize.S,
                           fixedWidth: 90),
                       DataColumn2(
+                          label: Center(child: Text('Bids')),
+                          size: ColumnSize.S,
+                          fixedWidth: 92),
+                      DataColumn2(
                           label: Center(child: Text('Details')),
                           size: ColumnSize.S,
                           fixedWidth: 64),
@@ -2169,6 +2174,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                             ),
                           ),
                         )),
+                        DataCell(Center(child: _BidsCell(info: info))),
                         DataCell(Center(
                           child: pkg != null
                               ? IconButton(
@@ -3643,6 +3649,345 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
   }
 }
 
+
+// ── Tender bids (recorded on unsold packages) ─────────────────
+
+/// Unsold-tenders "Bids" cell: shows the total recorded bid count across all
+/// tender rounds (or a "+ Bids" prompt when empty), opens the entry form on tap.
+class _BidsCell extends ConsumerWidget {
+  final ReTenderSaleInfo info;
+  const _BidsCell({required this.info});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final green = context.colors.successGreen;
+    final async = ref.watch(tenderBidsProvider(info.forfeited.id));
+    final count = async.asData?.value.values
+            .fold<int>(0, (s, l) => s + l.length) ??
+        0;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => showDialog(
+        context: context,
+        builder: (_) => _EnterBidsDialog(info: info),
+      ),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: green.withOpacity(count > 0 ? 0.14 : 0.06),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: green.withOpacity(count > 0 ? 0.5 : 0.3)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(count > 0 ? Icons.sell_rounded : Icons.add_rounded,
+              size: 14, color: green),
+          const Gap(4),
+          Text(count > 0 ? '$count' : 'Bids',
+              style: TextStyle(
+                  color: green, fontWeight: FontWeight.w800, fontSize: 12)),
+        ]),
+      ),
+    );
+  }
+}
+
+/// Form to record the bid amounts for an unsold tender package, grouped by
+/// tender ROUND (attempt). Past rounds are shown READ-ONLY (their bids were
+/// already recorded); only the CURRENT (latest) round is editable — the
+/// Add-button spawns more amount fields and Save writes just that round.
+class _EnterBidsDialog extends ConsumerStatefulWidget {
+  final ReTenderSaleInfo info;
+  const _EnterBidsDialog({required this.info});
+
+  @override
+  ConsumerState<_EnterBidsDialog> createState() => _EnterBidsDialogState();
+}
+
+class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
+  // Editable controllers for the CURRENT (latest) round only.
+  final _controllers = <TextEditingController>[];
+  // Saved amounts of the earlier rounds, for read-only display (round id → amts).
+  Map<String, List<double>> _past = const {};
+  bool _loading = true;
+  bool _saving = false;
+
+  // Tender rounds oldest→newest so they read as Tender 1, 2, 3…
+  List<TenderSaleModel> get _rounds =>
+      [...widget.info.sales]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+  TenderSaleModel get _current => _rounds.last;
+
+  @override
+  void initState() {
+    super.initState();
+    // The unsold row already watches tenderBidsProvider(fpId), so the bids are
+    // usually cached — seed synchronously for an instant open. Fall back to a
+    // fetch only when the cache is not yet populated.
+    final cached =
+        ref.read(tenderBidsProvider(widget.info.forfeited.id)).asData?.value;
+    if (cached != null) {
+      _seed(cached);
+      _loading = false;
+    } else {
+      _load();
+    }
+  }
+
+  void _seed(Map<String, List<double>> saved) {
+    _past = saved;
+    final current = saved[_current.id] ?? const <double>[];
+    for (final b in current) {
+      _controllers.add(TextEditingController(
+          text: b == b.roundToDouble() ? b.toInt().toString() : b.toString()));
+    }
+    if (_controllers.isEmpty) _controllers.add(TextEditingController());
+  }
+
+  Future<void> _load() async {
+    Map<String, List<double>> saved = const {};
+    try {
+      saved = await ref
+          .read(disposalServiceProvider)
+          .getTenderBidsByRound(widget.info.forfeited.id);
+    } catch (_) {}
+    _seed(saved);
+    if (mounted) setState(() => _loading = false);
+  }
+
+  @override
+  void dispose() {
+    for (final c in _controllers) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _addRow() => setState(() => _controllers.add(TextEditingController()));
+
+  void _removeRow(int i) => setState(() {
+        _controllers.removeAt(i).dispose();
+        if (_controllers.isEmpty) _controllers.add(TextEditingController());
+      });
+
+  Future<void> _save() async {
+    setState(() => _saving = true);
+    final fpId = widget.info.forfeited.id;
+    final yard = widget.info.forfeited.yard;
+    final amounts = <double>[];
+    for (final c in _controllers) {
+      final v = double.tryParse(c.text.trim());
+      if (v != null && v > 0) amounts.add(v);
+    }
+    try {
+      await ref
+          .read(disposalServiceProvider)
+          .saveTenderRoundBids(fpId, _current.id, amounts, yard: yard);
+      ref.invalidate(tenderBidsProvider(fpId));
+      ref.invalidate(packagesWithBidsProvider);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('${amounts.length} bid(s) saved'),
+          backgroundColor: context.colors.successGreen));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to save bids: $e'),
+          backgroundColor: context.colors.dangerRed));
+    }
+  }
+
+  String _roundLabel(TenderSaleModel s, int attempt) {
+    final parts = <String>['Tender $attempt'];
+    if (s.saleNumber != null && s.saleNumber!.isNotEmpty) {
+      parts.add(s.saleNumber!);
+    }
+    if (s.saleDate != null) {
+      parts.add(DateFormat('yyyy-MM-dd').format(s.saleDate!));
+    }
+    return parts.join(' · ');
+  }
+
+  String _fmt(double b) =>
+      b == b.roundToDouble() ? b.toInt().toString() : b.toString();
+
+  // A locked, already-recorded earlier round.
+  Widget _pastRoundCard(TenderSaleModel s, int attempt, List<double> amounts) {
+    final muted = context.colors.textMuted;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.lock_outline_rounded, size: 15, color: muted),
+            const Gap(8),
+            Expanded(
+              child: Text(_roundLabel(s, attempt),
+                  style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13)),
+            ),
+            Text('Recorded',
+                style: TextStyle(
+                    color: muted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+          ]),
+          const Gap(10),
+          if (amounts.isEmpty)
+            Text('No bids recorded',
+                style: TextStyle(color: muted, fontSize: 12))
+          else
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final b in amounts)
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: context.colors.cardDark,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: context.colors.borderColor),
+                    ),
+                    child: Text('Rs. ${_fmt(b)}',
+                        style: TextStyle(
+                            color: context.colors.textPrimary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13)),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bidField(int i, Color accent) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(children: [
+        Container(
+          width: 26,
+          alignment: Alignment.center,
+          child: Text('${i + 1}',
+              style: TextStyle(
+                  color: context.colors.textMuted,
+                  fontWeight: FontWeight.w700)),
+        ),
+        const Gap(6),
+        Expanded(
+          child: TextField(
+            controller: _controllers[i],
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
+            ],
+            style: TextStyle(color: context.colors.textPrimary),
+            decoration: InputDecoration(
+              isDense: true,
+              prefixText: 'Rs. ',
+              hintText: '0.00',
+              filled: true,
+              fillColor: context.colors.cardDark,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: context.colors.borderColor)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: context.colors.borderColor)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: accent, width: 1.4)),
+            ),
+          ),
+        ),
+        IconButton(
+          icon: Icon(Icons.close_rounded,
+              size: 18, color: context.colors.textMuted),
+          tooltip: 'Remove',
+          onPressed: () => _removeRow(i),
+        ),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.colors.successGreen;
+    final rounds = _rounds;
+    final lastIdx = rounds.length - 1;
+    return StyledFormDialog(
+      label: 'Record Bids',
+      title: widget.info.forfeited.srNumber,
+      headerAccentColor: accent,
+      icon: Icons.sell_rounded,
+      width: 480,
+      child: _loading
+          ? Padding(
+              padding: const EdgeInsets.all(28),
+              child: Center(child: CircularProgressIndicator(color: accent)))
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Earlier rounds: read-only.
+                for (int r = 0; r < lastIdx; r++)
+                  _pastRoundCard(rounds[r], r + 1,
+                      _past[rounds[r].id] ?? const <double>[]),
+                // Current (latest) round: editable.
+                StyledFormSection(
+                  title: '${_roundLabel(_current, rounds.length)} · Current',
+                  icon: Icons.gavel_rounded,
+                  children: [
+                    for (int i = 0; i < _controllers.length; i++)
+                      _bidField(i, accent),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: _addRow,
+                        icon: Icon(Icons.add_rounded, size: 18, color: accent),
+                        label: Text('Add bid',
+                            style: TextStyle(
+                                color: accent, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+      actions: [
+        TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: (_loading || _saving) ? null : _save,
+          style: FilledButton.styleFrom(backgroundColor: accent),
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Text('Save Bids'),
+        ),
+      ],
+    );
+  }
+}
 
 // ── Destructions ──────────────────────────────────────────────
 

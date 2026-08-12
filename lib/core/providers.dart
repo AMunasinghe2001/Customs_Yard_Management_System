@@ -467,6 +467,25 @@ final unsoldTenderSalesProvider =
   return ref.read(disposalServiceProvider).getUnsoldTenderSales();
 });
 
+// Bids recorded for a single unsold tender package, grouped by tender round
+// (tender_sale_id → amounts). Keyed by forfeited package id.
+final tenderBidsProvider =
+    FutureProvider.family<Map<String, List<double>>, String>((ref, fpId) async {
+  return ref.read(disposalServiceProvider).getTenderBidsByRound(fpId);
+});
+
+// Appeal portal: every forfeited package that has ≥1 recorded bid, with its
+// rounds (each a tender sale + its bid amounts).
+final packagesWithBidsProvider = FutureProvider<
+    List<
+        ({
+          ForfeitedPackageModel forfeited,
+          List<({TenderSaleModel? sale, List<double> bids})> rounds
+        })>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getPackagesWithBids();
+});
+
 // Central Disposal Directorate undestroyed packages from destructions
 final undestroyedDestructionsProvider =
     FutureProvider<List<ReDestructionInfo>>((ref) async {

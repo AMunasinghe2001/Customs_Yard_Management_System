@@ -1143,6 +1143,32 @@ class ReTenderSaleInfo {
   TenderSaleModel? get latestSale => sales.isNotEmpty ? sales.first : null;
 }
 
+/// A single bid amount recorded (by Central Disposal) for an unsold tender
+/// package. Keyed by the forfeited package id; viewable in the Appeal portal.
+class TenderBidModel {
+  final String id;
+  final String forfeitedPackageId;
+  final String? tenderSaleId; // the tender round this bid belongs to
+  final double amount;
+  final DateTime createdAt;
+
+  const TenderBidModel({
+    required this.id,
+    required this.forfeitedPackageId,
+    required this.tenderSaleId,
+    required this.amount,
+    required this.createdAt,
+  });
+
+  factory TenderBidModel.fromJson(Map<String, dynamic> json) => TenderBidModel(
+        id: json['id'] as String,
+        forfeitedPackageId: json['forfeited_package_id'] as String,
+        tenderSaleId: json['tender_sale_id'] as String?,
+        amount: (json['amount'] as num).toDouble(),
+        createdAt: DateTime.parse(json['created_at'] as String),
+      );
+}
+
 // ── Tender Disposal Outcome Model ────────────────────────────
 
 class TenderDisposalModel {

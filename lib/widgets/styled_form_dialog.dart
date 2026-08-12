@@ -174,13 +174,17 @@ class StyledFormSection extends StatelessWidget {
             children: [
               Icon(icon, size: 18, color: context.colors.primaryGold),
               const Gap(10),
-              Text(
-                title.toUpperCase(),
-                style: TextStyle(
-                  color: context.colors.primaryGold,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  letterSpacing: 0.8,
+              Flexible(
+                child: Text(
+                  title.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.colors.primaryGold,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.8,
+                  ),
                 ),
               ),
             ],
