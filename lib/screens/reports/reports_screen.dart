@@ -5,20 +5,27 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
+import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../core/yards.dart';
 import '../../services/report_service.dart';
 import '../../models/models.dart';
 import '../../widgets/print_barcode_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/tooltip_text.dart';
 import 'package:intl/intl.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../widgets/error_view.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
-  const ReportsScreen({super.key});
+  /// Executive Office (DG / ADG) mode: shows a Yard selector and scopes every
+  /// report to the picked yard. Officers/admins use the default (false), where
+  /// RLS already limits data to their own yard.
+  final bool executiveMode;
+  const ReportsScreen({super.key, this.executiveMode = false});
 
   @override
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
@@ -29,6 +36,20 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   DateTime? _endDate;
   String _selectedStatus = 'all';
   String _selectedWarehouse = 'all';
+  // Executive mode: the yard whose reports are generated (null = none picked).
+  String? _reportYard;
+
+  /// The yard passed to the data services. Executive mode → the picked yard
+  /// (report cards are only shown once one is picked, so it's non-null here);
+  /// officer mode → null, so RLS scopes data to the officer's own yard.
+  String? get _yardArg => widget.executiveMode ? _reportYard : null;
+
+  /// Client-side yard filter for report lists whose service can't take a yard
+  /// (e.g. forfeited packages). No-op in officer mode.
+  List<T> _filterByYard<T>(List<T> rows, String? Function(T) yardOf) {
+    if (!widget.executiveMode || _reportYard == null) return rows;
+    return rows.where((r) => yardOf(r) == _reportYard).toList();
+  }
   
   // Track loading state for each button uniquely
   final Map<String, bool> _loadingStates = {};
@@ -83,7 +104,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 controller: _scrollController,
                 physics: const ClampingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
-                child: _buildReportCards(),
+                child: (widget.executiveMode && _reportYard == null)
+                    ? _selectYardPrompt()
+                    : _buildReportCards(),
               ),
             ),
           ),
@@ -114,6 +137,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
+          // ── Yard (Executive Office only) ── reports scope to the picked yard
+          if (widget.executiveMode)
+            StyledDropdownButton<String>(
+              value: _reportYard,
+              allLabel: 'Select Yard',
+              icon: Icons.location_city_rounded,
+              menuWidth: 260,
+              options: kYards
+                  .map((y) => StyledDropdownOption(y.code, y.name))
+                  .toList(),
+              onChanged: (v) => setState(() => _reportYard = v),
+            ),
           // ── Date Range ──
           _filterChip(
             icon: Icons.date_range_rounded,
@@ -213,6 +248,276 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   /// A chip that opens a popup menu of (value,label) choices — matches the
   /// "All Reasons" / "All Years" style popups on the other pages.
+  /// Executive Office prompt shown until a yard is picked (reports are
+  /// per-yard, so no report can run without one).
+  Widget _selectYardPrompt() {
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.only(top: 80),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.location_city_rounded,
+              size: 56, color: context.colors.textMuted),
+          const Gap(16),
+          Text('Select a yard to generate reports',
+              style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w600)),
+          const Gap(6),
+          Text('Use the “Select Yard” dropdown above.',
+              style:
+                  TextStyle(color: context.colors.textMuted, fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  // ── In-app report viewer ─────────────────────────────────────────────────
+  // The primary way to consume a report is to view its rows right here in the
+  // app (pretty table); PDF / Excel are secondary exports inside the viewer.
+
+  static const List<String> _packageCols = [
+    'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Status',
+    'Entry Date', 'Value (LKR)'
+  ];
+  List<List<String>> _packageRows(List<PackageModel> pkgs) {
+    final f = NumberFormat('#,##0');
+    return pkgs.map((p) {
+      final item = p.items.isNotEmpty ? p.items.first : null;
+      final name = p.items.isEmpty
+          ? '—'
+          : (p.items.length == 1
+              ? item!.itemName
+              : '${item!.itemName} +${p.items.length - 1}');
+      return [
+        p.srNumber,
+        name,
+        item?.hsCode ?? '—',
+        '${p.effectiveItemCount}',
+        p.consigneeName,
+        p.status.toUpperCase(),
+        p.entryDate != null
+            ? DateFormat('yyyy-MM-dd').format(p.entryDate!)
+            : '—',
+        f.format(p.declaredValue),
+      ];
+    }).toList();
+  }
+
+  static const List<String> _forfeitedCols = [
+    'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Forfeited On'
+  ];
+  List<List<String>> _forfeitedRows(List<ForfeitedPackageModel> list) {
+    return list.map((fp) {
+      final items = fp.packageDetails?.items ?? const <PackageItem>[];
+      final item = items.isNotEmpty ? items.first : null;
+      final qty = fp.entryQty ??
+          (item?.quantity ?? items.fold<int>(0, (s, i) => s + i.quantity));
+      return [
+        fp.srNumber,
+        fp.itemName ?? item?.itemName ?? '—',
+        item?.hsCode ?? '—',
+        '$qty',
+        fp.consigneeName,
+        DateFormat('yyyy-MM-dd').format(fp.forfeitedAt),
+      ];
+    }).toList();
+  }
+
+  /// The shared in-app table dialog. Save PDF / Export Excel sit in the footer.
+  Future<void> _showReportTable({
+    required String title,
+    String? subtitle,
+    required List<String> columns,
+    required List<List<String>> rows,
+    VoidCallback? onSavePdf,
+    VoidCallback? onExportExcel,
+  }) async {
+    if (rows.isEmpty) {
+      _showNoDataMessage();
+      return;
+    }
+    await showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        insetPadding: const EdgeInsets.all(28),
+        backgroundColor: context.colors.cardDark,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+              maxWidth: 1150,
+              maxHeight: MediaQuery.of(ctx).size.height * 0.86),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Header
+              Container(
+                padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+                child: Row(children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800)),
+                        Text('${rows.length} record(s)${subtitle != null ? ' · $subtitle' : ''}',
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: Icon(Icons.close_rounded,
+                        color: context.colors.textMuted),
+                    onPressed: () => Navigator.pop(ctx),
+                  ),
+                ]),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: DataTable2(
+                    columnSpacing: 12,
+                    horizontalMargin: 12,
+                    fixedTopRows: 1,
+                    isVerticalScrollBarVisible: true,
+                    columns: columns
+                        .map((c) => DataColumn2(
+                            label: Text(c,
+                                style: TextStyle(
+                                    color: context.colors.primaryGold,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 12))))
+                        .toList(),
+                    rows: rows
+                        .map((r) => DataRow(
+                            cells: r
+                                .map((c) => DataCell(TooltipText(c,
+                                    style: TextStyle(
+                                        color: context.colors.textPrimary,
+                                        fontSize: 12.5))))
+                                .toList()))
+                        .toList(),
+                  ),
+                ),
+              ),
+              const Divider(height: 1),
+              // Footer — secondary exports
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(children: [
+                  const Spacer(),
+                  if (onExportExcel != null)
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.green),
+                      icon: const Icon(Icons.table_chart_outlined, size: 16),
+                      label: const Text('Export Excel'),
+                      onPressed: onExportExcel,
+                    ),
+                  if (onExportExcel != null) const Gap(10),
+                  if (onSavePdf != null)
+                    ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                          backgroundColor: context.colors.customsBlue,
+                          foregroundColor: Colors.white),
+                      icon: const Icon(Icons.picture_as_pdf_outlined,
+                          size: 16),
+                      label: const Text('Save PDF'),
+                      onPressed: onSavePdf,
+                    ),
+                ]),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// View a package-list report in-app (with PDF / Excel export).
+  Future<void> _viewPackages(String status, String title,
+      {String? subtitle}) async {
+    final key = '${title}_view';
+    _setLoading(key, true);
+    try {
+      final pkgs = _filterByWarehouse(_filterByDate(
+          await ref.read(packageServiceProvider).getAllPackages(
+              status: status == 'all' ? null : status, yard: _yardArg)));
+      final base = title.replaceAll(' ', '_');
+      await _showReportTable(
+        title: title,
+        subtitle: subtitle,
+        columns: _packageCols,
+        rows: _packageRows(pkgs),
+        onSavePdf: () => _showPdfPreview(
+            (f) => ReportService()
+                .generatePackagePdf(pkgs, title: title, format: f),
+            '$base.pdf'),
+        onExportExcel: () {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (c) => ExcelExportDialog(
+              title: 'Export $title',
+              recordCount: pkgs.length,
+              fileName: '$base.xlsx',
+              onExport: () => ReportService().exportPackagesToExcel(pkgs),
+              onSave: (b) => _handleFileSave(b, base, 'xlsx'),
+            ),
+          );
+        },
+      );
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  /// View a forfeited-list report in-app (with PDF / Excel export).
+  Future<void> _viewForfeited(String key, String title, String dateHeader,
+      Future<List<ForfeitedPackageModel>> Function() fetch) async {
+    _setLoading('${title}_view', true);
+    try {
+      final list =
+          _filterByDate(_filterByYard(await fetch(), (f) => f.yard));
+      final base = title.replaceAll(' ', '_');
+      await _showReportTable(
+        title: title,
+        columns: _forfeitedCols,
+        rows: _forfeitedRows(list),
+        onSavePdf: () => _showPdfPreview(
+            (_) => ReportService().generateForfeitedPdf(list,
+                title: title,
+                subTitle: 'Full Historical Report',
+                dateHeader: dateHeader),
+            '${base}_Report.pdf'),
+        onExportExcel: () {
+          if (!mounted) return;
+          showDialog(
+            context: context,
+            builder: (c) => ExcelExportDialog(
+              title: 'Export $title',
+              recordCount: list.length,
+              fileName: '${base}_Report.xlsx',
+              onExport: () => ReportService()
+                  .exportForfeitedToExcel(list, title: title, dateHeader: dateHeader),
+              onSave: (b) => _handleFileSave(b, base, 'xlsx'),
+            ),
+          );
+        },
+      );
+    } finally {
+      _setLoading('${title}_view', false);
+    }
+  }
+
   Widget _buildReportCards() {
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -248,6 +553,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Generates report based on active filters above.',
                       icon: Icons.inventory_2_rounded,
                       color: context.colors.primaryGold,
+                      onView: () =>
+                          _viewPackages(_selectedStatus, 'Packages Inventory Audit'),
                       onPdf: _generateAllPackagesPdf,
                       onExcel: _exportExcel,
                     ),
@@ -293,6 +600,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'All forfeited goods in this yard.',
                       icon: Icons.gavel_rounded,
                       color: const Color(0xFFC62828),
+                      onView: () => _viewForfeited(
+                          'Forfeited',
+                          'Forfeited Packages',
+                          'Forfeited On',
+                          () => ref
+                              .read(forfeitedPackageServiceProvider)
+                              .getForfeitedPackages()),
                       onPdf: () => _generateForfeitedReport('pdf'),
                       onExcel: () => _generateForfeitedReport('excel'),
                     ),
@@ -301,6 +615,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Goods abandoned by the consignee.',
                       icon: Icons.inbox_rounded,
                       color: const Color(0xFF8D6E63),
+                      onView: () => _viewForfeited(
+                          'Abandoned',
+                          'Abandoned Packages',
+                          'Abandoned On',
+                          () => ref
+                              .read(forfeitedPackageServiceProvider)
+                              .getForfeitedBySource('abandoned')),
                       onPdf: () => _generateSourceForfeitedReport(
                           'abandoned', 'Abandoned Packages', 'pdf'),
                       onExcel: () => _generateSourceForfeitedReport(
@@ -311,6 +632,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Packages routed via "Other" disposition.',
                       icon: Icons.more_horiz_rounded,
                       color: const Color(0xFF5E35B1),
+                      onView: () => _viewForfeited(
+                          'Other',
+                          'Other Packages',
+                          'Recorded On',
+                          () => ref
+                              .read(forfeitedPackageServiceProvider)
+                              .getForfeitedBySource('other')),
                       onPdf: () => _generateSourceForfeitedReport(
                           'other', 'Other Packages', 'pdf'),
                       onExcel: () => _generateSourceForfeitedReport(
@@ -548,7 +876,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final key = '${status}_$format';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages(status: status);
+      final packages = await ref.read(packageServiceProvider).getAllPackages(status: status, yard: _yardArg);
       final withDate = _filterByDate(packages);
       final filtered = _filterByWarehouse(withDate);
 
@@ -591,8 +919,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Category & Zone Summary_pdf';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages();
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+      final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
       
       final withDatePkgs = _filterByDate(packages);
       final withDateEntries = _filterByDate(entries);
@@ -617,8 +945,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Category & Zone Summary_excel';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages();
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+      final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
       
       final withDatePkgs = _filterByDate(packages);
       final withDateEntries = _filterByDate(entries);
@@ -645,6 +973,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       final packages = await ref.read(packageServiceProvider).getAllPackages(
         status: _selectedStatus == 'all' ? null : _selectedStatus,
+        yard: _yardArg,
       );
       final withDate = _filterByDate(packages);
       final filtered = _filterByWarehouse(withDate);
@@ -727,7 +1056,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final loadKey = '${key}_$format';
     _setLoading(loadKey, true);
     try {
-      final list = _filterByDate(await fetch());
+      final list =
+          _filterByDate(_filterByYard(await fetch(), (f) => f.yard));
       if (list.isEmpty) {
         _showNoDataMessage();
         return;
@@ -791,7 +1121,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final loadKey = '${key}_$format';
     _setLoading(loadKey, true);
     try {
-      final all = await ref.read(packageServiceProvider).getAllPackages();
+      final all = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
       final matches = all.where((p) => p.warehouseEntries.any((e) =>
           (e.returnNotes ?? '').toUpperCase().contains('[FINAL:$tag'))).toList();
       final list = _filterByDate(matches);
@@ -836,7 +1166,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     List<PackageModel> all;
     try {
-      all = await ref.read(packageServiceProvider).getAllPackages();
+      all = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
     } catch (e) {
       _showError(e.toString());
       return;
@@ -912,6 +1242,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     required String description,
     required IconData icon,
     required Color color,
+    Future<void> Function()? onView,
     Future<void> Function()? onPdf,
     Future<void> Function()? onExcel,
   }) {
@@ -937,9 +1268,23 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               style: TextStyle(color: context.colors.textMuted, fontSize: 11),
               maxLines: 1, overflow: TextOverflow.ellipsis),
           const Spacer(),
+          // Primary action — view the report data inside the app.
+          if (onView != null) ...[
+            SizedBox(
+              width: double.infinity,
+              child: _buildActionButton(
+                label: 'View Report',
+                icon: Icons.table_rows_rounded,
+                color: color,
+                isLoading: _isLoading('${title}_view'),
+                onTap: onView,
+              ),
+            ),
+            const Gap(8),
+          ],
           Row(
             children: [
-              if (onPdf != null) 
+              if (onPdf != null)
                 Expanded(
                   child: _buildActionButton(
                     label: 'PDF',
@@ -1046,7 +1391,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Warehouse Stock_pdf';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
@@ -1072,7 +1417,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Warehouse Stock_excel';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
@@ -1101,7 +1446,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Released Packages_pdf';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
       final filtered = _filterByDate(entries);
       _showPdfPreview(
         (format) => ReportService().generateWarehousePdf(
@@ -1123,7 +1468,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Released Packages_excel';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
@@ -1153,7 +1498,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final key = '${title}_$format';
     _setLoading(key, true);
     try {
-      final admitted = await ref.read(warehouseServiceProvider).getAllWarehouseEntries();
+      final admitted = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
       final filtered = _filterByDate(admitted);
       
       if (filtered.isEmpty) {
@@ -1270,6 +1615,7 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     try {
       final packages = await ref.read(packageServiceProvider).getAllPackages(
         status: _selectedStatus == 'all' ? null : _selectedStatus,
+        yard: _yardArg,
       );
 
       final withDate = _filterByDate(packages);
@@ -1469,12 +1815,12 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
      const key = 'Storage Charges_pdf';
       _setLoading(key, true);
       try {
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
         final filteredEntries = _filterByDate(entries);
         if (filteredEntries.isEmpty) {
           _showNoDataMessage();
         } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
           final rates = await ref.read(storageRateProvider.future);
           _showPdfPreview(
             (format) => ReportService().generateFinancialPdf(filteredEntries, packages, rates, isRevenue: false),
@@ -1492,12 +1838,12 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
      const key = 'Storage Charges_excel';
       _setLoading(key, true);
       try {
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false);
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
         final filteredEntries = _filterByDate(entries);
         if (filteredEntries.isEmpty) {
           _showNoDataMessage();
         } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
           final rates = await ref.read(storageRateProvider.future);
           if (mounted) {
             showDialog(
@@ -1523,12 +1869,12 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
       const key = 'Released Revenue_pdf';
       _setLoading(key, true);
       try {
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
         final filteredEntries = _filterByDate(entries);
         if (filteredEntries.isEmpty) {
           _showNoDataMessage();
         } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
           final rates = await ref.read(storageRateProvider.future);
           _showPdfPreview(
             (format) => ReportService().generateFinancialPdf(filteredEntries, packages, rates, isRevenue: true),
@@ -1546,12 +1892,12 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
      const key = 'Released Revenue_excel';
       _setLoading(key, true);
       try {
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true);
+        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
         final filteredEntries = _filterByDate(entries);
         if (filteredEntries.isEmpty) {
           _showNoDataMessage();
         } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages();
+          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
           final rates = await ref.read(storageRateProvider.future);
           if (mounted) {
             showDialog(

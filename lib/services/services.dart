@@ -866,10 +866,12 @@ class WarehouseService {
   }
 
   Future<List<WarehouseEntryModel>> getAllWarehouseEntries(
-      {bool? isReturned}) async {
+      {bool? isReturned, String? yard}) async {
     var query = supabase.from('warehouse_entries').select(
         '*, warehouses(*), packages(*, package_items(*)), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)');
     if (isReturned != null) query = query.eq('is_returned', isReturned);
+    // Executive-Office reports scope by yard; officers rely on RLS.
+    if (yard != null) query = query.eq('yard', yard);
     final data = await query.order('admitted_at', ascending: false);
     return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
   }
@@ -1614,6 +1616,13 @@ class AdminService {
   Future<bool> isValuationPositionAvailable(String code) async {
     final res = await supabase
         .rpc('valuation_position_available', params: {'code': code});
+    return res == true;
+  }
+
+  /// Whether an Executive Office position (DG / ADG) is still free to claim.
+  Future<bool> isExecutivePositionAvailable(String code) async {
+    final res = await supabase
+        .rpc('executive_position_available', params: {'code': code});
     return res == true;
   }
 

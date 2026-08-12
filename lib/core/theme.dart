@@ -171,7 +171,10 @@ class AppTheme {
   /// Appeal Directorate accent – deep purple for strong contrast against the
   /// dark navy scaffold, and a royal/legal feel that pairs well with gold.
   static const Color appealPurple = Color(0xFF7B1FA2);
-  
+  // Executive Office (DG / ADG) — a distinct deep teal, not used by any other
+  // portal (blue/green/purple/gold), so the top office reads apart.
+  static const Color executiveTeal = Color(0xFF0E7C86);
+
   // Custom Dark Colors
   static const Color _customsBlue = Color(0xFF231f87);
   static const Color _customsBlueDark = Color(0xFF1a1764);

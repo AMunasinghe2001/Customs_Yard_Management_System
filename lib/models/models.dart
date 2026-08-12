@@ -724,11 +724,15 @@ class ProfileModel {
   /// requests before they reach the Central Disposal Directorate.
   bool get isValuation => role == 'valuation';
 
+  /// Executive Office (DG / ADG) — Customs' two highest posts. Institutional,
+  /// cross-yard read-only, never auto-expires.
+  bool get isExecutive => role == 'executive';
+
   /// True once the account is past its 8-month lifetime. Directorate accounts
   /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC) are institutional and
   /// never auto-expire (officers transfer in/out of the post).
   bool get isExpired =>
-      !isDisposal && !isAppeal && !isValuation &&
+      !isDisposal && !isAppeal && !isValuation && !isExecutive &&
       DateTime.now().isAfter(expiresAt);
 
   /// Whether the account may currently sign in: explicitly active AND not
@@ -739,7 +743,7 @@ class ProfileModel {
   /// Negative once already expired. `null` for institutional directorate
   /// accounts (Disposal / Appeal / Valuation) that never auto-expire.
   int? get daysUntilExpiry {
-    if (isDisposal || isAppeal || isValuation) return null;
+    if (isDisposal || isAppeal || isValuation || isExecutive) return null;
     return expiresAt.difference(DateTime.now()).inDays;
   }
 
@@ -1211,6 +1215,16 @@ const Map<String, String> kValuationPositions = {
 
 String valuationPositionLabel(String? code) =>
     kValuationPositions[code] ?? (code ?? 'Valuation Directorate');
+
+// ── Executive Office positions (DG / ADG — Customs' two highest posts) ───────
+// Keys are the *usernames* (globally unique in profiles.username).
+const Map<String, String> kExecutivePositions = {
+  'DG': 'DG (Director General)',
+  'ADG': 'ADG (Additional Director General)',
+};
+
+String executivePositionLabel(String? code) =>
+    kExecutivePositions[code] ?? (code ?? "Director General's Office");
 
 // ── Tender Sale (Central Disposal Directorate) ───────────────────────────
 
