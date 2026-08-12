@@ -1169,6 +1169,36 @@ class TenderBidModel {
       );
 }
 
+/// A fresh valuation the Valuation Directorate sets for an unsold tender
+/// package, per tender round. Central Disposal reads it before re-tendering.
+class TenderRevaluationModel {
+  final String id;
+  final String forfeitedPackageId;
+  final String? tenderSaleId;
+  final double valuationCost;
+  final String? note;
+  final DateTime createdAt;
+
+  const TenderRevaluationModel({
+    required this.id,
+    required this.forfeitedPackageId,
+    required this.tenderSaleId,
+    required this.valuationCost,
+    required this.note,
+    required this.createdAt,
+  });
+
+  factory TenderRevaluationModel.fromJson(Map<String, dynamic> json) =>
+      TenderRevaluationModel(
+        id: json['id'] as String,
+        forfeitedPackageId: json['forfeited_package_id'] as String,
+        tenderSaleId: json['tender_sale_id'] as String?,
+        valuationCost: (json['valuation_cost'] as num).toDouble(),
+        note: json['note'] as String?,
+        createdAt: DateTime.parse(json['created_at'] as String),
+      );
+}
+
 // ── Tender Disposal Outcome Model ────────────────────────────
 
 class TenderDisposalModel {

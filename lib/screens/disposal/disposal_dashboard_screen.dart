@@ -1977,6 +1977,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
     final amber = context.colors.warningAmber;
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final async = ref.watch(unsoldTenderSalesProvider);
+    final eligible =
+        ref.watch(reTenderEligibleProvider).asData?.value ?? const <String>{};
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -2104,6 +2106,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                           size: ColumnSize.S,
                           fixedWidth: 92),
                       DataColumn2(
+                          label: Center(child: Text('Re-valuation')),
+                          size: ColumnSize.S,
+                          fixedWidth: 150),
+                      DataColumn2(
                           label: Center(child: Text('Details')),
                           size: ColumnSize.S,
                           fixedWidth: 64),
@@ -2175,6 +2181,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                           ),
                         )),
                         DataCell(Center(child: _BidsCell(info: info))),
+                        DataCell(Center(
+                          child: _ReTenderStatusChip(
+                              eligible: eligible.contains(f.id)),
+                        )),
                         DataCell(Center(
                           child: pkg != null
                               ? IconButton(
@@ -3133,10 +3143,13 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   Widget build(BuildContext context) {
     final green = context.colors.successGreen;
     // Fresh sale → "Sale"-tagged requests. Re-tender → only the unsold packages
-    // shown on the Unsold Tenders page. Either way, only the packages belonging
-    // to the yard selected in this form are shown (and tendered).
+    // that the Valuation Directorate has RE-VALUED (others await re-valuation).
+    // Either way, only packages in the yard selected in this form are shown.
+    final eligible =
+        ref.watch(reTenderEligibleProvider).asData?.value ?? const <String>{};
     final AsyncValue<List<DisposalRequestItemModel>> pool = (widget.reTender
             ? ref.watch(unsoldTenderSalesProvider).whenData((list) => list
+                .where((info) => eligible.contains(info.forfeited.id))
                 .map((info) => DisposalRequestItemModel(
                       id: info.forfeited.id,
                       requestId: '',
@@ -3271,8 +3284,13 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                       padding: const EdgeInsets.all(20),
                       child: Center(
                         child: Text(
-                          'No "Sale" packages awaiting a tender sale.\n'
-                          'Yards mark packages for Sale in a Disposal Request.',
+                          widget.reTender
+                              ? 'No re-valued unsold packages for this yard.\n'
+                                  'A package can be re-tendered only after the '
+                                  'Valuation Directorate sets a new valuation '
+                                  'for it.'
+                              : 'No "Sale" packages awaiting a tender sale.\n'
+                                  'Yards mark packages for Sale in a Disposal Request.',
                           textAlign: TextAlign.center,
                           style:
                               TextStyle(color: context.colors.textSecondary),
@@ -3652,6 +3670,43 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
 
 // ── Tender bids (recorded on unsold packages) ─────────────────
 
+/// Re-tender eligibility chip: a package may be re-tendered only once the
+/// Valuation Directorate has set a re-valuation for its current unsold round.
+class _ReTenderStatusChip extends StatelessWidget {
+  final bool eligible;
+  const _ReTenderStatusChip({required this.eligible});
+
+  @override
+  Widget build(BuildContext context) {
+    final green = context.colors.successGreen;
+    final amber = context.colors.warningAmber;
+    final color = eligible ? green : amber;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(
+            eligible
+                ? Icons.check_circle_rounded
+                : Icons.hourglass_bottom_rounded,
+            size: 13,
+            color: color),
+        const Gap(5),
+        Flexible(
+          child: Text(eligible ? 'Re-valued' : 'Awaiting value',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+        ),
+      ]),
+    );
+  }
+}
+
 /// Unsold-tenders "Bids" cell: shows the total recorded bid count across all
 /// tender rounds (or a "+ Bids" prompt when empty), opens the entry form on tap.
 class _BidsCell extends ConsumerWidget {
@@ -3708,6 +3763,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   final _controllers = <TextEditingController>[];
   // Saved amounts of the earlier rounds, for read-only display (round id → amts).
   Map<String, List<double>> _past = const {};
+  // Re-valuations the Valuation Directorate set, per round (read-only here).
+  Map<String, TenderRevaluationModel> _revals = const {};
   bool _loading = true;
   bool _saving = false;
 
@@ -3731,6 +3788,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     } else {
       _load();
     }
+    _loadRevals(); // async, non-blocking — the re-valuations are supplementary.
   }
 
   void _seed(Map<String, List<double>> saved) {
@@ -3752,6 +3810,15 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     } catch (_) {}
     _seed(saved);
     if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _loadRevals() async {
+    try {
+      final r = await ref
+          .read(disposalServiceProvider)
+          .getTenderRevaluationsByRound(widget.info.forfeited.id);
+      if (mounted) setState(() => _revals = r);
+    } catch (_) {}
   }
 
   @override
@@ -3812,6 +3879,32 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   String _fmt(double b) =>
       b == b.roundToDouble() ? b.toInt().toString() : b.toString();
 
+  // Valuation Directorate's re-valuation for a round, if any (read-only).
+  Widget _revalLine(String roundId) {
+    final reval = _revals[roundId];
+    if (reval == null) return const SizedBox.shrink();
+    final blue = context.colors.accentLightBlue;
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(children: [
+        Icon(Icons.price_change_rounded, size: 14, color: blue),
+        const Gap(6),
+        Text('Re-valued by Valuation: Rs. ${_fmt(reval.valuationCost)}',
+            style: TextStyle(
+                color: blue, fontWeight: FontWeight.w700, fontSize: 12)),
+        if (reval.note != null && reval.note!.isNotEmpty) ...[
+          const Gap(8),
+          Flexible(
+            child: Text('· ${reval.note}',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: context.colors.textMuted, fontSize: 12)),
+          ),
+        ],
+      ]),
+    );
+  }
+
   // A locked, already-recorded earlier round.
   Widget _pastRoundCard(TenderSaleModel s, int attempt, List<double> amounts) {
     final muted = context.colors.textMuted;
@@ -3868,6 +3961,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                   ),
               ],
             ),
+          _revalLine(s.id),
         ],
       ),
     );
@@ -3965,6 +4059,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                                 color: accent, fontWeight: FontWeight.w700)),
                       ),
                     ),
+                    _revalLine(_current.id),
                   ],
                 ),
               ],

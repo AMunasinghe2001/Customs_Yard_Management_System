@@ -85,7 +85,7 @@ class HomeScreen extends ConsumerWidget {
                     Flexible(child: _RoleCard(
                       icon: Icons.balance_rounded,
                       title: 'Appeal Directorate',
-                      subtitle: 'Review forfeited packages\n& hold appeals before disposal',
+                      subtitle: 'Review forfeited packages\n& hold appeals',
                       accentColor: AppTheme.appealPurple,
                       onLogin: (ctx) => ctx.go('/appeal/login'),
                       onSignup: (ctx) => ctx.go('/appeal/signup'),
@@ -296,14 +296,19 @@ class _RoleCardState extends State<_RoleCard> {
             ),
           ),
           const Gap(8),
-          Text(widget.subtitle,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: _hovered
-                      ? const Color(0xFF475569)
-                      : context.colors.textSecondary,
-                  fontSize: 13,
-                  height: 1.5)),
+          SizedBox(
+            height: 58,
+            child: Text(widget.subtitle,
+                textAlign: TextAlign.center,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: _hovered
+                        ? const Color(0xFF475569)
+                        : context.colors.textSecondary,
+                    fontSize: 13,
+                    height: 1.5)),
+          ),
           const Spacer(),
           const Gap(20),
           // Primary action — white label on the saturated accent so it reads

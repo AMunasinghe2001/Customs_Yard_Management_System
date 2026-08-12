@@ -3600,6 +3600,72 @@ class DisposalService {
     return result;
   }
 
+  // ── Tender re-valuations (Valuation sets a new value per unsold round) ─────
+
+  /// The set of forfeited_package_ids whose CURRENT (latest) unsold tender round
+  /// has a Valuation re-valuation — the only packages Central Disposal may
+  /// re-tender. A package with no re-valuation yet is "awaiting valuation".
+  Future<Set<String>> getReTenderEligibleIds() async {
+    final unsold = await getUnsoldTenderSales();
+    if (unsold.isEmpty) return {};
+    // Latest round id per package (newest createdAt).
+    final latestRound = <String, String>{};
+    for (final info in unsold) {
+      final sales = [...info.sales]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (sales.isNotEmpty) latestRound[info.forfeited.id] = sales.first.id;
+    }
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_revaluations')
+        .select('forfeited_package_id, tender_sale_id')
+        .inFilter('forfeited_package_id', latestRound.keys.toList()));
+    final eligible = <String>{};
+    for (final e in (rows as List)) {
+      final fpId = e['forfeited_package_id'] as String;
+      final saleId = e['tender_sale_id'] as String?;
+      if (saleId != null && latestRound[fpId] == saleId) eligible.add(fpId);
+    }
+    return eligible;
+  }
+
+  /// The re-valuations recorded for a package, keyed by tender round
+  /// (tender_sale_id → re-valuation). Round-less rows key under ''.
+  Future<Map<String, TenderRevaluationModel>> getTenderRevaluationsByRound(
+      String forfeitedPackageId) async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_revaluations')
+        .select('*')
+        .eq('forfeited_package_id', forfeitedPackageId)
+        .order('created_at', ascending: true));
+    final byRound = <String, TenderRevaluationModel>{};
+    for (final e in (rows as List)) {
+      final m = TenderRevaluationModel.fromJson(e as Map<String, dynamic>);
+      byRound[m.tenderSaleId ?? ''] = m; // latest wins (ordered asc)
+    }
+    return byRound;
+  }
+
+  /// Set / replace the Valuation Directorate's re-valuation for ONE tender round.
+  Future<void> saveTenderRevaluation(
+      String forfeitedPackageId, String tenderSaleId, double valuationCost,
+      {String? note, String? yard}) async {
+    await AuthService._withNetworkRetry(() => supabase
+        .from('tender_revaluations')
+        .delete()
+        .eq('forfeited_package_id', forfeitedPackageId)
+        .eq('tender_sale_id', tenderSaleId));
+    final uid = supabase.auth.currentUser?.id;
+    await AuthService._withNetworkRetry(() =>
+        supabase.from('tender_revaluations').insert({
+          'forfeited_package_id': forfeitedPackageId,
+          'tender_sale_id': tenderSaleId,
+          'valuation_cost': valuationCost,
+          'note': (note != null && note.trim().isNotEmpty) ? note.trim() : null,
+          'yard': yard,
+          'created_by': uid,
+        }));
+  }
+
   /// "Sale"-tagged disposal-request items that are not yet in a tender sale —
   /// the pool the Tender Sale form can pick from. Cross-yard via RLS; each
   /// carries the forfeited package (incl. yard, items, warehouse location).

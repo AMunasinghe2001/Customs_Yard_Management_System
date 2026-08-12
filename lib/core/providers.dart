@@ -474,6 +474,20 @@ final tenderBidsProvider =
   return ref.read(disposalServiceProvider).getTenderBidsByRound(fpId);
 });
 
+// Valuation re-valuations for a package, keyed by tender round (tender_sale_id).
+final tenderRevaluationsProvider = FutureProvider.family<
+    Map<String, TenderRevaluationModel>, String>((ref, fpId) async {
+  return ref.read(disposalServiceProvider).getTenderRevaluationsByRound(fpId);
+});
+
+// forfeited_package_ids that may be re-tendered — their latest unsold round has
+// a Valuation re-valuation. Packages awaiting re-valuation are excluded.
+final reTenderEligibleProvider = FutureProvider<Set<String>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getReTenderEligibleIds();
+});
+
 // Appeal portal: every forfeited package that has ≥1 recorded bid, with its
 // rounds (each a tender sale + its bid amounts).
 final packagesWithBidsProvider = FutureProvider<
