@@ -160,7 +160,7 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.customsBlueDark],
+              colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.primaryGold],
             ),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [

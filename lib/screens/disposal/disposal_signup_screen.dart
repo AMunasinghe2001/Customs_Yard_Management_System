@@ -298,7 +298,7 @@ class _DisposalSignupScreenState extends ConsumerState<DisposalSignupScreen> {
                 colors: [
                   const Color(0xFF051A0F),
                   context.colors.primaryNavy,
-                  context.colors.customsBlueDark
+                  context.colors.successGreen
                 ],
               ),
             ),

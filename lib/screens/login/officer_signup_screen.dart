@@ -106,7 +106,7 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
           decoration: BoxDecoration(
             gradient: LinearGradient(
               begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [context.colors.primaryNavy, context.colors.customsBlue, context.colors.customsBlueLight],
+              colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.accentLightBlue],
             ),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [

@@ -304,7 +304,7 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                 colors: [
                   const Color(0xFF0A0F2C),
                   context.colors.primaryNavy,
-                  context.colors.customsBlueDark
+                  context.colors.primaryGold
                 ],
               ),
             ),

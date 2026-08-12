@@ -146,7 +146,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               begin: Alignment.topLeft, end: Alignment.bottomRight,
               // Match the dark navy used by the other login screens (admin /
               // disposal / appeal) instead of the lighter customsBlueLight.
-              colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.customsBlueDark],
+              // Fade into the portal's accent at the bottom-right for a soft
+              // colour glow (matches the other portals' login screens).
+              colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.accentLightBlue],
             ),
           ),
           child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [

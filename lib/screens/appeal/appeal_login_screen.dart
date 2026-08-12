@@ -379,7 +379,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                   colors: [
                     const Color(0xFF0A0F2C),
                     context.colors.primaryNavy,
-                    context.colors.customsBlueDark
+                    AppTheme.appealPurple
                   ],
                 ),
               ),

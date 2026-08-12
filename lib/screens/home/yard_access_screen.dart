@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -253,29 +254,51 @@ class _RoleTileState extends State<_RoleTile> {
       child: GestureDetector(
         onTap: widget.onSignIn,
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          padding: const EdgeInsets.all(18),
+          duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
-            color: _hovered
-                ? accent.withOpacity(0.07)
-                : context.colors.cardDark,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: _hovered
-                  ? accent.withOpacity(0.6)
-                  : context.colors.borderColor,
-              width: _hovered ? 1.5 : 1,
-            ),
             boxShadow: _hovered
                 ? [
                     BoxShadow(
-                        color: accent.withOpacity(0.14),
-                        blurRadius: 20,
-                        spreadRadius: 0)
+                        color: accent.withOpacity(0.22),
+                        blurRadius: 26,
+                        spreadRadius: 1)
                   ]
-                : [],
+                : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)],
           ),
-          child: Row(children: [
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: BackdropFilter(
+              // Same liquid-glass hover as the home cards.
+              filter: ui.ImageFilter.blur(
+                  sigmaX: _hovered ? 16 : 0, sigmaY: _hovered ? 16 : 0),
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: _hovered
+                      ? RadialGradient(
+                          center: const Alignment(-0.85, -0.2),
+                          radius: 1.5,
+                          colors: [
+                            accent.withOpacity(0.28),
+                            Colors.white.withOpacity(0.5),
+                            Colors.white.withOpacity(0.32),
+                          ],
+                        )
+                      : LinearGradient(colors: [
+                          context.colors.cardDark,
+                          context.colors.cardDark
+                        ]),
+                  borderRadius: BorderRadius.circular(16),
+                  // Team-colour border on hover (not white).
+                  border: Border.all(
+                    color: _hovered
+                        ? accent.withOpacity(0.75)
+                        : context.colors.borderColor,
+                    width: _hovered ? 1.6 : 1,
+                  ),
+                ),
+                child: Row(children: [
             // Icon block
             AnimatedContainer(
               duration: const Duration(milliseconds: 160),
@@ -365,6 +388,9 @@ class _RoleTileState extends State<_RoleTile> {
                   color: _hovered ? onAccent : accent),
             ),
           ]),
+              ),
+            ),
+          ),
         ),
       ),
     );

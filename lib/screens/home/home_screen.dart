@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -82,16 +83,6 @@ class HomeScreen extends ConsumerWidget {
                     )),
                     const Gap(24),
                     Flexible(child: _RoleCard(
-                      icon: Icons.gavel_rounded,
-                      title: 'Central Disposal Directorate',
-                      subtitle: 'View sold items across all yards\n& record tender sales',
-                      accentColor: context.colors.successGreen,
-                      onLogin: (ctx) => ctx.go('/disposal/login'),
-                      onSignup: (ctx) => ctx.go('/disposal/signup'),
-                      delay: 800,
-                    )),
-                    const Gap(24),
-                    Flexible(child: _RoleCard(
                       icon: Icons.balance_rounded,
                       title: 'Appeal Directorate',
                       subtitle: 'Review forfeited packages\n& hold appeals before disposal',
@@ -108,6 +99,16 @@ class HomeScreen extends ConsumerWidget {
                       accentColor: context.colors.primaryGold,
                       onLogin: (ctx) => ctx.go('/valuation/login'),
                       onSignup: (ctx) => ctx.go('/valuation/signup'),
+                      delay: 1100,
+                    )),
+                    const Gap(24),
+                    Flexible(child: _RoleCard(
+                      icon: Icons.gavel_rounded,
+                      title: 'Central Disposal Directorate',
+                      subtitle: 'View sold items across all yards\n& record tender sales',
+                      accentColor: context.colors.successGreen,
+                      onLogin: (ctx) => ctx.go('/disposal/login'),
+                      onSignup: (ctx) => ctx.go('/disposal/signup'),
                       delay: 1100,
                     )),
                     const Gap(24),
@@ -213,35 +214,69 @@ class _RoleCardState extends State<_RoleCard> {
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
+        duration: const Duration(milliseconds: 220),
         constraints: const BoxConstraints(maxWidth: 300),
-        padding: const EdgeInsets.all(28),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft, end: Alignment.bottomRight,
-            colors: _hovered
-                ? [widget.accentColor.withOpacity(0.18), context.colors.cardDark]
-                : [context.colors.cardDark, context.colors.surfaceDark],
-          ),
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: _hovered ? widget.accentColor.withOpacity(0.6) : context.colors.borderColor,
-            width: _hovered ? 1.5 : 1,
-          ),
           boxShadow: _hovered
-              ? [BoxShadow(color: widget.accentColor.withOpacity(0.2), blurRadius: 28, spreadRadius: 2)]
-              : [],
+              ? [BoxShadow(color: widget.accentColor.withOpacity(0.28), blurRadius: 34, spreadRadius: 2)]
+              : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12)],
         ),
-        child: Column(mainAxisSize: MainAxisSize.max, children: [
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            // Frost the page's glow through the card on hover → liquid glass.
+            filter: ui.ImageFilter.blur(
+                sigmaX: _hovered ? 18 : 0, sigmaY: _hovered ? 18 : 0),
+            child: Container(
+              padding: const EdgeInsets.all(28),
+              decoration: BoxDecoration(
+                // Hover: a soft accent glow behind the icon that dissolves into
+                // translucent white on both sides (liquid-glass). Idle: neutral.
+                gradient: _hovered
+                    ? RadialGradient(
+                        center: const Alignment(0, -0.6),
+                        radius: 1.25,
+                        colors: [
+                          widget.accentColor.withOpacity(0.32),
+                          Colors.white.withOpacity(0.55),
+                          Colors.white.withOpacity(0.32),
+                        ],
+                      )
+                    : LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          context.colors.cardDark,
+                          context.colors.surfaceDark
+                        ],
+                      ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  // Team-colour border on hover (not white).
+                  color: _hovered
+                      ? widget.accentColor.withOpacity(0.75)
+                      : context.colors.borderColor,
+                  width: _hovered ? 1.6 : 1,
+                ),
+              ),
+              child: Column(mainAxisSize: MainAxisSize.max, children: [
           AnimatedScale(
             scale: _hovered ? 1.08 : 1.0,
             duration: const Duration(milliseconds: 200),
             child: Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: widget.accentColor.withOpacity(0.15),
+                // Idle: soft accent tint. Hover (accent-filled card): a frosted
+                // white circle so the white icon still reads.
+                color: _hovered
+                    ? Colors.white.withOpacity(0.5)
+                    : widget.accentColor.withOpacity(0.15),
                 shape: BoxShape.circle,
-                border: Border.all(color: widget.accentColor.withOpacity(0.4)),
+                border: Border.all(
+                    color: _hovered
+                        ? Colors.white.withOpacity(0.7)
+                        : widget.accentColor.withOpacity(0.4)),
               ),
               child: Icon(widget.icon, color: widget.accentColor, size: 34),
             ),
@@ -263,7 +298,12 @@ class _RoleCardState extends State<_RoleCard> {
           const Gap(8),
           Text(widget.subtitle,
               textAlign: TextAlign.center,
-              style: TextStyle(color: context.colors.textSecondary, fontSize: 13, height: 1.5)),
+              style: TextStyle(
+                  color: _hovered
+                      ? const Color(0xFF475569)
+                      : context.colors.textSecondary,
+                  fontSize: 13,
+                  height: 1.5)),
           const Spacer(),
           const Gap(20),
           // Primary action — white label on the saturated accent so it reads
@@ -274,7 +314,7 @@ class _RoleCardState extends State<_RoleCard> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: widget.accentColor,
                 foregroundColor: onAccent,
-                elevation: _hovered ? 4 : 0,
+                elevation: _hovered ? 3 : 0,
                 shadowColor: widget.accentColor.withOpacity(0.5),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
@@ -288,7 +328,9 @@ class _RoleCardState extends State<_RoleCard> {
                           fontSize: 15,
                           color: onAccent)),
                   const Gap(8),
-                  Icon(Icons.arrow_forward_rounded, size: 18, color: onAccent),
+                  Icon(Icons.arrow_forward_rounded,
+                      size: 18,
+                      color: onAccent),
                 ],
               ),
             ),
@@ -299,7 +341,10 @@ class _RoleCardState extends State<_RoleCard> {
               child: OutlinedButton(
                 style: OutlinedButton.styleFrom(
                   foregroundColor: widget.accentColor,
-                  side: BorderSide(color: widget.accentColor.withOpacity(0.6), width: 1.4),
+                  backgroundColor:
+                      _hovered ? Colors.white.withOpacity(0.35) : null,
+                  side: BorderSide(
+                      color: widget.accentColor.withOpacity(0.6), width: 1.4),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () => widget.onSignup!(context),
@@ -312,6 +357,9 @@ class _RoleCardState extends State<_RoleCard> {
             ),
           ],
         ]),
+            ),
+          ),
+        ),
       ).animate().scale(
         begin: const Offset(0.92, 0.92),
         duration: const Duration(milliseconds: 500),
