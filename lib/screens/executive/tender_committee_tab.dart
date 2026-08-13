@@ -12,6 +12,8 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/package_details_dialog.dart';
+import 'package:intl/intl.dart';
 
 String _cItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
@@ -19,6 +21,75 @@ String _cItemName(ForfeitedPackageModel f) {
   if (items.isEmpty) return 'Multiple/Unspecified';
   if (items.length == 1) return items.first.itemName;
   return '${items.first.itemName} +${items.length - 1}';
+}
+
+/// Warehouse · zone the item currently sits in (latest entry).
+String _committeeLocation(PackageModel? pkg, String? itemId) {
+  if (pkg == null) return '—';
+  var entries = itemId != null
+      ? pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
+      : <WarehouseEntryModel>[];
+  if (entries.isEmpty) entries = [...pkg.warehouseEntries];
+  if (entries.isEmpty) return '—';
+  entries.sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
+  final w = entries.first;
+  return (w.zone != null && w.zone!.isNotEmpty)
+      ? '${w.warehouseName} · ${w.zone}'
+      : w.warehouseName;
+}
+
+/// Small forfeit/source chip (Forfeit / Confiscated / …).
+class _CommitteeSourceChip extends StatelessWidget {
+  final String source;
+  const _CommitteeSourceChip({required this.source});
+  @override
+  Widget build(BuildContext context) {
+    final label = source.isEmpty
+        ? 'Forfeit'
+        : '${source[0].toUpperCase()}${source.substring(1)}';
+    final c = AppTheme.appealPurple;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: c.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: c.withOpacity(0.3)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: c, fontSize: 11, fontWeight: FontWeight.w700)),
+    );
+  }
+}
+
+/// Valuation cell: unit valuation × qty (matches the Central Disposal tables).
+class _CommitteeValuationCell extends StatelessWidget {
+  final ForfeitedPackageModel f;
+  final int? qty;
+  const _CommitteeValuationCell({required this.f, this.qty});
+  @override
+  Widget build(BuildContext context) {
+    final unit = f.valuationCost;
+    if (unit == null) {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    final effQty = (qty != null && qty! > 0) ? qty! : 1;
+    final fmt = NumberFormat('#,##0');
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text('LKR ${fmt.format(unit * effQty)}',
+            style: TextStyle(
+                color: context.colors.primaryGold,
+                fontWeight: FontWeight.w700,
+                fontSize: 12)),
+        Text('@ ${fmt.format(unit)} × $effQty',
+            style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+      ],
+    );
+  }
 }
 
 final _committeeSearchProvider = StateProvider<String>((ref) => '');
@@ -37,6 +108,8 @@ class TenderCommitteeTab extends ConsumerWidget {
         ref.watch(tenderCommitteesProvider).asData?.value ?? const {};
     final q = ref.watch(_committeeSearchProvider).toLowerCase();
     final yardFilter = ref.watch(_committeeYardProvider);
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        {DateTime(2020, 1, 1): 50.0};
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -131,7 +204,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                       columnSpacing: 12,
                       horizontalMargin: 16,
                       fixedTopRows: 1,
-                      minWidth: 980,
+                      minWidth: 1080,
                       empty: const EmptyTableState(
                           message:
                               'No packages unsold more than 3 times yet'),
@@ -139,13 +212,20 @@ class TenderCommitteeTab extends ConsumerWidget {
                           WidgetStateProperty.all(context.colors.surfaceDark),
                       columns: const [
                         DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                        DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                         DataColumn2(label: Text('Item'), size: ColumnSize.M),
                         DataColumn2(
-                            label: Text('Consignee'), size: ColumnSize.M),
+                            label: Center(child: Text('Source')),
+                            size: ColumnSize.S),
                         DataColumn2(
-                            label: Text('Yard'),
+                            label: Text('Qty'),
                             size: ColumnSize.S,
-                            fixedWidth: 110),
+                            fixedWidth: 56),
+                        DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Valuation'),
+                            size: ColumnSize.S,
+                            fixedWidth: 112),
                         DataColumn2(
                             label: Center(child: Text('Times')),
                             size: ColumnSize.S,
@@ -153,10 +233,21 @@ class TenderCommitteeTab extends ConsumerWidget {
                         DataColumn2(
                             label: Center(child: Text('Committee')),
                             size: ColumnSize.S,
-                            fixedWidth: 190),
+                            fixedWidth: 175),
+                        DataColumn2(
+                            label: Center(child: Text('Details')),
+                            size: ColumnSize.S,
+                            fixedWidth: 64),
                       ],
                       rows: rows.map((info) {
                         final f = info.forfeited;
+                        final pkg = f.packageDetails;
+                        final item = f.itemId != null
+                            ? pkg?.items
+                                .where((i) => i.id == f.itemId)
+                                .firstOrNull
+                            : null;
+                        final qty = f.entryQty ?? item?.quantity;
                         final committee = committees[f.id];
                         final count = committee?.members.length ?? 0;
                         return DataRow(cells: [
@@ -164,12 +255,18 @@ class TenderCommitteeTab extends ConsumerWidget {
                               style: TextStyle(
                                   color: accent,
                                   fontWeight: FontWeight.w600))),
+                          DataCell(TooltipText(pkg?.caseNumber ?? '—',
+                              overflow: TextOverflow.ellipsis)),
                           DataCell(TooltipText(_cItemName(f),
                               overflow: TextOverflow.ellipsis)),
-                          DataCell(TooltipText(f.consigneeName,
-                              overflow: TextOverflow.ellipsis)),
-                          DataCell(TooltipText(yardName(f.yard),
-                              overflow: TextOverflow.ellipsis)),
+                          DataCell(Center(child: _CommitteeSourceChip(source: f.source))),
+                          DataCell(TooltipText('${qty ?? '—'}')),
+                          DataCell(TooltipText(_committeeLocation(pkg, f.itemId),
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: context.colors.textSecondary,
+                                  fontSize: 12))),
+                          DataCell(_CommitteeValuationCell(f: f, qty: qty)),
                           DataCell(Center(
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -212,6 +309,32 @@ class TenderCommitteeTab extends ConsumerWidget {
                                 builder: (_) => _CommitteeDialog(
                                     info: info, existing: committee),
                               ),
+                            ),
+                          )),
+                          DataCell(Center(
+                            child: IconButton(
+                              icon: Icon(Icons.info_outline_rounded,
+                                  color: context.colors.accentLightBlue,
+                                  size: 18),
+                              onPressed: pkg == null
+                                  ? null
+                                  : () => showDialog(
+                                        context: context,
+                                        builder: (_) => PackageDetailsDialog(
+                                          package: pkg,
+                                          storageRate: storageRate,
+                                          headerAccentColor: accent,
+                                          useLegacySummary: true,
+                                          highlightItemId: f.itemId,
+                                          yardLabel: yardName(f.yard),
+                                          valuationUnitCost: f.valuationCost,
+                                          valuationTotalCost:
+                                              f.valuationCost != null
+                                                  ? f.valuationCost! * (qty ?? 1)
+                                                  : null,
+                                          valuationQty: qty,
+                                        ),
+                                      ),
                             ),
                           )),
                         ]);

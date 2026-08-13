@@ -3586,6 +3586,8 @@ class _CommitteesTab extends ConsumerWidget {
     final eligible = ref.watch(committeeEligibleProvider);
     final committees =
         ref.watch(tenderCommitteesProvider).asData?.value ?? const {};
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        {DateTime(2020, 1, 1): 50.0};
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -3658,7 +3660,8 @@ class _CommitteesTab extends ConsumerWidget {
                   separatorBuilder: (_, __) => const Gap(14),
                   itemBuilder: (context, i) => _CommitteeCard(
                       info: rows[i],
-                      committee: committees[rows[i].forfeited.id]!),
+                      committee: committees[rows[i].forfeited.id]!,
+                      storageRate: storageRate),
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
               },
             ),
@@ -3673,11 +3676,16 @@ class _CommitteesTab extends ConsumerWidget {
 class _CommitteeCard extends StatelessWidget {
   final ReTenderSaleInfo info;
   final TenderCommitteeModel committee;
-  const _CommitteeCard({required this.info, required this.committee});
+  final Map<DateTime, double> storageRate;
+  const _CommitteeCard(
+      {required this.info,
+      required this.committee,
+      required this.storageRate});
 
   @override
   Widget build(BuildContext context) {
-    final blue = context.colors.accentLightBlue;
+    // Central Disposal team colour is green.
+    final green = context.colors.successGreen;
     final f = info.forfeited;
     return Container(
       decoration: BoxDecoration(
@@ -3695,10 +3703,10 @@ class _CommitteeCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: blue.withOpacity(0.12),
+                  color: green.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.groups_rounded, size: 18, color: blue),
+                child: Icon(Icons.groups_rounded, size: 18, color: green),
               ),
               const Gap(12),
               Expanded(
@@ -3708,7 +3716,7 @@ class _CommitteeCard extends StatelessWidget {
                     Row(children: [
                       Text(f.srNumber,
                           style: TextStyle(
-                              color: blue,
+                              color: green,
                               fontWeight: FontWeight.w800,
                               fontSize: 15)),
                       const Gap(10),
@@ -3736,6 +3744,47 @@ class _CommitteeCard extends StatelessWidget {
                   ],
                 ),
               ),
+              const Gap(8),
+              // Package details popup for this committee's package.
+              Tooltip(
+                message: 'Package details',
+                child: OutlinedButton.icon(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: green,
+                    side: BorderSide(color: green.withOpacity(0.4)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                  ),
+                  icon: const Icon(Icons.info_outline_rounded, size: 16),
+                  label: const Text('Details'),
+                  onPressed: f.packageDetails == null
+                      ? null
+                      : () {
+                          final item = f.itemId != null
+                              ? f.packageDetails!.items
+                                  .where((i) => i.id == f.itemId)
+                                  .firstOrNull
+                              : null;
+                          final qty = f.entryQty ?? item?.quantity;
+                          showDialog(
+                            context: context,
+                            builder: (_) => PackageDetailsDialog(
+                              package: f.packageDetails!,
+                              storageRate: storageRate,
+                              headerAccentColor: green,
+                              useLegacySummary: true,
+                              highlightItemId: f.itemId,
+                              yardLabel: yardName(f.yard),
+                              valuationUnitCost: f.valuationCost,
+                              valuationTotalCost: f.valuationCost != null
+                                  ? f.valuationCost! * (qty ?? 1)
+                                  : null,
+                              valuationQty: qty,
+                            ),
+                          );
+                        },
+                ),
+              ),
             ]),
           ),
           Divider(height: 1, color: context.colors.borderColor),
@@ -3747,7 +3796,7 @@ class _CommitteeCard extends StatelessWidget {
               children: [
                 Text('COMMITTEE (${committee.members.length} MEMBERS)',
                     style: TextStyle(
-                        color: blue,
+                        color: green,
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.8)),
@@ -3772,12 +3821,12 @@ class _CommitteeCard extends StatelessWidget {
                             height: 22,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: blue.withOpacity(0.12),
+                              color: green.withOpacity(0.12),
                               shape: BoxShape.circle,
                             ),
                             child: Text('${i + 1}',
                                 style: TextStyle(
-                                    color: blue,
+                                    color: green,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w700)),
                           ),
