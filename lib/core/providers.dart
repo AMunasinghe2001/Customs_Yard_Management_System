@@ -467,16 +467,46 @@ final unsoldTenderSalesProvider =
   return ref.read(disposalServiceProvider).getUnsoldTenderSales();
 });
 
+// ── Realtime: tender_bids / tender_revaluations ──────────────────
+// So bids/re-valuations entered on one portal (Central Disposal / Valuation)
+// live-update the tables on the other portals.
+final tenderBidsRefreshTriggerProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+
+final tenderBidsChangeTriggerProvider = StreamProvider<int>((ref) async* {
+  final trigger = ref.watch(tenderBidsRefreshTriggerProvider);
+  yield trigger;
+  final channel = supabase.channel('tender-bids-realtime')
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'tender_bids',
+      callback: (_) =>
+          ref.read(tenderBidsRefreshTriggerProvider.notifier).trigger(),
+    )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'tender_revaluations',
+      callback: (_) =>
+          ref.read(tenderBidsRefreshTriggerProvider.notifier).trigger(),
+    )
+    ..subscribe();
+  ref.onDispose(() => supabase.removeChannel(channel));
+});
+
 // Bids recorded for a single unsold tender package, grouped by tender round
 // (tender_sale_id → amounts). Keyed by forfeited package id.
 final tenderBidsProvider =
     FutureProvider.family<Map<String, List<double>>, String>((ref, fpId) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getTenderBidsByRound(fpId);
 });
 
 // Valuation re-valuations for a package, keyed by tender round (tender_sale_id).
 final tenderRevaluationsProvider = FutureProvider.family<
     Map<String, TenderRevaluationModel>, String>((ref, fpId) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getTenderRevaluationsByRound(fpId);
 });
 
@@ -485,6 +515,7 @@ final tenderRevaluationsProvider = FutureProvider.family<
 final reTenderEligibleProvider = FutureProvider<Set<String>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getReTenderEligibleIds();
 });
 
@@ -497,6 +528,7 @@ final packagesWithBidsProvider = FutureProvider<
           List<({TenderSaleModel? sale, List<double> bids})> rounds
         })>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getPackagesWithBids();
 });
 

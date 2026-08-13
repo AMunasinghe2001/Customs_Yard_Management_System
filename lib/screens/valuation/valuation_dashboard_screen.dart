@@ -16,6 +16,7 @@ import '../../widgets/empty_state_card.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/styled_dropdown.dart';
 import '../../widgets/tooltip_text.dart';
 
 /// The quantity actually forfeited & sent for disposal for a valuation row.
@@ -454,20 +455,8 @@ class _ValuationRequestCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: gold,
-                  foregroundColor: Colors.white,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                ),
-                icon: const Icon(Icons.calculate_rounded, size: 18),
-                label: const Text('Set Valuation'),
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) => _SetValuationDialog(request: request),
-                ),
-              ),
+              // Forward every item at once (all must be valued first).
+              _ForwardAllButton(request: request, expandedCount: expandedRows.length),
             ]),
           ),
           Divider(height: 1, color: context.colors.borderColor),
@@ -513,6 +502,10 @@ class _ValuationRequestCard extends ConsumerWidget {
                         label: Text('Valuation'),
                         size: ColumnSize.S,
                         fixedWidth: 150),
+                    DataColumn2(
+                        label: Center(child: Text('Action')),
+                        size: ColumnSize.S,
+                        fixedWidth: 96),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
@@ -597,6 +590,29 @@ class _ValuationRequestCard extends ConsumerWidget {
                                   fontSize: 12,
                                   fontStyle: FontStyle.italic))),
                       DataCell(Center(
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: gold,
+                            side: BorderSide(color: gold.withOpacity(0.5)),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 10),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () => showDialog(
+                            context: context,
+                            builder: (_) => _ItemValuationDialog(
+                              item: it,
+                              pkgItem: pkgItem,
+                              qty: displayQty,
+                              itemName: displayName,
+                            ),
+                          ),
+                          child: Text(
+                              it.valuationCost == null ? 'Value' : 'Edit',
+                              style: const TextStyle(fontSize: 12)),
+                        ),
+                      )),
+                      DataCell(Center(
                         child: IconButton(
                           icon: Icon(Icons.info_outline_rounded,
                               color: context.colors.accentLightBlue, size: 18),
@@ -631,329 +647,242 @@ class _ValuationRequestCard extends ConsumerWidget {
   }
 }
 
-/// Dialog with one cost field per package item. "Save Draft" stores the costs
-/// without forwarding; "Forward to Central Disposal" requires every item to
-/// have a cost, then releases the request.
-class _SetValuationDialog extends ConsumerStatefulWidget {
+/// Header button that forwards EVERY (valued) item of a request at once.
+class _ForwardAllButton extends ConsumerStatefulWidget {
   final DisposalRequestModel request;
-  const _SetValuationDialog({required this.request});
-
+  final int expandedCount;
+  const _ForwardAllButton(
+      {required this.request, required this.expandedCount});
   @override
-  ConsumerState<_SetValuationDialog> createState() =>
-      _SetValuationDialogState();
+  ConsumerState<_ForwardAllButton> createState() => _ForwardAllButtonState();
 }
 
-class _SetValuationDialogState extends ConsumerState<_SetValuationDialog> {
-  late final Map<String, TextEditingController> _ctrls;
-  bool _isLoading = false;
-  String? _error;
+class _ForwardAllButtonState extends ConsumerState<_ForwardAllButton> {
+  bool _busy = false;
 
-  @override
-  void initState() {
-    super.initState();
-    // Build one controller per *display row* (composite key = itemId_pkgItemId)
-    // so that expanded per-item rows from the same FP row each have an
-    // independent text field rather than sharing one controller. Uses the same
-    // _expandRows() so skipped (duplicate) per-item rows get no orphan field.
-    _ctrls = {};
-    for (final row in _expandRows()) {
-      final key = _ctrlKey(row.it, row.pkgItem);
-      _ctrls[key] = TextEditingController(
-          text: row.it.valuationCost != null
-              ? row.it.valuationCost!.toStringAsFixed(0)
-              : '');
-    }
-    // Rebuild on every keystroke so each item's live total (cost × qty)
-    // updates as the directorate types.
-    for (final c in _ctrls.values) {
-      c.addListener(_onCostChanged);
-    }
-  }
-
-  void _onCostChanged() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    for (final c in _ctrls.values) {
-      c.removeListener(_onCostChanged);
-      c.dispose();
-    }
-    super.dispose();
-  }
-
-  String _itemName(DisposalRequestItemModel it) {
-    final items = it.forfeited?.packageDetails?.items ?? const [];
-    if (items.isEmpty) return it.forfeited?.srNumber ?? 'Item';
-    final itemId = it.forfeited?.itemId;
-    if (itemId != null) {
-      final match = items.where((i) => i.id == itemId).firstOrNull;
-      if (match != null) return match.itemName;
-    }
-    if (items.length == 1) return items.first.itemName;
-    return '${items.first.itemName} +${items.length - 1}';
-  }
-
-  /// Composite controller key for a display row.
-  String _ctrlKey(DisposalRequestItemModel it, PackageItem? pkgItem) =>
-      pkgItem != null ? '${it.id}_${pkgItem.id}' : it.id;
-
-  /// Collect costs keyed by disposal_request_items.id.
-  /// For expanded rows (multiple pkgItems from same it.id), each pkgItem has
-  /// its own controller; we map them back to it.id by taking the value from
-  /// whichever controller was filled (last non-empty wins — for now they're
-  /// independent fields but the backend stores one cost per DR item row).
-  Map<String, double> _collectCosts() {
-    final out = <String, double>{};
-    final expandedRows = _expandRows();
-    for (final row in expandedRows) {
-      final key = _ctrlKey(row.it, row.pkgItem);
-      final v = double.tryParse(_ctrls[key]?.text.trim() ?? '');
-      if (v != null && v >= 0) out[row.it.id] = v;
-    }
-    return out;
-  }
-
-  Future<void> _submit({required bool forward}) async {
-    final costs = _collectCosts();
-    if (forward && costs.length != widget.request.items.length) {
-      setState(() => _error =
-          'Enter a cost for every item before forwarding to Central Disposal.');
+  Future<void> _forwardAll() async {
+    final allValued =
+        widget.request.items.every((i) => i.valuationCost != null);
+    if (!allValued) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Every item must have a cost before forwarding.'),
+          backgroundColor: context.colors.dangerRed));
       return;
     }
-
-    if (costs.isEmpty) {
-      setState(() => _error = 'Enter at least one cost.');
-      return;
-    }
-    setState(() {
-      _isLoading = true;
-      _error = null;
-    });
+    setState(() => _busy = true);
     try {
-      await ref.read(valuationServiceProvider).setValuationCosts(
-            widget.request.id,
-            costs,
-            forward: forward,
-          );
+      await ref
+          .read(valuationServiceProvider)
+          .forwardAllValuationItems(widget.request.id);
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(valuationRequestsProvider);
       if (mounted) {
-        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.successGreen,
-          content: Text(forward
-              ? 'Request forwarded to the Central Disposal Directorate.'
-              : 'Valuation saved.'),
-        ));
+            content: const Text('All items forwarded to Central Disposal.'),
+            backgroundColor: context.colors.successGreen));
       }
     } catch (e) {
-      final msg = e.toString().contains('valuation_incomplete')
-          ? 'Every item must have a cost before forwarding.'
-          : 'Error: $e';
-      setState(() => _error = msg);
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  // Expand package-level FP rows (itemId==null, multiple items) into per-item
-  // display rows. Each sub-row shares the same disposal_request_items.id (and
-  // thus the same cost field) since the directorate sets one unit price for the
-  // item type; the total = unitCost × that item's qty.
-  List<({DisposalRequestItemModel it, PackageItem? pkgItem})> _expandRows() {
-    final out = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
-    // Items already covered by a dedicated per-item request row (correct
-    // partial qty) — keyed "<packageId>:<itemId>". A package-level row must not
-    // re-expand these at the full registered qty (mirrors the table builder).
-    final perItemKeys = <String>{};
-    for (final it in widget.request.items) {
-      final iid = it.forfeited?.itemId;
-      final pid = it.forfeited?.packageId;
-      if (iid != null && pid != null) perItemKeys.add('$pid:$iid');
-    }
-    for (final it in widget.request.items) {
-      final fpItems = it.forfeited?.packageDetails?.items ?? const [];
-      final pid = it.forfeited?.packageId;
-      if (it.forfeited?.itemId == null && fpItems.length > 1) {
-        for (final pkgItem in fpItems) {
-          if (pid != null && perItemKeys.contains('$pid:${pkgItem.id}')) {
-            continue;
-          }
-          out.add((it: it, pkgItem: pkgItem));
-        }
-      } else {
-        out.add((it: it, pkgItem: null));
+      if (mounted) {
+        setState(() => _busy = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Failed: $e'),
+            backgroundColor: context.colors.dangerRed));
       }
     }
-    return out;
   }
 
   @override
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
-    final expandedRows = _expandRows();
-    return StyledFormDialog(
-      label: 'SET VALUATION',
-      title: '${yardName(widget.request.yard)} · ${expandedRows.length} item(s)',
-      icon: Icons.calculate_rounded,
-      headerAccentColor: gold,
-      // Match the Central Disposal / Appeal package-detail popups (width 900) so
-      // the Set Valuation dialog has the same large, full-style presentation.
-      width: 900,
-      actions: [
-        Expanded(
-          child: Text(
-              'Forwarding requires a cost for every item.',
-              style: TextStyle(
-                  color: context.colors.textMuted, fontSize: 11)),
-        ),
-        TextButton(
-          onPressed: _isLoading ? null : () => _submit(forward: false),
-          child: const Text('Save Draft'),
-        ),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-              backgroundColor: gold, foregroundColor: Colors.white),
-          icon: _isLoading
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.send_rounded, size: 16),
-          label: const Text('Forward to Central Disposal'),
-          onPressed: _isLoading ? null : () => _submit(forward: true),
-        ),
-      ],
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (_error != null) ...[
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.colors.dangerRed.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: context.colors.dangerRed.withOpacity(0.4)),
-              ),
-              child: Row(children: [
-                Icon(Icons.error_outline,
-                    color: context.colors.dangerRed, size: 18),
-                const Gap(10),
-                Expanded(
-                    child: Text(_error!,
-                        style: TextStyle(
-                            color: context.colors.dangerRed,
-                            fontSize: 13))),
-              ]),
-            ),
-            const Gap(16),
-          ],
-          for (final row in expandedRows) ...[
-            Builder(builder: (context) {
-              final it = row.it;
-              final pkgItem = row.pkgItem;
-              final displayName = pkgItem?.itemName ?? _itemName(it);
-              final displayHs = pkgItem?.hsCode ?? it.hsCodeLabel;
-              // Value only the forfeited quantity (e.g. 6 of 10).
-              final forfeitQty = _forfeitedQtyFor(it, pkgItem);
-              final displayQty = forfeitQty ??
-                  (pkgItem != null ? pkgItem.quantity : it.totalQuantity);
-              final showPackaging =
-                  forfeitQty == null && pkgItem?.packagingLabel != null;
-              // SR-form declared value (unit value × qty) — a reference for the
-              // valuation officer, distinct from the valuation cost they set.
-              final srUnitValue = pkgItem?.unitValue ?? 0;
-              final srTotalValue = srUnitValue * displayQty;
-              final valueFmt = NumberFormat('#,##0');
-              return Row(children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(it.forfeited?.srNumber ?? '—',
-                          style: TextStyle(
-                              color: context.colors.accentLightBlue,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13)),
-                      Text(displayName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: context.colors.textSecondary,
-                              fontSize: 12)),
-                      const Gap(4),
-                      Row(children: [
-                        Icon(Icons.tag_rounded,
-                            size: 12, color: context.colors.textMuted),
-                        const Gap(4),
-                        Text('HS ${displayHs ?? '—'}',
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11)),
-                        const Gap(10),
-                        Icon(Icons.inventory_2_rounded,
-                            size: 12, color: context.colors.textMuted),
-                        const Gap(4),
-                        Text(
-                            showPackaging
-                                ? 'Qty $displayQty (in ${pkgItem!.packagingLabel})'
-                                : 'Qty $displayQty',
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11)),
-                        const Gap(10),
-                        Icon(Icons.sell_rounded,
-                            size: 12, color: context.colors.textMuted),
-                        const Gap(4),
-                        Text('Value LKR ${valueFmt.format(srTotalValue)}',
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 11)),
-                      ]),
-                    ],
-                  ),
-                ),
-                const Gap(8),
-                _DispoChip(disposition: it.disposition),
-                const Gap(12),
-                SizedBox(
-                  width: 150,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      TextField(
-                        controller: _ctrls[_ctrlKey(it, pkgItem)],
-                        keyboardType:
-                            const TextInputType.numberWithOptions(
-                                decimal: true),
-                        decoration: const InputDecoration(
-                          labelText: 'Cost / item (LKR)',
-                          isDense: true,
-                          prefixText: 'LKR ',
-                        ),
-                      ),
-                      const Gap(6),
-                      _LiveTotal(
-                          qty: displayQty,
-                          controller: _ctrls[_ctrlKey(it, pkgItem)]!),
-                    ],
-                  ),
-                ),
-              ]);
-            }),
-            const Divider(height: 24),
-          ],
-        ],
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: gold,
+        foregroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       ),
+      icon: _busy
+          ? const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Colors.white))
+          : const Icon(Icons.send_rounded, size: 18),
+      label: const Text('Forward All'),
+      onPressed: _busy ? null : _forwardAll,
     );
   }
 }
+
+/// Per-item valuation popup: set/edit this item's cost, then Save or
+/// Save & Forward (forwards just this item to Central Disposal).
+class _ItemValuationDialog extends ConsumerStatefulWidget {
+  final DisposalRequestItemModel item;
+  final PackageItem? pkgItem;
+  final int qty;
+  final String itemName;
+  const _ItemValuationDialog({
+    required this.item,
+    required this.pkgItem,
+    required this.qty,
+    required this.itemName,
+  });
+  @override
+  ConsumerState<_ItemValuationDialog> createState() =>
+      _ItemValuationDialogState();
+}
+
+class _ItemValuationDialogState extends ConsumerState<_ItemValuationDialog> {
+  late final TextEditingController _costCtrl;
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _costCtrl = TextEditingController(
+        text: widget.item.valuationCost != null
+            ? widget.item.valuationCost!.toStringAsFixed(0)
+            : '');
+    _costCtrl.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _costCtrl.dispose();
+    super.dispose();
+  }
+
+  double? get _cost {
+    final v = double.tryParse(_costCtrl.text.trim());
+    return (v != null && v > 0) ? v : null;
+  }
+
+  Future<void> _save({required bool forward}) async {
+    final cost = _cost;
+    if (cost == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Enter a valid cost.'),
+          backgroundColor: context.colors.dangerRed));
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final svc = ref.read(valuationServiceProvider);
+      await svc.setValuationItemCost(widget.item.id, cost);
+      if (forward) await svc.forwardValuationItem(widget.item.id);
+      ref.read(disposalRequestsRefreshProvider.notifier).trigger();
+      ref.invalidate(valuationRequestsProvider);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(forward
+              ? 'Item valued & forwarded to Central Disposal.'
+              : 'Valuation saved.'),
+          backgroundColor: context.colors.successGreen));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _busy = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed: $e'),
+          backgroundColor: context.colors.dangerRed));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    final srUnit = widget.pkgItem?.unitValue ?? 0;
+    final srTotal = srUnit * widget.qty;
+    return StyledFormDialog(
+      label: 'Set Valuation',
+      title: widget.item.forfeited?.srNumber ?? widget.itemName,
+      icon: Icons.calculate_rounded,
+      headerAccentColor: gold,
+      width: 460,
+      child: StyledFormSection(
+        title: 'Valuation',
+        icon: Icons.price_change_rounded,
+        children: [
+          Text(widget.itemName,
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14)),
+          const Gap(6),
+          Row(children: [
+            Icon(Icons.inventory_2_rounded,
+                size: 13, color: context.colors.textMuted),
+            const Gap(4),
+            Text('Qty ${widget.qty}',
+                style: TextStyle(
+                    color: context.colors.textMuted, fontSize: 12)),
+            const Gap(12),
+            Icon(Icons.sell_rounded,
+                size: 13, color: context.colors.textMuted),
+            const Gap(4),
+            Text('SR value LKR ${NumberFormat('#,##0').format(srTotal)}',
+                style: TextStyle(
+                    color: context.colors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12)),
+            if (widget.item.forwarded) ...[
+              const Gap(12),
+              Icon(Icons.check_circle_rounded,
+                  size: 13, color: context.colors.successGreen),
+              const Gap(4),
+              Text('Forwarded',
+                  style: TextStyle(
+                      color: context.colors.successGreen,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12)),
+            ],
+          ]),
+          const Gap(14),
+          // Full-width cost field; the live total sits on its own line below so
+          // a large total never squeezes / overflows the input.
+          TextField(
+            controller: _costCtrl,
+            keyboardType:
+                const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              labelText: 'Cost / item (LKR)',
+              isDense: true,
+              prefixText: 'LKR ',
+            ),
+          ),
+          const Gap(8),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _LiveTotal(qty: widget.qty, controller: _costCtrl),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: _busy ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        TextButton(
+          onPressed: _busy ? null : () => _save(forward: false),
+          child: const Text('Save'),
+        ),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: gold),
+          onPressed: _busy ? null : () => _save(forward: true),
+          icon: _busy
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.send_rounded, size: 16),
+          label: const Text('Save & Forward'),
+        ),
+      ],
+    );
+  }
+}
+
 
 /// The live "× qty = total" line under a cost field in the Set Valuation
 /// dialog. The dialog rebuilds on every keystroke, so reading the controller
@@ -973,6 +902,8 @@ class _LiveTotal extends StatelessWidget {
     final total = unit * qty;
     return Text(
         '× $qty = LKR ${NumberFormat('#,##0').format(total)}',
+        softWrap: true,
+        textAlign: TextAlign.right,
         style: TextStyle(
             color: context.colors.primaryGold,
             fontWeight: FontWeight.w700,
@@ -1009,6 +940,119 @@ class _DispoChip extends StatelessWidget {
 
 // ── Unsold Tenders (Valuation view: bids + re-valuation) ─────────────────────
 final _valUnsoldSearchProvider = StateProvider<String>((ref) => '');
+final _valUnsoldYardProvider = StateProvider<String?>((ref) => null); // null=all
+
+/// Search field styled exactly like the Central Disposal Unsold page.
+class _ValSearchField extends StatefulWidget {
+  final String value;
+  final ValueChanged<String> onChanged;
+  const _ValSearchField({required this.value, required this.onChanged});
+  @override
+  State<_ValSearchField> createState() => _ValSearchFieldState();
+}
+
+class _ValSearchFieldState extends State<_ValSearchField> {
+  late final TextEditingController _c = TextEditingController(text: widget.value);
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c, width: w));
+    return SizedBox(
+      width: 300,
+      child: TextField(
+        controller: _c,
+        style: TextStyle(
+            color: context.colors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600),
+        onChanged: (v) {
+          widget.onChanged(v);
+          setState(() {});
+        },
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Search SR / item / consignee…',
+          hintStyle:
+              TextStyle(color: context.colors.textSecondary, fontSize: 13),
+          prefixIcon: Icon(Icons.search_rounded, size: 20, color: gold),
+          suffixIcon: _c.text.isEmpty
+              ? null
+              : IconButton(
+                  splashRadius: 16,
+                  icon: Icon(Icons.close_rounded,
+                      size: 16, color: context.colors.textMuted),
+                  onPressed: () {
+                    _c.clear();
+                    widget.onChanged('');
+                    setState(() {});
+                  },
+                ),
+          filled: true,
+          fillColor: gold.withOpacity(0.06),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          border: border(gold.withOpacity(0.4)),
+          enabledBorder: border(gold.withOpacity(0.4)),
+          focusedBorder: border(gold, 1.5),
+        ),
+      ),
+    );
+  }
+}
+
+/// Yard dropdown with an "All Yards" option — same styled menu as Central
+/// Disposal's Unsold page (StyledDropdownFormField).
+class _ValYardFilter extends StatelessWidget {
+  final String? value; // null = all
+  final ValueChanged<String?> onChanged;
+  const _ValYardFilter({required this.value, required this.onChanged});
+  @override
+  Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c, width: w));
+    return SizedBox(
+      width: 220,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          inputDecorationTheme:
+              Theme.of(context).inputDecorationTheme.copyWith(
+                    filled: true,
+                    fillColor: gold.withOpacity(0.06),
+                    border: border(gold.withOpacity(0.4)),
+                    enabledBorder: border(gold.withOpacity(0.4)),
+                    focusedBorder: border(gold, 1.5),
+                  ),
+        ),
+        child: StyledDropdownFormField<String>(
+          value: value ?? '_all',
+          label: 'Yard',
+          helperText: null,
+          isDense: true,
+          menuWidth: 220,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          prefixIcon:
+              Icon(Icons.warehouse_rounded, color: gold, size: 20),
+          options: [
+            const StyledDropdownOption('_all', 'All Yards'),
+            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+          ],
+          onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
+        ),
+      ),
+    );
+  }
+}
 
 String _valItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
@@ -1028,6 +1072,9 @@ class _UnsoldTendersValTab extends ConsumerWidget {
     final gold = context.colors.primaryGold;
     final async = ref.watch(unsoldTenderSalesProvider);
     final q = ref.watch(_valUnsoldSearchProvider).toLowerCase();
+    final yardFilter = ref.watch(_valUnsoldYardProvider);
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        {DateTime(2020, 1, 1): 50.0};
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1044,28 +1091,18 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                 style: TextStyle(
                     color: context.colors.textMuted, fontSize: 13)),
             const Spacer(),
-            SizedBox(
-              width: 300,
-              child: TextField(
-                onChanged: (v) =>
-                    ref.read(_valUnsoldSearchProvider.notifier).state = v,
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Search SR / item / consignee…',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                  filled: true,
-                  fillColor: gold.withOpacity(0.06),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: gold.withOpacity(0.4))),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: gold.withOpacity(0.4))),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: gold, width: 1.5)),
-                ),
-              ),
+            // Search — same style as the Central Disposal Unsold page.
+            _ValSearchField(
+              value: q,
+              onChanged: (v) =>
+                  ref.read(_valUnsoldSearchProvider.notifier).state = v,
+            ),
+            const Gap(12),
+            // Yard filter — same styled dropdown as Central Disposal.
+            _ValYardFilter(
+              value: yardFilter,
+              onChanged: (v) =>
+                  ref.read(_valUnsoldYardProvider.notifier).state = v,
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(16),
@@ -1078,6 +1115,11 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                   onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
               data: (list) {
                 var rows = list;
+                if (yardFilter != null) {
+                  rows = rows
+                      .where((info) => info.forfeited.yard == yardFilter)
+                      .toList();
+                }
                 if (q.isNotEmpty) {
                   rows = rows.where((info) {
                     final f = info.forfeited;
@@ -1087,6 +1129,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                   }).toList();
                 }
                 return Container(
+                  width: double.infinity,
                   decoration: BoxDecoration(
                     color: context.colors.cardDark,
                     borderRadius: BorderRadius.circular(14),
@@ -1098,7 +1141,8 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                       columnSpacing: 12,
                       horizontalMargin: 16,
                       fixedTopRows: 1,
-                      minWidth: 1000,
+                      minWidth: 1070,
+                      showCheckboxColumn: false,
                       empty: const EmptyTableState(
                           message: 'No unsold tender packages'),
                       headingRowColor:
@@ -1124,15 +1168,14 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                             label: Center(child: Text('Re-valuation')),
                             size: ColumnSize.S,
                             fixedWidth: 150),
+                        DataColumn2(
+                            label: Center(child: Text('Details')),
+                            size: ColumnSize.S,
+                            fixedWidth: 70),
                       ],
                       rows: rows.map((info) {
                         final f = info.forfeited;
                         return DataRow(
-                          onSelectChanged: (_) => showDialog(
-                            context: context,
-                            builder: (_) =>
-                                _ValBidsAndRevalDialog(info: info),
-                          ),
                           cells: [
                             DataCell(TooltipText(f.srNumber,
                                 style: TextStyle(
@@ -1163,6 +1206,33 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                                   builder: (_) =>
                                       _ValBidsAndRevalDialog(info: info),
                                 ),
+                              ),
+                            )),
+                            DataCell(Center(
+                              child: IconButton(
+                                icon: Icon(Icons.info_outline_rounded,
+                                    color: context.colors.accentLightBlue,
+                                    size: 18),
+                                onPressed: f.packageDetails == null
+                                    ? null
+                                    : () => showDialog(
+                                          context: context,
+                                          builder: (_) => PackageDetailsDialog(
+                                            package: f.packageDetails!,
+                                            storageRate: storageRate,
+                                            headerAccentColor:
+                                                context.colors.primaryGold,
+                                            useLegacySummary: true,
+                                            highlightItemId: f.itemId,
+                                            yardLabel: yardName(f.yard),
+                                            valuationUnitCost: f.valuationCost,
+                                            valuationTotalCost:
+                                                f.valuationCost != null
+                                                    ? f.valuationCost! *
+                                                        (f.entryQty ?? 1)
+                                                    : null,
+                                          ),
+                                        ),
                               ),
                             )),
                           ],
@@ -1240,21 +1310,20 @@ class _ValBidsAndRevalDialogState
     return items.length == 1 ? items.first : null;
   }
 
+  // Quantity valued — MUST match the Unsold table's Valuation cell
+  // (_ValuationCell effQty): entryQty, else the matched item's qty, else the
+  // sum of all item quantities. (No forfeit-entry derivation here, so the
+  // popup's "× qty" agrees with the table.)
   int get _qty {
     final f = widget.info.forfeited;
     if (f.entryQty != null) return f.entryQty!;
-    // Derive from [FORFEIT]/[CONFISCATED] warehouse entries, else the item qty.
-    final pkg = f.packageDetails;
-    final targetId = _pkgItem?.id ?? f.itemId;
-    if (pkg != null && targetId != null) {
-      final q = pkg.warehouseEntries.where((e) {
-        if (!e.isReturned || e.packageItemId != targetId) return false;
-        final n = (e.returnNotes ?? '').trim().toUpperCase();
-        return n.startsWith('[FORFEIT') || n.startsWith('[CONFISCATED');
-      }).fold<int>(0, (s, e) => s + e.itemCount);
-      if (q > 0) return q;
+    if (f.itemId != null) {
+      final it = f.packageDetails?.items
+          .where((i) => i.id == f.itemId)
+          .firstOrNull;
+      if (it != null) return it.quantity;
     }
-    return _pkgItem?.quantity ?? 1;
+    return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
   }
 
   @override
@@ -1339,78 +1408,250 @@ class _ValBidsAndRevalDialogState
     }
   }
 
-  Widget _roundBidsCard(TenderSaleModel s, int attempt) {
-    final amounts = [...(_bids[s.id] ?? const <double>[])]
+  // The recorded bids for a round: "Bids" heading + amount chips.
+  Widget _roundBidsList(String roundId) {
+    final amounts = [...(_bids[roundId] ?? const <double>[])]
       ..sort((a, b) => b.compareTo(a));
-    final reval = _revals[s.id];
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: context.colors.surfaceDark,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: context.colors.borderColor),
-      ),
-      child: Column(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(Icons.sell_rounded, size: 15, color: context.colors.primaryGold),
+          const Gap(8),
+          Text('Bids',
+              style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13)),
+        ]),
+        const Gap(8),
+        if (amounts.isEmpty)
+          Text('No bids recorded',
+              style: TextStyle(color: context.colors.textMuted, fontSize: 12))
+        else
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (int i = 0; i < amounts.length; i++)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: context.colors.cardDark,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                        color: i == 0
+                            ? context.colors.successGreen.withOpacity(0.5)
+                            : context.colors.borderColor),
+                  ),
+                  child: Text('Rs. ${_fmt(amounts[i])}',
+                      style: TextStyle(
+                          color: context.colors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+
+  // Editable "Set / update valuation" input for the current round — cost per
+  // item × forfeited qty (like Pending Valuation) + an optional note.
+  Widget _newValuationEditor(Color gold) {
+    // "Set" once a value exists (either already saved for the next tender, or
+    // typed now); otherwise a Pending status prompts the officer to enter it.
+    final saved = _revals[_current.id] != null;
+    final typed = (double.tryParse(_costCtrl.text.trim()) ?? 0) > 0;
+    final isSet = saved || typed;
+    final amber = context.colors.warningAmber;
+    final green = context.colors.successGreen;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(children: [
+          Icon(Icons.edit_rounded, size: 15, color: gold),
+          const Gap(8),
+          Text('Set valuation',
+              style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13)),
+          const Spacer(),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: (isSet ? green : amber).withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: (isSet ? green : amber).withOpacity(0.4)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(
+                  isSet
+                      ? Icons.check_circle_rounded
+                      : Icons.hourglass_bottom_rounded,
+                  size: 13,
+                  color: isSet ? green : amber),
+              const Gap(5),
+              Text(isSet ? 'Valuation set' : 'Pending',
+                  style: TextStyle(
+                      color: isSet ? green : amber,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+            ]),
+          ),
+        ]),
+        const Gap(4),
+        Text(
+            'Decide the value for the next tender (Tender ${_rounds.length + 1}) from the bids above.',
+            style: TextStyle(color: context.colors.textMuted, fontSize: 11)),
+        const Gap(10),
+        Row(children: [
+          Expanded(
+            child: Text(_valItemName(widget.info.forfeited),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13)),
+          ),
+          const Gap(8),
+          Icon(Icons.inventory_2_rounded,
+              size: 12, color: context.colors.textMuted),
+          const Gap(4),
+          Text('Qty $_qty',
+              style:
+                  TextStyle(color: context.colors.textMuted, fontSize: 11)),
+        ]),
+        const Gap(10),
+        // Full-width cost field; live total on its own line below so a large
+        // total never squeezes / overflows the input.
+        TextField(
+          controller: _costCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Cost / item (LKR)',
+            isDense: true,
+            prefixText: 'LKR ',
+          ),
+        ),
+        const Gap(8),
+        Align(
+          alignment: Alignment.centerRight,
+          child: _LiveTotal(qty: _qty, controller: _costCtrl),
+        ),
+        const Gap(12),
+        TextField(
+          controller: _noteCtrl,
+          style: TextStyle(color: context.colors.textPrimary),
+          maxLines: 2,
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: 'Note (optional)',
+            filled: true,
+            fillColor: context.colors.cardDark,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: context.colors.borderColor)),
+            enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: context.colors.borderColor)),
+            focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+                borderSide: BorderSide(color: gold, width: 1.4)),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Valuation block for a round: Tender 1 falls back to the original valuation;
+  // later re-tenders show the Valuation Directorate's re-valuation, or amber.
+  Widget _roundValuation(String roundId, int attempt) {
+    final reval = _revals[roundId];
+    final unit = reval?.valuationCost ??
+        (attempt == 1 ? widget.info.forfeited.valuationCost : null);
+    final isReval = reval != null;
+
+    Widget heading(String? tag) => Row(children: [
+          Icon(Icons.price_change_rounded,
+              size: 15, color: context.colors.primaryGold),
+          const Gap(8),
+          Text('Valuation',
+              style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13)),
+          if (tag != null) ...[
+            const Gap(8),
+            Text(tag,
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ]);
+
+    if (unit == null) {
+      return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Icon(Icons.gavel_rounded,
-                size: 15, color: context.colors.primaryGold),
-            const Gap(8),
-            Expanded(
-              child: Text(_roundLabel(s, attempt),
-                  style: TextStyle(
-                      color: context.colors.textSecondary,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
+          heading(null),
+          const Gap(8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: context.colors.warningAmber.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: context.colors.warningAmber.withOpacity(0.4)),
             ),
-          ]),
-          const Gap(10),
-          if (amounts.isEmpty)
-            Text('No bids recorded',
+            child: Text('Awaiting new valuation',
                 style: TextStyle(
-                    color: context.colors.textMuted, fontSize: 12))
-          else
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (int i = 0; i < amounts.length; i++)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: context.colors.cardDark,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: i == 0
-                              ? context.colors.successGreen.withOpacity(0.5)
-                              : context.colors.borderColor),
-                    ),
-                    child: Text('Rs. ${_fmt(amounts[i])}',
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13)),
-                  ),
-              ],
-            ),
-          if (reval != null) ...[
-            const Gap(10),
-            Row(children: [
-              Icon(Icons.price_change_rounded,
-                  size: 14, color: context.colors.accentLightBlue),
-              const Gap(6),
-              Text('Re-valued: Rs. ${_money.format(reval.valuationCost)}',
-                  style: TextStyle(
-                      color: context.colors.accentLightBlue,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12)),
-            ]),
-          ],
+                    color: context.colors.warningAmber,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12)),
+          ),
         ],
-      ),
+      );
+    }
+    final blue = context.colors.accentLightBlue;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        heading(isReval ? 'Re-valued' : null),
+        const Gap(8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: blue.withOpacity(0.4)),
+          ),
+          child: RichText(
+            text: TextSpan(children: [
+              TextSpan(
+                  text: 'LKR ${_money.format(unit * _qty)}',
+                  style: TextStyle(
+                      color: blue, fontWeight: FontWeight.w800, fontSize: 13)),
+              TextSpan(
+                  text: '  (@ ${_money.format(unit)} × $_qty)',
+                  style: TextStyle(
+                      color: context.colors.textMuted, fontSize: 11)),
+            ]),
+          ),
+        ),
+        if (reval?.note != null && reval!.note!.isNotEmpty) ...[
+          const Gap(6),
+          Text(reval.note!,
+              style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
+        ],
+      ],
     );
   }
 
@@ -1432,107 +1673,28 @@ class _ValBidsAndRevalDialogState
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
+                // Past tender rounds — READ-ONLY: each round's valuation + bids.
+                for (int r = 0; r < rounds.length; r++) ...[
+                  if (r > 0) const Gap(10),
+                  StyledFormSection(
+                    gap: 0,
+                    title: _roundLabel(rounds[r], r + 1),
+                    icon: Icons.gavel_rounded,
+                    children: [
+                      _roundValuation(rounds[r].id, r + 1),
+                      const Gap(10),
+                      _roundBidsList(rounds[r].id),
+                    ],
+                  ),
+                ],
+                const Gap(10),
+                // The valuation for the NEXT (re-)tender — decided from the
+                // bids above. Editable; shows a Pending status until entered.
                 StyledFormSection(
-                  title: 'Recorded Bids',
-                  icon: Icons.sell_rounded,
-                  children: [
-                    for (int r = 0; r < rounds.length; r++)
-                      _roundBidsCard(rounds[r], r + 1),
-                  ],
-                ),
-                const Gap(14),
-                StyledFormSection(
-                  title:
-                      'New Valuation · ${_roundLabel(_current, rounds.length)}',
+                  gap: 0,
+                  title: 'Next Tender ${rounds.length + 1} · New Valuation',
                   icon: Icons.price_change_rounded,
-                  children: [
-                    // Item row — valued the same way as Pending Valuation:
-                    // cost per item × forfeited qty = live total.
-                    Row(children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(_valItemName(widget.info.forfeited),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                    color: context.colors.textPrimary,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13)),
-                            const Gap(4),
-                            Row(children: [
-                              Icon(Icons.inventory_2_rounded,
-                                  size: 12, color: context.colors.textMuted),
-                              const Gap(4),
-                              Text('Qty $_qty',
-                                  style: TextStyle(
-                                      color: context.colors.textMuted,
-                                      fontSize: 11)),
-                              const Gap(10),
-                              Icon(Icons.sell_rounded,
-                                  size: 12, color: context.colors.textMuted),
-                              const Gap(4),
-                              Text(
-                                  'Prev. valuation LKR ${NumberFormat('#,##0').format(widget.info.forfeited.valuationCost ?? 0)}',
-                                  style: TextStyle(
-                                      color: context.colors.textSecondary,
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 11)),
-                            ]),
-                          ],
-                        ),
-                      ),
-                      const Gap(12),
-                      SizedBox(
-                        width: 160,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            TextField(
-                              controller: _costCtrl,
-                              keyboardType:
-                                  const TextInputType.numberWithOptions(
-                                      decimal: true),
-                              decoration: const InputDecoration(
-                                labelText: 'Cost / item (LKR)',
-                                isDense: true,
-                                prefixText: 'LKR ',
-                              ),
-                            ),
-                            const Gap(6),
-                            _LiveTotal(qty: _qty, controller: _costCtrl),
-                          ],
-                        ),
-                      ),
-                    ]),
-                    const Gap(14),
-                    TextField(
-                      controller: _noteCtrl,
-                      style: TextStyle(color: context.colors.textPrimary),
-                      maxLines: 2,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        hintText: 'Note (optional)',
-                        filled: true,
-                        fillColor: context.colors.cardDark,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 12),
-                        border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(
-                                color: context.colors.borderColor)),
-                        enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(
-                                color: context.colors.borderColor)),
-                        focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: gold, width: 1.4)),
-                      ),
-                    ),
-                  ],
+                  children: [_newValuationEditor(gold)],
                 ),
               ],
             ),

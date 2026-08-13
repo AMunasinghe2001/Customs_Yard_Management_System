@@ -52,3 +52,16 @@ drop policy if exists tender_bids_appeal_read on public.tender_bids;
 create policy tender_bids_appeal_read on public.tender_bids
   for select
   using (public.auth_user_is_appeal());
+
+-- 4. ── Realtime: publish tender_bids so tables live-update across portals ────
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'tender_bids'
+  ) then
+    alter publication supabase_realtime add table public.tender_bids;
+  end if;
+end $$;

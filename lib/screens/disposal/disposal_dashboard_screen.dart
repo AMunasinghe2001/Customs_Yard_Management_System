@@ -874,7 +874,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                             DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.S),
                             DataColumn2(
-                                label: Text('Valuation'), size: ColumnSize.M),
+                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
                             DataColumn2(
                                 label: Text('Sold Price'), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
@@ -1159,7 +1159,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                             DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.S),
                             DataColumn2(
-                                label: Text('Valuation'), size: ColumnSize.M),
+                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
                             DataColumn2(
                                 label: Text('Destruction Price'),
                                 size: ColumnSize.M),
@@ -1395,8 +1395,19 @@ class _SaleValuationCell extends ConsumerWidget {
       error: (_, __) => const Text('—'),
       data: (item) {
         final fp = item?.forfeited;
-        final unitCost = fp?.valuationCost;
-        if (unitCost == null || fp == null) {
+        if (fp == null) {
+          return Text('—', style: TextStyle(color: context.colors.textMuted));
+        }
+        // Prefer the LATEST tender re-valuation for this package, if any.
+        final revals = ref
+                .watch(tenderRevaluationsProvider(fp.id))
+                .asData
+                ?.value ??
+            const <String, TenderRevaluationModel>{};
+        final reval = _latestReval(revals);
+        final isRevalued = reval != null;
+        final unitCost = reval?.valuationCost ?? fp.valuationCost;
+        if (unitCost == null) {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
         final int effQty;
@@ -1417,15 +1428,24 @@ class _SaleValuationCell extends ConsumerWidget {
         }
         final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
+        final priceColor = isRevalued
+            ? context.colors.accentLightBlue
+            : context.colors.primaryGold;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Rs ${fmt.format(total)}',
-                style: TextStyle(
-                    color: context.colors.primaryGold,
-                    fontWeight: FontWeight.w700)),
-            Text('@ ${fmt.format(unitCost)} × $effQty',
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('Rs ${fmt.format(total)}',
+                  style:
+                      TextStyle(color: priceColor, fontWeight: FontWeight.w700)),
+              if (isRevalued) ...[
+                const Gap(5),
+                Icon(Icons.price_change_rounded,
+                    size: 12, color: context.colors.accentLightBlue),
+              ],
+            ]),
+            Text('@ ${fmt.format(unitCost)} × $effQty${isRevalued ? ' · re-valued' : ''}',
                 style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
           ],
         );
@@ -2090,17 +2110,11 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                       DataColumn2(
                           label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Text('Goods Description'), size: ColumnSize.L),
-                      DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Center(child: Text('Times Tendered')),
-                          size: ColumnSize.S,
-                          fixedWidth: 130),
+                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
                       DataColumn2(
                           label: Center(child: Text('Tenders')),
                           size: ColumnSize.S,
-                          fixedWidth: 90),
+                          fixedWidth: 110),
                       DataColumn2(
                           label: Center(child: Text('Bids')),
                           size: ColumnSize.S,
@@ -2146,37 +2160,16 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
-                        DataCell(TooltipText(
-                            item?.goodsDescription?.isNotEmpty == true
-                                ? item!.goodsDescription!
-                                : '—',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 12))),
-                        DataCell(_ValuationCell(
-                            f: f, qty: f.entryQty ?? item?.quantity)),
+                        DataCell(_UnsoldValuationCell(
+                            info: info, qty: f.entryQty ?? item?.quantity)),
                         DataCell(Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: amber.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: amber.withOpacity(0.4)),
-                            ),
-                            child: Text('${info.tenderCount}×',
-                                style: TextStyle(
-                                    color: amber, fontWeight: FontWeight.w800)),
-                          ),
-                        )),
-                        DataCell(Center(
-                          child: IconButton(
-                            icon: const Icon(Icons.history_rounded, size: 18),
-                            color: context.colors.accentLightBlue,
-                            onPressed: () => showDialog(
+                          child: _AttemptsBadge(
+                            count: info.tenderCount,
+                            color: amber,
+                            onTap: () => showDialog(
                               context: context,
-                              builder: (_) => _TenderSaleHistoryDialog(info: info),
+                              builder: (_) =>
+                                  _TenderSaleHistoryDialog(info: info),
                             ),
                           ),
                         )),
@@ -2315,7 +2308,9 @@ class _TenderSalesTab extends ConsumerWidget {
                             'Create a tender sale, or check the Unsold Tenders tab for items whose window has closed.'),
                   );
                 }
-                final retenderIds = retenderTenderSaleIds(visible);
+                // Detect re-tenders against ALL sales (the earlier tender's
+                // window may have closed and dropped out of `visible`).
+                final retenderIds = retenderTenderSaleIds(list);
                 return ListView.separated(
                   itemCount: visible.length,
                   separatorBuilder: (_, __) => const Gap(16),
@@ -3670,6 +3665,105 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
 
 // ── Tender bids (recorded on unsold packages) ─────────────────
 
+/// Unsold-tenders "Valuation" cell: shows the LATEST tender re-valuation (blue,
+/// tagged "re-valued") when the Valuation Directorate has set one for the
+/// current round; otherwise the package's original valuation.
+class _UnsoldValuationCell extends ConsumerWidget {
+  final ReTenderSaleInfo info;
+  final int? qty;
+  const _UnsoldValuationCell({required this.info, this.qty});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final f = info.forfeited;
+    final revals =
+        ref.watch(tenderRevaluationsProvider(f.id)).asData?.value ?? const {};
+    // Latest round id (newest createdAt).
+    String? latestId;
+    DateTime? latest;
+    for (final s in info.sales) {
+      if (latest == null || s.createdAt.isAfter(latest)) {
+        latest = s.createdAt;
+        latestId = s.id;
+      }
+    }
+    final reval = latestId != null ? revals[latestId] : null;
+    return _ValuationCell(
+      f: f,
+      qty: qty,
+      overrideUnitCost: reval?.valuationCost,
+      isRevalued: reval != null,
+    );
+  }
+}
+
+/// The newest tender re-valuation across all rounds of a package (by createdAt),
+/// or null if none. Used to show the LATEST valuation in any table.
+TenderRevaluationModel? _latestReval(Map<String, TenderRevaluationModel> m) {
+  TenderRevaluationModel? best;
+  for (final r in m.values) {
+    if (best == null || r.createdAt.isAfter(best.createdAt)) best = r;
+  }
+  return best;
+}
+
+/// Valuation cell that surfaces the LATEST tender re-valuation for a package
+/// (blue, "re-valued") when one exists, else the original valuation. Works for
+/// any table that has a [ForfeitedPackageModel] (Unsold, Undestroyed, …).
+class _LatestValuationCell extends ConsumerWidget {
+  final ForfeitedPackageModel f;
+  final int? qty;
+  const _LatestValuationCell({required this.f, this.qty});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final revals =
+        ref.watch(tenderRevaluationsProvider(f.id)).asData?.value ?? const {};
+    final reval = _latestReval(revals);
+    return _ValuationCell(
+      f: f,
+      qty: qty,
+      overrideUnitCost: reval?.valuationCost,
+      isRevalued: reval != null,
+    );
+  }
+}
+
+/// A clickable "N×" attempts badge that opens the tender/destruction history
+/// popup — merges the old "Times …" count column with the "…" history button.
+class _AttemptsBadge extends StatelessWidget {
+  final int count;
+  final Color color;
+  final VoidCallback onTap;
+  const _AttemptsBadge(
+      {required this.count, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'View history',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: color.withOpacity(0.4)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text('$count×',
+                style: TextStyle(color: color, fontWeight: FontWeight.w800)),
+            const Gap(5),
+            Icon(Icons.history_rounded, size: 14, color: color),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
 /// Re-tender eligibility chip: a package may be re-tendered only once the
 /// Valuation Directorate has set a re-valuation for its current unsold round.
 class _ReTenderStatusChip extends StatelessWidget {
@@ -3879,29 +3973,109 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   String _fmt(double b) =>
       b == b.roundToDouble() ? b.toInt().toString() : b.toString();
 
-  // Valuation Directorate's re-valuation for a round, if any (read-only).
-  Widget _revalLine(String roundId) {
+  // Forfeited quantity being valued (for the total).
+  // Quantity valued — MUST match the Unsold table's Valuation cell
+  // (_ValuationCell effQty) so the popup's "× qty" agrees with the table:
+  // entryQty, else the matched item's qty, else the sum of all item quantities.
+  int get _qty {
+    final f = widget.info.forfeited;
+    if (f.entryQty != null) return f.entryQty!;
+    if (f.itemId != null) {
+      final it = f.packageDetails?.items
+          .where((i) => i.id == f.itemId)
+          .firstOrNull;
+      if (it != null) return it.quantity;
+    }
+    return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
+  }
+
+  // The valuation shown for a round. Tender 1 uses the ORIGINAL valuation (set
+  // directly in the disposal request). Tender 2+ are re-tenders whose value is
+  // decided ONLY by the Valuation Directorate after reviewing the prior round's
+  // bids — so they show the tender re-valuation, or an amber "Awaiting" chip.
+  Widget _revalLine(String roundId, int attempt) {
     final reval = _revals[roundId];
-    if (reval == null) return const SizedBox.shrink();
-    final blue = context.colors.accentLightBlue;
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Row(children: [
-        Icon(Icons.price_change_rounded, size: 14, color: blue),
-        const Gap(6),
-        Text('Re-valued by Valuation: Rs. ${_fmt(reval.valuationCost)}',
-            style: TextStyle(
-                color: blue, fontWeight: FontWeight.w700, fontSize: 12)),
-        if (reval.note != null && reval.note!.isNotEmpty) ...[
+    // Tender 1 falls back to the original valuation; later rounds do NOT.
+    final unit = reval?.valuationCost ??
+        (attempt == 1 ? widget.info.forfeited.valuationCost : null);
+    final isReval = reval != null;
+
+    // Heading in the same style as the round header ("Tender N · CDU/TS…").
+    Widget heading(String? tag) => Row(children: [
+          Icon(Icons.price_change_rounded,
+              size: 15, color: context.colors.primaryGold),
           const Gap(8),
-          Flexible(
-            child: Text('· ${reval.note}',
-                overflow: TextOverflow.ellipsis,
+          Text('Valuation',
+              style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13)),
+          if (tag != null) ...[
+            const Gap(8),
+            Text(tag,
                 style: TextStyle(
-                    color: context.colors.textMuted, fontSize: 12)),
+                    color: context.colors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ]);
+
+    if (unit == null) {
+      final amber = context.colors.warningAmber;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          heading(null),
+          const Gap(8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: amber.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: amber.withOpacity(0.4)),
+            ),
+            child: Text('Awaiting Valuation Directorate',
+                style: TextStyle(
+                    color: amber, fontWeight: FontWeight.w700, fontSize: 12)),
           ),
+          const Gap(4),
+          Text('Valuation reviews the bids, then sets a new value.',
+              style: TextStyle(color: context.colors.textMuted, fontSize: 11)),
         ],
-      ]),
+      );
+    }
+    final blue = context.colors.accentLightBlue;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        heading(isReval ? 'Re-valued' : null),
+        const Gap(8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: blue.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: blue.withOpacity(0.4)),
+          ),
+          child: RichText(
+            text: TextSpan(children: [
+              TextSpan(
+                  text: 'LKR ${_fmt(unit * _qty)}',
+                  style: TextStyle(
+                      color: blue, fontWeight: FontWeight.w800, fontSize: 13)),
+              TextSpan(
+                  text: '  (@ ${_fmt(unit)} × $_qty)',
+                  style: TextStyle(
+                      color: context.colors.textMuted, fontSize: 11)),
+            ]),
+          ),
+        ),
+        if (reval?.note != null && reval!.note!.isNotEmpty) ...[
+          const Gap(6),
+          Text(reval.note!,
+              style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
+        ],
+      ],
     );
   }
 
@@ -3935,7 +4109,22 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                     fontSize: 11,
                     fontWeight: FontWeight.w600)),
           ]),
-          const Gap(10),
+          const Gap(12),
+          // Valuation first (the value is decided before/at tendering) …
+          _revalLine(s.id, attempt),
+          const Gap(12),
+          // … then the bids that came in for this round.
+          Row(children: [
+            Icon(Icons.sell_rounded,
+                size: 15, color: context.colors.primaryGold),
+            const Gap(8),
+            Text('Bids',
+                style: TextStyle(
+                    color: context.colors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13)),
+          ]),
+          const Gap(8),
           if (amounts.isEmpty)
             Text('No bids recorded',
                 style: TextStyle(color: muted, fontSize: 12))
@@ -3961,7 +4150,6 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                   ),
               ],
             ),
-          _revalLine(s.id),
         ],
       ),
     );
@@ -4044,9 +4232,24 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                       _past[rounds[r].id] ?? const <double>[]),
                 // Current (latest) round: editable.
                 StyledFormSection(
+                  gap: 0,
                   title: '${_roundLabel(_current, rounds.length)} · Current',
                   icon: Icons.gavel_rounded,
                   children: [
+                    // Valuation first (decided before/at tendering) …
+                    _revalLine(_current.id, rounds.length),
+                    const Gap(12),
+                    // … then the bids for this round.
+                    Row(children: [
+                      Icon(Icons.sell_rounded, size: 15, color: accent),
+                      const Gap(8),
+                      Text('Bids',
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13)),
+                    ]),
+                    const Gap(10),
                     for (int i = 0; i < _controllers.length; i++)
                       _bidField(i, accent),
                     Align(
@@ -4059,7 +4262,6 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                                 color: accent, fontWeight: FontWeight.w700)),
                       ),
                     ),
-                    _revalLine(_current.id),
                   ],
                 ),
               ],
@@ -4176,7 +4378,9 @@ class _DestructionsTab extends ConsumerWidget {
                             'Create a destruction sale, or check the Undestroyed tab for items whose window has closed.'),
                   );
                 }
-                final retenderIds = retenderDestructionIds(visible);
+                // Detect re-destructions against ALL sales (the earlier sale's
+                // window may have closed and dropped out of `visible`).
+                final retenderIds = retenderDestructionIds(list);
                 return ListView.separated(
                   itemCount: visible.length,
                   separatorBuilder: (_, __) => const Gap(16),
@@ -4316,7 +4520,7 @@ class DestructionCard extends ConsumerWidget {
                       ),
                       if (isRetender) ...[
                         const Gap(8),
-                        _retenderBadge(context),
+                        _retenderBadge(context, label: 'Re-destruction'),
                       ],
                     ]),
                     const Gap(2),
@@ -4404,8 +4608,6 @@ class DestructionCard extends ConsumerWidget {
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                    DataColumn2(
-                        label: Text('Goods Description'), size: ColumnSize.M),
                     // Yard shows the SR item Value; Central shows the valuation.
                     // Fixed + centered so it sits snug next to Status (no gap) —
                     // mirrors the Tender Sale table for a consistent layout.
@@ -4453,17 +4655,6 @@ class DestructionCard extends ConsumerWidget {
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(Tooltip(
-                        message: r.item?.goodsDescription ?? '',
-                        child: Text(
-                            r.item?.goodsDescription?.isNotEmpty == true
-                                ? r.item!.goodsDescription!
-                                : '—',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 12)),
-                      )),
                       DataCell(Center(
                           child: _ValuationCell(
                         f: f,
@@ -5504,17 +5695,11 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                       DataColumn2(
                           label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Text('Goods Description'), size: ColumnSize.L),
-                      DataColumn2(label: Text('Valuation'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Center(child: Text('Times Attempted')),
-                          size: ColumnSize.S,
-                          fixedWidth: 130),
+                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
                       DataColumn2(
                           label: Center(child: Text('Destructions')),
                           size: ColumnSize.S,
-                          fixedWidth: 100),
+                          fixedWidth: 120),
                       DataColumn2(
                           label: Center(child: Text('Details')),
                           size: ColumnSize.S,
@@ -5552,37 +5737,16 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                             style: TextStyle(
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
-                        DataCell(TooltipText(
-                            item?.goodsDescription?.isNotEmpty == true
-                                ? item!.goodsDescription!
-                                : '—',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 12))),
-                        DataCell(_ValuationCell(
+                        DataCell(_LatestValuationCell(
                             f: f, qty: f.entryQty ?? item?.quantity)),
                         DataCell(Center(
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: amber.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: amber.withOpacity(0.4)),
-                            ),
-                            child: Text('${info.timesAttempted}×',
-                                style: TextStyle(
-                                    color: amber, fontWeight: FontWeight.w800)),
-                          ),
-                        )),
-                        DataCell(Center(
-                          child: IconButton(
-                            icon: const Icon(Icons.history_rounded, size: 18),
-                            color: context.colors.accentLightBlue,
-                            onPressed: () => showDialog(
+                          child: _AttemptsBadge(
+                            count: info.timesAttempted,
+                            color: amber,
+                            onTap: () => showDialog(
                               context: context,
-                              builder: (_) => _DestructionSaleHistoryDialog(info: info),
+                              builder: (_) =>
+                                  _DestructionSaleHistoryDialog(info: info),
                             ),
                           ),
                         )),
@@ -5759,7 +5923,17 @@ class _ValuationCell extends StatelessWidget {
   /// The quantity shown in the row's Qty column — the valuation must multiply
   /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
   final int? qty;
-  const _ValuationCell({required this.f, this.useItemValue = false, this.qty});
+  /// When set, this unit cost is shown instead of the package's original
+  /// [ForfeitedPackageModel.valuationCost] — used to surface the LATEST tender
+  /// re-valuation on the Unsold Tenders page.
+  final double? overrideUnitCost;
+  final bool isRevalued;
+  const _ValuationCell(
+      {required this.f,
+      this.useItemValue = false,
+      this.qty,
+      this.overrideUnitCost,
+      this.isRevalued = false});
 
   @override
   Widget build(BuildContext context) {
@@ -5804,26 +5978,35 @@ class _ValuationCell extends StatelessWidget {
       );
     }
 
-    // Central Disposal view → Valuation Directorate cost.
-    final unitCost = fp.valuationCost;
+    // Central Disposal view → the LATEST re-valuation if one exists, else the
+    // Valuation Directorate's original cost.
+    final unitCost = overrideUnitCost ?? fp.valuationCost;
     if (unitCost == null) {
       return Text('—', style: TextStyle(color: context.colors.textMuted));
     }
     final total = unitCost * effQty;
+    final priceColor = isRevalued
+        ? context.colors.accentLightBlue
+        : context.colors.primaryGold;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
+        Row(mainAxisSize: MainAxisSize.min, children: [
+          Text(
+            'LKR ${fmt.format(total)}',
+            style: TextStyle(
+                color: priceColor, fontWeight: FontWeight.w700, fontSize: 12),
+          ),
+          if (isRevalued) ...[
+            const Gap(5),
+            Icon(Icons.price_change_rounded,
+                size: 12, color: context.colors.accentLightBlue),
+          ],
+        ]),
         Text(
-          'LKR ${fmt.format(total)}',
-          style: TextStyle(
-              color: context.colors.primaryGold,
-              fontWeight: FontWeight.w700,
-              fontSize: 12),
-        ),
-        Text(
-          '@ ${fmt.format(unitCost)} × $effQty',
+          '@ ${fmt.format(unitCost)} × $effQty${isRevalued ? ' · re-valued' : ''}',
           style: TextStyle(color: context.colors.textMuted, fontSize: 10),
         ),
       ],

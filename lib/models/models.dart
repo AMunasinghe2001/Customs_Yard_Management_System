@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../core/holidays.dart';
 
 class PackageModel {
   final String id;
@@ -1406,14 +1407,14 @@ class TenderSaleModel {
     return DateTime.now().isAfter(moment);
   }
 
-  /// The moment the package leaves this sale as UNSOLD: the END of the day AFTER
-  /// the sale date (i.e. the sale day + its following day). After this, an item
-  /// not yet marked sold drops to the Unsold Tenders pool. Null when no date.
+  /// The moment the package leaves this sale as UNSOLD: the END of the next
+  /// WORKING day after the sale date (weekends & public holidays are skipped so
+  /// the officer always has an office day to mark it). After this, an item not
+  /// yet marked sold drops to the Unsold Tenders pool. Null when no date.
   DateTime? get unsoldDeadline {
     final d = saleDate;
     if (d == null) return null;
-    // End of (saleDate + 1 day): 23:59:59.999 of the day after the sale day.
-    return DateTime(d.year, d.month, d.day + 1, 23, 59, 59, 999);
+    return workingDeadline(d);
   }
 
   /// De-duplicated items: same (forfeited_package_id, fp.item_id) combination
@@ -1591,12 +1592,13 @@ class DestructionModel {
   }
 
   /// The moment the package leaves this destruction as UNDESTROYED: the END of
-  /// the day AFTER the destruction date. After this, an item not yet marked
-  /// destroyed drops to the Undestroyed pool. Null when no date.
+  /// the next WORKING day after the destruction date (weekends & public holidays
+  /// skipped). After this, an item not yet marked destroyed drops to the
+  /// Undestroyed pool. Null when no date.
   DateTime? get unsoldDeadline {
     final d = saleDate;
     if (d == null) return null;
-    return DateTime(d.year, d.month, d.day + 1, 23, 59, 59, 999);
+    return workingDeadline(d);
   }
 
   factory DestructionModel.fromJson(Map<String, dynamic> json) {
@@ -1658,6 +1660,8 @@ class DisposalRequestItemModel {
   final ForfeitedPackageModel? forfeited;
   /// Per-item cost set by the Valuation Directorate (null until valued).
   final double? valuationCost;
+  /// Whether THIS item has been forwarded to Central Disposal (per-item gate).
+  final bool forwarded;
 
   const DisposalRequestItemModel({
     required this.id,
@@ -1666,6 +1670,7 @@ class DisposalRequestItemModel {
     required this.disposition,
     this.forfeited,
     this.valuationCost,
+    this.forwarded = false,
   });
 
   String get dispositionLabelText => dispositionLabel(disposition);
@@ -1726,6 +1731,7 @@ class DisposalRequestItemModel {
               json['forfeited_packages'] as Map<String, dynamic>)
           : null,
       valuationCost: (json['valuation_cost'] as num?)?.toDouble(),
+      forwarded: json['forwarded'] as bool? ?? false,
     );
   }
 }

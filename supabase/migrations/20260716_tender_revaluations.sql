@@ -68,3 +68,16 @@ create policy valuation_read_all on public.tender_sale_items
 drop policy if exists tender_bids_valuation_read on public.tender_bids;
 create policy tender_bids_valuation_read on public.tender_bids
   for select using (public.auth_user_is_valuation());
+
+-- 6. ── Realtime: publish tender_revaluations for live cross-portal updates ───
+do $$
+begin
+  if not exists (
+    select 1 from pg_publication_tables
+     where pubname = 'supabase_realtime'
+       and schemaname = 'public'
+       and tablename = 'tender_revaluations'
+  ) then
+    alter publication supabase_realtime add table public.tender_revaluations;
+  end if;
+end $$;

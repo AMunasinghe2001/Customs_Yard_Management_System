@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -7,6 +8,7 @@ import 'core/theme.dart';
 import 'core/router.dart';
 import 'core/providers.dart';
 import 'core/app_updater.dart';
+import 'core/holidays.dart';
 import 'services/services.dart';
 
 class _NoPersistLocalStorage extends LocalStorage {
@@ -41,6 +43,11 @@ void main() async {
 
   // Background auto-update check (Windows/macOS). Never throws.
   await initAutoUpdater();
+
+  // Fetch Sri Lanka public holidays for the sale/destruction working-day
+  // deadlines. Fire-and-forget — never blocks startup, falls back to the
+  // static list + weekend rule if offline.
+  unawaited(loadPublicHolidays());
 
   runApp(
     const ProviderScope(

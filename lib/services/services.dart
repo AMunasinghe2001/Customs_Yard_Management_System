@@ -3684,7 +3684,7 @@ class DisposalService {
         .select(
             '*, disposal_requests!inner(valuation_status), forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
         .eq('disposition', 'sale')
-        .eq('disposal_requests.valuation_status', 'forwarded'));
+        .eq('forwarded', true));
 
     final items = (data as List)
         .map((e) => DisposalRequestItemModel.fromJson(e))
@@ -3715,7 +3715,7 @@ class DisposalService {
         .select(
             '*, disposal_requests!inner(valuation_status), forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
         .eq('disposition', 'sale')
-        .eq('disposal_requests.valuation_status', 'forwarded'));
+        .eq('forwarded', true));
 
     final items = (data as List)
         .map((e) => DisposalRequestItemModel.fromJson(e))
@@ -3782,9 +3782,12 @@ class DisposalService {
     for (final e in (data as List)) {
       final r = DisposalRequestModel.fromJson(e as Map<String, dynamic>);
       final items = r.items
-          .where((i) => !tenderedIds.contains(i.forfeitedPackageId))
+          // Only items the Valuation Directorate has actually forwarded
+          // (per-item gate) and not already tendered/destroyed.
+          .where((i) =>
+              i.forwarded && !tenderedIds.contains(i.forfeitedPackageId))
           .toList();
-      if (items.isEmpty) continue; // whole request consumed by tenders
+      if (items.isEmpty) continue; // nothing forwarded / all consumed
       result.add(DisposalRequestModel(
         id: r.id,
         yard: r.yard,
@@ -4093,7 +4096,7 @@ class DisposalService {
         .select(
             '*, disposal_requests!inner(valuation_status), forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
         .eq('disposition', 'destruction')
-        .eq('disposal_requests.valuation_status', 'forwarded'));
+        .eq('forwarded', true));
 
     final items = (data as List)
         .map((e) => DisposalRequestItemModel.fromJson(e))
@@ -4541,11 +4544,27 @@ class ValuationService {
         // Item Details + Warehouse Summary (mirrors the Forfeited screen).
         .select(
             '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
-        .eq('valuation_status', 'pending_valuation')
         .order('created_at', ascending: false));
-    return (data as List)
-        .map((e) => DisposalRequestModel.fromJson(e as Map<String, dynamic>))
-        .toList();
+    // Per-item forwarding: a request stays in the Pending Valuation feed while
+    // ANY of its items is not yet forwarded. Only the not-yet-forwarded items
+    // are shown (already-forwarded items have moved on to Central Disposal).
+    final result = <DisposalRequestModel>[];
+    for (final e in (data as List)) {
+      final r = DisposalRequestModel.fromJson(e as Map<String, dynamic>);
+      final pending = r.items.where((i) => !i.forwarded).toList();
+      if (pending.isEmpty) continue;
+      result.add(DisposalRequestModel(
+        id: r.id,
+        yard: r.yard,
+        requestDate: r.requestDate,
+        status: r.status,
+        createdAt: r.createdAt,
+        createdByName: r.createdByName,
+        valuationStatus: r.valuationStatus,
+        items: pending,
+      ));
+    }
+    return result;
   }
 
   /// Save per-item costs (map of disposal_request_items.id → cost). When
@@ -4571,6 +4590,50 @@ class ValuationService {
         action: forward
             ? 'Forwarded valued disposal request to Central Disposal'
             : 'Saved valuation costs',
+        entityType: 'disposal_request',
+        entityId: requestId,
+      );
+    }
+  }
+
+  // ── Per-item valuation & forwarding ───────────────────────────────────────
+
+  /// Set ONE disposal-request item's valuation cost (does not forward it).
+  Future<void> setValuationItemCost(String itemId, double cost) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'valuation_set_item_cost',
+          params: {'p_item_id': itemId, 'p_cost': cost},
+        ));
+  }
+
+  /// Forward ONE valued item to Central Disposal (server requires its cost set).
+  Future<void> forwardValuationItem(String itemId) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'valuation_forward_item',
+          params: {'p_item_id': itemId},
+        ));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Forwarded valued item to Central Disposal',
+        entityType: 'disposal_request_item',
+        entityId: itemId,
+      );
+    }
+  }
+
+  /// Forward EVERY item of a request (all must be valued first).
+  Future<void> forwardAllValuationItems(String requestId) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'valuation_forward_all',
+          params: {'p_request_id': requestId},
+        ));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Forwarded all valued items to Central Disposal',
         entityType: 'disposal_request',
         entityId: requestId,
       );
