@@ -1200,6 +1200,52 @@ class TenderRevaluationModel {
       );
 }
 
+/// One committee member (name + optional designation).
+class CommitteeMember {
+  final String name;
+  final String? designation;
+  const CommitteeMember({required this.name, this.designation});
+
+  factory CommitteeMember.fromJson(Map<String, dynamic> j) => CommitteeMember(
+        name: (j['name'] as String?)?.trim() ?? '',
+        designation: (j['designation'] as String?)?.trim(),
+      );
+  Map<String, dynamic> toJson() => {
+        'name': name,
+        if (designation != null && designation!.isNotEmpty)
+          'designation': designation,
+      };
+}
+
+/// A 5-member committee the DG appoints for a package unsold >3 times.
+class TenderCommitteeModel {
+  final String id;
+  final String forfeitedPackageId;
+  final List<CommitteeMember> members;
+  final String? note;
+  final DateTime createdAt;
+
+  const TenderCommitteeModel({
+    required this.id,
+    required this.forfeitedPackageId,
+    required this.members,
+    required this.note,
+    required this.createdAt,
+  });
+
+  factory TenderCommitteeModel.fromJson(Map<String, dynamic> json) =>
+      TenderCommitteeModel(
+        id: json['id'] as String,
+        forfeitedPackageId: json['forfeited_package_id'] as String,
+        members: ((json['members'] as List?) ?? const [])
+            .map((e) => CommitteeMember.fromJson(e as Map<String, dynamic>))
+            .where((m) => m.name.isNotEmpty)
+            .toList(),
+        note: json['note'] as String?,
+        createdAt: DateTime.parse(json['created_at'] as String),
+      );
+}
+
 // ── Tender Disposal Outcome Model ────────────────────────────
 
 class TenderDisposalModel {

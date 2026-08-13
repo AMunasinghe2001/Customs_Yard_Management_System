@@ -8,15 +8,39 @@ import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../reports/reports_screen.dart';
+import 'tender_committee_tab.dart';
 
 /// Executive Office (DG / ADG) portal. Standalone scaffold (not AppShell).
 /// Customs' two highest posts pick a yard and generate/view/print any report
-/// for it — the body reuses [ReportsScreen] in executive (per-yard) mode.
-class ExecutiveDashboardScreen extends ConsumerWidget {
+/// for it — the body reuses [ReportsScreen] in executive (per-yard) mode. A
+/// second tab appoints tender committees for packages unsold >3 times.
+class ExecutiveDashboardScreen extends ConsumerStatefulWidget {
   const ExecutiveDashboardScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ExecutiveDashboardScreen> createState() =>
+      _ExecutiveDashboardScreenState();
+}
+
+class _ExecutiveDashboardScreenState
+    extends ConsumerState<ExecutiveDashboardScreen>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabController;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final accent = AppTheme.executiveTeal;
     final profile = ref.watch(currentProfileProvider);
 
@@ -131,8 +155,68 @@ class ExecutiveDashboardScreen extends ConsumerWidget {
             ]),
           ).animate().fadeIn(duration: 350.ms).slideY(begin: -0.15),
 
-          // ── Reports hub (per-yard) ───────────────────────────
-          const Expanded(child: ReportsScreen(executiveMode: true)),
+          // ── Tab bar ──────────────────────────────────────────
+          Container(
+            color: context.colors.cardDark,
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: context.colors.surfaceDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: TabBar(
+                controller: _tabController,
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStateProperty.all(Colors.transparent),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicatorPadding: const EdgeInsets.all(4),
+                dividerColor: Colors.transparent,
+                indicator: BoxDecoration(
+                  color: accent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: accent.withOpacity(0.5)),
+                ),
+                labelColor: accent,
+                unselectedLabelColor: context.colors.textMuted,
+                labelStyle:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                tabs: const [
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.assessment_rounded, size: 18),
+                          Gap(8),
+                          Text('Reports'),
+                        ]),
+                  ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.groups_rounded, size: 18),
+                          Gap(8),
+                          Text('Tender Committees'),
+                        ]),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ── Tab views ────────────────────────────────────────
+          Expanded(
+            child: TabBarView(
+              controller: _tabController,
+              children: const [
+                ReportsScreen(executiveMode: true),
+                TenderCommitteeTab(),
+              ],
+            ),
+          ),
         ],
       ),
     );

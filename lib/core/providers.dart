@@ -491,8 +491,30 @@ final tenderBidsChangeTriggerProvider = StreamProvider<int>((ref) async* {
       callback: (_) =>
           ref.read(tenderBidsRefreshTriggerProvider.notifier).trigger(),
     )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'tender_committees',
+      callback: (_) =>
+          ref.read(tenderBidsRefreshTriggerProvider.notifier).trigger(),
+    )
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
+});
+
+// All appointed tender committees, keyed by forfeited_package_id.
+final tenderCommitteesProvider =
+    FutureProvider<Map<String, TenderCommitteeModel>>((ref) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getTenderCommittees();
+});
+
+// DG committee page: unsold tender packages tendered >3 times (≥4 attempts).
+final committeeEligibleProvider =
+    FutureProvider<List<ReTenderSaleInfo>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getCommitteeEligiblePackages();
 });
 
 // Bids recorded for a single unsold tender package, grouped by tender round

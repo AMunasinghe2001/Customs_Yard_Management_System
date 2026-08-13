@@ -35,21 +35,9 @@ class TaxesTab extends ConsumerWidget {
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const Spacer(),
-              SizedBox(
-                width: 260,
-                child: TextField(
-                  onChanged: (v) =>
-                      ref.read(_taxSearchProvider.notifier).state = v,
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: 'Search tax…',
-                    prefixIcon: const Icon(Icons.search_rounded, size: 18),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 11),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
-                  ),
-                ),
+              _TaxSearchField(
+                onChanged: (v) =>
+                    ref.read(_taxSearchProvider.notifier).state = v,
               ),
               const Gap(12),
               ElevatedButton.icon(
@@ -295,6 +283,72 @@ class _TaxDialogState extends State<_TaxDialog> {
           onPressed: _isLoading ? null : _save,
         ),
       ],
+    );
+  }
+}
+
+/// Search field styled to match the Central Disposal tabs (gold fill,
+/// rounded, with a clear button).
+class _TaxSearchField extends StatefulWidget {
+  final ValueChanged<String> onChanged;
+  const _TaxSearchField({required this.onChanged});
+  @override
+  State<_TaxSearchField> createState() => _TaxSearchFieldState();
+}
+
+class _TaxSearchFieldState extends State<_TaxSearchField> {
+  final _c = TextEditingController();
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: c, width: w));
+    return SizedBox(
+      width: 300,
+      child: TextField(
+        controller: _c,
+        style: TextStyle(
+            color: context.colors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w600),
+        onChanged: (v) {
+          widget.onChanged(v);
+          setState(() {});
+        },
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: 'Search tax…',
+          hintStyle:
+              TextStyle(color: context.colors.textSecondary, fontSize: 13),
+          prefixIcon: Icon(Icons.search_rounded, size: 20, color: gold),
+          suffixIcon: _c.text.isEmpty
+              ? null
+              : IconButton(
+                  splashRadius: 16,
+                  icon: Icon(Icons.close_rounded,
+                      size: 16, color: context.colors.textMuted),
+                  onPressed: () {
+                    _c.clear();
+                    widget.onChanged('');
+                    setState(() {});
+                  },
+                ),
+          filled: true,
+          fillColor: gold.withOpacity(0.06),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          border: border(gold.withOpacity(0.4)),
+          enabledBorder: border(gold.withOpacity(0.4)),
+          focusedBorder: border(gold, 1.5),
+        ),
+      ),
     );
   }
 }

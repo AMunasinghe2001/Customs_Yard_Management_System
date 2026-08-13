@@ -3666,6 +3666,44 @@ class DisposalService {
         }));
   }
 
+  // ── Tender committees (DG appoints 5 members for >3× unsold packages) ─────
+
+  /// All appointed committees, keyed by forfeited_package_id.
+  Future<Map<String, TenderCommitteeModel>> getTenderCommittees() async {
+    final rows = await AuthService._withNetworkRetry(
+        () => supabase.from('tender_committees').select('*'));
+    final out = <String, TenderCommitteeModel>{};
+    for (final e in (rows as List)) {
+      final m = TenderCommitteeModel.fromJson(e as Map<String, dynamic>);
+      out[m.forfeitedPackageId] = m;
+    }
+    return out;
+  }
+
+  /// Appoint / update the committee for a package (upsert by fp id).
+  Future<void> saveTenderCommittee(
+      String forfeitedPackageId, List<CommitteeMember> members,
+      {String? note, String? yard}) async {
+    final uid = supabase.auth.currentUser?.id;
+    await AuthService._withNetworkRetry(() =>
+        supabase.from('tender_committees').upsert({
+          'forfeited_package_id': forfeitedPackageId,
+          'members':
+              members.where((m) => m.name.isNotEmpty).map((m) => m.toJson()).toList(),
+          'note': (note != null && note.trim().isNotEmpty) ? note.trim() : null,
+          'yard': yard,
+          'created_by': uid,
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'forfeited_package_id'));
+  }
+
+  /// Unsold tender packages that have gone unsold MORE THAN 3 times
+  /// (≥4 tender attempts) — the pool for DG committee appointment.
+  Future<List<ReTenderSaleInfo>> getCommitteeEligiblePackages() async {
+    final all = await getUnsoldTenderSales();
+    return all.where((i) => i.tenderCount >= 4).toList();
+  }
+
   /// "Sale"-tagged disposal-request items that are not yet in a tender sale —
   /// the pool the Tender Sale form can pick from. Cross-yard via RLS; each
   /// carries the forfeited package (incl. yard, items, warehouse location).

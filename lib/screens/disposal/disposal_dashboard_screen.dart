@@ -48,7 +48,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 8,
+      length: 9,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -258,6 +258,13 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     Tab(
                         height: 44,
                         child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.groups_rounded, size: 18),
+                          Gap(8),
+                          Flexible(child: Text('Committees', overflow: TextOverflow.ellipsis)),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.receipt_long_rounded, size: 18),
                           Gap(8),
                           Flexible(child: Text('Taxes', overflow: TextOverflow.ellipsis)),
@@ -275,6 +282,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 _UnsoldReTenderTab(),
                 _DestructionsTab(),
                 _UndestroyedReDestructionTab(),
+                _CommitteesTab(),
                 TaxesTab(),
               ]),
             ),
@@ -3552,6 +3560,261 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
           },
         ),
       ],
+    );
+  }
+}
+
+// ── Tender Committees (read-only view of DG-appointed committees) ─────────────
+final _committeesYardProvider = StateProvider<String?>((ref) => null); // null=all
+
+String _committeeItemName(ForfeitedPackageModel f) {
+  if (f.itemName != null) return f.itemName!;
+  final items = f.packageDetails?.items ?? const [];
+  if (items.isEmpty) return 'Multiple/Unspecified';
+  if (items.length == 1) return items.first.itemName;
+  return '${items.first.itemName} +${items.length - 1}';
+}
+
+/// Central Disposal read-only tab: packages the DG has appointed a committee for
+/// (unsold >3 times). Each row expands to show the 5 committee members.
+class _CommitteesTab extends ConsumerWidget {
+  const _CommitteesTab();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = context.colors.accentLightBlue;
+    final eligible = ref.watch(committeeEligibleProvider);
+    final committees =
+        ref.watch(tenderCommitteesProvider).asData?.value ?? const {};
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text('Tender Committees',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700)),
+            const Gap(10),
+            Expanded(
+              child: Text(
+                  'Committees appointed by the Director General for packages unsold more than 3 times',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 13)),
+            ),
+            const Gap(12),
+            const _DisposalSearch(
+                tabKey: 'committees', hint: 'Search SR / item / consignee…'),
+            const Gap(12),
+            _YardAllFilter(
+              value: ref.watch(_committeesYardProvider),
+              onChanged: (v) =>
+                  ref.read(_committeesYardProvider.notifier).state = v,
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(16),
+          Expanded(
+            child: eligible.when(
+              skipLoadingOnReload: true,
+              loading: () =>
+                  Center(child: CircularProgressIndicator(color: accent)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () => ref.refresh(committeeEligibleProvider)),
+              data: (list) {
+                // Only packages that actually have a committee appointed.
+                var rows =
+                    list.where((i) => committees.containsKey(i.forfeited.id)).toList();
+                final yf = ref.watch(_committeesYardProvider);
+                if (yf != null) {
+                  rows = rows.where((i) => i.forfeited.yard == yf).toList();
+                }
+                final qq = ref.watch(_disposalSearchProvider('committees')).toLowerCase();
+                if (qq.isNotEmpty) {
+                  rows = rows.where((info) {
+                    final f = info.forfeited;
+                    return f.srNumber.toLowerCase().contains(qq) ||
+                        f.consigneeName.toLowerCase().contains(qq) ||
+                        _committeeItemName(f).toLowerCase().contains(qq);
+                  }).toList();
+                }
+                if (rows.isEmpty) {
+                  return _listCard(
+                    context,
+                    const EmptyTableState(
+                        icon: Icons.groups_rounded,
+                        message: 'No committees appointed yet',
+                        subtitle:
+                            'The Director General appoints a committee for packages unsold more than 3 times.'),
+                  );
+                }
+                return ListView.separated(
+                  itemCount: rows.length,
+                  separatorBuilder: (_, __) => const Gap(14),
+                  itemBuilder: (context, i) => _CommitteeCard(
+                      info: rows[i],
+                      committee: committees[rows[i].forfeited.id]!),
+                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// A package + its appointed 5-member committee (read-only card).
+class _CommitteeCard extends StatelessWidget {
+  final ReTenderSaleInfo info;
+  final TenderCommitteeModel committee;
+  const _CommitteeCard({required this.info, required this.committee});
+
+  @override
+  Widget build(BuildContext context) {
+    final blue = context.colors.accentLightBlue;
+    final f = info.forfeited;
+    return Container(
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: package identity + times tendered.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: blue.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.groups_rounded, size: 18, color: blue),
+              ),
+              const Gap(12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
+                      Text(f.srNumber,
+                          style: TextStyle(
+                              color: blue,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15)),
+                      const Gap(10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: context.colors.warningAmber.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text('${info.tenderCount}× unsold',
+                            style: TextStyle(
+                                color: context.colors.warningAmber,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                    ]),
+                    const Gap(2),
+                    Text(
+                        '${_committeeItemName(f)} · ${f.consigneeName} · ${yardName(f.yard)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: context.colors.textMuted, fontSize: 12)),
+                  ],
+                ),
+              ),
+            ]),
+          ),
+          Divider(height: 1, color: context.colors.borderColor),
+          // Members.
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('COMMITTEE (${committee.members.length} MEMBERS)',
+                    style: TextStyle(
+                        color: blue,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.8)),
+                const Gap(10),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (var i = 0; i < committee.members.length; i++)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: context.colors.surfaceDark,
+                          borderRadius: BorderRadius.circular(10),
+                          border:
+                              Border.all(color: context.colors.borderColor),
+                        ),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Container(
+                            width: 22,
+                            height: 22,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: blue.withOpacity(0.12),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Text('${i + 1}',
+                                style: TextStyle(
+                                    color: blue,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700)),
+                          ),
+                          const Gap(8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(committee.members[i].name,
+                                  style: TextStyle(
+                                      color: context.colors.textPrimary,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 13)),
+                              if (committee.members[i].designation != null &&
+                                  committee.members[i].designation!.isNotEmpty)
+                                Text(committee.members[i].designation!,
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 11)),
+                            ],
+                          ),
+                        ]),
+                      ),
+                  ],
+                ),
+                if (committee.note != null &&
+                    committee.note!.isNotEmpty) ...[
+                  const Gap(10),
+                  Text(committee.note!,
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 12)),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
