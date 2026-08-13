@@ -1200,20 +1200,23 @@ class TenderRevaluationModel {
       );
 }
 
-/// One committee member (name + optional designation).
+/// One committee member (name + optional designation + optional salary no).
 class CommitteeMember {
   final String name;
   final String? designation;
-  const CommitteeMember({required this.name, this.designation});
+  final String? salaryNo;
+  const CommitteeMember({required this.name, this.designation, this.salaryNo});
 
   factory CommitteeMember.fromJson(Map<String, dynamic> j) => CommitteeMember(
         name: (j['name'] as String?)?.trim() ?? '',
         designation: (j['designation'] as String?)?.trim(),
+        salaryNo: (j['salary_no'] as String?)?.trim(),
       );
   Map<String, dynamic> toJson() => {
         'name': name,
         if (designation != null && designation!.isNotEmpty)
           'designation': designation,
+        if (salaryNo != null && salaryNo!.isNotEmpty) 'salary_no': salaryNo,
       };
 }
 

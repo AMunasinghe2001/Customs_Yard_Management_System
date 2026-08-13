@@ -286,6 +286,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
   static const _count = 5;
   late final List<TextEditingController> _names;
   late final List<TextEditingController> _desigs;
+  late final List<TextEditingController> _salaries;
   final _noteCtrl = TextEditingController();
   bool _saving = false;
 
@@ -303,6 +304,10 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
             text: i < existing.length
                 ? (existing[i].designation ?? '')
                 : ''));
+    _salaries = List.generate(
+        _count,
+        (i) => TextEditingController(
+            text: i < existing.length ? (existing[i].salaryNo ?? '') : ''));
     _noteCtrl.text = widget.existing?.note ?? '';
   }
 
@@ -312,6 +317,9 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
       c.dispose();
     }
     for (final c in _desigs) {
+      c.dispose();
+    }
+    for (final c in _salaries) {
       c.dispose();
     }
     _noteCtrl.dispose();
@@ -324,8 +332,11 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
       final name = _names[i].text.trim();
       if (name.isEmpty) continue;
       final d = _desigs[i].text.trim();
+      final s = _salaries[i].text.trim();
       members.add(CommitteeMember(
-          name: name, designation: d.isEmpty ? null : d));
+          name: name,
+          designation: d.isEmpty ? null : d,
+          salaryNo: s.isEmpty ? null : s));
     }
     if (members.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -374,7 +385,12 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
         icon: Icons.badge_rounded,
         children: [
           for (var i = 0; i < _count; i++) ...[
-            if (i > 0) const Gap(10),
+            if (i > 0) ...[
+              const Gap(10),
+              Divider(height: 1, color: context.colors.borderColor),
+              const Gap(10),
+            ],
+            // Row 1: number + name.
             Row(children: [
               Container(
                 width: 24,
@@ -392,7 +408,6 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
               ),
               const Gap(10),
               Expanded(
-                flex: 3,
                 child: TextField(
                   controller: _names[i],
                   style: TextStyle(color: context.colors.textPrimary),
@@ -409,26 +424,49 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                   ),
                 ),
               ),
-              const Gap(8),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: _desigs[i],
-                  style: TextStyle(color: context.colors.textPrimary),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    labelText: 'Designation',
-                    filled: true,
-                    fillColor: context.colors.cardDark,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 12),
-                    border: border(context.colors.borderColor),
-                    enabledBorder: border(context.colors.borderColor),
-                    focusedBorder: border(accent, 1.4),
+            ]),
+            const Gap(8),
+            // Row 2: designation + salary number (aligned under the name).
+            Padding(
+              padding: const EdgeInsets.only(left: 34),
+              child: Row(children: [
+                Expanded(
+                  child: TextField(
+                    controller: _desigs[i],
+                    style: TextStyle(color: context.colors.textPrimary),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: 'Designation',
+                      filled: true,
+                      fillColor: context.colors.cardDark,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      border: border(context.colors.borderColor),
+                      enabledBorder: border(context.colors.borderColor),
+                      focusedBorder: border(accent, 1.4),
+                    ),
                   ),
                 ),
-              ),
-            ]),
+                const Gap(8),
+                Expanded(
+                  child: TextField(
+                    controller: _salaries[i],
+                    style: TextStyle(color: context.colors.textPrimary),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      labelText: 'Salary No.',
+                      filled: true,
+                      fillColor: context.colors.cardDark,
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
+                      border: border(context.colors.borderColor),
+                      enabledBorder: border(context.colors.borderColor),
+                      focusedBorder: border(accent, 1.4),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
           ],
           const Gap(14),
           TextField(

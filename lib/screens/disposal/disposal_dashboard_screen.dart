@@ -3791,12 +3791,22 @@ class _CommitteeCard extends StatelessWidget {
                                       color: context.colors.textPrimary,
                                       fontWeight: FontWeight.w700,
                                       fontSize: 13)),
-                              if (committee.members[i].designation != null &&
-                                  committee.members[i].designation!.isNotEmpty)
-                                Text(committee.members[i].designation!,
+                              Builder(builder: (_) {
+                                final m = committee.members[i];
+                                final bits = <String>[
+                                  if (m.designation != null &&
+                                      m.designation!.isNotEmpty)
+                                    m.designation!,
+                                  if (m.salaryNo != null &&
+                                      m.salaryNo!.isNotEmpty)
+                                    'Salary No. ${m.salaryNo}',
+                                ];
+                                if (bits.isEmpty) return const SizedBox.shrink();
+                                return Text(bits.join(' · '),
                                     style: TextStyle(
                                         color: context.colors.textMuted,
-                                        fontSize: 11)),
+                                        fontSize: 11));
+                              }),
                             ],
                           ),
                         ]),

@@ -815,6 +815,15 @@ final tenderSaleItemsChangeTriggerProvider = StreamProvider<int>((ref) async* {
       callback: (_) =>
           ref.read(tenderSaleItemsRefreshProvider.notifier).trigger(),
     )
+    // A new/edited tender SALE (number, date, re-tender) also drives the
+    // Tender Sales cards, Unsold "tenderCount" & committee eligibility.
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'tender_sales',
+      callback: (_) =>
+          ref.read(tenderSaleItemsRefreshProvider.notifier).trigger(),
+    )
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
 });
