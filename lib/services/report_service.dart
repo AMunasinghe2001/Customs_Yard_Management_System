@@ -49,8 +49,18 @@ class ReportService {
 
   /// Warehouse label(s) a forfeited package is/was held in — distinct warehouse
   /// codes from its (joined) warehouse entries. '—' when none recorded.
-  static String warehouseLabel(ForfeitedPackageModel f) {
+  /// When [itemId] is passed, returns warehouse codes specifically for that item.
+  static String warehouseLabel(ForfeitedPackageModel f, [String? itemId]) {
     final entries = f.packageDetails?.warehouseEntries ?? const [];
+    if (itemId != null) {
+      final itemEntries = entries.where((e) => e.packageItemId == itemId).toList();
+      final codes = itemEntries
+          .map((e) => e.warehouseCode.trim())
+          .where((c) => c.isNotEmpty)
+          .toSet()
+          .toList();
+      if (codes.isNotEmpty) return codes.join(', ');
+    }
     final codes = entries
         .map((e) => e.warehouseCode.trim())
         .where((c) => c.isNotEmpty)
@@ -59,6 +69,14 @@ class ReportService {
     if (codes.isEmpty) return '—';
     if (codes.length == 1) return codes.first;
     return codes.join(', ');
+  }
+
+  /// Reason helper: resolves the hold reason from forfeited package, item, or parent package.
+  static String reasonOf(ForfeitedPackageModel f, PackageItem? match) {
+    if (f.reason.trim().isNotEmpty) return f.reason.trim();
+    if (match?.reasons?.trim().isNotEmpty == true) return match!.reasons!.trim();
+    if (f.packageDetails?.reason?.trim().isNotEmpty == true) return f.packageDetails!.reason!.trim();
+    return '—';
   }
 
   /// Generates a PDF report for report items with category summary and zone summary
@@ -298,6 +316,418 @@ class ReportService {
       ),
     );
 
+    return pdf.save();
+  }
+
+  /// Full-detail report for ONE package (mirrors the on-screen package-details
+  /// popup): SR register, consignee/declarant, items, and warehouse holdings.
+  /// Full-detail report for ONE package (mirrors the on-screen package-details
+  /// popup): SR register, consignee/declarant, items, and warehouse holdings.
+  Future<Uint8List> generateSinglePackagePdf(PackageModel p,
+      {PdfPageFormat? format,
+      Map<String, ({DateTime? at, String? receipt})>? soldByItem,
+      Map<String, DateTime?>? destroyedByItem,
+      Map<DateTime, double>? rates}) async {
+    await _ensureFontsLoaded();
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    String v(String? s) => (s == null || s.trim().isEmpty) ? 'N/A' : s.trim();
+    String d(DateTime? dt) =>
+        dt == null ? 'N/A' : DateFormat('yyyy-MM-dd').format(dt);
+
+    String normStatus(String s) {
+      final t = s.trim().toLowerCase();
+      if (t == 'held' || t == 'pending' || t == 'detained' || t == 'detain') {
+        return 'Detain';
+      }
+      if (t == 'forfeit' || t == 'forfeited' || t == 'forfiet') return 'Forfeit';
+      if (t == 'abandoned') return 'Abandoned';
+      if (t.isEmpty) return 'Detain';
+      return '${t[0].toUpperCase()}${t.substring(1)}';
+    }
+
+    String receiptOf(String? notes) {
+      if (notes == null || notes.trim().isEmpty) return '—';
+      for (final part in notes.split('|')) {
+        final t = part.trim();
+        if (t.toLowerCase().startsWith('receipt no:')) {
+          final idx = t.indexOf(':');
+          if (idx != -1) {
+            final r = t.substring(idx + 1).trim();
+            if (r.isNotEmpty) return r;
+          }
+        }
+      }
+      return '—';
+    }
+
+    // Helper to resolve an item's status, outcome date, receipt, and hold reason
+    ({String status, String outDate, String receipt, String reason}) resolveItemOutcome(PackageItem? it) {
+      final iid = it?.id;
+      final releasedEntries = p.warehouseEntries.where((e) =>
+          e.isReturned && (iid == null || e.packageItemId == null || e.packageItemId == iid));
+
+      String status;
+      String outDate = '—';
+      String receipt = '—';
+
+      String reason = '—';
+      if (it?.reasons?.trim().isNotEmpty == true) {
+        reason = it!.reasons!.trim();
+      } else if (p.reason?.trim().isNotEmpty == true) {
+        reason = p.reason!.trim();
+      } else if (p.warehouseEntries.isNotEmpty) {
+        reason = p.warehouseEntries.first.holdReason;
+      }
+
+      if (iid != null && soldByItem != null && soldByItem.containsKey(iid)) {
+        status = 'Sold';
+        final s = soldByItem[iid]!;
+        outDate = s.at != null ? DateFormat('yyyy-MM-dd').format(s.at!) : '—';
+        receipt = (s.receipt?.isNotEmpty == true) ? s.receipt! : '—';
+      } else if (iid != null && destroyedByItem != null && destroyedByItem.containsKey(iid)) {
+        status = 'Destroyed';
+        final dt = destroyedByItem[iid];
+        outDate = dt != null ? DateFormat('yyyy-MM-dd').format(dt) : '—';
+      } else if (releasedEntries.isNotEmpty) {
+        status = 'Released';
+        final e = releasedEntries.first;
+        outDate = e.returnedAt != null ? DateFormat('yyyy-MM-dd').format(e.returnedAt!) : '—';
+        final r = receiptOf(e.returnNotes);
+        if (r != '—') receipt = r;
+      } else {
+        status = normStatus(it?.status.isNotEmpty == true ? it!.status : p.status);
+      }
+
+      return (status: status, outDate: outDate, receipt: receipt, reason: reason);
+    }
+
+    // Overall package status for top summary block
+    final itemOutcomes = p.items.isEmpty
+        ? [resolveItemOutcome(null)]
+        : p.items.map((it) => resolveItemOutcome(it)).toList();
+    final distinctStatuses = itemOutcomes.map((o) => o.status).toSet().toList();
+    final overallStatus = distinctStatuses.length == 1
+        ? distinctStatuses.first
+        : distinctStatuses.join(' / ');
+
+    // A labelled two-column field grid (like the popup cards).
+    pw.Widget section(String title, List<List<String>> fields) {
+      return pw.Container(
+        margin: const pw.EdgeInsets.only(bottom: 14),
+        padding: const pw.EdgeInsets.all(12),
+        decoration: pw.BoxDecoration(
+          border: pw.Border.all(color: PdfColors.grey300),
+          borderRadius: pw.BorderRadius.circular(6),
+        ),
+        child: pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.start,
+          children: [
+            pw.Text(title.toUpperCase(),
+                style: pw.TextStyle(
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromInt(0xFF0D47A1))),
+            pw.SizedBox(height: 8),
+            pw.Wrap(
+              spacing: 0,
+              runSpacing: 8,
+              children: [
+                for (final f in fields)
+                  pw.Container(
+                    width: 250,
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(f[0],
+                            style: const pw.TextStyle(
+                                fontSize: 8, color: PdfColors.grey600)),
+                        pw.Text(f[1],
+                            style: pw.TextStyle(
+                                fontSize: 10,
+                                fontWeight: pw.FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: format ?? PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        theme: pw.ThemeData.withFont(base: _font, bold: _fontBold),
+        build: (context) => [
+          _buildHeader('SR REGISTER ENTRY', dateStr, p.srNumber),
+          pw.SizedBox(height: 18),
+          section('SR Register Information', [
+            ['SR Number', p.srNumber],
+            ['Entry Date', d(p.entryDate)],
+            if (p.oldSrNumber != null && p.oldSrNumber!.isNotEmpty)
+              ['Old SR Number', p.oldSrNumber!],
+            ['Cusdec No', v(p.cusdecNo)],
+            ['Cusdec Date', v(p.cusdecDate)],
+            ['Case Number', v(p.caseNumber)],
+            ['Container Number', v(p.containerNumber)],
+            ['Package Description', v(p.description)],
+          ]),
+          section('Consignee / Declarant Information', [
+            ['Consignee Name', v(p.consigneeName)],
+            ['Consignee NIC', v(p.consigneeNic)],
+            ['Consignee Address', v(p.consigneeAddress)],
+            ['Consignee Phone', v(p.consigneePhone)],
+            ['Declarant Name', v(p.declarantName)],
+          ]),
+          pw.Text('PACKAGE ITEM SUMMARY',
+              style: pw.TextStyle(
+                  fontSize: 11,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromInt(0xFF0D47A1))),
+          pw.SizedBox(height: 6),
+          pw.TableHelper.fromTextArray(
+            headers: [
+              '#',
+              'Item',
+              'HS Code',
+              'Qty',
+              'Reason',
+              'Status',
+              'Outcome Date',
+              'Unit Value (LKR)'
+            ],
+            data: [
+              if (p.items.isEmpty)
+                [
+                  '1',
+                  '—',
+                  '—',
+                  '${p.totalItemCount}',
+                  v(p.reason),
+                  overallStatus,
+                  '—',
+                  NumberFormat('#,##0.##').format(p.declaredValue),
+                ]
+              else
+                for (var i = 0; i < p.items.length; i++)
+                  ...[
+                    (() {
+                      final item = p.items[i];
+                      final outcome = resolveItemOutcome(item);
+                      final qtyStr = '${item.quantity} ${item.unitOfMeasure}';
+                      return [
+                        '${i + 1}',
+                        item.itemName,
+                        item.hsCode ?? '—',
+                        qtyStr,
+                        outcome.reason,
+                        outcome.status,
+                        outcome.outDate,
+                        NumberFormat('#,##0.##').format(item.unitValue),
+                      ];
+                    })()
+                  ],
+            ],
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
+            cellStyle: const pw.TextStyle(fontSize: 7.5),
+            headerDecoration:
+                const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+            rowDecoration: const pw.BoxDecoration(
+                border: pw.Border(
+                    bottom: pw.BorderSide(color: PdfColors.grey200))),
+            cellAlignments: {
+              0: pw.Alignment.center,
+              2: pw.Alignment.center,
+              3: pw.Alignment.center,
+              5: pw.Alignment.center,
+              6: pw.Alignment.center,
+              7: pw.Alignment.centerRight,
+            },
+          ),
+          pw.SizedBox(height: 16),
+          if (p.warehouseEntries.isNotEmpty) ...[
+            pw.Text('WAREHOUSE SUMMARY',
+                style: pw.TextStyle(
+                    fontSize: 11,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromInt(0xFF0D47A1))),
+            pw.SizedBox(height: 6),
+            (() {
+              int getItemIndex(WarehouseEntryModel e) {
+                if (e.packageItemId != null) {
+                  final idx = p.items.indexWhere((i) => i.id == e.packageItemId);
+                  if (idx != -1) return idx;
+                }
+                if (e.itemName != null && e.itemName!.isNotEmpty) {
+                  final idx = p.items.indexWhere((i) =>
+                      i.itemName.trim().toLowerCase() ==
+                      e.itemName!.trim().toLowerCase());
+                  if (idx != -1) return idx;
+                }
+                return 999;
+              }
+
+              final sortedEntries = List<WarehouseEntryModel>.from(p.warehouseEntries)
+                ..sort((a, b) {
+                  final idxA = getItemIndex(a);
+                  final idxB = getItemIndex(b);
+                  if (idxA != idxB) return idxA.compareTo(idxB);
+                  return a.admittedAt.compareTo(b.admittedAt);
+                });
+
+              return pw.TableHelper.fromTextArray(
+                headers: [
+                  '#',
+                  'Item',
+                  'Warehouse',
+                  'Zone',
+                  'Qty',
+                  'Admitted Date',
+                  'Status',
+                  'Release Date',
+                  'Storage Charge (LKR)',
+                  'Receipt No'
+                ],
+                data: [
+                  for (final e in sortedEntries)
+                    ...[
+                      (() {
+                        final itemIdx = getItemIndex(e);
+                        final itemNumStr =
+                            (itemIdx != 999 && p.items.isNotEmpty)
+                                ? '${itemIdx + 1}'
+                                : '—';
+                        final itemNameStr =
+                            (itemIdx != 999 && p.items.isNotEmpty)
+                                ? p.items[itemIdx].itemName
+                                : (e.itemName ?? '—');
+                        final charge = (rates != null)
+                            ? e.calculatePackageCharge(p.items, rates)
+                            : (e.accumulatedCharge ?? 0.0);
+                        final rDate = (e.isReturned && e.returnedAt != null)
+                            ? DateFormat('yyyy-MM-dd').format(e.returnedAt!)
+                            : '—';
+                        final rNo = e.isReturned ? receiptOf(e.returnNotes) : '—';
+                        final chargeStr = (e.isReturned || charge > 0)
+                            ? NumberFormat('#,##0.00').format(charge)
+                            : '—';
+                        return [
+                          itemNumStr,
+                          itemNameStr,
+                          e.warehouseName,
+                          e.zone ?? '—',
+                          '${e.itemCount}',
+                          DateFormat('yyyy-MM-dd').format(e.admittedAt),
+                          e.isReturned ? 'Released' : 'In Warehouse',
+                          rDate,
+                          chargeStr,
+                          rNo,
+                        ];
+                      })()
+                    ],
+                ],
+                headerStyle: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 8,
+                    color: PdfColors.white),
+                cellStyle: const pw.TextStyle(fontSize: 7.5),
+                headerDecoration:
+                    const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+                rowDecoration: const pw.BoxDecoration(
+                    border: pw.Border(
+                        bottom: pw.BorderSide(color: PdfColors.grey200))),
+                cellAlignments: {
+                  0: pw.Alignment.center,
+                  1: pw.Alignment.centerLeft,
+                  4: pw.Alignment.center,
+                  5: pw.Alignment.center,
+                  6: pw.Alignment.center,
+                  7: pw.Alignment.center,
+                  8: pw.Alignment.centerRight,
+                  9: pw.Alignment.center,
+                },
+              );
+            })(),
+          ],
+        ],
+      ),
+    );
+    return pdf.save();
+  }
+
+  /// A stock / revenue metric report: a headline count/amount + a supporting
+  /// table of the goods (packages) that make up the figure.
+  Future<Uint8List> generateStockRevenuePdf({
+    required String title,
+    required String periodLabel,
+    required String headline,        // e.g. "42 goods" or "LKR 1,250,000"
+    required List<String> columns,
+    required List<List<String>> rows,
+    PdfPageFormat? format,
+  }) async {
+    await _ensureFontsLoaded();
+    final pdf = pw.Document();
+    final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    pdf.addPage(
+      pw.MultiPage(
+        pageFormat: format ?? PdfPageFormat.a4,
+        margin: const pw.EdgeInsets.all(32),
+        theme: pw.ThemeData.withFont(base: _font, bold: _fontBold),
+        build: (context) => [
+          _buildHeader(title, dateStr, periodLabel),
+          pw.SizedBox(height: 16),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(14),
+            decoration: pw.BoxDecoration(
+              color: const PdfColor.fromInt(0xFFE3F2FD),
+              borderRadius: pw.BorderRadius.circular(6),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('Total',
+                    style: pw.TextStyle(
+                        fontSize: 11,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.grey700)),
+                pw.SizedBox(height: 2),
+                // Wraps (and honours \n) so a long revenue/balance line fits.
+                pw.Text(headline,
+                    style: pw.TextStyle(
+                        fontSize: 14,
+                        fontWeight: pw.FontWeight.bold,
+                        color: const PdfColor.fromInt(0xFF0D47A1))),
+              ],
+            ),
+          ),
+          pw.SizedBox(height: 16),
+          if (rows.isEmpty)
+            pw.Text('No records for this period.',
+                style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600))
+          else
+            pw.TableHelper.fromTextArray(
+              headers: columns,
+              data: rows,
+              headerStyle: pw.TextStyle(
+                  fontWeight: pw.FontWeight.bold,
+                  fontSize: 8,
+                  color: PdfColors.white),
+              cellStyle: const pw.TextStyle(fontSize: 8),
+              headerDecoration:
+                  const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+              rowDecoration: const pw.BoxDecoration(
+                  border: pw.Border(
+                      bottom: pw.BorderSide(color: PdfColors.grey200))),
+            ),
+          pw.SizedBox(height: 16),
+          _buildFooter(rows.length, label: 'Goods:'),
+        ],
+      ),
+    );
     return pdf.save();
   }
 
@@ -811,9 +1241,25 @@ class ReportService {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
     
+    // Receipt number embedded in the release notes as "Receipt No: XXX".
+    String receiptOf(String? notes) {
+      if (notes == null || notes.trim().isEmpty) return '—';
+      for (final part in notes.split('|')) {
+        final t = part.trim();
+        if (t.toLowerCase().startsWith('receipt no:')) {
+          final idx = t.indexOf(':');
+          if (idx != -1) {
+            final r = t.substring(idx + 1).trim();
+            if (r.isNotEmpty) return r;
+          }
+        }
+      }
+      return '—';
+    }
+
     double totalCharge = 0;
     final rowData = <List<String>>[];
-    
+
     for (var entry in entries) {
       final package = packages.firstWhere((p) => p.id == entry.packageId, orElse: () => packages.first);
       final charge = entry.calculatePackageCharge(package.items, rates);
@@ -825,7 +1271,9 @@ class ReportService {
         (entry.hsCode?.trim().isNotEmpty == true)
             ? entry.hsCode!.trim()
             : hsLabel(package.items),
-        entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : '-') : 'Active',
+        DateFormat('yyyy-MM-dd').format(entry.admittedAt),
+        entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : 'Released') : 'In Warehouse',
+        entry.isReturned ? receiptOf(entry.returnNotes) : '—',
         entry.itemCount.toString(),
         entry.storageDays.toString(),
         NumberFormat.currency(symbol: 'Rs. ', decimalDigits: 2).format(charge),
@@ -842,10 +1290,20 @@ class ReportService {
           pw.TableHelper.fromTextArray(
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            headers: ['SR Number', 'Item', 'HS Code', 'Release Date', 'Items', 'Days', 'Calculated Charge'],
+            headers: ['SR Number', 'Item', 'HS Code', 'Entry Date', 'Release Date / Status', 'Receipt No', 'Items', 'Days', 'Calculated Charge'],
             data: rowData,
-            cellStyle: const pw.TextStyle(fontSize: 8),
-            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.center, 3: pw.Alignment.centerLeft, 4: pw.Alignment.center, 5: pw.Alignment.center, 6: pw.Alignment.centerRight},
+            cellStyle: const pw.TextStyle(fontSize: 7.5),
+            cellAlignments: {
+              0: pw.Alignment.centerLeft,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.center,
+              3: pw.Alignment.center,
+              4: pw.Alignment.centerLeft,
+              5: pw.Alignment.center,
+              6: pw.Alignment.center,
+              7: pw.Alignment.center,
+              8: pw.Alignment.centerRight,
+            },
           ),
           pw.SizedBox(height: 10),
           pw.Row(
@@ -873,7 +1331,22 @@ class ReportService {
     sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
     sheetObject.appendRow([TextCellValue('')]);
 
-    List<String> headers = ['SR Number', 'Item', 'HS Code', 'Release Date', 'Items', 'Days', 'Calculated Charge (LKR)'];
+    String receiptOf(String? notes) {
+      if (notes == null || notes.trim().isEmpty) return '—';
+      for (final part in notes.split('|')) {
+        final t = part.trim();
+        if (t.toLowerCase().startsWith('receipt no:')) {
+          final idx = t.indexOf(':');
+          if (idx != -1) {
+            final r = t.substring(idx + 1).trim();
+            if (r.isNotEmpty) return r;
+          }
+        }
+      }
+      return '—';
+    }
+
+    List<String> headers = ['SR Number', 'Item', 'HS Code', 'Entry Date', 'Release Date / Status', 'Receipt No', 'Items', 'Days', 'Calculated Charge (LKR)'];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
     var headerRow = sheetObject.row(3);
@@ -893,7 +1366,9 @@ class ReportService {
         TextCellValue((entry.hsCode?.trim().isNotEmpty == true)
             ? entry.hsCode!.trim()
             : hsLabel(package.items)),
-        TextCellValue(entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : '-') : 'Active'),
+        TextCellValue(DateFormat('yyyy-MM-dd').format(entry.admittedAt)),
+        TextCellValue(entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : 'Released') : 'In Warehouse'),
+        TextCellValue(entry.isReturned ? receiptOf(entry.returnNotes) : '—'),
         IntCellValue(entry.itemCount),
         IntCellValue(entry.storageDays),
         DoubleCellValue(charge),
@@ -1128,18 +1603,52 @@ class ReportService {
                 const pw.BoxDecoration(color: PdfColor.fromInt(0xFF1A237E)),
             cellStyle: const pw.TextStyle(fontSize: 8),
             cellAlignment: pw.Alignment.centerLeft,
-            data: packages.map((f) {
+            data: packages.expand<List<String>>((f) {
               final items = f.packageDetails?.items ?? const [];
-              final name = f.itemName ?? itemLabel(items);
-              return [
-                f.srNumber,
-                name,
-                hsLabel(items),
-                f.consigneeName,
-                warehouseLabel(f),
-                f.reason,
-                DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
-              ];
+              if (f.itemId != null) {
+                PackageItem? match;
+                for (final i in items) {
+                  if (i.id == f.itemId) {
+                    match = i;
+                    break;
+                  }
+                }
+                final name = f.itemName ?? match?.itemName ?? '—';
+                final hs = match?.hsCode ?? '—';
+                return [
+                  [
+                    f.srNumber,
+                    name,
+                    (hs.trim().isNotEmpty) ? hs.trim() : '—',
+                    f.consigneeName,
+                    warehouseLabel(f, f.itemId),
+                    reasonOf(f, match),
+                    DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+                  ]
+                ];
+              } else if (items.isNotEmpty) {
+                return items.map((i) => [
+                  f.srNumber,
+                  i.itemName,
+                  (i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—',
+                  f.consigneeName,
+                  warehouseLabel(f, i.id),
+                  reasonOf(f, i),
+                  DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+                ]);
+              } else {
+                return [
+                  [
+                    f.srNumber,
+                    f.itemName ?? '—',
+                    '—',
+                    f.consigneeName,
+                    warehouseLabel(f),
+                    reasonOf(f, null),
+                    DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+                  ]
+                ];
+              }
             }).toList(),
           ),
           pw.SizedBox(height: 20),
@@ -1177,16 +1686,48 @@ class ReportService {
     sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
     for (final f in packages) {
       final items = f.packageDetails?.items ?? const [];
-      final name = f.itemName ?? (items.isEmpty ? '' : itemLabel(items));
-      sheet.appendRow([
-        TextCellValue(f.srNumber),
-        TextCellValue(name),
-        TextCellValue(items.isEmpty ? '' : hsLabel(items)),
-        TextCellValue(f.consigneeName),
-        TextCellValue(warehouseLabel(f)),
-        TextCellValue(f.reason),
-        TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
-      ]);
+      if (f.itemId != null) {
+        PackageItem? match;
+        for (final i in items) {
+          if (i.id == f.itemId) {
+            match = i;
+            break;
+          }
+        }
+        final name = f.itemName ?? match?.itemName ?? '—';
+        final hs = match?.hsCode ?? '—';
+        sheet.appendRow([
+          TextCellValue(f.srNumber),
+          TextCellValue(name),
+          TextCellValue((hs.trim().isNotEmpty) ? hs.trim() : '—'),
+          TextCellValue(f.consigneeName),
+          TextCellValue(warehouseLabel(f, f.itemId)),
+          TextCellValue(reasonOf(f, match)),
+          TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
+        ]);
+      } else if (items.isNotEmpty) {
+        for (final i in items) {
+          sheet.appendRow([
+            TextCellValue(f.srNumber),
+            TextCellValue(i.itemName),
+            TextCellValue((i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—'),
+            TextCellValue(f.consigneeName),
+            TextCellValue(warehouseLabel(f, i.id)),
+            TextCellValue(reasonOf(f, i)),
+            TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
+          ]);
+        }
+      } else {
+        sheet.appendRow([
+          TextCellValue(f.srNumber),
+          TextCellValue(f.itemName ?? '—'),
+          TextCellValue('—'),
+          TextCellValue(f.consigneeName),
+          TextCellValue(warehouseLabel(f)),
+          TextCellValue(reasonOf(f, null)),
+          TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
+        ]);
+      }
     }
     return Uint8List.fromList(excel.encode()!);
   }
@@ -1331,6 +1872,34 @@ class ReportService {
       ]);
     }
 
+    return Uint8List.fromList(excel.encode()!);
+  }
+
+  /// Generic table export to Excel for any headers and string rows.
+  Future<Uint8List?> exportTableToExcel({
+    required String title,
+    String? subTitle,
+    required List<String> columns,
+    required List<List<String>> rows,
+  }) async {
+    final excel = Excel.createExcel();
+    final sheet = excel['Report'];
+    excel.delete('Sheet1');
+
+    sheet.appendRow([TextCellValue(title.toUpperCase())]);
+    if (subTitle != null && subTitle.isNotEmpty) {
+      sheet.appendRow([TextCellValue(subTitle)]);
+    }
+    sheet.appendRow([
+      TextCellValue(
+          'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
+    ]);
+    sheet.appendRow([TextCellValue('')]);
+
+    sheet.appendRow(columns.map((e) => TextCellValue(e)).toList());
+    for (final row in rows) {
+      sheet.appendRow(row.map((e) => TextCellValue(e)).toList());
+    }
     return Uint8List.fromList(excel.encode()!);
   }
 }

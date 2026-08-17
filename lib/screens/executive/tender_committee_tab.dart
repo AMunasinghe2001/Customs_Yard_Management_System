@@ -106,10 +106,7 @@ class TenderCommitteeTab extends ConsumerWidget {
     final async = ref.watch(committeeEligibleProvider);
     final committees =
         ref.watch(tenderCommitteesProvider).asData?.value ?? const {};
-    final q = ref.watch(_committeeSearchProvider).toLowerCase();
-    final yardFilter = ref.watch(_committeeYardProvider);
-    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
-        {DateTime(2020, 1, 1): 50.0};
+ල්
 
     return Padding(
       padding: const EdgeInsets.all(24),
