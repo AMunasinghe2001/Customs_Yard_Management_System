@@ -1567,6 +1567,102 @@ class ReportService {
 
   // ── Generic forfeited-package list report (Forfeited / Sold / Destroyed) ──
 
+  /// Helper that builds consistent headers, table rows, and item IDs for
+  /// forfeited package reports (used by View, PDF, and Excel).
+  (List<String>, List<List<String>>, List<String?>) buildForfeitedReportRows(
+    List<ForfeitedPackageModel> packages, {
+    String dateHeader = 'Date',
+  }) {
+    final headers = [
+      'SR Number',
+      'Item',
+      'HS Code',
+      'Qty',
+      'Consignee',
+      'Warehouse',
+      'Reason',
+      dateHeader,
+    ];
+    final rows = <List<String>>[];
+    final itemIds = <String?>[];
+
+    for (final f in packages) {
+      final pkg = f.packageDetails;
+      final items = pkg?.items ?? const <PackageItem>[];
+
+      if (f.itemId != null) {
+        PackageItem? match;
+        for (final i in items) {
+          if (i.id == f.itemId) {
+            match = i;
+            break;
+          }
+        }
+        final name = f.itemName ?? match?.itemName ?? '—';
+        final hs = match?.hsCode ?? '—';
+        final qty = f.entryQty ?? match?.quantity ?? 1;
+        rows.add([
+          f.srNumber,
+          name,
+          (hs.trim().isNotEmpty) ? hs.trim() : '—',
+          '$qty',
+          f.consigneeName,
+          warehouseLabel(f, f.itemId),
+          reasonOf(f, match),
+          DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+        ]);
+        itemIds.add(f.itemId);
+      } else if (pkg != null) {
+        // Package-level forfeit row: expand only items that are genuinely forfeited
+        final forfeitItems =
+            items.where((i) => pkg.isItemForfeited(i.id)).toList();
+        final effectiveItems =
+            forfeitItems.isNotEmpty ? forfeitItems : items;
+
+        if (effectiveItems.isNotEmpty) {
+          for (final i in effectiveItems) {
+            rows.add([
+              f.srNumber,
+              i.itemName,
+              (i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—',
+              '${i.quantity}',
+              f.consigneeName,
+              warehouseLabel(f, i.id),
+              reasonOf(f, i),
+              DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+            ]);
+            itemIds.add(i.id);
+          }
+        } else {
+          rows.add([
+            f.srNumber,
+            f.itemName ?? '—',
+            '—',
+            '${f.entryQty ?? 1}',
+            f.consigneeName,
+            warehouseLabel(f),
+            reasonOf(f, null),
+            DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+          ]);
+          itemIds.add(null);
+        }
+      } else {
+        rows.add([
+          f.srNumber,
+          f.itemName ?? '—',
+          '—',
+          '${f.entryQty ?? 1}',
+          f.consigneeName,
+          warehouseLabel(f),
+          reasonOf(f, null),
+          DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+        ]);
+        itemIds.add(null);
+      }
+    }
+    return (headers, rows, itemIds);
+  }
+
   /// PDF for any list of forfeited packages (used by the yard-page reports:
   /// Forfeited, Sold, Destroyed, etc.). [title]/[subTitle] label the report.
   Future<Uint8List> generateForfeitedPdf(
@@ -1577,6 +1673,10 @@ class ReportService {
   }) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    final data = buildForfeitedReportRows(packages, dateHeader: dateHeader);
+    final headers = data.$1;
+    final rows = data.$2;
+
     pdf.addPage(
       pw.MultiPage(
         pageFormat: PdfPageFormat.a4.landscape,
@@ -1585,74 +1685,17 @@ class ReportService {
           _buildHeader(title, dateStr, subTitle),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            // No "Source" column — the report title already says which action
-            // this is (FORFEITED / ABANDONED / OTHER), and it was identical on
-            // every row. Yard replaced by Warehouse.
-            headers: [
-              'SR Number',
-              'Item',
-              'HS Code',
-              'Consignee',
-              'Warehouse',
-              'Reason',
-              dateHeader,
-            ],
+            headers: headers,
             headerStyle: pw.TextStyle(
                 fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
             headerDecoration:
                 const pw.BoxDecoration(color: PdfColor.fromInt(0xFF1A237E)),
             cellStyle: const pw.TextStyle(fontSize: 8),
             cellAlignment: pw.Alignment.centerLeft,
-            data: packages.expand<List<String>>((f) {
-              final items = f.packageDetails?.items ?? const [];
-              if (f.itemId != null) {
-                PackageItem? match;
-                for (final i in items) {
-                  if (i.id == f.itemId) {
-                    match = i;
-                    break;
-                  }
-                }
-                final name = f.itemName ?? match?.itemName ?? '—';
-                final hs = match?.hsCode ?? '—';
-                return [
-                  [
-                    f.srNumber,
-                    name,
-                    (hs.trim().isNotEmpty) ? hs.trim() : '—',
-                    f.consigneeName,
-                    warehouseLabel(f, f.itemId),
-                    reasonOf(f, match),
-                    DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
-                  ]
-                ];
-              } else if (items.isNotEmpty) {
-                return items.map((i) => [
-                  f.srNumber,
-                  i.itemName,
-                  (i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—',
-                  f.consigneeName,
-                  warehouseLabel(f, i.id),
-                  reasonOf(f, i),
-                  DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
-                ]);
-              } else {
-                return [
-                  [
-                    f.srNumber,
-                    f.itemName ?? '—',
-                    '—',
-                    f.consigneeName,
-                    warehouseLabel(f),
-                    reasonOf(f, null),
-                    DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
-                  ]
-                ];
-              }
-            }).toList(),
+            data: rows,
           ),
           pw.SizedBox(height: 20),
-          _buildFooter(packages.length),
+          _buildFooter(rows.length),
         ],
       ),
     );
@@ -1674,60 +1717,10 @@ class ReportService {
           'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
     ]);
     sheet.appendRow([TextCellValue('')]);
-    final headers = [
-      'SR Number',
-      'Item',
-      'HS Code',
-      'Consignee',
-      'Warehouse',
-      'Reason',
-      dateHeader,
-    ];
-    sheet.appendRow(headers.map((e) => TextCellValue(e)).toList());
-    for (final f in packages) {
-      final items = f.packageDetails?.items ?? const [];
-      if (f.itemId != null) {
-        PackageItem? match;
-        for (final i in items) {
-          if (i.id == f.itemId) {
-            match = i;
-            break;
-          }
-        }
-        final name = f.itemName ?? match?.itemName ?? '—';
-        final hs = match?.hsCode ?? '—';
-        sheet.appendRow([
-          TextCellValue(f.srNumber),
-          TextCellValue(name),
-          TextCellValue((hs.trim().isNotEmpty) ? hs.trim() : '—'),
-          TextCellValue(f.consigneeName),
-          TextCellValue(warehouseLabel(f, f.itemId)),
-          TextCellValue(reasonOf(f, match)),
-          TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
-        ]);
-      } else if (items.isNotEmpty) {
-        for (final i in items) {
-          sheet.appendRow([
-            TextCellValue(f.srNumber),
-            TextCellValue(i.itemName),
-            TextCellValue((i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—'),
-            TextCellValue(f.consigneeName),
-            TextCellValue(warehouseLabel(f, i.id)),
-            TextCellValue(reasonOf(f, i)),
-            TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
-          ]);
-        }
-      } else {
-        sheet.appendRow([
-          TextCellValue(f.srNumber),
-          TextCellValue(f.itemName ?? '—'),
-          TextCellValue('—'),
-          TextCellValue(f.consigneeName),
-          TextCellValue(warehouseLabel(f)),
-          TextCellValue(reasonOf(f, null)),
-          TextCellValue(DateFormat('yyyy-MM-dd').format(f.forfeitedAt)),
-        ]);
-      }
+    final data = buildForfeitedReportRows(packages, dateHeader: dateHeader);
+    sheet.appendRow(data.$1.map((e) => TextCellValue(e)).toList());
+    for (final row in data.$2) {
+      sheet.appendRow(row.map((e) => TextCellValue(e)).toList());
     }
     return Uint8List.fromList(excel.encode()!);
   }

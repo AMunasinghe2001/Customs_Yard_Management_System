@@ -2469,14 +2469,6 @@ class _HoldReasonsTab extends ConsumerWidget {
                                 fontSize: 13)),
                         size: ColumnSize.L),
                     DataColumn2(
-                        label: Text('Active',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.S,
-                        fixedWidth: 100),
-                    DataColumn2(
                         label: Text('Actions',
                             style: TextStyle(
                                 color: context.colors.primaryGold,
@@ -2497,16 +2489,6 @@ class _HoldReasonsTab extends ConsumerWidget {
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 12))),
-                            DataCell(_StatusToggle(
-                              isActive: r.isActive,
-                              onChanged: (v) async {
-                                await ref
-                                    .read(holdReasonServiceProvider)
-                                    .toggleReasonActive(r.id, v);
-                                ref.invalidate(holdReasonsProvider);
-                              },
-                              label: 'Reason "${r.reasonText}"',
-                            )),
                             DataCell(Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [

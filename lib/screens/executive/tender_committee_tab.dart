@@ -106,7 +106,10 @@ class TenderCommitteeTab extends ConsumerWidget {
     final async = ref.watch(committeeEligibleProvider);
     final committees =
         ref.watch(tenderCommitteesProvider).asData?.value ?? const {};
-ල්
+    final q = ref.watch(_committeeSearchProvider).trim().toLowerCase();
+    final yardFilter = ref.watch(_committeeYardProvider);
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        const <DateTime, double>{};
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -174,7 +177,11 @@ class TenderCommitteeTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(committeeEligibleProvider)),
               data: (list) {
-                var rows = list;
+                // Once a committee is appointed, the package drops off the DG
+                // list (it lives on the Central Disposal read-only view).
+                var rows = list
+                    .where((info) => !committees.containsKey(info.forfeited.id))
+                    .toList();
                 if (yardFilter != null) {
                   rows = rows
                       .where((info) => info.forfeited.yard == yardFilter)
@@ -447,22 +454,26 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
   }
 
   Future<void> _save() async {
+    // All 5 member NAMES are mandatory.
+    final missing = <int>[];
+    for (var i = 0; i < _count; i++) {
+      if (_names[i].text.trim().isEmpty) missing.add(i + 1);
+    }
+    if (missing.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              'All 5 members are required. Enter name(s) for member ${missing.join(', ')}.'),
+          backgroundColor: context.colors.dangerRed));
+      return;
+    }
     final members = <CommitteeMember>[];
     for (var i = 0; i < _count; i++) {
-      final name = _names[i].text.trim();
-      if (name.isEmpty) continue;
       final d = _desigs[i].text.trim();
       final s = _salaries[i].text.trim();
       members.add(CommitteeMember(
-          name: name,
+          name: _names[i].text.trim(),
           designation: d.isEmpty ? null : d,
           salaryNo: s.isEmpty ? null : s));
-    }
-    if (members.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: const Text('Enter at least one member.'),
-          backgroundColor: context.colors.dangerRed));
-      return;
     }
     setState(() => _saving = true);
     try {

@@ -19,6 +19,7 @@ import 'package:intl/intl.dart';
 import 'package:gap/gap.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../widgets/error_view.dart';
+import '../../widgets/package_details_dialog.dart';
 
 class ReportsScreen extends ConsumerStatefulWidget {
   /// Executive Office (DG / ADG) mode: shows a Yard selector and scopes every
@@ -521,27 +522,58 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }).toList();
   }
 
-  static const List<String> _forfeitedCols = [
-    'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Forfeited On'
-  ];
-  List<List<String>> _forfeitedRows(List<ForfeitedPackageModel> list) {
-    return list.map((fp) {
-      final items = fp.packageDetails?.items ?? const <PackageItem>[];
-      final item = items.isNotEmpty ? items.first : null;
-      final qty = fp.entryQty ??
-          (item?.quantity ?? items.fold<int>(0, (s, i) => s + i.quantity));
-      return [
-        fp.srNumber,
-        fp.itemName ?? item?.itemName ?? '—',
-        item?.hsCode ?? '—',
-        '$qty',
-        fp.consigneeName,
-        DateFormat('yyyy-MM-dd').format(fp.forfeitedAt),
-      ];
-    }).toList();
+
+
+  Future<void> _openDetailsForSr(String query, {String? itemId, String? itemName}) async {
+    final storageRate =
+        ref.read(storageRateProvider).valueOrNull ?? const <DateTime, double>{};
+    try {
+      final svc = ref.read(packageServiceProvider);
+      final packages = await svc.getAllPackages(yard: _yardArg);
+      final q = query.trim().toLowerCase();
+      final pkg = packages.where((p) =>
+          p.srNumber.toLowerCase() == q ||
+          (p.oldSrNumber ?? '').toLowerCase() == q ||
+          p.id == query).firstOrNull;
+
+      if (pkg != null && mounted) {
+        String? resolvedItemId = itemId;
+        if (resolvedItemId == null && itemName != null && itemName.isNotEmpty && itemName != '—') {
+          // Attempt to resolve item by item name if itemId is null
+          final cleanName = itemName.split('+')[0].trim().toLowerCase();
+          final match = pkg.items.where((i) => i.itemName.trim().toLowerCase() == cleanName).firstOrNull;
+          if (match != null) {
+            resolvedItemId = match.id;
+          }
+        }
+
+        showDialog(
+          context: context,
+          builder: (_) => PackageDetailsDialog(
+            package: pkg,
+            storageRate: storageRate,
+            useLegacySummary: true,
+            highlightItemId: resolvedItemId,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('No package details found for "$query"'),
+            backgroundColor: context.colors.primaryGold,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      _showError(e.toString());
+    }
   }
 
   /// The shared in-app table dialog. Save PDF / Export Excel sit in the footer.
+  /// [rowItemIds] is an optional list (same length as [rows]) where each entry
+  /// is the package-item ID for that row; when non-null the Details button will
+  /// open the popup filtered to that specific item.
   Future<void> _showReportTable({
     required String title,
     String? subtitle,
@@ -549,11 +581,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     required List<List<String>> rows,
     VoidCallback? onSavePdf,
     VoidCallback? onExportExcel,
+    bool showDetailsButton = true,
+    List<String?>? rowItemIds,
   }) async {
     if (rows.isEmpty) {
       _showNoDataMessage();
       return;
     }
+
+    final hasSrCol = columns.isNotEmpty &&
+        (columns.first.toLowerCase().contains('sr') ||
+            columns.first.toLowerCase().contains('package'));
+    final shouldAddDetails =
+        showDetailsButton && hasSrCol && !columns.contains('Details');
+
+    final effectiveCols = shouldAddDetails ? [...columns, 'Details'] : columns;
+
     await showDialog(
       context: context,
       builder: (ctx) => Dialog(
@@ -562,7 +605,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-              maxWidth: 1150,
+              maxWidth: 1180,
               maxHeight: MediaQuery.of(ctx).size.height * 0.86),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -603,23 +646,50 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     horizontalMargin: 12,
                     fixedTopRows: 1,
                     isVerticalScrollBarVisible: true,
-                    columns: columns
+                    columns: effectiveCols
                         .map((c) => DataColumn2(
-                            label: Text(c,
-                                style: TextStyle(
-                                    color: context.colors.primaryGold,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12))))
+                            label: Center(
+                              child: Text(c,
+                                  style: TextStyle(
+                                      color: context.colors.primaryGold,
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 12)),
+                            ),
+                            size: c == 'Details' ? ColumnSize.S : ColumnSize.M,
+                            fixedWidth: c == 'Details' ? 70 : null))
                         .toList(),
-                    rows: rows
-                        .map((r) => DataRow(
-                            cells: r
-                                .map((c) => DataCell(TooltipText(c,
-                                    style: TextStyle(
-                                        color: context.colors.textPrimary,
-                                        fontSize: 12.5))))
-                                .toList()))
-                        .toList(),
+                    rows: rows.asMap().entries.map((entry) {
+                      final idx = entry.key;
+                      final r = entry.value;
+                      final cells = r
+                          .map((c) => DataCell(TooltipText(c,
+                              style: TextStyle(
+                                  color: context.colors.textPrimary,
+                                  fontSize: 12.5))))
+                          .toList();
+
+                      if (shouldAddDetails) {
+                        final sr = r[0];
+                        final itemName = r.length > 1 ? r[1] : null;
+                        final itemId = (rowItemIds != null && idx < rowItemIds.length)
+                            ? rowItemIds[idx]
+                            : null;
+                        cells.add(
+                          DataCell(
+                            Center(
+                              child: IconButton(
+                                icon: Icon(Icons.info_outline_rounded,
+                                    color: context.colors.accentLightBlue,
+                                    size: 18),
+                                tooltip: 'View Package Details',
+                                onPressed: () => _openDetailsForSr(sr, itemId: itemId, itemName: itemName),
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      return DataRow(cells: cells);
+                    }).toList(),
                   ),
                 ),
               ),
@@ -635,7 +705,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           foregroundColor: Colors.green),
                       icon: const Icon(Icons.table_chart_outlined, size: 16),
                       label: const Text('Export Excel'),
-                      onPressed: onExportExcel,
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        onExportExcel();
+                      },
                     ),
                   if (onExportExcel != null) const Gap(10),
                   if (onSavePdf != null)
@@ -646,7 +719,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       icon: const Icon(Icons.picture_as_pdf_outlined,
                           size: 16),
                       label: const Text('Save PDF'),
-                      onPressed: onSavePdf,
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        onSavePdf();
+                      },
                     ),
                 ]),
               ),
@@ -655,6 +731,278 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _viewCategoryZone() async {
+    const key = 'Category & Zone Summary_view';
+    _setLoading(key, true);
+    try {
+      final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
+      final withDatePkgs = _filterByDate(packages);
+      final withDateEntries = _filterByDate(entries);
+      if (withDatePkgs.isEmpty && withDateEntries.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final columns = ['Category / Zone', 'Package Count', 'Item Count', 'Total Declared Value (LKR)'];
+      final categoryMap = <String, ({int pkgs, int items, double val})>{};
+      for (final p in withDatePkgs) {
+        final cat = (p.items.isNotEmpty && p.items.first.category != null && p.items.first.category!.isNotEmpty)
+            ? p.items.first.category!
+            : 'Uncategorized';
+        final cur = categoryMap[cat] ?? (pkgs: 0, items: 0, val: 0.0);
+        categoryMap[cat] = (
+          pkgs: cur.pkgs + 1,
+          items: cur.items + (p.items.isNotEmpty ? p.items.length : 1),
+          val: cur.val + p.declaredValue,
+        );
+      }
+      final money = NumberFormat('#,##0');
+      final rows = categoryMap.entries.map((e) => [
+        e.key,
+        '${e.value.pkgs}',
+        '${e.value.items}',
+        money.format(e.value.val),
+      ]).toList();
+
+      _showReportTable(
+        title: 'Category & Zone Summary',
+        columns: columns,
+        rows: rows,
+        onSavePdf: _generateCategoryZonePdf,
+        onExportExcel: _exportCategoryZoneExcel,
+        showDetailsButton: false,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _viewWarehouseStock() async {
+    const key = 'Warehouse Stock_view';
+    _setLoading(key, true);
+    try {
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
+      final filtered = _filterByDate(entries);
+      if (filtered.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final df = DateFormat('yyyy-MM-dd');
+      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Reason', 'Admitted Date'];
+      final rows = filtered.map((e) => [
+        e.srNumber ?? '—',
+        e.itemName ?? '—',
+        e.consigneeName ?? '—',
+        e.warehouseCode,
+        e.holdReason,
+        df.format(e.admittedAt),
+      ]).toList();
+      final itemIds = filtered.map((e) => e.packageItemId).toList();
+      _showReportTable(
+        title: 'Warehouse Stock (Held Goods)',
+        columns: columns,
+        rows: rows,
+        rowItemIds: itemIds,
+        onSavePdf: _generateWarehouseStockPdf,
+        onExportExcel: _exportWarehouseStockExcel,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _viewReturnedPackages() async {
+    const key = 'Released Packages_view';
+    _setLoading(key, true);
+    try {
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final filtered = _filterByDate(entries);
+      if (filtered.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final df = DateFormat('yyyy-MM-dd');
+      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Returned Date', 'Return Notes'];
+      final rows = filtered.map((e) => [
+        e.srNumber ?? '—',
+        e.itemName ?? '—',
+        e.consigneeName ?? '—',
+        e.warehouseCode,
+        e.returnedAt != null ? df.format(e.returnedAt!) : '—',
+        e.returnNotes ?? '—',
+      ]).toList();
+      final itemIds = filtered.map((e) => e.packageItemId).toList();
+      _showReportTable(
+        title: 'Released Packages Report',
+        columns: columns,
+        rows: rows,
+        rowItemIds: itemIds,
+        onSavePdf: _generateReturnedPdf,
+        onExportExcel: _exportReturnedExcel,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _viewWarehousesList() async {
+    const key = 'Warehouses List_view';
+    _setLoading(key, true);
+    try {
+      final warehouses = ref.read(warehousesProvider).asData?.value ?? const [];
+      if (warehouses.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final columns = ['Warehouse Code', 'Warehouse Name', 'Capacity'];
+      final rows = warehouses.map((w) => [
+        w.code,
+        w.name,
+        '${w.capacity}',
+      ]).toList();
+      _showReportTable(
+        title: 'Warehouses List',
+        columns: columns,
+        rows: rows,
+        onSavePdf: _generateWarehousesListPdf,
+        onExportExcel: _exportWarehousesListExcel,
+        showDetailsButton: false,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _viewStorageCharges() async {
+    const key = 'Storage Charges_view';
+    _setLoading(key, true);
+    try {
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
+      final filteredEntries = _filterByDate(entries);
+      if (filteredEntries.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final df = DateFormat('yyyy-MM-dd');
+      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Admitted Date', 'Status'];
+      final rows = filteredEntries.map((e) => [
+        e.srNumber ?? '—',
+        e.itemName ?? '—',
+        e.consigneeName ?? '—',
+        e.warehouseCode,
+        df.format(e.admittedAt),
+        e.isReturned ? 'Released' : 'Held',
+      ]).toList();
+      final itemIds = filteredEntries.map((e) => e.packageItemId).toList();
+      _showReportTable(
+        title: 'Storage Charges Report',
+        columns: columns,
+        rows: rows,
+        rowItemIds: itemIds,
+        onSavePdf: _generateStorageChargesPdf,
+        onExportExcel: _exportStorageChargesExcel,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _viewReleasedRevenue() async {
+    const key = 'Released Revenue_view';
+    _setLoading(key, true);
+    try {
+      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final filtered = _filterByDate(entries);
+      if (filtered.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final df = DateFormat('yyyy-MM-dd');
+      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Admitted Date', 'Released Date'];
+      final rows = filtered.map((e) => [
+        e.srNumber ?? '—',
+        e.itemName ?? '—',
+        e.consigneeName ?? '—',
+        e.warehouseCode,
+        df.format(e.admittedAt),
+        e.returnedAt != null ? df.format(e.returnedAt!) : '—',
+      ]).toList();
+      final itemIds = filtered.map((e) => e.packageItemId).toList();
+      _showReportTable(
+        title: 'Released Revenue Report',
+        columns: columns,
+        rows: rows,
+        rowItemIds: itemIds,
+        onSavePdf: _generateReleasedRevenuePdf,
+        onExportExcel: _exportReleasedRevenueExcel,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _viewHoldReasons() async {
+    const key = 'Hold Reasons_view';
+    _setLoading(key, true);
+    try {
+      final reasons = await ref.read(holdReasonServiceProvider).getReasons();
+      if (reasons.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final rows = reasons.map((r) => [r.reasonText, r.description ?? '—', r.isActive ? 'ACTIVE' : 'INACTIVE']).toList();
+      _showReportTable(
+        title: 'Hold Reasons List',
+        columns: ['Reason Text', 'Description', 'Status'],
+        rows: rows,
+        onSavePdf: _generateHoldReasonsPdf,
+        onExportExcel: _exportHoldReasonsExcel,
+        showDetailsButton: false,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  Future<void> _viewCategories() async {
+    const key = 'Item Categories_view';
+    _setLoading(key, true);
+    try {
+      final categories = await ref.read(packageCategoryServiceProvider).getCategories();
+      if (categories.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      final rows = categories.map((c) => [c.name, c.description ?? '—']).toList();
+      _showReportTable(
+        title: 'Item Categories List',
+        columns: ['Category Name', 'Description'],
+        rows: rows,
+        onSavePdf: _generateCategoriesPdf,
+        onExportExcel: _exportCategoriesExcel,
+        showDetailsButton: false,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
   }
 
   /// View a package-list report in-app (with PDF / Excel export).
@@ -667,11 +1015,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           await ref.read(packageServiceProvider).getAllPackages(
               status: status == 'all' ? null : status, yard: _yardArg)));
       final base = title.replaceAll(' ', '_');
+      final data = await _goodsData(pkgs);
       await _showReportTable(
         title: title,
         subtitle: subtitle,
-        columns: _packageCols,
-        rows: _packageRows(pkgs),
+        columns: data.$1,
+        rows: data.$2,
+        rowItemIds: data.$3,
         onSavePdf: () => _showPdfPreview(
             (f) => ReportService()
                 .generatePackagePdf(pkgs, title: title, format: f),
@@ -695,43 +1045,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-  /// View a forfeited-list report in-app (with PDF / Excel export).
-  Future<void> _viewForfeited(String key, String title, String dateHeader,
-      Future<List<ForfeitedPackageModel>> Function() fetch) async {
-    _setLoading('${title}_view', true);
-    try {
-      final list =
-          _filterByDate(_filterByYard(await fetch(), (f) => f.yard));
-      final base = title.replaceAll(' ', '_');
-      await _showReportTable(
-        title: title,
-        columns: _forfeitedCols,
-        rows: _forfeitedRows(list),
-        onSavePdf: () => _showPdfPreview(
-            (_) => ReportService().generateForfeitedPdf(list,
-                title: title,
-                subTitle: 'Full Historical Report',
-                dateHeader: dateHeader),
-            '${base}_Report.pdf'),
-        onExportExcel: () {
-          if (!mounted) return;
-          showDialog(
-            context: context,
-            builder: (c) => ExcelExportDialog(
-              title: 'Export $title',
-              recordCount: list.length,
-              fileName: '${base}_Report.xlsx',
-              onExport: () => ReportService()
-                  .exportForfeitedToExcel(list, title: title, dateHeader: dateHeader),
-              onSave: (b) => _handleFileSave(b, base, 'xlsx'),
-            ),
-          );
-        },
-      );
-    } finally {
-      _setLoading('${title}_view', false);
-    }
-  }
+
 
   /// View stock & revenue reconciliation statement in-app.
   Future<void> _viewStockReconciliation() async {
@@ -781,6 +1095,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Inventory distribution by category & warehouse zones.',
                       icon: Icons.pie_chart_rounded,
                       color: Colors.purpleAccent,
+                      onView: _viewCategoryZone,
                       onPdf: _generateCategoryZonePdf,
                       onExcel: _exportCategoryZoneExcel,
                     ),
@@ -799,6 +1114,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'Packages migrated from a previous register (old SR → new SR).',
                       icon: Icons.history_rounded,
                       color: const Color(0xFF5D4037),
+                      onView: () => _generateOldEntriesReport('view'),
                       onPdf: () => _generateOldEntriesReport('pdf'),
                       onExcel: () => _generateOldEntriesReport('excel'),
                     ),
@@ -824,13 +1140,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'All forfeited goods in this yard.',
                       icon: Icons.gavel_rounded,
                       color: const Color(0xFFC62828),
-                      onView: () => _viewForfeited(
-                          'Forfeited',
-                          'Forfeited Packages (Forfeited Goods)',
-                          'Forfeited On',
-                          () => ref
-                              .read(forfeitedPackageServiceProvider)
-                              .getForfeitedPackages()),
+                      onView: () => _generateForfeitedReport('view'),
                       onPdf: () => _generateForfeitedReport('pdf'),
                       onExcel: () => _generateForfeitedReport('excel'),
                     ),
@@ -839,13 +1149,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Goods abandoned by the consignee.',
                       icon: Icons.inbox_rounded,
                       color: const Color(0xFF8D6E63),
-                      onView: () => _viewForfeited(
-                          'Abandoned',
-                          'Abandoned Packages (Abandoned Goods)',
-                          'Abandoned On',
-                          () => ref
-                              .read(forfeitedPackageServiceProvider)
-                              .getForfeitedBySource('abandoned')),
+                      onView: () => _generateSourceForfeitedReport(
+                          'abandoned', 'Abandoned Packages (Abandoned Goods)', 'view'),
                       onPdf: () => _generateSourceForfeitedReport(
                           'abandoned', 'Abandoned Packages (Abandoned Goods)', 'pdf'),
                       onExcel: () => _generateSourceForfeitedReport(
@@ -856,13 +1161,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Packages routed via "Other" disposition.',
                       icon: Icons.more_horiz_rounded,
                       color: const Color(0xFF5E35B1),
-                      onView: () => _viewForfeited(
-                          'Other',
-                          'Other Packages (Other Goods)',
-                          'Recorded On',
-                          () => ref
-                              .read(forfeitedPackageServiceProvider)
-                              .getForfeitedBySource('other')),
+                      onView: () => _generateSourceForfeitedReport(
+                          'other', 'Other Packages (Other Goods)', 'view'),
                       onPdf: () => _generateSourceForfeitedReport(
                           'other', 'Other Packages (Other Goods)', 'pdf'),
                       onExcel: () => _generateSourceForfeitedReport(
@@ -873,6 +1173,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Packages routed via Re-export disposition.',
                       icon: Icons.flight_takeoff_rounded,
                       color: const Color(0xFF00796B),
+                      onView: () => _generateReexportedReport('view'),
                       onPdf: () => _generateReexportedReport('pdf'),
                       onExcel: () => _generateReexportedReport('excel'),
                     ),
@@ -898,6 +1199,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Forfeited goods sold via tender during the period.',
                       icon: Icons.sell_rounded,
                       color: Colors.teal,
+                      onView: () => _stockRevenueReport('sold', 'view'),
                       onPdf: () => _stockRevenueReport('sold', 'pdf'),
                       onExcel: () => _stockRevenueReport('sold', 'excel'),
                     ),
@@ -907,6 +1209,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'Forfeited goods destroyed in destruction tender during the period.',
                       icon: Icons.local_fire_department_rounded,
                       color: Colors.deepOrange,
+                      onView: () => _stockRevenueReport('destroyed', 'view'),
                       onPdf: () => _stockRevenueReport('destroyed', 'pdf'),
                       onExcel: () => _stockRevenueReport('destroyed', 'excel'),
                     ),
@@ -932,6 +1235,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'Goods in the SR register as at the period start date.',
                       icon: Icons.warehouse_rounded,
                       color: context.colors.primaryGold,
+                      onView: () => _stockRevenueReport('initial', 'view'),
                       onPdf: () => _stockRevenueReport('initial', 'pdf'),
                       onExcel: () => _stockRevenueReport('initial', 'excel'),
                     ),
@@ -941,6 +1245,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'Total goods currently in the SR register.',
                       icon: Icons.inventory_2_rounded,
                       color: context.colors.accentLightBlue,
+                      onView: () => _stockRevenueReport('total', 'view'),
                       onPdf: () => _stockRevenueReport('total', 'pdf'),
                       onExcel: () => _stockRevenueReport('total', 'excel'),
                     ),
@@ -950,6 +1255,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'Goods added during the selected period.',
                       icon: Icons.add_box_rounded,
                       color: context.colors.successGreen,
+                      onView: () => _stockRevenueReport('added', 'view'),
                       onPdf: () => _stockRevenueReport('added', 'pdf'),
                       onExcel: () => _stockRevenueReport('added', 'excel'),
                     ),
@@ -959,6 +1265,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                           'Tender revenue (sold price + taxes) & net stock balance.',
                       icon: Icons.payments_rounded,
                       color: Colors.indigo,
+                      onView: () => _stockRevenueReport('revenue', 'view'),
                       onPdf: () => _stockRevenueReport('revenue', 'pdf'),
                       onExcel: () => _stockRevenueReport('revenue', 'excel'),
                     ),
@@ -992,6 +1299,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Currently held items in warehouses.',
                       icon: Icons.warehouse_rounded,
                       color: const Color(0xFF1565C0),
+                      onView: _viewWarehouseStock,
                       onPdf: _generateWarehouseStockPdf,
                       onExcel: _exportWarehouseStockExcel,
                     ),
@@ -1000,6 +1308,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'All released package entries.',
                       icon: Icons.keyboard_return_rounded,
                       color: const Color(0xFF2E7D32),
+                      onView: _viewReturnedPackages,
                       onPdf: _generateReturnedPdf,
                       onExcel: _exportReturnedExcel,
                     ),
@@ -1008,6 +1317,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Registered warehouses & current occupancy.',
                       icon: Icons.domain_rounded,
                       color: const Color(0xFF6A1B9A),
+                      onView: _viewWarehousesList,
                       onPdf: _generateWarehousesListPdf,
                       onExcel: _exportWarehousesListExcel,
                     ),
@@ -1031,6 +1341,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Outstanding storage charges for held items.',
                       icon: Icons.account_balance_wallet_rounded,
                       color: const Color(0xFFC62828),
+                      onView: _viewStorageCharges,
                       onPdf: _generateStorageChargesPdf,
                       onExcel: _exportStorageChargesExcel,
                     ),
@@ -1039,6 +1350,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Storage charges collected on released items.',
                       icon: Icons.receipt_long_rounded,
                       color: const Color(0xFF388E3C),
+                      onView: _viewReleasedRevenue,
                       onPdf: _generateReleasedRevenuePdf,
                       onExcel: _exportReleasedRevenueExcel,
                     ),
@@ -1062,6 +1374,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'System-wide hold reasons list.',
                       icon: Icons.rule_rounded,
                       color: Colors.orange,
+                      onView: _viewHoldReasons,
                       onPdf: _generateHoldReasonsPdf,
                       onExcel: _exportHoldReasonsExcel,
                     ),
@@ -1070,6 +1383,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       description: 'Package classification rules.',
                       icon: Icons.category_rounded,
                       color: Colors.teal,
+                      onView: _viewCategories,
                       onPdf: _generateCategoriesPdf,
                       onExcel: _exportCategoriesExcel,
                     ),
@@ -1600,7 +1914,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// Audit, Initial Stock and Goods reports. Resolves each item's ACTUAL
   /// outcome (Released / Sold / Destroyed, else its disposition) with the
   /// matching date, plus reason, receipt and value.
-  Future<(List<String>, List<List<String>>)> _goodsData(
+  Future<(List<String>, List<List<String>>, List<String?>)> _goodsData(
       List<PackageModel> packages) async {
     final df = DateFormat('yyyy-MM-dd');
     final money = NumberFormat('#,##0');
@@ -1646,6 +1960,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       'Status', 'Outcome Date', 'Receipt No', 'Value (LKR)', 'Entry Date'
     ];
     final rows = <List<String>>[];
+    final itemIds = <String?>[];
     for (final p in packages) {
       final entry = p.entryDate != null ? df.format(p.entryDate!) : '—';
       final items = p.items.isEmpty ? <PackageItem?>[null] : p.items;
@@ -1691,9 +2006,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           money.format(it?.unitValue ?? p.declaredValue),
           entry,
         ]);
+        itemIds.add(it?.id);
       }
     }
-    return (columns, rows);
+    return (columns, rows, itemIds);
   }
 
   /// Stock & revenue metric reports. [metric] ∈ initial, total, added, sold,
@@ -1727,6 +2043,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       String headline;
       List<String> columns;
       List<List<String>> rows;
+      List<String?> rowItemIds = [];
 
       switch (metric) {
         case 'initial':
@@ -1745,6 +2062,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           final data = await _goodsData(list);
           columns = data.$1;
           rows = data.$2;
+          rowItemIds = data.$3;
           title = metric == 'total'
               ? 'GOODS IN SR REGISTER'
               : metric == 'added'
@@ -1767,6 +2085,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           double totalRev = 0;
 
           rows = [];
+          rowItemIds = [];
           for (final it in soldItems) {
             double tax = 0;
             for (final t in it.appliedTaxes) {
@@ -1788,6 +2107,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 money.format(tax),
                 money.format(it.soldPrice + tax),
               ]);
+              rowItemIds.add(f?.itemId);
             } else if (pkgItems.isNotEmpty) {
               for (final i in pkgItems) {
                 rows.add([
@@ -1799,6 +2119,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   money.format(tax),
                   money.format(it.soldPrice + tax),
                 ]);
+                rowItemIds.add(i.id);
               }
             } else {
               rows.add([
@@ -1810,6 +2131,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 money.format(tax),
                 money.format(it.soldPrice + tax),
               ]);
+              rowItemIds.add(null);
             }
           }
           if (metric == 'sold') {
@@ -1851,6 +2173,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           title = 'GOODS DESTROYED IN DESTRUCTION TENDER';
           columns = ['SR Number', 'Item', 'HS Code', 'Destroyed Date', 'Qty'];
           rows = [];
+          rowItemIds = [];
           for (final it in items) {
             final f = it.forfeited;
             final pkgItems = f?.packageDetails?.items ?? const <PackageItem>[];
@@ -1866,6 +2189,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 it.destroyedAt != null ? df.format(it.destroyedAt!) : '—',
                 '$qty',
               ]);
+              rowItemIds.add(f?.itemId);
             } else if (pkgItems.isNotEmpty) {
               for (final i in pkgItems) {
                 rows.add([
@@ -1875,6 +2199,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   it.destroyedAt != null ? df.format(it.destroyedAt!) : '—',
                   '${i.quantity}',
                 ]);
+                rowItemIds.add(i.id);
               }
             } else {
               rows.add([
@@ -1884,6 +2209,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 it.destroyedAt != null ? df.format(it.destroyedAt!) : '—',
                 '${f?.entryQty ?? '—'}',
               ]);
+              rowItemIds.add(null);
             }
           }
           headline = '${rows.length} goods';
@@ -1950,8 +2276,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Status / Movement', 'Date', 'Value (LKR)'
           ];
           rows = [];
-          for (final r in addedData.$2) {
+          rowItemIds = [];
+          for (var idx = 0; idx < addedData.$2.length; idx++) {
+            final r = addedData.$2[idx];
             rows.add([r[0], r[1], r[2], r[3], r[4], 'ADDED', r[10], r[9]]);
+            rowItemIds.add(addedData.$3[idx]);
           }
           for (final it in soldItems) {
             final f = it.forfeited;
@@ -1965,6 +2294,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               it.soldAt != null ? df.format(it.soldAt!) : '—',
               money.format(it.soldPrice),
             ]);
+            rowItemIds.add(f?.itemId);
           }
           for (final it in destroyedItems) {
             final f = it.forfeited;
@@ -1978,6 +2308,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               it.destroyedAt != null ? df.format(it.destroyedAt!) : '—',
               '—',
             ]);
+            rowItemIds.add(f?.itemId);
           }
           break;
 
@@ -1996,6 +2327,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           subtitle: periodLabel,
           columns: columns,
           rows: rows,
+          rowItemIds: rowItemIds,
           onSavePdf: () => _stockRevenueReport(metric, 'pdf'),
           onExportExcel: () => _stockRevenueReport(metric, 'excel'),
         );
@@ -2126,7 +2458,38 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final dateRange = (_startDate != null && _endDate != null)
           ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
           : 'Full Historical Report';
-      if (format == 'pdf') {
+      final reportData = ReportService()
+          .buildForfeitedReportRows(list, dateHeader: dateHeader);
+      final columns = reportData.$1;
+      final rows = reportData.$2;
+      final itemIds = reportData.$3;
+
+      if (format == 'view') {
+        await _showReportTable(
+          title: title,
+          columns: columns,
+          rows: rows,
+          rowItemIds: itemIds,
+          onSavePdf: () => _showPdfPreview(
+              (_) => ReportService().generateForfeitedPdf(list,
+                  title: title, subTitle: dateRange, dateHeader: dateHeader),
+              '${fileBase}_Report.pdf'),
+          onExportExcel: () {
+            if (!mounted) return;
+            showDialog(
+              context: context,
+              builder: (ctx) => ExcelExportDialog(
+                title: 'Export $key',
+                recordCount: rows.length,
+                fileName: '${fileBase}_Report.xlsx',
+                onExport: () => ReportService()
+                    .exportForfeitedToExcel(list, title: title, dateHeader: dateHeader),
+                onSave: (bytes) => _handleFileSave(bytes, fileBase, 'xlsx'),
+              ),
+            );
+          },
+        );
+      } else if (format == 'pdf') {
         _showPdfPreview(
           (_) => ReportService().generateForfeitedPdf(list,
               title: title, subTitle: dateRange, dateHeader: dateHeader),
@@ -2137,7 +2500,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           context: context,
           builder: (ctx) => ExcelExportDialog(
             title: 'Export $key',
-            recordCount: list.length,
+            recordCount: rows.length,
             fileName: '${fileBase}_Report.xlsx',
             onExport: () => ReportService()
                 .exportForfeitedToExcel(list, title: title, dateHeader: dateHeader),
@@ -2549,7 +2912,44 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ? '${df.format(_startDate!)} to ${df.format(_endDate!)}'
           : 'All time';
 
-      if (format == 'pdf') {
+      if (format == 'view') {
+        await _showReportTable(
+          title: 'Old Entries (Migrated Packages)',
+          subtitle: periodLabel,
+          columns: columns,
+          rows: rows,
+          onSavePdf: () => _showPdfPreview(
+            (fmt) => ReportService().generateStockRevenuePdf(
+              title: 'OLD ENTRIES (MIGRATED PACKAGES)',
+              periodLabel: periodLabel,
+              headline: '${rows.length} migrated packages',
+              columns: columns,
+              rows: rows,
+              format: fmt,
+            ),
+            'Old_Entries_Report.pdf',
+          ),
+          onExportExcel: () {
+            if (!mounted) return;
+            showDialog(
+              context: context,
+              builder: (ctx) => ExcelExportDialog(
+                title: 'Export Old Entries',
+                recordCount: rows.length,
+                fileName: 'Old_Entries_Report.xlsx',
+                onExport: () => ReportService().exportTableToExcel(
+                  title: 'Old Entries (Migrated Packages)',
+                  subTitle: periodLabel,
+                  columns: columns,
+                  rows: rows,
+                ),
+                onSave: (bytes) =>
+                    _handleFileSave(bytes, 'Old_Entries', 'xlsx'),
+              ),
+            );
+          },
+        );
+      } else if (format == 'pdf') {
         _showPdfPreview(
           (fmt) => ReportService().generateStockRevenuePdf(
             title: 'OLD ENTRIES (MIGRATED PACKAGES)',
@@ -2732,17 +3132,19 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
           final dateRangeStr = (_startDate != null && _endDate != null) 
               ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
               : 'Full Historical Audit';
+          final data = await _goodsData(filtered);
 
           showDialog(
             context: context,
             builder: (ctx) => ExcelExportDialog(
               title: 'Export $statusName$whSuffix Inventory Audit',
-              recordCount: filtered.length,
+              recordCount: data.$2.length,
               fileName: '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit.xlsx',
-              onExport: () => ReportService().exportPackagesToExcel(
-                filtered,
+              onExport: () => ReportService().exportTableToExcel(
                 title: '$statusName PACKAGES INVENTORY AUDIT$whSuffix',
                 subTitle: dateRangeStr,
+                columns: data.$1,
+                rows: data.$2,
               ),
               onSave: (bytes) => _handleFileSave(bytes, '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit', 'xlsx'),
             ),
