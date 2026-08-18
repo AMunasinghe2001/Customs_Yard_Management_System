@@ -924,8 +924,10 @@ class ReportService {
     return Uint8List.fromList(excel.encode()!);
   }
 
-  /// Generates a PDF report for hold reasons
-  Future<Uint8List> generateHoldReasonsPdf(List<HoldReasonModel> reasons) async {
+  /// Generates a PDF report of the post status activities, each with the item
+  /// statuses it is offered for.
+  Future<Uint8List> generatePostStatusActivitiesPdf(
+      List<List<String>> rows) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -934,20 +936,17 @@ class ReportService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader('HOLD REASONS CONFIGURATION REPORT', dateStr, 'System Configuration Audit'),
+          _buildHeader('POST STATUS ACTIVITY CONFIGURATION REPORT', dateStr,
+              'System Configuration Audit'),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
             cellAlignment: pw.Alignment.centerLeft,
-            headers: ['Reason Text', 'Description', 'Status'],
-            data: reasons.map((r) => [
-              r.reasonText,
-              r.description ?? '-',
-              r.isActive ? 'ACTIVE' : 'INACTIVE',
-            ]).toList(),
+            headers: ['Activity', 'Applies To Status'],
+            data: rows,
           ),
-          _buildFooter(reasons.length, label: 'Total Configuration Entries:'),
+          _buildFooter(rows.length, label: 'Total Configuration Entries:'),
         ],
       ),
     );
@@ -1029,30 +1028,28 @@ class ReportService {
     return pdf.save();
   }
 
-  /// Exports hold reasons to Excel
-  Future<Uint8List?> exportHoldReasonsToExcel(List<HoldReasonModel> reasons) async {
+  /// Exports the post status activities to Excel.
+  Future<Uint8List?> exportPostStatusActivitiesToExcel(
+      List<List<String>> rows) async {
     var excel = Excel.createExcel();
-    Sheet sheetObject = excel['HoldReasons'];
+    Sheet sheetObject = excel['PostStatusActivities'];
     excel.delete('Sheet1');
 
-    sheetObject.appendRow([TextCellValue('HOLD REASONS CONFIGURATION REPORT')]);
+    sheetObject.appendRow(
+        [TextCellValue('POST STATUS ACTIVITY CONFIGURATION REPORT')]);
     sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
     sheetObject.appendRow([TextCellValue('')]);
 
-    List<String> headers = ['Reason Text', 'Description', 'Status'];
+    List<String> headers = ['Activity', 'Applies To Status'];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
-    
+
     var headerRow = sheetObject.row(3);
     for (var cell in headerRow) {
       if (cell != null) cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
     }
 
-    for (var r in reasons) {
-      sheetObject.appendRow([
-        TextCellValue(r.reasonText),
-        TextCellValue(r.description ?? ''),
-        TextCellValue(r.isActive ? 'Active' : 'Inactive'),
-      ]);
+    for (var r in rows) {
+      sheetObject.appendRow(r.map((c) => TextCellValue(c)).toList());
     }
     return Uint8List.fromList(excel.encode()!);
   }

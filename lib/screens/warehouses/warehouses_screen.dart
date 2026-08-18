@@ -9,6 +9,7 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../core/providers.dart';
+import '../../core/post_status_activities.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
@@ -369,28 +370,21 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                         }),
                         Consumer(builder: (context, ref, _) {
                           final rFilter = ref.watch(warehouseReasonFilterProvider(warehouse.id));
-                          return ref.watch(holdReasonsProvider).when(
-                            loading: () => const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-                            error: (_, __) => const SizedBox.shrink(),
-                            data: (reasons) {
-                              return StyledDropdownButton<String>(
-                                value: rFilter == 'all' ? null : rFilter,
-                                allLabel: 'All Reasons',
-                                icon: Icons.label_outline_rounded,
-                                menuWidth: 320,
-                                options: reasons
-                                    .map((r) => StyledDropdownOption(
-                                        r.reasonText, r.reasonText))
-                                    .toList(),
-                                onChanged: (v) {
-                                  ref
-                                      .read(warehouseReasonFilterProvider(
-                                              warehouse.id)
-                                          .notifier)
-                                      .state = v ?? 'all';
-                                  setState(() => _page = 0);
-                                },
-                              );
+                          return StyledDropdownButton<String>(
+                            value: rFilter == 'all' ? null : rFilter,
+                            allLabel: 'All Activities',
+                            icon: Icons.label_outline_rounded,
+                            menuWidth: 320,
+                            options: kAllPostStatusActivities
+                                .map((a) => StyledDropdownOption(a, a))
+                                .toList(),
+                            onChanged: (v) {
+                              ref
+                                  .read(warehouseReasonFilterProvider(
+                                          warehouse.id)
+                                      .notifier)
+                                  .state = v ?? 'all';
+                              setState(() => _page = 0);
                             },
                           );
                         }),

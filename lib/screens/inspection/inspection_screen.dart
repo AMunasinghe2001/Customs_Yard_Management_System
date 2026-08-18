@@ -10,6 +10,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
+import '../../core/post_status_activities.dart';
 import '../../core/app_session.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
@@ -2173,7 +2174,18 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     .map((s) => StyledDropdownOption(s, s))
                     .toList(),
                 onChanged: (v) {
-                  setState(() => widget.row.status = v!);
+                  setState(() {
+                    final previous = widget.row.status;
+                    widget.row.status = v!;
+                    // Detain and the disposal statuses offer different
+                    // activities — drop selections that no longer apply.
+                    if (postStatusActivitiesFor(previous) !=
+                        postStatusActivitiesFor(widget.row.status)) {
+                      widget.row.selectedReasons
+                        ..clear()
+                        ..add(null);
+                    }
+                  });
                   widget.onChanged();
                 },
               ),
@@ -2319,13 +2331,15 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               error: (_, __) => const SizedBox.shrink()),
         ]),
         const Gap(16),
-        // ── Reasons Section ──
+        // ── Post Status Activity Section ──
+        // Options are driven by the item's Status: `Detain` gets the pending
+        // activities, every other status gets the disposal activities.
         Row(
           children: [
             Icon(Icons.warning_amber_rounded,
                 size: 18, color: context.colors.heldOrange),
             const Gap(8),
-            Text('Hold Reasons',
+            Text('Post Status Activity',
                 style: TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.bold,
@@ -2338,7 +2352,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   widget.onChanged();
                 },
                 icon: const Icon(Icons.add_circle_outline, size: 16),
-                label: const Text('Add Reason',
+                label: const Text('Add Activity',
                     style:
                         TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                 style: TextButton.styleFrom(
@@ -2357,47 +2371,40 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
           spacing: 12,
           runSpacing: 10,
           children: List.generate(widget.row.selectedReasons.length, (rIdx) {
+            final activities = postStatusActivitiesFor(widget.row.status);
             return SizedBox(
               width: 380,
               child: Row(
                 children: [
                   Expanded(
-                    child: ref.watch(holdReasonsProvider).when(
-                          loading: () => const LinearProgressIndicator(),
-                          error: (e, _) => Text('Error loading reasons',
-                              style: TextStyle(
-                                  color: context.colors.dangerRed,
-                                  fontSize: 11)),
-                          data: (reasons) => StyledDropdownFormField<String>(
-                            label: 'Reason ${rIdx + 1} *',
-                            menuWidth: 300,
-                            fillColor: context.colors.cardDark,
-                            value: widget.row.selectedReasons[rIdx],
-                            validator: (v) =>
-                                widget.showValidationErrors && v == null
-                                    ? 'Required'
-                                    : null,
-                            options: reasons.map((r) {
-                              final isSelectedSomewhereElse = widget
-                                  .row.selectedReasons
-                                  .any((res) => res == r.reasonText);
-                              final isCurrentSelection =
-                                  widget.row.selectedReasons[rIdx] ==
-                                      r.reasonText;
-                              return StyledDropdownOption(
-                                r.reasonText,
-                                r.reasonText,
-                                enabled: !isSelectedSomewhereElse ||
-                                    isCurrentSelection,
-                              );
-                            }).toList(),
-                            onChanged: (v) {
-                              setState(
-                                  () => widget.row.selectedReasons[rIdx] = v);
-                              widget.onChanged();
-                            },
-                          ),
-                        ),
+                    child: StyledDropdownFormField<String>(
+                      label: 'Activity ${rIdx + 1} *',
+                      menuWidth: 300,
+                      fillColor: context.colors.cardDark,
+                      value: activities.contains(widget.row.selectedReasons[rIdx])
+                          ? widget.row.selectedReasons[rIdx]
+                          : null,
+                      validator: (v) =>
+                          widget.showValidationErrors && v == null
+                              ? 'Required'
+                              : null,
+                      options: activities.map((a) {
+                        final isSelectedSomewhereElse =
+                            widget.row.selectedReasons.any((res) => res == a);
+                        final isCurrentSelection =
+                            widget.row.selectedReasons[rIdx] == a;
+                        return StyledDropdownOption(
+                          a,
+                          a,
+                          enabled:
+                              !isSelectedSomewhereElse || isCurrentSelection,
+                        );
+                      }).toList(),
+                      onChanged: (v) {
+                        setState(() => widget.row.selectedReasons[rIdx] = v);
+                        widget.onChanged();
+                      },
+                    ),
                   ),
                   if (widget.row.selectedReasons.length > 1)
                     Padding(
@@ -2412,7 +2419,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                         },
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
-                        tooltip: 'Remove reason',
+                        tooltip: 'Remove activity',
                       ),
                     ),
                 ],

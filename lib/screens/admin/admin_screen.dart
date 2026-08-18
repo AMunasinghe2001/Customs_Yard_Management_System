@@ -29,7 +29,7 @@ class AdminScreen extends ConsumerWidget {
     return AppShell(
       currentRoute: '/admin/panel',
       child: DefaultTabController(
-        length: 6,
+        length: 5,
         initialIndex: initialIndex,
         child: Scaffold(
           backgroundColor: context.colors.scaffoldBg,
@@ -99,9 +99,6 @@ class AdminScreen extends ConsumerWidget {
                                 icon: Icon(Icons.payments_rounded, size: 20),
                                 text: 'Storage Charges'),
                             Tab(
-                                icon: Icon(Icons.list_alt_rounded, size: 20),
-                                text: 'Hold Reasons'),
-                            Tab(
                                 icon: Icon(Icons.history_toggle_off_rounded,
                                     size: 20),
                                 text: 'Logs'),
@@ -122,7 +119,6 @@ class AdminScreen extends ConsumerWidget {
                 _WarehousesTab(),
                 _CategoriesTab(),
                 _StorageChargesTab(),
-                _HoldReasonsTab(),
                 _LogsTab()
               ])),
             ],
@@ -2402,248 +2398,5 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
         ),
       ),
     );
-  }
-}
-
-// ── Hold Reasons Tab ──────────────────────────────────────────
-
-class _HoldReasonsTab extends ConsumerWidget {
-  const _HoldReasonsTab();
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final reasons = ref.watch(holdReasonsProvider);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [
-          Text('Hold Reasons',
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 24,
-                  fontWeight: FontWeight.w700)),
-          const Spacer(),
-          ElevatedButton.icon(
-              onPressed: () => _showAddReasonDialog(context, ref),
-              icon: const Icon(Icons.add, size: 18),
-              label: const Text('Add Reason')),
-        ]),
-        const Gap(16),
-        Expanded(
-          child: reasons.when(
-            loading: () => Center(
-                child: CircularProgressIndicator(
-                    color: context.colors.primaryGold)),
-            error: (e, _) => Center(
-                child: Text('Error: $e',
-                    style: TextStyle(color: context.colors.dangerRed))),
-            data: (list) => Container(
-              width: double.infinity,
-              decoration: BoxDecoration(
-                  color: context.colors.cardDark,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.colors.borderColor)),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(14),
-                child: DataTable2(
-                  horizontalMargin: 24,
-                  columnSpacing: 20,
-                  empty: const EmptyTableState(
-                      icon: Icons.label_important_outline_rounded,
-                      message: 'No hold reasons yet',
-                      subtitle: 'Add a hold reason to use it on the SR form.'),
-                  headingRowColor:
-                      WidgetStateProperty.all(context.colors.surfaceDark),
-                  columns: [
-                    DataColumn2(
-                        label: Text('Reason Text',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.M),
-                    DataColumn2(
-                        label: Text('Description',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.L),
-                    DataColumn2(
-                        label: Text('Actions',
-                            style: TextStyle(
-                                color: context.colors.primaryGold,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                        size: ColumnSize.S,
-                        fixedWidth: 100),
-                  ],
-                  rows: list
-                      .map((r) => DataRow(cells: [
-                            DataCell(TooltipText(r.reasonText,
-                                style: TextStyle(
-                                    color: context.colors.textPrimary,
-                                    fontWeight: FontWeight.w500))),
-                            DataCell(TooltipText(r.description ?? '—',
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                                style: TextStyle(
-                                    color: context.colors.textMuted,
-                                    fontSize: 12))),
-                            DataCell(Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                IconButton(
-                                  icon: Icon(Icons.edit_rounded,
-                                      color: context.colors.primaryGold,
-                                      size: 18),
-                                  onPressed: () =>
-                                      _showEditReasonDialog(context, ref, r),
-                                ),
-                                IconButton(
-                                  icon: Icon(Icons.delete_outline_rounded,
-                                      color: context.colors.dangerRed,
-                                      size: 18),
-                                  onPressed: () async {
-                                    final ok = await showDialog<bool>(
-                                        context: context,
-                                        builder: (ctx) => AlertDialog(
-                                              title:
-                                                  const Text('Delete Reason?'),
-                                              content: Text(
-                                                  'Delete "${r.reasonText}"?'),
-                                              actions: [
-                                                TextButton(
-                                                    onPressed: () =>
-                                                        Navigator.pop(
-                                                            context, false),
-                                                    child:
-                                                        const Text('Cancel')),
-                                                ElevatedButton(
-                                                    style: ElevatedButton
-                                                        .styleFrom(
-                                                            backgroundColor:
-                                                                context.colors
-                                                                    .dangerRed,
-                                                            foregroundColor:
-                                                                Colors.white),
-                                                    onPressed: () =>
-                                                        Navigator.pop(
-                                                            context, true),
-                                                    child:
-                                                        const Text('Delete')),
-                                              ],
-                                            ));
-                                    if (ok == true) {
-                                      await ref
-                                          .read(holdReasonServiceProvider)
-                                          .deleteReason(r.id);
-                                      ref.invalidate(holdReasonsProvider);
-                                    }
-                                  },
-                                ),
-                              ],
-                            )),
-                          ]))
-                      .toList(),
-                ),
-              ),
-            )
-                .animate()
-                .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
-                .fadeIn(),
-          ),
-        ),
-      ]),
-    );
-  }
-
-  void _showAddReasonDialog(BuildContext context, WidgetRef ref) {
-    final nameC = TextEditingController();
-    final descC = TextEditingController();
-    showDialog(
-        context: context,
-        builder: (ctx) => StyledFormDialog(
-              label: 'Hold Reason',
-              title: 'Add Hold Reason',
-              icon: Icons.list_alt_rounded,
-              width: 440,
-              child: StyledFormSection(
-                title: 'Reason Details',
-                icon: Icons.label_important_outline_rounded,
-                children: [
-                  TextField(
-                      controller: nameC,
-                      decoration:
-                          const InputDecoration(labelText: 'Reason Text *')),
-                  TextField(
-                      controller: descC,
-                      decoration:
-                          const InputDecoration(labelText: 'Description'),
-                      maxLines: 2),
-                ],
-              ),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
-                StyledDialogPrimaryButton(
-                    labelText: 'Add Reason',
-                    icon: Icons.add_rounded,
-                    onPressed: () async {
-                      if (nameC.text.trim().isEmpty) return;
-                      await ref.read(holdReasonServiceProvider).addReason(
-                          nameC.text.trim(),
-                          descC.text.trim().isEmpty ? null : descC.text.trim());
-                      ref.invalidate(holdReasonsProvider);
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    }),
-              ],
-            ));
-  }
-
-  void _showEditReasonDialog(
-      BuildContext context, WidgetRef ref, HoldReasonModel reason) {
-    final nameC = TextEditingController(text: reason.reasonText);
-    final descC = TextEditingController(text: reason.description);
-    showDialog(
-        context: context,
-        builder: (ctx) => StyledFormDialog(
-              label: 'Hold Reason',
-              title: 'Edit Hold Reason',
-              icon: Icons.list_alt_rounded,
-              width: 440,
-              child: StyledFormSection(
-                title: 'Reason Details',
-                icon: Icons.label_important_outline_rounded,
-                children: [
-                  TextField(
-                      controller: nameC,
-                      decoration:
-                          const InputDecoration(labelText: 'Reason Text *')),
-                  TextField(
-                      controller: descC,
-                      decoration:
-                          const InputDecoration(labelText: 'Description'),
-                      maxLines: 2),
-                ],
-              ),
-              actions: [
-                TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Cancel')),
-                StyledDialogPrimaryButton(
-                    labelText: 'Save Changes',
-                    icon: Icons.save_rounded,
-                    onPressed: () async {
-                      if (nameC.text.trim().isEmpty) return;
-                      await ref.read(holdReasonServiceProvider).updateReason(
-                          reason.id,
-                          nameC.text.trim(),
-                          descC.text.trim().isEmpty ? null : descC.text.trim());
-                      ref.invalidate(holdReasonsProvider);
-                      if (ctx.mounted) Navigator.pop(ctx);
-                    }),
-              ],
-            ));
   }
 }

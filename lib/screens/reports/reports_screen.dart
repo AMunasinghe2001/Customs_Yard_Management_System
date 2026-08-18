@@ -9,6 +9,7 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
+import '../../core/post_status_activities.dart';
 import '../../services/report_service.dart';
 import '../../models/models.dart';
 import '../../widgets/print_barcode_dialog.dart';
@@ -955,22 +956,32 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-  Future<void> _viewHoldReasons() async {
-    const key = 'Hold Reasons_view';
+  /// The configured post status activities as report rows: the activity and
+  /// the item statuses it is offered for.
+  List<List<String>> _postStatusActivityRows() =>
+      kAllPostStatusActivities.map((a) {
+        final statuses = <String>[
+          if (kDetainActivities.contains(a)) 'Detain',
+          if (kDisposalActivities.contains(a)) 'Forfeit / Abandoned / Other',
+        ];
+        return [a, statuses.join(', ')];
+      }).toList();
+
+  Future<void> _viewPostStatusActivities() async {
+    const key = 'Post Status Activity_view';
     _setLoading(key, true);
     try {
-      final reasons = await ref.read(holdReasonServiceProvider).getReasons();
-      if (reasons.isEmpty) {
+      final rows = _postStatusActivityRows();
+      if (rows.isEmpty) {
         _showNoDataMessage();
         return;
       }
-      final rows = reasons.map((r) => [r.reasonText, r.description ?? '—', r.isActive ? 'ACTIVE' : 'INACTIVE']).toList();
       _showReportTable(
-        title: 'Hold Reasons List',
-        columns: ['Reason Text', 'Description', 'Status'],
+        title: 'Post Status Activity List',
+        columns: ['Activity', 'Applies To Status'],
         rows: rows,
-        onSavePdf: _generateHoldReasonsPdf,
-        onExportExcel: _exportHoldReasonsExcel,
+        onSavePdf: _generatePostStatusActivitiesPdf,
+        onExportExcel: _exportPostStatusActivitiesExcel,
         showDetailsButton: false,
       );
     } catch (e) {
@@ -1370,13 +1381,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   childAspectRatio: 2.3,
                   children: [
                     _buildReportCard(
-                      title: 'Hold Reasons',
-                      description: 'System-wide hold reasons list.',
+                      title: 'Post Status Activity',
+                      description: 'System-wide post status activity list.',
                       icon: Icons.rule_rounded,
                       color: Colors.orange,
-                      onView: _viewHoldReasons,
-                      onPdf: _generateHoldReasonsPdf,
-                      onExcel: _exportHoldReasonsExcel,
+                      onView: _viewPostStatusActivities,
+                      onPdf: _generatePostStatusActivitiesPdf,
+                      onExcel: _exportPostStatusActivitiesExcel,
                     ),
                     _buildReportCard(
                       title: 'Item Categories',
@@ -3158,18 +3169,18 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     }
   }
 
-  Future<void> _generateHoldReasonsPdf() async {
-    const key = 'Hold Reasons_pdf';
+  Future<void> _generatePostStatusActivitiesPdf() async {
+    const key = 'Post Status Activity_pdf';
     _setLoading(key, true);
     try {
-      final reasons = await ref.read(holdReasonServiceProvider).getReasons();
-      if (reasons.isEmpty) {
+      final rows = _postStatusActivityRows();
+      if (rows.isEmpty) {
         _showNoDataMessage();
         return;
       }
       _showPdfPreview(
-        (format) => ReportService().generateHoldReasonsPdf(reasons),
-        'Hold_Reasons_Audit.pdf',
+        (format) => ReportService().generatePostStatusActivitiesPdf(rows),
+        'Post_Status_Activity_Audit.pdf',
       );
     } catch (e) {
       _showError(e.toString());
@@ -3178,25 +3189,27 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     }
   }
 
-  Future<void> _exportHoldReasonsExcel() async {
-    const key = 'Hold Reasons_excel';
+  Future<void> _exportPostStatusActivitiesExcel() async {
+    const key = 'Post Status Activity_excel';
     _setLoading(key, true);
     try {
-      final reasons = await ref.read(holdReasonServiceProvider).getReasons();
-      if (reasons.isEmpty) {
+      final rows = _postStatusActivityRows();
+      if (rows.isEmpty) {
         _showNoDataMessage();
         return;
       }
-      
+
       if (mounted) {
         showDialog(
           context: context,
           builder: (ctx) => ExcelExportDialog(
-            title: 'Export Hold Reasons',
-            recordCount: reasons.length,
-            fileName: 'Hold_Reasons_Audit.xlsx',
-            onExport: () => ReportService().exportHoldReasonsToExcel(reasons),
-            onSave: (bytes) => _handleFileSave(bytes, 'Hold_Reasons_Audit', 'xlsx'),
+            title: 'Export Post Status Activities',
+            recordCount: rows.length,
+            fileName: 'Post_Status_Activity_Audit.xlsx',
+            onExport: () =>
+                ReportService().exportPostStatusActivitiesToExcel(rows),
+            onSave: (bytes) =>
+                _handleFileSave(bytes, 'Post_Status_Activity_Audit', 'xlsx'),
           ),
         );
       }

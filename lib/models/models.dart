@@ -1910,29 +1910,3 @@ class DisposalTaxModel {
     };
   }
 }
-
-class HoldReasonModel {
-  final String id;
-  final String reasonText;
-  final String? description;
-  final bool isActive;
-  final DateTime createdAt;
-
-  const HoldReasonModel({
-    required this.id,
-    required this.reasonText,
-    this.description,
-    this.isActive = true,
-    required this.createdAt,
-  });
-
-  factory HoldReasonModel.fromJson(Map<String, dynamic> json) {
-    return HoldReasonModel(
-      id: json['id'] as String,
-      reasonText: json['reason_text'] as String,
-      description: json['description'] as String?,
-      isActive: json['is_active'] as bool? ?? true,
-      createdAt: DateTime.parse(json['created_at'] as String),
-    );
-  }
-}

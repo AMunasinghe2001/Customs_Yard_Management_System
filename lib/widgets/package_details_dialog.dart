@@ -2,7 +2,6 @@ import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart'
     show
         Wrap,
-        LinearProgressIndicator,
         RoundedRectangleBorder,
         Colors,
         Icons,
@@ -92,6 +91,7 @@ import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 import '../core/providers.dart';
+import '../core/post_status_activities.dart';
 import 'styled_dropdown.dart';
 import 'one_tap_date_picker.dart';
 
@@ -1484,7 +1484,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               _DetailItem(
                                                 icon: Icons
                                                     .warning_amber_rounded,
-                                                label: 'Hold Reasons',
+                                                label: 'Post Status Activity',
                                                 value: highlightedItem
                                                     .reasons!,
                                               ),
@@ -1616,7 +1616,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               _DetailItem(
                                                 icon: Icons
                                                     .warning_amber_rounded,
-                                                label: 'Hold Reasons',
+                                                label: 'Post Status Activity',
                                                 value:
                                                     highlightedItem.reasons!,
                                               ),
@@ -3827,7 +3827,7 @@ class _NoEntryItemCard extends StatelessWidget {
           if (item.reasons?.isNotEmpty == true)
             _DetailItem(
               icon: Icons.warning_amber_rounded,
-              label: 'Hold Reasons',
+              label: 'Post Status Activity',
               value: item.reasons!,
             ),
         ],
@@ -4983,7 +4983,18 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                       .map((s) => StyledDropdownOption(s, s))
                       .toList(),
                   onChanged: (v) {
-                    setState(() => widget.row.status = v!);
+                    setState(() {
+                      final previous = widget.row.status;
+                      widget.row.status = v!;
+                      // Detain and the disposal statuses offer different
+                      // activities — drop selections that no longer apply.
+                      if (postStatusActivitiesFor(previous) !=
+                          postStatusActivitiesFor(widget.row.status)) {
+                        widget.row.selectedReasons
+                          ..clear()
+                          ..add(null);
+                      }
+                    });
                     widget.onChanged();
                   },
                 ),
@@ -5075,7 +5086,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
               Icon(Icons.warning_amber_rounded,
                   size: 18, color: context.colors.heldOrange),
               const Gap(8),
-              Text('Hold Reasons',
+              Text('Post Status Activity',
                   style: material.TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
@@ -5088,7 +5099,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                     widget.onChanged();
                   },
                   icon: const Icon(Icons.add_circle_outline, size: 16),
-                  label: const Text('Add Reason',
+                  label: const Text('Add Activity',
                       style:
                           TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
                   style: TextButton.styleFrom(
@@ -5108,34 +5119,30 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
             spacing: 12,
             runSpacing: 10,
             children: List.generate(widget.row.selectedReasons.length, (rIdx) {
+              final activities = postStatusActivitiesFor(widget.row.status);
               return SizedBox(
                 width: 380,
                 child: Row(
                   children: [
                     Expanded(
-                      child: ref.watch(holdReasonsProvider).when(
-                            loading: () => const LinearProgressIndicator(),
-                            error: (e, _) => Text('Error loading reasons',
-                                style: TextStyle(
-                                    color: context.colors.dangerRed,
-                                    fontSize: 11)),
-                            data: (reasons) => StyledDropdownFormField<String>(
-                              label: 'Reason ${rIdx + 1} *',
-                              menuWidth: 300,
-                              fillColor: context.colors.cardDark,
-                              value: widget.row.selectedReasons[rIdx],
-                              validator: (v) => v == null ? 'Required' : null,
-                              options: reasons
-                                  .map((r) => StyledDropdownOption(
-                                      r.reasonText, r.reasonText))
-                                  .toList(),
-                              onChanged: (v) {
-                                setState(
-                                    () => widget.row.selectedReasons[rIdx] = v);
-                                widget.onChanged();
-                              },
-                            ),
-                          ),
+                      child: StyledDropdownFormField<String>(
+                        label: 'Activity ${rIdx + 1} *',
+                        menuWidth: 300,
+                        fillColor: context.colors.cardDark,
+                        value:
+                            activities.contains(widget.row.selectedReasons[rIdx])
+                                ? widget.row.selectedReasons[rIdx]
+                                : null,
+                        validator: (v) => v == null ? 'Required' : null,
+                        options: activities
+                            .map((a) => StyledDropdownOption(a, a))
+                            .toList(),
+                        onChanged: (v) {
+                          setState(
+                              () => widget.row.selectedReasons[rIdx] = v);
+                          widget.onChanged();
+                        },
+                      ),
                     ),
                     if (widget.row.selectedReasons.length > 1)
                       Padding(
@@ -5150,7 +5157,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                           },
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
-                          tooltip: 'Remove reason',
+                          tooltip: 'Remove activity',
                         ),
                       ),
                   ],

@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/providers.dart';
+import '../../core/post_status_activities.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
@@ -529,30 +530,19 @@ class _AbandonedPackagesScreenState
                             constraints: const BoxConstraints(),
                           ),
                         const SizedBox(width: 8),
-                        ref.watch(holdReasonsProvider).when(
-                              loading: () => const SizedBox(
-                                  width: 14,
-                                  height: 14,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2)),
-                              error: (_, __) => const SizedBox.shrink(),
-                              data: (reasons) {
-                                return StyledDropdownButton<String>(
-                                  value: rFilter == 'all' ? null : rFilter,
-                                  allLabel: 'All Reasons',
-                                  icon: Icons.label_outline_rounded,
-                                  menuWidth: 320,
-                                  options: reasons
-                                      .map((r) => StyledDropdownOption(
-                                          r.reasonText, r.reasonText))
-                                      .toList(),
-                                  onChanged: (v) => ref
-                                      .read(abandonedPackageReasonFilterProvider
-                                          .notifier)
-                                      .state = v ?? 'all',
-                                );
-                              },
-                            ),
+                        StyledDropdownButton<String>(
+                          value: rFilter == 'all' ? null : rFilter,
+                          allLabel: 'All Activities',
+                          icon: Icons.label_outline_rounded,
+                          menuWidth: 320,
+                          options: kAllPostStatusActivities
+                              .map((a) => StyledDropdownOption(a, a))
+                              .toList(),
+                          onChanged: (v) => ref
+                              .read(abandonedPackageReasonFilterProvider
+                                  .notifier)
+                              .state = v ?? 'all',
+                        ),
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,

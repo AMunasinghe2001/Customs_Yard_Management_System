@@ -13,7 +13,6 @@ final warehouseServiceProvider = Provider((ref) => WarehouseService());
 final adminServiceProvider = Provider((ref) => AdminService());
 final auditLogServiceProvider = Provider((ref) => AuditLogService());
 final packageCategoryServiceProvider = Provider((ref) => PackageCategoryService());
-final holdReasonServiceProvider = Provider((ref) => HoldReasonService());
 final forfeitedPackageServiceProvider = Provider((ref) => ForfeitedPackageService());
 final tendersServiceProvider = Provider((ref) => TendersService());
 final disposalServiceProvider = Provider((ref) => DisposalService());
@@ -108,26 +107,6 @@ final categoryChangeTriggerProvider = StreamProvider<int>((ref) async* {
       schema: 'public',
       table: 'package_categories',
       callback: (_) => ref.read(categoriesRefreshTriggerProvider.notifier).trigger(),
-    )
-    ..subscribe();
-  ref.onDispose(() => supabase.removeChannel(channel));
-});
-
-// ── Realtime: Hold Reasons ──────────────────────────────────────
-// So adding/editing a hold reason in one session appears in every other
-// session without a manual refresh (Admin Panel + SR-form reason pickers).
-final holdReasonsRefreshTriggerProvider =
-    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
-final holdReasonsChangeTriggerProvider = StreamProvider<int>((ref) async* {
-  final trigger = ref.watch(holdReasonsRefreshTriggerProvider);
-  yield trigger;
-  final channel = supabase.channel('hold-reasons-realtime')
-    ..onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'hold_reasons',
-      callback: (_) =>
-          ref.read(holdReasonsRefreshTriggerProvider.notifier).trigger(),
     )
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
@@ -401,11 +380,6 @@ final allLogsProvider = FutureProvider<List<AuditLogModel>>((ref) async {
 final packageCategoriesProvider = FutureProvider<List<PackageCategory>>((ref) async {
   ref.watch(categoryChangeTriggerProvider);
   return ref.read(packageCategoryServiceProvider).getCategories();
-});
-
-final holdReasonsProvider = FutureProvider<List<HoldReasonModel>>((ref) async {
-  ref.watch(holdReasonsChangeTriggerProvider);
-  return ref.read(holdReasonServiceProvider).getReasons();
 });
 
 // ── Forfeited Packages & Tenders Providers ──────────────────
