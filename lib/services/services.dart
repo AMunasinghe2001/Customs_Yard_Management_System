@@ -3556,6 +3556,56 @@ class DisposalService {
     return byRound;
   }
 
+  /// ALL forfeited-package rows with their package/item details, unfiltered by
+  /// any work-queue rule (unlike [getForfeitedPackages], which hides tendered /
+  /// requested / sold rows). Reporting needs the complete history.
+  Future<List<ForfeitedPackageModel>> getAllForfeitedForReports() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .order('forfeited_at', ascending: false));
+    return (data as List)
+        .map((e) => ForfeitedPackageModel.fromJson(e))
+        .toList();
+  }
+
+  /// Every valuation ever set for a package, oldest first:
+  /// `[initial, 2nd, 3rd, final]`. The first entry is the Valuation
+  /// Directorate's INITIAL valuation (`disposal_request_items.valuation_cost`);
+  /// each later entry is one `tender_revaluations` round, ordered by
+  /// `created_at`. Keyed by `forfeited_package_id`.
+  ///
+  /// Used by the Executive Office valuation reports; the list can be shorter
+  /// than 4 (not every package is re-valued) and callers pad/trim as needed.
+  Future<Map<String, List<double>>> getValuationChains() async {
+    final chains = <String, List<double>>{};
+
+    // 1. Initial valuation — one row per disposal request item.
+    final initial = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_request_items')
+        .select('forfeited_package_id, valuation_cost'));
+    for (final e in (initial as List)) {
+      final id = e['forfeited_package_id']?.toString();
+      final cost = (e['valuation_cost'] as num?)?.toDouble();
+      if (id == null || cost == null) continue;
+      chains.putIfAbsent(id, () => []).add(cost);
+    }
+
+    // 2. Re-valuations — one per unsold tender round, oldest first.
+    final revals = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_revaluations')
+        .select('forfeited_package_id, valuation_cost, created_at')
+        .order('created_at', ascending: true));
+    for (final e in (revals as List)) {
+      final id = e['forfeited_package_id']?.toString();
+      final cost = (e['valuation_cost'] as num?)?.toDouble();
+      if (id == null || cost == null) continue;
+      chains.putIfAbsent(id, () => []).add(cost);
+    }
+    return chains;
+  }
+
   /// Set / replace the Valuation Directorate's re-valuation for ONE tender round.
   Future<void> saveTenderRevaluation(
       String forfeitedPackageId, String tenderSaleId, double valuationCost,

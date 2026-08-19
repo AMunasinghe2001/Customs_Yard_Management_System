@@ -113,9 +113,9 @@ class HomeScreen extends ConsumerWidget {
                     )),
                     const Gap(24),
                     Flexible(child: _RoleCard(
-                      icon: Icons.workspace_premium_rounded,
-                      title: 'Director General’s Office',
-                      subtitle: 'DG / ADG · generate & print\nany yard’s reports',
+                      icon: Icons.shield_moon_rounded,
+                      title: 'High Panel Officers',
+                      subtitle: 'DG / ADG · reports, valuations\n& tender committees',
                       accentColor: AppTheme.executiveTeal,
                       onLogin: (ctx) => ctx.go('/executive/login'),
                       onSignup: (ctx) => ctx.go('/executive/signup'),

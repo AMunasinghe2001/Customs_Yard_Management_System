@@ -1170,6 +1170,25 @@ class TenderBidModel {
       );
 }
 
+/// How many bid-driven tender rounds a package gets after its first
+/// (valuation-driven) attempt. Once these are exhausted and it is still
+/// unsold, it goes to the High Panel Officers' Tender Committees.
+const int kMaxBidTenderRounds = 3;
+
+/// Human label for a tender attempt, 1-based.
+///
+/// Attempt 1 is the **Valuation Tender** — its price comes from the Valuation
+/// Directorate's Pending Valuation, not from bids, so it is deliberately NOT
+/// called "Tender 1". Attempts 2, 3, 4 are **Tender 1, 2, 3** — each priced
+/// from the previous round's unsold bids. Anything beyond that is a High Panel
+/// committee round.
+String tenderRoundLabel(int attempt) {
+  if (attempt <= 1) return 'Valuation Tender';
+  final n = attempt - 1;
+  if (n <= kMaxBidTenderRounds) return 'Tender $n';
+  return 'Committee Tender ${n - kMaxBidTenderRounds}';
+}
+
 /// A fresh valuation the Valuation Directorate sets for an unsold tender
 /// package, per tender round. Central Disposal reads it before re-tendering.
 class TenderRevaluationModel {

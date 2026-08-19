@@ -95,8 +95,9 @@ class _CommitteeValuationCell extends StatelessWidget {
 final _committeeSearchProvider = StateProvider<String>((ref) => '');
 final _committeeYardProvider = StateProvider<String?>((ref) => null); // null=all
 
-/// DG Office tab: tender packages that have gone unsold >3 times (≥4 attempts).
-/// The DG appoints a 5-member committee for each.
+/// High Panel tab: packages still unsold after the Valuation Tender plus all
+/// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The DG appoints a
+/// 5-member committee for each; the ADG then sets that committee's valuation.
 class TenderCommitteeTab extends ConsumerWidget {
   const TenderCommitteeTab({super.key});
 
@@ -125,7 +126,7 @@ class TenderCommitteeTab extends ConsumerWidget {
             const Gap(10),
             Expanded(
               child: Text(
-                  'Packages unsold more than 3 times — appoint a 5-member committee',
+                  'Packages still unsold after Tender 3 — appoint a 5-member committee',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style:
@@ -211,7 +212,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                       minWidth: 1080,
                       empty: const EmptyTableState(
                           message:
-                              'No packages unsold more than 3 times yet'),
+                              'No packages unsold after Tender 3 yet'),
                       headingRowColor:
                           WidgetStateProperty.all(context.colors.surfaceDark),
                       columns: const [
@@ -238,6 +239,10 @@ class TenderCommitteeTab extends ConsumerWidget {
                             label: Center(child: Text('Committee')),
                             size: ColumnSize.S,
                             fixedWidth: 175),
+                        DataColumn2(
+                            label: Center(child: Text('Committee Value')),
+                            size: ColumnSize.S,
+                            fixedWidth: 150),
                         DataColumn2(
                             label: Center(child: Text('Details')),
                             size: ColumnSize.S,
@@ -314,6 +319,12 @@ class TenderCommitteeTab extends ConsumerWidget {
                                     info: info, existing: committee),
                               ),
                             ),
+                          )),
+                          // ADG sets the valuation for the committee's tender
+                          // round; disabled until the DG appoints a committee.
+                          DataCell(Center(
+                            child: _CommitteeRoundValueCell(
+                                info: info, qty: qty, hasCommittee: count > 0),
                           )),
                           DataCell(Center(
                             child: IconButton(
@@ -632,6 +643,284 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Colors.white))
               : const Text('Save Committee'),
+        ),
+      ],
+    );
+  }
+}
+
+/// The committee round's valuation: shows the amount the ADG set for the
+/// package's CURRENT tender round, or a button to set it.
+///
+/// It writes to the same `tender_revaluations` table (keyed by
+/// `tender_sale_id`) that the Valuation Directorate uses for Tender 1-3, so a
+/// committee valuation continues the very same chain the DG's valuation
+/// reports read — no separate table, no separate report.
+class _CommitteeRoundValueCell extends ConsumerWidget {
+  final ReTenderSaleInfo info;
+  final int? qty;
+  final bool hasCommittee;
+  const _CommitteeRoundValueCell({
+    required this.info,
+    required this.qty,
+    required this.hasCommittee,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = AppTheme.executiveTeal;
+    final round = info.latestSale;
+    if (round == null) {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    // Only the ADG sets committee valuations; the DG appoints the members.
+    final profile = ref.watch(currentProfileProvider);
+    final isAdg = (profile?.jobRole ?? '').toUpperCase() == 'ADG';
+
+    final revals =
+        ref.watch(tenderRevaluationsProvider(info.forfeited.id)).valueOrNull ??
+            const <String, TenderRevaluationModel>{};
+    final existing = revals[round.id];
+    final fmt = NumberFormat('#,##0');
+    final effQty = (qty != null && qty! > 0) ? qty! : 1;
+
+    if (existing != null) {
+      return InkWell(
+        onTap: isAdg
+            ? () => showDialog(
+                  context: context,
+                  builder: (_) => _CommitteeValuationDialog(
+                      info: info, qty: effQty, existing: existing),
+                )
+            : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('LKR ${fmt.format(existing.valuationCost * effQty)}',
+                style: TextStyle(
+                    color: context.colors.successGreen,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 12)),
+            Text('@ ${fmt.format(existing.valuationCost)} × $effQty',
+                style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+          ],
+        ),
+      );
+    }
+
+    if (!isAdg) {
+      return Text('Not set',
+          style: TextStyle(
+              color: context.colors.textMuted,
+              fontSize: 11,
+              fontStyle: FontStyle.italic));
+    }
+
+    return FilledButton.icon(
+      style: FilledButton.styleFrom(
+          backgroundColor: hasCommittee ? accent : context.colors.textMuted,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          visualDensity: VisualDensity.compact),
+      icon: const Icon(Icons.price_change_rounded, size: 15),
+      label: const Text('Set Value', style: TextStyle(fontSize: 12)),
+      // The committee must exist before its valuation is meaningful.
+      onPressed: !hasCommittee
+          ? null
+          : () => showDialog(
+                context: context,
+                builder: (_) =>
+                    _CommitteeValuationDialog(info: info, qty: effQty),
+              ),
+    );
+  }
+}
+
+/// ADG-only: set the valuation for a committee package's current tender round.
+class _CommitteeValuationDialog extends ConsumerStatefulWidget {
+  final ReTenderSaleInfo info;
+  final int qty;
+  final TenderRevaluationModel? existing;
+  const _CommitteeValuationDialog({
+    required this.info,
+    required this.qty,
+    this.existing,
+  });
+  @override
+  ConsumerState<_CommitteeValuationDialog> createState() =>
+      _CommitteeValuationDialogState();
+}
+
+class _CommitteeValuationDialogState
+    extends ConsumerState<_CommitteeValuationDialog> {
+  final _costCtrl = TextEditingController();
+  final _noteCtrl = TextEditingController();
+  bool _saving = false;
+
+  static final _money = NumberFormat('#,##0.##');
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.existing;
+    if (e != null) {
+      _costCtrl.text = e.valuationCost == e.valuationCost.roundToDouble()
+          ? e.valuationCost.toInt().toString()
+          : e.valuationCost.toString();
+      _noteCtrl.text = e.note ?? '';
+    }
+    _costCtrl.addListener(() {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _costCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final cost = double.tryParse(_costCtrl.text.trim());
+    if (cost == null || cost <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Enter a valid valuation amount'),
+          backgroundColor: context.colors.dangerRed));
+      return;
+    }
+    final round = widget.info.latestSale;
+    if (round == null) return;
+    setState(() => _saving = true);
+    try {
+      await ref.read(disposalServiceProvider).saveTenderRevaluation(
+            widget.info.forfeited.id,
+            round.id,
+            cost,
+            note: _noteCtrl.text,
+            yard: widget.info.forfeited.yard,
+          );
+      ref.invalidate(tenderRevaluationsProvider(widget.info.forfeited.id));
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:
+              Text('Committee valuation saved: Rs. ${_money.format(cost)}'),
+          backgroundColor: context.colors.successGreen));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to save: $e'),
+          backgroundColor: context.colors.dangerRed));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.executiveTeal;
+    final f = widget.info.forfeited;
+    final typed = double.tryParse(_costCtrl.text.trim()) ?? 0;
+    return StyledFormDialog(
+      label: 'Committee Valuation',
+      title: f.srNumber,
+      headerAccentColor: accent,
+      icon: Icons.price_change_rounded,
+      width: 460,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          StyledFormSection(
+            title:
+                '${tenderRoundLabel(widget.info.tenderCount)} · Committee Value',
+            icon: Icons.gavel_rounded,
+            children: [
+              Text(
+                  'Set the value for this committee tender. It replaces the '
+                  'previous round’s valuation for the next sale attempt.',
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 11)),
+              const Gap(10),
+              Row(children: [
+                Expanded(
+                  child: Text(_cItemName(f),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: context.colors.textPrimary,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 13)),
+                ),
+                const Gap(8),
+                Icon(Icons.inventory_2_rounded,
+                    size: 12, color: context.colors.textMuted),
+                const Gap(4),
+                Text('Qty ${widget.qty}',
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 11)),
+              ]),
+              const Gap(10),
+              TextField(
+                controller: _costCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                  labelText: 'Cost / item (LKR)',
+                  isDense: true,
+                  prefixText: 'LKR ',
+                ),
+              ),
+              const Gap(8),
+              Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                    typed > 0
+                        ? 'Total: LKR ${_money.format(typed * widget.qty)}  (× ${widget.qty})'
+                        : '× ${widget.qty}',
+                    style: TextStyle(
+                        color: typed > 0
+                            ? context.colors.successGreen
+                            : context.colors.textMuted,
+                        fontWeight: typed > 0 ? FontWeight.w700 : null,
+                        fontSize: 12)),
+              ),
+              const Gap(12),
+              TextField(
+                controller: _noteCtrl,
+                style: TextStyle(color: context.colors.textPrimary),
+                maxLines: 2,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Note (optional)',
+                  filled: true,
+                  fillColor: context.colors.cardDark,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide:
+                          BorderSide(color: context.colors.borderColor)),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          style: FilledButton.styleFrom(backgroundColor: accent),
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Text('Save Valuation'),
         ),
       ],
     );

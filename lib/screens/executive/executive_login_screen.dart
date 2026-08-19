@@ -149,7 +149,7 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
         if (!profile.isExecutive) {
           await supabase.auth.signOut();
           setState(() => _error =
-              'This account is not a Executive Office account. Use the correct portal.');
+              'This account is not a High Panel Officers account. Use the correct portal.');
           return;
         }
         if (profile.isPasswordExpired || profile.isPasswordExpiringSoon) {
@@ -219,7 +219,7 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
       if (!profile.isExecutive) {
         await supabase.auth.signOut();
         setState(() => _error =
-            'This account is not a Executive Office account. Use the correct portal.');
+            'This account is not a High Panel Officers account. Use the correct portal.');
         return;
       }
       if (profile.isPasswordExpired || profile.isPasswordExpiringSoon) {
@@ -416,9 +416,9 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                       color: accent.withOpacity(0.06),
                     ),
                     child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.calculate_rounded, color: accent, size: 16),
+                      Icon(Icons.shield_moon_rounded, color: accent, size: 16),
                       const Gap(8),
-                      Text('Executive Office',
+                      Text('High Panel Officers',
                           style: TextStyle(
                               color: accent,
                               fontSize: 14,
@@ -463,7 +463,7 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                                       : 'Update your password')
                                   : _otpStage
                                       ? 'Two-step verification'
-                                      : 'Executive Office access',
+                                      : 'High Panel Officers access',
                               style: TextStyle(
                                   color: context.colors.textSecondary,
                                   fontSize: 14)),

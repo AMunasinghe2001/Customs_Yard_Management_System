@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
@@ -69,22 +68,19 @@ class _ExecutiveDashboardScreenState
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: accent.withOpacity(0.3)),
                 ),
-                child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                    width: 30,
-                    height: 30,
-                    colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
+                child: Icon(Icons.shield_moon_rounded, size: 30, color: accent),
               ),
               const Gap(14),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Director General’s Office',
+                  Text('High Panel Officers',
                       style: TextStyle(
                           color: context.colors.textPrimary,
                           fontSize: 17,
                           fontWeight: FontWeight.w800)),
-                  Text('Generate, view & print reports for any yard',
+                  Text('DG / ADG · reports, valuations & tender committees',
                       style: TextStyle(
                           color: context.colors.textMuted, fontSize: 12)),
                 ],

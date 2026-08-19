@@ -56,7 +56,10 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
   String get _username => (_position ?? '').toLowerCase(); // 'dg' | 'adg'
   // Position keys are already the short titles (DG / ADG).
   String get _shortTitle => _position ?? '';
-  String get _fullName => 'Executive Office ($_shortTitle)';
+  // NOTE: stored in profiles.full_name at signup, so accounts created before
+  // the "High Panel Officers" rename keep their old "Executive Office (DG)"
+  // label until edited.
+  String get _fullName => 'High Panel Officers ($_shortTitle)';
 
   bool get _resendLocked =>
       _resendLockUntil != null && DateTime.now().isBefore(_resendLockUntil!);
@@ -335,7 +338,7 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
                     color: accent.withOpacity(0.06),
                   ),
                   child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.calculate_rounded, color: accent, size: 16),
+                    Icon(Icons.shield_moon_rounded, color: accent, size: 16),
                     const Gap(8),
                     Text('Executive • Create Account',
                         style: TextStyle(

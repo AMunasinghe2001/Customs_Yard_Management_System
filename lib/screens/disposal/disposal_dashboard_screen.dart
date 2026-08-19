@@ -3616,7 +3616,7 @@ class _CommitteesTab extends ConsumerWidget {
             const Gap(10),
             Expanded(
               child: Text(
-                  'Committees appointed by the Director General for packages unsold more than 3 times',
+                  'Committees appointed by the High Panel for packages still unsold after Tender 3',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style:
@@ -3665,7 +3665,7 @@ class _CommitteesTab extends ConsumerWidget {
                         icon: Icons.groups_rounded,
                         message: 'No committees appointed yet',
                         subtitle:
-                            'The Director General appoints a committee for packages unsold more than 3 times.'),
+                            'The High Panel appoints a committee for packages still unsold after Tender 3.'),
                   );
                 }
                 return ListView.separated(

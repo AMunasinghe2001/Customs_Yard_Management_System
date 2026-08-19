@@ -1368,7 +1368,7 @@ class _ValBidsAndRevalDialogState
       b == b.roundToDouble() ? b.toInt().toString() : b.toString();
 
   String _roundLabel(TenderSaleModel s, int attempt) {
-    final parts = <String>['Tender $attempt'];
+    final parts = <String>[tenderRoundLabel(attempt)];
     if (s.saleNumber != null && s.saleNumber!.isNotEmpty) parts.add(s.saleNumber!);
     if (s.saleDate != null) {
       parts.add(DateFormat('yyyy-MM-dd').format(s.saleDate!));
@@ -1505,7 +1505,7 @@ class _ValBidsAndRevalDialogState
         ]),
         const Gap(4),
         Text(
-            'Decide the value for the next tender (Tender ${_rounds.length + 1}) from the bids above.',
+            'Decide the value for the next tender (${tenderRoundLabel(_rounds.length + 1)}) from the bids above.',
             style: TextStyle(color: context.colors.textMuted, fontSize: 11)),
         const Gap(10),
         Row(children: [
@@ -1570,8 +1570,9 @@ class _ValBidsAndRevalDialogState
     );
   }
 
-  // Valuation block for a round: Tender 1 falls back to the original valuation;
-  // later re-tenders show the Valuation Directorate's re-valuation, or amber.
+  // Valuation block for a round: the Valuation Tender (attempt 1) falls back to
+  // the original Pending Valuation price; later re-tenders show the Valuation
+  // Directorate's bid-driven re-valuation, or amber while it is still pending.
   Widget _roundValuation(String roundId, int attempt) {
     final reval = _revals[roundId];
     final unit = reval?.valuationCost ??
@@ -1692,7 +1693,8 @@ class _ValBidsAndRevalDialogState
                 // bids above. Editable; shows a Pending status until entered.
                 StyledFormSection(
                   gap: 0,
-                  title: 'Next Tender ${rounds.length + 1} · New Valuation',
+                  title:
+                      'Next ${tenderRoundLabel(rounds.length + 1)} · New Valuation',
                   icon: Icons.price_change_rounded,
                   children: [_newValuationEditor(gold)],
                 ),

@@ -39,6 +39,20 @@ const List<String> kReportStatuses = [
   'Destroyed',
 ];
 
+/// The valuation rounds a package can go through, in order, mirroring the
+/// tender names in [tenderRoundLabel]:
+///   * **Initial Value** — the Valuation Directorate's valuation on the
+///     disposal request, which prices the **Valuation Tender**.
+///   * **2nd / 3rd Value** — bid-driven re-valuations pricing **Tender 1 / 2**.
+///   * **Final Value** — the last valuation on record (Tender 3, or a High
+///     Panel committee round). The 4th IS the final — there is no 5th.
+const List<String> kValuationRounds = [
+  'Initial Value',
+  '2nd Value',
+  '3rd Value',
+  'Final Value',
+];
+
 class ReportsScreen extends ConsumerStatefulWidget {
   /// Executive Office (DG / ADG) mode: shows a Yard selector and scopes every
   /// report to the picked yard. Officers/admins use the default (false), where
@@ -70,6 +84,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _selectedWarehouse = 'all';
   // Executive mode: the yard whose reports are generated (null = none picked).
   String? _reportYard;
+  /// Which valuation column(s) the "List of Goods Valued" report shows:
+  /// 'all' = every round side by side, else one of [kValuationRounds].
+  String _valuationRound = 'all';
 
   /// The yard passed to the data services. Executive mode → the picked yard
   /// (report cards are only shown once one is picked, so it's non-null here);
@@ -458,6 +475,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 .toList(),
             onChanged: (v) => setState(() => _selectedStatus = v ?? 'all'),
           ),
+
+          // ── Valuation Round (Executive Office only) ──
+          // Drives the "List of Goods Valued" report: every round side by
+          // side, or one round on its own.
+          if (widget.executiveMode)
+            StyledDropdownButton<String>(
+              value: _valuationRound == 'all' ? null : _valuationRound,
+              allLabel: 'All Valuations',
+              icon: Icons.stacked_line_chart_rounded,
+              menuWidth: 240,
+              options: kValuationRounds
+                  .map((r) => StyledDropdownOption(r, r))
+                  .toList(),
+              onChanged: (v) => setState(() => _valuationRound = v ?? 'all'),
+            ),
 
           // ── Warehouse ──
           // Hidden for Central Disposal: `warehouses` is not in the
@@ -1130,6 +1162,282 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     await _stockRevenueReport('reconciliation', 'view');
   }
 
+  // ── Executive Office (DG / ADG) only reports ────────────────────────────
+  // Three fixed-column listings the High Panel Officers sign off on.
+  // Column sets are exactly as specified — no extra columns.
+
+  /// Emit one of the High Panel listings: shows it in-app, previews a PDF, or exports
+  /// Excel, from a pre-built column/row set.
+  Future<void> _emitDgReport({
+    required String key,
+    required String title,
+    required String fileBase,
+    required String format,
+    required List<String> columns,
+    required List<List<String>> rows,
+    List<String?>? rowItemIds,
+  }) async {
+    if (rows.isEmpty) {
+      _showNoDataMessage();
+      return;
+    }
+    final periodLabel = (_startDate != null && _endDate != null)
+        ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+        : 'Full Historical Report';
+
+    void savePdf() => _showPdfPreview(
+          (f) => ReportService().generateStockRevenuePdf(
+            title: title,
+            periodLabel: periodLabel,
+            headline: '${rows.length} goods',
+            columns: columns,
+            rows: rows,
+            format: f.copyWith(
+                marginLeft: 20,
+                marginRight: 20,
+                marginTop: 20,
+                marginBottom: 20),
+          ),
+          '$fileBase.pdf',
+        );
+
+    void exportExcel() {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        builder: (c) => ExcelExportDialog(
+          title: 'Export $key',
+          recordCount: rows.length,
+          fileName: '$fileBase.xlsx',
+          onExport: () => ReportService().exportTableToExcel(
+            title: title,
+            subTitle: periodLabel,
+            columns: columns,
+            rows: rows,
+          ),
+          onSave: (b) => _handleFileSave(b, fileBase, 'xlsx'),
+        ),
+      );
+    }
+
+    if (format == 'view') {
+      await _showReportTable(
+        title: key,
+        subtitle: periodLabel,
+        columns: columns,
+        rows: rows,
+        rowItemIds: rowItemIds,
+        onSavePdf: savePdf,
+        onExportExcel: exportExcel,
+      );
+    } else if (format == 'pdf') {
+      savePdf();
+    } else {
+      exportExcel();
+    }
+  }
+
+  /// **List of the SRs** — SR Number · Item Name · Goods Description ·
+  /// Quantity · Status. One row per package item.
+  Future<void> _generateSrListReport(String format) async {
+    final key = 'List of the SRs';
+    _setLoading('${key}_$format', true);
+    try {
+      final packages = _filterByWarehouse(_filterByDate(await ref
+          .read(packageServiceProvider)
+          .getAllPackages(yard: _yardArg)));
+
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+      for (final p in packages) {
+        for (final it in p.items) {
+          final status = _normStatus(
+              it.status.isNotEmpty ? it.status : p.status);
+          if (_selectedStatus != 'all' &&
+              status.toLowerCase() != _selectedStatus.toLowerCase()) {
+            continue;
+          }
+          rows.add([
+            p.srNumber,
+            it.itemName,
+            (it.goodsDescription?.trim().isNotEmpty == true)
+                ? it.goodsDescription!.trim()
+                : '—',
+            '${it.quantity}',
+            status,
+          ]);
+          itemIds.add(it.id);
+        }
+      }
+
+      await _emitDgReport(
+        key: key,
+        title: 'LIST OF THE SRs',
+        fileBase: 'List_of_the_SRs',
+        format: format,
+        columns: const [
+          'SR Number',
+          'Item Name',
+          'Goods Description',
+          'Quantity',
+          'Status',
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
+    }
+  }
+
+  /// **List of Goods for Valuation** — SR Number · Item Name · Goods
+  /// Description · Quantity · HS Code · Initial Value.
+  ///
+  /// "Initial Value" is the FIRST valuation given to a tender-sale package
+  /// (`disposal_request_items.valuation_cost`), i.e. chain index 0.
+  Future<void> _generateForValuationReport(String format) async {
+    const key = 'List of Goods for Valuation';
+    _setLoading('${key}_$format', true);
+    try {
+      final disposal = ref.read(disposalServiceProvider);
+      final forfeited = _filterByYard(
+          await disposal.getAllForfeitedForReports(), (f) => f.yard);
+      final chains = await disposal.getValuationChains();
+
+      final money = NumberFormat('#,##0.##');
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+      for (final f in _filterByDate(forfeited)) {
+        final chain = chains[f.id];
+        // Only goods that actually reached valuation belong on this list.
+        if (chain == null || chain.isEmpty) continue;
+        for (final it in _reportItemsOf(f)) {
+          rows.add([
+            f.srNumber,
+            it?.itemName ?? f.itemName ?? '—',
+            (it?.goodsDescription?.trim().isNotEmpty == true)
+                ? it!.goodsDescription!.trim()
+                : '—',
+            '${f.entryQty ?? it?.quantity ?? '—'}',
+            (it?.hsCode?.trim().isNotEmpty == true) ? it!.hsCode!.trim() : '—',
+            money.format(chain.first),
+          ]);
+          itemIds.add(it?.id);
+        }
+      }
+
+      await _emitDgReport(
+        key: key,
+        title: 'LIST OF GOODS FOR VALUATION',
+        fileBase: 'List_of_Goods_for_Valuation',
+        format: format,
+        columns: const [
+          'SR Number',
+          'Item Name',
+          'Goods Description',
+          'Quantity',
+          'HS Code',
+          'Initial Value',
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
+    }
+  }
+
+  /// **List of Goods Valued** — SR Number · Item Name · Goods Description,
+  /// then the valuation columns chosen by the Valuation Round filter:
+  /// every round side by side ('all'), or a single round on its own.
+  Future<void> _generateValuedReport(String format) async {
+    const key = 'List of Goods Valued';
+    _setLoading('${key}_$format', true);
+    try {
+      final disposal = ref.read(disposalServiceProvider);
+      final forfeited = _filterByYard(
+          await disposal.getAllForfeitedForReports(), (f) => f.yard);
+      final chains = await disposal.getValuationChains();
+
+      final money = NumberFormat('#,##0.##');
+      // 'all' → every round as its own column; otherwise just the picked one.
+      final roundIdx = kValuationRounds.indexOf(_valuationRound);
+      final showAll = _valuationRound == 'all' || roundIdx < 0;
+      final valueCols =
+          showAll ? kValuationRounds : [kValuationRounds[roundIdx]];
+
+      /// The value for round [i] of [chain]; the LAST round is the final
+      /// valuation, so a chain of 2 reports its 2nd entry as "Final Value".
+      String valueAt(List<double> chain, int i) {
+        final isFinalCol = i == kValuationRounds.length - 1;
+        if (isFinalCol) {
+          // Final = the newest valuation, but only once it is actually final
+          // (i.e. beyond the initial one); otherwise leave blank.
+          return chain.length > 1 ? money.format(chain.last) : '—';
+        }
+        return i < chain.length ? money.format(chain[i]) : '—';
+      }
+
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+      for (final f in _filterByDate(forfeited)) {
+        final chain = chains[f.id];
+        if (chain == null || chain.isEmpty) continue;
+        // A single-round filter only lists goods that reached that round.
+        if (!showAll && valueAt(chain, roundIdx) == '—') continue;
+        for (final it in _reportItemsOf(f)) {
+          rows.add([
+            f.srNumber,
+            it?.itemName ?? f.itemName ?? '—',
+            (it?.goodsDescription?.trim().isNotEmpty == true)
+                ? it!.goodsDescription!.trim()
+                : '—',
+            for (var i = 0; i < kValuationRounds.length; i++)
+              if (showAll || i == roundIdx) valueAt(chain, i),
+          ]);
+          itemIds.add(it?.id);
+        }
+      }
+
+      final label = showAll ? 'All Valuations' : _valuationRound;
+      await _emitDgReport(
+        key: '$key — $label',
+        title: 'LIST OF GOODS VALUED — ${label.toUpperCase()}',
+        fileBase:
+            'List_of_Goods_Valued_${label.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_')}',
+        format: format,
+        columns: [
+          'SR Number',
+          'Item Name',
+          'Goods Description',
+          ...valueCols,
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
+    }
+  }
+
+  /// The package items a forfeited row covers: the one item it points at for
+  /// per-item rows, otherwise every item of the package (`[null]` when the
+  /// package details did not load, so the row still prints).
+  List<PackageItem?> _reportItemsOf(ForfeitedPackageModel f) {
+    final all = f.packageDetails?.items ?? const <PackageItem>[];
+    if (f.itemId != null) {
+      final match = all.where((i) => i.id == f.itemId).toList();
+      return match.isNotEmpty ? match : <PackageItem?>[null];
+    }
+    return all.isEmpty ? <PackageItem?>[null] : all;
+  }
+
   /// One report per Post Status Activity: every goods row whose item carries
   /// [activity]. Honours the Date / Warehouse / Status filters above, so e.g.
   /// "Pending Licence" + Status=Detain narrows to still-detained licence cases.
@@ -1320,14 +1628,65 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 2: Post Status Activity Reports ──
+                // ── Section 2: High Panel Officers Reports ──
+                // Executive Office only — fixed-column listings the DG signs
+                // off on. Hidden from yard officers/admins entirely.
+                if (widget.executiveMode) ...[
+                  const Gap(24),
+                  _buildSectionHeader("High Panel Officers Reports",
+                      Icons.account_balance_rounded),
+                  const Gap(8),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 2.3,
+                    children: [
+                      _buildReportCard(
+                        title: 'List of the SRs',
+                        description:
+                            'SR No · Item · Description · Qty · Status.',
+                        icon: Icons.list_alt_rounded,
+                        color: context.colors.primaryGold,
+                        onView: () => _generateSrListReport('view'),
+                        onPdf: () => _generateSrListReport('pdf'),
+                        onExcel: () => _generateSrListReport('excel'),
+                      ),
+                      _buildReportCard(
+                        title: 'List of Goods for Valuation',
+                        description:
+                            'Goods sent for valuation, with their initial value.',
+                        icon: Icons.price_check_rounded,
+                        color: const Color(0xFF00897B),
+                        onView: () => _generateForValuationReport('view'),
+                        onPdf: () => _generateForValuationReport('pdf'),
+                        onExcel: () => _generateForValuationReport('excel'),
+                      ),
+                      _buildReportCard(
+                        title: 'List of Goods Valued',
+                        description: _valuationRound == 'all'
+                            ? 'Every valuation round side by side.'
+                            : 'Goods valued — ${_valuationRound.toLowerCase()} only.',
+                        icon: Icons.stacked_line_chart_rounded,
+                        color: const Color(0xFF3949AB),
+                        onView: () => _generateValuedReport('view'),
+                        onPdf: () => _generateValuedReport('pdf'),
+                        onExcel: () => _generateValuedReport('excel'),
+                      ),
+                    ],
+                  ),
+                ],
+
+                // ── Section 3: Post Status Activity Reports ──
                 const Gap(24),
                 _buildSectionHeader(
                     'Post Status Activity Reports', Icons.warning_amber_rounded),
                 const Gap(8),
                 _buildActivityGrid(crossAxisCount),
 
-                // ── Section 3: Goods Disposition Reports ──
+                // ── Section 4: Goods Disposition Reports ──
                 // (How goods are classified: Forfeit / Abandon / Other / Re-export)
                 const Gap(24),
                 _buildSectionHeader(
@@ -1386,7 +1745,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 4: Goods Disposal Reports ──
+                // ── Section 5: Goods Disposal Reports ──
                 // (What happens to forfeited goods: Sold via Tender / Destroyed)
                 const Gap(24),
                 _buildSectionHeader(
@@ -1422,7 +1781,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 5: Stock & Revenue Reports ──
+                // ── Section 6: Stock & Revenue Reports ──
                 const Gap(24),
                 _buildSectionHeader(
                     'Stock & Revenue Reports', Icons.inventory_rounded),
@@ -1488,7 +1847,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 6: Warehouse & Movement Reports ──
+                // ── Section 7: Warehouse & Movement Reports ──
                 const Gap(24),
                 _buildSectionHeader('Warehouse & Movement Reports', Icons.warehouse_rounded),
                 const Gap(8),
@@ -1530,7 +1889,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 7: Financial Reports ──
+                // ── Section 8: Financial Reports ──
                 const Gap(24),
                 _buildSectionHeader('Financial Reports', Icons.payments_rounded),
                 const Gap(8),
@@ -1563,7 +1922,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 8: System Configuration & Logs ──
+                // ── Section 9: System Configuration & Logs ──
                 const Gap(24),
                 _buildSectionHeader('System Configuration & Logs', Icons.settings_rounded),
                 const Gap(8),
@@ -1596,7 +1955,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 9: QR Code Labels ──
+                // ── Section 10: QR Code Labels ──
                 const Gap(24),
                 _buildSectionHeader('QR Code Labels', Icons.qr_code_2_rounded),
                 const Gap(8),
