@@ -15,6 +15,7 @@ import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import 'taxes_tab.dart';
+import '../reports/reports_screen.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
@@ -48,7 +49,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 9,
+      length: 10,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -190,6 +191,10 @@ class DisposalDashboardScreen extends ConsumerWidget {
                   border: Border.all(color: context.colors.borderColor),
                 ),
                 child: TabBar(
+                  // 10 tabs no longer fit at a readable width — scroll instead
+                  // of truncating every label to "Destroyed ...".
+                  isScrollable: true,
+                  tabAlignment: TabAlignment.start,
                   splashFactory: NoSplash.splashFactory,
                   overlayColor:
                       WidgetStateProperty.all(Colors.transparent),
@@ -208,66 +213,73 @@ class DisposalDashboardScreen extends ConsumerWidget {
                   tabs: const [
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.sell_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Sold Packages', overflow: TextOverflow.ellipsis)),
+                          Text('Sold Packages'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.delete_forever_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Destroyed Packages', overflow: TextOverflow.ellipsis)),
+                          Text('Destroyed Packages'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.assignment_turned_in_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Disposal Requests', overflow: TextOverflow.ellipsis)),
+                          Text('Disposal Requests'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.storefront_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Tender Sales', overflow: TextOverflow.ellipsis)),
+                          Text('Tender Sales'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.replay_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Unsold Tenders', overflow: TextOverflow.ellipsis)),
+                          Text('Unsold Tenders'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.gavel_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Destructions', overflow: TextOverflow.ellipsis)),
+                          Text('Destructions'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.auto_delete_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Undestroyed', overflow: TextOverflow.ellipsis)),
+                          Text('Undestroyed'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.groups_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Committees', overflow: TextOverflow.ellipsis)),
+                          Text('Committees'),
                         ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.receipt_long_rounded, size: 18),
                           Gap(8),
-                          Flexible(child: Text('Taxes', overflow: TextOverflow.ellipsis)),
+                          Text('Taxes'),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.assessment_rounded, size: 18),
+                          Gap(8),
+                          Text('Reports'),
                         ])),
                   ],
                 ),
@@ -284,6 +296,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 _UndestroyedReDestructionTab(),
                 _CommitteesTab(),
                 TaxesTab(),
+                ReportsScreen(disposalMode: true),
               ]),
             ),
           ],

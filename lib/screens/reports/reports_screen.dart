@@ -22,12 +22,41 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/package_details_dialog.dart';
 
+/// The statuses a report row can actually carry, in lifecycle order: the three
+/// registration dispositions (+ Other) followed by the terminal outcomes
+/// resolved in `_goodsData`. These are the values shown in the reports' Status
+/// column, so the Status filter offers exactly these and nothing else.
+///
+/// NOTE: `packages.status` (the legacy `pending`/`held`/`cleared` column) is
+/// written once at registration and never updated, so it is NOT filtered on.
+const List<String> kReportStatuses = [
+  'Detain',
+  'Forfeit',
+  'Abandoned',
+  'Other',
+  'Released',
+  'Sold',
+  'Destroyed',
+];
+
 class ReportsScreen extends ConsumerStatefulWidget {
   /// Executive Office (DG / ADG) mode: shows a Yard selector and scopes every
   /// report to the picked yard. Officers/admins use the default (false), where
   /// RLS already limits data to their own yard.
   final bool executiveMode;
-  const ReportsScreen({super.key, this.executiveMode = false});
+
+  /// Central Disposal Directorate mode: shows ONLY the Post Status Activity
+  /// reports, cross-yard by default with an optional single-yard filter
+  /// ("All Yards" = null). Disposal's `disposal_read_all` RLS grants SELECT on
+  /// packages/package_items/warehouse_entries across every yard, which is
+  /// exactly what these reports read.
+  final bool disposalMode;
+
+  const ReportsScreen({
+    super.key,
+    this.executiveMode = false,
+    this.disposalMode = false,
+  });
 
   @override
   ConsumerState<ReportsScreen> createState() => _ReportsScreenState();
@@ -44,13 +73,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   /// The yard passed to the data services. Executive mode → the picked yard
   /// (report cards are only shown once one is picked, so it's non-null here);
+  /// disposal mode → the picked yard, or null for "All Yards" (cross-yard);
   /// officer mode → null, so RLS scopes data to the officer's own yard.
-  String? get _yardArg => widget.executiveMode ? _reportYard : null;
+  String? get _yardArg =>
+      (widget.executiveMode || widget.disposalMode) ? _reportYard : null;
 
   /// Client-side yard filter for report lists whose service can't take a yard
-  /// (e.g. forfeited packages). No-op in officer mode.
+  /// (e.g. forfeited packages). No-op in officer mode, and in disposal mode
+  /// when "All Yards" is selected.
   List<T> _filterByYard<T>(List<T> rows, String? Function(T) yardOf) {
-    if (!widget.executiveMode || _reportYard == null) return rows;
+    if (!widget.executiveMode && !widget.disposalMode) return rows;
+    if (_reportYard == null) return rows;
     return rows.where((r) => yardOf(r) == _reportYard).toList();
   }
   
@@ -85,8 +118,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Report Generator', style: Theme.of(context).textTheme.headlineLarge),
-                        Text('Choose periodic or standard warehouse reports.',
+                        Text(
+                            widget.disposalMode
+                                ? 'Post Status Activity Reports'
+                                : 'Report Generator',
+                            style: Theme.of(context).textTheme.headlineLarge),
+                        Text(
+                            widget.disposalMode
+                                ? 'Goods by post status activity, across all yards.'
+                                : 'Choose periodic or standard warehouse reports.',
                             style: TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
@@ -341,11 +381,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         runSpacing: 8,
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
-          // ── Yard (Executive Office only) ──
-          if (widget.executiveMode)
+          // ── Yard (Executive Office picks one; Central Disposal defaults to
+          //    every yard and can narrow to one) ──
+          if (widget.executiveMode || widget.disposalMode)
             StyledDropdownButton<String>(
               value: _reportYard,
-              allLabel: 'Select Yard',
+              allLabel: widget.disposalMode ? 'All Yards' : 'Select Yard',
               icon: Icons.location_city_rounded,
               menuWidth: 260,
               options: kYards
@@ -405,31 +446,34 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             ),
 
           // ── Status ──
+          // The real statuses the system produces: the three registration
+          // dispositions plus the terminal outcomes resolved in [_goodsData].
           StyledDropdownButton<String>(
             value: _selectedStatus == 'all' ? null : _selectedStatus,
             allLabel: 'All Statuses',
             icon: Icons.flag_rounded,
-            options: const [
-              StyledDropdownOption('pending', 'PENDING'),
-              StyledDropdownOption('held', 'HELD'),
-              StyledDropdownOption('cleared', 'CLEARED'),
-              StyledDropdownOption('returned', 'RELEASED'),
-            ],
+            menuWidth: 220,
+            options: kReportStatuses
+                .map((s) => StyledDropdownOption(s, s.toUpperCase()))
+                .toList(),
             onChanged: (v) => setState(() => _selectedStatus = v ?? 'all'),
           ),
 
           // ── Warehouse ──
-          StyledDropdownButton<String>(
-            value: _selectedWarehouse == 'all' ? null : _selectedWarehouse,
-            allLabel: 'All Warehouses',
-            icon: Icons.warehouse_rounded,
-            menuWidth: 320,
-            options: warehouses
-                .map((w) =>
-                    StyledDropdownOption(w.id, '${w.code} - ${w.name}'))
-                .toList(),
-            onChanged: (v) => setState(() => _selectedWarehouse = v ?? 'all'),
-          ),
+          // Hidden for Central Disposal: `warehouses` is not in the
+          // `disposal_read_all` RLS set, so the list would always be empty.
+          if (!widget.disposalMode)
+            StyledDropdownButton<String>(
+              value: _selectedWarehouse == 'all' ? null : _selectedWarehouse,
+              allLabel: 'All Warehouses',
+              icon: Icons.warehouse_rounded,
+              menuWidth: 320,
+              options: warehouses
+                  .map((w) =>
+                      StyledDropdownOption(w.id, '${w.code} - ${w.name}'))
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedWarehouse = v ?? 'all'),
+            ),
         ],
       ),
     );
@@ -1022,11 +1066,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final key = '${title}_view';
     _setLoading(key, true);
     try {
+      // Status is resolved per ITEM inside _goodsData, not by the query — the
+      // packages.status column is stale (always 'pending').
       final pkgs = _filterByWarehouse(_filterByDate(
           await ref.read(packageServiceProvider).getAllPackages(
-              status: status == 'all' ? null : status, yard: _yardArg)));
+              yard: _yardArg)));
       final base = title.replaceAll(' ', '_');
-      final data = await _goodsData(pkgs);
+      final data = await _goodsData(pkgs, statusFilter: status);
+      if (data.$2.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+      // Export exactly the rows on screen, so a Status filter applies to the
+      // PDF/Excel too (they used to re-export every package).
       await _showReportTable(
         title: title,
         subtitle: subtitle,
@@ -1034,8 +1086,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         rows: data.$2,
         rowItemIds: data.$3,
         onSavePdf: () => _showPdfPreview(
-            (f) => ReportService()
-                .generatePackagePdf(pkgs, title: title, format: f),
+            (f) => ReportService().generateStockRevenuePdf(
+                  title: title.toUpperCase(),
+                  periodLabel: subtitle ?? 'Full Historical Audit',
+                  headline: '${data.$2.length} goods',
+                  columns: data.$1,
+                  rows: data.$2,
+                  format: f.copyWith(
+                      marginLeft: 20,
+                      marginRight: 20,
+                      marginTop: 20,
+                      marginBottom: 20),
+                ),
             '$base.pdf'),
         onExportExcel: () {
           if (!mounted) return;
@@ -1043,9 +1105,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             context: context,
             builder: (c) => ExcelExportDialog(
               title: 'Export $title',
-              recordCount: pkgs.length,
+              recordCount: data.$2.length,
               fileName: '$base.xlsx',
-              onExport: () => ReportService().exportPackagesToExcel(pkgs),
+              onExport: () => ReportService().exportTableToExcel(
+                title: title.toUpperCase(),
+                subTitle: subtitle ?? 'Full Historical Audit',
+                columns: data.$1,
+                rows: data.$2,
+              ),
               onSave: (b) => _handleFileSave(b, base, 'xlsx'),
             ),
           );
@@ -1063,10 +1130,131 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     await _stockRevenueReport('reconciliation', 'view');
   }
 
+  /// One report per Post Status Activity: every goods row whose item carries
+  /// [activity]. Honours the Date / Warehouse / Status filters above, so e.g.
+  /// "Pending Licence" + Status=Detain narrows to still-detained licence cases.
+  Future<void> _generateActivityReport(String activity, String format) async {
+    final key = '${activity}_$format';
+    _setLoading(key, true);
+    try {
+      final packages = await ref
+          .read(packageServiceProvider)
+          .getAllPackages(yard: _yardArg);
+      final filtered = _filterByWarehouse(_filterByDate(packages));
+      final data = await _goodsData(filtered,
+          statusFilter: _selectedStatus, activityFilter: activity);
+      if (data.$2.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
+
+      final title = '${activity.toUpperCase()} — POST STATUS ACTIVITY REPORT';
+      final base =
+          '${activity.replaceAll(RegExp(r'[^A-Za-z0-9]+'), '_')}_Activity';
+      final periodLabel = (_startDate != null && _endDate != null)
+          ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
+          : 'Full Historical Report';
+
+      void savePdf() => _showPdfPreview(
+            (f) => ReportService().generateStockRevenuePdf(
+              title: title,
+              periodLabel: periodLabel,
+              headline: '${data.$2.length} goods',
+              columns: data.$1,
+              rows: data.$2,
+              format: f.copyWith(
+                  marginLeft: 20,
+                  marginRight: 20,
+                  marginTop: 20,
+                  marginBottom: 20),
+            ),
+            '$base.pdf',
+          );
+
+      void exportExcel() {
+        if (!mounted) return;
+        showDialog(
+          context: context,
+          builder: (c) => ExcelExportDialog(
+            title: 'Export $activity Report',
+            recordCount: data.$2.length,
+            fileName: '$base.xlsx',
+            onExport: () => ReportService().exportTableToExcel(
+              title: title,
+              subTitle: periodLabel,
+              columns: data.$1,
+              rows: data.$2,
+            ),
+            onSave: (b) => _handleFileSave(b, base, 'xlsx'),
+          ),
+        );
+      }
+
+      if (format == 'view') {
+        await _showReportTable(
+          title: '$activity — Post Status Activity',
+          subtitle: periodLabel,
+          columns: data.$1,
+          rows: data.$2,
+          rowItemIds: data.$3,
+          onSavePdf: savePdf,
+          onExportExcel: exportExcel,
+        );
+      } else if (format == 'pdf') {
+        savePdf();
+      } else {
+        exportExcel();
+      }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
+  }
+
+  /// One report card per Post Status Activity, driven by
+  /// [kAllPostStatusActivities] so the grid grows automatically when an
+  /// activity is added there. Shared by the full Report Generator (as its
+  /// Section 2) and the Central Disposal Reports tab (where it is the whole
+  /// page).
+  Widget _buildActivityGrid(int crossAxisCount) {
+    return GridView.count(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      crossAxisCount: crossAxisCount,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 2.3,
+      children: [
+        for (final activity in kAllPostStatusActivities)
+          _buildReportCard(
+            title: activity,
+            description: kDetainActivities.contains(activity) &&
+                    kDisposalActivities.contains(activity)
+                ? 'Goods with the "$activity" activity (any status).'
+                : (kDetainActivities.contains(activity)
+                    ? 'Detained goods pending this activity.'
+                    : 'Goods marked "$activity".'),
+            icon: _activityIcon(activity),
+            color: _activityColor(activity),
+            onView: () => _generateActivityReport(activity, 'view'),
+            onPdf: () => _generateActivityReport(activity, 'pdf'),
+            onExcel: () => _generateActivityReport(activity, 'excel'),
+          ),
+      ],
+    );
+  }
+
   Widget _buildReportCards() {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth > 900 ? 3 : (constraints.maxWidth > 600 ? 2 : 1);
+
+        // Central Disposal sees only the Post Status Activity reports — the
+        // rest of the Report Generator is yard-office business.
+        if (widget.disposalMode) {
+          return _buildActivityGrid(crossAxisCount);
+        }
 
         return FutureBuilder<ProfileModel?>(
           future: ref.read(authServiceProvider).getCurrentProfile(),
@@ -1132,7 +1320,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 2: Goods Disposition Reports ──
+                // ── Section 2: Post Status Activity Reports ──
+                const Gap(24),
+                _buildSectionHeader(
+                    'Post Status Activity Reports', Icons.warning_amber_rounded),
+                const Gap(8),
+                _buildActivityGrid(crossAxisCount),
+
+                // ── Section 3: Goods Disposition Reports ──
                 // (How goods are classified: Forfeit / Abandon / Other / Re-export)
                 const Gap(24),
                 _buildSectionHeader(
@@ -1191,7 +1386,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 3: Goods Disposal Reports ──
+                // ── Section 4: Goods Disposal Reports ──
                 // (What happens to forfeited goods: Sold via Tender / Destroyed)
                 const Gap(24),
                 _buildSectionHeader(
@@ -1227,7 +1422,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 4: Stock & Revenue Reports ──
+                // ── Section 5: Stock & Revenue Reports ──
                 const Gap(24),
                 _buildSectionHeader(
                     'Stock & Revenue Reports', Icons.inventory_rounded),
@@ -1293,7 +1488,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 5: Warehouse & Movement Reports ──
+                // ── Section 6: Warehouse & Movement Reports ──
                 const Gap(24),
                 _buildSectionHeader('Warehouse & Movement Reports', Icons.warehouse_rounded),
                 const Gap(8),
@@ -1335,7 +1530,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 6: Financial Reports ──
+                // ── Section 7: Financial Reports ──
                 const Gap(24),
                 _buildSectionHeader('Financial Reports', Icons.payments_rounded),
                 const Gap(8),
@@ -1368,7 +1563,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 7: System Configuration & Logs ──
+                // ── Section 8: System Configuration & Logs ──
                 const Gap(24),
                 _buildSectionHeader('System Configuration & Logs', Icons.settings_rounded),
                 const Gap(8),
@@ -1401,7 +1596,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 8: QR Code Labels ──
+                // ── Section 9: QR Code Labels ──
                 const Gap(24),
                 _buildSectionHeader('QR Code Labels', Icons.qr_code_2_rounded),
                 const Gap(8),
@@ -1461,6 +1656,52 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         ],
       ),
     );
+  }
+
+  /// Card icon for a Post Status Activity. Falls back to a neutral icon so an
+  /// activity added to [kAllPostStatusActivities] still renders sensibly.
+  IconData _activityIcon(String activity) {
+    switch (activity) {
+      case 'Pending Licence':
+        return Icons.badge_rounded;
+      case 'Pending Classification / Valuation':
+        return Icons.calculate_rounded;
+      case 'Pending Inquiry':
+        return Icons.help_center_rounded;
+      case 'Supposed to be Sold / Auction':
+        return Icons.gavel_rounded;
+      case 'Supposed to be Destroyed':
+        return Icons.local_fire_department_rounded;
+      case 'Supposed to be Converted':
+        return Icons.change_circle_rounded;
+      case 'Supposed to be Donated':
+        return Icons.volunteer_activism_rounded;
+      default:
+        return Icons.more_horiz_rounded;
+    }
+  }
+
+  /// Card accent for a Post Status Activity: the pending (Detain) ones share a
+  /// warm amber family, the disposal ones reuse their outcome colours.
+  Color _activityColor(String activity) {
+    switch (activity) {
+      case 'Pending Licence':
+        return const Color(0xFFEF6C00);
+      case 'Pending Classification / Valuation':
+        return const Color(0xFFF9A825);
+      case 'Pending Inquiry':
+        return const Color(0xFFD84315);
+      case 'Supposed to be Sold / Auction':
+        return Colors.teal;
+      case 'Supposed to be Destroyed':
+        return Colors.deepOrange;
+      case 'Supposed to be Converted':
+        return Colors.indigo;
+      case 'Supposed to be Donated':
+        return const Color(0xFF2E7D32);
+      default:
+        return const Color(0xFF5E35B1);
+    }
   }
 
   Widget _buildSectionHeader(String title, IconData icon) {
@@ -1583,13 +1824,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Packages Inventory Audit_pdf';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages(
-        status: _selectedStatus == 'all' ? null : _selectedStatus,
-        yard: _yardArg,
-      );
+      // Status is resolved per ITEM (not from the stale packages.status column),
+      // so it is applied inside _goodsData rather than in the query.
+      final packages = await ref
+          .read(packageServiceProvider)
+          .getAllPackages(yard: _yardArg);
       final withDate = _filterByDate(packages);
       final filtered = _filterByWarehouse(withDate);
-      
+
       if (filtered.isEmpty) {
         _showNoDataMessage();
         return;
@@ -1611,7 +1853,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           : 'Full Historical Audit';
 
       // Same item-level full column set as the Stock / Initial-Stock reports.
-      final data = await _goodsData(filtered);
+      final data = await _goodsData(filtered, statusFilter: _selectedStatus);
+      if (data.$2.isEmpty) {
+        _showNoDataMessage();
+        return;
+      }
       _showPdfPreview(
         (format) => ReportService().generateStockRevenuePdf(
           title: '$statusTitle PACKAGES INVENTORY AUDIT$warehouseTitle',
@@ -1918,15 +2164,44 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (t == 'forfeit' || t == 'forfeited' || t == 'forfiet') return 'Forfeit';
     if (t == 'abandoned') return 'Abandoned';
     if (t.isEmpty) return 'Detain';
+    // "Other: <custom text>" (the SR form's Other marker) groups under Other so
+    // the Status filter can match it; the custom text stays in the Reason
+    // column.
+    if (t == 'other' || t.startsWith('other:')) return 'Other';
     return '${t[0].toUpperCase()}${t.substring(1)}';
+  }
+
+  /// Whether [item] carries [activity] among its Post Status Activities. The
+  /// activities are stored comma-joined in `package_items.reasons` (up to 4),
+  /// so match the split parts rather than the raw string — otherwise
+  /// "Pending Licence" would also match "Pending Licence, Pending Inquiry"
+  /// only by luck of substring position.
+  bool _hasActivity(PackageItem? item, String activity) {
+    final raw = item?.reasons?.trim();
+    if (raw == null || raw.isEmpty) return false;
+    final want = activity.trim().toLowerCase();
+    return raw
+        .split(',')
+        .map((a) => a.trim().toLowerCase())
+        .any((a) => a == want);
   }
 
   /// Item-level "goods" rows with the full column set shared by the Inventory
   /// Audit, Initial Stock and Goods reports. Resolves each item's ACTUAL
   /// outcome (Released / Sold / Destroyed, else its disposition) with the
   /// matching date, plus reason, receipt and value.
+  ///
+  /// When [statusFilter] is set (anything but `all`) only rows whose resolved
+  /// Status equals it are returned — the filter therefore always matches the
+  /// Status column the reader actually sees.
+  ///
+  /// [activityFilter] narrows to items carrying that Post Status Activity in
+  /// their `reasons` list (see [kAllPostStatusActivities]); an item may hold up
+  /// to 4, so it is matched against the split parts, not the raw string.
   Future<(List<String>, List<List<String>>, List<String?>)> _goodsData(
-      List<PackageModel> packages) async {
+      List<PackageModel> packages,
+      {String statusFilter = 'all',
+      String activityFilter = 'all'}) async {
     final df = DateFormat('yyyy-MM-dd');
     final money = NumberFormat('#,##0');
     final disposal = ref.read(disposalServiceProvider);
@@ -2003,6 +2278,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         } else {
           status = _normStatus(
               (it?.status.isNotEmpty == true ? it!.status : p.status));
+        }
+        if (statusFilter != 'all' &&
+            status.toLowerCase() != statusFilter.toLowerCase()) {
+          continue;
+        }
+        if (activityFilter != 'all' && !_hasActivity(it, activityFilter)) {
+          continue;
         }
         rows.add([
           p.srNumber,
@@ -2616,7 +2898,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     Future<void> Function()? onPdf,
     Future<void> Function()? onExcel,
   }) {
-    final showView = widget.executiveMode && onView != null;
+    final showView =
+        (widget.executiveMode || widget.disposalMode) && onView != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -3119,10 +3402,10 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     const key = 'Packages Inventory Audit_excel';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages(
-        status: _selectedStatus == 'all' ? null : _selectedStatus,
-        yard: _yardArg,
-      );
+      // Status is resolved per ITEM inside _goodsData (see _generateAllPackagesPdf).
+      final packages = await ref
+          .read(packageServiceProvider)
+          .getAllPackages(yard: _yardArg);
 
       final withDate = _filterByDate(packages);
       final filtered = _filterByWarehouse(withDate);
@@ -3143,7 +3426,11 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
           final dateRangeStr = (_startDate != null && _endDate != null) 
               ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
               : 'Full Historical Audit';
-          final data = await _goodsData(filtered);
+          final data = await _goodsData(filtered, statusFilter: _selectedStatus);
+          if (data.$2.isEmpty) {
+            _showNoDataMessage();
+            return;
+          }
 
           showDialog(
             context: context,
