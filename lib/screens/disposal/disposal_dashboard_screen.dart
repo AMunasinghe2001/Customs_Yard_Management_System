@@ -895,7 +895,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                             DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.S),
                             DataColumn2(
-                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
+                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
                             DataColumn2(
                                 label: Text('Sold Price'), size: ColumnSize.M),
                             DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
@@ -1180,7 +1180,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                             DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.S),
                             DataColumn2(
-                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
+                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
                             DataColumn2(
                                 label: Text('Destruction Price'),
                                 size: ColumnSize.M),
@@ -1452,9 +1452,13 @@ class _SaleValuationCell extends ConsumerWidget {
         final priceColor = isRevalued
             ? context.colors.accentLightBlue
             : context.colors.primaryGold;
+        // mainAxisSize.min + a single-line, ellipsised sub-label: without both,
+        // the "· re-valued" suffix wraps onto a second line and overflows the
+        // DataRow by ~1px ("BOTTOM OVERFLOWED BY 1.00 PIXELS").
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
               Text('Rs ${fmt.format(total)}',
@@ -1467,6 +1471,8 @@ class _SaleValuationCell extends ConsumerWidget {
               ],
             ]),
             Text('@ ${fmt.format(unitCost)} × $effQty${isRevalued ? ' · re-valued' : ''}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
           ],
         );
@@ -2131,7 +2137,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                       DataColumn2(
                           label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
+                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
                       DataColumn2(
                           label: Center(child: Text('Tenders')),
                           size: ColumnSize.S,
@@ -6030,7 +6036,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                       DataColumn2(
                           label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 112),
+                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
                       DataColumn2(
                           label: Center(child: Text('Destructions')),
                           size: ColumnSize.S,

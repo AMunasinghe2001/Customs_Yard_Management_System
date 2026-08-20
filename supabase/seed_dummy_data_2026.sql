@@ -1,8 +1,9 @@
 -- ============================================================================
 --  DUMMY DATA SEED — full SR register for testing
 --
---  STEP 1 wipes ALL package data, STEP 2 inserts 35 realistic SRs, STEP 3
---  parks the appeal-expired forfeits mid-pipeline (nothing sold/destroyed).
+--  STEP 1 wipes ALL package data, STEP 2 inserts 41 realistic SRs, STEP 3
+--  parks SR 05-35's expired forfeits mid-pipeline, STEP 4 runs SR 36-41 all
+--  the way to SOLD / DESTROYED.
 --  Officers / profiles / warehouses / storage rates / admin config are KEPT.
 --
 --  ⚠️ RUN THE WHOLE FILE ONCE. Running only STEP 2/3, or running the file
@@ -11,7 +12,7 @@
 --
 --  Coverage (every SR-form field is filled — nothing left null that the form
 --  would normally capture):
---    * 35 SR numbers, entry dates spread over Nov 2025 – Feb 2026
+--    * 41 SR numbers, entry dates spread over Nov 2025 – Feb 2026
 --    * 8 packages carry MULTIPLE items (2–4 each); the rest are single-item
 --    * Old Entries    → 4 packages with old_sr_number set
 --    * Released       → 3 packages with [FINAL:RELEASED] warehouse entries
@@ -38,6 +39,16 @@
 --      one. Every round is UNSOLD (sold = false, deadline passed).
 --      The goods never leave the yard: no [FINAL:...] entry, the held
 --      warehouse entry is kept, item status stays 'Forfeit'.
+--    * STEP 4 COMPLETES six more packages, so Sold / Destroyed have data.
+--      Each finishes on its LAST round; earlier rounds stay recorded as
+--      unsold/undestroyed attempts, so the yard's Tender Sale page shows the
+--      whole history (old rounds Unsold, final round Sold):
+--        SOLD       SR 36 x1 round | SR 40 x2 rounds | SR 37 x4 rounds
+--        DESTROYED  SR 38 x1 round | SR 41 x2 rounds | SR 39 x3 rounds
+--      The final round writes what the real RPCs write: a [FINAL:SOLD] /
+--      [FINAL:DESTROYED] returned entry, status sold/destroyed, and the held
+--      entry deleted. SR 37 and 39 are multi-item, so those tables show
+--      several lines under one SR.
 --    * Still held     → the remainder sit in warehouses as Detain
 --
 --  Yard: GL1 (Grey Line 1). SR format: GL1/SR/nn/YYYY.
@@ -304,7 +315,35 @@ BEGIN
 
       (35, DATE '2026-01-16', 'Malaysia',  'Skyline Electricals',          '199689012345', '0703456012', 'No 77, Galle Road, Kalutara',
        'Skyline Cargo Lanka',        'CUSDEC/2026/1093', '2026-01-15', 'GL1/CASE/2026/423', 'KMTU5678432', 'Electrical switchgear components', 760.250,
-       'Safety certification not produced', 'Held pending disposal.', 'forfeit', NULL)
+       'Safety certification not produced', 'Held pending disposal.', 'forfeit', NULL),
+
+      -- ── COMPLETED disposals: these reach Sold / Destroyed in STEP 4 ───────
+      -- 36, 37 → SOLD    (36 straight away; 37 after 3 unsold rounds)
+      -- 38, 39 → DESTROYED (38 straight away; 39 after 2 undestroyed rounds)
+      -- 40, 41 → one more of each, so both tables have a couple of rows.
+      (36, DATE '2025-11-25', 'China',     'Horizon Imports Lanka',        '198812345670', '0711112223', 'No 112, Maradana Road, Colombo 10',
+       'Horizon Clearing Ltd',      'CUSDEC/2025/8930', '2025-11-24', 'GL1/CASE/2025/336', 'HRZU1122330', 'Aluminium kitchen sinks and taps', 940.500,
+       'Undeclared quantity on manifest', 'Sold at the first tender.', 'forfeit_sold', NULL),
+
+      (37, DATE '2025-12-05', 'India',     'Pearl Hardware Traders',       '197923456781', '0712223334', 'No 64, Kotahena Street, Colombo 13',
+       'Pearl Cargo Services',      'CUSDEC/2025/9015', '2025-12-04', 'GL1/CASE/2025/337', 'PRLU2233441', 'Galvanised pipe fittings assortment', 1560.750,
+       'Import licence not produced', 'Sold only at the fourth tender.', 'forfeit_sold_late', NULL),
+
+      (38, DATE '2025-12-11', 'Thailand',  'Nature Fresh Lanka',           '199034567892', '0713334445', 'No 9, Station Road, Ratnapura',
+       'Nature Clearing Agents',    'CUSDEC/2025/9060', '2025-12-10', 'GL1/CASE/2025/338', 'NTFU3344552', 'Preserved fruit pulp cartons', 1240.300,
+       'Unfit for human consumption', 'Destroyed at the first destruction.', 'forfeit_destroyed', NULL),
+
+      (39, DATE '2026-01-12', 'Vietnam',   'Delta Chemicals Lanka',        '198645678903', '0714445556', 'No 38, Baseline Road, Colombo 09',
+       'Delta Clearing House',      'CUSDEC/2026/1055', '2026-01-11', 'GL1/CASE/2026/439', 'DLTU4455663', 'Industrial solvent drums', 2250.000,
+       'Hazardous chemicals without permit', 'Destroyed at the third attempt.', 'forfeit_destroyed_late', NULL),
+
+      (40, DATE '2026-01-26', 'Dubai',     'Sunset Textiles Lanka',        '199756789014', '0715556667', 'No 21, First Cross Street, Colombo 11',
+       'Sunset Clearing Lanka',     'CUSDEC/2026/1170', '2026-01-25', 'GL1/CASE/2026/440', 'SNST5566774', 'Curtain fabric rolls, assorted', 680.400,
+       'Counterfeit brand labels', 'Sold at the second tender.', 'forfeit_sold_late', NULL),
+
+      (41, DATE '2026-02-09', 'Malaysia',  'Apex Plastics Lanka',          '198567890125', '0716667778', 'No 143, Negombo Road, Ja-Ela',
+       'Apex Cargo Lanka',          'CUSDEC/2026/1270', '2026-02-08', 'GL1/CASE/2026/441', 'APXU6677885', 'Expired PVC resin sacks', 3100.600,
+       'Degraded stock, unusable', 'Destroyed at the second attempt.', 'forfeit_destroyed_late', NULL)
     ) AS t(n, entry_date, origin, consignee, nic, phone, address, declarant,
            cusdec_no, cusdec_date, case_no, container, descr, weight,
            reason, notes, outcome, old_sr)
@@ -376,6 +415,15 @@ BEGIN
         (32, 1, 'Steel Mesh Sheets',      'Reinforcement mesh, 6mm x 2m x 3m',      65 , 'Pieces',  9800.00, '7314.20.00', 'Steel Products'),
         (32, 2, 'Binding Wire Coils',     'Galvanised binding wire, 25kg coil',     38 , 'Pieces',  4200.00, '7217.20.00', 'Steel Products'),
 
+        -- Multi-item completed disposals, so the Sold / Destroyed tables show
+        -- several lines under one SR.
+        (37, 1, 'Pipe Elbows 2in',        'Galvanised 90-degree elbows, 2 inch',   240, 'Pieces',   680.00, '7307.19.00', 'Hardware'),
+        (37, 2, 'Pipe Tees 2in',          'Galvanised equal tees, 2 inch',         180, 'Pieces',   820.00, '7307.19.00', 'Hardware'),
+        (37, 3, 'Pipe Unions 2in',        'Galvanised screwed unions, 2 inch',     150, 'Pieces',   950.00, '7307.19.00', 'Hardware'),
+
+        (39, 1, 'Solvent Drums 200L',     'Industrial solvent, 200L steel drum',    24 , 'Pieces', 32000.00, '3814.00.00', 'Chemicals'),
+        (39, 2, 'Thinner Cans 20L',       'Paint thinner, 20L can',                 90 , 'Pieces',  4800.00, '3814.00.00', 'Chemicals'),
+
         (11, 1, 'Chair Frames',           'Knock-down wooden chair frames',        90 , 'Pieces',  5600.00, '9401.69.00', 'Furniture'),
         (11, 2, 'Table Tops',             'Laminated MDF table tops, 4ft',         40 , 'Pieces',  8900.00, '9403.30.00', 'Furniture'),
         (11, 3, 'Drawer Runners',         'Metal drawer runner pairs, 450mm',      200, 'Pieces',   740.00, '8302.42.00', 'Hardware'),
@@ -410,17 +458,17 @@ BEGIN
       VALUES (
         v_item, v_pkg, v_yard, it.item_name, it.descr, it.qty,
         it.uom, it.unit_val, it.hs, it.cat, false,
-        CASE r.outcome
-          WHEN 'abandoned' THEN 'Abandoned'
-          WHEN 'forfeit'   THEN 'Forfeit'
-          WHEN 'forfeit_open' THEN 'Forfeit'
-          WHEN 'other'     THEN 'Other: Pending court case'
+        CASE
+          WHEN r.outcome = 'abandoned'      THEN 'Abandoned'
+          WHEN r.outcome LIKE 'forfeit%'    THEN 'Forfeit'
+          WHEN r.outcome = 'other'          THEN 'Other: Pending court case'
           ELSE 'Detain' END,
-        CASE r.outcome
-          WHEN 'abandoned' THEN 'Supposed to be Destroyed'
-          WHEN 'forfeit'   THEN 'Supposed to be Sold / Auction'
-          WHEN 'forfeit_open' THEN 'Supposed to be Sold / Auction'
-          WHEN 'other'     THEN 'Supposed to be Converted'
+        CASE
+          WHEN r.outcome = 'abandoned'   THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%_destroyed%'
+                                         THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%' THEN 'Supposed to be Sold / Auction'
+          WHEN r.outcome = 'other'       THEN 'Supposed to be Converted'
           ELSE 'Pending Licence, Pending Classification / Valuation' END,
         NULL,
         r.entry_date::timestamptz + interval '10 hours');
@@ -433,11 +481,12 @@ BEGIN
         CASE (r.n + it.seq) % 3 WHEN 0 THEN wh1 WHEN 1 THEN wh2 ELSE wh3 END,
         v_yard,
         CASE (r.n + it.seq) % 3 WHEN 0 THEN 'A' WHEN 1 THEN 'B' ELSE 'C' END,
-        CASE r.outcome
-          WHEN 'abandoned' THEN 'Supposed to be Destroyed'
-          WHEN 'forfeit'   THEN 'Supposed to be Sold / Auction'
-          WHEN 'forfeit_open' THEN 'Supposed to be Sold / Auction'
-          WHEN 'other'     THEN 'Supposed to be Converted'
+        CASE
+          WHEN r.outcome = 'abandoned'   THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%_destroyed%'
+                                         THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%' THEN 'Supposed to be Sold / Auction'
+          WHEN r.outcome = 'other'       THEN 'Supposed to be Converted'
           ELSE 'Pending Licence' END,
         it.qty, v_off,
         r.entry_date::timestamptz + interval '14 hours',
@@ -464,17 +513,17 @@ BEGIN
         lpad(((8400 + r.n * 3) % 9999)::text, 4, '0') || '.'
           || lpad(((10 + r.n) % 99)::text, 2, '0') || '.00',
         'General Cargo', false,
-        CASE r.outcome
-          WHEN 'abandoned' THEN 'Abandoned'
-          WHEN 'forfeit'   THEN 'Forfeit'
-          WHEN 'forfeit_open' THEN 'Forfeit'
-          WHEN 'other'     THEN 'Other: Pending court case'
+        CASE
+          WHEN r.outcome = 'abandoned'      THEN 'Abandoned'
+          WHEN r.outcome LIKE 'forfeit%'    THEN 'Forfeit'
+          WHEN r.outcome = 'other'          THEN 'Other: Pending court case'
           ELSE 'Detain' END,
-        CASE r.outcome
-          WHEN 'abandoned' THEN 'Supposed to be Destroyed'
-          WHEN 'forfeit'   THEN 'Supposed to be Sold / Auction'
-          WHEN 'forfeit_open' THEN 'Supposed to be Sold / Auction'
-          WHEN 'other'     THEN 'Supposed to be Donated'
+        CASE
+          WHEN r.outcome = 'abandoned'   THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%_destroyed%'
+                                         THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%' THEN 'Supposed to be Sold / Auction'
+          WHEN r.outcome = 'other'       THEN 'Supposed to be Donated'
           ELSE 'Pending Inquiry' END,
         NULL,
         r.entry_date::timestamptz + interval '10 hours');
@@ -487,11 +536,12 @@ BEGIN
         CASE r.n % 3 WHEN 0 THEN wh1 WHEN 1 THEN wh2 ELSE wh3 END,
         v_yard,
         CASE r.n % 3 WHEN 0 THEN 'A' WHEN 1 THEN 'B' ELSE 'C' END,
-        CASE r.outcome
-          WHEN 'abandoned' THEN 'Supposed to be Destroyed'
-          WHEN 'forfeit'   THEN 'Supposed to be Sold / Auction'
-          WHEN 'forfeit_open' THEN 'Supposed to be Sold / Auction'
-          WHEN 'other'     THEN 'Supposed to be Donated'
+        CASE
+          WHEN r.outcome = 'abandoned'   THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%_destroyed%'
+                                         THEN 'Supposed to be Destroyed'
+          WHEN r.outcome LIKE 'forfeit%' THEN 'Supposed to be Sold / Auction'
+          WHEN r.outcome = 'other'       THEN 'Supposed to be Donated'
           ELSE 'Pending Inquiry' END,
         v_qty, v_off,
         r.entry_date::timestamptz + interval '14 hours',
@@ -560,7 +610,7 @@ BEGIN
     -- 'forfeit_open' → window OPEN    (forfeited days ago)   → "In Appeal"
     --   The 30-day window is measured from forfeited_at, so an OPEN one is
     --   backdated only a few days from today and its deadline is in the future.
-    IF r.outcome IN ('forfeit', 'forfeit_open') THEN
+    IF r.outcome LIKE 'forfeit%' THEN
       v_forf_at := CASE
         -- OPEN: forfeited 3–20 days ago, so deadline = +30d is still ahead.
         WHEN r.outcome = 'forfeit_open'
@@ -710,6 +760,12 @@ BEGIN
       WHEN f.sr_number LIKE '%/35/%' THEN v_stage := 'idle';
       WHEN f.sr_number LIKE '%/31/%' THEN v_stage := 'val_b';
       WHEN f.sr_number LIKE '%/34/%' THEN v_stage := 'val_b';
+      -- SR 36-41 are the COMPLETED disposals — STEP 4 owns them entirely, so
+      -- leave them alone here (without this they would fall into 'val_a').
+      WHEN f.sr_number LIKE '%/36/%' OR f.sr_number LIKE '%/37/%'
+        OR f.sr_number LIKE '%/38/%' OR f.sr_number LIKE '%/39/%'
+        OR f.sr_number LIKE '%/40/%' OR f.sr_number LIKE '%/41/%'
+                                     THEN v_stage := 'skip';
       ELSE v_stage := 'val_a';          -- SR 05 and 23
     END CASE;
 
@@ -718,6 +774,9 @@ BEGIN
       v_n_idle := v_n_idle + 1;
       CONTINUE;
     END IF;
+
+    -- Completed disposals are built by STEP 4.
+    IF v_stage = 'skip' THEN CONTINUE; END IF;
 
     -- ── AWAITING VALUATION ─────────────────────────────────────────────────
     -- forwarded = FALSE and no valuation_cost yet: the Valuation Directorate
@@ -838,6 +897,286 @@ BEGIN
     v_n_unsold, v_n_cmte, v_n_undestr, v_n_pending, v_n_val, v_n_idle;
 END $$;
 
+-- ── STEP 4: COMPLETED DISPOSALS (SR 36-41) ───────────────────────────────────
+--  These packages run all the way through and FINISH, so the Sold Packages and
+--  Destroyed Packages tables have data. Two routes to each outcome:
+--
+--    SOLD
+--      SR 36  sold at the FIRST tender          (1 round)
+--      SR 40  sold at the SECOND tender         (2 rounds: 1 unsold, then sold)
+--      SR 37  sold at the FOURTH tender         (4 rounds: 3 unsold, then sold)
+--    DESTROYED
+--      SR 38  destroyed at the FIRST destruction  (1 round)
+--      SR 41  destroyed at the SECOND destruction (2 rounds)
+--      SR 39  destroyed at the THIRD destruction  (3 rounds)
+--
+--  Every round is its own tender_sales / destructions row on its own date, so
+--  the yard's Tender Sale page shows the whole history: the earlier rounds sit
+--  there as Unsold and the last one as Sold.
+--
+--  The final round reproduces exactly what disposal_mark_sale_item_sold /
+--  disposal_mark_destruction_item_destroyed write:
+--    * a [FINAL:SOLD] / [FINAL:DESTROYED] RETURNED warehouse entry
+--    * package_items.status = 'sold' / 'destroyed'
+--    * the open (held) warehouse entry DELETED
+--    * tender_sale_items.sold / destruction_items.destroyed = true
+--
+--  Dates: forfeited -> appeal expires -> request -> valuation -> rounds -> sale.
+--  Every instant is in the PAST and always AFTER that item's appeal deadline.
+DO $$
+DECLARE
+  v_yard     text := 'GL1';
+  v_off      uuid;
+  v_req      uuid;
+  f          record;
+  v_wh       uuid;
+  v_zone     text;
+  v_hold     text;
+  v_rate     numeric;
+  v_admat    timestamptz;
+  v_qty      int;
+  v_val      numeric;
+  v_rounds   int;    -- how many attempts before it finished
+  v_age      int;    -- days ago the FINAL (successful) round ran
+  v_destroy  boolean;
+  v_sale     uuid;
+  v_when     timestamptz;
+  v_last     boolean;
+  v_seq      int := 0;
+  i          int;
+  v_n_sold   int := 0;
+  v_n_destr  int := 0;
+BEGIN
+  SELECT id INTO v_off FROM public.profiles
+   WHERE yard = v_yard ORDER BY created_at LIMIT 1;
+  IF v_off IS NULL THEN
+    SELECT id INTO v_off FROM public.profiles ORDER BY created_at LIMIT 1;
+  END IF;
+
+  -- The disposal request these were raised under (valued + forwarded).
+  v_req := gen_random_uuid();
+  INSERT INTO public.disposal_requests (
+    id, yard, request_date, status, valuation_status, valued_at, valued_by,
+    created_by, created_at)
+  VALUES (
+    v_req, v_yard, (now() - interval '200 days')::date, 'reviewed',
+    'forwarded', now() - interval '195 days', v_off, v_off,
+    now() - interval '200 days');
+
+  FOR f IN
+    SELECT fp.id, fp.package_id, fp.item_id, fp.appeal_deadline, p.sr_number
+      FROM public.forfeited_packages fp
+      JOIN public.packages p ON p.id = fp.package_id
+     WHERE p.sr_number LIKE '%/36/%' OR p.sr_number LIKE '%/37/%'
+        OR p.sr_number LIKE '%/38/%' OR p.sr_number LIKE '%/39/%'
+        OR p.sr_number LIKE '%/40/%' OR p.sr_number LIKE '%/41/%'
+     ORDER BY p.sr_number, fp.id
+  LOOP
+    v_seq := v_seq + 1;
+
+    -- How many attempts, how long ago it finished, and which outcome.
+    v_destroy := false;
+    CASE
+      WHEN f.sr_number LIKE '%/36/%' THEN v_rounds := 1; v_age := 95;
+      WHEN f.sr_number LIKE '%/40/%' THEN v_rounds := 2; v_age := 34;
+      WHEN f.sr_number LIKE '%/37/%' THEN v_rounds := 4; v_age := 20;
+      WHEN f.sr_number LIKE '%/38/%' THEN v_rounds := 1; v_age := 88;
+                                          v_destroy := true;
+      WHEN f.sr_number LIKE '%/41/%' THEN v_rounds := 2; v_age := 27;
+                                          v_destroy := true;
+      ELSE                                v_rounds := 3; v_age := 45;
+                                          v_destroy := true;   -- SR 39
+    END CASE;
+
+    SELECT quantity, unit_value INTO v_qty, v_val
+      FROM public.package_items WHERE id = f.item_id;
+    v_qty := COALESCE(v_qty, 1);
+    v_val := COALESCE(v_val, 1000);
+
+    -- Reset first: a SELECT ... INTO that finds NO row leaves the variables
+    -- holding the PREVIOUS iteration's values, which would silently attach
+    -- this item to another package's warehouse.
+    v_wh := NULL; v_zone := NULL; v_hold := NULL; v_rate := NULL; v_admat := NULL;
+
+    SELECT warehouse_id, zone, hold_reason, daily_rate, admitted_at
+      INTO v_wh, v_zone, v_hold, v_rate, v_admat
+      FROM public.warehouse_entries
+     WHERE package_id = f.package_id
+     ORDER BY (package_item_id = f.item_id) DESC NULLS LAST, admitted_at DESC
+     LIMIT 1;
+
+    -- A multi-item package loses its held entries one by one as each item is
+    -- finalised below, so by the 2nd/3rd item the lookup can come back empty.
+    -- Fall back to any warehouse rather than skipping the item.
+    IF v_wh IS NULL THEN
+      SELECT id INTO v_wh FROM public.warehouses ORDER BY code LIMIT 1;
+      v_zone := 'A';
+    END IF;
+    IF v_wh IS NULL THEN CONTINUE; END IF;
+
+    -- hold_reason and item_count are parsed as NON-NULLABLE in
+    -- WarehouseEntryModel.fromJson — a NULL in either throws and the whole
+    -- package disappears from the UI. Guarantee values here.
+    v_hold  := COALESCE(v_hold, 'Supposed to be Sold / Auction');
+    v_rate  := COALESCE(v_rate, 50);
+    v_admat := COALESCE(v_admat, now() - interval '200 days');
+
+    -- The valuation line this item was priced at.
+    INSERT INTO public.disposal_request_items (
+      id, request_id, forfeited_package_id, disposition, valuation_cost,
+      forwarded, created_at)
+    VALUES (
+      gen_random_uuid(), v_req, f.id,
+      CASE WHEN v_destroy THEN 'destruction' ELSE 'sale' END,
+      v_val, true, now() - interval '200 days')
+    ON CONFLICT DO NOTHING;
+
+    -- ── The rounds ─────────────────────────────────────────────────────────
+    -- Round i runs (v_rounds - i) * 32 days before the final one. Only the
+    -- LAST round succeeds; the earlier ones are recorded as unsold/undestroyed
+    -- attempts so the history is visible on the yard's Tender Sale page.
+    FOR i IN 1..v_rounds LOOP
+      v_last := (i = v_rounds);
+      v_when := now() - make_interval(days => v_age + (v_rounds - i) * 32);
+      -- Never before this item's own appeal deadline.
+      IF v_when < f.appeal_deadline THEN
+        v_when := f.appeal_deadline + interval '3 days';
+      END IF;
+
+      IF v_destroy THEN
+        SELECT id INTO v_sale FROM public.destructions
+         WHERE sale_number = 'GL1/DS/2026/D'
+                             || lpad((v_age + (v_rounds - i) * 32)::text, 3, '0');
+        IF v_sale IS NULL THEN
+          v_sale := gen_random_uuid();
+          INSERT INTO public.destructions (
+            id, sale_number, sale_date, serial, year, tender_type, yard,
+            sale_time, created_by, created_at)
+          VALUES (
+            v_sale,
+            'GL1/DS/2026/D' || lpad((v_age + (v_rounds - i) * 32)::text, 3, '0'),
+            v_when::date, i, 2026, 'general_cargo', v_yard, '09:30', v_off,
+            v_when - interval '2 days');
+        END IF;
+
+        INSERT INTO public.destruction_items (
+          id, destruction_id, forfeited_package_id, package_item_id, yard,
+          destroyed, destroyed_at, destroyed_price, applied_taxes, notes,
+          created_at)
+        VALUES (
+          gen_random_uuid(), v_sale, f.id, f.item_id, v_yard,
+          v_last,
+          CASE WHEN v_last THEN v_when END,
+          -- The Destroyed Packages table reads destruction_items.destroyed_price
+          -- (NOT NULL DEFAULT 0), so leaving it out shows "Rs 0.00". This is the
+          -- contractor's destruction charge, so it is a COST, not a sale price.
+          CASE WHEN v_last THEN round((v_val * v_qty * 0.06)::numeric, 2)
+               ELSE 0 END,
+          '[]'::jsonb,
+          CASE WHEN v_last
+               THEN 'Destroyed under supervision of the disposal committee'
+               ELSE 'Destruction could not be carried out on this date' END,
+          v_when - interval '2 days')
+        ON CONFLICT DO NOTHING;
+
+      ELSE
+        SELECT id INTO v_sale FROM public.tender_sales
+         WHERE sale_number = 'GL1/TS/2026/S'
+                             || lpad((v_age + (v_rounds - i) * 32)::text, 3, '0');
+        IF v_sale IS NULL THEN
+          v_sale := gen_random_uuid();
+          INSERT INTO public.tender_sales (
+            id, sale_number, sale_date, serial, year, tender_type, yard,
+            sale_time, created_by, created_at)
+          VALUES (
+            v_sale,
+            'GL1/TS/2026/S' || lpad((v_age + (v_rounds - i) * 32)::text, 3, '0'),
+            v_when::date, i::text, 2026, 'general_cargo', v_yard, '10:00',
+            v_off, v_when - interval '2 days');
+        END IF;
+
+        INSERT INTO public.tender_sale_items (
+          id, tender_sale_id, forfeited_package_id, package_item_id, yard,
+          sold, sold_at, receipt_number, sold_price, applied_taxes,
+          is_delivered, delivered_at, created_at)
+        VALUES (
+          gen_random_uuid(), v_sale, f.id, f.item_id, v_yard,
+          v_last,
+          CASE WHEN v_last THEN v_when END,
+          CASE WHEN v_last
+               THEN 'RCP/2026/' || lpad((900 + v_seq)::text, 4, '0') END,
+          CASE WHEN v_last THEN round((v_val * v_qty * 1.18)::numeric, 2)
+               ELSE 0 END,
+          '[]'::jsonb,
+          -- Most sold items were collected; leave one pending per package.
+          (v_last AND v_seq % 3 <> 0),
+          CASE WHEN v_last AND v_seq % 3 <> 0 THEN v_when + interval '5 days' END,
+          v_when - interval '2 days')
+        ON CONFLICT DO NOTHING;
+
+        -- Bids on every round. On the losing rounds they fall short of the
+        -- valuation; on the winning round the top bid clears it.
+        INSERT INTO public.tender_bids
+          (id, forfeited_package_id, tender_sale_id, amount, yard, created_by, created_at)
+        SELECT gen_random_uuid(), f.id, v_sale,
+               round((v_val * v_qty * x)::numeric, 2), v_yard, v_off,
+               v_when + interval '1 hour'
+          FROM unnest(
+                 CASE WHEN v_last THEN ARRAY[1.18, 0.94, 0.81]
+                      ELSE ARRAY[0.80 - (i * 0.05), 0.69 - (i * 0.05)] END) AS x;
+      END IF;
+
+      -- Rounds 2+ were re-priced by the Valuation Directorate after the
+      -- previous attempt failed (sales only — destructions are not re-valued).
+      IF i > 1 AND NOT v_destroy THEN
+        INSERT INTO public.tender_revaluations (
+          id, forfeited_package_id, tender_sale_id, valuation_cost, note,
+          yard, created_by, created_at)
+        VALUES (
+          gen_random_uuid(), f.id, v_sale,
+          round((v_val * (1 - (i - 1) * 0.10))::numeric, 2),
+          'Re-valued after the previous round went unsold',
+          v_yard, v_off, v_when - interval '3 days');
+      END IF;
+    END LOOP;
+
+    -- ── Finish it: the goods leave the yard ────────────────────────────────
+    v_when := now() - make_interval(days => v_age);
+    IF v_when < f.appeal_deadline THEN
+      v_when := f.appeal_deadline + interval '3 days';
+    END IF;
+
+    INSERT INTO public.warehouse_entries (
+      id, package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
+      item_count, admitted_by, admitted_at, daily_rate,
+      is_returned, returned_at, returned_by, return_notes, created_at, updated_at)
+    VALUES (
+      gen_random_uuid(), f.package_id, v_yard, f.item_id, v_wh, v_zone,
+      COALESCE(v_hold, 'Forfeit'), v_qty, v_off, COALESCE(v_admat, v_when),
+      COALESCE(v_rate, 50),
+      true, v_when, v_off,
+      CASE WHEN v_destroy
+           THEN '[FINAL:DESTROYED] — Receipt/Notes: DSR/2026/'
+                || lpad((900 + v_seq)::text, 4, '0')
+           ELSE '[FINAL:SOLD] — Receipt: RCP/2026/'
+                || lpad((900 + v_seq)::text, 4, '0') END,
+      v_when, v_when);
+
+    UPDATE public.package_items
+       SET status = CASE WHEN v_destroy THEN 'destroyed' ELSE 'sold' END
+     WHERE id = f.item_id;
+
+    DELETE FROM public.warehouse_entries
+     WHERE package_item_id = f.item_id AND is_returned = false;
+
+    IF v_destroy THEN v_n_destr := v_n_destr + 1;
+    ELSE v_n_sold := v_n_sold + 1;
+    END IF;
+  END LOOP;
+
+  RAISE NOTICE 'completed: % sold, % destroyed', v_n_sold, v_n_destr;
+END $$;
+
 -- ── VERIFY ───────────────────────────────────────────────────────────────────
 SELECT 'packages'          AS table_name, count(*) FROM public.packages
 UNION ALL SELECT 'package_items',      count(*) FROM public.package_items
@@ -865,10 +1204,10 @@ SELECT to_char(entry_date, 'YYYY-MM') AS month, count(*)
 
 -- ── STEP 3 verification: everything must be MID-PROCESS ───────────────────
 -- The first four rows MUST be 0 — nothing is sold or destroyed yet.
-SELECT 'SOLD items (must be 0)'            AS check, count(*) FROM public.package_items WHERE status = 'sold'
-UNION ALL SELECT 'DESTROYED items (must be 0)',    count(*) FROM public.package_items WHERE status = 'destroyed'
-UNION ALL SELECT '[FINAL:SOLD] entries (must be 0)',      count(*) FROM public.warehouse_entries WHERE return_notes LIKE '[FINAL:SOLD]%'
-UNION ALL SELECT '[FINAL:DESTROYED] entries (must be 0)', count(*) FROM public.warehouse_entries WHERE return_notes LIKE '[FINAL:DESTROYED]%'
+SELECT 'SOLD items (STEP 4: SR 36/37/40)'  AS check, count(*) FROM public.package_items WHERE status = 'sold'
+UNION ALL SELECT 'DESTROYED items (STEP 4: SR 38/39/41)', count(*) FROM public.package_items WHERE status = 'destroyed'
+UNION ALL SELECT '[FINAL:SOLD] entries',      count(*) FROM public.warehouse_entries WHERE return_notes LIKE '[FINAL:SOLD]%'
+UNION ALL SELECT '[FINAL:DESTROYED] entries', count(*) FROM public.warehouse_entries WHERE return_notes LIKE '[FINAL:DESTROYED]%'
 -- … and these are the stages that SHOULD have work in them.
 UNION ALL SELECT 'UNSOLD (Unsold Tenders tab)',  count(*)
     FROM public.tender_sale_items WHERE NOT sold
@@ -979,3 +1318,27 @@ UNION ALL SELECT 'destroyed before appeal expiry', count(*)
     FROM public.destruction_items di
     JOIN public.forfeited_packages fp ON fp.id = di.forfeited_package_id
    WHERE di.destroyed AND di.destroyed_at < fp.appeal_deadline;
+
+-- ── STEP 4 verification: completed disposals ────────────────────────────────
+-- Each SR should show its attempt count and exactly ONE successful round.
+SELECT p.sr_number,
+       'SALE'                                   AS route,
+       count(*)                                 AS attempts,
+       count(*) FILTER (WHERE t.sold)           AS succeeded,
+       max(t.sold_at)::date                     AS finished_on
+  FROM public.tender_sale_items t
+  JOIN public.forfeited_packages f ON f.id = t.forfeited_package_id
+  JOIN public.packages p ON p.id = f.package_id
+ WHERE EXISTS (SELECT 1 FROM public.tender_sale_items x
+                WHERE x.forfeited_package_id = f.id AND x.sold)
+ GROUP BY p.sr_number, t.forfeited_package_id
+UNION ALL
+SELECT p.sr_number, 'DESTRUCTION',
+       count(*), count(*) FILTER (WHERE d.destroyed), max(d.destroyed_at)::date
+  FROM public.destruction_items d
+  JOIN public.forfeited_packages f ON f.id = d.forfeited_package_id
+  JOIN public.packages p ON p.id = f.package_id
+ WHERE EXISTS (SELECT 1 FROM public.destruction_items x
+                WHERE x.forfeited_package_id = f.id AND x.destroyed)
+ GROUP BY p.sr_number, d.forfeited_package_id
+ ORDER BY route, sr_number;

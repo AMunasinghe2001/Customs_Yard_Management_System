@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
@@ -68,7 +69,13 @@ class _ExecutiveDashboardScreenState
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: accent.withOpacity(0.3)),
                 ),
-                child: Icon(Icons.shield_moon_rounded, size: 30, color: accent),
+                // The Customs emblem, tinted to the portal accent. Must use
+                // SvgTheme(currentColor:) — a colorFilter srcIn flattens the
+                // eye/ship detail into a solid blob.
+                child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                    width: 30,
+                    height: 30,
+                    theme: SvgTheme(currentColor: accent)),
               ),
               const Gap(14),
               Column(

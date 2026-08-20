@@ -63,16 +63,50 @@ class CustomsApp extends ConsumerStatefulWidget {
   ConsumerState<CustomsApp> createState() => _CustomsAppState();
 }
 
-class _CustomsAppState extends ConsumerState<CustomsApp> with WindowListener {
+class _CustomsAppState extends ConsumerState<CustomsApp>
+    with WindowListener, WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
     windowManager.addListener(this);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  /// Re-pull every live list when the window regains focus.
+  ///
+  /// Realtime only delivers changes to a session that is already subscribed, so
+  /// rows written while the app was in the background (or by a bulk SQL script,
+  /// or by another machine during a dropped socket) never arrive — the user had
+  /// to hit Ctrl+R. Bumping the refresh triggers on resume re-fetches instead.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    if (state == AppLifecycleState.resumed) _refreshAll();
+  }
+
+  @override
+  void onWindowFocus() => _refreshAll();
+
+  void _refreshAll() {
+    if (!mounted) return;
+    for (final t in [
+      packagesRefreshTriggerProvider,
+      warehouseRefreshTriggerProvider,
+      forfeitedRefreshTriggerProvider,
+      disposalRequestsRefreshProvider,
+      tenderSalesRefreshProvider,
+      tenderSaleItemsRefreshProvider,
+      tenderBidsRefreshTriggerProvider,
+      destructionsRefreshProvider,
+    ]) {
+      ref.read(t.notifier).trigger();
+    }
   }
 
   @override
   void dispose() {
     windowManager.removeListener(this);
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
