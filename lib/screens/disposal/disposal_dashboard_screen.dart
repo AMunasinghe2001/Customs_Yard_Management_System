@@ -1270,6 +1270,10 @@ class _DestroyedDeliveryCell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(destructionItemForPackageProvider(package.id));
     return async.when(
+      // Keep the previous value while re-fetching: without this every
+      // realtime event drops every row's cell to a spinner and back,
+      // which reads as the whole table constantly refreshing.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
@@ -1306,6 +1310,10 @@ class _DestructionValuationCell extends ConsumerWidget {
     final key = '${package.id}|${packageItemId ?? ''}';
     final async = ref.watch(destructionItemForPackageItemProvider(key));
     return async.when(
+      // Keep the previous value while re-fetching: without this every
+      // realtime event drops every row's cell to a spinner and back,
+      // which reads as the whole table constantly refreshing.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
@@ -1360,6 +1368,10 @@ class _DestructionPriceCell extends ConsumerWidget {
     final key = '${package.id}|${packageItemId ?? ''}';
     final async = ref.watch(destructionItemForPackageItemProvider(key));
     return async.when(
+      // Keep the previous value while re-fetching: without this every
+      // realtime event drops every row's cell to a spinner and back,
+      // which reads as the whole table constantly refreshing.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
@@ -1384,6 +1396,10 @@ class _SaleReceiptCell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
     return async.when(
+      // Keep the previous value while re-fetching: without this every
+      // realtime event drops every row's cell to a spinner and back,
+      // which reads as the whole table constantly refreshing.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
@@ -1411,6 +1427,10 @@ class _SaleValuationCell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
     return async.when(
+      // Keep the previous value while re-fetching: without this every
+      // realtime event drops every row's cell to a spinner and back,
+      // which reads as the whole table constantly refreshing.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
@@ -1488,6 +1508,10 @@ class _SaleFinancialsCell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
     return async.when(
+      // Keep the previous value while re-fetching: without this every
+      // realtime event drops every row's cell to a spinner and back,
+      // which reads as the whole table constantly refreshing.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
@@ -1523,6 +1547,10 @@ class _DeliveryStatusCell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
     return async.when(
+      // Keep the previous value while re-fetching: without this every
+      // realtime event drops every row's cell to a spinner and back,
+      // which reads as the whole table constantly refreshing.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
@@ -2025,7 +2053,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final async = ref.watch(unsoldTenderSalesProvider);
     final eligible =
-        ref.watch(reTenderEligibleProvider).asData?.value ?? const <String>{};
+        ref.watch(reTenderEligibleProvider).valueOrNull ?? const <String>{};
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -3168,7 +3196,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
     // that the Valuation Directorate has RE-VALUED (others await re-valuation).
     // Either way, only packages in the yard selected in this form are shown.
     final eligible =
-        ref.watch(reTenderEligibleProvider).asData?.value ?? const <String>{};
+        ref.watch(reTenderEligibleProvider).valueOrNull ?? const <String>{};
     final AsyncValue<List<DisposalRequestItemModel>> pool = (widget.reTender
             ? ref.watch(unsoldTenderSalesProvider).whenData((list) => list
                 .where((info) => eligible.contains(info.forfeited.id))
@@ -3590,6 +3618,14 @@ String _committeeItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
   final items = f.packageDetails?.items ?? const [];
   if (items.isEmpty) return 'Multiple/Unspecified';
+  // Forfeiture is recorded PER ITEM, so a multi-item package produces one row
+  // per item. Resolve THIS row's own item from item_id — falling straight
+  // through to items.first labelled every row of the package with the first
+  // item's name (e.g. three "Wash Basins +2" rows).
+  if (f.itemId != null) {
+    final match = items.where((i) => i.id == f.itemId).firstOrNull;
+    if (match != null) return match.itemName;
+  }
   if (items.length == 1) return items.first.itemName;
   return '${items.first.itemName} +${items.length - 1}';
 }
@@ -3604,7 +3640,7 @@ class _CommitteesTab extends ConsumerWidget {
     final accent = context.colors.accentLightBlue;
     final eligible = ref.watch(committeeEligibleProvider);
     final committees =
-        ref.watch(tenderCommitteesProvider).asData?.value ?? const {};
+        ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
@@ -3691,7 +3727,7 @@ class _CommitteesTab extends ConsumerWidget {
   }
 }
 
-/// A package + its appointed 5-member committee (read-only card).
+/// A package + its appointed committee (read-only card).
 class _CommitteeCard extends StatelessWidget {
   final ReTenderSaleInfo info;
   final TenderCommitteeModel committee;
@@ -4018,7 +4054,7 @@ class _UnsoldValuationCell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final f = info.forfeited;
     final revals =
-        ref.watch(tenderRevaluationsProvider(f.id)).asData?.value ?? const {};
+        ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
     // Latest round id (newest createdAt).
     String? latestId;
     DateTime? latest;
@@ -4059,7 +4095,7 @@ class _LatestValuationCell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final revals =
-        ref.watch(tenderRevaluationsProvider(f.id)).asData?.value ?? const {};
+        ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
     final reval = _latestReval(revals);
     return _ValuationCell(
       f: f,
@@ -4152,7 +4188,10 @@ class _BidsCell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
     final async = ref.watch(tenderBidsProvider(info.forfeited.id));
-    final count = async.asData?.value.values
+    // valueOrNull, NOT asData?.value: asData is null while the provider
+    // re-fetches, so the count flips to 0 and back — the table then looks
+    // like it is constantly refreshing.
+    final count = async.valueOrNull?.values
             .fold<int>(0, (s, l) => s + l.length) ??
         0;
     return InkWell(
@@ -4301,7 +4340,10 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   }
 
   String _roundLabel(TenderSaleModel s, int attempt) {
-    final parts = <String>['Tender $attempt'];
+    // Attempt 1 is the Valuation Tender (priced from the Pending Valuation, not
+    // from bids); attempts 2-4 are Tender 1/2/3. Shared with the Valuation
+    // portal via tenderRoundLabel so both read the same.
+    final parts = <String>[tenderRoundLabel(attempt)];
     if (s.saleNumber != null && s.saleNumber!.isNotEmpty) {
       parts.add(s.saleNumber!);
     }
@@ -4311,8 +4353,11 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     return parts.join(' · ');
   }
 
-  String _fmt(double b) =>
-      b == b.roundToDouble() ? b.toInt().toString() : b.toString();
+  // NumberFormat, not toString(): a raw double prints its binary artefacts
+  // (e.g. 222272.63999999998 for 222272.64).
+  String _fmt(double b) => b == b.roundToDouble()
+      ? NumberFormat('#,##0').format(b)
+      : NumberFormat('#,##0.00').format(b);
 
   // Forfeited quantity being valued (for the total).
   // Quantity valued — MUST match the Unsold table's Valuation cell
@@ -4496,6 +4541,78 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     );
   }
 
+  /// True once the Valuation Directorate has set this round's re-valuation.
+  ///
+  /// The valuation is decided BY reading these bids, so once it exists the bids
+  /// are evidence for a decision already taken — editing them would leave the
+  /// valuation resting on numbers that no longer exist. The round becomes
+  /// read-only; the next round's bids go on the next round.
+  bool get _currentRoundLocked => _revals[_current.id] != null;
+
+  /// The saved bids of a locked round, shown as read-only chips (highest first)
+  /// — the same presentation a past round gets.
+  Widget _lockedBidChips() {
+    final amounts = [..._controllers.map((c) => double.tryParse(c.text.trim()) ?? 0)]
+        .where((a) => a > 0)
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (amounts.isEmpty) {
+      return Text('No bids recorded',
+          style: TextStyle(color: context.colors.textMuted, fontSize: 12));
+    }
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (int i = 0; i < amounts.length; i++)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: context.colors.cardDark,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: i == 0
+                      ? context.colors.successGreen.withOpacity(0.5)
+                      : context.colors.borderColor),
+            ),
+            child: Text('Rs. ${_fmt(amounts[i])}',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13)),
+          ),
+      ],
+    );
+  }
+
+  /// Explains why the bids can no longer be edited.
+  Widget _lockedNotice() {
+    final blue = context.colors.accentLightBlue;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: blue.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: blue.withOpacity(0.35)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Icons.lock_outline_rounded, size: 14, color: blue),
+        const Gap(8),
+        Expanded(
+          child: Text(
+            'The Valuation Directorate has set this round’s valuation from '
+            'these bids, so they can no longer be changed. Record the next '
+            'round’s bids after the package is re-tendered.',
+            style: TextStyle(
+                color: context.colors.textSecondary,
+                fontSize: 11,
+                height: 1.35),
+          ),
+        ),
+      ]),
+    );
+  }
+
   Widget _bidField(int i, Color accent) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
@@ -4571,10 +4688,14 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                 for (int r = 0; r < lastIdx; r++)
                   _pastRoundCard(rounds[r], r + 1,
                       _past[rounds[r].id] ?? const <double>[]),
-                // Current (latest) round: editable.
+                // Current (latest) round. LOCKED once the Valuation Directorate
+                // has priced it: the valuation is decided BY looking at these
+                // bids, so changing them afterwards would invalidate it.
                 StyledFormSection(
                   gap: 0,
-                  title: '${_roundLabel(_current, rounds.length)} · Current',
+                  title: _currentRoundLocked
+                      ? '${_roundLabel(_current, rounds.length)} · Valued'
+                      : '${_roundLabel(_current, rounds.length)} · Current',
                   icon: Icons.gavel_rounded,
                   children: [
                     // Valuation first (decided before/at tendering) …
@@ -4591,18 +4712,25 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                               fontSize: 13)),
                     ]),
                     const Gap(10),
-                    for (int i = 0; i < _controllers.length; i++)
-                      _bidField(i, accent),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        onPressed: _addRow,
-                        icon: Icon(Icons.add_rounded, size: 18, color: accent),
-                        label: Text('Add bid',
-                            style: TextStyle(
-                                color: accent, fontWeight: FontWeight.w700)),
+                    if (_currentRoundLocked) ...[
+                      // Read-only chips, same as a past round.
+                      _lockedBidChips(),
+                      const Gap(10),
+                      _lockedNotice(),
+                    ] else ...[
+                      for (int i = 0; i < _controllers.length; i++)
+                        _bidField(i, accent),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: _addRow,
+                          icon: Icon(Icons.add_rounded, size: 18, color: accent),
+                          label: Text('Add bid',
+                              style: TextStyle(
+                                  color: accent, fontWeight: FontWeight.w700)),
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ],
@@ -4610,7 +4738,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
       actions: [
         TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context),
-            child: const Text('Cancel')),
+            child: Text(_currentRoundLocked ? 'Close' : 'Cancel')),
+        if (!_currentRoundLocked)
         FilledButton(
           onPressed: (_loading || _saving) ? null : _save,
           style: FilledButton.styleFrom(backgroundColor: accent),

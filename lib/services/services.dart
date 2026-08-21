@@ -3519,22 +3519,62 @@ class DisposalService {
   Future<Set<String>> getReTenderEligibleIds() async {
     final unsold = await getUnsoldTenderSales();
     if (unsold.isEmpty) return {};
-    // Latest round id per package (newest createdAt).
+    // Latest round id per package (newest createdAt), plus how many rounds it
+    // has run — a package past Tender 3 is a High Panel committee case.
     final latestRound = <String, String>{};
+    final roundCount = <String, int>{};
     for (final info in unsold) {
       final sales = [...info.sales]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-      if (sales.isNotEmpty) latestRound[info.forfeited.id] = sales.first.id;
+      if (sales.isNotEmpty) {
+        latestRound[info.forfeited.id] = sales.first.id;
+        roundCount[info.forfeited.id] = sales.length;
+      }
     }
-    final rows = await AuthService._withNetworkRetry(() => supabase
+    final ids = latestRound.keys.toList();
+
+    // 1. The current round must carry a valuation …
+    final revals = await AuthService._withNetworkRetry(() => supabase
         .from('tender_revaluations')
         .select('forfeited_package_id, tender_sale_id')
-        .inFilter('forfeited_package_id', latestRound.keys.toList()));
+        .inFilter('forfeited_package_id', ids));
+
+    // 2. … and that valuation must have been decided FROM bids, so the round
+    //    must actually have bids recorded against it. Without this a package
+    //    could be re-tendered on a price nobody bid against.
+    final bidRows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_bids')
+        .select('forfeited_package_id, tender_sale_id')
+        .inFilter('forfeited_package_id', ids));
+    final bidRounds = <String>{};
+    for (final e in (bidRows as List)) {
+      final fpId = e['forfeited_package_id']?.toString();
+      final saleId = e['tender_sale_id']?.toString();
+      if (fpId != null && saleId != null) bidRounds.add('$fpId|$saleId');
+    }
+
+    // 3. Once a package is past Tender 3 the price is a COMMITTEE decision, and
+    //    it only counts when the ADG has submitted it.
+    final committees = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_committees')
+        .select('forfeited_package_id, submitted_value')
+        .inFilter('forfeited_package_id', ids));
+    final adgSubmitted = <String>{};
+    for (final e in (committees as List)) {
+      final fpId = e['forfeited_package_id']?.toString();
+      if (fpId != null && e['submitted_value'] != null) adgSubmitted.add(fpId);
+    }
+
     final eligible = <String>{};
-    for (final e in (rows as List)) {
+    for (final e in (revals as List)) {
       final fpId = e['forfeited_package_id'] as String;
       final saleId = e['tender_sale_id'] as String?;
-      if (saleId != null && latestRound[fpId] == saleId) eligible.add(fpId);
+      if (saleId == null || latestRound[fpId] != saleId) continue;
+      if (!bidRounds.contains('$fpId|$saleId')) continue;
+      // Committee stage: needs the ADG's submission, not just any valuation.
+      final rounds = roundCount[fpId] ?? 0;
+      if (rounds > kMaxBidTenderRounds && !adgSubmitted.contains(fpId)) continue;
+      eligible.add(fpId);
     }
     return eligible;
   }
@@ -3627,7 +3667,7 @@ class DisposalService {
         }));
   }
 
-  // ── Tender committees (DG appoints 5 members for >3× unsold packages) ─────
+  // ── Tender committees (DG appoints the members for >3× unsold packages) ──
 
   /// All appointed committees, keyed by forfeited_package_id.
   Future<Map<String, TenderCommitteeModel>> getTenderCommittees() async {
@@ -3656,6 +3696,58 @@ class DisposalService {
           'created_by': uid,
           'updated_at': DateTime.now().toIso8601String(),
         }, onConflict: 'forfeited_package_id'));
+  }
+
+  /// Step 2 of the committee flow: the appointed COMMITTEE records the price it
+  /// decided after inspecting the goods. Does NOT price the tender yet — the
+  /// ADG must submit it (see [submitCommitteeValuation]).
+  Future<void> saveCommitteeValuation(
+    String forfeitedPackageId,
+    double value, {
+    String? note,
+  }) async {
+    await AuthService._withNetworkRetry(() =>
+        supabase.from('tender_committees').update({
+          'committee_value': value,
+          'committee_valued_at': DateTime.now().toIso8601String(),
+          'committee_note':
+              (note != null && note.trim().isNotEmpty) ? note.trim() : null,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('forfeited_package_id', forfeitedPackageId));
+  }
+
+  /// Step 3: the ADG submits the committee's figure as the FINAL valuation for
+  /// the package's next tender round.
+  ///
+  /// This also writes the normal `tender_revaluations` row for the current
+  /// round, so the price reaches the tender through the very same path a
+  /// Valuation Directorate re-valuation uses — Central Disposal, the reports
+  /// and the valuation chain all pick it up with no extra wiring.
+  Future<void> submitCommitteeValuation({
+    required String forfeitedPackageId,
+    required String tenderSaleId,
+    required double value,
+    String? note,
+    String? yard,
+  }) async {
+    await saveTenderRevaluation(
+      forfeitedPackageId,
+      tenderSaleId,
+      value,
+      note: (note != null && note.trim().isNotEmpty)
+          ? note.trim()
+          : 'Committee valuation submitted by the ADG',
+      yard: yard,
+    );
+
+    final uid = supabase.auth.currentUser?.id;
+    await AuthService._withNetworkRetry(() =>
+        supabase.from('tender_committees').update({
+          'submitted_value': value,
+          'submitted_at': DateTime.now().toIso8601String(),
+          'submitted_by': uid,
+          'updated_at': DateTime.now().toIso8601String(),
+        }).eq('forfeited_package_id', forfeitedPackageId));
   }
 
   /// Unsold tender packages that have gone unsold MORE THAN 3 times

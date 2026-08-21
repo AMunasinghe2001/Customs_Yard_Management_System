@@ -1239,7 +1239,8 @@ class CommitteeMember {
       };
 }
 
-/// A 5-member committee the DG appoints for a package unsold >3 times.
+/// The committee the DG appoints for a package unsold >3 times. Usually five
+/// officers, but the size is not fixed (the form allows 2-10).
 class TenderCommitteeModel {
   final String id;
   final String forfeitedPackageId;
@@ -1247,13 +1248,38 @@ class TenderCommitteeModel {
   final String? note;
   final DateTime createdAt;
 
+  /// Step 2 — the per-unit price the COMMITTEE itself decided after inspecting
+  /// the goods. Null until the appointed committee records it.
+  final double? committeeValue;
+  final DateTime? committeeValuedAt;
+  final String? committeeNote;
+
+  /// Step 3 — the ADG submitting the committee's figure as the FINAL valuation
+  /// for the next tender. Null until the ADG signs it off.
+  final double? submittedValue;
+  final DateTime? submittedAt;
+
   const TenderCommitteeModel({
     required this.id,
     required this.forfeitedPackageId,
     required this.members,
     required this.note,
     required this.createdAt,
+    this.committeeValue,
+    this.committeeValuedAt,
+    this.committeeNote,
+    this.submittedValue,
+    this.submittedAt,
   });
+
+  /// The committee exists but has not priced the goods yet.
+  bool get isAwaitingCommitteeValue => committeeValue == null;
+
+  /// The committee has priced it, but the ADG has not submitted it yet.
+  bool get isAwaitingAdgSubmission =>
+      committeeValue != null && submittedValue == null;
+
+  bool get isSubmitted => submittedValue != null;
 
   factory TenderCommitteeModel.fromJson(Map<String, dynamic> json) =>
       TenderCommitteeModel(
@@ -1265,6 +1291,15 @@ class TenderCommitteeModel {
             .toList(),
         note: json['note'] as String?,
         createdAt: DateTime.parse(json['created_at'] as String),
+        committeeValue: (json['committee_value'] as num?)?.toDouble(),
+        committeeValuedAt: json['committee_valued_at'] != null
+            ? DateTime.tryParse(json['committee_valued_at'].toString())
+            : null,
+        committeeNote: json['committee_note'] as String?,
+        submittedValue: (json['submitted_value'] as num?)?.toDouble(),
+        submittedAt: json['submitted_at'] != null
+            ? DateTime.tryParse(json['submitted_at'].toString())
+            : null,
       );
 }
 

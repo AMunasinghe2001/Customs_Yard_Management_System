@@ -1058,6 +1058,14 @@ String _valItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
   final items = f.packageDetails?.items ?? const [];
   if (items.isEmpty) return 'Multiple/Unspecified';
+  // Forfeiture is recorded PER ITEM, so a multi-item package produces one row
+  // per item. Resolve THIS row's own item from item_id — falling straight
+  // through to items.first labelled every row of the package with the first
+  // item's name (e.g. three "Wash Basins +2" rows).
+  if (f.itemId != null) {
+    final match = items.where((i) => i.id == f.itemId).firstOrNull;
+    if (match != null) return match.itemName;
+  }
   if (items.length == 1) return items.first.itemName;
   return '${items.first.itemName} +${items.length - 1}';
 }
@@ -1257,7 +1265,14 @@ class _ValBidCountChip extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final gold = context.colors.primaryGold;
-    final count = ref.watch(tenderBidsProvider(fpId)).asData?.value.values
+    // valueOrNull, NOT asData?.value: while the provider re-fetches, asData is
+    // null and the count collapses to 0 before snapping back — which is what
+    // made the table look like it was constantly refreshing. valueOrNull keeps
+    // the previous value during a reload.
+    final count = ref
+            .watch(tenderBidsProvider(fpId))
+            .valueOrNull
+            ?.values
             .fold<int>(0, (s, l) => s + l.length) ??
         0;
     return Container(
@@ -1364,8 +1379,11 @@ class _ValBidsAndRevalDialogState
     super.dispose();
   }
 
-  String _fmt(double b) =>
-      b == b.roundToDouble() ? b.toInt().toString() : b.toString();
+  // NumberFormat, not toString(): a raw double prints its binary artefacts
+  // (e.g. 222272.63999999998 for 222272.64).
+  String _fmt(double b) => b == b.roundToDouble()
+      ? NumberFormat('#,##0').format(b)
+      : NumberFormat('#,##0.00').format(b);
 
   String _roundLabel(TenderSaleModel s, int attempt) {
     final parts = <String>[tenderRoundLabel(attempt)];
@@ -1505,7 +1523,8 @@ class _ValBidsAndRevalDialogState
         ]),
         const Gap(4),
         Text(
-            'Decide the value for the next tender (${tenderRoundLabel(_rounds.length + 1)}) from the bids above.',
+            'Decide this round’s value (${tenderRoundLabel(_rounds.length)}) from the bids above. '
+            'Central Disposal can re-tender the package once it is set.',
             style: TextStyle(color: context.colors.textMuted, fontSize: 11)),
         const Gap(10),
         Row(children: [
@@ -1531,6 +1550,9 @@ class _ValBidsAndRevalDialogState
         // total never squeezes / overflows the input.
         TextField(
           controller: _costCtrl,
+          // Locked once saved: the valuation is a decision already issued to
+          // Central Disposal, so it is not silently editable afterwards.
+          enabled: !saved,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           decoration: const InputDecoration(
             labelText: 'Cost / item (LKR)',
@@ -1546,6 +1568,7 @@ class _ValBidsAndRevalDialogState
         const Gap(12),
         TextField(
           controller: _noteCtrl,
+          enabled: !saved,
           style: TextStyle(color: context.colors.textPrimary),
           maxLines: 2,
           decoration: InputDecoration(
@@ -1689,33 +1712,86 @@ class _ValBidsAndRevalDialogState
                   ),
                 ],
                 const Gap(10),
-                // The valuation for the NEXT (re-)tender — decided from the
-                // bids above. Editable; shows a Pending status until entered.
-                StyledFormSection(
-                  gap: 0,
-                  title:
-                      'Next ${tenderRoundLabel(rounds.length + 1)} · New Valuation',
-                  icon: Icons.price_change_rounded,
-                  children: [_newValuationEditor(gold)],
-                ),
+                // After the Valuation Tender plus Tender 1-3 have all gone
+                // unsold, the Valuation Directorate is done: the next price is
+                // set by a High Panel tender committee, not here.
+                if (_handedToHighPanel)
+                  StyledFormSection(
+                    gap: 0,
+                    title: 'Referred to the High Panel',
+                    icon: Icons.groups_rounded,
+                    children: [_handoverNotice()],
+                  )
+                else
+                  // The valuation for the NEXT (re-)tender — decided from the
+                  // bids above. Editable; shows Pending until entered.
+                  StyledFormSection(
+                    gap: 0,
+                    // This prices the CURRENT round — the one whose bids are
+                    // listed above. Labelling it "Next Tender N+1" made the
+                    // same round read as "Tender 2" here and "Tender 1" on
+                    // Central Disposal.
+                    title:
+                        '${tenderRoundLabel(rounds.length)} · New Valuation',
+                    icon: Icons.price_change_rounded,
+                    children: [_newValuationEditor(gold)],
+                  ),
               ],
             ),
       actions: [
         TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context),
-            child: const Text('Cancel')),
-        FilledButton(
-          onPressed: (_loading || _saving) ? null : _save,
-          style: FilledButton.styleFrom(backgroundColor: gold),
-          child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Text('Save Valuation'),
-        ),
+            child: Text(
+                (_handedToHighPanel || _alreadyValued) ? 'Close' : 'Cancel')),
+        // Hidden once this round already carries a valuation — the figure has
+        // gone to Central Disposal and must not be quietly changed.
+        if (!_handedToHighPanel && !_alreadyValued)
+          FilledButton(
+            onPressed: (_loading || _saving) ? null : _save,
+            style: FilledButton.styleFrom(backgroundColor: gold),
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Text('Save Valuation'),
+          ),
       ],
+    );
+  }
+
+  /// True once the package has exhausted the Valuation Tender + Tender 1-3.
+  /// From that point a High Panel committee decides the price.
+  bool get _handedToHighPanel => _rounds.length > kMaxBidTenderRounds;
+
+  /// True once this round's valuation has been issued.
+  bool get _alreadyValued => _revals[_current.id] != null;
+
+  /// Read-only explanation shown in place of the editor after Tender 3.
+  Widget _handoverNotice() {
+    final blue = context.colors.accentLightBlue;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: blue.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: blue.withOpacity(0.35)),
+      ),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(Icons.info_outline_rounded, size: 16, color: blue),
+        const Gap(10),
+        Expanded(
+          child: Text(
+            'This package went unsold through the Valuation Tender and '
+            'Tender 1-3. A High Panel tender committee now inspects it and '
+            'sets the committee valuation, which the ADG then submits as the '
+            'final valuation for the next tender.',
+            style: TextStyle(
+                color: context.colors.textSecondary, fontSize: 12, height: 1.4),
+          ),
+        ),
+      ]),
     );
   }
 }

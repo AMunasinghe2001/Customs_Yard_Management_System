@@ -1,9 +1,9 @@
 -- ============================================================================
 --  DUMMY DATA SEED — full SR register for testing
 --
---  STEP 1 wipes ALL package data, STEP 2 inserts 41 realistic SRs, STEP 3
+--  STEP 1 wipes ALL package data, STEP 2 inserts 45 realistic SRs, STEP 3
 --  parks SR 05-35's expired forfeits mid-pipeline, STEP 4 runs SR 36-41 all
---  the way to SOLD / DESTROYED.
+--  the way to SOLD / DESTROYED, STEP 5 appoints the tender committees.
 --  Officers / profiles / warehouses / storage rates / admin config are KEPT.
 --
 --  ⚠️ RUN THE WHOLE FILE ONCE. Running only STEP 2/3, or running the file
@@ -12,7 +12,7 @@
 --
 --  Coverage (every SR-form field is filled — nothing left null that the form
 --  would normally capture):
---    * 41 SR numbers, entry dates spread over Nov 2025 – Feb 2026
+--    * 45 SR numbers, entry dates spread over Nov 2025 – Feb 2026
 --    * 8 packages carry MULTIPLE items (2–4 each); the rest are single-item
 --    * Old Entries    → 4 packages with old_sr_number set
 --    * Released       → 3 packages with [FINAL:RELEASED] warehouse entries
@@ -31,11 +31,11 @@
 --        Pending Valuation  SR 05+23 (12 days ago) | SR 31+34 (4 days ago)
 --        Disposal Requests  SR 24 (75 days ago)    | SR 29 (26 days ago)
 --        Unsold Tenders     SR 20 x1 | SR 33 x2 | SR 26 x3 | SR 27 x2 rounds
---        Tender Committees  SR 32 x4 rounds (tenderCount >= 4)
+--        Tender Committees  SR 32/42/43/44/45 x4 rounds (tenderCount >= 4)
 --        Undestroyed        SR 12
 --        Forfeited UNTOUCHED SR 35 (30 days up, nothing started)
 --      Each tender ROUND is its own tender_sales row on its own day, so the
---      yard's Tender Sale page lists 12 sales spread Apr-Aug 2026 rather than
+--      yard's Tender Sale page lists 28 sales spread Mar-Aug 2026 rather than
 --      one. Every round is UNSOLD (sold = false, deadline passed).
 --      The goods never leave the yard: no [FINAL:...] entry, the held
 --      warehouse entry is kept, item status stays 'Forfeit'.
@@ -49,6 +49,14 @@
 --      [FINAL:DESTROYED] returned entry, status sold/destroyed, and the held
 --      entry deleted. SR 37 and 39 are multi-item, so those tables show
 --      several lines under one SR.
+--    * STEP 5 appoints a TENDER COMMITTEE (4-6 officers; five is the norm, the
+--      form allows 2-10) per forfeited item of SR 42/43/45. Each committee gets
+--      DIFFERENT officers. All four states are seeded:
+--        SR 32, 44  NO committee yet       -> "Appoint" button (type members)
+--        SR 42, 45  committee has valued  -> "Awaiting ADG" / "Submit as Final"
+--        SR 43      ADG submitted         -> "Final" + a tender_revaluations row
+--      Central Disposal's Committees tab lists every package that has a
+--      committee, read-only.
 --    * Still held     → the remainder sit in warehouses as Detain
 --
 --  Yard: GL1 (Grey Line 1). SR format: GL1/SR/nn/YYYY.
@@ -95,6 +103,15 @@ BEGIN
   IF NOT EXISTS (SELECT 1 FROM information_schema.columns
      WHERE table_schema='public' AND table_name='disposal_request_items' AND column_name='forwarded')
   THEN missing := missing || ' disposal_request_items.forwarded (20260717_valuation_per_item_forward.sql)'; END IF;
+
+  -- STEP 5 (tender committees + their valuation) needs these:
+  IF NOT EXISTS (SELECT 1 FROM information_schema.tables
+     WHERE table_schema='public' AND table_name='tender_committees')
+  THEN missing := missing || ' tender_committees (20260718_tender_committees.sql)'; END IF;
+
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+     WHERE table_schema='public' AND table_name='tender_committees' AND column_name='committee_value')
+  THEN missing := missing || ' tender_committees.committee_value (20260820_committee_valuation.sql)'; END IF;
 
   IF missing <> '' THEN
     RAISE EXCEPTION 'Missing schema — run these migrations first:%', missing;
@@ -343,7 +360,24 @@ BEGIN
 
       (41, DATE '2026-02-09', 'Malaysia',  'Apex Plastics Lanka',          '198567890125', '0716667778', 'No 143, Negombo Road, Ja-Ela',
        'Apex Cargo Lanka',          'CUSDEC/2026/1270', '2026-02-08', 'GL1/CASE/2026/441', 'APXU6677885', 'Expired PVC resin sacks', 3100.600,
-       'Degraded stock, unusable', 'Destroyed at the second attempt.', 'forfeit_destroyed_late', NULL)
+       'Degraded stock, unusable', 'Destroyed at the second attempt.', 'forfeit_destroyed_late', NULL),
+
+      -- ── More 4x-unsold packages, so Tender Committees has real volume ────
+      (42, DATE '2025-11-13', 'China',     'Colombo Tile Centre',          '198234567012', '0717778889', 'No 98, Galle Road, Wellawatte',
+       'Colombo Clearing Ltd',      'CUSDEC/2025/8862', '2025-11-12', 'GL1/CASE/2025/442', 'CTCU7788996', 'Sanitary ware and bathroom fittings', 1850.400,
+       'Undervalued declaration confirmed', 'Unsold through all four tenders.', 'forfeit', NULL),
+
+      (43, DATE '2025-11-27', 'India',     'Lanka Paper Mills',            '197845678123', '0718889990', 'No 12, Sea Beach Road, Colombo 15',
+       'Paper Line Clearing',       'CUSDEC/2025/8941', '2025-11-26', 'GL1/CASE/2025/443', 'LPMU8899007', 'Industrial paper reels', 4200.000,
+       'Import licence not produced', 'Unsold through all four tenders.', 'forfeit', NULL),
+
+      (44, DATE '2025-12-09', 'Taiwan',    'Techno Parts Lanka',           '199156789234', '0719990001', 'No 46, Dematagoda Road, Colombo 09',
+       'Techno Clearing Agents',    'CUSDEC/2025/9048', '2025-12-08', 'GL1/CASE/2025/444', 'TPLU9900118', 'Obsolete circuit boards', 320.750,
+       'Restricted e-waste import', 'Unsold through all four tenders.', 'forfeit', NULL),
+
+      (45, DATE '2026-01-05', 'Dubai',     'Gulf Carpet House',            '198767890345', '0710001112', 'No 33, Hospital Street, Colombo 01',
+       'Gulf Clearing Lanka',       'CUSDEC/2026/1010', '2026-01-04', 'GL1/CASE/2026/445', 'GCHU0011229', 'Machine-made carpet rolls', 2650.300,
+       'Country of origin misdeclared', 'Unsold through all four tenders.', 'forfeit', NULL)
     ) AS t(n, entry_date, origin, consignee, nic, phone, address, declarant,
            cusdec_no, cusdec_date, case_no, container, descr, weight,
            reason, notes, outcome, old_sr)
@@ -423,6 +457,14 @@ BEGIN
 
         (39, 1, 'Solvent Drums 200L',     'Industrial solvent, 200L steel drum',    24 , 'Pieces', 32000.00, '3814.00.00', 'Chemicals'),
         (39, 2, 'Thinner Cans 20L',       'Paint thinner, 20L can',                 90 , 'Pieces',  4800.00, '3814.00.00', 'Chemicals'),
+
+        -- More 4x-unsold committee candidates, two of them multi-item.
+        (42, 1, 'Wash Basins',            'Ceramic wash basins, white',             85 , 'Pieces',  7400.00, '6910.10.00', 'Sanitary Ware'),
+        (42, 2, 'Basin Mixer Taps',       'Chrome basin mixer taps',                130, 'Pieces',  5200.00, '8481.80.00', 'Sanitary Ware'),
+        (42, 3, 'Toilet Seat Covers',     'Moulded toilet seat covers',             160, 'Pieces',  2350.00, '3922.20.00', 'Sanitary Ware'),
+
+        (43, 1, 'Kraft Paper Reels',      'Unbleached kraft paper, 1.2m reel',      45 , 'Pieces', 18500.00, '4804.11.00', 'Paper Products'),
+        (43, 2, 'Newsprint Reels',        'Standard newsprint, 0.9m reel',          60 , 'Pieces', 14200.00, '4801.00.00', 'Paper Products'),
 
         (11, 1, 'Chair Frames',           'Knock-down wooden chair frames',        90 , 'Pieces',  5600.00, '9401.69.00', 'Furniture'),
         (11, 2, 'Table Tops',             'Laminated MDF table tops, 4ft',         40 , 'Pieces',  8900.00, '9403.30.00', 'Furniture'),
@@ -754,6 +796,11 @@ BEGIN
       WHEN f.sr_number LIKE '%/26/%' THEN v_stage := 'tendered'; v_rounds := 3; v_age := 11;
       WHEN f.sr_number LIKE '%/27/%' THEN v_stage := 'tendered'; v_rounds := 2; v_age := 40;
       WHEN f.sr_number LIKE '%/32/%' THEN v_stage := 'tendered'; v_rounds := 4; v_age := 30;
+      -- More committee candidates (4 rounds each), on their own sale dates.
+      WHEN f.sr_number LIKE '%/42/%' THEN v_stage := 'tendered'; v_rounds := 4; v_age := 16;
+      WHEN f.sr_number LIKE '%/43/%' THEN v_stage := 'tendered'; v_rounds := 4; v_age := 23;
+      WHEN f.sr_number LIKE '%/44/%' THEN v_stage := 'tendered'; v_rounds := 4; v_age := 37;
+      WHEN f.sr_number LIKE '%/45/%' THEN v_stage := 'tendered'; v_rounds := 4; v_age := 44;
       WHEN f.sr_number LIKE '%/12/%' THEN v_stage := 'undestroyed';
       WHEN f.sr_number LIKE '%/24/%' THEN v_stage := 'pending_request';
       WHEN f.sr_number LIKE '%/29/%' THEN v_stage := 'pending_request2';
@@ -1177,6 +1224,173 @@ BEGIN
   RAISE NOTICE 'completed: % sold, % destroyed', v_n_sold, v_n_destr;
 END $$;
 
+-- ── STEP 5: TENDER COMMITTEES (SR 32/42/43/44/45) ────────────────────────────
+--  Packages that stayed unsold through the Valuation Tender plus Tender 1-3
+--  go to the High Panel. The DG appoints a 5-member committee PER PACKAGE
+--  (different officers each time — a committee is chosen for that consignment,
+--  not a standing panel). The committee then values the goods, and the ADG
+--  submits that figure as the tender's final valuation.
+--
+--  This seeds all three stages so every screen has something to show:
+--
+--    SR 32  NO COMMITTEE AT ALL             → "Appoint" (type the members in)
+--    SR 44  NO COMMITTEE AT ALL             → "Appoint" (type the members in)
+--    SR 42  appointed + COMMITTEE VALUED    → "Awaiting ADG" / "Submit as Final"
+--    SR 43  appointed + valued + SUBMITTED  → "Final" + a tender_revaluations row
+--    SR 45  appointed + COMMITTEE VALUED
+--
+--  Committee SIZE varies 4-6 members (the form allows 2-10) — five is the norm,
+--  not a rule.
+--
+--  A committee is per FORFEITED PACKAGE row, and forfeiture is per item, so a
+--  multi-item package (SR 42 x3, SR 43 x2) gets a separate committee for each
+--  of its items — which is what the tables list.
+--
+--  Central Disposal's Committees tab shows exactly the packages that have a
+--  committee, read-only. No extra wiring needed: it reads tender_committees.
+DO $$
+DECLARE
+  v_yard    text := 'GL1';
+  v_off     uuid;
+  f         record;
+  v_members jsonb;
+  v_val     numeric;
+  v_qty     int;
+  v_stage   text;
+  v_round   uuid;
+  v_seq     int := 0;
+  v_size    int;    -- how many officers this committee has
+  v_n_appt  int := 0;
+  v_n_val   int := 0;
+  v_n_sub   int := 0;
+BEGIN
+  SELECT id INTO v_off FROM public.profiles
+   WHERE yard = v_yard ORDER BY created_at LIMIT 1;
+  IF v_off IS NULL THEN
+    SELECT id INTO v_off FROM public.profiles ORDER BY created_at LIMIT 1;
+  END IF;
+
+  FOR f IN
+    SELECT fp.id, fp.package_id, fp.item_id, fp.yard, p.sr_number,
+           pi.item_name, pi.quantity, pi.unit_value
+      FROM public.forfeited_packages fp
+      JOIN public.packages p       ON p.id  = fp.package_id
+      LEFT JOIN public.package_items pi ON pi.id = fp.item_id
+     -- Only the packages that reached 4 unsold tender rounds.
+     WHERE fp.id IN (
+             SELECT forfeited_package_id
+               FROM public.tender_sale_items
+              GROUP BY forfeited_package_id
+             HAVING count(*) >= 4 AND bool_and(NOT sold))
+     ORDER BY p.sr_number, pi.item_name
+  LOOP
+    v_seq := v_seq + 1;
+    v_qty := COALESCE(f.quantity, 1);
+    v_val := COALESCE(f.unit_value, 1000);
+
+    -- A DIFFERENT 5-officer committee per package. Rotating the roster by v_seq
+    -- keeps every committee distinct, the way the DG picks fresh officers for
+    -- each consignment.
+    -- A committee is USUALLY five officers, but the DG may name fewer or more
+    -- (the form allows 2-10), so vary the size: 4, 5 or 6 members.
+    v_size := 4 + (v_seq % 3);
+
+    SELECT jsonb_agg(m ORDER BY ord) INTO v_members
+      FROM (
+        SELECT ord,
+               jsonb_build_object(
+                 'name',        name,
+                 'designation', desig,
+                 'salaryNo',    salary
+               ) AS m
+          FROM (VALUES
+            (1, 'W.A.D. Perera',          'Deputy Director of Customs',     '10' || lpad(((v_seq * 7) % 90 + 10)::text, 3, '0')),
+            (2, 'M.S. Fernando',          'Superintendent of Customs',      '10' || lpad(((v_seq * 11) % 90 + 10)::text, 3, '0')),
+            (3, 'K.G. Jayasuriya',        'Assistant Superintendent',       '10' || lpad(((v_seq * 13) % 90 + 10)::text, 3, '0')),
+            (4, 'R.M.P. Bandara',         'Customs Appraiser',              '10' || lpad(((v_seq * 17) % 90 + 10)::text, 3, '0')),
+            (5, 'N.D. Wickramasinghe',    'Customs Valuation Officer',      '10' || lpad(((v_seq * 19) % 90 + 10)::text, 3, '0')),
+            (6, 'H.P. Dissanayake',       'Customs Examining Officer',      '10' || lpad(((v_seq * 23) % 90 + 10)::text, 3, '0'))
+          ) AS t(ord, name, desig, salary)
+         WHERE ord <= v_size
+      ) x;
+
+    -- How far this package has progressed.
+    v_stage := CASE
+      WHEN f.sr_number LIKE '%/43/%' THEN 'submitted'
+      WHEN f.sr_number LIKE '%/42/%' THEN 'valued'
+      WHEN f.sr_number LIKE '%/45/%' THEN 'valued'
+      -- SR 44 and SR 32 are left with NO committee, so the DG's "Appoint"
+      -- form (typing the members in) stays testable on more than one package.
+      WHEN f.sr_number LIKE '%/44/%' THEN 'none'
+      WHEN f.sr_number LIKE '%/32/%' THEN 'none'
+      ELSE 'appointed'
+    END;
+
+    -- Nothing to insert for a package the DG has not acted on yet.
+    IF v_stage = 'none' THEN CONTINUE; END IF;
+
+    INSERT INTO public.tender_committees (
+      id, forfeited_package_id, members, note, yard, created_by,
+      committee_value, committee_valued_at, committee_note,
+      submitted_value, submitted_at, submitted_by,
+      created_at, updated_at)
+    VALUES (
+      gen_random_uuid(), f.id, v_members,
+      'Committee appointed for ' || COALESCE(f.item_name, 'the consignment')
+        || ' after four unsold tenders',
+      f.yard, v_off,
+      -- Step 2: the committee's own valuation (30% below the last tender price,
+      -- reflecting goods that failed to sell four times).
+      CASE WHEN v_stage IN ('valued', 'submitted')
+           THEN round((v_val * 0.70)::numeric, 2) END,
+      CASE WHEN v_stage IN ('valued', 'submitted')
+           THEN now() - interval '6 days' END,
+      CASE WHEN v_stage IN ('valued', 'submitted')
+           THEN 'Inspected by the committee; value reduced after four failed tenders.' END,
+      -- Step 3: the ADG's submission.
+      CASE WHEN v_stage = 'submitted'
+           THEN round((v_val * 0.70)::numeric, 2) END,
+      CASE WHEN v_stage = 'submitted' THEN now() - interval '2 days' END,
+      CASE WHEN v_stage = 'submitted' THEN v_off END,
+      now() - interval '9 days', now() - interval '2 days')
+    ON CONFLICT (forfeited_package_id) DO NOTHING;
+
+    v_n_appt := v_n_appt + 1;
+    IF v_stage IN ('valued', 'submitted') THEN v_n_val := v_n_val + 1; END IF;
+
+    -- A submitted committee valuation ALSO writes the ordinary
+    -- tender_revaluations row for the package's current round — that is how the
+    -- price actually reaches the tender (same path a Valuation Directorate
+    -- re-valuation takes), so Central Disposal and the reports pick it up.
+    IF v_stage = 'submitted' THEN
+      SELECT ts.id INTO v_round
+        FROM public.tender_sale_items tsi
+        JOIN public.tender_sales ts ON ts.id = tsi.tender_sale_id
+       WHERE tsi.forfeited_package_id = f.id
+       ORDER BY ts.created_at DESC
+       LIMIT 1;
+
+      IF v_round IS NOT NULL THEN
+        DELETE FROM public.tender_revaluations
+         WHERE forfeited_package_id = f.id AND tender_sale_id = v_round;
+
+        INSERT INTO public.tender_revaluations (
+          id, forfeited_package_id, tender_sale_id, valuation_cost, note,
+          yard, created_by, created_at)
+        VALUES (
+          gen_random_uuid(), f.id, v_round,
+          round((v_val * 0.70)::numeric, 2),
+          'Committee valuation submitted by the ADG',
+          f.yard, v_off, now() - interval '2 days');
+      END IF;
+      v_n_sub := v_n_sub + 1;
+    END IF;
+  END LOOP;
+
+  RAISE NOTICE 'committees: % appointed, % valued, % submitted',
+    v_n_appt, v_n_val, v_n_sub;
+END $$;
+
 -- ── VERIFY ───────────────────────────────────────────────────────────────────
 SELECT 'packages'          AS table_name, count(*) FROM public.packages
 UNION ALL SELECT 'package_items',      count(*) FROM public.package_items
@@ -1342,3 +1556,35 @@ SELECT p.sr_number, 'DESTRUCTION',
                 WHERE x.forfeited_package_id = f.id AND x.destroyed)
  GROUP BY p.sr_number, d.forfeited_package_id
  ORDER BY route, sr_number;
+
+-- ── STEP 5 verification: tender committees ──────────────────────────────────
+-- Every committee-eligible package should have a committee with 5 members,
+-- and each package should have a DIFFERENT set of officers.
+SELECT p.sr_number,
+       pi.item_name,
+       jsonb_array_length(tc.members)                     AS members,
+       (tc.committee_value IS NOT NULL)                    AS committee_valued,
+       (tc.submitted_value IS NOT NULL)                    AS adg_submitted,
+       tc.committee_value,
+       tc.submitted_value
+  FROM public.tender_committees tc
+  JOIN public.forfeited_packages f ON f.id = tc.forfeited_package_id
+  JOIN public.packages p           ON p.id = f.package_id
+  LEFT JOIN public.package_items pi ON pi.id = f.item_id
+ ORDER BY p.sr_number, pi.item_name;
+
+-- The three committee stages, as the UI shows them.
+SELECT 'committees appointed'        AS stage, count(*) FROM public.tender_committees
+UNION ALL SELECT 'awaiting committee value', count(*)
+    FROM public.tender_committees WHERE committee_value IS NULL
+UNION ALL SELECT 'valued, awaiting ADG',      count(*)
+    FROM public.tender_committees
+   WHERE committee_value IS NOT NULL AND submitted_value IS NULL
+UNION ALL SELECT 'submitted as final',        count(*)
+    FROM public.tender_committees WHERE submitted_value IS NOT NULL;
+
+-- Each committee must have its OWN officers — no two packages sharing a
+-- salary-number set. This should return one row per distinct roster.
+SELECT count(DISTINCT members::text) AS distinct_rosters,
+       count(*)                      AS committees
+  FROM public.tender_committees;
