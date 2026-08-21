@@ -27,6 +27,7 @@ import '../screens/packages/abandoned_packages_screen.dart';
 import '../screens/packages/other_packages_screen.dart';
 import '../screens/packages/old_entries_screen.dart';
 import '../screens/packages/disposition_category_screen.dart';
+import '../screens/packages/unsold_packages_screen.dart';
 import '../screens/admin/admin_screen.dart';
 import '../screens/admin/admin_dashboard_screen.dart';
 import '../screens/profile/edit_profile_screen.dart';
@@ -120,6 +121,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(path: '/forfeited-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ForfeitedPackagesScreen())),
       GoRoute(path: '/other-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const OtherPackagesScreen())),
       GoRoute(path: '/sold-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/sold-packages', title: 'Sold Packages', subtitle: 'Goods disposed by sale', countLabel: 'Sold', finalTag: 'SOLD'))),
+      GoRoute(path: '/unsold-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const UnsoldPackagesScreen())),
       GoRoute(path: '/destroyed-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/destroyed-packages', title: 'Destroyed Packages', subtitle: 'Goods that have been destroyed', countLabel: 'Destroyed', finalTag: 'DESTROYED'))),
       GoRoute(path: '/reexported-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/reexported-packages', title: 'Re-exported Packages', subtitle: 'Goods sent back to country of origin', countLabel: 'Re-exported', finalTag: 'RE-EXPORTED'))),
       GoRoute(path: '/tender-disposals', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const TenderDisposalScreen())),

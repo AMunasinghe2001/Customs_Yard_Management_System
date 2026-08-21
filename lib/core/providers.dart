@@ -472,6 +472,13 @@ final tenderBidsChangeTriggerProvider = StreamProvider<int>((ref) async* {
       callback: (_) =>
           ref.read(tenderBidsRefreshTriggerProvider.notifier).trigger(),
     )
+    ..onPostgresChanges(
+      event: PostgresChangeEvent.all,
+      schema: 'public',
+      table: 'unsold_proposals',
+      callback: (_) =>
+          ref.read(tenderBidsRefreshTriggerProvider.notifier).trigger(),
+    )
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
 });
@@ -508,6 +515,25 @@ final tenderRevaluationsProvider = FutureProvider.family<
 
 // forfeited_package_ids that may be re-tendered — their latest unsold round has
 // a Valuation re-valuation. Packages awaiting re-valuation are excluded.
+// ── Unsold proposals (High Panel's final outcome) ──────────────────────────
+// The packages that exhausted every avenue: past Tender 3, committee valuation
+// submitted by the ADG, tendered again, still unsold. Shared by the High Panel,
+// Central Disposal and the yards so all three lists agree.
+final exhaustedUnsoldProvider =
+    FutureProvider<List<ReTenderSaleInfo>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getExhaustedUnsoldPackages();
+});
+
+// The recorded final outcomes, keyed by forfeited_package_id.
+final unsoldProposalsProvider =
+    FutureProvider<Map<String, UnsoldProposalModel>>((ref) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getUnsoldProposals();
+});
+
 // Packages whose CURRENT unsold round the Valuation Directorate has already
 // re-valued — drives their own Pending/Valued filter. Not the same as
 // reTenderEligibleProvider, which also needs bids + the ADG's submission.

@@ -1,0 +1,643 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_animate/flutter_animate.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:gap/gap.dart';
+import 'package:data_table_2/data_table_2.dart';
+import 'package:intl/intl.dart';
+import '../../core/theme.dart';
+import '../../core/providers.dart';
+import '../../core/yards.dart';
+import '../../models/models.dart';
+import '../../widgets/error_view.dart';
+import '../../widgets/empty_table_state.dart';
+import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/styled_dropdown.dart';
+import '../../widgets/tooltip_text.dart';
+import '../../widgets/package_details_dialog.dart';
+
+String _uItemName(ForfeitedPackageModel f) {
+  if (f.itemName != null) return f.itemName!;
+  final items = f.packageDetails?.items ?? const [];
+  if (items.isEmpty) return 'Multiple/Unspecified';
+  // Forfeiture is per item, so resolve THIS row's own item.
+  if (f.itemId != null) {
+    final m = items.where((i) => i.id == f.itemId).firstOrNull;
+    if (m != null) return m.itemName;
+  }
+  if (items.length == 1) return items.first.itemName;
+  return '${items.first.itemName} +${items.length - 1}';
+}
+
+int _uQty(ForfeitedPackageModel f) {
+  if (f.entryQty != null) return f.entryQty!;
+  if (f.itemId != null) {
+    final it =
+        f.packageDetails?.items.where((i) => i.id == f.itemId).firstOrNull;
+    if (it != null) return it.quantity;
+  }
+  return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
+}
+
+/// Warehouse · zone the item currently sits in.
+String _uLocation(PackageModel? pkg, String? itemId) {
+  if (pkg == null) return '—';
+  var entries = itemId != null
+      ? pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
+      : <WarehouseEntryModel>[];
+  if (entries.isEmpty) entries = [...pkg.warehouseEntries];
+  if (entries.isEmpty) return '—';
+  entries.sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
+  final w = entries.first;
+  return (w.zone != null && w.zone!.isNotEmpty)
+      ? '${w.warehouseName} · ${w.zone}'
+      : w.warehouseName;
+}
+
+final _uSearchProvider = StateProvider<String>((ref) => '');
+final _uYardProvider = StateProvider<String?>((ref) => null); // null = all
+/// null = all · false = still undecided · true = decided
+final _uDecidedProvider = StateProvider<bool?>((ref) => null);
+
+/// Icon + colour per outcome, matching the chips on the other portals.
+({IconData icon, Color colour}) _style(BuildContext context, String p) {
+  switch (p) {
+    case 'destroy':
+      return (
+        icon: Icons.delete_forever_rounded,
+        colour: context.colors.dangerRed
+      );
+    case 'remand':
+      return (
+        icon: Icons.reply_all_rounded,
+        colour: context.colors.accentLightBlue
+      );
+    case 'government_use':
+      return (
+        icon: Icons.account_balance_rounded,
+        colour: context.colors.successGreen
+      );
+    case 'auction':
+      return (icon: Icons.gavel_rounded, colour: context.colors.warningAmber);
+    default:
+      return (
+        icon: Icons.help_outline_rounded,
+        colour: context.colors.textMuted
+      );
+  }
+}
+
+/// High Panel tab: packages that have exhausted EVERY avenue — the Valuation
+/// Tender plus Tender 1-3 all failed, a committee re-valued them, the ADG
+/// submitted that figure, they were tendered again, and they STILL did not
+/// sell. The High Panel decides the final outcome here; Central Disposal and
+/// the owning yard then see that decision on their own Unsold pages.
+class UnsoldDecisionTab extends ConsumerWidget {
+  const UnsoldDecisionTab({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = AppTheme.executiveTeal;
+    final async = ref.watch(exhaustedUnsoldProvider);
+    final proposals =
+        ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
+    final q = ref.watch(_uSearchProvider).trim().toLowerCase();
+    final yardFilter = ref.watch(_uYardProvider);
+    final decidedFilter = ref.watch(_uDecidedProvider);
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        const <DateTime, double>{};
+
+    return Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Text('Unsold Packages',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700)),
+            const Gap(10),
+            Expanded(
+              child: Text(
+                  'Every avenue exhausted — decide the final outcome',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 13)),
+            ),
+            const Gap(12),
+            SizedBox(
+              width: 280,
+              child: TextField(
+                onChanged: (v) => ref.read(_uSearchProvider.notifier).state = v,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600),
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: 'Search SR / item / consignee…',
+                  prefixIcon:
+                      Icon(Icons.search_rounded, size: 20, color: accent),
+                  filled: true,
+                  fillColor: accent.withOpacity(0.06),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide(color: accent, width: 1.5)),
+                ),
+              ),
+            ),
+            const Gap(12),
+            _UYardFilter(
+              value: yardFilter,
+              onChanged: (v) => ref.read(_uYardProvider.notifier).state = v,
+            ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(12),
+          Row(children: [
+            _filterChip(context,
+                label: 'All',
+                selected: decidedFilter == null,
+                onTap: () => ref.read(_uDecidedProvider.notifier).state = null),
+            const Gap(8),
+            _filterChip(context,
+                label: 'Pending decision',
+                icon: Icons.hourglass_bottom_rounded,
+                colour: context.colors.warningAmber,
+                selected: decidedFilter == false,
+                onTap: () =>
+                    ref.read(_uDecidedProvider.notifier).state = false),
+            const Gap(8),
+            _filterChip(context,
+                label: 'Decided',
+                icon: Icons.check_circle_rounded,
+                colour: context.colors.successGreen,
+                selected: decidedFilter == true,
+                onTap: () => ref.read(_uDecidedProvider.notifier).state = true),
+          ]),
+          const Gap(14),
+          Expanded(
+            child: async.when(
+              skipLoadingOnReload: true,
+              loading: () =>
+                  Center(child: CircularProgressIndicator(color: accent)),
+              error: (e, _) => ErrorView(
+                  error: e,
+                  onRetry: () => ref.refresh(exhaustedUnsoldProvider)),
+              data: (list) {
+                var rows = list;
+                if (yardFilter != null) {
+                  rows = rows
+                      .where((i) => i.forfeited.yard == yardFilter)
+                      .toList();
+                }
+                if (q.isNotEmpty) {
+                  rows = rows.where((i) {
+                    final f = i.forfeited;
+                    return f.srNumber.toLowerCase().contains(q) ||
+                        f.consigneeName.toLowerCase().contains(q) ||
+                        _uItemName(f).toLowerCase().contains(q);
+                  }).toList();
+                }
+                if (decidedFilter != null) {
+                  rows = rows
+                      .where((i) =>
+                          proposals.containsKey(i.forfeited.id) ==
+                          decidedFilter)
+                      .toList();
+                }
+                return Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: context.colors.cardDark,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: context.colors.borderColor),
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: DataTable2(
+                      columnSpacing: 12,
+                      horizontalMargin: 16,
+                      fixedTopRows: 1,
+                      minWidth: 1040,
+                      empty: const EmptyTableState(
+                          message: 'No packages awaiting a final outcome'),
+                      headingRowColor:
+                          WidgetStateProperty.all(context.colors.surfaceDark),
+                      columns: const [
+                        DataColumn2(
+                            label: Text('SR Number'), size: ColumnSize.M),
+                        DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Consignee'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Yard'),
+                            size: ColumnSize.S,
+                            fixedWidth: 100),
+                        DataColumn2(
+                            label: Text('Qty'),
+                            size: ColumnSize.S,
+                            fixedWidth: 60),
+                        DataColumn2(
+                            label: Text('Location'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Center(child: Text('Final Outcome')),
+                            size: ColumnSize.M,
+                            fixedWidth: 200),
+                        DataColumn2(
+                            label: Center(child: Text('Details')),
+                            size: ColumnSize.S,
+                            fixedWidth: 70),
+                      ],
+                      rows: rows.map((info) {
+                        final f = info.forfeited;
+                        final pkg = f.packageDetails;
+                        return DataRow(cells: [
+                          DataCell(TooltipText(f.srNumber,
+                              style: TextStyle(
+                                  color: accent,
+                                  fontWeight: FontWeight.w600))),
+                          DataCell(TooltipText(_uItemName(f),
+                              overflow: TextOverflow.ellipsis)),
+                          DataCell(TooltipText(f.consigneeName,
+                              overflow: TextOverflow.ellipsis)),
+                          DataCell(TooltipText(yardName(f.yard),
+                              overflow: TextOverflow.ellipsis)),
+                          DataCell(TooltipText('${_uQty(f)}')),
+                          DataCell(TooltipText(_uLocation(pkg, f.itemId),
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: context.colors.textSecondary,
+                                  fontSize: 12))),
+                          DataCell(Center(
+                            child: _DecisionCell(
+                                info: info, proposal: proposals[f.id]),
+                          )),
+                          DataCell(Center(
+                            child: IconButton(
+                              icon: Icon(Icons.info_outline_rounded,
+                                  color: context.colors.accentLightBlue,
+                                  size: 18),
+                              onPressed: pkg == null
+                                  ? null
+                                  : () => showDialog(
+                                        context: context,
+                                        builder: (_) => PackageDetailsDialog(
+                                          package: pkg,
+                                          storageRate: storageRate,
+                                          headerAccentColor: accent,
+                                          useLegacySummary: true,
+                                          highlightItemId: f.itemId,
+                                          yardLabel: yardName(f.yard),
+                                        ),
+                                      ),
+                            ),
+                          )),
+                        ]);
+                      }).toList(),
+                    ),
+                  ),
+                )
+                    .animate()
+                    .fadeIn(duration: 350.ms)
+                    .slideY(begin: 0.05);
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    IconData? icon,
+    Color? colour,
+  }) {
+    final c = colour ?? AppTheme.executiveTeal;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? c.withOpacity(0.14) : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color:
+                    selected ? c.withOpacity(0.6) : context.colors.borderColor,
+                width: selected ? 1.4 : 1),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 14, color: selected ? c : context.colors.textMuted),
+              const Gap(6),
+            ],
+            Text(label,
+                style: TextStyle(
+                    color: selected ? c : context.colors.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// The decision cell: a "Decide" button until an outcome is set, then the
+/// outcome itself (still tappable, so it can be revised).
+class _DecisionCell extends ConsumerWidget {
+  final ReTenderSaleInfo info;
+  final UnsoldProposalModel? proposal;
+  const _DecisionCell({required this.info, required this.proposal});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = AppTheme.executiveTeal;
+    void open() => showDialog(
+          context: context,
+          builder: (_) => _DecisionDialog(info: info, existing: proposal),
+        );
+
+    final p = proposal;
+    if (p == null) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+            backgroundColor: context.colors.warningAmber,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            visualDensity: VisualDensity.compact),
+        icon: const Icon(Icons.rule_rounded, size: 15),
+        label: const Text('Decide', style: TextStyle(fontSize: 12)),
+        onPressed: open,
+      );
+    }
+
+    final st = _style(context, p.proposal);
+    return Tooltip(
+      message: p.note?.trim().isNotEmpty == true
+          ? p.note!.trim()
+          : 'Decided ${DateFormat('yyyy-MM-dd').format(p.decidedAt)} — tap to revise',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: open,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: st.colour.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: st.colour.withOpacity(0.45)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(st.icon, size: 13, color: st.colour),
+              const Gap(5),
+              Flexible(
+                child: Text(p.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: st.colour,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800)),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Pick one of the four outcomes, with an optional reason.
+class _DecisionDialog extends ConsumerStatefulWidget {
+  final ReTenderSaleInfo info;
+  final UnsoldProposalModel? existing;
+  const _DecisionDialog({required this.info, this.existing});
+  @override
+  ConsumerState<_DecisionDialog> createState() => _DecisionDialogState();
+}
+
+class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
+  late String? _choice = widget.existing?.proposal;
+  late final _noteCtrl =
+      TextEditingController(text: widget.existing?.note ?? '');
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    final choice = _choice;
+    if (choice == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Choose a final outcome.'),
+          backgroundColor: context.colors.dangerRed));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await ref.read(disposalServiceProvider).saveUnsoldProposal(
+            forfeitedPackageId: widget.info.forfeited.id,
+            proposal: choice,
+            note: _noteCtrl.text,
+            yard: widget.info.forfeited.yard,
+          );
+      ref.invalidate(unsoldProposalsProvider);
+      if (!mounted) return;
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Final outcome set: ${unsoldProposalLabel(choice)}'),
+          backgroundColor: context.colors.successGreen));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Failed to save: $e'),
+          backgroundColor: context.colors.dangerRed));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.executiveTeal;
+    final f = widget.info.forfeited;
+    return StyledFormDialog(
+      label: 'Final Outcome',
+      title: f.srNumber,
+      headerAccentColor: accent,
+      icon: Icons.rule_rounded,
+      width: 480,
+      child: StyledFormSection(
+        title: 'Decide · ${_uItemName(f)}',
+        icon: Icons.gavel_rounded,
+        children: [
+          Text(
+              'This package could not be sold by any means — the Valuation '
+              'Tender, Tender 1-3 and the committee-valued tender all failed. '
+              'Choose what happens to the goods.',
+              style: TextStyle(color: context.colors.textMuted, fontSize: 11)),
+          const Gap(12),
+          for (final p in kUnsoldProposals) ...[
+            _option(p),
+            const Gap(6),
+          ],
+          const Gap(6),
+          TextField(
+            controller: _noteCtrl,
+            minLines: 2,
+            maxLines: 4,
+            keyboardType: TextInputType.multiline,
+            textCapitalization: TextCapitalization.sentences,
+            style:
+                TextStyle(color: context.colors.textPrimary, fontSize: 13),
+            decoration: InputDecoration(
+              isDense: true,
+              labelText: 'Reason (optional)',
+              alignLabelWithHint: true,
+              hintText: 'Why this outcome was chosen…',
+              hintStyle:
+                  TextStyle(color: context.colors.textMuted, fontSize: 12),
+              filled: true,
+              fillColor: context.colors.cardDark,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: context.colors.borderColor)),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: context.colors.borderColor)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: accent, width: 1.4)),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context),
+            child: const Text('Cancel')),
+        FilledButton(
+          onPressed: _saving ? null : _save,
+          style: FilledButton.styleFrom(backgroundColor: accent),
+          child: _saving
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : Text(widget.existing == null ? 'Save Outcome' : 'Update'),
+        ),
+      ],
+    );
+  }
+
+  /// One selectable outcome, styled as a radio card.
+  Widget _option(String p) {
+    final st = _style(context, p);
+    final selected = _choice == p;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: _saving ? null : () => setState(() => _choice = p),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? st.colour.withOpacity(0.12)
+                : context.colors.cardDark,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: selected
+                    ? st.colour.withOpacity(0.6)
+                    : context.colors.borderColor,
+                width: selected ? 1.4 : 1),
+          ),
+          child: Row(children: [
+            Icon(
+                selected
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 17,
+                color: selected ? st.colour : context.colors.textMuted),
+            const Gap(10),
+            Icon(st.icon, size: 16, color: st.colour),
+            const Gap(8),
+            Text(unsoldProposalLabel(p),
+                style: TextStyle(
+                    color: selected
+                        ? st.colour
+                        : context.colors.textPrimary,
+                    fontSize: 13.5,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// Yard dropdown with an "All Yards" option.
+class _UYardFilter extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  const _UYardFilter({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.executiveTeal;
+    return SizedBox(
+      width: 210,
+      child: Theme(
+        data: Theme.of(context).copyWith(
+          inputDecorationTheme:
+              Theme.of(context).inputDecorationTheme.copyWith(
+                    filled: true,
+                    fillColor: accent.withOpacity(0.06),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide:
+                            BorderSide(color: accent.withOpacity(0.4))),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide:
+                            BorderSide(color: accent.withOpacity(0.4))),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: accent, width: 1.5)),
+                  ),
+        ),
+        child: StyledDropdownFormField<String>(
+          label: 'Yard',
+          value: value ?? '_all',
+          options: [
+            const StyledDropdownOption('_all', 'All Yards'),
+            ...kYards.map((y) => StyledDropdownOption(y.code, y.name)),
+          ],
+          onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
+        ),
+      ),
+    );
+  }
+}

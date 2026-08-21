@@ -1219,6 +1219,64 @@ class TenderRevaluationModel {
       );
 }
 
+/// The FINAL outcome the High Panel decides for a package that could not be
+/// sold by any means — after the Valuation Tender, Tender 1-3, a committee
+/// re-valuation and one more tender all failed.
+class UnsoldProposalModel {
+  final String id;
+  final String forfeitedPackageId;
+
+  /// destroy | remand | government_use | auction
+  final String proposal;
+  final String? note;
+  final String? yard;
+  final DateTime decidedAt;
+
+  const UnsoldProposalModel({
+    required this.id,
+    required this.forfeitedPackageId,
+    required this.proposal,
+    required this.note,
+    required this.yard,
+    required this.decidedAt,
+  });
+
+  String get label => unsoldProposalLabel(proposal);
+
+  factory UnsoldProposalModel.fromJson(Map<String, dynamic> json) =>
+      UnsoldProposalModel(
+        id: json['id'] as String,
+        forfeitedPackageId: json['forfeited_package_id'] as String,
+        proposal: json['proposal'] as String,
+        note: json['note'] as String?,
+        yard: json['yard'] as String?,
+        decidedAt: DateTime.parse(json['decided_at'].toString()),
+      );
+}
+
+/// The four outcomes, in the order the High Panel sees them.
+const List<String> kUnsoldProposals = [
+  'destroy',
+  'remand',
+  'government_use',
+  'auction',
+];
+
+String unsoldProposalLabel(String? p) {
+  switch (p) {
+    case 'destroy':
+      return 'Destroy';
+    case 'remand':
+      return 'Remand';
+    case 'government_use':
+      return 'Government Use';
+    case 'auction':
+      return 'Auction';
+    default:
+      return p ?? '—';
+  }
+}
+
 /// One committee member (name + optional designation + optional salary no).
 class CommitteeMember {
   final String name;

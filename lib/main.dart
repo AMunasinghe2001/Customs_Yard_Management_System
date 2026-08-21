@@ -72,6 +72,17 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
     WidgetsBinding.instance.addObserver(this);
   }
 
+  /// The last time the live lists were force-refreshed.
+  ///
+  /// Refreshing on EVERY focus event made the app re-fetch (and visibly reset
+  /// tables to page 1) whenever the window lost focus for a moment — taking a
+  /// screenshot, alt-tabbing, clicking another app. Realtime already covers
+  /// live changes; the focus refresh only exists to catch writes made while
+  /// this session was not subscribed, which cannot happen several times a
+  /// minute. So it is throttled.
+  DateTime? _lastForcedRefresh;
+  static const _refreshCooldown = Duration(minutes: 2);
+
   /// Re-pull every live list when the window regains focus.
   ///
   /// Realtime only delivers changes to a session that is already subscribed, so
@@ -89,6 +100,12 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
 
   void _refreshAll() {
     if (!mounted) return;
+    final now = DateTime.now();
+    if (_lastForcedRefresh != null &&
+        now.difference(_lastForcedRefresh!) < _refreshCooldown) {
+      return; // too soon — realtime is already keeping the data current
+    }
+    _lastForcedRefresh = now;
     for (final t in [
       packagesRefreshTriggerProvider,
       warehouseRefreshTriggerProvider,

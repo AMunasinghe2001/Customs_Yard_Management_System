@@ -9,6 +9,7 @@ import '../../core/providers.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../reports/reports_screen.dart';
 import 'tender_committee_tab.dart';
+import 'unsold_decision_tab.dart';
 
 /// Executive Office (DG / ADG) portal. Standalone scaffold (not AppShell).
 /// Customs' two highest posts pick a yard and generate/view/print any report
@@ -30,7 +31,7 @@ class _ExecutiveDashboardScreenState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -205,6 +206,16 @@ class _ExecutiveDashboardScreenState
                           Text('Tender Committees'),
                         ]),
                   ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.rule_folder_rounded, size: 18),
+                          Gap(8),
+                          Text('Unsold Packages'),
+                        ]),
+                  ),
                 ],
               ),
             ),
@@ -217,6 +228,7 @@ class _ExecutiveDashboardScreenState
               children: const [
                 ReportsScreen(executiveMode: true),
                 TenderCommitteeTab(),
+                UnsoldDecisionTab(),
               ],
             ),
           ),

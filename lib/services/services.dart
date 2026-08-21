@@ -3779,6 +3779,56 @@ class DisposalService {
         }).eq('forfeited_package_id', forfeitedPackageId));
   }
 
+  // ── Unsold proposals (the High Panel's final outcome) ────────────────────
+
+  /// Every recorded final outcome, keyed by forfeited_package_id.
+  Future<Map<String, UnsoldProposalModel>> getUnsoldProposals() async {
+    final rows = await AuthService._withNetworkRetry(
+        () => supabase.from('unsold_proposals').select('*'));
+    final out = <String, UnsoldProposalModel>{};
+    for (final e in (rows as List)) {
+      final m = UnsoldProposalModel.fromJson(e as Map<String, dynamic>);
+      out[m.forfeitedPackageId] = m;
+    }
+    return out;
+  }
+
+  /// Record (or replace) the High Panel's final outcome for a package.
+  Future<void> saveUnsoldProposal({
+    required String forfeitedPackageId,
+    required String proposal,
+    String? note,
+    String? yard,
+  }) async {
+    final uid = supabase.auth.currentUser?.id;
+    await AuthService._withNetworkRetry(() =>
+        supabase.from('unsold_proposals').upsert({
+          'forfeited_package_id': forfeitedPackageId,
+          'proposal': proposal,
+          'note': (note != null && note.trim().isNotEmpty) ? note.trim() : null,
+          'yard': yard,
+          'decided_by': uid,
+          'decided_at': DateTime.now().toIso8601String(),
+          'updated_at': DateTime.now().toIso8601String(),
+        }, onConflict: 'forfeited_package_id'));
+  }
+
+  /// The packages that have exhausted EVERY avenue and now need (or already
+  /// carry) a final outcome: past Tender 3, a committee valuation submitted by
+  /// the ADG, tendered again, and still unsold.
+  ///
+  /// Shared by the High Panel (who decide), Central Disposal and the yards
+  /// (who see the decision), so all three lists agree by construction.
+  Future<List<ReTenderSaleInfo>> getExhaustedUnsoldPackages() async {
+    final unsold = await getUnsoldTenderSales();
+    if (unsold.isEmpty) return [];
+    final committees = await getTenderCommittees();
+    return unsold.where((i) {
+      if (i.tenderCount <= kMaxBidTenderRounds) return false;
+      return committees[i.forfeited.id]?.submittedValue != null;
+    }).toList();
+  }
+
   /// Unsold tender packages that have gone unsold MORE THAN 3 times
   /// (≥4 tender attempts) — the pool for DG committee appointment.
   Future<List<ReTenderSaleInfo>> getCommitteeEligiblePackages() async {

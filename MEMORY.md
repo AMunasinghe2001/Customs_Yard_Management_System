@@ -384,6 +384,24 @@
 - ⚠️ **A filter alone did not make Pending vs Valued readable** — every row still had the same gold "Value" button, so the state was invisible unless you filtered. `_ValRevalCell` now renders **amber "Set Value"** when pending and a **green single-line card with the amount** when done (still tappable to review the bids). Kept to one line so the row height stays default.
 - **Packages past Tender 3 are excluded from the Valuation Unsold table entirely** (`info.tenderCount <= kMaxBidTenderRounds`), and from its pending count. They belong to the High Panel — a committee prices them and the ADG submits it — so the Valuation Directorate has no action left on them. The dialog's `_handedToHighPanel` branch is now only a safety net for a package crossing the threshold while the dialog is open.
 
+## Build env: C: is full — temp moved to D: (2026-08-21)
+- `flutter run` failed with **`FileSystemException: writeFrom failed … app.dill (OS Error: There is not enough space on the disk, errno = 112)`**. Not a code fault: **C: had 0 GB free** of 156 GB.
+- Cleared user Temp (1.75 GB, incl. 8 stale `flutter_tools.*` folders), Windows Temp and the Windows Update download cache → only ~1 GB recovered.
+- Fix applied: **user `TMP`/`TEMP` env vars now point at `D:\FlutterTemp`** (D: has 28 GB). Builds succeed again. ⚠️ Open a NEW terminal for this to take effect — existing shells keep the old value.
+- ⚠️ **C: is still ~0.8 GB free.** The unaccounted ~25 GB is `pagefile.sys` (19 GB) + `hiberfil.sys` (6 GB); `powercfg /h off` would reclaim the hibernation file, but that is a system-level change left to the user. Largest folders: Users 49 GB, Windows 37 GB, Program Files (x86) 25 GB.
+- Note: clearing `%LOCALAPPDATA%\Temp` wholesale also deletes this session's scratchpad/tasks dirs under `Temp\claude\…`; recreate them if a tool call reports a missing output file.
+
+## Unsold Proposals tab gated to exhausted packages (2026-08-21)
+- The **Unsold Proposals** tab (Central Disposal, "Unresolved / Unsold Packages") watched `unsoldTenderSalesProvider` **unfiltered**, so it listed every unsold package — including ones the Valuation Directorate had not finished with. A final outcome is only proposed once **every** avenue is exhausted, so it now requires BOTH: `info.tenderCount > kMaxBidTenderRounds` **and** `tenderCommitteesProvider[fpId].submittedValue != null` (the ADG submitted the committee's figure, it was tendered again, and it still did not sell). Banner text updated to say so.
+- **The Proposal cell overflowed the row** — a `Wrap` of four chips in a 300px column spilled onto a second line. Now a single horizontally-scrollable `Row`, column widened to 430, and "Government Use" shortened to "Govt. Use".
+
+## Unsold final outcome: High Panel decides, 3 portals show it (2026-08-21)
+- ⚠️ **Screenshots/alt-tab reloaded every table.** My `onWindowFocus → _refreshAll()` fired on EVERY focus event, so any brief focus loss re-fetched and reset tables to page 1. Now **throttled to one forced refresh per 2 minutes** (`_lastForcedRefresh` + `_refreshCooldown` in [main.dart](lib/main.dart)) — realtime already covers live changes; the focus refresh only exists to catch writes made while unsubscribed.
+- ⚠️ **Migration `20260821_unsold_proposals.sql`** — new `unsold_proposals` table (one row per forfeited package, `proposal` in destroy|remand|government_use|auction, + note/yard/decided_by/decided_at). RLS: **High Panel `for all`**, Central Disposal / Valuation / Appeal read-only, and the **owning yard read-only for its own yard**. Added to the realtime publication. **Apply in Supabase.**
+- **`getExhaustedUnsoldPackages()` is the single source of truth** for "every avenue exhausted": past Tender 3 **and** `tender_committees.submittedValue != null` (committee re-valued, ADG submitted, tendered again, still unsold). Exposed as `exhaustedUnsoldProvider`, and **all three portals read it**, so their lists agree by construction.
+- **Who does what**: the **High Panel decides** (new 3rd tab `UnsoldDecisionTab` — radio-card dialog for the four outcomes + optional reason, All/Pending/Decided filter); **Central Disposal** and the **yard** only *display* the decision. Central Disposal's action chips were replaced with a read-only `_ProposalOutcomeChip` — showing buttons there implied that directorate could choose.
+- **New yard page `/unsold-packages`** ([unsold_packages_screen.dart](lib/screens/packages/unsold_packages_screen.dart)), nav item added right after "Sold Packages" in both officer and admin navs. Filters to the officer's own yard (belt-and-braces over RLS, since the shared provider is cross-yard).
+
 ## Change Log Summary (inferred from git)
 - Built admin dashboard, package management, reporting + centralized providers & package details dialog.
 - Added Google sign-in + `verifyUserSession`; admin login UI.
