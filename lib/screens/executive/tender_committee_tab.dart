@@ -15,6 +15,19 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'package:intl/intl.dart';
 
+/// True when the signed-in High Panel officer is the ADG.
+///
+/// The position lives in `profiles.job_role` ('DG' / 'ADG'), but accounts
+/// created before the "High Panel Officers" rename can carry it only in the
+/// username ('adg') or the full name, so check all three rather than locking
+/// the ADG out of their own actions.
+bool _isAdg(ProfileModel? p) {
+  if (p == null) return false;
+  if ((p.jobRole ?? '').trim().toUpperCase() == 'ADG') return true;
+  if ((p.username ?? '').trim().toLowerCase() == 'adg') return true;
+  return RegExp(r'\(\s*ADG\s*\)', caseSensitive: false).hasMatch(p.fullName);
+}
+
 String _cItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
   final items = f.packageDetails?.items ?? const [];
@@ -256,7 +269,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                         DataColumn2(
                             label: Center(child: Text('Committee Value')),
                             size: ColumnSize.S,
-                            fixedWidth: 172),
+                            fixedWidth: 186),
                         DataColumn2(
                             label: Center(child: Text('Details')),
                             size: ColumnSize.S,
@@ -444,7 +457,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
   /// A committee is normally five officers, but the DG may appoint fewer or
   /// more, so the rows are add/remove-able rather than a fixed five.
   static const _defaultCount = 5;
-  static const _minCount = 2;
+  static const _minCount = 1;
   static const _maxCount = 10;
 
   final List<TextEditingController> _names = [];
@@ -505,26 +518,26 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
   }
 
   Future<void> _save() async {
-    // Every row that exists must be named — remove a row instead of blanking it.
-    final missing = <int>[];
-    for (var i = 0; i < _count; i++) {
-      if (_names[i].text.trim().isEmpty) missing.add(i + 1);
-    }
-    if (missing.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              'Enter a name for member ${missing.join(', ')}, or remove the row.'),
-          backgroundColor: context.colors.dangerRed));
-      return;
-    }
+    // Blank rows are simply IGNORED, not an error: the form opens with five
+    // rows because five is the norm, but a committee may be any size, so
+    // leaving the spare rows empty is the normal way to appoint fewer.
     final members = <CommitteeMember>[];
     for (var i = 0; i < _count; i++) {
+      final name = _names[i].text.trim();
+      if (name.isEmpty) continue;
       final d = _desigs[i].text.trim();
       final s = _salaries[i].text.trim();
       members.add(CommitteeMember(
-          name: _names[i].text.trim(),
+          name: name,
           designation: d.isEmpty ? null : d,
           salaryNo: s.isEmpty ? null : s));
+    }
+    // …but at least one named officer is required.
+    if (members.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Enter at least one committee member.'),
+          backgroundColor: context.colors.dangerRed));
+      return;
     }
     setState(() => _saving = true);
     try {
@@ -690,11 +703,19 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
           const Gap(8),
           TextField(
             controller: _noteCtrl,
-            maxLines: 2,
-            style: TextStyle(color: context.colors.textPrimary),
+            minLines: 2,
+            maxLines: 4,
+            keyboardType: TextInputType.multiline,
+            textCapitalization: TextCapitalization.sentences,
+            style: TextStyle(
+                color: context.colors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               isDense: true,
-              hintText: 'Note (optional)',
+              labelText: 'Note (optional)',
+              alignLabelWithHint: true,
+              hintText: 'Why these officers were appointed…',
+              hintStyle:
+                  TextStyle(color: context.colors.textMuted, fontSize: 12),
               filled: true,
               fillColor: context.colors.cardDark,
               contentPadding:
@@ -844,7 +865,7 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
     final fmt = NumberFormat('#,##0');
     final effQty = (qty != null && qty! > 0) ? qty! : 1;
     final profile = ref.watch(currentProfileProvider);
-    final isAdg = (profile?.jobRole ?? '').toUpperCase() == 'ADG';
+    final isAdg = _isAdg(profile);
 
     // 2 ── Committee appointed but has not priced the goods yet.
     if (c.committeeValue == null) {
@@ -877,40 +898,73 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
     final shown = c.submittedValue ?? c.committeeValue!;
     final colour = submitted ? context.colors.successGreen : accent;
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(8),
-      // Only the ADG can act here: re-open to submit, or to revise.
-      onTap: isAdg
-          ? () => showDialog(
-                context: context,
-                builder: (_) => _CommitteeValuationDialog(
-                    info: info, qty: effQty, committee: c),
-              )
-          : null,
+    // The whole cell is one tappable card, so the tap target is obvious rather
+    // than being bare text that happens to respond to a click.
+    final tappable = isAdg;
+    // TWO compact lines so the row keeps its default height: the amount with
+    // a leading status icon, and the unit rate + status beneath. Three stacked
+    // lines overflowed the row by 16px, and raising dataRowHeight made the
+    // whole table look bloated.
+    final card = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: colour.withOpacity(tappable ? 0.10 : 0.06),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: colour.withOpacity(tappable ? 0.45 : 0.25)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Text('LKR ${fmt.format(shown * effQty)}',
-              style: TextStyle(
-                  color: colour, fontWeight: FontWeight.w800, fontSize: 12)),
-          Text('@ ${fmt.format(shown)} × $effQty',
-              style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
-          const Gap(2),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-            decoration: BoxDecoration(
-              color: colour.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: colour.withOpacity(0.4)),
-            ),
-            child: Text(
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(
                 submitted
-                    ? 'Final'
-                    : (isAdg ? 'Submit as Final' : 'Awaiting ADG'),
-                style: TextStyle(
-                    color: colour, fontSize: 9, fontWeight: FontWeight.w700)),
-          ),
+                    ? Icons.verified_rounded
+                    : (isAdg
+                        ? Icons.arrow_circle_right_rounded
+                        : Icons.hourglass_bottom_rounded),
+                size: 12,
+                color: colour),
+            const Gap(4),
+            Flexible(
+              child: Text('LKR ${fmt.format(shown * effQty)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: colour,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12)),
+            ),
+          ]),
+          Text(
+              submitted
+                  ? 'Final'
+                  : (isAdg ? 'Submit as Final' : 'Awaiting ADG'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: colour, fontSize: 9.5, fontWeight: FontWeight.w700)),
         ],
+      ),
+    );
+
+    if (!tappable) return card;
+
+    return Tooltip(
+      message: submitted
+          ? 'Revise the final valuation'
+          : 'Submit this as the tender’s final valuation',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => showDialog(
+            context: context,
+            builder: (_) => _CommitteeValuationDialog(
+                info: info, qty: effQty, committee: c),
+          ),
+          child: card,
+        ),
       ),
     );
   }
@@ -1035,7 +1089,7 @@ class _CommitteeValuationDialogState
     final f = widget.info.forfeited;
     final c = widget.committee;
     final profile = ref.watch(currentProfileProvider);
-    final isAdg = (profile?.jobRole ?? '').toUpperCase() == 'ADG';
+    final isAdg = _isAdg(profile);
     final typed = _typed ?? 0;
 
     return StyledFormDialog(
@@ -1131,14 +1185,26 @@ class _CommitteeValuationDialogState
                 ),
               ]),
               const Gap(10),
+              // Grows 2-4 lines as you type, wraps instead of truncating, and
+              // carries the same enabled/focused borders as every other field
+              // (a single-line box with only `border:` set looked broken and
+              // hid the end of the note).
               TextField(
                 controller: _noteCtrl,
                 enabled: isAdg,
-                style: TextStyle(color: context.colors.textPrimary),
-                maxLines: 1,
+                style: TextStyle(
+                    color: context.colors.textPrimary, fontSize: 13),
+                minLines: 2,
+                maxLines: 4,
+                keyboardType: TextInputType.multiline,
+                textCapitalization: TextCapitalization.sentences,
                 decoration: InputDecoration(
                   isDense: true,
-                  hintText: 'Committee note (optional)',
+                  labelText: 'Committee note (optional)',
+                  alignLabelWithHint: true,
+                  hintText: 'Why the committee set this value…',
+                  hintStyle:
+                      TextStyle(color: context.colors.textMuted, fontSize: 12),
                   filled: true,
                   fillColor: context.colors.cardDark,
                   contentPadding:
@@ -1147,6 +1213,17 @@ class _CommitteeValuationDialogState
                       borderRadius: BorderRadius.circular(10),
                       borderSide:
                           BorderSide(color: context.colors.borderColor)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide:
+                          BorderSide(color: context.colors.borderColor)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: accent, width: 1.4)),
+                  disabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                          color: context.colors.borderColor.withOpacity(0.5))),
                 ),
               ),
               if (c.isAwaitingAdgSubmission && !isAdg) ...[
@@ -1174,31 +1251,32 @@ class _CommitteeValuationDialogState
         TextButton(
             onPressed: _saving ? null : () => Navigator.pop(context),
             child: const Text('Cancel')),
-        // Step 2 — record/revise the committee's own figure.
-        // Step 2 — the ADG enters the figure the committee decided.
+        // Step 2 — the ADG records the figure the committee decided.
+        // Labels are kept short: three long buttons overflowed the dialog.
         if (isAdg && !c.isSubmitted)
           OutlinedButton(
             onPressed: _saving ? null : _saveCommitteeValue,
             style: OutlinedButton.styleFrom(
                 foregroundColor: accent,
+                visualDensity: VisualDensity.compact,
                 side: BorderSide(color: accent.withOpacity(0.6))),
-            child: Text(c.committeeValue == null
-                ? 'Save Committee Value'
-                : 'Update Value'),
+            child: Text(c.committeeValue == null ? 'Save Value' : 'Update'),
           ),
         // Step 3 — ADG only.
         if (isAdg) ...[
           const Gap(8),
           FilledButton(
             onPressed: (_saving || _typed == null) ? null : _submitAsFinal,
-            style: FilledButton.styleFrom(backgroundColor: accent),
+            style: FilledButton.styleFrom(
+                backgroundColor: accent,
+                visualDensity: VisualDensity.compact),
             child: _saving
                 ? const SizedBox(
                     width: 16,
                     height: 16,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
-                : Text(c.isSubmitted ? 'Re-submit as Final' : 'Submit as Final'),
+                : Text(c.isSubmitted ? 'Re-submit' : 'Submit as Final'),
           ),
         ],
       ],

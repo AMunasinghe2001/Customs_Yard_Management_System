@@ -942,6 +942,12 @@ class _DispoChip extends StatelessWidget {
 final _valUnsoldSearchProvider = StateProvider<String>((ref) => '');
 final _valUnsoldYardProvider = StateProvider<String?>((ref) => null); // null=all
 
+/// Which rows the Unsold Tenders table shows:
+///   null  = all
+///   false = still PENDING this round's valuation (the work queue)
+///   true  = already VALUED and sent on to Central Disposal
+final _valUnsoldStatusProvider = StateProvider<bool?>((ref) => null);
+
 /// Search field styled exactly like the Central Disposal Unsold page.
 class _ValSearchField extends StatefulWidget {
   final String value;
@@ -1081,6 +1087,9 @@ class _UnsoldTendersValTab extends ConsumerWidget {
     final async = ref.watch(unsoldTenderSalesProvider);
     final q = ref.watch(_valUnsoldSearchProvider).toLowerCase();
     final yardFilter = ref.watch(_valUnsoldYardProvider);
+    final statusFilter = ref.watch(_valUnsoldStatusProvider);
+    final valued =
+        ref.watch(valuedCurrentRoundProvider).valueOrNull ?? const <String>{};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     return Padding(
@@ -1113,7 +1122,34 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                   ref.read(_valUnsoldYardProvider.notifier).state = v,
             ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(16),
+          const Gap(12),
+          // Pending vs Valued — lets the officer see just their work queue,
+          // or just what has already gone to Central Disposal.
+          Row(children: [
+            _ValStatusFilter(
+              value: statusFilter,
+              onChanged: (v) =>
+                  ref.read(_valUnsoldStatusProvider.notifier).state = v,
+            ),
+            const Spacer(),
+            // How much work is actually waiting on this directorate.
+            Builder(builder: (context) {
+              // Same exclusion as the table: High Panel packages are not this
+              // directorate's work, so they must not inflate the count.
+              final all = (async.valueOrNull ?? const <ReTenderSaleInfo>[])
+                  .where((i) => i.tenderCount <= kMaxBidTenderRounds)
+                  .toList();
+              final pending = all
+                  .where((i) => !valued.contains(i.forfeited.id))
+                  .length;
+              if (all.isEmpty) return const SizedBox.shrink();
+              return Text(
+                  '$pending of ${all.length} awaiting valuation',
+                  style: TextStyle(
+                      color: context.colors.textMuted, fontSize: 12));
+            }),
+          ]),
+          const Gap(14),
           Expanded(
             child: async.when(
               skipLoadingOnReload: true,
@@ -1122,7 +1158,13 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
               data: (list) {
-                var rows = list;
+                // Packages past Tender 3 belong to the High Panel: a committee
+                // prices them and the ADG submits it, so the Valuation
+                // Directorate has no work left on them. Drop them entirely
+                // rather than showing rows this officer cannot act on.
+                var rows = list
+                    .where((info) => info.tenderCount <= kMaxBidTenderRounds)
+                    .toList();
                 if (yardFilter != null) {
                   rows = rows
                       .where((info) => info.forfeited.yard == yardFilter)
@@ -1135,6 +1177,13 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                         f.consigneeName.toLowerCase().contains(q) ||
                         _valItemName(f).toLowerCase().contains(q);
                   }).toList();
+                }
+                // Pending vs Valued for THIS round.
+                if (statusFilter != null) {
+                  rows = rows
+                      .where((info) =>
+                          valued.contains(info.forfeited.id) == statusFilter)
+                      .toList();
                 }
                 return Container(
                   width: double.infinity,
@@ -1195,26 +1244,14 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                                 overflow: TextOverflow.ellipsis)),
                             DataCell(TooltipText(yardName(f.yard),
                                 overflow: TextOverflow.ellipsis)),
-                            DataCell(Center(child: Text('${info.tenderCount}×'))),
+                            DataCell(Center(
+                                child: _ValAttemptsBadge(info: info))),
                             DataCell(Center(
                                 child: _ValBidCountChip(fpId: f.id))),
                             DataCell(Center(
-                              child: FilledButton.icon(
-                                style: FilledButton.styleFrom(
-                                    backgroundColor: gold,
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10),
-                                    visualDensity: VisualDensity.compact),
-                                icon: const Icon(Icons.price_change_rounded,
-                                    size: 15),
-                                label: const Text('Value',
-                                    style: TextStyle(fontSize: 12)),
-                                onPressed: () => showDialog(
-                                  context: context,
-                                  builder: (_) =>
-                                      _ValBidsAndRevalDialog(info: info),
-                                ),
-                              ),
+                              child: _ValRevalCell(
+                                  info: info,
+                                  valued: valued.contains(f.id)),
                             )),
                             DataCell(Center(
                               child: IconButton(
@@ -1763,6 +1800,10 @@ class _ValBidsAndRevalDialogState
 
   /// True once the package has exhausted the Valuation Tender + Tender 1-3.
   /// From that point a High Panel committee decides the price.
+  ///
+  /// The Unsold table now filters these packages out entirely, so this is a
+  /// safety net for a package that crosses the threshold while the dialog is
+  /// already open.
   bool get _handedToHighPanel => _rounds.length > kMaxBidTenderRounds;
 
   /// True once this round's valuation has been issued.
@@ -1794,4 +1835,325 @@ class _ValBidsAndRevalDialogState
       ]),
     );
   }
+}
+
+/// How many times this package has been tendered, as a tappable badge that
+/// opens the round history — the same affordance Central Disposal's Unsold
+/// table uses, instead of a bare "4×".
+class _ValAttemptsBadge extends StatelessWidget {
+  final ReTenderSaleInfo info;
+  const _ValAttemptsBadge({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    final amber = context.colors.warningAmber;
+    return Tooltip(
+      message: 'View tender history',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: () => showDialog(
+            context: context,
+            builder: (_) => _ValTenderHistoryDialog(info: info),
+          ),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: amber.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: amber.withOpacity(0.4)),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('${info.tenderCount}×',
+                  style:
+                      TextStyle(color: amber, fontWeight: FontWeight.w800)),
+              const Gap(5),
+              Icon(Icons.history_rounded, size: 14, color: amber),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Every tender round this package has been through, newest first.
+class _ValTenderHistoryDialog extends StatelessWidget {
+  final ReTenderSaleInfo info;
+  const _ValTenderHistoryDialog({required this.info});
+
+  @override
+  Widget build(BuildContext context) {
+    final gold = context.colors.primaryGold;
+    // Oldest first so the round numbers read Valuation Tender, Tender 1, 2, 3.
+    final sales = [...info.sales]
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return StyledFormDialog(
+      label: 'Tender History',
+      title: info.forfeited.srNumber,
+      headerAccentColor: gold,
+      icon: Icons.history_rounded,
+      width: 520,
+      child: StyledFormSection(
+        title: 'Tendered ${info.tenderCount} time(s)',
+        icon: Icons.gavel_rounded,
+        children: [
+          for (int i = 0; i < sales.length; i++) ...[
+            if (i > 0) const Gap(8),
+            _roundCard(context, sales[i], i + 1, i == sales.length - 1),
+          ],
+        ],
+      ),
+      actions: [
+        TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close')),
+      ],
+    );
+  }
+
+  Widget _roundCard(
+      BuildContext context, TenderSaleModel t, int attempt, bool isLatest) {
+    final gold = context.colors.primaryGold;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+            color: isLatest ? gold.withOpacity(0.5) : context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(Icons.gavel_rounded, size: 15, color: gold),
+            const Gap(8),
+            Expanded(
+              child: Text(tenderRoundLabel(attempt),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14)),
+            ),
+            if (isLatest)
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: gold.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: gold.withOpacity(0.4)),
+                ),
+                child: Text('Current',
+                    style: TextStyle(
+                        color: gold,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700)),
+              ),
+          ]),
+          const Gap(8),
+          _kv(context, 'Sale Number', t.saleNumber ?? '—'),
+          _kv(
+              context,
+              'Sale Date',
+              t.saleDate != null
+                  ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
+                  : '—'),
+          _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
+          if (t.createdByName?.trim().isNotEmpty == true)
+            _kv(context, 'Created By', t.createdByName!.trim()),
+        ],
+      ),
+    );
+  }
+
+  Widget _kv(BuildContext context, String k, String v) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 3),
+      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        SizedBox(
+          width: 118,
+          child: Text(k,
+              style:
+                  TextStyle(color: context.colors.textMuted, fontSize: 12)),
+        ),
+        Expanded(
+          child: Text(v,
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
+}
+
+/// All / Pending / Valued segmented filter for the Unsold Tenders table.
+///
+/// "Pending" is this directorate's actual work queue — rounds whose valuation
+/// has not been set yet. "Valued" is what has already gone to Central Disposal.
+class _ValStatusFilter extends StatelessWidget {
+  final bool? value;
+  final ValueChanged<bool?> onChanged;
+  const _ValStatusFilter({required this.value, required this.onChanged});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(children: [
+      _chip(context, label: 'All', selected: value == null, onTap: () => onChanged(null)),
+      const Gap(8),
+      _chip(context,
+          label: 'Pending',
+          icon: Icons.hourglass_bottom_rounded,
+          colour: context.colors.warningAmber,
+          selected: value == false,
+          onTap: () => onChanged(false)),
+      const Gap(8),
+      _chip(context,
+          label: 'Valued',
+          icon: Icons.check_circle_rounded,
+          colour: context.colors.successGreen,
+          selected: value == true,
+          onTap: () => onChanged(true)),
+    ]);
+  }
+
+  Widget _chip(
+    BuildContext context, {
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    IconData? icon,
+    Color? colour,
+  }) {
+    final c = colour ?? context.colors.primaryGold;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          decoration: BoxDecoration(
+            color: selected ? c.withOpacity(0.14) : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+                color: selected ? c.withOpacity(0.6) : context.colors.borderColor,
+                width: selected ? 1.4 : 1),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (icon != null) ...[
+              Icon(icon,
+                  size: 14,
+                  color: selected ? c : context.colors.textMuted),
+              const Gap(6),
+            ],
+            Text(label,
+                style: TextStyle(
+                    color: selected ? c : context.colors.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+/// The Re-valuation cell — must make PENDING and VALUED tellable apart at a
+/// glance, which a uniform gold "Value" button on every row could not do.
+///
+///   pending -> amber outlined "Set Value" button
+///   valued  -> green card showing the amount that was set (still tappable,
+///              so the round's bids and figure can be reviewed)
+class _ValRevalCell extends ConsumerWidget {
+  final ReTenderSaleInfo info;
+  final bool valued;
+  const _ValRevalCell({required this.info, required this.valued});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final amber = context.colors.warningAmber;
+    final green = context.colors.successGreen;
+
+    void open() => showDialog(
+          context: context,
+          builder: (_) => _ValBidsAndRevalDialog(info: info),
+        );
+
+    if (!valued) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+            backgroundColor: amber,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            visualDensity: VisualDensity.compact),
+        icon: const Icon(Icons.price_change_rounded, size: 15),
+        label: const Text('Set Value', style: TextStyle(fontSize: 12)),
+        onPressed: open,
+      );
+    }
+
+    // Valued — show WHAT was set, not just that it was.
+    final current = info.latestSale?.id;
+    final revals =
+        ref.watch(tenderRevaluationsProvider(info.forfeited.id)).valueOrNull ??
+            const <String, TenderRevaluationModel>{};
+    final unit = current != null ? revals[current]?.valuationCost : null;
+    final qty = _valQtyOf(info.forfeited);
+    final fmt = NumberFormat('#,##0');
+
+    return Tooltip(
+      message: 'View bids & the valuation set for this round',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: open,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: green.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: green.withOpacity(0.45)),
+            ),
+            // ONE line, so the row keeps its default height. A stacked
+            // label + amount forced the whole table taller, which looked
+            // worse than the extra line was worth.
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.check_circle_rounded, size: 13, color: green),
+              const Gap(5),
+              Flexible(
+                child: Text(
+                    unit != null ? 'LKR ${fmt.format(unit * qty)}' : 'Valued',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: green,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800)),
+              ),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Quantity a valuation is multiplied by — the forfeited entry qty, else the
+/// matched item's qty, else the sum of the package's items.
+int _valQtyOf(ForfeitedPackageModel f) {
+  if (f.entryQty != null) return f.entryQty!;
+  if (f.itemId != null) {
+    final it =
+        f.packageDetails?.items.where((i) => i.id == f.itemId).firstOrNull;
+    if (it != null) return it.quantity;
+  }
+  return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
 }

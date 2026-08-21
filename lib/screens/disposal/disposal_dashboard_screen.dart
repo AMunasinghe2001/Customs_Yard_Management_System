@@ -2230,8 +2230,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                         )),
                         DataCell(Center(child: _BidsCell(info: info))),
                         DataCell(Center(
-                          child: _ReTenderStatusChip(
-                              eligible: eligible.contains(f.id)),
+                          child: _ReTenderStatusCell(
+                              info: info, eligible: eligible.contains(f.id)),
                         )),
                         DataCell(Center(
                           child: pkg != null
@@ -4141,17 +4141,58 @@ class _AttemptsBadge extends StatelessWidget {
   }
 }
 
-/// Re-tender eligibility chip: a package may be re-tendered only once the
-/// Valuation Directorate has set a re-valuation for its current unsold round.
+/// Resolves whether this package's current round already carries a price —
+/// either a Valuation Directorate re-valuation, or a committee value the ADG
+/// has recorded but not yet submitted — and renders the chip accordingly.
+class _ReTenderStatusCell extends ConsumerWidget {
+  final ReTenderSaleInfo info;
+  final bool eligible;
+  const _ReTenderStatusCell({required this.info, required this.eligible});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fpId = info.forfeited.id;
+    final current = info.latestSale?.id;
+
+    final revals =
+        ref.watch(tenderRevaluationsProvider(fpId)).valueOrNull ?? const {};
+    final committees =
+        ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
+
+    final hasReval = current != null && revals[current] != null;
+    // A committee value counts as "valued" even before the ADG submits it —
+    // that is exactly the "Awaiting ADG" state.
+    final hasCommitteeValue = committees[fpId]?.committeeValue != null;
+
+    return _ReTenderStatusChip(
+        eligible: eligible, valued: hasReval || hasCommitteeValue);
+  }
+}
+
+/// Re-tender status chip. THREE states, not two — a package can be valued but
+/// still not re-tenderable:
+///   * valued + eligible          -> "Re-valued"    (green, ready to re-tender)
+///   * valued, awaiting the ADG   -> "Awaiting ADG" (blue, committee stage)
+///   * no valuation for the round -> "Awaiting value" (amber)
+/// Showing `eligible` alone made committee packages that HAD a valuation read
+/// as "Awaiting value".
 class _ReTenderStatusChip extends StatelessWidget {
   final bool eligible;
-  const _ReTenderStatusChip({required this.eligible});
+
+  /// The current round already carries a valuation (Valuation Directorate
+  /// re-valuation, or a committee value the ADG has not submitted yet).
+  final bool valued;
+  const _ReTenderStatusChip({required this.eligible, this.valued = false});
 
   @override
   Widget build(BuildContext context) {
     final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
-    final color = eligible ? green : amber;
+    final blue = context.colors.accentLightBlue;
+    // Valued but not yet re-tenderable == the committee's figure is waiting on
+    // the ADG's submission.
+    final awaitingAdg = !eligible && valued;
+    final color = eligible ? green : (awaitingAdg ? blue : amber);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -4163,12 +4204,17 @@ class _ReTenderStatusChip extends StatelessWidget {
         Icon(
             eligible
                 ? Icons.check_circle_rounded
-                : Icons.hourglass_bottom_rounded,
+                : (awaitingAdg
+                    ? Icons.how_to_reg_rounded
+                    : Icons.hourglass_bottom_rounded),
             size: 13,
             color: color),
         const Gap(5),
         Flexible(
-          child: Text(eligible ? 'Re-valued' : 'Awaiting value',
+          child: Text(
+              eligible
+                  ? 'Re-valued'
+                  : (awaitingAdg ? 'Awaiting ADG' : 'Awaiting value'),
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                   color: color, fontSize: 11, fontWeight: FontWeight.w700)),
@@ -4541,6 +4587,88 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     );
   }
 
+  /// The High Panel committee's figure for this package, if one exists.
+  ///
+  /// Past Tender 3 the price is no longer a Valuation Directorate decision — a
+  /// committee inspects the goods and the ADG submits their figure. Central
+  /// Disposal needs to see both the number and whether it is final, because
+  /// the package only becomes re-tenderable once the ADG has submitted.
+  Widget _committeeValueSection() {
+    final c = ref
+        .watch(tenderCommitteesProvider)
+        .valueOrNull?[widget.info.forfeited.id];
+    if (c == null || c.committeeValue == null) return const SizedBox.shrink();
+
+    final submitted = c.submittedValue != null;
+    final colour =
+        submitted ? context.colors.successGreen : context.colors.accentLightBlue;
+    final unit = c.submittedValue ?? c.committeeValue!;
+    final total = unit * _qty;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: StyledFormSection(
+        gap: 0,
+        title: 'High Panel Committee Valuation',
+        icon: Icons.groups_rounded,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: colour.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: colour.withOpacity(0.4)),
+            ),
+            child: RichText(
+              text: TextSpan(children: [
+                TextSpan(
+                    text: 'LKR ${_fmt(total)}',
+                    style: TextStyle(
+                        color: colour,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13)),
+                TextSpan(
+                    text: '  (@ ${_fmt(unit)} × $_qty)',
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 11)),
+              ]),
+            ),
+          ),
+          const Gap(8),
+          Row(children: [
+            Icon(
+                submitted
+                    ? Icons.check_circle_rounded
+                    : Icons.hourglass_bottom_rounded,
+                size: 13,
+                color: colour),
+            const Gap(6),
+            Expanded(
+              child: Text(
+                  submitted
+                      ? 'Submitted by the ADG as the final valuation — the '
+                          'package can now be re-tendered.'
+                      : 'Recorded by the committee. Awaiting the ADG to submit '
+                          'it as the final valuation.',
+                  style: TextStyle(
+                      color: context.colors.textSecondary,
+                      fontSize: 11,
+                      height: 1.35)),
+            ),
+          ]),
+          if (c.committeeNote?.trim().isNotEmpty == true) ...[
+            const Gap(6),
+            Text(c.committeeNote!.trim(),
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 11,
+                    fontStyle: FontStyle.italic)),
+          ],
+        ],
+      ),
+    );
+  }
+
   /// True once the Valuation Directorate has set this round's re-valuation.
   ///
   /// The valuation is decided BY reading these bids, so once it exists the bids
@@ -4733,6 +4861,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                     ],
                   ],
                 ),
+                // The High Panel committee's figure, once one exists.
+                _committeeValueSection(),
               ],
             ),
       actions: [

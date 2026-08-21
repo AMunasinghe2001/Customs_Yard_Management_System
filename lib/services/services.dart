@@ -3579,6 +3579,35 @@ class DisposalService {
     return eligible;
   }
 
+  /// The forfeited-package ids whose CURRENT unsold round already carries a
+  /// Valuation Directorate re-valuation.
+  ///
+  /// Deliberately NOT the same as [getReTenderEligibleIds]: that also demands
+  /// bids and, past Tender 3, the ADG's submission. This answers only "has the
+  /// Valuation Directorate done its part for this round?", which is what their
+  /// own Pending/Valued filter needs.
+  Future<Set<String>> getValuedCurrentRoundIds() async {
+    final unsold = await getUnsoldTenderSales();
+    if (unsold.isEmpty) return {};
+    final latestRound = <String, String>{};
+    for (final info in unsold) {
+      final sales = [...info.sales]
+        ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (sales.isNotEmpty) latestRound[info.forfeited.id] = sales.first.id;
+    }
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_revaluations')
+        .select('forfeited_package_id, tender_sale_id')
+        .inFilter('forfeited_package_id', latestRound.keys.toList()));
+    final valued = <String>{};
+    for (final e in (rows as List)) {
+      final fpId = e['forfeited_package_id'] as String;
+      final saleId = e['tender_sale_id'] as String?;
+      if (saleId != null && latestRound[fpId] == saleId) valued.add(fpId);
+    }
+    return valued;
+  }
+
   /// The re-valuations recorded for a package, keyed by tender round
   /// (tender_sale_id → re-valuation). Round-less rows key under ''.
   Future<Map<String, TenderRevaluationModel>> getTenderRevaluationsByRound(

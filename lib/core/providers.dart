@@ -508,6 +508,16 @@ final tenderRevaluationsProvider = FutureProvider.family<
 
 // forfeited_package_ids that may be re-tendered — their latest unsold round has
 // a Valuation re-valuation. Packages awaiting re-valuation are excluded.
+// Packages whose CURRENT unsold round the Valuation Directorate has already
+// re-valued — drives their own Pending/Valued filter. Not the same as
+// reTenderEligibleProvider, which also needs bids + the ADG's submission.
+final valuedCurrentRoundProvider = FutureProvider<Set<String>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getValuedCurrentRoundIds();
+});
+
 final reTenderEligibleProvider = FutureProvider<Set<String>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(tenderSaleItemsChangeTriggerProvider);
