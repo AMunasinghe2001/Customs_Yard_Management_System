@@ -3565,12 +3565,26 @@ class DisposalService {
       if (fpId != null && e['submitted_value'] != null) adgSubmitted.add(fpId);
     }
 
+    // 4. Once the DG has decided a package's FINAL outcome (destroy / remand /
+    //    government use / auction) it must stop being offered for re-tender —
+    //    the decision ends the tender route for those goods.
+    final decided = await AuthService._withNetworkRetry(() => supabase
+        .from('unsold_proposals')
+        .select('forfeited_package_id')
+        .inFilter('forfeited_package_id', ids));
+    final decidedIds = {
+      for (final e in (decided as List))
+        if (e['forfeited_package_id'] != null)
+          e['forfeited_package_id'].toString()
+    };
+
     final eligible = <String>{};
     for (final e in (revals as List)) {
       final fpId = e['forfeited_package_id'] as String;
       final saleId = e['tender_sale_id'] as String?;
       if (saleId == null || latestRound[fpId] != saleId) continue;
       if (!bidRounds.contains('$fpId|$saleId')) continue;
+      if (decidedIds.contains(fpId)) continue;
       // Committee stage: needs the ADG's submission, not just any valuation.
       final rounds = roundCount[fpId] ?? 0;
       if (rounds > kMaxBidTenderRounds && !adgSubmitted.contains(fpId)) continue;
@@ -3824,8 +3838,26 @@ class DisposalService {
     if (unsold.isEmpty) return [];
     final committees = await getTenderCommittees();
     return unsold.where((i) {
+      // 1. The Valuation Tender + Tender 1-3 must all have failed.
       if (i.tenderCount <= kMaxBidTenderRounds) return false;
-      return committees[i.forfeited.id]?.submittedValue != null;
+
+      // 2. The committee must have valued it AND the ADG submitted that
+      //    figure as the tender's price.
+      final c = committees[i.forfeited.id];
+      final submittedAt = c?.submittedAt;
+      if (c?.submittedValue == null || submittedAt == null) return false;
+
+      // 3. …and the package must then have been tendered AGAIN at that price
+      //    and STILL not sold. Without this the package reached the DG the
+      //    moment the ADG submitted, before the committee-priced tender had
+      //    even been placed — so the DG was deciding the final outcome of a
+      //    package that still had a live chance of selling.
+      //
+      //    `getUnsoldTenderSales` already guarantees "not sold" and "the
+      //    latest round's deadline has passed", so a round created after the
+      //    submission means exactly: the committee-priced tender ran and
+      //    failed.
+      return i.sales.any((s) => s.createdAt.isAfter(submittedAt));
     }).toList();
   }
 

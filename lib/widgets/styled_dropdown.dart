@@ -184,6 +184,11 @@ class StyledDropdownFormField<T> extends StatelessWidget {
   final TextStyle? valueStyle;
   final TextStyle? labelStyle;
 
+  /// Corner radius of the tap/hover splash. Must match the radius of the
+  /// [OutlineInputBorder] the caller themes this field with, or the splash
+  /// shows through outside the drawn border. Defaults to the app-wide 12.
+  final double splashRadius;
+
   const StyledDropdownFormField({
     super.key,
     required this.value,
@@ -201,6 +206,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
     this.contentPadding,
     this.valueStyle,
     this.labelStyle,
+    this.splashRadius = 12,
   });
 
   String _selectedLabel() {
@@ -225,7 +231,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
         }
         return Builder(builder: (btnContext) {
           return InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(splashRadius),
             onTap: () async {
               final picked = await _showStyledMenu<T>(
                 btnContext,

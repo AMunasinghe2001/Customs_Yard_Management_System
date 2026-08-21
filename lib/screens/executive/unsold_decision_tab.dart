@@ -12,87 +12,52 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
-import '../../widgets/tooltip_text.dart';
+import '../../widgets/table_pager.dart';
 import '../../widgets/package_details_dialog.dart';
+import 'unsold_shared.dart';
 
-String _uItemName(ForfeitedPackageModel f) {
-  if (f.itemName != null) return f.itemName!;
-  final items = f.packageDetails?.items ?? const [];
-  if (items.isEmpty) return 'Multiple/Unspecified';
-  // Forfeiture is per item, so resolve THIS row's own item.
-  if (f.itemId != null) {
-    final m = items.where((i) => i.id == f.itemId).firstOrNull;
-    if (m != null) return m.itemName;
-  }
-  if (items.length == 1) return items.first.itemName;
-  return '${items.first.itemName} +${items.length - 1}';
-}
-
-int _uQty(ForfeitedPackageModel f) {
-  if (f.entryQty != null) return f.entryQty!;
-  if (f.itemId != null) {
-    final it =
-        f.packageDetails?.items.where((i) => i.id == f.itemId).firstOrNull;
-    if (it != null) return it.quantity;
-  }
-  return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
-}
-
-/// Warehouse · zone the item currently sits in.
-String _uLocation(PackageModel? pkg, String? itemId) {
-  if (pkg == null) return '—';
-  var entries = itemId != null
-      ? pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
-      : <WarehouseEntryModel>[];
-  if (entries.isEmpty) entries = [...pkg.warehouseEntries];
-  if (entries.isEmpty) return '—';
-  entries.sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
-  final w = entries.first;
-  return (w.zone != null && w.zone!.isNotEmpty)
-      ? '${w.warehouseName} · ${w.zone}'
-      : w.warehouseName;
+/// True when the signed-in High Panel officer is the DG.
+///
+/// Only the DG decides the final outcome of an unsold package — the ADG can
+/// look but not choose. The post lives in `profiles.job_role`, but accounts
+/// created before the "High Panel Officers" rename can carry it only in the
+/// username ('dg') or the full name, so check all three. The ADG regex is
+/// tested first: "(ADG)" also contains "DG".
+bool _isDg(ProfileModel? p) {
+  if (p == null) return false;
+  final role = (p.jobRole ?? '').trim().toUpperCase();
+  final user = (p.username ?? '').trim().toLowerCase();
+  final isAdg = role == 'ADG' ||
+      user == 'adg' ||
+      RegExp(r'\(\s*ADG\s*\)', caseSensitive: false).hasMatch(p.fullName);
+  if (isAdg) return false;
+  if (role == 'DG') return true;
+  if (user == 'dg') return true;
+  return RegExp(r'\(\s*DG\s*\)', caseSensitive: false).hasMatch(p.fullName);
 }
 
 final _uSearchProvider = StateProvider<String>((ref) => '');
 final _uYardProvider = StateProvider<String?>((ref) => null); // null = all
 /// null = all · false = still undecided · true = decided
 final _uDecidedProvider = StateProvider<bool?>((ref) => null);
+final _uPageProvider = StateProvider<int>((ref) => 0);
 
-/// Icon + colour per outcome, matching the chips on the other portals.
-({IconData icon, Color colour}) _style(BuildContext context, String p) {
-  switch (p) {
-    case 'destroy':
-      return (
-        icon: Icons.delete_forever_rounded,
-        colour: context.colors.dangerRed
-      );
-    case 'remand':
-      return (
-        icon: Icons.reply_all_rounded,
-        colour: context.colors.accentLightBlue
-      );
-    case 'government_use':
-      return (
-        icon: Icons.account_balance_rounded,
-        colour: context.colors.successGreen
-      );
-    case 'auction':
-      return (icon: Icons.gavel_rounded, colour: context.colors.warningAmber);
-    default:
-      return (
-        icon: Icons.help_outline_rounded,
-        colour: context.colors.textMuted
-      );
-  }
-}
+/// Shared height for the header's search field and yard dropdown so the two
+/// line up exactly.
+const double _kFilterHeight = 52;
 
 /// High Panel tab: packages that have exhausted EVERY avenue — the Valuation
 /// Tender plus Tender 1-3 all failed, a committee re-valued them, the ADG
 /// submitted that figure, they were tendered again, and they STILL did not
-/// sell. The High Panel decides the final outcome here; Central Disposal and
-/// the owning yard then see that decision on their own Unsold pages.
+/// sell. The DG decides the final outcome here; Central Disposal and the
+/// owning yard then see that decision on their own Unsold pages.
+///
+/// Laid out to match the Tender Committees tab — same header row (title,
+/// subtitle, search, yard dropdown), same table shell and column set.
 class UnsoldDecisionTab extends ConsumerWidget {
   const UnsoldDecisionTab({super.key});
+
+  static const int _pageSize = 20;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -105,38 +70,58 @@ class UnsoldDecisionTab extends ConsumerWidget {
     final decidedFilter = ref.watch(_uDecidedProvider);
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
+    // Only the DG may decide; the ADG sees the same table, read-only.
+    final canDecide = _isDg(ref.watch(currentProfileProvider));
 
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Text('Unsold Packages',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
-            const Gap(10),
+          // The yard dropdown carries a floating "Yard" label, so it is taller
+          // than a bare search field. Bottom-aligned and matched to the same
+          // height, otherwise Row centres them and they sit visibly off from
+          // each other.
+          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
             Expanded(
-              child: Text(
-                  'Every avenue exhausted — decide the final outcome',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 13)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Unsold Packages',
+                      style: TextStyle(
+                          color: context.colors.textPrimary,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w700)),
+                  const Gap(2),
+                  Text(
+                      canDecide
+                          ? 'Every avenue exhausted — decide the final outcome'
+                          : 'Every avenue exhausted — the DG decides the final outcome',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 13)),
+                ],
+              ),
             ),
-            const Gap(12),
+            const Gap(16),
             SizedBox(
-              width: 280,
+              width: 300,
+              height: _kFilterHeight,
               child: TextField(
-                onChanged: (v) => ref.read(_uSearchProvider.notifier).state = v,
+                onChanged: (v) {
+                  ref.read(_uSearchProvider.notifier).state = v;
+                  ref.read(_uPageProvider.notifier).state = 0;
+                },
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w600),
                 decoration: InputDecoration(
                   isDense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                   hintText: 'Search SR / item / consignee…',
                   prefixIcon:
                       Icon(Icons.search_rounded, size: 20, color: accent),
@@ -155,9 +140,19 @@ class UnsoldDecisionTab extends ConsumerWidget {
               ),
             ),
             const Gap(12),
-            _UYardFilter(
-              value: yardFilter,
-              onChanged: (v) => ref.read(_uYardProvider.notifier).state = v,
+            // NO fixed height here: the dropdown's InkWell fills whatever box
+            // it is given, so forcing 52px made the hover splash spill past
+            // the field's own border as a pale band underneath. It sizes
+            // itself to _kFilterHeight via its contentPadding instead.
+            SizedBox(
+              width: 220,
+              child: _UYardFilter(
+                value: yardFilter,
+                onChanged: (v) {
+                  ref.read(_uYardProvider.notifier).state = v;
+                  ref.read(_uPageProvider.notifier).state = 0;
+                },
+              ),
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(12),
@@ -165,22 +160,30 @@ class UnsoldDecisionTab extends ConsumerWidget {
             _filterChip(context,
                 label: 'All',
                 selected: decidedFilter == null,
-                onTap: () => ref.read(_uDecidedProvider.notifier).state = null),
+                onTap: () {
+                  ref.read(_uDecidedProvider.notifier).state = null;
+                  ref.read(_uPageProvider.notifier).state = 0;
+                }),
             const Gap(8),
             _filterChip(context,
                 label: 'Pending decision',
                 icon: Icons.hourglass_bottom_rounded,
                 colour: context.colors.warningAmber,
                 selected: decidedFilter == false,
-                onTap: () =>
-                    ref.read(_uDecidedProvider.notifier).state = false),
+                onTap: () {
+                  ref.read(_uDecidedProvider.notifier).state = false;
+                  ref.read(_uPageProvider.notifier).state = 0;
+                }),
             const Gap(8),
             _filterChip(context,
                 label: 'Decided',
                 icon: Icons.check_circle_rounded,
                 colour: context.colors.successGreen,
                 selected: decidedFilter == true,
-                onTap: () => ref.read(_uDecidedProvider.notifier).state = true),
+                onTap: () {
+                  ref.read(_uDecidedProvider.notifier).state = true;
+                  ref.read(_uPageProvider.notifier).state = 0;
+                }),
           ]),
           const Gap(14),
           Expanded(
@@ -203,7 +206,10 @@ class UnsoldDecisionTab extends ConsumerWidget {
                     final f = i.forfeited;
                     return f.srNumber.toLowerCase().contains(q) ||
                         f.consigneeName.toLowerCase().contains(q) ||
-                        _uItemName(f).toLowerCase().contains(q);
+                        unsoldItemName(f).toLowerCase().contains(q) ||
+                        (f.packageDetails?.caseNumber ?? '')
+                            .toLowerCase()
+                            .contains(q);
                   }).toList();
                 }
                 if (decidedFilter != null) {
@@ -213,101 +219,89 @@ class UnsoldDecisionTab extends ConsumerWidget {
                           decidedFilter)
                       .toList();
                 }
-                return Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: context.colors.cardDark,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: context.colors.borderColor),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: DataTable2(
-                      columnSpacing: 12,
-                      horizontalMargin: 16,
-                      fixedTopRows: 1,
-                      minWidth: 1040,
-                      empty: const EmptyTableState(
-                          message: 'No packages awaiting a final outcome'),
-                      headingRowColor:
-                          WidgetStateProperty.all(context.colors.surfaceDark),
-                      columns: const [
-                        DataColumn2(
-                            label: Text('SR Number'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                        DataColumn2(
-                            label: Text('Consignee'), size: ColumnSize.M),
-                        DataColumn2(
-                            label: Text('Yard'),
-                            size: ColumnSize.S,
-                            fixedWidth: 100),
-                        DataColumn2(
-                            label: Text('Qty'),
-                            size: ColumnSize.S,
-                            fixedWidth: 60),
-                        DataColumn2(
-                            label: Text('Location'), size: ColumnSize.M),
-                        DataColumn2(
-                            label: Center(child: Text('Final Outcome')),
-                            size: ColumnSize.M,
-                            fixedWidth: 200),
-                        DataColumn2(
-                            label: Center(child: Text('Details')),
-                            size: ColumnSize.S,
-                            fixedWidth: 70),
-                      ],
-                      rows: rows.map((info) {
-                        final f = info.forfeited;
-                        final pkg = f.packageDetails;
-                        return DataRow(cells: [
-                          DataCell(TooltipText(f.srNumber,
-                              style: TextStyle(
-                                  color: accent,
-                                  fontWeight: FontWeight.w600))),
-                          DataCell(TooltipText(_uItemName(f),
-                              overflow: TextOverflow.ellipsis)),
-                          DataCell(TooltipText(f.consigneeName,
-                              overflow: TextOverflow.ellipsis)),
-                          DataCell(TooltipText(yardName(f.yard),
-                              overflow: TextOverflow.ellipsis)),
-                          DataCell(TooltipText('${_uQty(f)}')),
-                          DataCell(TooltipText(_uLocation(pkg, f.itemId),
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 12))),
-                          DataCell(Center(
-                            child: _DecisionCell(
-                                info: info, proposal: proposals[f.id]),
-                          )),
-                          DataCell(Center(
-                            child: IconButton(
-                              icon: Icon(Icons.info_outline_rounded,
-                                  color: context.colors.accentLightBlue,
-                                  size: 18),
-                              onPressed: pkg == null
-                                  ? null
-                                  : () => showDialog(
-                                        context: context,
-                                        builder: (_) => PackageDetailsDialog(
-                                          package: pkg,
-                                          storageRate: storageRate,
-                                          headerAccentColor: accent,
-                                          useLegacySummary: true,
-                                          highlightItemId: f.itemId,
-                                          yardLabel: yardName(f.yard),
-                                        ),
-                                      ),
-                            ),
-                          )),
-                        ]);
-                      }).toList(),
+
+                final maxPage =
+                    rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
+                final page = ref.watch(_uPageProvider).clamp(0, maxPage);
+                final pageRows =
+                    rows.skip(page * _pageSize).take(_pageSize).toList();
+
+                return Column(
+                  children: [
+                    Expanded(
+                      child: Container(
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: context.colors.cardDark,
+                          borderRadius: BorderRadius.circular(14),
+                          border:
+                              Border.all(color: context.colors.borderColor),
+                        ),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(14),
+                          child: DataTable2(
+                            columnSpacing: 12,
+                            horizontalMargin: 16,
+                            fixedTopRows: 1,
+                            minWidth: kUnsoldTableMinWidth,
+                            empty: const EmptyTableState(
+                                message:
+                                    'No packages awaiting a final outcome'),
+                            headingRowColor: WidgetStateProperty.all(
+                                context.colors.surfaceDark),
+                            columns: kUnsoldColumns,
+                            rows: pageRows.map((info) {
+                              final f = info.forfeited;
+                              final pkg = f.packageDetails;
+                              final qty = unsoldQty(f);
+                              return DataRow(
+                                cells: unsoldCells(
+                                  context,
+                                  info: info,
+                                  srColor: accent,
+                                  outcome: Center(
+                                    child: _DecisionCell(
+                                        info: info,
+                                        proposal: proposals[f.id],
+                                        canDecide: canDecide),
+                                  ),
+                                  onDetails: pkg == null
+                                      ? null
+                                      : () => showDialog(
+                                            context: context,
+                                            builder: (_) =>
+                                                PackageDetailsDialog(
+                                              package: pkg,
+                                              storageRate: storageRate,
+                                              headerAccentColor: accent,
+                                              useLegacySummary: true,
+                                              highlightItemId: f.itemId,
+                                              yardLabel: yardName(f.yard),
+                                              valuationUnitCost:
+                                                  f.valuationCost,
+                                              valuationTotalCost:
+                                                  f.valuationCost != null
+                                                      ? f.valuationCost! * qty
+                                                      : null,
+                                              valuationQty: qty,
+                                            ),
+                                          ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
-                )
-                    .animate()
-                    .fadeIn(duration: 350.ms)
-                    .slideY(begin: 0.05);
+                    TablePager(
+                      total: rows.length,
+                      page: page,
+                      pageSize: _pageSize,
+                      onPageChanged: (p) =>
+                          ref.read(_uPageProvider.notifier).state = p,
+                    ),
+                  ],
+                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
               },
             ),
           ),
@@ -358,16 +352,23 @@ class UnsoldDecisionTab extends ConsumerWidget {
   }
 }
 
-/// The decision cell: a "Decide" button until an outcome is set, then the
-/// outcome itself (still tappable, so it can be revised).
+/// The decision cell. For the DG: a "Decide" button until an outcome is set,
+/// then the outcome itself (still tappable, so it can be revised). For the ADG
+/// and anyone else: the read-only chip the other portals show.
 class _DecisionCell extends ConsumerWidget {
   final ReTenderSaleInfo info;
   final UnsoldProposalModel? proposal;
-  const _DecisionCell({required this.info, required this.proposal});
+  final bool canDecide;
+  const _DecisionCell({
+    required this.info,
+    required this.proposal,
+    required this.canDecide,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final accent = AppTheme.executiveTeal;
+    if (!canDecide) return UnsoldOutcomeChip(proposal: proposal);
+
     void open() => showDialog(
           context: context,
           builder: (_) => _DecisionDialog(info: info, existing: proposal),
@@ -387,7 +388,7 @@ class _DecisionCell extends ConsumerWidget {
       );
     }
 
-    final st = _style(context, p.proposal);
+    final st = unsoldOutcomeStyle(context, p.proposal);
     return Tooltip(
       message: p.note?.trim().isNotEmpty == true
           ? p.note!.trim()
@@ -424,7 +425,7 @@ class _DecisionCell extends ConsumerWidget {
   }
 }
 
-/// Pick one of the four outcomes, with an optional reason.
+/// Pick one of the four outcomes, with an optional reason. DG only.
 class _DecisionDialog extends ConsumerStatefulWidget {
   final ReTenderSaleInfo info;
   final UnsoldProposalModel? existing;
@@ -462,6 +463,9 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
             yard: widget.info.forfeited.yard,
           );
       ref.invalidate(unsoldProposalsProvider);
+      // A decision ends the tender route for these goods, so Central
+      // Disposal's re-tender pool must drop them straight away.
+      ref.invalidate(reTenderEligibleProvider);
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -487,7 +491,7 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
       icon: Icons.rule_rounded,
       width: 480,
       child: StyledFormSection(
-        title: 'Decide · ${_uItemName(f)}',
+        title: 'Decide · ${unsoldItemName(f)}',
         icon: Icons.gavel_rounded,
         children: [
           Text(
@@ -507,8 +511,7 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
             maxLines: 4,
             keyboardType: TextInputType.multiline,
             textCapitalization: TextCapitalization.sentences,
-            style:
-                TextStyle(color: context.colors.textPrimary, fontSize: 13),
+            style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               isDense: true,
               labelText: 'Reason (optional)',
@@ -554,7 +557,7 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
 
   /// One selectable outcome, styled as a radio card.
   Widget _option(String p) {
-    final st = _style(context, p);
+    final st = unsoldOutcomeStyle(context, p);
     final selected = _choice == p;
     return Material(
       color: Colors.transparent,
@@ -564,9 +567,8 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: selected
-                ? st.colour.withOpacity(0.12)
-                : context.colors.cardDark,
+            color:
+                selected ? st.colour.withOpacity(0.12) : context.colors.cardDark,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
                 color: selected
@@ -586,9 +588,7 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
             const Gap(8),
             Text(unsoldProposalLabel(p),
                 style: TextStyle(
-                    color: selected
-                        ? st.colour
-                        : context.colors.textPrimary,
+                    color: selected ? st.colour : context.colors.textPrimary,
                     fontSize: 13.5,
                     fontWeight: selected ? FontWeight.w800 : FontWeight.w600)),
           ]),
@@ -598,7 +598,9 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
   }
 }
 
-/// Yard dropdown with an "All Yards" option.
+/// Yard dropdown with an "All Yards" option, styled like the Tender
+/// Committees tab's filter (same width, same icon, same rounded gold-teal
+/// border) so the two tabs' header rows line up.
 class _UYardFilter extends StatelessWidget {
   final String? value;
   final ValueChanged<String?> onChanged;
@@ -607,9 +609,10 @@ class _UYardFilter extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final accent = AppTheme.executiveTeal;
-    return SizedBox(
-      width: 210,
-      child: Theme(
+    // Width comes from the caller; the height comes from contentPadding, so
+    // the tap target matches the drawn field exactly and the hover splash
+    // stays inside the border.
+    return Theme(
         data: Theme.of(context).copyWith(
           inputDecorationTheme:
               Theme.of(context).inputDecorationTheme.copyWith(
@@ -631,13 +634,20 @@ class _UYardFilter extends StatelessWidget {
         child: StyledDropdownFormField<String>(
           label: 'Yard',
           value: value ?? '_all',
+          helperText: null,
+          isDense: true,
+          menuWidth: 220,
+          // Same radius as the OutlineInputBorder above, so the hover splash
+          // stays inside the drawn border instead of showing at the corners.
+          splashRadius: 14,
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          prefixIcon: Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
             ...kYards.map((y) => StyledDropdownOption(y.code, y.name)),
           ],
           onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
-        ),
-      ),
-    );
+        ));
   }
 }

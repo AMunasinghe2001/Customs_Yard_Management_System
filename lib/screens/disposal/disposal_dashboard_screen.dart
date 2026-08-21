@@ -23,6 +23,7 @@ import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
+import '../executive/unsold_shared.dart';
 
 /// The quantity actually forfeited & sent for disposal for a request row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -221,6 +222,13 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     Tab(
                         height: 44,
                         child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.pending_actions_rounded, size: 18),
+                          Gap(8),
+                          Text('Unsold Packages'),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.delete_forever_rounded, size: 18),
                           Gap(8),
                           Text('Destroyed Packages'),
@@ -245,13 +253,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                           Icon(Icons.replay_rounded, size: 18),
                           Gap(8),
                           Text('Unsold Tenders'),
-                        ])),
-                    Tab(
-                        height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.pending_actions_rounded, size: 18),
-                          Gap(8),
-                          Text('Unsold Proposals'),
                         ])),
                     Tab(
                         height: 44,
@@ -295,11 +296,11 @@ class DisposalDashboardScreen extends ConsumerWidget {
             const Expanded(
               child: TabBarView(children: [
                 _SoldPackagesTab(),
+                UnsoldProposalsTab(),
                 _DestroyedPackagesTab(),
                 _DisposalRequestsTab(),
                 _TenderSalesTab(),
                 _UnsoldReTenderTab(),
-                UnsoldProposalsTab(),
                 _DestructionsTab(),
                 _UndestroyedReDestructionTab(),
                 _CommitteesTab(),
@@ -398,152 +399,35 @@ class _DisposalSearchState extends ConsumerState<_DisposalSearch> {
   }
 }
 
-/// Icon + colour for each final outcome, shared by every portal that shows one.
-({IconData icon, Color colour}) proposalStyle(BuildContext context, String p) {
-  switch (p) {
-    case 'destroy':
-      return (icon: Icons.delete_forever_rounded, colour: context.colors.dangerRed);
-    case 'remand':
-      return (icon: Icons.reply_all_rounded, colour: context.colors.accentLightBlue);
-    case 'government_use':
-      return (icon: Icons.account_balance_rounded, colour: context.colors.successGreen);
-    case 'auction':
-      return (icon: Icons.gavel_rounded, colour: context.colors.warningAmber);
-    default:
-      return (icon: Icons.help_outline_rounded, colour: context.colors.textMuted);
-  }
-}
+/// Page index for the Unsold Packages tab's client-side pager.
+final _unsoldPageProvider = StateProvider<int>((ref) => 0);
 
-/// The High Panel's decision, read-only. Shown on Central Disposal and on the
-/// yard's Unsold page — neither of them chooses it.
-class _ProposalOutcomeChip extends StatelessWidget {
-  final UnsoldProposalModel? proposal;
-  const _ProposalOutcomeChip({required this.proposal});
-
-  @override
-  Widget build(BuildContext context) {
-    final p = proposal;
-    if (p == null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: context.colors.warningAmber.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(8),
-          border:
-              Border.all(color: context.colors.warningAmber.withOpacity(0.4)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.hourglass_bottom_rounded,
-              size: 13, color: context.colors.warningAmber),
-          const Gap(5),
-          Text('Awaiting High Panel',
-              style: TextStyle(
-                  color: context.colors.warningAmber,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700)),
-        ]),
-      );
-    }
-    final st = proposalStyle(context, p.proposal);
-    return Tooltip(
-      message: p.note?.trim().isNotEmpty == true
-          ? p.note!.trim()
-          : 'Decided ${DateFormat('yyyy-MM-dd').format(p.decidedAt)}',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: st.colour.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: st.colour.withOpacity(0.45)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(st.icon, size: 13, color: st.colour),
-          const Gap(5),
-          Flexible(
-            child: Text(p.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: st.colour,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800)),
-          ),
-        ]),
-      ),
-    );
-  }
-}
-
-class _ProposalActionChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback? onTap;
-
-  const _ProposalActionChip({
-    required this.label,
-    required this.icon,
-    required this.color,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.45)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 14, color: color),
-            const Gap(6),
-            Text(label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                )),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
+/// Packages that exhausted every avenue — the Valuation Tender, Tender 1-3 and
+/// the committee-valued tender all failed. READ-ONLY here: the DG decides the
+/// final outcome on the High Panel portal, this directorate carries it out.
+///
+/// Uses the shared Unsold table (see `unsold_shared.dart`) so this tab, the
+/// yard's Unsold page and the High Panel's tab show identical details.
 class UnsoldProposalsTab extends ConsumerWidget {
   const UnsoldProposalsTab({super.key});
 
-  String _itemName(ForfeitedPackageModel f) {
-    final items = f.packageDetails?.items ?? const [];
-    if (items.isEmpty) return 'Multiple/Unspecified';
-    if (f.itemId != null) {
-      final match = items.where((i) => i.id == f.itemId).firstOrNull;
-      if (match != null) return match.itemName;
-    }
-    if (items.length == 1) return items.first.itemName;
-    return '${items.first.itemName} +${items.length - 1}';
-  }
+  static const int _pageSize = 20;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
     final blue = context.colors.accentLightBlue;
-    final red = context.colors.dangerRed;
     // The shared "every avenue exhausted" list, so this tab, the yard page and
     // the High Panel all show exactly the same packages.
     final async = ref.watch(exhaustedUnsoldProvider);
-    final q = ref.watch(_disposalSearchProvider('unsold-proposals')).toLowerCase();
-    final yardFilter = ref.watch(_disposalYardFilterProvider('unsold-proposals'));
+    final q =
+        ref.watch(_disposalSearchProvider('unsold-proposals')).toLowerCase();
+    final yardFilter =
+        ref.watch(_disposalYardFilterProvider('unsold-proposals'));
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
+    final storageRate = ref.watch(storageRateProvider).valueOrNull ??
+        const <DateTime, double>{};
 
     final rows = async.when(
       skipLoadingOnReload: true,
@@ -552,14 +436,16 @@ class UnsoldProposalsTab extends ConsumerWidget {
       data: (list) {
         var filtered = list;
         if (yardFilter != null) {
-          filtered = filtered.where((info) => info.forfeited.yard == yardFilter).toList();
+          filtered = filtered
+              .where((info) => info.forfeited.yard == yardFilter)
+              .toList();
         }
         if (q.isNotEmpty) {
           filtered = filtered.where((info) {
             final f = info.forfeited;
             return f.srNumber.toLowerCase().contains(q) ||
                 f.consigneeName.toLowerCase().contains(q) ||
-                _itemName(f).toLowerCase().contains(q) ||
+                unsoldItemName(f).toLowerCase().contains(q) ||
                 (f.packageDetails?.caseNumber ?? '').toLowerCase().contains(q);
           }).toList();
         }
@@ -567,69 +453,55 @@ class UnsoldProposalsTab extends ConsumerWidget {
       },
     );
 
+    final maxPage = rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
+    final page = ref.watch(_unsoldPageProvider).clamp(0, maxPage);
+    final pageRows = rows.skip(page * _pageSize).take(_pageSize).toList();
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
+          // Same header shape as the Sold Packages tab: title, then search and
+          // the yard filter pushed to the right.
+          Row(
             children: [
               Text(
-                'Unresolved / Unsold Packages',
+                'Unsold Packages',
                 style: TextStyle(
                   color: context.colors.textPrimary,
                   fontSize: 22,
                   fontWeight: FontWeight.w700,
                 ),
               ),
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const _DisposalSearch(
-                    tabKey: 'unsold-proposals',
-                    hint: 'Search SR / item / consignee…',
-                    width: 300,
-                  ),
-                  const Gap(12),
-                  _YardAllFilter(
-                    value: yardFilter,
-                    onChanged: (v) => ref
-                        .read(_disposalYardFilterProvider('unsold-proposals').notifier)
-                        .state = v,
-                  ),
-                ],
+              const Spacer(),
+              const _DisposalSearch(
+                tabKey: 'unsold-proposals',
+                hint: 'Search SR / item / consignee...',
+              ),
+              const Gap(12),
+              _YardAllFilter(
+                value: yardFilter,
+                onChanged: (v) {
+                  ref
+                      .read(_disposalYardFilterProvider('unsold-proposals')
+                          .notifier)
+                      .state = v;
+                  ref.read(_unsoldPageProvider.notifier).state = 0;
+                },
               ),
             ],
           ).animate().fadeIn(duration: 300.ms),
-          const Gap(16),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: amber.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: amber.withOpacity(0.35)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline_rounded, size: 17, color: amber),
-                const Gap(8),
-                Expanded(
-                  child: Text(
-                    'Still unsold after the High Panel committee’s valuation was tendered — every avenue is exhausted, so these need a final outcome: destroy, remand, government use, or auction.',
-                    style: TextStyle(
-                      color: context.colors.textSecondary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          const Gap(14),
+          // Count pill, same as the Sold Packages tab.
+          Padding(
+            padding: const EdgeInsets.only(bottom: 14),
+            child: _StatChip(
+                label:
+                    'Unsold in ${yardFilter == null ? 'all yards' : yardName(yardFilter)}',
+                value: '${rows.length}',
+                color: amber),
           ),
-          const Gap(12),
           Expanded(
             child: rows.isEmpty
                 ? _listCard(
@@ -637,72 +509,72 @@ class UnsoldProposalsTab extends ConsumerWidget {
                     const EmptyTableState(
                       icon: Icons.refresh_rounded,
                       message: 'No unresolved unsold packages',
-                      subtitle: 'Packages that remain unsold after re-opening will appear here.',
+                      subtitle:
+                          'Packages that remain unsold after re-opening will appear here.',
                     ),
                   )
-                : _listCard(
-                    context,
-                    DataTable2(
-                      columnSpacing: 12,
-                      horizontalMargin: 16,
-                      minWidth: 980,
-                      headingRowColor: _headingColor(context),
-                      columns: const [
-                        DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                        DataColumn2(label: Text('Item'), size: ColumnSize.M),
-                        DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
-                        DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
-                        DataColumn2(label: Text('Reason'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 120),
-                        DataColumn2(label: Center(child: Text('Tenders')), size: ColumnSize.S, fixedWidth: 90),
-                        DataColumn2(label: Center(child: Text('Outcome')), size: ColumnSize.M, fixedWidth: 210),
-                      ],
-                      rows: rows.map((info) {
-                        final f = info.forfeited;
-                        final itemName = _itemName(f);
-                        final itemQty = f.entryQty ?? (f.packageDetails?.items.isNotEmpty == true ? f.packageDetails!.items.fold<int>(0, (sum, i) => sum + i.quantity) : 0);
-                        final itemCost = f.valuationCost ?? 0;
-                        final reason = _forfeitReasonText(
-                          f.packageDetails?.items.where((i) => i.id == f.itemId).firstOrNull,
-                          f,
-                        );
-                        final location = _warehouseLocation(f.packageDetails, f.itemId);
-                        final caseNo = f.packageDetails?.caseNumber ?? '—';
-                        final source = (f.source.isEmpty ? 'forfeit' : f.source).toLowerCase();
-
-                        return DataRow(cells: [
-                          DataCell(Text(f.srNumber, style: TextStyle(color: blue, fontWeight: FontWeight.w700))),
-                          DataCell(Text(caseNo)),
-                          DataCell(Text(itemName)),
-                          DataCell(Center(child: _sourceChip(context, source))),
-                          DataCell(Text('$itemQty')),
-                          DataCell(Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: amber.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: amber.withOpacity(0.35)),
-                            ),
-                            child: Text(
-                              reason.isEmpty ? 'Unresolved' : reason,
-                              style: TextStyle(color: amber, fontWeight: FontWeight.w700, fontSize: 11),
-                            ),
-                          )),
-                          DataCell(Text(location, style: TextStyle(color: context.colors.textSecondary))),
-                          DataCell(Text('LKR ${NumberFormat('#,##0').format(itemCost)}', style: TextStyle(color: green, fontWeight: FontWeight.w700))),
-                          DataCell(Center(child: _AttemptsBadge(count: info.tenderCount, color: amber, onTap: () {}))),
-                          // READ-ONLY: the High Panel decides the outcome, this
-                          // directorate carries it out. Showing action chips
-                          // here implied Central Disposal could choose.
-                          DataCell(Center(
-                            child: _ProposalOutcomeChip(
-                                proposal: proposals[f.id]),
-                          )),
-                        ]);
-                      }).toList(),
-                    ),
+                : Column(
+                    children: [
+                      Expanded(
+                        child: _listCard(
+                          context,
+                          DataTable2(
+                            columnSpacing: 12,
+                            horizontalMargin: 16,
+                            fixedTopRows: 1,
+                            minWidth: kUnsoldTableMinWidth,
+                            headingRowColor: _headingColor(context),
+                            columns: kUnsoldColumns,
+                            rows: pageRows.map((info) {
+                              final f = info.forfeited;
+                              final pkg = f.packageDetails;
+                              final qty = unsoldQty(f);
+                              return DataRow(
+                                cells: unsoldCells(
+                                  context,
+                                  info: info,
+                                  srColor: blue,
+                                  // READ-ONLY: the DG decides the outcome,
+                                  // this directorate carries it out.
+                                  outcome: Center(
+                                    child: UnsoldOutcomeChip(
+                                        proposal: proposals[f.id]),
+                                  ),
+                                  onDetails: pkg == null
+                                      ? null
+                                      : () => showDialog(
+                                            context: context,
+                                            builder: (_) =>
+                                                PackageDetailsDialog(
+                                              package: pkg,
+                                              storageRate: storageRate,
+                                              headerAccentColor: blue,
+                                              useLegacySummary: true,
+                                              highlightItemId: f.itemId,
+                                              yardLabel: yardName(f.yard),
+                                              valuationUnitCost:
+                                                  f.valuationCost,
+                                              valuationTotalCost:
+                                                  f.valuationCost != null
+                                                      ? f.valuationCost! * qty
+                                                      : null,
+                                              valuationQty: qty,
+                                            ),
+                                          ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                      ),
+                      TablePager(
+                        total: rows.length,
+                        page: page,
+                        pageSize: _pageSize,
+                        onPageChanged: (p) =>
+                            ref.read(_unsoldPageProvider.notifier).state = p,
+                      ),
+                    ],
                   ),
           ),
         ],
