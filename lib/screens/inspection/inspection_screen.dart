@@ -55,6 +55,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       text:
           "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}");
   final _containerNumberCtrl = TextEditingController();
+  /// Deposit lodged against the cost of destroying the goods. One figure
+  /// per SR (package-level), not per goods item.
+  final _destroyingDepositCtrl = TextEditingController();
   final _descCtrl = TextEditingController();
   final _reasonCtrlMain = TextEditingController();
   final _notesCtrl = TextEditingController();
@@ -131,6 +134,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           : '';
       _descCtrl.text = pkg.description ?? '';
       _containerNumberCtrl.text = pkg.containerNumber ?? '';
+      _destroyingDepositCtrl.text =
+          pkg.destroyingDeposit?.toString() ?? '';
       _reasonCtrlMain.text = pkg.reason ?? '';
       _notesCtrl.text = pkg.notes ?? '';
       _oldSrNumberCtrl.text = pkg.oldSrNumber ?? '';
@@ -341,6 +346,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _cusdecDateCtrl.dispose();
     _entryDateCtrl.dispose();
     _containerNumberCtrl.dispose();
+    _destroyingDepositCtrl.dispose();
     _descCtrl.dispose();
     _reasonCtrlMain.dispose();
     _notesCtrl.dispose();
@@ -448,6 +454,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         containerNumber: _containerNumberCtrl.text.trim().isEmpty
             ? null
             : _containerNumberCtrl.text.trim(),
+        destroyingDeposit:
+            double.tryParse(_destroyingDepositCtrl.text.trim()),
         consigneeName: _consigneeCtrl.text.trim(),
         consigneeNic: _consigneeNicCtrl.text,
         consigneePhone: _consigneePhoneCtrl.text,
@@ -506,6 +514,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _entryDateCtrl.text =
         "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}";
     _containerNumberCtrl.clear();
+    _destroyingDepositCtrl.clear();
     _descCtrl.clear();
     _reasonCtrlMain.clear();
     _notesCtrl.clear();
@@ -936,10 +945,30 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                             TextCapitalization.characters,
                                       ),
                                     ),
-                                    if (_entryMode != 'old') ...[
-                                      const Gap(12),
-                                      const Expanded(child: SizedBox()),
-                                    ],
+                                    const Gap(12),
+                                    Expanded(
+                                      child: TextFormField(
+                                        controller: _destroyingDepositCtrl,
+                                        decoration: _fieldDecoration(
+                                          labelText: 'Destroying Deposit (LKR)',
+                                        ),
+                                        keyboardType:
+                                            const TextInputType.numberWithOptions(
+                                                decimal: true),
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                              RegExp(r'[0-9.]')),
+                                        ],
+                                        validator: (v) {
+                                          final t = (v ?? '').trim();
+                                          if (t.isEmpty) return null; // optional
+                                          final d = double.tryParse(t);
+                                          if (d == null) return 'Enter a number';
+                                          if (d < 0) return 'Cannot be negative';
+                                          return null;
+                                        },
+                                      ),
+                                    ),
                                   ]),
                                   const Gap(16),
                                   TextFormField(

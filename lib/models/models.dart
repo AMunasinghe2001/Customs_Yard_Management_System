@@ -14,6 +14,11 @@ class PackageModel {
   final int totalItemCount;
   final String? description;
   final String? containerNumber;
+
+  /// Deposit the declarant lodges against the cost of destroying the goods.
+  /// PACKAGE-level (one figure per SR), not per goods item.
+  final double? destroyingDeposit;
+
   final String consigneeName;
   final String? consigneeNic;
   final String? consigneeAddress;
@@ -46,6 +51,7 @@ class PackageModel {
     this.totalItemCount = 1,
     this.description,
     this.containerNumber,
+    this.destroyingDeposit,
     required this.consigneeName,
     this.consigneeNic,
     this.consigneeAddress,
@@ -98,6 +104,8 @@ class PackageModel {
       totalItemCount: json['total_item_count'] as int? ?? 1,
       description: json['description'] as String?,
       containerNumber: json['container_number'] as String?,
+      destroyingDeposit:
+          (json['destroying_deposit'] as num?)?.toDouble(),
       consigneeName: json['consignee_name'] as String,
       consigneeNic: json['consignee_nic'] as String?,
       consigneeAddress: json['consignee_address'] as String?,
@@ -149,6 +157,7 @@ class PackageModel {
       'total_item_count': totalItemCount,
       'description': description,
       'container_number': containerNumber,
+      'destroying_deposit': destroyingDeposit,
       'consignee_name': consigneeName,
       'consignee_nic': consigneeNic,
       'consignee_address': consigneeAddress,
@@ -175,6 +184,7 @@ class PackageModel {
     int? totalItemCount,
     String? description,
     String? containerNumber,
+    double? destroyingDeposit,
     String? consigneeName,
     String? consigneeNic,
     String? consigneeAddress,
@@ -205,6 +215,7 @@ class PackageModel {
       totalItemCount: totalItemCount ?? this.totalItemCount,
       description: description ?? this.description,
       containerNumber: containerNumber ?? this.containerNumber,
+      destroyingDeposit: destroyingDeposit ?? this.destroyingDeposit,
       consigneeName: consigneeName ?? this.consigneeName,
       consigneeNic: consigneeNic ?? this.consigneeNic,
       consigneeAddress: consigneeAddress ?? this.consigneeAddress,

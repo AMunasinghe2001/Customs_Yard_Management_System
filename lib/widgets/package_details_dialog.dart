@@ -1277,6 +1277,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               label: 'Container Number',
                               value: p.containerNumber ?? 'N/A',
                             ),
+                            // Package-level: one deposit per SR, taken at
+                            // registration against the cost of destruction.
+                            _DetailItem(
+                              icon: Icons.savings_rounded,
+                              label: 'Destroying Deposit',
+                              value: p.destroyingDeposit == null
+                                  ? 'N/A'
+                                  : 'LKR ${NumberFormat('#,##0.##').format(p.destroyingDeposit)}',
+                            ),
                             _DetailItem(
                               icon: Icons.description_rounded,
                               label: 'Package Description',
@@ -3977,6 +3986,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
   late final TextEditingController _entryDateCtrl;
   late final TextEditingController _caseNumberCtrl;
   late final TextEditingController _containerNumberCtrl;
+  /// Package-level deposit against the cost of destruction.
+  late final TextEditingController _destroyingDepositCtrl;
   late final TextEditingController _descCtrl;
   late final TextEditingController _notesCtrl;
   late final TextEditingController _reasonCtrl;
@@ -4015,6 +4026,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         TextEditingController(text: widget.package.caseNumber ?? '');
     _containerNumberCtrl =
         TextEditingController(text: widget.package.containerNumber ?? '');
+    _destroyingDepositCtrl = TextEditingController(
+        text: widget.package.destroyingDeposit?.toString() ?? '');
     _descCtrl = TextEditingController(text: widget.package.description ?? '');
     _notesCtrl = TextEditingController(text: widget.package.notes ?? '');
     _reasonCtrl = TextEditingController(text: widget.package.reason ?? '');
@@ -4157,6 +4170,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
     _entryDateCtrl.dispose();
     _caseNumberCtrl.dispose();
     _containerNumberCtrl.dispose();
+    _destroyingDepositCtrl.dispose();
     _descCtrl.dispose();
     _notesCtrl.dispose();
     _reasonCtrl.dispose();
@@ -4306,6 +4320,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         containerNumber: _containerNumberCtrl.text.trim().isEmpty
             ? null
             : _containerNumberCtrl.text.trim(),
+        destroyingDeposit:
+            double.tryParse(_destroyingDepositCtrl.text.trim()),
         entryDate: _entryDateCtrl.text.isNotEmpty
             ? DateTime.tryParse(_entryDateCtrl.text)
             : null,
@@ -4561,6 +4577,26 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                               decoration: const InputDecoration(
                                   labelText: 'Container Number'),
                               textCapitalization: TextCapitalization.characters,
+                            ),
+                            TextFormField(
+                              controller: _destroyingDepositCtrl,
+                              decoration: const InputDecoration(
+                                  labelText: 'Destroying Deposit (LKR)'),
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                      decimal: true),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                    RegExp(r'[0-9.]')),
+                              ],
+                              validator: (v) {
+                                final t = (v ?? '').trim();
+                                if (t.isEmpty) return null; // optional
+                                final d = double.tryParse(t);
+                                if (d == null) return 'Enter a number';
+                                if (d < 0) return 'Cannot be negative';
+                                return null;
+                              },
                             ),
                             TextFormField(
                               controller: _descCtrl,
