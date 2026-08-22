@@ -16,25 +16,10 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'unsold_shared.dart';
 
-/// True when the signed-in High Panel officer is the DG.
-///
-/// Only the DG decides the final outcome of an unsold package — the ADG can
-/// look but not choose. The post lives in `profiles.job_role`, but accounts
-/// created before the "High Panel Officers" rename can carry it only in the
-/// username ('dg') or the full name, so check all three. The ADG regex is
-/// tested first: "(ADG)" also contains "DG".
-bool _isDg(ProfileModel? p) {
-  if (p == null) return false;
-  final role = (p.jobRole ?? '').trim().toUpperCase();
-  final user = (p.username ?? '').trim().toLowerCase();
-  final isAdg = role == 'ADG' ||
-      user == 'adg' ||
-      RegExp(r'\(\s*ADG\s*\)', caseSensitive: false).hasMatch(p.fullName);
-  if (isAdg) return false;
-  if (role == 'DG') return true;
-  if (user == 'dg') return true;
-  return RegExp(r'\(\s*DG\s*\)', caseSensitive: false).hasMatch(p.fullName);
-}
+/// True when the signed-in High Panel officer is the DG — the only post that
+/// rules on an unsold package's final outcome. The ADG and the DC both see the
+/// table read-only. See [executivePostIs] for how the post is resolved.
+bool _isDg(ProfileModel? p) => executivePostIs(p, 'DG');
 
 final _uSearchProvider = StateProvider<String>((ref) => '');
 final _uYardProvider = StateProvider<String?>((ref) => null); // null = all

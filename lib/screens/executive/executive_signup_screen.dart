@@ -28,7 +28,7 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _otpCtrl = TextEditingController();
-  String? _position; // 'DG' | 'ADG'
+  String? _position; // 'DG' | 'ADG' | 'DC'
   bool _obscurePass = true, _obscureConfirm = true;
   bool _isLoading = false;
   bool _otpSent = false;
@@ -53,7 +53,7 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
     super.dispose();
   }
 
-  String get _username => (_position ?? '').toLowerCase(); // 'dg' | 'adg'
+  String get _username => (_position ?? '').toLowerCase(); // 'dg'|'adg'|'dc'
   // Position keys are already the short titles (DG / ADG).
   String get _shortTitle => _position ?? '';
   // NOTE: stored in profiles.full_name at signup, so accounts created before
@@ -104,7 +104,7 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
     if (!isResend) {
       if (!_formKey.currentState!.validate()) return;
       if (_position == null) {
-        setState(() => _error = 'Please select the position (DG or ADG).');
+        setState(() => _error = 'Please select the position (DG, ADG or DC).');
         return;
       }
     } else if (!_canResend) {
@@ -124,7 +124,7 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
           setState(() {
             _isLoading = false;
             _error =
-                'A ${executivePositionLabel(_position)} account already exists. Only one DG and one ADG account is allowed.';
+                'A ${executivePositionLabel(_position)} account already exists. Only one account per post is allowed.';
           });
           return;
         }
@@ -236,7 +236,7 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
         low.contains('23505') ||
         low.contains('profiles_username_lower_idx') ||
         low.contains('unique')) {
-      return 'A ${executivePositionLabel(_position)} account already exists. Only one DG and one ADG account is allowed.';
+      return 'A ${executivePositionLabel(_position)} account already exists. Only one account per post is allowed.';
     }
     if (raw.contains('already_registered') ||
         raw.contains('already been registered')) {
@@ -417,7 +417,7 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
                           value: _position,
                           label: 'Position *',
                           helperText:
-                              'Only one DG and one ADG account can exist',
+                              'One account per post (DG · ADG · DC)',
                           menuWidth: 364,
                           prefixIcon: Icon(Icons.badge_outlined,
                               color: context.colors.textMuted),

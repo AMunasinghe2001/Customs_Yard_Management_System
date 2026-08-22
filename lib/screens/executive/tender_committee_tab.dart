@@ -15,18 +15,10 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'package:intl/intl.dart';
 
-/// True when the signed-in High Panel officer is the ADG.
-///
-/// The position lives in `profiles.job_role` ('DG' / 'ADG'), but accounts
-/// created before the "High Panel Officers" rename can carry it only in the
-/// username ('adg') or the full name, so check all three rather than locking
-/// the ADG out of their own actions.
-bool _isAdg(ProfileModel? p) {
-  if (p == null) return false;
-  if ((p.jobRole ?? '').trim().toUpperCase() == 'ADG') return true;
-  if ((p.username ?? '').trim().toLowerCase() == 'adg') return true;
-  return RegExp(r'\(\s*ADG\s*\)', caseSensitive: false).hasMatch(p.fullName);
-}
+/// True when the signed-in High Panel officer is the ADG — the post that
+/// submits a committee's valuation as the tender's final price.
+/// See [executivePostIs] for how the post is resolved.
+bool _isAdg(ProfileModel? p) => executivePostIs(p, 'ADG');
 
 String _cItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
@@ -117,10 +109,9 @@ final _committeeSearchProvider = StateProvider<String>((ref) => '');
 final _committeeYardProvider = StateProvider<String?>((ref) => null); // null=all
 
 /// High Panel tab: packages still unsold after the Valuation Tender plus all
-/// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The ADG appoints a
-/// committee for each (usually five officers) and then submits that
-/// committee's valuation as the tender's final price. The DG has VIEW-ONLY
-/// access to this tab — their own decision comes later, on Unsold Packages.
+/// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The DG and the ADG
+/// both appoint committees (usually five officers); the ADG then submits the
+/// committee's valuation as the tender's final price. The DC observes only.
 class TenderCommitteeTab extends ConsumerWidget {
   const TenderCommitteeTab({super.key});
 
@@ -134,8 +125,8 @@ class TenderCommitteeTab extends ConsumerWidget {
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
     final q = ref.watch(_committeeSearchProvider).trim().toLowerCase();
     final yardFilter = ref.watch(_committeeYardProvider);
-    // Appointing the committee is the ADG's job; the DG only views.
-    final canAppoint = _isAdg(ref.watch(currentProfileProvider));
+    // Both the DG and the ADG appoint committees; the DC only observes.
+    final canAppoint = !isExecutiveViewOnly(ref.watch(currentProfileProvider));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
 
@@ -155,7 +146,7 @@ class TenderCommitteeTab extends ConsumerWidget {
               child: Text(
                   canAppoint
                       ? 'Packages still unsold after Tender 3 — appoint a committee'
-                      : 'Packages still unsold after Tender 3 — the ADG appoints the committee',
+                      : 'Packages still unsold after Tender 3 — view only',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style:
@@ -583,11 +574,11 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
   /// The dialog is a read-only roster when EITHER:
   ///   * the members are already appointed — the record of who valued the
   ///     goods must not change afterwards; or
-  ///   * the signed-in officer is not the ADG. Naming the committee is the
-  ///     ADG's job; the DG can look but not appoint.
+  ///   * the signed-in officer only observes (the DC). The DG and the ADG can
+  ///     both appoint.
   bool get _readOnly {
     if (widget.existing?.members.isNotEmpty ?? false) return true;
-    return !_isAdg(ref.read(currentProfileProvider));
+    return isExecutiveViewOnly(ref.read(currentProfileProvider));
   }
 
   @override
@@ -795,7 +786,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
               Expanded(
                 child: Text(
                     'No committee has been appointed for this package yet. '
-                    'The ADG names the committee members.',
+                    'The DG or the ADG names the committee members.',
                     style: TextStyle(
                         color: context.colors.textMuted, fontSize: 13)),
               ),

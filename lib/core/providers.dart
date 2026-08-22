@@ -739,19 +739,25 @@ final requestableForfeitedPackagesProvider =
 });
 
 /// Yard-side: set of "pkgId:itemId" keys for abandoned/other packages that
-/// already have a forfeited_packages row — i.e. a disposal request has been
-/// sent. Used by the Abandoned and Other table screens to hide rows that have
-/// already been sent for disposal.
+/// have actually been SENT for disposal. Used by the Abandoned and Other table
+/// screens to hide rows already in a disposal request.
+///
+/// Keyed on `disposal_request_items`, NOT on the mere existence of a
+/// forfeited_packages row: an APPEAL now also creates that row (see
+/// `appeal_ensure_forfeited_row`), and a package under appeal must stay
+/// visible on the yard's table — it has not been sent anywhere.
 final sentAbandonedOtherFpKeysProvider =
     FutureProvider<Set<String>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(disposalRequestsChangeTriggerProvider);
   ref.watch(packagesChangeTriggerProvider);
   final data = await supabase
-      .from('forfeited_packages')
-      .select('package_id, item_id')
-      .inFilter('source', ['abandoned', 'other']);
-  return (data as List).map((e) {
+      .from('disposal_request_items')
+      .select('forfeited_packages!inner(package_id, item_id, source)')
+      .inFilter('forfeited_packages.source', ['abandoned', 'other']);
+  return (data as List).map((row) {
+    final e = (row as Map<String, dynamic>)['forfeited_packages']
+        as Map<String, dynamic>;
     final pkgId = e['package_id'].toString();
     final itemId = e['item_id']?.toString();
     return itemId != null ? '$pkgId:$itemId' : pkgId;

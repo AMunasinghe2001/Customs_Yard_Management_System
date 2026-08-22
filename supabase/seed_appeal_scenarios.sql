@@ -20,6 +20,10 @@
 --    D. APPEAL DECIDED — the four outcomes, spread across the statuses:
 --       Forfeit→RELEASE · Detain→SALE · Abandoned→DESTROY · Other→RE-EXPORT.
 --
+--  Abandoned / "Other" goods also get the RETURNED warehouse entry the app
+--  reads their status from ('[ABANDONED] …' / '[OTHER] …'); without it every
+--  row would be classified as Detain.
+--
 --  ADDITIVE and idempotent: it creates its OWN SRs (GL1/SR/6x/2026) and never
 --  touches existing data. Re-running updates the same rows rather than
 --  duplicating them. Delete them again with the query at the bottom.
@@ -81,8 +85,14 @@ BEGIN
     RAISE EXCEPTION 'No profile found — create a yard officer first.';
   END IF;
 
-  SELECT id INTO v_wh FROM public.warehouses
-   WHERE yard = v_yard ORDER BY name LIMIT 1;
+  -- `warehouses` has NO yard column — warehouses are shared, and the yard is
+  -- recorded per warehouse_entry. So prefer one this yard already stores goods
+  -- in, and otherwise take any warehouse.
+  SELECT w.id INTO v_wh
+    FROM public.warehouses w
+   WHERE EXISTS (SELECT 1 FROM public.warehouse_entries e
+                  WHERE e.warehouse_id = w.id AND e.yard = v_yard)
+   ORDER BY w.name LIMIT 1;
   IF v_wh IS NULL THEN
     SELECT id INTO v_wh FROM public.warehouses ORDER BY name LIMIT 1;
   END IF;
@@ -191,6 +201,43 @@ BEGIN
     ELSE
       UPDATE public.warehouse_entries
          SET admitted_at = v_entdt WHERE id = v_entry;
+    END IF;
+
+    -- ── disposition event, for the statuses that need one ────────────────
+    --  The app decides an item's status from its warehouse entries:
+    --    Abandoned -> a RETURNED entry whose return_notes start '[ABANDONED]'
+    --    Other     -> a RETURNED entry whose return_notes start '[OTHER'
+    --  Detain and Forfeit need no event (Detain = simply still held).
+    --  Without this the Appeal portal shows every row as "Detain".
+    IF r.status IN ('Abandoned', 'Other') THEN
+      IF NOT EXISTS (
+        SELECT 1 FROM public.warehouse_entries
+         WHERE package_id = v_pkg AND package_item_id = v_item
+           AND is_returned
+           AND upper(coalesce(return_notes, '')) LIKE
+               CASE r.status WHEN 'Abandoned' THEN '[ABANDONED]%'
+                             ELSE '[OTHER%' END
+      ) THEN
+        INSERT INTO public.warehouse_entries (
+          id, package_id, package_item_id, warehouse_id, yard, zone,
+          hold_reason, item_count, admitted_by, admitted_at, daily_rate,
+          is_returned, returned_at, returned_by, return_notes,
+          created_at, updated_at)
+        VALUES (
+          gen_random_uuid(), v_pkg, v_item, v_wh, v_yard,
+          COALESCE(v_zone, 'A'),
+          CASE r.status
+            WHEN 'Abandoned' THEN 'Supposed to be Destroyed'
+            ELSE 'Supposed to be Sold / Auction'
+          END,
+          r.qty, v_off, v_entdt, 50,
+          true, v_entdt, v_off,
+          CASE r.status
+            WHEN 'Abandoned' THEN '[ABANDONED] Consignee did not claim the goods'
+            ELSE '[OTHER] Held pending a court order'
+          END,
+          v_entdt, v_entdt);
+      END IF;
     END IF;
 
     -- ── forfeited_packages row ───────────────────────────────────────────
@@ -307,23 +354,61 @@ END $$;
 reset lock_timeout;
 
 -- ── VERIFY ───────────────────────────────────────────────────────────────────
+--  Exactly what the Appeal Directorate's Active Appeals tab should now list.
+--  `derived_status` is computed the same way the app does it, so if this says
+--  Abandoned/Other/Detain, the portal will too.
 SELECT p.sr_number,
        pi.item_name                                   AS goods,
-       pi.status                                      AS goods_status,
+       CASE
+         WHEN fp.source = 'forfeit'                          THEN 'Forfeit'
+         WHEN EXISTS (SELECT 1 FROM public.warehouse_entries w
+                       WHERE w.package_item_id = pi.id AND w.is_returned
+                         AND upper(coalesce(w.return_notes,'')) LIKE '[ABANDONED]%')
+                                                             THEN 'Abandoned'
+         WHEN EXISTS (SELECT 1 FROM public.warehouse_entries w
+                       WHERE w.package_item_id = pi.id AND w.is_returned
+                         AND upper(coalesce(w.return_notes,'')) LIKE '[OTHER%')
+                                                             THEN 'Other'
+         ELSE 'Detain'
+       END                                            AS derived_status,
        p.entry_date,
-       (p.entry_date + 30)                            AS window_closes,
-       CASE WHEN p.entry_date + 30 > current_date
-            THEN 'Appealing (' || (p.entry_date + 30 - current_date) || 'd)'
-            ELSE 'Enabled' END                        AS appeal_chip,
-       fp.appeal_hold,
+       (p.entry_date::date + 30)                      AS window_closes,
+       CASE WHEN p.entry_date::date + 30 > current_date
+            THEN 'In Appeal (' || (p.entry_date::date + 30 - current_date) || 'd)'
+            ELSE 'Window passed' END                   AS appeal_state,
+       coalesce(fp.appeal_hold, false)                AS on_hold,
        fp.appeal_decision
   FROM public.packages p
   JOIN public.package_items pi ON pi.package_id = p.id
   LEFT JOIN public.forfeited_packages fp
          ON fp.package_id = p.id AND fp.item_id = pi.id
- WHERE p.sr_number LIKE 'GL1/SR/6%/2026'
-    OR p.sr_number LIKE 'GL1/SR/7%/2026'
+ WHERE p.sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$'
  ORDER BY p.sr_number;
+
+-- How many rows the Appeal portal should show, by status.
+SELECT CASE
+         WHEN fp.source = 'forfeit' THEN 'Forfeit'
+         WHEN EXISTS (SELECT 1 FROM public.warehouse_entries w
+                       WHERE w.package_item_id = pi.id AND w.is_returned
+                         AND upper(coalesce(w.return_notes,'')) LIKE '[ABANDONED]%')
+                                    THEN 'Abandoned'
+         WHEN EXISTS (SELECT 1 FROM public.warehouse_entries w
+                       WHERE w.package_item_id = pi.id AND w.is_returned
+                         AND upper(coalesce(w.return_notes,'')) LIKE '[OTHER%')
+                                    THEN 'Other'
+         ELSE 'Detain'
+       END                                            AS status,
+       count(*)                                       AS goods,
+       count(*) filter (where p.entry_date::date + 30 > current_date) AS in_appeal,
+       count(*) filter (where coalesce(fp.appeal_hold,false))   AS on_hold,
+       count(*) filter (where fp.appeal_decision is not null)   AS decided
+  FROM public.packages p
+  JOIN public.package_items pi ON pi.package_id = p.id
+  LEFT JOIN public.forfeited_packages fp
+         ON fp.package_id = p.id AND fp.item_id = pi.id
+ WHERE p.sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$'
+ GROUP BY 1
+ ORDER BY 1;
 
 -- ── UNDO (run only if you want these test rows gone) ─────────────────────────
 -- delete from public.forfeited_packages

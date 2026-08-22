@@ -1472,10 +1472,39 @@ String valuationPositionLabel(String? code) =>
 const Map<String, String> kExecutivePositions = {
   'DG': 'DG (Director General)',
   'ADG': 'ADG (Additional Director General)',
+  // Sits on the High Panel to observe. VIEW-ONLY: no committee appointment,
+  // no committee valuation, no final outcome — see [isExecutiveViewOnly].
+  'DC': 'DC (Deputy Commissioner)',
 };
 
 String executivePositionLabel(String? code) =>
     kExecutivePositions[code] ?? (code ?? "Director General's Office");
+
+/// True when the signed-in High Panel officer holds [code].
+///
+/// The post lives in `profiles.job_role`, but accounts created before the
+/// "High Panel Officers" rename can carry it only in the username or the full
+/// name, so all three are checked. Longer codes are tested FIRST because
+/// "(ADG)" also contains "DG" — a naive match would read an ADG as a DG.
+bool executivePostIs(ProfileModel? p, String code) {
+  if (p == null) return false;
+  final role = (p.jobRole ?? '').trim().toUpperCase();
+  final user = (p.username ?? '').trim().toLowerCase();
+  bool matches(String c) =>
+      role == c ||
+      user == c.toLowerCase() ||
+      RegExp(r'\(\s*' + c + r'\s*\)', caseSensitive: false)
+          .hasMatch(p.fullName);
+
+  // Anything that matches a LONGER post cannot be this one.
+  for (final other in kExecutivePositions.keys) {
+    if (other.length > code.length && matches(other)) return false;
+  }
+  return matches(code);
+}
+
+/// The DC observes the High Panel but changes nothing.
+bool isExecutiveViewOnly(ProfileModel? p) => executivePostIs(p, 'DC');
 
 // ── Tender Sale (Central Disposal Directorate) ───────────────────────────
 

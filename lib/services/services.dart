@@ -2346,7 +2346,11 @@ class ForfeitedPackageService {
 
     final out = <ForfeitedPackageModel>[];
     for (final raw in (pkgData as List)) {
-      final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
+      final row = raw as Map<String, dynamic>;
+      final pkg = PackageModel.fromJson(row);
+      // PackageModel drops `yard`, and an appeal officer belongs to no yard,
+      // so AppSession.currentYard is null here — read it off the raw row.
+      final pkgYard = row['yard']?.toString();
       final entryDate = pkg.entryDate ?? pkg.createdAt;
       // Only goods still inside the window — once it closes the yard acts on
       // them and there is nothing left to appeal.
@@ -2366,6 +2370,11 @@ class ForfeitedPackageService {
       final deadline = appealDeadlineFrom(entryDate);
 
       for (final item in pkg.items) {
+        // Genuine forfeits already have their own forfeited_packages row and
+        // reach the portal through AppealService.getForfeitedPackages().
+        // Listing them again here would duplicate every forfeit row.
+        if (pkg.isItemForfeited(item.id)) continue;
+
         // Which status this item currently sits under decides its label.
         final abandonedEntries = _abandonedEntriesForItem(pkg, item);
         final otherEntries = _otherEntriesForItem(pkg, item);
@@ -2384,8 +2393,10 @@ class ForfeitedPackageService {
           reason = _otherReasonFor(pkg);
         } else {
           // Still held in the warehouse under its original status — Detain.
+          // isReturned is the authoritative flag; returnedAt can be null on a
+          // row that was still marked returned.
           final held = pkg.warehouseEntries
-              .where((e) => e.packageItemId == item.id && e.returnedAt == null)
+              .where((e) => e.packageItemId == item.id && !e.isReturned)
               .toList();
           if (held.isEmpty) continue;
           source = 'detain';
@@ -2401,9 +2412,7 @@ class ForfeitedPackageService {
           forfeitedAt: entryDate,
           appealDeadline: deadline,
           reason: reason,
-          // PackageModel carries no yard; RLS already scopes the read and the
-          // Appeal portal shows every yard, so fall back to the session's.
-          yard: AppSession.currentYard,
+          yard: pkgYard ?? AppSession.currentYard,
           source: source,
           packageDetails: pkg,
           itemId: item.id,
@@ -2590,23 +2599,33 @@ class ForfeitedPackageService {
         .select(
             '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number))'));
 
-    // package_ids that already have an abandoned FP row (any request state).
-    final existingAbandonedFp = await AuthService._withNetworkRetry(() => supabase
-        .from('forfeited_packages')
-        .select('package_id')
-        .eq('source', 'abandoned'));
+    // package_ids already SENT in a disposal request as abandoned.
+    //
+    // Scoped to disposal_request_items on purpose: an APPEAL also creates a
+    // forfeited_packages row now (`appeal_ensure_forfeited_row`), and goods
+    // under appeal must stay requestable once their window closes. Keying on
+    // the row's mere existence would strand them forever.
+    final existingAbandonedFp = await AuthService._withNetworkRetry(() =>
+        supabase
+            .from('disposal_request_items')
+            .select('forfeited_packages!inner(package_id, source)')
+            .eq('forfeited_packages.source', 'abandoned'));
     final abandonedFpPkgIds = (existingAbandonedFp as List)
-        .map((e) => e['package_id'].toString())
+        .map((row) => ((row as Map<String, dynamic>)['forfeited_packages']
+            as Map<String, dynamic>)['package_id']
+            .toString())
         .toSet();
 
     // ── 3. "Other"-status packages (30-day appeal window from entry) ────────
     // Track at item level so that only the specific item that was already
     // requested is excluded — other items in the same package remain requestable.
     final existingOtherFp = await AuthService._withNetworkRetry(() => supabase
-        .from('forfeited_packages')
-        .select('package_id, item_id')
-        .eq('source', 'other'));
-    final otherFpItemKeys = (existingOtherFp as List).map((e) {
+        .from('disposal_request_items')
+        .select('forfeited_packages!inner(package_id, item_id, source)')
+        .eq('forfeited_packages.source', 'other'));
+    final otherFpItemKeys = (existingOtherFp as List).map((row) {
+      final e = (row as Map<String, dynamic>)['forfeited_packages']
+          as Map<String, dynamic>;
       final pkgId = e['package_id'].toString();
       final itemId = e['item_id']?.toString();
       return itemId != null ? '$pkgId:$itemId' : pkgId;
