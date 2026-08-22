@@ -273,6 +273,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
                                                       ? f.valuationCost! * qty
                                                       : null,
                                               valuationQty: qty,
+                                              tenderHistoryFor: f,
                                             ),
                                           ),
                                 ),

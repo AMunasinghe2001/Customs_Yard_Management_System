@@ -342,6 +342,11 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                       context,
                                       info: info,
                                       srColor: gold,
+                                      // Plain text on the yard table — the
+                                      // green highlight is for the portals
+                                      // that act on the money.
+                                      valuationColor:
+                                          context.colors.textPrimary,
                                       // READ-ONLY: the DG decides, the yard
                                       // acts on what was decided.
                                       outcome: Center(
@@ -356,7 +361,11 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                                     PackageDetailsDialog(
                                                   package: pkg,
                                                   storageRate: storageRate,
-                                                  headerAccentColor: gold,
+                                                  // No headerAccentColor: the
+                                                  // yard's other pages (Sold,
+                                                  // Abandoned, ...) use the
+                                                  // default blue header, and
+                                                  // this popup must match.
                                                   useLegacySummary: true,
                                                   highlightItemId: f.itemId,
                                                   valuationUnitCost:
@@ -367,6 +376,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                                               qty
                                                           : null,
                                                   valuationQty: qty,
+                                                  tenderHistoryFor: f,
                                                 ),
                                               ),
                                     ),

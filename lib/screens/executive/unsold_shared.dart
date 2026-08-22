@@ -127,6 +127,11 @@ List<DataCell> unsoldCells(
   required Color srColor,
   required Widget outcome,
   required VoidCallback? onDetails,
+
+  /// Colour of the Valuation figure. The directorate tables highlight it in
+  /// green because the money is what they act on; the yard is only being told
+  /// what happened, so it reads as ordinary body text there.
+  Color? valuationColor,
 }) {
   final f = info.forfeited;
   final pkg = f.packageDetails;
@@ -154,7 +159,8 @@ List<DataCell> unsoldCells(
     DataCell(TooltipText(
         value == null ? '—' : 'LKR ${NumberFormat('#,##0').format(value)}',
         style: TextStyle(
-            color: context.colors.successGreen, fontWeight: FontWeight.w700))),
+            color: valuationColor ?? context.colors.successGreen,
+            fontWeight: FontWeight.w700))),
     DataCell(outcome),
     DataCell(Center(
       child: IconButton(

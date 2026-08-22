@@ -98,6 +98,282 @@ import 'one_tap_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
 
+
+/// The valuation row shown in the Sale / Destruction sections.
+///
+/// Shows the **LATEST** valuation: if the package was re-valued for a later
+/// tender round that figure wins over the Valuation Directorate's first one,
+/// and the row is marked "re-valued" — the same rule the Unsold tables use.
+/// Formatted like those tables too: total first, then `@ unit x qty`.
+class _ValuationDetailRow extends ConsumerWidget {
+  final ForfeitedPackageModel fp;
+
+  /// The quantity actually sold / destroyed, when the caller knows it.
+  final int? soldQty;
+
+  const _ValuationDetailRow({required this.fp, this.soldQty});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final revals =
+        ref.watch(tenderRevaluationsProvider(fp.id)).valueOrNull ?? const {};
+    TenderRevaluationModel? latest;
+    for (final r in revals.values) {
+      if (latest == null || r.createdAt.isAfter(latest.createdAt)) latest = r;
+    }
+    final unit = latest?.valuationCost ?? fp.valuationCost;
+    if (unit == null) return const SizedBox.shrink();
+
+    final int qty;
+    if (soldQty != null && soldQty! > 0) {
+      qty = soldQty!;
+    } else if (fp.entryQty != null) {
+      qty = fp.entryQty!;
+    } else if (fp.itemId != null) {
+      qty = fp.packageDetails?.items
+              .where((i) => i.id == fp.itemId)
+              .firstOrNull
+              ?.quantity ??
+          1;
+    } else {
+      qty = fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
+    }
+
+    final money = NumberFormat('#,##0.##');
+    final revalued = latest != null;
+    return _DetailItem(
+      icon: Icons.calculate_rounded,
+      label: revalued ? 'Valuation (Rs) · re-valued' : 'Valuation (Rs)',
+      value: '${money.format(unit * qty)}'
+          '  (@ ${money.format(unit)} × $qty)',
+      valueColor: revalued ? context.colors.accentLightBlue : null,
+    );
+  }
+}
+
+
+/// Per-round tender history for an unsold package: the valuation each round
+/// was offered at, and the bids that came in against it.
+///
+/// Shown on the Unsold popup so the whole story is visible in one place —
+/// the Valuation Tender, then Tender 1/2/3, then the committee-priced round,
+/// each with its price and its bids. Rounds with neither a valuation nor a
+/// bid are skipped, and the section hides itself entirely when there is
+/// nothing to show.
+class TenderHistorySection extends ConsumerWidget {
+  final ForfeitedPackageModel forfeited;
+
+  /// Quantity this row covers, so a per-item unit price can be totalled.
+  final int? qty;
+
+  const TenderHistorySection({super.key, required this.forfeited, this.qty});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final revals =
+        ref.watch(tenderRevaluationsProvider(forfeited.id)).valueOrNull ??
+            const <String, TenderRevaluationModel>{};
+    final bids = ref.watch(tenderBidsProvider(forfeited.id)).valueOrNull ??
+        const <String, List<double>>{};
+    // The committee round is priced by the ADG's submission. The seed also
+    // records that as a tender_revaluations row, but a package valued through
+    // the UI may not have one yet — so fall back to the committee itself,
+    // otherwise the round would vanish from this list.
+    final committee =
+        ref.watch(tenderCommitteesProvider).valueOrNull?[forfeited.id];
+    final sales = ref.watch(tenderSalesProvider).valueOrNull ??
+        const <TenderSaleModel>[];
+
+    // The rounds THIS package sat in, oldest first — that ordering is what
+    // turns a sale id into "Valuation Tender" / "Tender 1" / ...
+    final mine = sales
+        .where((s) =>
+            s.items.any((i) => i.forfeitedPackageId == forfeited.id))
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    // Any round that has a valuation or bids but no matching sale row still
+    // deserves a line, so collect those ids too.
+    final ordered = <String>[for (final s in mine) s.id];
+    for (final id in {...revals.keys, ...bids.keys}) {
+      if (id.isNotEmpty && !ordered.contains(id)) ordered.add(id);
+    }
+    if (ordered.isEmpty) return const SizedBox.shrink();
+
+    final effQty = (qty != null && qty! > 0)
+        ? qty!
+        : (forfeited.entryQty ??
+            (forfeited.itemId != null
+                ? (forfeited.packageDetails?.items
+                        .where((i) => i.id == forfeited.itemId)
+                        .firstOrNull
+                        ?.quantity ??
+                    1)
+                : (forfeited.packageDetails?.items
+                        .fold<int>(0, (a, i) => a + i.quantity) ??
+                    1)));
+
+    final money = NumberFormat('#,##0.##');
+    final rows = <Widget>[];
+    for (var i = 0; i < ordered.length; i++) {
+      final id = ordered[i];
+      final reval = revals[id];
+      final roundBids = bids[id] ?? const <double>[];
+      // Bids only exist to PRICE the next round, and the committee round is
+      // the last one — its price comes from the committee, not from bidding.
+      // So a committee round shows its price and nothing about bids.
+      final isCommitteeRound = (i + 1) > kMaxBidTenderRounds + 1;
+      // Round 1 has no re-valuation of its own — it ran at the Valuation
+      // Directorate's original figure. The committee round falls back to the
+      // ADG's submitted value.
+      final unit = reval?.valuationCost ??
+          (i == 0
+              ? forfeited.valuationCost
+              : (isCommitteeRound ? committee?.submittedValue : null));
+      // A committee round is ALWAYS worth showing: it is the last attempt, and
+      // hiding it would end the history at Tender 3.
+      if (unit == null && roundBids.isEmpty && !isCommitteeRound) continue;
+      rows.add(_TenderRoundTile(
+        label: tenderRoundLabel(i + 1),
+        isCommitteeRound: isCommitteeRound,
+        priceLabel: unit == null
+            ? null
+            : 'LKR ${money.format(unit * effQty)}'
+                '  (@ ${money.format(unit)} \u00d7 $effQty)',
+        revalued: reval != null && !isCommitteeRound,
+        bids: isCommitteeRound
+            ? const []
+            : [for (final b in roundBids) 'LKR ${money.format(b)}'],
+      ));
+    }
+    if (rows.isEmpty) return const SizedBox.shrink();
+
+    return _DetailSection(
+      title: 'Tender History',
+      icon: Icons.history_rounded,
+      delay: 250,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: rows,
+      ),
+    );
+  }
+}
+
+/// One round of [TenderHistorySection]: its price and the bids against it.
+class _TenderRoundTile extends StatelessWidget {
+  final String label;
+  final String? priceLabel;
+  final bool revalued;
+  final List<String> bids;
+
+  /// The committee-priced round. It takes no bids, so the bid line is replaced
+  /// by a note saying where its price came from.
+  final bool isCommitteeRound;
+
+  const _TenderRoundTile({
+    required this.label,
+    required this.priceLabel,
+    required this.revalued,
+    required this.bids,
+    this.isCommitteeRound = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = revalued
+        ? context.colors.accentLightBlue
+        : context.colors.primaryGold;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: context.colors.surfaceDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: context.colors.borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(
+                color: accent.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(7),
+                border: Border.all(color: accent.withOpacity(0.4)),
+              ),
+              child: Text(label,
+                  style: TextStyle(
+                      color: accent,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800)),
+            ),
+            if (revalued) ...[
+              const Gap(8),
+              Icon(Icons.price_change_rounded,
+                  size: 14, color: context.colors.accentLightBlue),
+              const Gap(4),
+              Text('re-valued',
+                  style: TextStyle(
+                      color: context.colors.accentLightBlue,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+            ],
+            const Spacer(),
+            if (priceLabel != null)
+              Flexible(
+                child: Text(priceLabel!,
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700)),
+              ),
+          ]),
+          const Gap(8),
+          if (isCommitteeRound)
+            Text('Priced by the tender committee · no bidding',
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 11.5))
+          else if (bids.isEmpty)
+            Text('No bids recorded',
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 11.5))
+          else
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: [
+                Text('Bids:',
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 11.5)),
+                for (final b in bids)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: context.colors.successGreen.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                          color: context.colors.successGreen.withOpacity(0.35)),
+                    ),
+                    child: Text(b,
+                        style: TextStyle(
+                            color: context.colors.successGreen,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class PackageDetailsDialog extends ConsumerStatefulWidget {
   final PackageModel package;
   final Map<DateTime, double> storageRate;
@@ -108,6 +384,10 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // view and the Final Disposition footer button.
   final String? highlightItemId;
   final bool useLegacySummary;
+
+  /// The forfeited row whose tender history (per-round valuation + bids)
+  /// should be shown. Set by the Unsold pages; null hides the section.
+  final ForfeitedPackageModel? tenderHistoryFor;
   final bool useWarehouseSummary;
 
   // Optional yard label (e.g. 'Grey Line 1') shown in the Warehouse Summary so
@@ -175,6 +455,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.highlightEntry, // Added highlightEntry
     this.highlightItemId,
     this.useLegacySummary = false,
+    this.tenderHistoryFor,
     this.useWarehouseSummary = false,
     this.yardLabel,
     this.valuationUnitCost,
@@ -1675,6 +1956,12 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               ),
                             ),
                           ),
+                        // Per-round valuation + bids, for unsold packages.
+                        if (widget.tenderHistoryFor != null)
+                          TenderHistorySection(
+                            forfeited: widget.tenderHistoryFor!,
+                            qty: widget.valuationQty,
+                          ),
                         if (!widget.useWarehouseSummary)
                           _DetailSection(
                             title: 'Warehouse Summary',
@@ -2508,6 +2795,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           // Sold table.
                           soldBy: widget.highlightEntry?.returnedByName ??
                               widget.highlightEntry?.returnedByBadge,
+                          // Prefer the caller's figure; fall back to the
+                          // highlighted entry's own count so the popup still
+                          // agrees with the row when no qty was passed.
+                          valuationQty: widget.valuationQty ??
+                              widget.highlightEntry?.itemCount,
                         ),
                       // Destroyed packages can also be delivered out — show a
                       // Delivered/Pending section with a Mark Delivered button
@@ -2516,6 +2808,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         _DestructionDeliverySection(
                           package: p,
                           packageItemId: widget.highlightEntry?.packageItemId,
+                          valuationQty: widget.valuationQty ??
+                              widget.highlightEntry?.itemCount,
                         ),
                     ],
                   ),
@@ -3299,8 +3593,17 @@ class _SaleFinancialsSection extends ConsumerStatefulWidget {
   final String? receipt;
   /// Officer who recorded the sale (shown here, not in the Sold table).
   final String? soldBy;
+
+  /// Quantity this sale covers, as the table shows it. Without it the
+  /// valuation row falls back to 1, because the sale query does not join
+  /// package_items so `forfeited.packageDetails` is null here.
+  final int? valuationQty;
   const _SaleFinancialsSection(
-      {required this.package, this.packageItemId, this.receipt, this.soldBy});
+      {required this.package,
+      this.packageItemId,
+      this.receipt,
+      this.soldBy,
+      this.valuationQty});
   @override
   ConsumerState<_SaleFinancialsSection> createState() => _SaleFinancialsSectionState();
 }
@@ -3398,25 +3701,13 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                   final fp = saleItem.forfeited;
                   return fp?.valuationCost != null;
                 }())
-                  _DetailItem(
-                    icon: Icons.calculate_rounded,
-                    label: 'Valuation (Rs)',
-                    value: (() {
-                      final fp = saleItem.forfeited!;
-                      final unit = fp.valuationCost!;
-                      final qty = fp.entryQty ??
-                          (fp.itemId != null
-                              ? (fp.packageDetails?.items
-                                      .where((i) => i.id == fp.itemId)
-                                      .firstOrNull
-                                      ?.quantity ??
-                                  1)
-                              : (fp.packageDetails?.items
-                                      .fold<int>(0, (s, i) => s + i.quantity) ??
-                                  1));
-                      return (unit * qty).toStringAsFixed(2);
-                    }()),
-                  ),
+                  _ValuationDetailRow(
+                      fp: saleItem.forfeited!,
+                      // The table's Qty column is the source of truth:
+                      // the sale query does not join package_items, so
+                      // fp.packageDetails is null here and the internal
+                      // fallback would land on 1.
+                      soldQty: widget.valuationQty),
                 _DetailItem(
                   icon: Icons.payments_rounded,
                   label: 'Sold Price (Rs)',
@@ -3492,8 +3783,11 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
 class _DestructionDeliverySection extends ConsumerStatefulWidget {
   final PackageModel package;
   final String? packageItemId;
+
+  /// Quantity this destruction covers — see _SaleFinancialsSection.
+  final int? valuationQty;
   const _DestructionDeliverySection(
-      {required this.package, this.packageItemId});
+      {required this.package, this.packageItemId, this.valuationQty});
   @override
   ConsumerState<_DestructionDeliverySection> createState() =>
       _DestructionDeliverySectionState();
@@ -3594,25 +3888,8 @@ class _DestructionDeliverySectionState
                   final fp = item.forfeited;
                   return fp?.valuationCost != null;
                 }())
-                  _DetailItem(
-                    icon: Icons.calculate_rounded,
-                    label: 'Valuation (Rs)',
-                    value: (() {
-                      final fp = item.forfeited!;
-                      final unit = fp.valuationCost!;
-                      final qty = fp.entryQty ??
-                          (fp.itemId != null
-                              ? (fp.packageDetails?.items
-                                      .where((i) => i.id == fp.itemId)
-                                      .firstOrNull
-                                      ?.quantity ??
-                                  1)
-                              : (fp.packageDetails?.items
-                                      .fold<int>(0, (s, i) => s + i.quantity) ??
-                                  1));
-                      return (unit * qty).toStringAsFixed(2);
-                    }()),
-                  ),
+                  _ValuationDetailRow(
+                      fp: item.forfeited!, soldQty: widget.valuationQty),
                 // Destruction records a price only — no taxes (unlike a sale).
                 _DetailItem(
                   icon: Icons.payments_rounded,

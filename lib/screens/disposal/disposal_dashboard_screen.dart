@@ -548,7 +548,12 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                                 PackageDetailsDialog(
                                               package: pkg,
                                               storageRate: storageRate,
-                                              headerAccentColor: blue,
+                                              // Green: this portal's accent.
+                                              // Every other Central Disposal
+                                              // popup uses it; only this tab
+                                              // was passing blue.
+                                              headerAccentColor:
+                                                  context.colors.successGreen,
                                               useLegacySummary: true,
                                               highlightItemId: f.itemId,
                                               yardLabel: yardName(f.yard),
@@ -559,6 +564,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                                       ? f.valuationCost! * qty
                                                       : null,
                                               valuationQty: qty,
+                                              tenderHistoryFor: f,
                                             ),
                                           ),
                                 ),
@@ -1136,6 +1142,10 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                             highlightEntry: r.entry,
                                             useLegacySummary: true,
                                             isSoldPage: true,
+                                            // Same qty the table's Valuation
+                                            // cell multiplies by, so the popup
+                                            // cannot disagree with the row.
+                                            valuationQty: r.entry.itemCount,
                                           ),
                                         ),
                                       ),

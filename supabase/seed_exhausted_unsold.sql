@@ -144,14 +144,29 @@ BEGIN
       false, 0, '[]'::jsonb, false, v_created)
     ON CONFLICT DO NOTHING;
 
-    -- Bids came in BELOW even the committee's reduced price — which is why
-    -- this last attempt failed too and the goods now need a DG decision.
-    INSERT INTO public.tender_bids
-      (id, forfeited_package_id, tender_sale_id, amount, yard, created_by, created_at)
-    SELECT gen_random_uuid(), f.id, v_sale,
-           round((v_price * v_qty * x)::numeric, 2), v_yard, v_off,
-           v_saledt + interval '9 hours'
-      FROM unnest(ARRAY[0.58, 0.44, 0.31]) AS x;
+    -- The price this round ran at: the ADG's submission, recorded the same way
+    -- a Valuation re-valuation is, so the Tender History shows a figure for
+    -- the committee round instead of a blank line.
+    DELETE FROM public.tender_revaluations
+     WHERE forfeited_package_id = f.id AND tender_sale_id = v_sale;
+
+    INSERT INTO public.tender_revaluations (
+      id, forfeited_package_id, tender_sale_id, valuation_cost, note,
+      yard, created_by, created_at)
+    VALUES (
+      gen_random_uuid(), f.id, v_sale, v_price,
+      'Committee valuation submitted by the ADG',
+      v_yard, v_off, v_created);
+
+    -- NO BIDS on this round, on purpose.
+    --
+    -- Bids exist to PRICE the next round: Tender 1/2/3 are each re-valued from
+    -- the previous round's bids. The committee round is different — the
+    -- committee fixes the price and the ADG submits it, and if it still does
+    -- not sell the package goes straight to the DG for a final outcome. There
+    -- is no further round to price, so recording bids here would be
+    -- meaningless (and made the popup show a "Committee Tender 1 · Bids" line
+    -- that should never appear).
 
     v_n := v_n + 1;
     RAISE NOTICE '  % · % → round % held % at LKR %, unsold',
@@ -167,6 +182,14 @@ BEGIN
     RAISE NOTICE 'Added the committee-priced FINAL tender for % package(s).', v_n;
   END IF;
 END $$;
+
+-- ── CLEAN UP: bids an earlier version of this script wrote ──────────────────
+--  The committee round never takes bids (the committee sets the price), but an
+--  earlier revision seeded three. Remove them from those rounds only.
+DELETE FROM public.tender_bids b
+ USING public.tender_sales s
+ WHERE s.id = b.tender_sale_id
+   AND s.sale_number LIKE 'GL1/TS/2026/F%';
 
 reset lock_timeout;
 
