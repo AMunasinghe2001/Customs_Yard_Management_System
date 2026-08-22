@@ -13,12 +13,12 @@
 --    B. WINDOW PASSED  (chip "Enabled", actions allowed)
 --         one package per status, entered well over 30 days ago.
 --
---    C. APPEAL LODGED  — ON APPEAL HOLD, one per status
---       (Forfeit · Detain · Abandoned · Other). These show "On Appeal Hold"
---       and cannot be sold or destroyed.
+--    C. APPEAL LODGED  — ON APPEAL HOLD, 9 goods across every status
+--       (5 Forfeit · 2 Detain · 3 Abandoned · 1 Other). These show
+--       "On Appeal Hold" and cannot be sold or destroyed.
 --
---    D. APPEAL DECIDED — the four outcomes, spread across the statuses:
---       Forfeit→RELEASE · Detain→SALE · Abandoned→DESTROY · Other→RE-EXPORT.
+--    D. APPEAL DECIDED — 9 goods covering all four outcomes
+--       (RELEASE · SALE · DESTROY · RE-EXPORT), mostly on forfeits.
 --
 --  Abandoned / "Other" goods also get the RETURNED warehouse entry the app
 --  reads their status from ('[ABANDONED] …' / '[OTHER] …'); without it every
@@ -125,7 +125,19 @@ BEGIN
       (73, 'Laminated Glass Sheets'    , '7007.29.00',  40,  7800, 'Forfeit'  , 45, 'dec_release'),
       (74, 'Printed Circuit Boards'    , '8534.00.00', 160,  5600, 'Detain'   , 48, 'dec_sale'),
       (75, 'Expired Latex Paint'       , '3209.10.00',  90,  1200, 'Abandoned', 52, 'dec_destroy'),
-      (76, 'Marine Diesel Filters'     , '8421.23.00', 110,  3400, 'Other'    , 55, 'dec_reexport')
+      (76, 'Marine Diesel Filters'     , '8421.23.00', 110,  3400, 'Other'    , 55, 'dec_reexport'),
+      -- MORE APPEALS ON HOLD — several forfeits plus more abandoned goods.
+      (77, 'Chrome Bathroom Fittings'  , '7418.20.00', 145,  3900, 'Forfeit'  ,  6, 'hold'),
+      (78, 'Galvanised Steel Sheets'   , '7210.49.00',  85,  7400, 'Forfeit'  , 10, 'hold'),
+      (79, 'Cotton Bed Linen Sets'     , '6302.21.00', 260,  2100, 'Abandoned',  5, 'hold'),
+      (80, 'Melamine Dinner Sets'      , '3924.10.00', 310,  1450, 'Abandoned', 14, 'hold'),
+      (81, 'PVC Electrical Conduit'    , '3917.23.00', 420,   680, 'Detain'   ,  9, 'hold'),
+      -- MORE APPEALS DECIDED — the four outcomes again, mostly on forfeits.
+      (82, 'Hydraulic Jack Sets'       , '8425.42.00',  65,  6800, 'Forfeit'  , 40, 'dec_release'),
+      (83, 'Ceramic Wall Tiles'        , '6907.22.00', 190,  2600, 'Forfeit'  , 42, 'dec_sale'),
+      (84, 'Damaged Paint Thinner'     , '3814.00.00',  75,   900, 'Forfeit'  , 44, 'dec_destroy'),
+      (85, 'Imported Office Chairs'    , '9401.30.00', 120,  4700, 'Forfeit'  , 46, 'dec_reexport'),
+      (86, 'Nylon Fishing Nets'        , '5608.11.00', 230,  1900, 'Abandoned', 50, 'dec_sale')
     ) AS t(sr, goods, hs, qty, val, status, days_ago, state)
   LOOP
     v_sr    := 'GL1/SR/' || r.sr || '/2026';
@@ -382,7 +394,7 @@ SELECT p.sr_number,
   JOIN public.package_items pi ON pi.package_id = p.id
   LEFT JOIN public.forfeited_packages fp
          ON fp.package_id = p.id AND fp.item_id = pi.id
- WHERE p.sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$'
+ WHERE p.sr_number ~ '^GL1/SR/(6[1-9]|7[0-9]|8[0-6])/2026$'
  ORDER BY p.sr_number;
 
 -- How many rows the Appeal portal should show, by status.
@@ -406,19 +418,19 @@ SELECT CASE
   JOIN public.package_items pi ON pi.package_id = p.id
   LEFT JOIN public.forfeited_packages fp
          ON fp.package_id = p.id AND fp.item_id = pi.id
- WHERE p.sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$'
+ WHERE p.sr_number ~ '^GL1/SR/(6[1-9]|7[0-9]|8[0-6])/2026$'
  GROUP BY 1
  ORDER BY 1;
 
 -- ── UNDO (run only if you want these test rows gone) ─────────────────────────
 -- delete from public.forfeited_packages
 --  where package_id in (select id from public.packages
---                        where sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$');
+--                        where sr_number ~ '^GL1/SR/(6[1-9]|7[0-9]|8[0-6])/2026$');
 -- delete from public.warehouse_entries
 --  where package_id in (select id from public.packages
---                        where sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$');
+--                        where sr_number ~ '^GL1/SR/(6[1-9]|7[0-9]|8[0-6])/2026$');
 -- delete from public.package_items
 --  where package_id in (select id from public.packages
---                        where sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$');
+--                        where sr_number ~ '^GL1/SR/(6[1-9]|7[0-9]|8[0-6])/2026$');
 -- delete from public.packages
---  where sr_number ~ '^GL1/SR/(6[1-9]|7[0-6])/2026$';
+--  where sr_number ~ '^GL1/SR/(6[1-9]|7[0-9]|8[0-6])/2026$';

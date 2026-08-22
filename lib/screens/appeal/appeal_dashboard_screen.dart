@@ -664,6 +664,9 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                         (!f.isAppealExpired || f.isAppealHeld))
                     .toList();
                 if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
+                // Soonest deadline first, so the appeals needing attention
+                // most urgently lead instead of being paged out of sight.
+                rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
                 if (q.isNotEmpty) {
                   rows = rows.where((f) =>
                       f.srNumber.toLowerCase().contains(q) ||
@@ -807,6 +810,9 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                 final yard = ref.watch(_appealYardProvider);
                 var rows = list.where((f) => f.hasAppealDecision).toList();
                 if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
+                // Soonest deadline first, so the appeals needing attention
+                // most urgently lead instead of being paged out of sight.
+                rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
                 if (q.isNotEmpty) {
                   rows = rows.where((f) =>
                       f.srNumber.toLowerCase().contains(q) ||

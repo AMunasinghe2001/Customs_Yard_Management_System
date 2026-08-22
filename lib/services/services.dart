@@ -2344,6 +2344,23 @@ class ForfeitedPackageService {
         .select(
             '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number))'));
 
+    // Once an appeal is lodged against Detain / Abandoned / "Other" goods a
+    // REAL forfeited_packages row exists (`appeal_ensure_forfeited_row`). Load
+    // those so the row we emit carries the actual hold / decision and, above
+    // all, the real uuid — a synthetic id cannot be released or decided.
+    final realRows = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('*')
+        .inFilter('source', ['detain', 'abandoned', 'other']));
+    final realByKey = <String, Map<String, dynamic>>{};
+    for (final e in (realRows as List)) {
+      final row = e as Map<String, dynamic>;
+      final pkgId = row['package_id']?.toString();
+      final itemId = row['item_id']?.toString();
+      if (pkgId == null || itemId == null) continue;
+      realByKey['$pkgId:$itemId'] = row;
+    }
+
     final out = <ForfeitedPackageModel>[];
     for (final raw in (pkgData as List)) {
       final row = raw as Map<String, dynamic>;
@@ -2403,8 +2420,40 @@ class ForfeitedPackageService {
           reason = pkg.reason ?? 'Detained';
         }
 
+        final real = realByKey['${pkg.id}:${item.id}'];
+        if (real != null) {
+          // An appeal has already been lodged: use the STORED row so its hold,
+          // decision and real uuid come through. Only the package detail is
+          // grafted on, since the stored row was fetched without the join.
+          final stored = ForfeitedPackageModel.fromJson(real);
+          out.add(ForfeitedPackageModel(
+            id: stored.id,
+            packageId: stored.packageId,
+            srNumber: stored.srNumber,
+            consigneeName: stored.consigneeName,
+            forfeitedAt: stored.forfeitedAt,
+            appealDeadline: stored.appealDeadline,
+            reason: stored.reason,
+            yard: stored.yard ?? pkgYard,
+            source: stored.source,
+            appealHold: stored.appealHold,
+            appealHoldNote: stored.appealHoldNote,
+            appealHeldAt: stored.appealHeldAt,
+            heldItemIds: stored.heldItemIds,
+            appealDecision: stored.appealDecision,
+            appealDecisionNote: stored.appealDecisionNote,
+            appealDecidedAt: stored.appealDecidedAt,
+            itemAppealDecisions: stored.itemAppealDecisions,
+            packageDetails: pkg,
+            itemId: item.id,
+            itemName: item.itemName,
+          ));
+          continue;
+        }
+
         out.add(ForfeitedPackageModel(
-          // Synthetic id — there is no forfeited_packages row for these yet.
+          // Synthetic id — no forfeited_packages row exists yet. Lodging an
+          // appeal materialises one (see _materialiseForfeitedRow).
           id: '${pkg.id}:${item.id}:$source',
           packageId: pkg.id,
           srNumber: pkg.srNumber,
