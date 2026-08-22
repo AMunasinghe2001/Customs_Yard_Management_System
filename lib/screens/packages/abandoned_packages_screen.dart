@@ -220,10 +220,10 @@ class _AbandonedPackagesScreenState
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Abandoned Packages',
+                        Text('Abandoned Goods',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                          'Manage abandoned packages and send them for disposal',
+                          'Manage abandoned goods and send them for disposal',
                           style: TextStyle(
                               color: context.colors.textSecondary)),
                       ],

@@ -173,10 +173,10 @@ class _ReturnedPackagesScreenState
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Released Packages',
+                        Text('Released Goods',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                          'View and search all packages that have been released',
+                          'View and search all goods that have been released',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],

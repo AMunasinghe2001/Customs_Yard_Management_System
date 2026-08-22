@@ -81,22 +81,34 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
   /// this session was not subscribed, which cannot happen several times a
   /// minute. So it is throttled.
   DateTime? _lastForcedRefresh;
-  static const _refreshCooldown = Duration(minutes: 2);
+  static const _refreshCooldown = Duration(minutes: 15);
 
-  /// Re-pull every live list when the window regains focus.
+  /// Re-pull every live list when the app comes back from being SUSPENDED.
   ///
   /// Realtime only delivers changes to a session that is already subscribed, so
-  /// rows written while the app was in the background (or by a bulk SQL script,
-  /// or by another machine during a dropped socket) never arrive — the user had
-  /// to hit Ctrl+R. Bumping the refresh triggers on resume re-fetches instead.
+  /// rows written while the app was suspended (or by a bulk SQL script, or by
+  /// another machine during a dropped socket) never arrive — the user had to
+  /// hit Ctrl+R. Bumping the refresh triggers on resume re-fetches instead.
+  ///
+  /// Deliberately NOT hooked to `onWindowFocus`: that fires for a screenshot,
+  /// an alt-tab, or a click on any other app, and each one reset every table
+  /// to page 1 mid-read. Only a real suspend/resume can have missed writes.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
-    if (state == AppLifecycleState.resumed) _refreshAll();
+    // `resumed` also arrives after a brief focus loss, so only refresh when we
+    // actually came back from a state where realtime could not reach us.
+    if (state == AppLifecycleState.resumed && _wasDetached) {
+      _wasDetached = false;
+      _refreshAll();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      _wasDetached = true;
+    }
   }
 
-  @override
-  void onWindowFocus() => _refreshAll();
+  /// True once the app has actually been suspended (not merely unfocused).
+  bool _wasDetached = false;
 
   void _refreshAll() {
     if (!mounted) return;

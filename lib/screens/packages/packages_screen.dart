@@ -114,9 +114,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Package History',
+                        Text('Goods History',
                             style: Theme.of(context).textTheme.headlineLarge),
-                        Text('Search and filter all inspected packages',
+                        Text('Search and filter all inspected goods',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
@@ -460,11 +460,19 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                               label: Text('SR Number'), size: ColumnSize.M),
                             DataColumn2(
                               label: Text('Cusdec No'), size: ColumnSize.M),
+                            // Dates are a fixed ~10 characters, so give them a
+                            // fixed width and left-align them. As ColumnSize.M
+                            // with a CENTRED label the short text sat in the
+                            // middle of a wide column, leaving a large gap
+                            // between these two and their neighbours.
                             DataColumn2(
-                              label: Text('Cusdec Date'), size: ColumnSize.M),
+                              label: Text('Cusdec Date'),
+                              size: ColumnSize.S,
+                              fixedWidth: 110),
                             DataColumn2(
-                              label: Center(child: Text('Entry Date')),
-                              size: ColumnSize.M),
+                              label: Text('Entry Date'),
+                              size: ColumnSize.S,
+                              fixedWidth: 110),
                             DataColumn2(
                               label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
@@ -488,12 +496,11 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                   overflow: TextOverflow.ellipsis)),
                                 DataCell(TooltipText(p.cusdecDate ?? 'â€”',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(Center(
-                                  child: Text(p.entryDate != null
+                                DataCell(TooltipText(p.entryDate != null
                                     ? DateFormat('yyyy-MM-dd')
-                                      .format(p.entryDate!)
+                                        .format(p.entryDate!)
                                     : DateFormat('yyyy-MM-dd')
-                                      .format(p.createdAt)))),
+                                        .format(p.createdAt))),
                                 DataCell(TooltipText(p.consigneeName,
                                   overflow: TextOverflow.ellipsis)),
                                 DataCell(TooltipText(p.declarantName ?? 'â€”',

@@ -91,7 +91,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Unsold Packages',
+                  Text('Unsold Goods',
                       style: TextStyle(
                           color: context.colors.textPrimary,
                           fontSize: 22,

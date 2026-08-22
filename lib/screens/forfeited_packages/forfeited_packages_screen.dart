@@ -316,7 +316,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                             Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Forfeited Packages', style: Theme.of(context).textTheme.headlineLarge),
+                            Text('Forfeited Goods', style: Theme.of(context).textTheme.headlineLarge),
                             const Gap(4),
                             Text(
                               'Manage forfeited packages and their 30-day appeal periods',

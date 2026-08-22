@@ -213,7 +213,7 @@ class _ExecutiveDashboardScreenState
                         children: [
                           Icon(Icons.rule_folder_rounded, size: 18),
                           Gap(8),
-                          Text('Unsold Packages'),
+                          Text('Unsold Goods'),
                         ]),
                   ),
                 ],

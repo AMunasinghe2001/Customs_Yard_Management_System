@@ -184,7 +184,7 @@ class DashboardScreen extends ConsumerWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text('Recent Packages',
+                              Text('Recent Goods',
                                   style: Theme.of(context).textTheme.titleLarge),
                               TextButton(
                                   onPressed: () => context.go('/packages'),
@@ -283,7 +283,7 @@ class DashboardScreen extends ConsumerWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text('Recent Packages', style: Theme.of(context).textTheme.titleLarge),
+                  Text('Recent Goods', style: Theme.of(context).textTheme.titleLarge),
                   TextButton(onPressed: () => context.go('/packages'), child: const Text('View All →')),
                 ],
               ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),

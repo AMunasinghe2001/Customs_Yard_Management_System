@@ -1849,7 +1849,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                             _generateHighPanelValuationReport('excel'),
                       ),
                       _buildReportCard(
-                        title: 'Not Sold Packages',
+                        title: 'Not Sold Goods',
                         description:
                             'Committee members & the DG\'s proposed decision.',
                         icon: Icons.rule_folder_rounded,
@@ -4865,7 +4865,7 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
                               fontSize: 11,
                               letterSpacing: 1.2,
                               fontWeight: FontWeight.w800)),
-                      const Text('Select Packages',
+                      const Text('Select Goods',
                           style: TextStyle(
                               color: Colors.white,
                               fontSize: 22,

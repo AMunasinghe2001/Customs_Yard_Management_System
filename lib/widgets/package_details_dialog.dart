@@ -313,7 +313,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   Text('SR: ${widget.package.srNumber}',
                       style: const material.TextStyle(
                           fontWeight: FontWeight.bold)),
-                  Text('Item: ${specificItem.itemName}',
+                  Text('Goods: ${specificItem.itemName}',
                       style: material.TextStyle(
                           color: context.colors.primaryGold)),
                   Text('Warehouse: ${entry.warehouseName}',
@@ -1337,7 +1337,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       if (widget.useLegacySummary ||
                           widget.useWarehouseSummary) ...[
                         _DetailSection(
-                          title: 'Item Details',
+                          title: 'Goods Details',
                           icon: Icons.shopping_bag_rounded,
                           delay: 300,
                           child: (widget.highlightEntry == null &&
@@ -4632,11 +4632,11 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                         ).animate().slideY(
                             begin: 0.1, duration: 400.ms, delay: 200.ms),
                         const Gap(16),
-                        // Package Items Section
+                        // Package Goods Section
                         _UpdateSectionCard(
                           title: widget.highlightedItem != null
                               ? 'ITEM DETAILS'
-                              : 'Package Items',
+                              : 'Package Goods',
                           icon: Icons.shopping_bag_rounded,
                           children: [
                             Column(
@@ -4671,7 +4671,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                                 alignment: material.Alignment.centerLeft,
                                 child: OutlinedButton.icon(
                                   icon: const Icon(Icons.add_rounded, size: 18),
-                                  label: const Text('Add Item'),
+                                  label: const Text('Add Goods'),
                                   style: OutlinedButton.styleFrom(
                                     foregroundColor: context.colors.primaryGold,
                                     side: BorderSide(
@@ -4797,7 +4797,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                   color: context.colors.primaryGold.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Text('Item ${widget.index == -1 ? "1" : widget.index}',
+                child: Text('Goods ${widget.index == -1 ? "1" : widget.index}',
                     style: TextStyle(
                         color: context.colors.primaryGold,
                         fontWeight: FontWeight.w700,
@@ -4824,7 +4824,7 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                 child: TextFormField(
                   controller: widget.row.nameCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Item Name *', isDense: true),
+                      labelText: 'Goods Name *', isDense: true),
                   validator: (v) =>
                       v == null || v.trim().isEmpty ? 'Required' : null,
                   onChanged: (_) => widget.onChanged(),

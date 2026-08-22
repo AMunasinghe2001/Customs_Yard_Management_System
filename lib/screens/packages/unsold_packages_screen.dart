@@ -109,7 +109,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Unsold Packages',
+                        Text('Unsold Goods',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text('Goods that could not be sold by any means',
                             style: TextStyle(

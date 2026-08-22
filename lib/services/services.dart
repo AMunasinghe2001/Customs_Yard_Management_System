@@ -3557,15 +3557,32 @@ class DisposalService {
     //    it only counts when the ADG has submitted it.
     final committees = await AuthService._withNetworkRetry(() => supabase
         .from('tender_committees')
-        .select('forfeited_package_id, submitted_value')
+        .select('forfeited_package_id, submitted_value, submitted_at')
         .inFilter('forfeited_package_id', ids));
     final adgSubmitted = <String>{};
+    final submittedAt = <String, DateTime>{};
     for (final e in (committees as List)) {
       final fpId = e['forfeited_package_id']?.toString();
-      if (fpId != null && e['submitted_value'] != null) adgSubmitted.add(fpId);
+      if (fpId == null || e['submitted_value'] == null) continue;
+      adgSubmitted.add(fpId);
+      final at = DateTime.tryParse(e['submitted_at']?.toString() ?? '');
+      if (at != null) submittedAt[fpId] = at;
     }
 
-    // 4. Once the DG has decided a package's FINAL outcome (destroy / remand /
+    // 4. The committee-priced tender is the LAST attempt. If a round was
+    //    already created after the ADG's submission and that round also went
+    //    unsold, every avenue is exhausted — the package belongs to the DG's
+    //    Unsold Packages tab, not to the re-tender pool.
+    final exhaustedIds = <String>{};
+    for (final info in unsold) {
+      final at = submittedAt[info.forfeited.id];
+      if (at == null) continue;
+      if (info.sales.any((s) => s.createdAt.isAfter(at))) {
+        exhaustedIds.add(info.forfeited.id);
+      }
+    }
+
+    // 5. Once the DG has decided a package's FINAL outcome (destroy / remand /
     //    government use / auction) it must stop being offered for re-tender —
     //    the decision ends the tender route for those goods.
     final decided = await AuthService._withNetworkRetry(() => supabase
@@ -3585,6 +3602,7 @@ class DisposalService {
       if (saleId == null || latestRound[fpId] != saleId) continue;
       if (!bidRounds.contains('$fpId|$saleId')) continue;
       if (decidedIds.contains(fpId)) continue;
+      if (exhaustedIds.contains(fpId)) continue;
       // Committee stage: needs the ADG's submission, not just any valuation.
       final rounds = roundCount[fpId] ?? 0;
       if (rounds > kMaxBidTenderRounds && !adgSubmitted.contains(fpId)) continue;

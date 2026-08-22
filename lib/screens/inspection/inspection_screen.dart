@@ -560,7 +560,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Package Registration',
+                    Text('Goods Registration',
                         style: Theme.of(context).textTheme.headlineLarge),
                     Text('Enter incoming package details for SR registration',
                         style: TextStyle(color: context.colors.textSecondary)),
@@ -1008,7 +1008,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                 .fadeIn(),
                             const Gap(16),
                             _SectionCard(
-                              title: 'Package Items',
+                              title: 'Package Goods',
                               icon: Icons.list_alt_rounded,
                               children: [
                                 ...List.generate(
@@ -1036,7 +1036,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                   alignment: Alignment.centerLeft,
                                   child: OutlinedButton.icon(
                                     icon: const Icon(Icons.add_rounded, size: 18),
-                                    label: const Text('Add Item'),
+                                    label: const Text('Add Goods'),
                                     style: OutlinedButton.styleFrom(
                                       foregroundColor: context.colors.primaryGold,
                                       side: BorderSide(
@@ -1214,7 +1214,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       for (int i = 0; i < widget.tempPackageItems!.length; i++) {
         if (_itemWarehouseSelections[i] == null) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text('Please select a warehouse for Item ${i + 1}')));
+              content: Text('Please select a warehouse for Goods ${i + 1}')));
           return;
         }
       }
@@ -1436,7 +1436,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
               ),
             const Gap(24),
             if (widget.tempPackageItems != null && !_warehouseSent) ...[
-              Text('Items Distribution',
+              Text('Goods Distribution',
                   style: Theme.of(context).textTheme.titleMedium),
               const Gap(12),
               ...List.generate(widget.tempPackageItems!.length, (index) {
@@ -1463,7 +1463,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                     context.colors.primaryGold.withOpacity(0.1),
                                 borderRadius: BorderRadius.circular(4),
                               ),
-                              child: Text('Item ${index + 1}',
+                              child: Text('Goods ${index + 1}',
                                   style: TextStyle(
                                       color: context.colors.primaryGold,
                                       fontWeight: FontWeight.bold,
@@ -1970,7 +1970,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               decoration: BoxDecoration(
                   color: context.colors.primaryGold.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(6)),
-              child: Text('Item ${widget.index}',
+              child: Text('Goods ${widget.index}',
                   style: TextStyle(
                       color: context.colors.primaryGold,
                       fontWeight: FontWeight.w700,
@@ -1994,7 +1994,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               child: TextFormField(
                   controller: widget.row.nameCtrl,
                   decoration: const InputDecoration(
-                      labelText: 'Item Name *',
+                      labelText: 'Goods Name *',
                       isDense: true,
                       helperText: ' ',
                       contentPadding:

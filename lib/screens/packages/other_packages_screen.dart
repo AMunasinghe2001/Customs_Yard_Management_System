@@ -343,7 +343,7 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Other Packages',
+                        Text('Other Goods',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
                           'Manage packages with an "Other" status — release, re-export or send for disposal',

@@ -217,21 +217,21 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.sell_rounded, size: 18),
                           Gap(8),
-                          Text('Sold Packages'),
+                          Text('Sold Goods'),
                         ])),
                     Tab(
                         height: 44,
                         child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.pending_actions_rounded, size: 18),
                           Gap(8),
-                          Text('Unsold Packages'),
+                          Text('Unsold Goods'),
                         ])),
                     Tab(
                         height: 44,
                         child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.delete_forever_rounded, size: 18),
                           Gap(8),
-                          Text('Destroyed Packages'),
+                          Text('Destroyed Goods'),
                         ])),
                     Tab(
                         height: 44,
@@ -467,7 +467,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
           Row(
             children: [
               Text(
-                'Unsold Packages',
+                'Unsold Goods',
                 style: TextStyle(
                   color: context.colors.textPrimary,
                   fontSize: 22,
@@ -997,7 +997,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Sold Packages',
+            Text('Sold Goods',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -1281,7 +1281,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Destroyed Packages',
+            Text('Destroyed Goods',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -2248,6 +2248,14 @@ class _UnsoldReTenderTab extends ConsumerWidget {
     final async = ref.watch(unsoldTenderSalesProvider);
     final eligible =
         ref.watch(reTenderEligibleProvider).valueOrNull ?? const <String>{};
+    // Packages whose committee-priced tender ALSO failed have run out of
+    // tender rounds — they belong to the Unsold Packages tab (where the DG
+    // rules on them), not to this re-tender pool.
+    final exhausted = {
+      for (final i in ref.watch(exhaustedUnsoldProvider).valueOrNull ??
+          const <ReTenderSaleInfo>[])
+        i.forfeited.id
+    };
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -2255,7 +2263,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Unsold Packages — Re-tender',
+            Text('Unsold Goods — Re-tender',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -2298,7 +2306,9 @@ class _UnsoldReTenderTab extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: 14),
               child: _StatChip(
                   label: 'Unsold — re-tenderable',
-                  value: '${list.length}',
+                  // Counts the SAME rows the table shows — exhausted packages
+                  // are excluded there, so they must not be counted here.
+                  value: '${list.where((i) => !exhausted.contains(i.forfeited.id)).length}',
                   color: amber),
             ).animate().fadeIn(duration: 300.ms),
             orElse: () => const SizedBox.shrink(),
@@ -2312,6 +2322,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
               data: (list) {
+                // Every avenue exhausted → handled on Unsold Packages.
+                list = list
+                    .where((info) => !exhausted.contains(info.forfeited.id))
+                    .toList();
                 final q =
                     ref.watch(_disposalSearchProvider('unsold')).toLowerCase();
                 final yf = ref.watch(_disposalYardFilterProvider('unsold'));
@@ -3835,6 +3849,14 @@ class _CommitteesTab extends ConsumerWidget {
     final eligible = ref.watch(committeeEligibleProvider);
     final committees =
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
+    // Packages that have moved on to the Unsold Packages table: the
+    // committee-priced tender ran and failed too, so the committee's work is
+    // finished and its card leaves this tab.
+    final movedOn = {
+      for (final i in ref.watch(exhaustedUnsoldProvider).valueOrNull ??
+          const <ReTenderSaleInfo>[])
+        i.forfeited.id
+    };
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
@@ -3878,9 +3900,13 @@ class _CommitteesTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(committeeEligibleProvider)),
               data: (list) {
-                // Only packages that actually have a committee appointed.
-                var rows =
-                    list.where((i) => committees.containsKey(i.forfeited.id)).toList();
+                // Only packages that actually have a committee appointed AND
+                // have not yet moved on to the Unsold Packages table.
+                var rows = list
+                    .where((i) =>
+                        committees.containsKey(i.forfeited.id) &&
+                        !movedOn.contains(i.forfeited.id))
+                    .toList();
                 final yf = ref.watch(_committeesYardProvider);
                 if (yf != null) {
                   rows = rows.where((i) => i.forfeited.yard == yf).toList();
@@ -4355,28 +4381,41 @@ class _ReTenderStatusCell extends ConsumerWidget {
 
     final hasReval = current != null && revals[current] != null;
     // A committee value counts as "valued" even before the ADG submits it —
-    // that is exactly the "Awaiting ADG" state.
+    // that is exactly the "Committee valued" state.
     final hasCommitteeValue = committees[fpId]?.committeeValue != null;
 
     return _ReTenderStatusChip(
-        eligible: eligible, valued: hasReval || hasCommitteeValue);
+        eligible: eligible,
+        valued: hasReval || hasCommitteeValue,
+        committeeValued: hasCommitteeValue);
   }
 }
 
-/// Re-tender status chip. THREE states, not two — a package can be valued but
-/// still not re-tenderable:
-///   * valued + eligible          -> "Re-valued"    (green, ready to re-tender)
-///   * valued, awaiting the ADG   -> "Awaiting ADG" (blue, committee stage)
-///   * no valuation for the round -> "Awaiting value" (amber)
+/// Re-tender status chip. FOUR states — a package can be valued but still not
+/// re-tenderable, and "the committee has priced it" is NOT the same wait as
+/// "nobody has priced it yet":
+///   * valued + eligible            -> "Re-valued"        (green, ready)
+///   * committee priced it, unsent  -> "Committee valued" (blue) — the ADG
+///                                     still has to submit it as final
+///   * valued, awaiting the ADG     -> "Awaiting ADG"     (blue)
+///   * no valuation for the round   -> "Awaiting value"   (amber)
 /// Showing `eligible` alone made committee packages that HAD a valuation read
-/// as "Awaiting value".
+/// as "Awaiting value"; showing "Awaiting ADG" for both committee states made
+/// a priced package look identical to an unpriced one.
 class _ReTenderStatusChip extends StatelessWidget {
   final bool eligible;
 
   /// The current round already carries a valuation (Valuation Directorate
   /// re-valuation, or a committee value the ADG has not submitted yet).
   final bool valued;
-  const _ReTenderStatusChip({required this.eligible, this.valued = false});
+
+  /// The COMMITTEE has recorded its own figure; only the ADG's submission is
+  /// outstanding. Distinguishes "priced, waiting to be sent" from "not priced".
+  final bool committeeValued;
+  const _ReTenderStatusChip(
+      {required this.eligible,
+      this.valued = false,
+      this.committeeValued = false});
 
   @override
   Widget build(BuildContext context) {
@@ -4387,7 +4426,18 @@ class _ReTenderStatusChip extends StatelessWidget {
     // the ADG's submission.
     final awaitingAdg = !eligible && valued;
     final color = eligible ? green : (awaitingAdg ? blue : amber);
-    return Container(
+    final tip = eligible
+        ? 'Priced for the next round — ready to re-tender.'
+        : (awaitingAdg
+            ? (committeeValued
+                ? 'The tender committee has recorded its valuation. '
+                    'Waiting for the ADG to submit it as the final price.'
+                : 'Waiting for the ADG to submit the committee valuation.')
+            : 'No valuation recorded for the current round yet.');
+    return Tooltip(
+      message: tip,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.12),
@@ -4399,7 +4449,9 @@ class _ReTenderStatusChip extends StatelessWidget {
             eligible
                 ? Icons.check_circle_rounded
                 : (awaitingAdg
-                    ? Icons.how_to_reg_rounded
+                    ? (committeeValued
+                        ? Icons.price_check_rounded
+                        : Icons.how_to_reg_rounded)
                     : Icons.hourglass_bottom_rounded),
             size: 13,
             color: color),
@@ -4408,12 +4460,17 @@ class _ReTenderStatusChip extends StatelessWidget {
           child: Text(
               eligible
                   ? 'Re-valued'
-                  : (awaitingAdg ? 'Awaiting ADG' : 'Awaiting value'),
+                  : (awaitingAdg
+                      ? (committeeValued
+                          ? 'Committee valued'
+                          : 'Awaiting ADG')
+                      : 'Awaiting value'),
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                   color: color, fontSize: 11, fontWeight: FontWeight.w700)),
         ),
       ]),
+      ),
     );
   }
 }
