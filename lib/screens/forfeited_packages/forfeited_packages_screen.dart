@@ -13,6 +13,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/appeal_state_chip.dart';
 import 'disposal_request_dialog.dart';
 import '../../widgets/tooltip_text.dart';
 
@@ -529,7 +530,10 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                             DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(label: Text('Forfeited Date'), size: ColumnSize.M),
                             DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.M),
-                            DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S),
+                            DataColumn2(
+                                label: Center(child: Text('Appeal')),
+                                size: ColumnSize.S,
+                                fixedWidth: 130),
                             DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                           ],
                           rows: rows.map((row) {
@@ -673,23 +677,15 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                     ]),
                                               ),
                                             )
-                                          : Container(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 10, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: isExpired ? context.colors.dangerRed.withOpacity(0.1) : context.colors.successGreen.withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(color: isExpired ? context.colors.dangerRed.withOpacity(0.3) : context.colors.successGreen.withOpacity(0.3)),
-                                          ),
-                                          child: Text(
-                                            isExpired ? 'Appeal Expired' : 'Appealing',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              color: isExpired ? context.colors.dangerRed : context.colors.successGreen,
-                                              fontWeight: FontWeight.bold,
-                                            ),
-                                          ),
-                                        ),
+                                          // The SAME chip the Abandoned and
+                                          // Other tables use, so one status
+                                          // reads identically everywhere.
+                                          // A forfeit carries its OWN recorded
+                                          // deadline (forfeited_at + 30 days),
+                                          // which is later than entry + 30.
+                                          : AppealStateChip(
+                                              entryDate: pkg.forfeitedAt,
+                                              deadline: pkg.appealDeadline),
                                 )),
                                 DataCell(Center(
                                   child: IconButton(

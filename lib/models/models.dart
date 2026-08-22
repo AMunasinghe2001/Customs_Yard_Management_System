@@ -831,6 +831,39 @@ class AuditLogModel {
   }
 }
 
+// ── Appeal window (shared by EVERY status) ───────────────────
+//
+// The 30-day appeal window is NOT a forfeit-only rule: a Detain, Abandoned or
+// "Other" package is equally frozen for its first 30 days. Nothing can be
+// disposed of, and nothing can be sent to Central Disposal, until it passes.
+//
+// The clock runs from the goods' ENTRY DATE (when they reached the yard), so a
+// package that has been sitting for months is actionable immediately — the
+// window is about giving the owner 30 days from arrival, not 30 days from the
+// moment an officer happened to change its status.
+
+/// How long goods stay open to appeal after entering the yard.
+const int kAppealWindowDays = 30;
+
+/// The moment the appeal window closes for goods that entered on [entryDate].
+DateTime appealDeadlineFrom(DateTime entryDate) {
+  final d = DateTime(entryDate.year, entryDate.month, entryDate.day);
+  return d.add(const Duration(days: kAppealWindowDays));
+}
+
+/// Whether the appeal window for [entryDate] is still open.
+bool isWithinAppealWindow(DateTime? entryDate) {
+  if (entryDate == null) return false;
+  return DateTime.now().isBefore(appealDeadlineFrom(entryDate));
+}
+
+/// Whole days left in the appeal window; 0 once it has closed.
+int appealDaysLeft(DateTime? entryDate) {
+  if (entryDate == null) return 0;
+  final left = appealDeadlineFrom(entryDate).difference(DateTime.now()).inDays;
+  return left < 0 ? 0 : left + 1;
+}
+
 // ── Forfeited Packages ───────────────────────────────────────
 
 class ForfeitedPackageModel {

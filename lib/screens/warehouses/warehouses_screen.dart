@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/theme.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/appeal_state_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
@@ -422,6 +423,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                             DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.M),
                             DataColumn2(label: Text('Reason'), size: ColumnSize.L),
                             DataColumn2(label: Center(child: Text('Entry Date')), size: ColumnSize.M),
+                            DataColumn2(label: Center(child: Text('Appeal')), size: ColumnSize.S, fixedWidth: 130),
                             DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 60),
                           ],
                           rows: pageSlice(filteredList, _page, kClientPageSize).map((e) {
@@ -513,6 +515,12 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     overflow: TextOverflow.ellipsis)),
                                 DataCell(Center(child: Text(DateFormat('dd/MM/yy').format(e.admittedAt),
                                     style: TextStyle(color: isItemConfiscated ? context.colors.textMuted : null)))),
+                                // The 30-day appeal window runs from the date
+                                // the goods were admitted, which is exactly
+                                // this row's date.
+                                DataCell(Center(
+                                    child: AppealStateChip(
+                                        entryDate: e.admittedAt))),
                                 DataCell(Center(child: IconButton(
                                   icon: Icon(Icons.info_outline_rounded, color: context.colors.accentLightBlue, size: 20),
                                   padding: const EdgeInsets.all(4),

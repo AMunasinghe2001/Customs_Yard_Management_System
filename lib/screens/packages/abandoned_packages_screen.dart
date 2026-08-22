@@ -12,6 +12,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/appeal_state_chip.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
@@ -642,6 +643,10 @@ class _AbandonedPackagesScreenState
                             DataColumn2(
                                 label: Text('Consignee'), size: ColumnSize.M),
                             DataColumn2(
+                                label: Center(child: Text('Appeal')),
+                                size: ColumnSize.S,
+                                fixedWidth: 130),
+                            DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
                                 fixedWidth: 55),
@@ -675,6 +680,11 @@ class _AbandonedPackagesScreenState
                                             ? row.package.consigneeName
                                             : '—',
                                         overflow: TextOverflow.ellipsis)),
+                                    DataCell(Center(
+                                        child: AppealStateChip(
+                                            entryDate:
+                                                row.package.entryDate ??
+                                                    row.package.createdAt))),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,

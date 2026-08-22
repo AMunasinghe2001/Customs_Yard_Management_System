@@ -724,6 +724,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         packageId: entry.packageId,
         itemId: specificItem.id,
         fallbackEntry: entry,
+        entryDate: widget.package.entryDate ?? widget.package.createdAt,
         onRelease: (held, slots) async {
           return await _showReleaseConfirmation(ctx, held,
               preselectedQty: slots.length, packageNumbers: slots);
@@ -5246,6 +5247,10 @@ class _PackageActionsDialog extends ConsumerStatefulWidget {
   final String packageId;
   final String itemId;
   final WarehouseEntryModel fallbackEntry;
+
+  /// When the goods entered the yard. Every status carries a 30-day appeal
+  /// window from this date, and NO action may be taken while it is open.
+  final DateTime? entryDate;
   // Return true when the action was applied.
   final Future<bool> Function(WarehouseEntryModel held, List<int> slots)
       onRelease;
@@ -5260,6 +5265,7 @@ class _PackageActionsDialog extends ConsumerStatefulWidget {
     required this.packageId,
     required this.itemId,
     required this.fallbackEntry,
+    required this.entryDate,
     required this.onRelease,
     required this.onDispose,
     this.onCompleted,
@@ -5408,8 +5414,13 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
     final isOfficer =
         ref.watch(currentProfileProvider)?.role == 'officer';
     const _disabledForAll = {'Destroy'};
+    // The 30-day appeal window freezes EVERY action, whatever the status:
+    // the owner may still appeal, so the goods cannot be released, forfeited,
+    // abandoned, re-exported or destroyed until it closes.
+    final inAppealWindow = isWithinAppealWindow(widget.entryDate);
+    final appealDaysRemaining = appealDaysLeft(widget.entryDate);
     bool isActionEnabled(String key) =>
-        !isOfficer && !_disabledForAll.contains(key);
+        !isOfficer && !_disabledForAll.contains(key) && !inAppealWindow;
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 400),
@@ -5512,7 +5523,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                           Icon(Icons.bolt_rounded, color: context.colors.primaryGold, size: 24),
                           const Gap(10),
                           Text(
-                            'Package Actions',
+                            'Goods Actions',
                             style: TextStyle(
                               color: context.colors.textPrimary,
                               fontSize: 20,
@@ -5522,6 +5533,35 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                         ],
                       ).animate().fadeIn(delay: 200.ms),
                       const Gap(16),
+                      // Why everything is greyed out.
+                      if (inAppealWindow)
+                        material.Container(
+                          margin: const EdgeInsets.only(bottom: 16),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: context.colors.warningAmber.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: context.colors.warningAmber
+                                    .withOpacity(0.4)),
+                          ),
+                          child: Row(children: [
+                            Icon(Icons.gavel_rounded,
+                                color: context.colors.warningAmber, size: 18),
+                            const Gap(10),
+                            Expanded(
+                              child: Text(
+                                  'Appealing · $appealDaysRemaining day'
+                                  '${appealDaysRemaining == 1 ? '' : 's'} left. '
+                                  'No action can be taken until the 30-day '
+                                  'appeal window closes.',
+                                  style: TextStyle(
+                                      color: context.colors.warningAmber,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                          ]),
+                        ).animate().fadeIn(delay: 220.ms),
                       if (heldCount <= 0)
                         material.Container(
                           margin: const EdgeInsets.only(bottom: 16),

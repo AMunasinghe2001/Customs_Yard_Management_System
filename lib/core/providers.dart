@@ -655,10 +655,18 @@ final disposalForfeitedPackagesProvider =
 // ── Appeal Directorate: cross-yard forfeited packages (all yards) ──────────
 // An appeal-hold toggle is a forfeited_packages UPDATE, so the existing
 // forfeited-packages realtime channel propagates it here and to the yard view.
+/// Everything the Appeal Directorate can act on: genuine forfeits (which have
+/// real forfeited_packages rows) PLUS Detain / Abandoned / "Other" goods still
+/// inside their 30-day window (synthesised, since they have no row yet).
 final appealForfeitedPackagesProvider =
     FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
-  return ref.read(appealServiceProvider).getForfeitedPackages();
+  ref.watch(packagesChangeTriggerProvider);
+  final forfeits = await ref.read(appealServiceProvider).getForfeitedPackages();
+  final others = await ref
+      .read(forfeitedPackageServiceProvider)
+      .getInAppealNonForfeitPackages();
+  return [...forfeits, ...others];
 });
 
 final tenderSalesRefreshProvider =

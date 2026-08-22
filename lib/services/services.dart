@@ -2328,6 +2328,93 @@ class ForfeitedPackageService {
     }
   }
 
+  /// Detain / Abandoned / "Other" goods whose 30-day appeal window is STILL
+  /// OPEN, as synthetic [ForfeitedPackageModel]s the Appeal Directorate can
+  /// raise an appeal against.
+  ///
+  /// Genuine forfeits are NOT included — those already have real
+  /// `forfeited_packages` rows and the Appeal portal reads them directly.
+  /// This covers the other three statuses, which have no such row until a
+  /// disposal request is sent, yet are equally open to appeal.
+  ///
+  /// Cross-yard: the Appeal Directorate reviews every yard (RLS allows it).
+  Future<List<ForfeitedPackageModel>> getInAppealNonForfeitPackages() async {
+    final pkgData = await AuthService._withNetworkRetry(() => supabase
+        .from('packages')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number))'));
+
+    final out = <ForfeitedPackageModel>[];
+    for (final raw in (pkgData as List)) {
+      final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
+      final entryDate = pkg.entryDate ?? pkg.createdAt;
+      // Only goods still inside the window — once it closes the yard acts on
+      // them and there is nothing left to appeal.
+      if (!isWithinAppealWindow(entryDate)) continue;
+      // Nothing left to appeal once every item has been finalised.
+      final allItems = pkg.items;
+      if (allItems.isNotEmpty) {
+        bool hasFinalEntry(String itemId) => pkg.warehouseEntries.any((e) =>
+            e.packageItemId == itemId &&
+            (e.returnNotes ?? '').trim().toUpperCase().startsWith('[FINAL:'));
+        const terminal = {'sold', 'destroyed', 're-exported', 'released'};
+        final finalised = allItems.every((it) =>
+            hasFinalEntry(it.id) ||
+            terminal.contains((it.status ?? '').trim().toLowerCase()));
+        if (finalised) continue;
+      }
+      final deadline = appealDeadlineFrom(entryDate);
+
+      for (final item in pkg.items) {
+        // Which status this item currently sits under decides its label.
+        final abandonedEntries = _abandonedEntriesForItem(pkg, item);
+        final otherEntries = _otherEntriesForItem(pkg, item);
+        final isAbandoned = abandonedEntries.isNotEmpty ||
+            _itemIsRequestableAbandoned(pkg, item);
+        final isOther =
+            otherEntries.isNotEmpty || _itemIsRequestableOther(pkg, item);
+
+        final String source;
+        final String reason;
+        if (isAbandoned) {
+          source = 'abandoned';
+          reason = _abandonReasonFor(pkg);
+        } else if (isOther) {
+          source = 'other';
+          reason = _otherReasonFor(pkg);
+        } else {
+          // Still held in the warehouse under its original status — Detain.
+          final held = pkg.warehouseEntries
+              .where((e) => e.packageItemId == item.id && e.returnedAt == null)
+              .toList();
+          if (held.isEmpty) continue;
+          source = 'detain';
+          reason = pkg.reason ?? 'Detained';
+        }
+
+        out.add(ForfeitedPackageModel(
+          // Synthetic id — there is no forfeited_packages row for these yet.
+          id: '${pkg.id}:${item.id}:$source',
+          packageId: pkg.id,
+          srNumber: pkg.srNumber,
+          consigneeName: pkg.consigneeName,
+          forfeitedAt: entryDate,
+          appealDeadline: deadline,
+          reason: reason,
+          // PackageModel carries no yard; RLS already scopes the read and the
+          // Appeal portal shows every yard, so fall back to the session's.
+          yard: AppSession.currentYard,
+          source: source,
+          packageDetails: pkg,
+          itemId: item.id,
+          itemName: item.itemName,
+        ));
+      }
+    }
+    out.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
+    return out;
+  }
+
   /// Forfeited packages whose 30-day appeal window has passed and that are
   /// not yet part of a disposal request — i.e. items a yard can request the
   /// Central Disposal Directorate to dispose of. RLS keeps this to the
@@ -2492,7 +2579,7 @@ class ForfeitedPackageService {
       }
     }
 
-    // ── 2. Abandoned packages (no appeal — requestable immediately) ──────────
+    // ── 2. Abandoned packages (30-day appeal window from entry date) ────────
     // Abandoned packages live in `packages`/`package_items`; they have no
     // forfeited_packages row until requested. Surface them here as synthetic
     // ForfeitedPackageModels (id == package_id, source='abandoned') so the same
@@ -2512,7 +2599,7 @@ class ForfeitedPackageService {
         .map((e) => e['package_id'].toString())
         .toSet();
 
-    // ── 3. "Other"-status packages (no appeal — requestable immediately) ─────
+    // ── 3. "Other"-status packages (30-day appeal window from entry) ────────
     // Track at item level so that only the specific item that was already
     // requested is excluded — other items in the same package remain requestable.
     final existingOtherFp = await AuthService._withNetworkRetry(() => supabase
@@ -2525,11 +2612,17 @@ class ForfeitedPackageService {
       return itemId != null ? '$pkgId:$itemId' : pkgId;
     }).toSet();
 
-    final expiredDeadline = DateTime.now().subtract(const Duration(days: 1));
-
     for (final raw in (pkgData as List)) {
       final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
       final alreadyAbandoned = abandonedFpPkgIds.contains(pkg.id);
+
+      // The 30-day appeal window applies to abandoned and "other" goods too,
+      // counted from the ENTRY DATE. While it is open the goods cannot be sent
+      // to Central Disposal at all, so they are left out of this pool.
+      // (These used to be stamped with a yesterday deadline, i.e. no window.)
+      final entryDate = pkg.entryDate ?? pkg.createdAt;
+      if (isWithinAppealWindow(entryDate)) continue;
+      final windowDeadline = appealDeadlineFrom(entryDate);
 
       // One requestable row PER qualifying ITEM+EVENT:
       //   • Abandoned: one row per [ABANDONED] warehouse entry event, id =
@@ -2549,8 +2642,7 @@ class ForfeitedPackageService {
               srNumber: pkg.srNumber,
               consigneeName: pkg.consigneeName,
               forfeitedAt: pkg.createdAt,
-              // No appeal for abandoned goods → already-passed deadline.
-              appealDeadline: expiredDeadline,
+              appealDeadline: windowDeadline,
               reason: _abandonReasonFor(pkg),
               yard: AppSession.currentYard,
               source: 'abandoned',
@@ -2569,7 +2661,7 @@ class ForfeitedPackageService {
               srNumber: pkg.srNumber,
               consigneeName: pkg.consigneeName,
               forfeitedAt: pkg.createdAt,
-              appealDeadline: expiredDeadline,
+              appealDeadline: windowDeadline,
               reason: _abandonReasonFor(pkg),
               yard: AppSession.currentYard,
               source: 'abandoned',
@@ -2592,7 +2684,7 @@ class ForfeitedPackageService {
               srNumber: pkg.srNumber,
               consigneeName: pkg.consigneeName,
               forfeitedAt: pkg.createdAt,
-              appealDeadline: expiredDeadline,
+              appealDeadline: windowDeadline,
               reason: _otherReasonFor(pkg),
               yard: AppSession.currentYard,
               source: 'other',
@@ -2612,7 +2704,7 @@ class ForfeitedPackageService {
               consigneeName: pkg.consigneeName,
               forfeitedAt: pkg.createdAt,
               // No appeal for "Other" goods → already-passed deadline.
-              appealDeadline: expiredDeadline,
+              appealDeadline: windowDeadline,
               reason: _otherReasonFor(pkg),
               yard: AppSession.currentYard,
               source: 'other',
@@ -3030,9 +3122,14 @@ class ForfeitedPackageService {
             'sr_number': pkg.srNumber,
             'consignee_name': pkg.consigneeName,
             'forfeited_at': DateTime.now().toIso8601String(),
-            'appeal_deadline': DateTime.now()
-                .subtract(const Duration(days: 1))
-                .toIso8601String(),
+            // The 30-day appeal window applies to EVERY status, not just
+            // forfeit. It runs from the goods' entry date, so a package that
+            // has been in the yard for months is actionable immediately while
+            // a fresh one stays frozen. (This used to be set to YESTERDAY,
+            // which skipped the window for abandoned / "other" goods.)
+            'appeal_deadline':
+                appealDeadlineFrom(pkg.entryDate ?? pkg.createdAt)
+                    .toIso8601String(),
             'reason': reason,
             'yard': AppSession.currentYard,
             'source': source,
@@ -4702,15 +4799,46 @@ class AppealService {
   }
 
   /// Place (or lift) an appeal hold on a specific item (or all items if itemId null).
+  /// Turn a SYNTHETIC appeal-row id into a real `forfeited_packages` id.
+  ///
+  /// Detain / Abandoned / "Other" goods carry no forfeited_packages row until
+  /// something acts on them, so [getInAppealNonForfeitPackages] hands the UI
+  /// composite ids of the form "<packageId>:<itemId>:<source>". The appeal
+  /// RPCs take a uuid, so the first appeal against such goods creates the row.
+  ///
+  /// The insert goes through `appeal_ensure_forfeited_row` (SECURITY DEFINER)
+  /// because the appeal role holds only SELECT on `forfeited_packages` — a
+  /// direct insert from here is refused by RLS. A plain uuid passes straight
+  /// through.
+  Future<String> _materialiseForfeitedRow(String id) async {
+    final parts = id.split(':');
+    if (parts.length < 3) return id; // already a real uuid
+
+    final res = await AuthService._withNetworkRetry(
+        () => supabase.rpc('appeal_ensure_forfeited_row', params: {
+              'p_package_id': parts[0],
+              'p_item_id': parts[1],
+              'p_source': parts.last,
+            }));
+    return res.toString();
+  }
+
   Future<void> setAppealHold(String forfeitedId, bool hold,
       {String? note, String? itemId}) async {
+    // Detain / Abandoned / "Other" goods have NO forfeited_packages row until
+    // something acts on them, so their rows on this portal are synthetic
+    // ("<pkgId>:<itemId>:<source>"). The RPC needs a real uuid, so create the
+    // row the first time an appeal is lodged against one.
+    final realId = await _materialiseForfeitedRow(forfeitedId);
+
     await AuthService._withNetworkRetry(() => supabase.rpc('set_appeal_hold',
         params: {
-          'p_forfeited_id': forfeitedId,
+          'p_forfeited_id': realId,
           'p_hold': hold,
           'p_note': note,
           'p_item_id': itemId,
         }));
+    forfeitedId = realId;
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(
@@ -4731,13 +4859,15 @@ class AppealService {
     String? note,
     String? itemId,
   }) async {
+    final realId = await _materialiseForfeitedRow(forfeitedId);
     await AuthService._withNetworkRetry(
         () => supabase.rpc('release_appeal_with_decision', params: {
-              'p_forfeited_id': forfeitedId,
+              'p_forfeited_id': realId,
               'p_decision': decision,
               'p_note': note,
               'p_item_id': itemId,
             }));
+    forfeitedId = realId;
     final user = supabase.auth.currentUser;
     if (user != null) {
       await AuditLogService().recordLog(

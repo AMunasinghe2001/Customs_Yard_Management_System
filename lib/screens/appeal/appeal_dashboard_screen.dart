@@ -42,7 +42,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
   }
 
   @override
@@ -75,8 +75,6 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
             (!f.isAppealExpired || f.isAppealHeld))
         .length;
     final decidedCount = allList.where((f) => f.hasAppealDecision).length;
-    final bidsCount =
-        ref.watch(packagesWithBidsProvider).valueOrNull?.length ?? 0;
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -237,18 +235,6 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                       ],
                     ]),
                   ),
-                  Tab(
-                    height: 44,
-                    child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                      const Icon(Icons.sell_rounded, size: 18),
-                      const Gap(8),
-                      const Flexible(child: Text('Tender Bids', overflow: TextOverflow.ellipsis)),
-                      if (bidsCount > 0) ...[
-                        const Gap(6),
-                        _TabBadge(bidsCount, accent),
-                      ],
-                    ]),
-                  ),
                 ],
               ),
             ),
@@ -282,12 +268,35 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                   buildDecidedRow: _buildDecidedRow,
                   listCard: _listCard,
                 ),
-                _BidsTab(accent: accent, itemName: _itemName),
               ],
             ),
           ),
         ],
       ),
+    );
+  }
+
+  /// The status these goods arrived under — Detain / Forfeit / Abandoned /
+  /// Other. The Appeal Directorate now sees all four, so the row has to say
+  /// which pipeline it came from.
+  Widget _sourceChip(BuildContext context, ForfeitedPackageModel f) {
+    final s = (f.source.isEmpty ? 'forfeit' : f.source).trim().toLowerCase();
+    final (label, colour) = switch (s) {
+      'detain' || 'detained' => ('Detain', context.colors.accentLightBlue),
+      'abandoned' => ('Abandoned', context.colors.heldOrange),
+      'other' => ('Other', context.colors.warningAmber),
+      _ => ('Forfeit', AppTheme.appealPurple),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: colour.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colour.withOpacity(0.35)),
+      ),
+      child: Text(label,
+          style: TextStyle(
+              color: colour, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 
@@ -321,6 +330,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
           style: TextStyle(
               color: context.colors.accentLightBlue,
               fontWeight: FontWeight.w600))),
+      DataCell(Center(child: _sourceChip(context, f))),
       DataCell(TooltipText(_itemName(f), overflow: TextOverflow.ellipsis)),
       DataCell(TooltipText(f.consigneeName, overflow: TextOverflow.ellipsis)),
       DataCell(TooltipText(yardName(f.yard), overflow: TextOverflow.ellipsis)),
@@ -351,6 +361,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
           style: TextStyle(
               color: context.colors.textSecondary,
               fontWeight: FontWeight.w600))),
+      DataCell(Center(child: _sourceChip(context, f))),
       DataCell(TooltipText(_itemName(f), overflow: TextOverflow.ellipsis)),
       DataCell(TooltipText(f.consigneeName, overflow: TextOverflow.ellipsis)),
       DataCell(TooltipText(yardName(f.yard), overflow: TextOverflow.ellipsis)),
@@ -534,274 +545,6 @@ class _TabBadge extends StatelessWidget {
   }
 }
 
-// ── Tender Bids tab (read-only view of bids recorded by Central Disposal) ─────
-class _BidsTab extends ConsumerWidget {
-  final Color accent;
-  final String Function(ForfeitedPackageModel) itemName;
-  const _BidsTab({required this.accent, required this.itemName});
-
-  static final _money = NumberFormat('#,##0.##', 'en_US');
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(packagesWithBidsProvider);
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Text('Tender Bids',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
-            const Gap(10),
-            Text('Bid values recorded on unsold tender packages',
-                style: TextStyle(
-                    color: context.colors.textMuted, fontSize: 13)),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(16),
-          Expanded(
-            child: async.when(
-              skipLoadingOnReload: true,
-              loading: () =>
-                  Center(child: CircularProgressIndicator(color: accent)),
-              error: (e, _) => ErrorView(
-                  error: e,
-                  onRetry: () => ref.refresh(packagesWithBidsProvider)),
-              data: (list) {
-                return Container(
-                  decoration: BoxDecoration(
-                    color: context.colors.cardDark,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: context.colors.borderColor),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: DataTable2(
-                      columnSpacing: 12,
-                      horizontalMargin: 16,
-                      fixedTopRows: 1,
-                      minWidth: 900,
-                      empty: const EmptyTableState(
-                          message: 'No bids recorded yet'),
-                      headingRowColor: WidgetStateProperty.all(
-                          context.colors.surfaceDark),
-                      columns: const [
-                        DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
-                        DataColumn2(
-                            label: Text('Consignee'), size: ColumnSize.M),
-                        DataColumn2(
-                            label: Text('Yard'),
-                            size: ColumnSize.S,
-                            fixedWidth: 110),
-                        DataColumn2(
-                            label: Center(child: Text('Bids')),
-                            size: ColumnSize.S,
-                            fixedWidth: 70),
-                        DataColumn2(
-                            label: Center(child: Text('Highest')),
-                            size: ColumnSize.S,
-                            fixedWidth: 130),
-                        DataColumn2(
-                            label: Center(child: Text('View')),
-                            size: ColumnSize.S,
-                            fixedWidth: 70),
-                      ],
-                      rows: list.map((e) {
-                        final f = e.forfeited;
-                        final rounds = e.rounds;
-                        final bidCount = rounds.fold<int>(
-                            0, (s, r) => s + r.bids.length);
-                        final highest = rounds.fold<double>(0, (m, r) =>
-                            r.bids.isNotEmpty && r.bids.first > m
-                                ? r.bids.first
-                                : m);
-                        return DataRow(cells: [
-                          DataCell(TooltipText(f.srNumber,
-                              style: TextStyle(
-                                  color: accent,
-                                  fontWeight: FontWeight.w600))),
-                          DataCell(TooltipText(itemName(f),
-                              overflow: TextOverflow.ellipsis)),
-                          DataCell(TooltipText(f.consigneeName,
-                              overflow: TextOverflow.ellipsis)),
-                          DataCell(TooltipText(yardName(f.yard),
-                              overflow: TextOverflow.ellipsis)),
-                          DataCell(Center(
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: accent.withOpacity(0.14),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text('$bidCount',
-                                  style: TextStyle(
-                                      color: accent,
-                                      fontWeight: FontWeight.w800)),
-                            ),
-                          )),
-                          DataCell(Center(
-                            child: Text('Rs. ${_money.format(highest)}',
-                                style: TextStyle(
-                                    color: context.colors.successGreen,
-                                    fontWeight: FontWeight.w700)),
-                          )),
-                          DataCell(Center(
-                            child: IconButton(
-                              icon: Icon(Icons.visibility_rounded,
-                                  size: 18, color: accent),
-                              onPressed: () => showDialog(
-                                context: context,
-                                builder: (_) => _ViewBidsDialog(
-                                    forfeited: f,
-                                    rounds: rounds,
-                                    itemName: itemName(f)),
-                              ),
-                            ),
-                          )),
-                        ]);
-                      }).toList(),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Read-only popup listing the bid amounts recorded for a package, grouped by
-/// tender ROUND (attempt), newest round first; each round's highest is
-/// highlighted. Modelled on the Central Disposal tender-history.
-class _ViewBidsDialog extends StatelessWidget {
-  final ForfeitedPackageModel forfeited;
-  // rounds newest-first; each round's bids already highest-first.
-  final List<({TenderSaleModel? sale, List<double> bids})> rounds;
-  final String itemName;
-  const _ViewBidsDialog({
-    required this.forfeited,
-    required this.rounds,
-    required this.itemName,
-  });
-
-  static final _money = NumberFormat('#,##0.##', 'en_US');
-
-  String _roundTitle(({TenderSaleModel? sale, List<double> bids}) r, int n) {
-    final s = r.sale;
-    final parts = <String>['Tender $n'];
-    if (s?.saleNumber != null && s!.saleNumber!.isNotEmpty) {
-      parts.add(s.saleNumber!);
-    }
-    if (s?.saleDate != null) {
-      parts.add(DateFormat('yyyy-MM-dd').format(s!.saleDate!));
-    }
-    return parts.join(' · ');
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = AppTheme.appealPurple;
-    // Number the rounds oldest→newest for the labels, but keep display newest-first.
-    final total = rounds.length;
-    return StyledFormDialog(
-      label: 'Recorded Bids',
-      title: forfeited.srNumber,
-      headerAccentColor: accent,
-      icon: Icons.sell_rounded,
-      width: 480,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (rounds.isEmpty)
-            StyledFormSection(
-              title: itemName,
-              icon: Icons.payments_rounded,
-              children: [
-                Text('No bids recorded.',
-                    style: TextStyle(color: context.colors.textMuted)),
-              ],
-            )
-          else
-            for (int r = 0; r < rounds.length; r++) ...[
-              if (r > 0) const Gap(14),
-              StyledFormSection(
-                title: _roundTitle(rounds[r], total - r),
-                icon: Icons.gavel_rounded,
-                children: [
-                  for (int i = 0; i < rounds[r].bids.length; i++)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 12),
-                      decoration: BoxDecoration(
-                        color: context.colors.cardDark,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color: i == 0
-                                ? context.colors.successGreen.withOpacity(0.5)
-                                : context.colors.borderColor),
-                      ),
-                      child: Row(children: [
-                        Container(
-                          width: 24,
-                          height: 24,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: accent.withOpacity(0.12),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Text('${i + 1}',
-                              style: TextStyle(
-                                  color: accent,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700)),
-                        ),
-                        const Gap(12),
-                        Text('Rs. ${_money.format(rounds[r].bids[i])}',
-                            style: TextStyle(
-                                color: context.colors.textPrimary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800)),
-                        const Spacer(),
-                        if (i == 0)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: context.colors.successGreen
-                                  .withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text('Highest',
-                                style: TextStyle(
-                                    color: context.colors.successGreen,
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.bold)),
-                          ),
-                      ]),
-                    ),
-                ],
-              ),
-            ],
-        ],
-      ),
-      actions: [
-        TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close')),
-      ],
-    );
-  }
-}
-
-// ── Active Appeals tab ────────────────────────────────────────────────────────
 class _ActiveTab extends ConsumerStatefulWidget {
   final AsyncValue<List<ForfeitedPackageModel>> async;
   final Color accent;
@@ -939,11 +682,15 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                         headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                         columns: const [
                           DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                          DataColumn2(
+                              label: Center(child: Text('Status')),
+                              size: ColumnSize.S,
+                              fixedWidth: 104),
                           DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                           DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                           DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
                           DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.S),
-                          DataColumn2(label: Center(child: Text('Status')), size: ColumnSize.S, fixedWidth: 140),
+                          DataColumn2(label: Center(child: Text('Appeal State')), size: ColumnSize.S, fixedWidth: 150),
                           DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                         ],
                         rows: pageSlice(rows, widget.page, kClientPageSize)
@@ -1078,6 +825,10 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                         headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                         columns: const [
                           DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                          DataColumn2(
+                              label: Center(child: Text('Status')),
+                              size: ColumnSize.S,
+                              fixedWidth: 104),
                           DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                           DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                           DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
