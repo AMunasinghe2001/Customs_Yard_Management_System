@@ -1079,7 +1079,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                           columns: const [
                             DataColumn2(
                                 label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Qty'),
                                 size: ColumnSize.S,
@@ -1363,7 +1363,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                           columns: const [
                             DataColumn2(
                                 label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                            DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Qty'),
                                 size: ColumnSize.S,
@@ -2017,7 +2017,7 @@ class _RequestCard extends ConsumerWidget {
                       message: 'No packages in this request'),
                   columns: const [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                     DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('HS Code'),
@@ -2350,7 +2350,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                      DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                       DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                       DataColumn2(
                           label: Text('Qty'),
@@ -2889,7 +2889,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                   columns: [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                    DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                     DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
@@ -3824,7 +3824,7 @@ String _committeeItemName(ForfeitedPackageModel f) {
   return '${items.first.itemName} +${items.length - 1}';
 }
 
-/// Central Disposal read-only tab: packages the DG has appointed a committee for
+/// Central Disposal read-only tab: packages the ADG has appointed a committee for
 /// (unsold >3 times). Each row expands to show the 5 committee members.
 class _CommitteesTab extends ConsumerWidget {
   const _CommitteesTab();
@@ -5396,7 +5396,7 @@ class DestructionCard extends ConsumerWidget {
                   columns: [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                    DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                     DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
@@ -6480,7 +6480,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                      DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                       DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
                       DataColumn2(
                           label: Text('Qty'),

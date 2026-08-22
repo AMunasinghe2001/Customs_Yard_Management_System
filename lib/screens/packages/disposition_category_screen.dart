@@ -459,7 +459,7 @@ class _DispositionCategoryScreenState
                             const DataColumn2(
                                 label: Text('SR Number'), size: ColumnSize.M),
                             const DataColumn2(
-                                label: Text('Item Name'), size: ColumnSize.M),
+                                label: Text('Goods Name'), size: ColumnSize.M),
                             const DataColumn2(
                                 label: Text('HS Code'),
                                 size: ColumnSize.S,

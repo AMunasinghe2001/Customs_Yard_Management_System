@@ -3710,7 +3710,7 @@ class DisposalService {
         }));
   }
 
-  // ── Tender committees (DG appoints the members for >3× unsold packages) ──
+  // ── Tender committees (ADG appoints the members for >3× unsold packages) ─
 
   /// All appointed committees, keyed by forfeited_package_id.
   Future<Map<String, TenderCommitteeModel>> getTenderCommittees() async {

@@ -614,7 +614,7 @@ class _RecentPackagesTable extends ConsumerWidget {
                         fontSize: 13)),
                 size: ColumnSize.M),
             DataColumn2(
-                label: Text('Item Name',
+                label: Text('Goods Name',
                     style: TextStyle(
                         color: context.colors.primaryGold,
                         fontWeight: FontWeight.w700,

@@ -572,7 +572,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   // app (pretty table); PDF / Excel are secondary exports inside the viewer.
 
   static const List<String> _packageCols = [
-    'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Status',
+    'SR Number', 'Goods Name', 'HS Code', 'Qty', 'Consignee', 'Status',
     'Entry Date', 'Value (LKR)'
   ];
   List<List<String>> _packageRows(List<PackageModel> pkgs) {
@@ -869,7 +869,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Reason', 'Admitted Date'];
+      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Reason', 'Admitted Date'];
       final rows = filtered.map((e) => [
         e.srNumber ?? '—',
         e.itemName ?? '—',
@@ -905,7 +905,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Returned Date', 'Return Notes'];
+      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Returned Date', 'Return Notes'];
       final rows = filtered.map((e) => [
         e.srNumber ?? '—',
         e.itemName ?? '—',
@@ -971,7 +971,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Admitted Date', 'Status'];
+      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Admitted Date', 'Status'];
       final rows = filteredEntries.map((e) => [
         e.srNumber ?? '—',
         e.itemName ?? '—',
@@ -1007,7 +1007,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Item', 'Consignee', 'Warehouse', 'Admitted Date', 'Released Date'];
+      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Admitted Date', 'Released Date'];
       final rows = filtered.map((e) => [
         e.srNumber ?? '—',
         e.itemName ?? '—',
@@ -1277,7 +1277,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         format: format,
         columns: const [
           'SR Number',
-          'Item Name',
+          'Goods Name',
           'Goods Description',
           'Quantity',
           'Status',
@@ -1335,7 +1335,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         format: format,
         columns: const [
           'SR Number',
-          'Item Name',
+          'Goods Name',
           'Goods Description',
           'Quantity',
           'HS Code',
@@ -1412,9 +1412,166 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         format: format,
         columns: [
           'SR Number',
-          'Item Name',
+          'Goods Name',
           'Goods Description',
           ...valueCols,
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
+    }
+  }
+
+  /// **High Panel Valuation** — SR Number · Goods Name · Goods Description ·
+  /// Final Valuation · High Panel Valuation.
+  ///
+  /// "Final Valuation" is the LAST price the Valuation Directorate set, i.e.
+  /// the one Tender 3 was offered at. "High Panel Valuation" is the figure the
+  /// appointed committee reached and the ADG submitted for the final tender.
+  ///
+  /// Only goods that reached the committee stage appear — anything the ADG has
+  /// not submitted a value for has no High Panel valuation to report.
+  Future<void> _generateHighPanelValuationReport(String format) async {
+    const key = 'High Panel Valuation';
+    _setLoading('${key}_$format', true);
+    try {
+      final disposal = ref.read(disposalServiceProvider);
+      final forfeited = _filterByYard(
+          await disposal.getAllForfeitedForReports(), (f) => f.yard);
+      final chains = await disposal.getValuationChains();
+      final committees = await disposal.getTenderCommittees();
+
+      final money = NumberFormat('#,##0.##');
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+      for (final f in _filterByDate(forfeited)) {
+        final c = committees[f.id];
+        final panelValue = c?.submittedValue;
+        if (panelValue == null) continue;
+
+        // The ADG's submission ALSO writes a tender_revaluations row, so it is
+        // the last link of the chain. The Valuation Directorate's own final
+        // figure — what Tender 3 was priced at — is the link before it.
+        final chain = chains[f.id] ?? const <double>[];
+        final finalValuation =
+            chain.length >= 2 ? chain[chain.length - 2] : null;
+
+        for (final it in _reportItemsOf(f)) {
+          rows.add([
+            f.srNumber,
+            it?.itemName ?? f.itemName ?? '—',
+            (it?.goodsDescription?.trim().isNotEmpty == true)
+                ? it!.goodsDescription!.trim()
+                : '—',
+            finalValuation != null ? money.format(finalValuation) : '—',
+            money.format(panelValue),
+          ]);
+          itemIds.add(it?.id);
+        }
+      }
+
+      await _emitDgReport(
+        key: key,
+        title: 'HIGH PANEL VALUATION',
+        fileBase: 'High_Panel_Valuation',
+        format: format,
+        columns: const [
+          'SR Number',
+          'Goods Name',
+          'Goods Description',
+          'Final Valuation',
+          'High Panel Valuation',
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
+    }
+  }
+
+  /// **Not Sold Packages** — SR Number · Item Name · Goods Description ·
+  /// High Panel Committee Members · Proposed Decision.
+  ///
+  /// The goods that exhausted EVERY avenue: the Valuation Tender, Tender 1-3
+  /// and the committee-priced final tender all failed. For each one it prints
+  /// the committee the ADG appointed to value it and the final outcome the DG
+  /// proposed (destroy / remand / government use / auction), or "Pending
+  /// decision" when the DG has not ruled yet.
+  Future<void> _generateNotSoldReport(String format) async {
+    const key = 'Not Sold Packages';
+    _setLoading('${key}_$format', true);
+    try {
+      final disposal = ref.read(disposalServiceProvider);
+      final exhausted = await disposal.getExhaustedUnsoldPackages();
+      final committees = await disposal.getTenderCommittees();
+      final proposals = await disposal.getUnsoldProposals();
+
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+      for (final info in exhausted) {
+        final f = info.forfeited;
+        // Respect the portal's yard picker and the date range above.
+        if (_yardArg != null && f.yard != _yardArg) continue;
+        if (_startDate != null && f.forfeitedAt.isBefore(_startDate!)) continue;
+        if (_endDate != null &&
+            f.forfeitedAt.isAfter(DateTime(
+                _endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59))) {
+          continue;
+        }
+
+        // "Name (Designation) · Salary No" per member, one per line.
+        final members = committees[f.id]?.members ?? const <CommitteeMember>[];
+        final memberText = members.isEmpty
+            ? 'No committee appointed'
+            : members
+                .map((m) {
+                  final desig = m.designation?.trim() ?? '';
+                  final sal = m.salaryNo?.trim() ?? '';
+                  return '${m.name.trim()}'
+                      '${desig.isNotEmpty ? ' ($desig)' : ''}'
+                      '${sal.isNotEmpty ? ' · $sal' : ''}';
+                })
+                .join('\n');
+
+        final p = proposals[f.id];
+        final decision = p == null
+            ? 'Pending decision'
+            : (p.note?.trim().isNotEmpty == true
+                ? '${p.label}\n${p.note!.trim()}'
+                : p.label);
+
+        for (final it in _reportItemsOf(f)) {
+          rows.add([
+            f.srNumber,
+            it?.itemName ?? f.itemName ?? '—',
+            (it?.goodsDescription?.trim().isNotEmpty == true)
+                ? it!.goodsDescription!.trim()
+                : '—',
+            memberText,
+            decision,
+          ]);
+          itemIds.add(it?.id);
+        }
+      }
+
+      await _emitDgReport(
+        key: key,
+        title: 'NOT SOLD PACKAGES',
+        fileBase: 'Not_Sold_Packages',
+        format: format,
+        columns: const [
+          'SR Number',
+          'Goods Name',
+          'Goods Description',
+          'High Panel Committee Members',
+          'Proposed Decision',
         ],
         rows: rows,
         rowItemIds: itemIds,
@@ -1597,34 +1754,39 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: _generateAllPackagesPdf,
                       onExcel: _exportExcel,
                     ),
-                    _buildReportCard(
-                      title: 'Category & Zone Summary',
-                      description: 'Inventory distribution by category & warehouse zones.',
-                      icon: Icons.pie_chart_rounded,
-                      color: Colors.purpleAccent,
-                      onView: _viewCategoryZone,
-                      onPdf: _generateCategoryZonePdf,
-                      onExcel: _exportCategoryZoneExcel,
-                    ),
-                    _buildReportCard(
-                      title: 'Package History',
-                      description:
-                          'Full details of a single package by its SR number.',
-                      icon: Icons.description_rounded,
-                      color: context.colors.accentLightBlue,
-                      onPdf: _generatePackageHistoryPdf,
-                      onExcel: _exportPackageHistoryExcel,
-                    ),
-                    _buildReportCard(
-                      title: 'Old Entries (Migrated Packages)',
-                      description:
-                          'Packages migrated from a previous register (old SR → new SR).',
-                      icon: Icons.history_rounded,
-                      color: const Color(0xFF5D4037),
-                      onView: () => _generateOldEntriesReport('view'),
-                      onPdf: () => _generateOldEntriesReport('pdf'),
-                      onExcel: () => _generateOldEntriesReport('excel'),
-                    ),
+                    // Category & Zone / Package History / Old Entries are
+                    // register-keeping detail the High Panel does not sign off
+                    // on, so their portal shows the audit alone.
+                    if (!widget.executiveMode) ...[
+                      _buildReportCard(
+                        title: 'Category & Zone Summary',
+                        description: 'Inventory distribution by category & warehouse zones.',
+                        icon: Icons.pie_chart_rounded,
+                        color: Colors.purpleAccent,
+                        onView: _viewCategoryZone,
+                        onPdf: _generateCategoryZonePdf,
+                        onExcel: _exportCategoryZoneExcel,
+                      ),
+                      _buildReportCard(
+                        title: 'Package History',
+                        description:
+                            'Full details of a single package by its SR number.',
+                        icon: Icons.description_rounded,
+                        color: context.colors.accentLightBlue,
+                        onPdf: _generatePackageHistoryPdf,
+                        onExcel: _exportPackageHistoryExcel,
+                      ),
+                      _buildReportCard(
+                        title: 'Old Entries (Migrated Packages)',
+                        description:
+                            'Packages migrated from a previous register (old SR → new SR).',
+                        icon: Icons.history_rounded,
+                        color: const Color(0xFF5D4037),
+                        onView: () => _generateOldEntriesReport('view'),
+                        onPdf: () => _generateOldEntriesReport('pdf'),
+                        onExcel: () => _generateOldEntriesReport('excel'),
+                      ),
+                    ],
                   ],
                 ),
 
@@ -1675,19 +1837,42 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                         onPdf: () => _generateValuedReport('pdf'),
                         onExcel: () => _generateValuedReport('excel'),
                       ),
+                      _buildReportCard(
+                        title: 'High Panel Valuation',
+                        description:
+                            'Final valuation vs. the committee\'s figure.',
+                        icon: Icons.balance_rounded,
+                        color: const Color(0xFF00695C),
+                        onPdf: () =>
+                            _generateHighPanelValuationReport('pdf'),
+                        onExcel: () =>
+                            _generateHighPanelValuationReport('excel'),
+                      ),
+                      _buildReportCard(
+                        title: 'Not Sold Packages',
+                        description:
+                            'Committee members & the DG\'s proposed decision.',
+                        icon: Icons.rule_folder_rounded,
+                        color: const Color(0xFFEF6C00),
+                        onPdf: () => _generateNotSoldReport('pdf'),
+                        onExcel: () => _generateNotSoldReport('excel'),
+                      ),
                     ],
                   ),
                 ],
 
                 // ── Section 3: Post Status Activity Reports ──
-                const Gap(24),
-                _buildSectionHeader(
-                    'Post Status Activity Reports', Icons.warning_amber_rounded),
-                const Gap(8),
-                _buildActivityGrid(crossAxisCount),
+                if (!widget.executiveMode) ...[
+                  const Gap(24),
+                  _buildSectionHeader(
+                      'Post Status Activity Reports', Icons.warning_amber_rounded),
+                  const Gap(8),
+                  _buildActivityGrid(crossAxisCount),
+                ],
 
                 // ── Section 4: Goods Disposition Reports ──
                 // (How goods are classified: Forfeit / Abandon / Other / Re-export)
+                if (!widget.executiveMode) ...[
                 const Gap(24),
                 _buildSectionHeader(
                     'Goods Disposition Reports', Icons.assignment_turned_in_rounded),
@@ -1744,6 +1929,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     ),
                   ],
                 ),
+                ],
 
                 // ── Section 5: Goods Disposal Reports ──
                 // (What happens to forfeited goods: Sold via Tender / Destroyed)
@@ -1859,15 +2045,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   mainAxisSpacing: 12,
                   childAspectRatio: 2.3,
                   children: [
-                    _buildReportCard(
-                      title: 'Warehouse Stock (Held Goods)',
-                      description: 'Currently held items in warehouses.',
-                      icon: Icons.warehouse_rounded,
-                      color: const Color(0xFF1565C0),
-                      onView: _viewWarehouseStock,
-                      onPdf: _generateWarehouseStockPdf,
-                      onExcel: _exportWarehouseStockExcel,
-                    ),
+                    // Warehouse Stock / Warehouses List are yard housekeeping.
+                    if (!widget.executiveMode)
+                      _buildReportCard(
+                        title: 'Warehouse Stock (Held Goods)',
+                        description: 'Currently held items in warehouses.',
+                        icon: Icons.warehouse_rounded,
+                        color: const Color(0xFF1565C0),
+                        onView: _viewWarehouseStock,
+                        onPdf: _generateWarehouseStockPdf,
+                        onExcel: _exportWarehouseStockExcel,
+                      ),
                     _buildReportCard(
                       title: 'Released Packages (Released Goods)',
                       description: 'All released package entries.',
@@ -1877,19 +2065,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: _generateReturnedPdf,
                       onExcel: _exportReturnedExcel,
                     ),
-                    _buildReportCard(
-                      title: 'Warehouses List',
-                      description: 'Registered warehouses & current occupancy.',
-                      icon: Icons.domain_rounded,
-                      color: const Color(0xFF6A1B9A),
-                      onView: _viewWarehousesList,
-                      onPdf: _generateWarehousesListPdf,
-                      onExcel: _exportWarehousesListExcel,
-                    ),
+                    if (!widget.executiveMode)
+                      _buildReportCard(
+                        title: 'Warehouses List',
+                        description: 'Registered warehouses & current occupancy.',
+                        icon: Icons.domain_rounded,
+                        color: const Color(0xFF6A1B9A),
+                        onView: _viewWarehousesList,
+                        onPdf: _generateWarehousesListPdf,
+                        onExcel: _exportWarehousesListExcel,
+                      ),
                   ],
                 ),
 
                 // ── Section 8: Financial Reports ──
+                if (!widget.executiveMode) ...[
                 const Gap(24),
                 _buildSectionHeader('Financial Reports', Icons.payments_rounded),
                 const Gap(8),
@@ -1921,8 +2111,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     ),
                   ],
                 ),
+                ],
 
                 // ── Section 9: System Configuration & Logs ──
+                if (!widget.executiveMode) ...[
                 const Gap(24),
                 _buildSectionHeader('System Configuration & Logs', Icons.settings_rounded),
                 const Gap(8),
@@ -1970,6 +2162,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     _buildQrCard(),
                   ],
                 ),
+                ],
               ],
             ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn();
           },
@@ -2475,7 +2668,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
 
       final columns = [
-        'SR Number', 'Item Name', 'HS Code', 'Quantity', 'Consignee',
+        'SR Number', 'Goods Name', 'HS Code', 'Quantity', 'Consignee',
         'Status', 'Entry Date', 'Reason'
       ];
       final rows = pkg.items.map((i) => [
@@ -2601,7 +2794,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
 
     final columns = [
-      'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Reason',
+      'SR Number', 'Goods Name', 'HS Code', 'Qty', 'Consignee', 'Reason',
       'Status', 'Outcome Date', 'Receipt No', 'Value (LKR)', 'Entry Date'
     ];
     final rows = <List<String>>[];
@@ -2746,15 +2939,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             totalRev += it.soldPrice + tax;
             final f = it.forfeited;
             final pkgItems = f?.packageDetails?.items ?? const <PackageItem>[];
+            // Goods Description rather than HS Code / Sold Date: this listing
+            // is about what was sold and for how much.
             if (f?.itemId != null) {
               final match = pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
               final name = f?.itemName ?? match?.itemName ?? '—';
-              final hs = match?.hsCode ?? '—';
+              final desc = match?.goodsDescription?.trim();
               rows.add([
                 f?.srNumber ?? '—',
                 name,
-                (hs.trim().isNotEmpty) ? hs.trim() : '—',
-                it.soldAt != null ? df.format(it.soldAt!) : '—',
+                (desc?.isNotEmpty == true) ? desc! : '—',
                 money.format(it.soldPrice),
                 money.format(tax),
                 money.format(it.soldPrice + tax),
@@ -2765,8 +2959,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 rows.add([
                   f?.srNumber ?? '—',
                   i.itemName,
-                  (i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—',
-                  it.soldAt != null ? df.format(it.soldAt!) : '—',
+                  (i.goodsDescription?.trim().isNotEmpty == true)
+                      ? i.goodsDescription!.trim()
+                      : '—',
                   money.format(it.soldPrice),
                   money.format(tax),
                   money.format(it.soldPrice + tax),
@@ -2778,7 +2973,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 f?.srNumber ?? '—',
                 f?.itemName ?? '—',
                 '—',
-                it.soldAt != null ? df.format(it.soldAt!) : '—',
                 money.format(it.soldPrice),
                 money.format(tax),
                 money.format(it.soldPrice + tax),
@@ -2808,7 +3002,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 'Revenue LKR ${money.format(totalRev)}   |   Balance: $balance goods\n(added $added − sold ${soldItems.length} − destroyed $destroyed)';
           }
           columns = [
-            'SR Number', 'Item', 'HS Code', 'Sold Date', 'Sold Price', 'Tax', 'Total'
+            'SR Number',
+            'Goods Name',
+            'Goods Description',
+            'Sold Value',
+            'Total Tax',
+            'Total Amount',
           ];
           break;
 
@@ -2823,7 +3022,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   it
           ];
           title = 'GOODS DESTROYED IN DESTRUCTION TENDER';
-          columns = ['SR Number', 'Item', 'HS Code', 'Destroyed Date', 'Qty'];
+          columns = ['SR Number', 'Goods Name', 'HS Code', 'Destroyed Date', 'Qty'];
           rows = [];
           rowItemIds = [];
           for (final it in items) {
@@ -2925,7 +3124,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               '− Sold: $soldCnt (Value of Goods Sold: LKR ${money.format(soldVal)}) − Destroyed: $destCnt = Net Balance: $balCnt goods';
 
           columns = [
-            'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Status / Movement', 'Date', 'Value (LKR)'
+            'SR Number', 'Goods Name', 'HS Code', 'Qty', 'Consignee', 'Status / Movement', 'Date', 'Value (LKR)'
           ];
           rows = [];
           rowItemIds = [];
@@ -3257,8 +3456,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     Future<void> Function()? onPdf,
     Future<void> Function()? onExcel,
   }) {
-    final showView =
-        (widget.executiveMode || widget.disposalMode) && onView != null;
+    // The High Panel take their reports away as documents, so their cards
+    // offer PDF + Excel only — no in-app View. Central Disposal keeps it.
+    final showView = widget.disposalMode && onView != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(

@@ -117,9 +117,10 @@ final _committeeSearchProvider = StateProvider<String>((ref) => '');
 final _committeeYardProvider = StateProvider<String?>((ref) => null); // null=all
 
 /// High Panel tab: packages still unsold after the Valuation Tender plus all
-/// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The DG appoints a
-/// committee for each (usually five officers); the ADG then submits that
-/// committee's valuation as the tender's final price.
+/// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The ADG appoints a
+/// committee for each (usually five officers) and then submits that
+/// committee's valuation as the tender's final price. The DG has VIEW-ONLY
+/// access to this tab — their own decision comes later, on Unsold Packages.
 class TenderCommitteeTab extends ConsumerWidget {
   const TenderCommitteeTab({super.key});
 
@@ -133,6 +134,8 @@ class TenderCommitteeTab extends ConsumerWidget {
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
     final q = ref.watch(_committeeSearchProvider).trim().toLowerCase();
     final yardFilter = ref.watch(_committeeYardProvider);
+    // Appointing the committee is the ADG's job; the DG only views.
+    final canAppoint = _isAdg(ref.watch(currentProfileProvider));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
 
@@ -150,7 +153,9 @@ class TenderCommitteeTab extends ConsumerWidget {
             const Gap(10),
             Expanded(
               child: Text(
-                  'Packages still unsold after Tender 3 — appoint a committee',
+                  canAppoint
+                      ? 'Packages still unsold after Tender 3 — appoint a committee'
+                      : 'Packages still unsold after Tender 3 — the ADG appoints the committee',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style:
@@ -245,7 +250,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                       columns: const [
                         DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                         DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                        DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                        DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                         DataColumn2(
                             label: Center(child: Text('Source')),
                             size: ColumnSize.S),
@@ -322,32 +327,45 @@ class TenderCommitteeTab extends ConsumerWidget {
                             ),
                           )),
                           DataCell(Center(
-                            child: FilledButton.icon(
-                              style: FilledButton.styleFrom(
-                                  backgroundColor: count > 0
-                                      ? context.colors.successGreen
-                                      : accent,
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 10),
-                                  visualDensity: VisualDensity.compact),
-                              icon: Icon(
-                                  count > 0
-                                      ? Icons.visibility_rounded
-                                      : Icons.group_add_rounded,
-                                  size: 15),
+                            child: Builder(builder: (context) {
                               // Appointed committees are view-only — the record
-                              // of who valued the goods must not change.
-                              label: Text(
-                                  count > 0
-                                      ? 'View ($count)'
-                                      : 'Appoint',
-                                  style: const TextStyle(fontSize: 12)),
-                              onPressed: () => showDialog(
-                                context: context,
-                                builder: (_) => _CommitteeDialog(
-                                    info: info, existing: committee),
-                              ),
-                            ),
+                              // of who valued the goods must not change — and
+                              // the DG never gets the Appoint form at all.
+                              // Colour follows the ACTION, not the count, so
+                              // every View button looks the same.
+                              final appointing = canAppoint && count == 0;
+                              // Width only — the button keeps its natural
+                              // height, so the row does not look squashed.
+                              return SizedBox(
+                                width: 116,
+                                child: FilledButton.icon(
+                                  style: FilledButton.styleFrom(
+                                      backgroundColor: appointing
+                                          ? accent
+                                          : context.colors.successGreen,
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10),
+                                      // Keeps the button inside the 48px data
+                                      // row; without it the row overflows.
+                                      visualDensity: VisualDensity.compact),
+                                  icon: Icon(
+                                      appointing
+                                          ? Icons.group_add_rounded
+                                          : Icons.visibility_rounded,
+                                      size: 15),
+                                  label: Text(
+                                      count > 0
+                                          ? 'View ($count)'
+                                          : (appointing ? 'Appoint' : 'View'),
+                                      style: const TextStyle(fontSize: 12)),
+                                  onPressed: () => showDialog(
+                                    context: context,
+                                    builder: (_) => _CommitteeDialog(
+                                        info: info, existing: committee),
+                                  ),
+                                ),
+                              );
+                            }),
                           )),
                           // Two-step: the appointed COMMITTEE records its
                           // valuation, then the ADG submits it as the tender's
@@ -454,7 +472,7 @@ class _CommitteeDialog extends ConsumerStatefulWidget {
 }
 
 class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
-  /// A committee is normally five officers, but the DG may appoint fewer or
+  /// A committee is normally five officers, but the ADG may appoint fewer or
   /// more, so the rows are add/remove-able rather than a fixed five.
   static const _defaultCount = 5;
   static const _minCount = 1;
@@ -562,10 +580,15 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
     }
   }
 
-  /// Once the DG has appointed the members the committee is fixed — the record
-  /// of who valued the goods must not change afterwards, so the dialog becomes
-  /// a read-only roster.
-  bool get _readOnly => (widget.existing?.members.isNotEmpty ?? false);
+  /// The dialog is a read-only roster when EITHER:
+  ///   * the members are already appointed — the record of who valued the
+  ///     goods must not change afterwards; or
+  ///   * the signed-in officer is not the ADG. Naming the committee is the
+  ///     ADG's job; the DG can look but not appoint.
+  bool get _readOnly {
+    if (widget.existing?.members.isNotEmpty ?? false) return true;
+    return !_isAdg(ref.read(currentProfileProvider));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -684,7 +707,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
             ),
           ],
           const Gap(6),
-          // A committee is normally 5 officers, but the DG may appoint fewer
+          // A committee is normally 5 officers, but the ADG may appoint fewer
           // or more — up to 10.
           Row(children: [
             TextButton.icon(
@@ -756,10 +779,27 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
       icon: Icons.groups_rounded,
       width: 520,
       child: StyledFormSection(
-        title: 'Appointed Committee (${members.length}) · '
-            '${_cItemName(widget.info.forfeited)}',
+        title: members.isEmpty
+            ? 'No Committee Yet · ${_cItemName(widget.info.forfeited)}'
+            : 'Appointed Committee (${members.length}) · '
+                '${_cItemName(widget.info.forfeited)}',
         icon: Icons.badge_rounded,
         children: [
+          // A non-ADG officer (i.e. the DG) opening a package with no
+          // committee: explain rather than showing an empty panel.
+          if (members.isEmpty)
+            Row(children: [
+              Icon(Icons.info_outline_rounded,
+                  size: 18, color: context.colors.textMuted),
+              const Gap(10),
+              Expanded(
+                child: Text(
+                    'No committee has been appointed for this package yet. '
+                    'The ADG names the committee members.',
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 13)),
+              ),
+            ]),
           for (var i = 0; i < members.length; i++) ...[
             if (i > 0) const Gap(6),
             _memberTile(i + 1, members[i], accent),
@@ -825,6 +865,32 @@ Widget _memberTile(int no, CommitteeMember m, Color accent) {
   });
 }
 
+/// A pill for the Committee Value column's waiting states. Reads as a real
+/// status like the chips beside it, instead of the faint italic caption these
+/// states used to be.
+Widget _waitingChip(
+    BuildContext context, String label, IconData icon, Color colour) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+    decoration: BoxDecoration(
+      color: colour.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: colour.withOpacity(0.45)),
+    ),
+    child: Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 13, color: colour),
+      const Gap(5),
+      Flexible(
+        child: Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                color: colour, fontSize: 11, fontWeight: FontWeight.w700)),
+      ),
+    ]),
+  );
+}
+
 /// The committee valuation cell — a TWO-STEP flow, shown as three states:
 ///
 ///   1. no committee yet          → "Appoint first" (nothing to value)
@@ -853,13 +919,11 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
     final accent = AppTheme.executiveTeal;
     final c = committee;
 
-    // 1 ── The DG has not appointed anyone yet, so there is nothing to value.
+    // 1 ── Nobody appointed yet, so there is nothing to value.
     if (c == null || c.members.isEmpty) {
-      return Text('Appoint first',
-          style: TextStyle(
-              color: context.colors.textMuted,
-              fontSize: 11,
-              fontStyle: FontStyle.italic));
+      return _waitingChip(
+          context, 'Appoint first', Icons.group_add_rounded,
+          context.colors.textSecondary);
     }
 
     final fmt = NumberFormat('#,##0');
@@ -871,12 +935,8 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
     if (c.committeeValue == null) {
       // Only the ADG enters the committee's figure; the DG sees the state.
       if (!isAdg) {
-        return Text('Awaiting ADG entry',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: context.colors.textMuted,
-                fontSize: 11,
-                fontStyle: FontStyle.italic));
+        return _waitingChip(context, 'Awaiting ADG entry',
+            Icons.hourglass_bottom_rounded, context.colors.warningAmber);
       }
       return FilledButton.icon(
         style: FilledButton.styleFrom(
@@ -1155,7 +1215,8 @@ class _CommitteeValuationDialogState
                   child: TextField(
                     controller: _costCtrl,
                     // The ADG enters the committee's figure and submits it;
-                    // the DG appoints the members but does not price the goods.
+                    // the ADG appoints the members but the COMMITTEE prices
+                    // the goods.
                     enabled: isAdg,
                     keyboardType:
                         const TextInputType.numberWithOptions(decimal: true),

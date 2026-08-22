@@ -523,7 +523,7 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                   'Try adjusting the search or date filters.'),
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
                             DataColumn2(label: Text('HS Code'), size: ColumnSize.S, fixedWidth: 110),
                             DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 70),
                             DataColumn2(label: Text('Consignee'), size: ColumnSize.M),

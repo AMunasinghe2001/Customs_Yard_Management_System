@@ -590,7 +590,7 @@ class _BidsTab extends ConsumerWidget {
                           context.colors.surfaceDark),
                       columns: const [
                         DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                        DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                         DataColumn2(
                             label: Text('Consignee'), size: ColumnSize.M),
                         DataColumn2(
@@ -939,7 +939,7 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                         headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                         columns: const [
                           DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                          DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                           DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                           DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
                           DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.S),
@@ -1078,7 +1078,7 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                         headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
                         columns: const [
                           DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                          DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                          DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                           DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                           DataColumn2(label: Text('Yard'), size: ColumnSize.S, fixedWidth: 110),
                           DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.S),

@@ -42,9 +42,13 @@ final _uYardProvider = StateProvider<String?>((ref) => null); // null = all
 final _uDecidedProvider = StateProvider<bool?>((ref) => null);
 final _uPageProvider = StateProvider<int>((ref) => 0);
 
-/// Shared height for the header's search field and yard dropdown so the two
-/// line up exactly.
-const double _kFilterHeight = 52;
+/// Shared content padding for the header's search field and yard dropdown.
+/// BOTH controls derive their height from this, so they render at exactly the
+/// same size and sit on one line. Do not set an explicit height on either —
+/// the dropdown's InkWell fills whatever box it is given and its hover splash
+/// would spill past the drawn border.
+const EdgeInsets _kFilterPadding =
+    EdgeInsets.symmetric(horizontal: 12, vertical: 14);
 
 /// High Panel tab: packages that have exhausted EVERY avenue — the Valuation
 /// Tender plus Tender 1-3 all failed, a committee re-valued them, the ADG
@@ -78,11 +82,10 @@ class UnsoldDecisionTab extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // The yard dropdown carries a floating "Yard" label, so it is taller
-          // than a bare search field. Bottom-aligned and matched to the same
-          // height, otherwise Row centres them and they sit visibly off from
-          // each other.
-          Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          // Search field and yard dropdown sit on ONE line: the dropdown's
+          // label never floats (a floating label draws above the box) and both
+          // take their height from the same _kFilterPadding.
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -108,7 +111,6 @@ class UnsoldDecisionTab extends ConsumerWidget {
             const Gap(16),
             SizedBox(
               width: 300,
-              height: _kFilterHeight,
               child: TextField(
                 onChanged: (v) {
                   ref.read(_uSearchProvider.notifier).state = v;
@@ -120,8 +122,10 @@ class UnsoldDecisionTab extends ConsumerWidget {
                     fontWeight: FontWeight.w600),
                 decoration: InputDecoration(
                   isDense: true,
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  // IDENTICAL padding to the yard dropdown beside it — both
+                  // controls take their height from this, so any difference
+                  // here puts them on two different levels.
+                  contentPadding: _kFilterPadding,
                   hintText: 'Search SR / item / consignee…',
                   prefixIcon:
                       Icon(Icons.search_rounded, size: 20, color: accent),
@@ -140,10 +144,10 @@ class UnsoldDecisionTab extends ConsumerWidget {
               ),
             ),
             const Gap(12),
-            // NO fixed height here: the dropdown's InkWell fills whatever box
-            // it is given, so forcing 52px made the hover splash spill past
-            // the field's own border as a pale band underneath. It sizes
-            // itself to _kFilterHeight via its contentPadding instead.
+            // Width only — NO fixed height. The dropdown's InkWell fills
+            // whatever box it is given, so forcing a height made the hover
+            // splash spill past the field's border as a pale band underneath.
+            // Its contentPadding already matches the search field.
             SizedBox(
               width: 220,
               child: _UYardFilter(
@@ -367,7 +371,12 @@ class _DecisionCell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!canDecide) return UnsoldOutcomeChip(proposal: proposal);
+    // Inside the High Panel's own portal "Awaiting High Panel" would tell the
+    // ADG to wait for themselves — name the officer who actually decides.
+    if (!canDecide) {
+      return UnsoldOutcomeChip(
+          proposal: proposal, pendingLabel: UnsoldOutcomeChip.kAwaitingDg);
+    }
 
     void open() => showDialog(
           context: context,
@@ -598,9 +607,13 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
   }
 }
 
-/// Yard dropdown with an "All Yards" option, styled like the Tender
-/// Committees tab's filter (same width, same icon, same rounded gold-teal
-/// border) so the two tabs' header rows line up.
+/// Yard dropdown with an "All Yards" option, styled to sit on exactly the same
+/// line as the search field beside it.
+///
+/// The "Yard" caption is deliberately NOT a floating label: a floating label
+/// renders above the box and makes the control taller than a plain TextField,
+/// which is what left the two controls on two different levels. The caption is
+/// drawn as a prefix inside the box instead.
 class _UYardFilter extends StatelessWidget {
   final String? value;
   final ValueChanged<String?> onChanged;
@@ -633,6 +646,8 @@ class _UYardFilter extends StatelessWidget {
         ),
         child: StyledDropdownFormField<String>(
           label: 'Yard',
+          // Keeps the box the same height as the search field beside it.
+          floatingLabelBehavior: FloatingLabelBehavior.never,
           value: value ?? '_all',
           helperText: null,
           isDense: true,
@@ -640,8 +655,10 @@ class _UYardFilter extends StatelessWidget {
           // Same radius as the OutlineInputBorder above, so the hover splash
           // stays inside the drawn border instead of showing at the corners.
           splashRadius: 14,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          // MUST match the search field's padding exactly — this is what sets
+          // the height, and a 2px difference here is what put the two controls
+          // on different levels.
+          contentPadding: _kFilterPadding,
           prefixIcon: Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),

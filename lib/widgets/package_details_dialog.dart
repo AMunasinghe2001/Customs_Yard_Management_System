@@ -1380,7 +1380,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                             _DetailItem(
                                               icon: Icons
                                                   .label_important_rounded,
-                                              label: 'Item Name',
+                                              label: 'Goods Name',
                                               value: highlightedItem.itemName,
                                             ),
                                             Row(
@@ -1495,7 +1495,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                             _DetailItem(
                                               icon: Icons
                                                   .label_important_rounded,
-                                              label: 'Item Name',
+                                              label: 'Goods Name',
                                               value: highlightedItem.itemName,
                                             ),
                                             // Total Packages + Unit — always
@@ -3772,7 +3772,7 @@ class _NoEntryItemCard extends StatelessWidget {
         children: [
           _DetailItem(
             icon: Icons.label_important_rounded,
-            label: 'Item Name',
+            label: 'Goods Name',
             value: item.itemName,
           ),
           Row(

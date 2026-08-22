@@ -582,7 +582,7 @@ class _TenderPackagesTable extends ConsumerWidget {
           empty: const EmptyTableState(message: 'No packages in this tender'),
           columns: const [
             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-            DataColumn2(label: Text('Item Name'), size: ColumnSize.M),
+            DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
             DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
             DataColumn2(label: Text('Disposal Type'), size: ColumnSize.M),
             DataColumn2(label: Text('Receipt / Details'), size: ColumnSize.M),
@@ -1531,7 +1531,7 @@ class UnsoldReTenderDialog extends ConsumerWidget {
                     minWidth: 760,
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Item'), size: ColumnSize.L),
+                      DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
                       DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                       DataColumn2(
                           label: Center(child: Text('Times Tendered')),

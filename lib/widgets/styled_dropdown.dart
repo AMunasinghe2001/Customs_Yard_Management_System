@@ -189,6 +189,11 @@ class StyledDropdownFormField<T> extends StatelessWidget {
   /// shows through outside the drawn border. Defaults to the app-wide 12.
   final double splashRadius;
 
+  /// How [label] behaves. The default floats it above the box, which makes the
+  /// field TALLER than a plain [TextField] beside it — pass
+  /// [FloatingLabelBehavior.never] on a filter row so both line up.
+  final FloatingLabelBehavior? floatingLabelBehavior;
+
   const StyledDropdownFormField({
     super.key,
     required this.value,
@@ -207,6 +212,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
     this.valueStyle,
     this.labelStyle,
     this.splashRadius = 12,
+    this.floatingLabelBehavior,
   });
 
   String _selectedLabel() {
@@ -253,6 +259,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
               decoration: InputDecoration(
                 labelText: label,
                 labelStyle: labelStyle ?? const TextStyle(fontSize: 12),
+                floatingLabelBehavior: floatingLabelBehavior,
                 isDense: isDense,
                 helperText: helperText,
                 filled: fillColor != null,
@@ -263,7 +270,11 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 suffixIcon: Icon(Icons.arrow_drop_down_rounded,
                     color: context.colors.primaryGold, size: 24),
-                suffixIconConstraints: const BoxConstraints(minWidth: 32),
+                // maxHeight caps the 24px arrow so it cannot make the box
+                // taller than a plain TextField with the same contentPadding —
+                // without it a dropdown beside a search field sits lower.
+                suffixIconConstraints:
+                    const BoxConstraints(minWidth: 32, maxHeight: 24),
               ),
               child: Text(
                 _selectedLabel(),

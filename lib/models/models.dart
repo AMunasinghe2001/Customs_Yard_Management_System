@@ -1297,7 +1297,7 @@ class CommitteeMember {
       };
 }
 
-/// The committee the DG appoints for a package unsold >3 times. Usually five
+/// The committee the ADG appoints for a package unsold >3 times. Usually five
 /// officers, but the size is not fixed (the form allows 2-10).
 class TenderCommitteeModel {
   final String id;

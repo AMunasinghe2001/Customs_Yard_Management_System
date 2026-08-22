@@ -479,7 +479,7 @@ class _ValuationRequestCard extends ConsumerWidget {
                       message: 'No packages in this request'),
                   columns: const [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                     DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('HS Code'),
@@ -1206,7 +1206,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                           WidgetStateProperty.all(context.colors.surfaceDark),
                       columns: const [
                         DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                        DataColumn2(label: Text('Item'), size: ColumnSize.M),
+                        DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
                         DataColumn2(
                             label: Text('Consignee'), size: ColumnSize.M),
                         DataColumn2(

@@ -415,7 +415,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                           ),
                           columns: const [
                             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Item Name'), size: ColumnSize.L),
+                            DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
                             DataColumn2(label: Text('HS Code'), size: ColumnSize.S, fixedWidth: 110),
                             DataColumn2(label: Text('No. of Packages'), size: ColumnSize.S, fixedWidth: 100),
                             DataColumn2(label: Center(child: Text('Charge')), size: ColumnSize.M),

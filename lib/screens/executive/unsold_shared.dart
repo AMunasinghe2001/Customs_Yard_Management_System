@@ -103,7 +103,7 @@ const double kUnsoldTableMinWidth = 900;
 /// exhausted all four rounds, so a "4×" badge on every row says nothing.
 const List<DataColumn2> kUnsoldColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-  DataColumn2(label: Text('Item'), size: ColumnSize.L),
+  DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
   DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
@@ -166,11 +166,25 @@ List<DataCell> unsoldCells(
   ];
 }
 
-/// The High Panel's decision, read-only. Shown on the yard page, on Central
-/// Disposal's tab, and to the ADG.
+/// The DG's decision, read-only. Shown on the yard page, on Central Disposal's
+/// tab, and to the ADG.
 class UnsoldOutcomeChip extends StatelessWidget {
   final UnsoldProposalModel? proposal;
-  const UnsoldOutcomeChip({super.key, required this.proposal});
+
+  /// What to show while no outcome has been set. Defaults to naming the High
+  /// Panel, which is right for the yard and Central Disposal — but INSIDE the
+  /// High Panel portal that reads as telling them to wait for themselves, so
+  /// the ADG's view passes [kAwaitingDg] to name the officer instead.
+  final String pendingLabel;
+
+  const UnsoldOutcomeChip({
+    super.key,
+    required this.proposal,
+    this.pendingLabel = 'Awaiting High Panel',
+  });
+
+  /// Pending label for use inside the High Panel portal itself.
+  static const String kAwaitingDg = 'Awaiting DG decision';
 
   @override
   Widget build(BuildContext context) {
@@ -189,7 +203,7 @@ class UnsoldOutcomeChip extends StatelessWidget {
               size: 13, color: context.colors.warningAmber),
           const Gap(5),
           Flexible(
-            child: Text('Awaiting High Panel',
+            child: Text(pendingLabel,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
