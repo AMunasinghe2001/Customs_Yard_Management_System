@@ -53,3 +53,20 @@ Yard yardByCode(String? code) {
 
 String yardName(String? code) => yardByCode(code).name;
 String yardSrPrefix(String? code) => yardByCode(code).srPrefix;
+
+/// The yard an SR number belongs to, read from its prefix ("GL1/SR/01/2025").
+///
+/// Neither `packages` nor `warehouse_entries` expose a yard on their models,
+/// but every SR number is minted with its yard's prefix (see [yardSrPrefix]),
+/// so the number itself is the reliable source.
+///
+/// Returns null when the prefix matches no known yard, so a caller can tell
+/// "unknown" apart from a genuine match rather than silently defaulting.
+String? yardOfSrNumber(String? srNumber) {
+  final prefix = (srNumber ?? '').split('/').first.trim().toUpperCase();
+  if (prefix.isEmpty) return null;
+  for (final y in kYards) {
+    if (y.srPrefix.toUpperCase() == prefix) return y.code;
+  }
+  return null;
+}

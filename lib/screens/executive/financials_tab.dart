@@ -4,13 +4,21 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
+import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/table_pager.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
-import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
-import '../../widgets/styled_form_dialog.dart';
-import '../../widgets/styled_dropdown.dart';
+import '../../widgets/tooltip_text.dart';
+import 'executive_header.dart';
+
+/// The page's filters. Both the headline cards and the per-goods table read
+/// them, so narrowing to a yard narrows EVERY figure on the page, not just the
+/// table at the bottom — a yard's totals have to add up on their own.
+final _finSearchProvider = StateProvider<String>((ref) => '');
+final _finYardProvider = StateProvider<String?>((ref) => null); // null = all
+final _finPageProvider = StateProvider<int>((ref) => 0);
 
 final _money = NumberFormat('#,##0.00');
 String _lkr(double v) => 'LKR ${_money.format(v)}';
@@ -18,9 +26,17 @@ String _lkr(double v) => 'LKR ${_money.format(v)}';
 /// High Panel · Financials.
 ///
 /// INCOME is derived from records the system already holds — storage charges,
-/// destroying deposits, sale proceeds and the taxes on them. EXPENDITURE is
-/// entered by hand (destruction costs, advertising, refunds), because nothing
-/// else in the system records it.
+/// destroying deposits, sale proceeds and the taxes on them.
+///
+/// EXPENDITURE comes from Central Disposal, who record the destruction and
+/// advertising costs GOODS BY GOODS as they incur them. A refund is never
+/// entered: the destroying deposit is held against those costs, so whatever is
+/// left of it goes back —
+///
+///     refund = destroying deposit - (destruction + advertising)
+///
+/// Because every figure is attributed to a goods item, the whole ledger can be
+/// read item by item (see [_GoodsBreakdown]) as well as in total.
 ///
 /// The sale-proceeds distribution is shown SEPARATELY from the net balance:
 /// it does not add to or subtract from the balance, it says where the proceeds
@@ -31,139 +47,176 @@ class FinancialsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTheme.executiveTeal;
-    final async = ref.watch(financialSummaryProvider);
+    final rowsAsync = ref.watch(goodsFinancialsProvider);
     // The DC observes the High Panel but records nothing.
     final canEdit = !isExecutiveViewOnly(ref.watch(currentProfileProvider));
+    final q = ref.watch(_finSearchProvider).trim().toLowerCase();
+    final yardFilter = ref.watch(_finYardProvider);
 
-    return async.when(
+    return rowsAsync.when(
       loading: () => Center(child: CircularProgressIndicator(color: accent)),
       error: (e, _) => ErrorView(
-          error: e, onRetry: () => ref.refresh(financialSummaryProvider)),
-      data: (sum) => SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Text('Financials',
-                  style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700)),
-              const Gap(10),
-              Expanded(
-                child: Text(
-                    canEdit
-                        ? 'Income, expenditure and the distribution of sale proceeds'
-                        : 'Income, expenditure and the distribution of sale proceeds · view only',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: context.colors.textMuted, fontSize: 13)),
-              ),
-              if (canEdit)
-                FilledButton.icon(
-                  style: FilledButton.styleFrom(backgroundColor: accent),
-                  icon: const Icon(Icons.add_rounded, size: 18),
-                  label: const Text('Record Expense'),
-                  onPressed: () => showDialog(
-                    context: context,
-                    builder: (_) => const _AddExpenseDialog(),
+          error: e, onRetry: () => ref.refresh(goodsFinancialsProvider)),
+      data: (all) {
+        // Filter FIRST, then total — so every card on the page reports the
+        // same slice the table below it lists.
+        var filtered = all.where((r) => !r.isEmpty);
+        if (yardFilter != null) {
+          filtered = filtered.where((r) => r.yard == yardFilter);
+        }
+        if (q.isNotEmpty) {
+          filtered = filtered.where((r) =>
+              r.srNumber.toLowerCase().contains(q) ||
+              r.goodsName.toLowerCase().contains(q));
+        }
+        final rows = filtered.toList();
+        final sum = summariseGoods(rows);
+
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Title + subtitle · search · yard — the order every
+              // other High Panel tab uses.
+              Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('Financials',
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 22,
+                              fontWeight: FontWeight.w700)),
+                      const Gap(2),
+                      Text(
+                          canEdit
+                              ? 'Income, expenditure and the distribution of sale proceeds'
+                              : 'Income, expenditure and the distribution of sale proceeds \u00b7 view only',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 13)),
+                    ],
                   ),
                 ),
-            ]).animate().fadeIn(duration: 300.ms),
-            const Gap(20),
+                const Gap(16),
+                ExecutiveSearchField(
+                  hint: 'Search SR / goods\u2026',
+                  onChanged: (v) {
+                    ref.read(_finSearchProvider.notifier).state = v;
+                    ref.read(_finPageProvider.notifier).state = 0;
+                  },
+                ),
+                const Gap(12),
+                // Width only — NO fixed height; the dropdown takes its
+                // height from kExecutiveFilterPadding, like the search field.
+                SizedBox(
+                  width: 220,
+                  child: ExecutiveYardFilter(
+                    value: yardFilter,
+                    onChanged: (v) {
+                      ref.read(_finYardProvider.notifier).state = v;
+                      ref.read(_finPageProvider.notifier).state = 0;
+                    },
+                  ),
+                ),
+              ]).animate().fadeIn(duration: 300.ms),
+              const Gap(20),
 
-            // ── The three headline figures ──────────────────────────────
-            Row(children: [
-              Expanded(
-                child: _HeadlineCard(
-                  label: 'Total Income',
-                  value: sum.totalIncome,
-                  icon: Icons.trending_up_rounded,
+              // ── The three headline figures ──────────────────────────────
+              Row(children: [
+                Expanded(
+                  child: _HeadlineCard(
+                    label: 'Total Income',
+                    value: sum.totalIncome,
+                    icon: Icons.trending_up_rounded,
+                    colour: context.colors.successGreen,
+                  ),
+                ),
+                const Gap(14),
+                Expanded(
+                  child: _HeadlineCard(
+                    label: 'Total Expenditure',
+                    value: sum.totalExpenditure,
+                    icon: Icons.trending_down_rounded,
+                    colour: context.colors.dangerRed,
+                  ),
+                ),
+                const Gap(14),
+                Expanded(
+                  child: _HeadlineCard(
+                    label: 'Net Balance',
+                    value: sum.netBalance,
+                    icon: Icons.account_balance_rounded,
+                    colour: sum.netBalance >= 0
+                        ? context.colors.primaryGold
+                        : context.colors.dangerRed,
+                  ),
+                ),
+              ]).animate().fadeIn(duration: 350.ms).slideY(begin: 0.06),
+              const Gap(20),
+
+              // ── Income vs Expenditure, side by side ─────────────────────
+              LayoutBuilder(builder: (context, c) {
+                final stacked = c.maxWidth < 900;
+                final income = _LedgerCard(
+                  title: 'Income',
+                  icon: Icons.savings_rounded,
                   colour: context.colors.successGreen,
-                ),
-              ),
-              const Gap(14),
-              Expanded(
-                child: _HeadlineCard(
-                  label: 'Total Expenditure',
-                  value: sum.totalExpenditure,
-                  icon: Icons.trending_down_rounded,
+                  total: sum.totalIncome,
+                  lines: [
+                    ('SR Charges', sum.srCharges),
+                    ('Destroying Deposits', sum.destroyingDeposits),
+                    ('Sale Proceeds', sum.saleProceeds),
+                    ('Taxes', sum.taxes),
+                  ],
+                );
+                final expenditure = _LedgerCard(
+                  title: 'Expenditure',
+                  icon: Icons.payments_rounded,
                   colour: context.colors.dangerRed,
-                ),
-              ),
-              const Gap(14),
-              Expanded(
-                child: _HeadlineCard(
-                  label: 'Net Balance',
-                  value: sum.netBalance,
-                  icon: Icons.account_balance_rounded,
-                  colour: sum.netBalance >= 0
-                      ? context.colors.primaryGold
-                      : context.colors.dangerRed,
-                ),
-              ),
-            ]).animate().fadeIn(duration: 350.ms).slideY(begin: 0.06),
-            const Gap(20),
+                  total: sum.totalExpenditure,
+                  lines: [
+                    ('Destruction Expenses', sum.destructionExpenses),
+                    ('Advertising Expenses', sum.advertisingExpenses),
+                    ('Refunds (unspent deposits)', sum.refunds),
+                  ],
+                );
+                if (stacked) {
+                  return Column(children: [
+                    income,
+                    const Gap(14),
+                    expenditure,
+                  ]);
+                }
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: income),
+                    const Gap(14),
+                    Expanded(child: expenditure),
+                  ],
+                );
+              }).animate().fadeIn(duration: 400.ms).slideY(begin: 0.06),
+              const Gap(20),
 
-            // ── Income vs Expenditure, side by side ─────────────────────
-            LayoutBuilder(builder: (context, c) {
-              final stacked = c.maxWidth < 900;
-              final income = _LedgerCard(
-                title: 'Income',
-                icon: Icons.savings_rounded,
-                colour: context.colors.successGreen,
-                total: sum.totalIncome,
-                lines: [
-                  ('SR Charges', sum.srCharges),
-                  ('Destroying Deposits', sum.destroyingDeposits),
-                  ('Sale Proceeds', sum.saleProceeds),
-                  ('Taxes', sum.taxes),
-                ],
-              );
-              final expenditure = _LedgerCard(
-                title: 'Expenditure',
-                icon: Icons.payments_rounded,
-                colour: context.colors.dangerRed,
-                total: sum.totalExpenditure,
-                lines: [
-                  ('Destruction Expenses', sum.destructionExpenses),
-                  ('Advertising Expenses', sum.advertisingExpenses),
-                  ('Refunds', sum.refunds),
-                ],
-              );
-              if (stacked) {
-                return Column(children: [
-                  income,
-                  const Gap(14),
-                  expenditure,
-                ]);
-              }
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: income),
-                  const Gap(14),
-                  Expanded(child: expenditure),
-                ],
-              );
-            }).animate().fadeIn(duration: 400.ms).slideY(begin: 0.06),
-            const Gap(20),
+              _ProceedsSplitCard(split: sum.split)
+                  .animate()
+                  .fadeIn(duration: 450.ms)
+                  .slideY(begin: 0.06),
+              const Gap(20),
 
-            _ProceedsSplitCard(split: sum.split)
-                .animate()
-                .fadeIn(duration: 450.ms)
-                .slideY(begin: 0.06),
-            const Gap(20),
-
-            _ExpenseLedger(canEdit: canEdit)
-                .animate()
-                .fadeIn(duration: 500.ms)
-                .slideY(begin: 0.06),
-          ],
-        ),
-      ),
+              _GoodsBreakdown(rows: rows)
+                  .animate()
+                  .fadeIn(duration: 500.ms)
+                  .slideY(begin: 0.06),
+            ],
+          ),
+        );
+      },
     );
   }
 }
@@ -361,10 +414,9 @@ class _ProceedsSplitCard extends StatelessWidget {
               Icon(Icons.subdirectory_arrow_right_rounded,
                   size: 16, color: context.colors.textMuted),
               const Gap(6),
-              Text(
-                  'The Treasury\'s half splits again',
-                  style: TextStyle(
-                      color: context.colors.textMuted, fontSize: 12)),
+              Text('The Treasury\'s half splits again',
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 12)),
             ]),
           ),
 
@@ -446,15 +498,28 @@ class _SplitTile extends StatelessWidget {
   }
 }
 
-/// Every recorded outgoing, so a figure in the Expenditure card can be traced.
-class _ExpenseLedger extends ConsumerWidget {
-  final bool canEdit;
-  const _ExpenseLedger({required this.canEdit});
+/// The ledger read GOODS BY GOODS.
+///
+/// Costs are incurred item by item, so this is the shape the figures are
+/// actually kept in — the headline cards above are simply the sum of these
+/// rows. Central Disposal enters the destruction and advertising columns; the
+/// refund column is derived from what is left of each item's deposit.
+///
+/// Takes the rows already filtered by the page header, so the table and the
+/// cards above it always describe the same slice.
+class _GoodsBreakdown extends ConsumerWidget {
+  final List<GoodsFinancials> rows;
+  const _GoodsBreakdown({required this.rows});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(financialExpensesProvider);
-    final df = DateFormat('yyyy-MM-dd');
+    final page = ref.watch(_finPageProvider);
+
+    // A filter can leave the pager past the end of the list.
+    final maxPage = rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+    final safePage = page > maxPage ? maxPage : page;
+    final pageRows =
+        rows.skip(safePage * kClientPageSize).take(kClientPageSize).toList();
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -467,306 +532,127 @@ class _ExpenseLedger extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Icon(Icons.receipt_long_rounded,
-                size: 18, color: context.colors.dangerRed),
+            Icon(Icons.inventory_2_rounded,
+                size: 18, color: AppTheme.executiveTeal),
             const Gap(8),
-            Text('Recorded Expenses',
+            Text('Per Goods',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 15,
                     fontWeight: FontWeight.w700)),
+            const Gap(10),
+            Expanded(
+              child: Text(
+                  'Every figure above, item by item \u00b7 costs recorded by Central Disposal',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 12)),
+            ),
           ]),
           const Gap(14),
-          async.when(
-            loading: () => const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: Center(child: CircularProgressIndicator()),
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Center(
+                child: Text('Nothing recorded against these goods yet.',
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 13)),
+              ),
+            )
+          else ...[
+            SizedBox(
+              // Tall enough to read, short enough to leave the cards above
+              // visible; the table scrolls inside itself.
+              height: pageRows.length * 48.0 + 56,
+              child: _GoodsBreakdownTable(rows: pageRows),
             ),
-            error: (e, _) => Text('Could not load expenses: $e',
-                style: TextStyle(color: context.colors.dangerRed)),
-            data: (list) {
-              if (list.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 20),
-                  child: Center(
-                    child: Text(
-                        canEdit
-                            ? 'No expenses recorded yet — use Record Expense above.'
-                            : 'No expenses recorded yet.',
-                        style: TextStyle(
-                            color: context.colors.textMuted, fontSize: 13)),
-                  ),
-                );
-              }
-              return Column(
-                children: [
-                  for (final e in list)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Row(children: [
-                        _KindChip(kind: e.kind),
-                        const Gap(12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                  e.description?.trim().isNotEmpty == true
-                                      ? e.description!.trim()
-                                      : e.kindLabel,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.colors.textPrimary,
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600)),
-                              Text(
-                                  [
-                                    df.format(e.incurredOn),
-                                    if (e.srNumber != null) e.srNumber!,
-                                    if (e.yard != null) yardName(e.yard),
-                                  ].join('  ·  '),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.colors.textMuted,
-                                      fontSize: 11.5)),
-                            ],
-                          ),
-                        ),
-                        const Gap(12),
-                        Text(_lkr(e.amount),
-                            style: TextStyle(
-                                color: context.colors.dangerRed,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
-                        if (canEdit) ...[
-                          const Gap(6),
-                          IconButton(
-                            tooltip: 'Delete',
-                            icon: Icon(Icons.delete_outline_rounded,
-                                size: 18, color: context.colors.textMuted),
-                            onPressed: () async {
-                              await ref
-                                  .read(disposalServiceProvider)
-                                  .deleteFinancialExpense(e.id);
-                              ref
-                                  .read(financialExpensesRefreshProvider
-                                      .notifier)
-                                  .trigger();
-                            },
-                          ),
-                        ],
-                      ]),
-                    ),
-                ],
-              );
-            },
-          ),
+            TablePager(
+              total: rows.length,
+              page: safePage,
+              onPageChanged: (p) =>
+                  ref.read(_finPageProvider.notifier).state = p,
+            ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _KindChip extends StatelessWidget {
-  final String kind;
-  const _KindChip({required this.kind});
+class _GoodsBreakdownTable extends StatelessWidget {
+  final List<GoodsFinancials> rows;
+  const _GoodsBreakdownTable({required this.rows});
 
   @override
   Widget build(BuildContext context) {
-    final (label, colour) = switch (kind) {
-      'destruction_expense' => ('Destruction', context.colors.dangerRed),
-      'advertising_expense' => ('Advertising', context.colors.accentLightBlue),
-      _ => ('Refund', context.colors.warningAmber),
-    };
-    return Container(
-      width: 96,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: colour.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: colour.withOpacity(0.4)),
-      ),
-      child: Text(label,
-          style: TextStyle(
-              color: colour, fontSize: 11, fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
-/// Record one outgoing.
-class _AddExpenseDialog extends ConsumerStatefulWidget {
-  const _AddExpenseDialog();
-  @override
-  ConsumerState<_AddExpenseDialog> createState() => _AddExpenseDialogState();
-}
-
-class _AddExpenseDialogState extends ConsumerState<_AddExpenseDialog> {
-  final _formKey = GlobalKey<FormState>();
-  final _amountCtrl = TextEditingController();
-  final _descCtrl = TextEditingController();
-  final _srCtrl = TextEditingController();
-  String _kind = 'destruction_expense';
-  String? _yard;
-  DateTime _date = DateTime.now();
-  bool _saving = false;
-
-  @override
-  void dispose() {
-    _amountCtrl.dispose();
-    _descCtrl.dispose();
-    _srCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-    setState(() => _saving = true);
-    try {
-      await ref.read(disposalServiceProvider).addFinancialExpense(
-            kind: _kind,
-            amount: double.parse(_amountCtrl.text.trim()),
-            description: _descCtrl.text,
-            yard: _yard,
-            srNumber: _srCtrl.text,
-            incurredOn: _date,
-          );
-      ref.read(financialExpensesRefreshProvider.notifier).trigger();
-      if (!mounted) return;
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('${expenseKindLabel(_kind)} recorded'),
-          backgroundColor: context.colors.successGreen));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to save: $e'),
-          backgroundColor: context.colors.dangerRed));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = AppTheme.executiveTeal;
-    return StyledFormDialog(
-      label: 'Financials',
-      title: 'Record Expense',
-      headerAccentColor: accent,
-      icon: Icons.receipt_long_rounded,
-      width: 520,
-      child: Form(
-        key: _formKey,
-        child: StyledFormSection(
-          title: 'Expense Details',
-          icon: Icons.payments_rounded,
-          children: [
-            StyledDropdownFormField<String>(
-              label: 'Type *',
-              value: _kind,
-              helperText: null,
-              isDense: true,
-              menuWidth: 440,
-              options: [
-                for (final e in kExpenseKinds.entries)
-                  StyledDropdownOption(e.key, e.value),
-              ],
-              onChanged: (v) => setState(() => _kind = v ?? _kind),
-            ),
-            const Gap(14),
-            TextFormField(
-              controller: _amountCtrl,
-              decoration: const InputDecoration(
-                  isDense: true, labelText: 'Amount (LKR) *'),
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
-              ],
-              validator: (v) {
-                final t = (v ?? '').trim();
-                if (t.isEmpty) return 'Required';
-                final d = double.tryParse(t);
-                if (d == null) return 'Enter a number';
-                if (d < 0) return 'Cannot be negative';
-                return null;
-              },
-            ),
-            const Gap(14),
-            TextFormField(
-              controller: _descCtrl,
-              decoration: const InputDecoration(
-                  isDense: true, labelText: 'Description'),
-              maxLines: 2,
-            ),
-            const Gap(14),
-            Row(children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _srCtrl,
-                  decoration: const InputDecoration(
-                      isDense: true, labelText: 'SR Number (optional)'),
-                  textCapitalization: TextCapitalization.characters,
-                ),
-              ),
-              const Gap(12),
-              Expanded(
-                child: StyledDropdownFormField<String>(
-                  label: 'Yard (optional)',
-                  value: _yard ?? '_none',
-                  helperText: null,
-                  isDense: true,
-                  menuWidth: 220,
-                  options: [
-                    const StyledDropdownOption('_none', 'Not specified'),
-                    for (final y in kYards)
-                      StyledDropdownOption(y.code, y.name),
-                  ],
-                  onChanged: (v) => setState(
-                      () => _yard = (v == null || v == '_none') ? null : v),
-                ),
-              ),
-            ]),
-            const Gap(14),
-            InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _date,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now().add(const Duration(days: 1)),
-                );
-                if (picked != null) setState(() => _date = picked);
-              },
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                    isDense: true, labelText: 'Date incurred'),
-                child: Text(DateFormat('yyyy-MM-dd').format(_date),
-                    style: TextStyle(color: context.colors.textPrimary)),
-              ),
-            ),
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-            onPressed: _saving ? null : () => Navigator.pop(context),
-            child: const Text('Cancel')),
-        FilledButton(
-          onPressed: _saving ? null : _save,
-          style: FilledButton.styleFrom(backgroundColor: accent),
-          child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Text('Save Expense'),
-        ),
+    return DataTable2(
+      // Fits without sideways scrolling.
+      columnSpacing: 10,
+      horizontalMargin: 12,
+      headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+      columns: const [
+        DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+        DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+        DataColumn2(label: Text('Income'), size: ColumnSize.S, numeric: true),
+        DataColumn2(label: Text('Deposit'), size: ColumnSize.S, numeric: true),
+        DataColumn2(
+            label: Text('Destruction'), size: ColumnSize.S, numeric: true),
+        DataColumn2(
+            label: Text('Advertising'), size: ColumnSize.S, numeric: true),
+        DataColumn2(label: Text('Refund'), size: ColumnSize.S, numeric: true),
+        DataColumn2(label: Text('Net'), size: ColumnSize.S, numeric: true),
+      ],
+      rows: [
+        for (final r in rows)
+          DataRow(cells: [
+            DataCell(TooltipText(r.srNumber,
+                style: TextStyle(
+                    color: context.colors.accentLightBlue,
+                    fontWeight: FontWeight.w700))),
+            DataCell(TooltipText(r.goodsName)),
+            DataCell(Text(_money.format(r.totalIncome),
+                style: TextStyle(
+                    color: context.colors.successGreen,
+                    fontWeight: FontWeight.w600))),
+            DataCell(Text(_dash(r.destroyingDeposit),
+                style: TextStyle(color: context.colors.textPrimary))),
+            DataCell(Text(_dash(r.destructionExpense),
+                style: TextStyle(
+                    color: r.destructionExpense == 0
+                        ? context.colors.textMuted
+                        : context.colors.dangerRed))),
+            DataCell(Text(_dash(r.advertisingExpense),
+                style: TextStyle(
+                    color: r.advertisingExpense == 0
+                        ? context.colors.textMuted
+                        : context.colors.warningAmber))),
+            // Derived, never entered: the unspent part of this item's deposit.
+            // A shortfall shows as a negative instead.
+            DataCell(r.deficit > 0
+                ? Tooltip(
+                    message: 'Costs exceed the deposit by ${_lkr(r.deficit)}',
+                    child: Text('\u2212${_money.format(r.deficit)}',
+                        style: TextStyle(
+                            color: context.colors.dangerRed,
+                            fontWeight: FontWeight.w700)),
+                  )
+                : Text(_dash(r.refund),
+                    style: TextStyle(
+                        color: r.refund == 0
+                            ? context.colors.textMuted
+                            : context.colors.successGreen,
+                        fontWeight: FontWeight.w700))),
+            DataCell(Text(_money.format(r.netBalance),
+                style: TextStyle(
+                    color: r.netBalance >= 0
+                        ? context.colors.primaryGold
+                        : context.colors.dangerRed,
+                    fontWeight: FontWeight.w800))),
+          ]),
       ],
     );
   }
+
+  static String _dash(double v) => v == 0 ? '\u2014' : _money.format(v);
 }

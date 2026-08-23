@@ -973,8 +973,13 @@ class FinancialSummary {
   SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
 }
 
-/// Builds [FinancialSummary] from every source, cross-yard.
-final financialSummaryProvider = FutureProvider<FinancialSummary>((ref) async {
+/// The per-goods ledger: one [GoodsFinancials] row per goods item, cross-yard.
+///
+/// Everything the Financials tab shows is built from this. Costs are incurred
+/// goods by goods, so the headline totals are the SUM of these rows rather
+/// than a separate calculation — the two can never drift apart.
+final goodsFinancialsProvider =
+    FutureProvider<List<GoodsFinancials>>((ref) async {
   ref.watch(packagesChangeTriggerProvider);
   ref.watch(tenderSaleItemsChangeTriggerProvider);
   ref.watch(destructionsChangeTriggerProvider);
@@ -986,44 +991,128 @@ final financialSummaryProvider = FutureProvider<FinancialSummary>((ref) async {
   final expenses =
       await ref.read(disposalServiceProvider).getFinancialExpenses();
 
-  // ── Income ────────────────────────────────────────────────────────────────
-  double srCharges = 0;
-  double deposits = 0;
-  for (final p in packages) {
-    deposits += p.destroyingDeposit ?? 0;
-    for (final e in p.warehouseEntries) {
-      srCharges += e.calculatePackageCharge(p.items, rates);
-    }
-  }
-
-  double proceeds = 0;
-  double taxes = 0;
+  // ── Sale proceeds + taxes, per goods item ─────────────────────────────────
+  final proceedsByItem = <String, double>{};
+  final taxesByItem = <String, double>{};
+  // Sales whose forfeited row names no item still count towards the totals, so
+  // they are collected against the SR instead and shown as an unattributed row.
+  final proceedsBySr = <String, double>{};
+  final taxesBySr = <String, double>{};
   for (final sale in sales) {
     for (final it in sale.items) {
       if (!it.sold) continue;
-      proceeds += it.soldPrice;
+      double tax = 0;
       for (final t in it.appliedTaxes) {
-        if (t is Map) {
-          taxes += (t['amount'] as num?)?.toDouble() ?? 0;
-        }
+        if (t is Map) tax += (t['amount'] as num?)?.toDouble() ?? 0;
+      }
+      final itemId = it.forfeited?.itemId;
+      if (itemId != null && itemId.isNotEmpty) {
+        proceedsByItem[itemId] = (proceedsByItem[itemId] ?? 0) + it.soldPrice;
+        taxesByItem[itemId] = (taxesByItem[itemId] ?? 0) + tax;
+      } else {
+        final sr = it.forfeited?.srNumber ?? '';
+        proceedsBySr[sr] = (proceedsBySr[sr] ?? 0) + it.soldPrice;
+        taxesBySr[sr] = (taxesBySr[sr] ?? 0) + tax;
       }
     }
   }
 
-  // ── Expenditure ───────────────────────────────────────────────────────────
-  double destruction = 0, advertising = 0, refunds = 0;
+  // ── Recorded costs, per goods item ────────────────────────────────────────
+  final destructionByItem = <String, double>{};
+  final advertisingByItem = <String, double>{};
+  // Older rows predate per-item attribution; keep them in the totals by
+  // holding them against the SR.
+  final destructionBySr = <String, double>{};
+  final advertisingBySr = <String, double>{};
   for (final e in expenses) {
-    switch (e.kind) {
-      case 'destruction_expense':
-        destruction += e.amount;
-        break;
-      case 'advertising_expense':
-        advertising += e.amount;
-        break;
-      case 'refund':
-        refunds += e.amount;
-        break;
+    // A refund is derived from what is left of the deposit, never recorded.
+    if (e.kind == 'refund') continue;
+    final isDestruction = e.kind == 'destruction_expense';
+    final itemId = e.packageItemId;
+    if (itemId != null && itemId.isNotEmpty) {
+      final m = isDestruction ? destructionByItem : advertisingByItem;
+      m[itemId] = (m[itemId] ?? 0) + e.amount;
+    } else {
+      final sr = e.srNumber ?? '';
+      final m = isDestruction ? destructionBySr : advertisingBySr;
+      m[sr] = (m[sr] ?? 0) + e.amount;
     }
+  }
+
+  // ── One row per goods item ────────────────────────────────────────────────
+  final rows = <GoodsFinancials>[];
+  for (final p in packages) {
+    if (p.items.isEmpty) continue;
+
+    // Storage charges are billed per warehouse ENTRY. An entry that names an
+    // item bills that item; one that does not covers the whole package, so its
+    // charge is spread across the items by quantity.
+    final chargeByItem = <String, double>{};
+    double packageWideCharge = 0;
+    for (final e in p.warehouseEntries) {
+      final charge = e.calculatePackageCharge(p.items, rates);
+      if (charge == 0) continue;
+      final id = e.packageItemId;
+      if (id != null && id.isNotEmpty) {
+        chargeByItem[id] = (chargeByItem[id] ?? 0) + charge;
+      } else {
+        packageWideCharge += charge;
+      }
+    }
+
+    // The destroying deposit is a PACKAGE-level value (one per SR), so it is
+    // apportioned the same way.
+    final totalQty = p.items.fold<int>(0, (a, i) => a + i.quantity);
+    final deposit = p.destroyingDeposit ?? 0;
+
+    for (final item in p.items) {
+      final share = totalQty > 0 ? item.quantity / totalQty : 1 / p.items.length;
+      rows.add(GoodsFinancials(
+        itemId: item.id,
+        srNumber: p.srNumber,
+        goodsName: item.itemName,
+        // Neither the package nor its warehouse entries carry a yard on the
+        // model; the SR number's prefix is the reliable source.
+        yard: yardOfSrNumber(p.srNumber),
+        quantity: item.quantity,
+        srCharges: (chargeByItem[item.id] ?? 0) + packageWideCharge * share,
+        destroyingDeposit: deposit * share,
+        saleProceeds: (proceedsByItem[item.id] ?? 0) +
+            (proceedsBySr[p.srNumber] ?? 0) * share,
+        taxes: (taxesByItem[item.id] ?? 0) + (taxesBySr[p.srNumber] ?? 0) * share,
+        destructionExpense: (destructionByItem[item.id] ?? 0) +
+            (destructionBySr[p.srNumber] ?? 0) * share,
+        advertisingExpense: (advertisingByItem[item.id] ?? 0) +
+            (advertisingBySr[p.srNumber] ?? 0) * share,
+      ));
+    }
+  }
+
+  rows.sort((a, b) {
+    final c = a.srNumber.compareTo(b.srNumber);
+    return c != 0 ? c : a.goodsName.compareTo(b.goodsName);
+  });
+  return rows;
+});
+
+/// Totals a set of per-goods rows into a [FinancialSummary].
+///
+/// Takes the rows rather than reading them itself, so a filtered view (one
+/// yard, one search) can total the SAME slice it lists and have its cards
+/// agree with its table.
+FinancialSummary summariseGoods(Iterable<GoodsFinancials> rows) {
+  double srCharges = 0, deposits = 0, proceeds = 0, taxes = 0;
+  double destruction = 0, advertising = 0, refunds = 0;
+  for (final r in rows) {
+    srCharges += r.srCharges;
+    deposits += r.destroyingDeposit;
+    proceeds += r.saleProceeds;
+    taxes += r.taxes;
+    destruction += r.destructionExpense;
+    advertising += r.advertisingExpense;
+    // Derived per goods, then summed — a refund is the unspent remainder of
+    // THAT item's deposit, so it cannot be computed from the totals.
+    refunds += r.refund;
   }
 
   return FinancialSummary(
@@ -1035,7 +1124,11 @@ final financialSummaryProvider = FutureProvider<FinancialSummary>((ref) async {
     advertisingExpenses: advertising,
     refunds: refunds,
   );
-});
+}
+
+/// Builds [FinancialSummary] by summing the whole per-goods ledger, cross-yard.
+final financialSummaryProvider = FutureProvider<FinancialSummary>((ref) async =>
+    summariseGoods(await ref.watch(goodsFinancialsProvider.future)));
 
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   ref.watch(packagesChangeTriggerProvider);

@@ -852,6 +852,14 @@ const Map<String, String> kExpenseKinds = {
   'refund': 'Refunds',
 };
 
+/// The kinds Central Disposal actually RECORDS. A refund is not typed in — it
+/// is what is left of the goods' destroying deposit once these two are paid,
+/// so it is derived (see [GoodsFinancials.refund]) rather than entered.
+const Map<String, String> kRecordableExpenseKinds = {
+  'destruction_expense': 'Destruction Expenses',
+  'advertising_expense': 'Advertising Expenses',
+};
+
 String expenseKindLabel(String? k) => kExpenseKinds[k] ?? (k ?? '—');
 
 /// One recorded outgoing: a destruction cost, an advertising cost, or a refund.
@@ -862,6 +870,11 @@ class FinancialExpenseModel {
   final String? description;
   final String? yard;
   final String? srNumber;
+
+  /// The goods item this cost was incurred for. Costs are attributed item by
+  /// item — one SR can hold many goods, each destroyed and advertised on its
+  /// own — so the Financials tab can break the ledger down goods by goods.
+  final String? packageItemId;
   final DateTime incurredOn;
   final DateTime createdAt;
 
@@ -872,6 +885,7 @@ class FinancialExpenseModel {
     this.description,
     this.yard,
     this.srNumber,
+    this.packageItemId,
     required this.incurredOn,
     required this.createdAt,
   });
@@ -886,6 +900,7 @@ class FinancialExpenseModel {
         description: j['description'] as String?,
         yard: j['yard'] as String?,
         srNumber: j['sr_number'] as String?,
+        packageItemId: j['package_item_id']?.toString(),
         incurredOn: DateTime.tryParse(j['incurred_on']?.toString() ?? '') ??
             DateTime.now(),
         createdAt: DateTime.tryParse(j['created_at']?.toString() ?? '') ??
@@ -910,6 +925,72 @@ class SaleProceedsSplit {
 
   double get consolidatedFund => deputySecretaryTreasury * 0.60;
   double get compFund => deputySecretaryTreasury * 0.40;
+}
+
+/// One goods item's financial position — the Financials tab's per-goods row.
+///
+/// Costs are incurred goods by goods, so the whole ledger is built this way
+/// and the headline totals are simply the sum of these rows.
+///
+/// The REFUND is derived, never entered: the destroying deposit is money held
+/// against the cost of destroying the goods, so whatever is not spent on the
+/// destruction and its advertising goes back.
+///
+///     refund = destroyingDeposit - (destruction + advertising)
+///
+/// floored at zero — a deposit cannot refund more than it held. When the costs
+/// exceed the deposit the shortfall is reported by [deficit] instead.
+class GoodsFinancials {
+  final String itemId;
+  final String srNumber;
+  final String goodsName;
+  final String? yard;
+  final int quantity;
+
+  /// Income attributable to these goods.
+  final double srCharges;
+  final double destroyingDeposit;
+  final double saleProceeds;
+  final double taxes;
+
+  /// Costs Central Disposal recorded against these goods.
+  final double destructionExpense;
+  final double advertisingExpense;
+
+  const GoodsFinancials({
+    required this.itemId,
+    required this.srNumber,
+    required this.goodsName,
+    this.yard,
+    this.quantity = 0,
+    this.srCharges = 0,
+    this.destroyingDeposit = 0,
+    this.saleProceeds = 0,
+    this.taxes = 0,
+    this.destructionExpense = 0,
+    this.advertisingExpense = 0,
+  });
+
+  /// What the deposit was spent on.
+  double get depositSpent => destructionExpense + advertisingExpense;
+
+  /// Returned to the depositor: the unspent part of the deposit.
+  double get refund =>
+      (destroyingDeposit - depositSpent) > 0 ? destroyingDeposit - depositSpent : 0;
+
+  /// Costs beyond what the deposit covered. Zero when the deposit was enough.
+  double get deficit =>
+      (depositSpent - destroyingDeposit) > 0 ? depositSpent - destroyingDeposit : 0;
+
+  double get totalIncome =>
+      srCharges + destroyingDeposit + saleProceeds + taxes;
+
+  double get totalExpenditure => depositSpent + refund;
+
+  double get netBalance => totalIncome - totalExpenditure;
+
+  /// Whether anything at all was recorded for these goods.
+  bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
 }
 
 // ── Appeal window (shared by EVERY status) ───────────────────

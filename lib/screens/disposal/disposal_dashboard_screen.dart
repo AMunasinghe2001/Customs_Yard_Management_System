@@ -14,7 +14,9 @@ import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
+import 'disposal_shared.dart';
 import 'taxes_tab.dart';
+import 'expenses_tab.dart';
 import '../reports/reports_screen.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
@@ -50,7 +52,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 11,
+      length: 12,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -285,6 +287,13 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     Tab(
                         height: 44,
                         child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.payments_rounded, size: 18),
+                          Gap(8),
+                          Text('Expenses'),
+                        ])),
+                    Tab(
+                        height: 44,
+                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
                           Icon(Icons.assessment_rounded, size: 18),
                           Gap(8),
                           Text('Reports'),
@@ -305,6 +314,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 _UndestroyedReDestructionTab(),
                 _CommitteesTab(),
                 TaxesTab(),
+                ExpensesTab(),
                 ReportsScreen(disposalMode: true),
               ]),
             ),
@@ -316,88 +326,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
 }
 
 // ── Shared widgets ────────────────────────────────────────────────
-
-// Per-tab search query (keyed by tab name).
-final _disposalSearchProvider =
-    StateProvider.family<String, String>((ref, key) => '');
-
-// Per-tab yard filter (null = All Yards) for the cross-yard list tabs.
-final _disposalYardFilterProvider =
-    StateProvider.family<String?, String>((ref, key) => null);
-
-/// Styled search box shared by every Central Disposal tab.
-class _DisposalSearch extends ConsumerStatefulWidget {
-  final String tabKey;
-  final String hint;
-  final double width;
-  const _DisposalSearch(
-      {required this.tabKey, this.hint = 'Search…', this.width = 300});
-  @override
-  ConsumerState<_DisposalSearch> createState() => _DisposalSearchState();
-}
-
-class _DisposalSearchState extends ConsumerState<_DisposalSearch> {
-  late final TextEditingController _c;
-
-  @override
-  void initState() {
-    super.initState();
-    _c = TextEditingController(
-        text: ref.read(_disposalSearchProvider(widget.tabKey)));
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
-        borderRadius: BorderRadius.circular(14),
-        borderSide: BorderSide(color: c, width: w));
-    return SizedBox(
-      width: widget.width,
-      child: TextField(
-        controller: _c,
-        style: TextStyle(color: context.colors.textPrimary, fontSize: 13, fontWeight: FontWeight.w600),
-        onChanged: (v) {
-          ref.read(_disposalSearchProvider(widget.tabKey).notifier).state = v;
-          setState(() {});
-        },
-        decoration: InputDecoration(
-          isDense: true,
-          hintText: widget.hint,
-          hintStyle: TextStyle(color: context.colors.textSecondary, fontSize: 13),
-          prefixIcon: Icon(Icons.search_rounded,
-              size: 20, color: context.colors.primaryGold),
-          suffixIcon: _c.text.isEmpty
-              ? null
-              : IconButton(
-                  splashRadius: 16,
-                  icon: Icon(Icons.close_rounded,
-                      size: 16, color: context.colors.textMuted),
-                  onPressed: () {
-                    _c.clear();
-                    ref
-                        .read(_disposalSearchProvider(widget.tabKey).notifier)
-                        .state = '';
-                    setState(() {});
-                  },
-                ),
-          filled: true,
-          fillColor: context.colors.primaryGold.withOpacity(0.06),
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          border: border(context.colors.primaryGold.withOpacity(0.4)),
-          enabledBorder: border(context.colors.primaryGold.withOpacity(0.4)),
-          focusedBorder: border(context.colors.primaryGold, 1.5),
-        ),
-      ),
-    );
-  }
-
-  @override
-  void dispose() {
-    _c.dispose();
-    super.dispose();
-  }
-}
 
 /// Page index for the Unsold Packages tab's client-side pager.
 final _unsoldPageProvider = StateProvider<int>((ref) => 0);
@@ -421,9 +349,9 @@ class UnsoldProposalsTab extends ConsumerWidget {
     // the High Panel all show exactly the same packages.
     final async = ref.watch(exhaustedUnsoldProvider);
     final q =
-        ref.watch(_disposalSearchProvider('unsold-proposals')).toLowerCase();
+        ref.watch(disposalSearchProvider('unsold-proposals')).toLowerCase();
     final yardFilter =
-        ref.watch(_disposalYardFilterProvider('unsold-proposals'));
+        ref.watch(disposalYardFilterProvider('unsold-proposals'));
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
@@ -475,16 +403,16 @@ class UnsoldProposalsTab extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              const _DisposalSearch(
+              const DisposalSearch(
                 tabKey: 'unsold-proposals',
                 hint: 'Search SR / item / consignee...',
               ),
               const Gap(12),
-              _YardAllFilter(
+              YardAllFilter(
                 value: yardFilter,
                 onChanged: (v) {
                   ref
-                      .read(_disposalYardFilterProvider('unsold-proposals')
+                      .read(disposalYardFilterProvider('unsold-proposals')
                           .notifier)
                       .state = v;
                   ref.read(_unsoldPageProvider.notifier).state = 0;
@@ -496,7 +424,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
           // Count pill, same as the Sold Packages tab.
           Padding(
             padding: const EdgeInsets.only(bottom: 14),
-            child: _StatChip(
+            child: StatChip(
                 label:
                     'Unsold in ${yardFilter == null ? 'all yards' : yardName(yardFilter)}',
                 value: '${rows.length}',
@@ -590,52 +518,6 @@ class UnsoldProposalsTab extends ConsumerWidget {
 }
 
 
-/// Yard dropdown with an "All Yards" option, bound to a provided value/onChanged.
-/// Used by tabs that filter their own (cross-yard) list locally.
-class _YardAllFilter extends StatelessWidget {
-  final String? value; // null = all
-  final ValueChanged<String?> onChanged;
-  const _YardAllFilter({required this.value, required this.onChanged});
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 220,
-      child: Theme(
-        data: Theme.of(context).copyWith(
-          inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
-            filled: true,
-            fillColor: context.colors.primaryGold.withOpacity(0.06),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.colors.primaryGold, width: 1.5)),
-          ),
-        ),
-        child: StyledDropdownFormField<String>(
-          value: value ?? '_all',
-          label: 'Yard',
-          helperText: null,
-          isDense: true,
-          menuWidth: 220,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          prefixIcon:
-              Icon(Icons.warehouse_rounded, color: context.colors.primaryGold, size: 20),
-          options: [
-            const StyledDropdownOption('_all', 'All Yards'),
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
-          ],
-          onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
-        ),
-      ),
-    );
-  }
-}
-
 class _YardFilter extends ConsumerWidget {
   const _YardFilter();
   @override
@@ -697,36 +579,6 @@ class _StyledYardPicker extends StatelessWidget {
           onChanged: onChanged,
         ),
       ),
-    );
-  }
-}
-
-class _StatChip extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-  const _StatChip(
-      {required this.label, required this.value, required this.color});
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Text(value,
-            style: TextStyle(
-                color: color, fontSize: 18, fontWeight: FontWeight.w800)),
-        const Gap(8),
-        Text(label,
-            style: TextStyle(
-                color: context.colors.textSecondary,
-                fontSize: 12,
-                fontWeight: FontWeight.w600)),
-      ]),
     );
   }
 }
@@ -1009,10 +861,10 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'sold', hint: 'Search SR / item / sold by…'),
             const Gap(12),
-            _YardAllFilter(
+            YardAllFilter(
               value: yardFilter,
               onChanged: (v) {
                 ref.read(disposalSoldYardFilterProvider.notifier).state = v;
@@ -1040,7 +892,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                   onRetry: () => ref.refresh(disposalSoldPackagesProvider)),
               data: (packages) {
                 final q =
-                    ref.watch(_disposalSearchProvider('sold')).toLowerCase();
+                    ref.watch(disposalSearchProvider('sold')).toLowerCase();
                 var rows = _rows(packages);
                 if (q.isNotEmpty) {
                   rows = rows
@@ -1067,7 +919,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 14),
-                      child: _StatChip(
+                      child: StatChip(
                           label: 'Sold in $yardLabel',
                           value: '$total',
                           color: green),
@@ -1297,10 +1149,10 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'destroyed', hint: 'Search SR / item / by…'),
             const Gap(12),
-            _YardAllFilter(
+            YardAllFilter(
               value: yardFilter,
               onChanged: (v) {
                 ref.read(disposalDestroyedYardFilterProvider.notifier).state =
@@ -1329,7 +1181,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                       ref.refresh(disposalDestroyedPackagesProvider)),
               data: (packages) {
                 final q = ref
-                    .watch(_disposalSearchProvider('destroyed'))
+                    .watch(disposalSearchProvider('destroyed'))
                     .toLowerCase();
                 var rows = _rows(packages);
                 if (q.isNotEmpty) {
@@ -1355,7 +1207,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                   children: [
                     Padding(
                       padding: const EdgeInsets.only(bottom: 14),
-                      child: _StatChip(
+                      child: StatChip(
                           label: 'Destroyed in $yardLabel',
                           value: '$total',
                           color: green),
@@ -1818,10 +1670,10 @@ class _DisposalRequestsTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'requests', hint: 'Search SR / consignee…'),
             const Gap(12),
-            _YardAllFilter(
+            YardAllFilter(
               value: yardFilter,
               onChanged: (v) =>
                   ref.read(_requestYardFilterProvider.notifier).state = v,
@@ -1838,7 +1690,7 @@ class _DisposalRequestsTab extends ConsumerWidget {
                   onRetry: () => ref.refresh(disposalRequestsProvider)),
               data: (list) {
                 final q = ref
-                    .watch(_disposalSearchProvider('requests'))
+                    .watch(disposalSearchProvider('requests'))
                     .toLowerCase();
                 var filtered = yardFilter == null
                     ? list
@@ -2279,13 +2131,13 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'unsold', hint: 'Search SR / item / consignee…'),
             const Gap(12),
-            _YardAllFilter(
-              value: ref.watch(_disposalYardFilterProvider('unsold')),
+            YardAllFilter(
+              value: ref.watch(disposalYardFilterProvider('unsold')),
               onChanged: (v) => ref
-                  .read(_disposalYardFilterProvider('unsold').notifier)
+                  .read(disposalYardFilterProvider('unsold').notifier)
                   .state = v,
             ),
             const Gap(12),
@@ -2314,7 +2166,7 @@ class _UnsoldReTenderTab extends ConsumerWidget {
           async.maybeWhen(
             data: (list) => Padding(
               padding: const EdgeInsets.only(bottom: 14),
-              child: _StatChip(
+              child: StatChip(
                   label: 'Unsold — re-tenderable',
                   // Counts the SAME rows the table shows — exhausted packages
                   // are excluded there, so they must not be counted here.
@@ -2337,8 +2189,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     .where((info) => !exhausted.contains(info.forfeited.id))
                     .toList();
                 final q =
-                    ref.watch(_disposalSearchProvider('unsold')).toLowerCase();
-                final yf = ref.watch(_disposalYardFilterProvider('unsold'));
+                    ref.watch(disposalSearchProvider('unsold')).toLowerCase();
+                final yf = ref.watch(disposalYardFilterProvider('unsold'));
                 if (yf != null) {
                   list =
                       list.where((info) => info.forfeited.yard == yf).toList();
@@ -2510,13 +2362,13 @@ class _TenderSalesTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'tendersales', hint: 'Search sale no / SR…'),
             const Gap(12),
-            _YardAllFilter(
-              value: ref.watch(_disposalYardFilterProvider('tendersales')),
+            YardAllFilter(
+              value: ref.watch(disposalYardFilterProvider('tendersales')),
               onChanged: (v) => ref
-                  .read(_disposalYardFilterProvider('tendersales').notifier)
+                  .read(disposalYardFilterProvider('tendersales').notifier)
                   .state = v,
             ),
             const Gap(12),
@@ -2541,7 +2393,7 @@ class _TenderSalesTab extends ConsumerWidget {
                   error: e, onRetry: () => ref.refresh(tenderSalesProvider)),
               data: (list) {
                 final q = ref
-                    .watch(_disposalSearchProvider('tendersales'))
+                    .watch(disposalSearchProvider('tendersales'))
                     .toLowerCase();
                 // Hide sales with no actionable rows left: every item sold
                 // (fully consumed), OR the sell window has closed (un-sold items
@@ -2554,7 +2406,7 @@ class _TenderSalesTab extends ConsumerWidget {
                   return !windowClosed;
                 }).toList();
                 final yf =
-                    ref.watch(_disposalYardFilterProvider('tendersales'));
+                    ref.watch(disposalYardFilterProvider('tendersales'));
                 if (yf != null) {
                   visible = visible.where((s) => s.yard == yf).toList();
                 }
@@ -3891,10 +3743,10 @@ class _CommitteesTab extends ConsumerWidget {
                       TextStyle(color: context.colors.textMuted, fontSize: 13)),
             ),
             const Gap(12),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'committees', hint: 'Search SR / item / consignee…'),
             const Gap(12),
-            _YardAllFilter(
+            YardAllFilter(
               value: ref.watch(_committeesYardProvider),
               onChanged: (v) =>
                   ref.read(_committeesYardProvider.notifier).state = v,
@@ -3921,7 +3773,7 @@ class _CommitteesTab extends ConsumerWidget {
                 if (yf != null) {
                   rows = rows.where((i) => i.forfeited.yard == yf).toList();
                 }
-                final qq = ref.watch(_disposalSearchProvider('committees')).toLowerCase();
+                final qq = ref.watch(disposalSearchProvider('committees')).toLowerCase();
                 if (qq.isNotEmpty) {
                   rows = rows.where((info) {
                     final f = info.forfeited;
@@ -5168,13 +5020,13 @@ class _DestructionsTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'destructions', hint: 'Search sale no / SR…'),
             const Gap(12),
-            _YardAllFilter(
-              value: ref.watch(_disposalYardFilterProvider('destructions')),
+            YardAllFilter(
+              value: ref.watch(disposalYardFilterProvider('destructions')),
               onChanged: (v) => ref
-                  .read(_disposalYardFilterProvider('destructions').notifier)
+                  .read(disposalYardFilterProvider('destructions').notifier)
                   .state = v,
             ),
             const Gap(12),
@@ -5199,10 +5051,10 @@ class _DestructionsTab extends ConsumerWidget {
                   error: e, onRetry: () => ref.refresh(destructionsProvider)),
               data: (list) {
                 final q = ref
-                    .watch(_disposalSearchProvider('destructions'))
+                    .watch(disposalSearchProvider('destructions'))
                     .toLowerCase();
                 final yf =
-                    ref.watch(_disposalYardFilterProvider('destructions'));
+                    ref.watch(disposalYardFilterProvider('destructions'));
                 // Hide sales with no actionable rows left: every item destroyed
                 // (fully consumed), OR the destroy window has closed (the
                 // un-destroyed items have dropped to the Undestroyed pool).
@@ -6458,13 +6310,13 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     fontSize: 22,
                     fontWeight: FontWeight.w700)),
             const Spacer(),
-            const _DisposalSearch(
+            const DisposalSearch(
                 tabKey: 'undestroyed', hint: 'Search SR / item / consignee…'),
             const Gap(12),
-            _YardAllFilter(
-              value: ref.watch(_disposalYardFilterProvider('undestroyed')),
+            YardAllFilter(
+              value: ref.watch(disposalYardFilterProvider('undestroyed')),
               onChanged: (v) => ref
-                  .read(_disposalYardFilterProvider('undestroyed').notifier)
+                  .read(disposalYardFilterProvider('undestroyed').notifier)
                   .state = v,
             ),
             const Gap(12),
@@ -6493,7 +6345,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
           async.maybeWhen(
             data: (list) => Padding(
               padding: const EdgeInsets.only(bottom: 14),
-              child: _StatChip(
+              child: StatChip(
                   label: 'Undestroyed — re-destructionable',
                   value: '${list.length}',
                   color: amber),
@@ -6510,10 +6362,10 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                   onRetry: () => ref.refresh(undestroyedDestructionsProvider)),
               data: (list) {
                 final q = ref
-                    .watch(_disposalSearchProvider('undestroyed'))
+                    .watch(disposalSearchProvider('undestroyed'))
                     .toLowerCase();
                 final yf =
-                    ref.watch(_disposalYardFilterProvider('undestroyed'));
+                    ref.watch(disposalYardFilterProvider('undestroyed'));
                 if (yf != null) {
                   list =
                       list.where((info) => info.forfeited.yard == yf).toList();

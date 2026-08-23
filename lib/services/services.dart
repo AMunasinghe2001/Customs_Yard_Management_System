@@ -3438,30 +3438,45 @@ class DisposalService {
         .toList();
   }
 
-  /// Record one outgoing. [kind] is a key of `kExpenseKinds`.
+  /// Record one outgoing against a GOODS ITEM. [kind] is a key of
+  /// `kRecordableExpenseKinds` — a refund is never recorded, it is derived
+  /// from what is left of the item's destroying deposit.
+  ///
+  /// Re-posting the same kind for the same item OVERWRITES it rather than
+  /// adding a second row: a unique index enforces one destruction cost and one
+  /// advertising cost per item, so a correction should replace the figure
+  /// instead of double-counting it against the deposit.
   Future<void> addFinancialExpense({
     required String kind,
     required double amount,
     String? description,
     String? yard,
     String? srNumber,
+    String? packageItemId,
     DateTime? incurredOn,
   }) async {
     final d = incurredOn ?? DateTime.now();
-    await AuthService._withNetworkRetry(
-        () => supabase.from('financial_expenses').insert({
-              'kind': kind,
-              'amount': amount,
-              if (description != null && description.trim().isNotEmpty)
-                'description': description.trim(),
-              if (yard != null) 'yard': yard,
-              if (srNumber != null && srNumber.trim().isNotEmpty)
-                'sr_number': srNumber.trim(),
-              'incurred_on':
-                  '${d.year}-${d.month.toString().padLeft(2, '0')}-'
-                      '${d.day.toString().padLeft(2, '0')}',
-              'created_by': supabase.auth.currentUser?.id,
-            }));
+    final row = {
+      'kind': kind,
+      'amount': amount,
+      'description': (description != null && description.trim().isNotEmpty)
+          ? description.trim()
+          : null,
+      if (yard != null) 'yard': yard,
+      if (srNumber != null && srNumber.trim().isNotEmpty)
+        'sr_number': srNumber.trim(),
+      if (packageItemId != null) 'package_item_id': packageItemId,
+      'incurred_on': '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+          '${d.day.toString().padLeft(2, '0')}',
+      'created_by': supabase.auth.currentUser?.id,
+    };
+
+    await AuthService._withNetworkRetry(() => packageItemId == null
+        ? supabase.from('financial_expenses').insert(row)
+        // Matches financial_expenses_item_kind_uniq.
+        : supabase
+            .from('financial_expenses')
+            .upsert(row, onConflict: 'package_item_id,kind'));
   }
 
   Future<void> deleteFinancialExpense(String id) async {

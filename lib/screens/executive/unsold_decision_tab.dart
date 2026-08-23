@@ -11,9 +11,9 @@ import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
-import '../../widgets/styled_dropdown.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/package_details_dialog.dart';
+import 'executive_header.dart';
 import 'unsold_shared.dart';
 
 /// True when the signed-in High Panel officer is the DG — the only post that
@@ -26,14 +26,6 @@ final _uYardProvider = StateProvider<String?>((ref) => null); // null = all
 /// null = all · false = still undecided · true = decided
 final _uDecidedProvider = StateProvider<bool?>((ref) => null);
 final _uPageProvider = StateProvider<int>((ref) => 0);
-
-/// Shared content padding for the header's search field and yard dropdown.
-/// BOTH controls derive their height from this, so they render at exactly the
-/// same size and sit on one line. Do not set an explicit height on either —
-/// the dropdown's InkWell fills whatever box it is given and its hover splash
-/// would spill past the drawn border.
-const EdgeInsets _kFilterPadding =
-    EdgeInsets.symmetric(horizontal: 12, vertical: 14);
 
 /// High Panel tab: packages that have exhausted EVERY avenue — the Valuation
 /// Tender plus Tender 1-3 all failed, a committee re-valued them, the ADG
@@ -69,7 +61,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
         children: [
           // Search field and yard dropdown sit on ONE line: the dropdown's
           // label never floats (a floating label draws above the box) and both
-          // take their height from the same _kFilterPadding.
+          // take their height from the same kExecutiveFilterPadding.
           Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             Expanded(
               child: Column(
@@ -94,39 +86,12 @@ class UnsoldDecisionTab extends ConsumerWidget {
               ),
             ),
             const Gap(16),
-            SizedBox(
-              width: 300,
-              child: TextField(
-                onChanged: (v) {
-                  ref.read(_uSearchProvider.notifier).state = v;
-                  ref.read(_uPageProvider.notifier).state = 0;
-                },
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  isDense: true,
-                  // IDENTICAL padding to the yard dropdown beside it — both
-                  // controls take their height from this, so any difference
-                  // here puts them on two different levels.
-                  contentPadding: _kFilterPadding,
-                  hintText: 'Search SR / item / consignee…',
-                  prefixIcon:
-                      Icon(Icons.search_rounded, size: 20, color: accent),
-                  filled: true,
-                  fillColor: accent.withOpacity(0.06),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent, width: 1.5)),
-                ),
-              ),
+            ExecutiveSearchField(
+              hint: 'Search SR / item / consignee…',
+              onChanged: (v) {
+                ref.read(_uSearchProvider.notifier).state = v;
+                ref.read(_uPageProvider.notifier).state = 0;
+              },
             ),
             const Gap(12),
             // Width only — NO fixed height. The dropdown's InkWell fills
@@ -135,7 +100,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
             // Its contentPadding already matches the search field.
             SizedBox(
               width: 220,
-              child: _UYardFilter(
+              child: ExecutiveYardFilter(
                 value: yardFilter,
                 onChanged: (v) {
                   ref.read(_uYardProvider.notifier).state = v;
@@ -146,33 +111,29 @@ class UnsoldDecisionTab extends ConsumerWidget {
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(12),
           Row(children: [
-            _filterChip(context,
-                label: 'All',
-                selected: decidedFilter == null,
-                onTap: () {
-                  ref.read(_uDecidedProvider.notifier).state = null;
-                  ref.read(_uPageProvider.notifier).state = 0;
-                }),
+            executiveFilterChip(context,
+                label: 'All', selected: decidedFilter == null, onTap: () {
+              ref.read(_uDecidedProvider.notifier).state = null;
+              ref.read(_uPageProvider.notifier).state = 0;
+            }),
             const Gap(8),
-            _filterChip(context,
+            executiveFilterChip(context,
                 label: 'Pending decision',
                 icon: Icons.hourglass_bottom_rounded,
                 colour: context.colors.warningAmber,
-                selected: decidedFilter == false,
-                onTap: () {
-                  ref.read(_uDecidedProvider.notifier).state = false;
-                  ref.read(_uPageProvider.notifier).state = 0;
-                }),
+                selected: decidedFilter == false, onTap: () {
+              ref.read(_uDecidedProvider.notifier).state = false;
+              ref.read(_uPageProvider.notifier).state = 0;
+            }),
             const Gap(8),
-            _filterChip(context,
+            executiveFilterChip(context,
                 label: 'Decided',
                 icon: Icons.check_circle_rounded,
                 colour: context.colors.successGreen,
-                selected: decidedFilter == true,
-                onTap: () {
-                  ref.read(_uDecidedProvider.notifier).state = true;
-                  ref.read(_uPageProvider.notifier).state = 0;
-                }),
+                selected: decidedFilter == true, onTap: () {
+              ref.read(_uDecidedProvider.notifier).state = true;
+              ref.read(_uPageProvider.notifier).state = 0;
+            }),
           ]),
           const Gap(14),
           Expanded(
@@ -223,8 +184,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
                         decoration: BoxDecoration(
                           color: context.colors.cardDark,
                           borderRadius: BorderRadius.circular(14),
-                          border:
-                              Border.all(color: context.colors.borderColor),
+                          border: Border.all(color: context.colors.borderColor),
                         ),
                         child: ClipRRect(
                           borderRadius: BorderRadius.circular(14),
@@ -296,47 +256,6 @@ class UnsoldDecisionTab extends ConsumerWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-
-  Widget _filterChip(
-    BuildContext context, {
-    required String label,
-    required bool selected,
-    required VoidCallback onTap,
-    IconData? icon,
-    Color? colour,
-  }) {
-    final c = colour ?? AppTheme.executiveTeal;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-          decoration: BoxDecoration(
-            color: selected ? c.withOpacity(0.14) : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-                color:
-                    selected ? c.withOpacity(0.6) : context.colors.borderColor,
-                width: selected ? 1.4 : 1),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (icon != null) ...[
-              Icon(icon,
-                  size: 14, color: selected ? c : context.colors.textMuted),
-              const Gap(6),
-            ],
-            Text(label,
-                style: TextStyle(
-                    color: selected ? c : context.colors.textSecondary,
-                    fontSize: 12.5,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600)),
-          ]),
-        ),
       ),
     );
   }
@@ -562,8 +481,9 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color:
-                selected ? st.colour.withOpacity(0.12) : context.colors.cardDark,
+            color: selected
+                ? st.colour.withOpacity(0.12)
+                : context.colors.cardDark,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
                 color: selected
@@ -600,57 +520,3 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
 /// renders above the box and makes the control taller than a plain TextField,
 /// which is what left the two controls on two different levels. The caption is
 /// drawn as a prefix inside the box instead.
-class _UYardFilter extends StatelessWidget {
-  final String? value;
-  final ValueChanged<String?> onChanged;
-  const _UYardFilter({required this.value, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    final accent = AppTheme.executiveTeal;
-    // Width comes from the caller; the height comes from contentPadding, so
-    // the tap target matches the drawn field exactly and the hover splash
-    // stays inside the border.
-    return Theme(
-        data: Theme.of(context).copyWith(
-          inputDecorationTheme:
-              Theme.of(context).inputDecorationTheme.copyWith(
-                    filled: true,
-                    fillColor: accent.withOpacity(0.06),
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide:
-                            BorderSide(color: accent.withOpacity(0.4))),
-                    enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide:
-                            BorderSide(color: accent.withOpacity(0.4))),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: accent, width: 1.5)),
-                  ),
-        ),
-        child: StyledDropdownFormField<String>(
-          label: 'Yard',
-          // Keeps the box the same height as the search field beside it.
-          floatingLabelBehavior: FloatingLabelBehavior.never,
-          value: value ?? '_all',
-          helperText: null,
-          isDense: true,
-          menuWidth: 220,
-          // Same radius as the OutlineInputBorder above, so the hover splash
-          // stays inside the drawn border instead of showing at the corners.
-          splashRadius: 14,
-          // MUST match the search field's padding exactly — this is what sets
-          // the height, and a 2px difference here is what put the two controls
-          // on different levels.
-          contentPadding: _kFilterPadding,
-          prefixIcon: Icon(Icons.warehouse_rounded, color: accent, size: 20),
-          options: [
-            const StyledDropdownOption('_all', 'All Yards'),
-            ...kYards.map((y) => StyledDropdownOption(y.code, y.name)),
-          ],
-          onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
-        ));
-  }
-}
