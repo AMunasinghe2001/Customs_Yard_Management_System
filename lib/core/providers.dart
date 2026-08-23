@@ -917,6 +917,126 @@ final dashboardStatsProvider = FutureProvider<Map<String, dynamic>>((ref) async 
   return await ref.read(packageServiceProvider).getDashboardStats();
 });
 
+// ── Financials (High Panel) ──────────────────────────────────────────────────
+
+/// Hand-entered outgoings: destruction costs, advertising costs, refunds.
+final financialExpensesProvider =
+    FutureProvider<List<FinancialExpenseModel>>((ref) async {
+  ref.watch(financialExpensesRefreshProvider);
+  return ref.read(disposalServiceProvider).getFinancialExpenses();
+});
+
+final financialExpensesRefreshProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+
+/// Every figure the Financials tab shows, computed in one place.
+///
+/// INCOME is derived from records the system already holds:
+///   SR (storage) charges  — accrued on every warehouse entry
+///   Destroying deposits   — packages.destroying_deposit, one per SR
+///   Sale proceeds         — tender_sale_items.sold_price
+///   Taxes                 — the applied_taxes attached to those sales
+///
+/// EXPENSES are the hand-entered rows above.
+///
+/// The sale-proceeds split is NOT part of income/expenditure — it says where
+/// the proceeds go afterwards, so it is reported separately.
+class FinancialSummary {
+  final double srCharges;
+  final double destroyingDeposits;
+  final double saleProceeds;
+  final double taxes;
+
+  final double destructionExpenses;
+  final double advertisingExpenses;
+  final double refunds;
+
+  const FinancialSummary({
+    this.srCharges = 0,
+    this.destroyingDeposits = 0,
+    this.saleProceeds = 0,
+    this.taxes = 0,
+    this.destructionExpenses = 0,
+    this.advertisingExpenses = 0,
+    this.refunds = 0,
+  });
+
+  double get totalIncome =>
+      srCharges + destroyingDeposits + saleProceeds + taxes;
+
+  double get totalExpenditure =>
+      destructionExpenses + advertisingExpenses + refunds;
+
+  double get netBalance => totalIncome - totalExpenditure;
+
+  /// Where the sale proceeds are distributed. Independent of the net balance.
+  SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
+}
+
+/// Builds [FinancialSummary] from every source, cross-yard.
+final financialSummaryProvider = FutureProvider<FinancialSummary>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
+  ref.watch(financialExpensesRefreshProvider);
+
+  final packages = await ref.read(packageServiceProvider).getAllPackages();
+  final rates = await ref.watch(storageRateProvider.future);
+  final sales = await ref.read(disposalServiceProvider).getTenderSales();
+  final expenses =
+      await ref.read(disposalServiceProvider).getFinancialExpenses();
+
+  // ── Income ────────────────────────────────────────────────────────────────
+  double srCharges = 0;
+  double deposits = 0;
+  for (final p in packages) {
+    deposits += p.destroyingDeposit ?? 0;
+    for (final e in p.warehouseEntries) {
+      srCharges += e.calculatePackageCharge(p.items, rates);
+    }
+  }
+
+  double proceeds = 0;
+  double taxes = 0;
+  for (final sale in sales) {
+    for (final it in sale.items) {
+      if (!it.sold) continue;
+      proceeds += it.soldPrice;
+      for (final t in it.appliedTaxes) {
+        if (t is Map) {
+          taxes += (t['amount'] as num?)?.toDouble() ?? 0;
+        }
+      }
+    }
+  }
+
+  // ── Expenditure ───────────────────────────────────────────────────────────
+  double destruction = 0, advertising = 0, refunds = 0;
+  for (final e in expenses) {
+    switch (e.kind) {
+      case 'destruction_expense':
+        destruction += e.amount;
+        break;
+      case 'advertising_expense':
+        advertising += e.amount;
+        break;
+      case 'refund':
+        refunds += e.amount;
+        break;
+    }
+  }
+
+  return FinancialSummary(
+    srCharges: srCharges,
+    destroyingDeposits: deposits,
+    saleProceeds: proceeds,
+    taxes: taxes,
+    destructionExpenses: destruction,
+    advertisingExpenses: advertising,
+    refunds: refunds,
+  );
+});
+
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   ref.watch(packagesChangeTriggerProvider);
   ref.watch(warehouseEntriesChangeTriggerProvider); // also refresh on WH actions

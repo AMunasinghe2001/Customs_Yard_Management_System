@@ -842,6 +842,76 @@ class AuditLogModel {
   }
 }
 
+// ── Financials (High Panel) ──────────────────────────────────
+
+/// The three hand-entered outgoings. Income is derived from records the
+/// system already holds; these are not, so they are typed in.
+const Map<String, String> kExpenseKinds = {
+  'destruction_expense': 'Destruction Expenses',
+  'advertising_expense': 'Advertising Expenses',
+  'refund': 'Refunds',
+};
+
+String expenseKindLabel(String? k) => kExpenseKinds[k] ?? (k ?? '—');
+
+/// One recorded outgoing: a destruction cost, an advertising cost, or a refund.
+class FinancialExpenseModel {
+  final String id;
+  final String kind;
+  final double amount;
+  final String? description;
+  final String? yard;
+  final String? srNumber;
+  final DateTime incurredOn;
+  final DateTime createdAt;
+
+  const FinancialExpenseModel({
+    required this.id,
+    required this.kind,
+    required this.amount,
+    this.description,
+    this.yard,
+    this.srNumber,
+    required this.incurredOn,
+    required this.createdAt,
+  });
+
+  String get kindLabel => expenseKindLabel(kind);
+
+  factory FinancialExpenseModel.fromJson(Map<String, dynamic> j) =>
+      FinancialExpenseModel(
+        id: j['id'].toString(),
+        kind: (j['kind'] ?? '').toString(),
+        amount: (j['amount'] as num?)?.toDouble() ?? 0,
+        description: j['description'] as String?,
+        yard: j['yard'] as String?,
+        srNumber: j['sr_number'] as String?,
+        incurredOn: DateTime.tryParse(j['incurred_on']?.toString() ?? '') ??
+            DateTime.now(),
+        createdAt: DateTime.tryParse(j['created_at']?.toString() ?? '') ??
+            DateTime.now(),
+      );
+}
+
+/// How sale proceeds are split, as a share of the SALE PROCEEDS total.
+///
+///   Reward Fund                       50%
+///   Deputy Secretary of the Treasury  50%, and that half splits again:
+///       Consolidated Fund   60% of it  (= 30% overall)
+///       Comp Fund           40% of it  (= 20% overall)
+class SaleProceedsSplit {
+  final double proceeds;
+  const SaleProceedsSplit(this.proceeds);
+
+  double get rewardFund => proceeds * 0.50;
+
+  /// The Treasury's half, before its own 60/40 split.
+  double get deputySecretaryTreasury => proceeds * 0.50;
+
+  double get consolidatedFund => deputySecretaryTreasury * 0.60;
+  double get compFund => deputySecretaryTreasury * 0.40;
+}
+
 // ── Appeal window (shared by EVERY status) ───────────────────
 //
 // The 30-day appeal window is NOT a forfeit-only rule: a Detain, Abandoned or

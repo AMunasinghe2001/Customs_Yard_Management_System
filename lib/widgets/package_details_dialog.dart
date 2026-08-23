@@ -179,8 +179,11 @@ class TenderHistorySection extends ConsumerWidget {
     // records that as a tender_revaluations row, but a package valued through
     // the UI may not have one yet — so fall back to the committee itself,
     // otherwise the round would vanish from this list.
-    final committee =
-        ref.watch(tenderCommitteesProvider).valueOrNull?[forfeited.id];
+    final committeeAsync = ref.watch(tenderCommitteesProvider);
+    final committee = committeeAsync.valueOrNull?[forfeited.id];
+    // Members only exist once the DG/ADG appointed the committee. Held in a
+    // local so every branch below reads the same list.
+    final committeeMembers = committee?.members ?? const <CommitteeMember>[];
     final sales = ref.watch(tenderSalesProvider).valueOrNull ??
         const <TenderSaleModel>[];
 
@@ -220,9 +223,16 @@ class TenderHistorySection extends ConsumerWidget {
       final reval = revals[id];
       final roundBids = bids[id] ?? const <double>[];
       // Bids only exist to PRICE the next round, and the committee round is
-      // the last one — its price comes from the committee, not from bidding.
-      // So a committee round shows its price and nothing about bids.
-      final isCommitteeRound = (i + 1) > kMaxBidTenderRounds + 1;
+      // the last one — its price comes from the committee, not from bidding,
+      // so it shows its price and nothing about bids.
+      //
+      // Normally the round's POSITION says it: anything past Tender 3 is
+      // committee-priced. But a package whose earlier rounds were never
+      // recorded would shift that index, so the last round also counts as the
+      // committee round once the ADG has submitted a committee price.
+      final isLastRound = i == ordered.length - 1;
+      final isCommitteeRound = (i + 1) > kMaxBidTenderRounds + 1 ||
+          (isLastRound && committee?.submittedValue != null && i > 0);
       // Round 1 has no re-valuation of its own — it ran at the Valuation
       // Directorate's original figure. The committee round falls back to the
       // ADG's submitted value.
@@ -236,6 +246,11 @@ class TenderHistorySection extends ConsumerWidget {
       rows.add(_TenderRoundTile(
         label: tenderRoundLabel(i + 1),
         isCommitteeRound: isCommitteeRound,
+        // Who set this price. Only the committee round names its officers.
+        committeeMembers: isCommitteeRound ? committeeMembers : const [],
+        // Separates "still loading" from "nobody was appointed", so the tile
+        // can say which instead of silently listing none.
+        committeeLoading: isCommitteeRound && committeeAsync.isLoading,
         priceLabel: unit == null
             ? null
             : 'LKR ${money.format(unit * effQty)}'
@@ -260,6 +275,66 @@ class TenderHistorySection extends ConsumerWidget {
   }
 }
 
+/// One appointed committee officer, shown under the committee round.
+class _CommitteeMemberChip extends StatelessWidget {
+  final int no;
+  final CommitteeMember member;
+
+  const _CommitteeMemberChip({required this.no, required this.member});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = context.colors.accentLightBlue;
+    final desig = member.designation?.trim() ?? '';
+    final salary = member.salaryNo?.trim() ?? '';
+    final sub = [
+      if (desig.isNotEmpty) desig,
+      if (salary.isNotEmpty) 'Salary No: $salary',
+    ].join('  ·  ');
+
+    return material.Tooltip(
+      message: sub.isEmpty ? member.name : member.name + '\n' + sub,
+      waitDuration: const Duration(milliseconds: 300),
+      child: material.Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: accent.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: accent.withOpacity(0.35)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          material.Container(
+            width: 17,
+            height: 17,
+            alignment: material.Alignment.center,
+            decoration: BoxDecoration(
+                color: accent.withOpacity(0.18), shape: BoxShape.circle),
+            child: Text('$no',
+                style: TextStyle(
+                    color: accent, fontSize: 9.5, fontWeight: FontWeight.w800)),
+          ),
+          const Gap(6),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(member.name,
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700)),
+              if (desig.isNotEmpty)
+                Text(desig,
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 10)),
+            ],
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
 /// One round of [TenderHistorySection]: its price and the bids against it.
 class _TenderRoundTile extends StatelessWidget {
   final String label;
@@ -271,12 +346,22 @@ class _TenderRoundTile extends StatelessWidget {
   /// by a note saying where its price came from.
   final bool isCommitteeRound;
 
+  /// The officers the ADG appointed to value these goods. Listed under the
+  /// committee round so the price and the people who set it read together.
+  final List<CommitteeMember> committeeMembers;
+
+  /// The committee list has not arrived yet. Distinguishes it from a package
+  /// no committee was ever appointed for.
+  final bool committeeLoading;
+
   const _TenderRoundTile({
     required this.label,
     required this.priceLabel,
     required this.revalued,
     required this.bids,
     this.isCommitteeRound = false,
+    this.committeeMembers = const [],
+    this.committeeLoading = false,
   });
 
   @override
@@ -334,10 +419,31 @@ class _TenderRoundTile extends StatelessWidget {
               ),
           ]),
           const Gap(8),
-          if (isCommitteeRound)
-            Text('Priced by the tender committee · no bidding',
+          if (isCommitteeRound) ...[
+            Text(
+                committeeLoading
+                    ? 'Priced by the tender committee · loading members…'
+                    : committeeMembers.isEmpty
+                        ? 'Priced by the tender committee · no bidding'
+                        : 'Priced by the tender committee '
+                            '(${committeeMembers.length} '
+                            '${committeeMembers.length == 1 ? 'member' : 'members'})'
+                            ' · no bidding',
                 style:
-                    TextStyle(color: context.colors.textMuted, fontSize: 11.5))
+                    TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
+            if (committeeMembers.isNotEmpty) ...[
+              const Gap(8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (var i = 0; i < committeeMembers.length; i++)
+                    _CommitteeMemberChip(
+                        no: i + 1, member: committeeMembers[i]),
+                ],
+              ),
+            ],
+          ]
           else if (bids.isEmpty)
             Text('No bids recorded',
                 style:

@@ -10,6 +10,7 @@ import '../../widgets/disposal_profile_dialog.dart';
 import '../reports/reports_screen.dart';
 import 'tender_committee_tab.dart';
 import 'unsold_decision_tab.dart';
+import 'financials_tab.dart';
 
 /// Executive Office (DG / ADG) portal. Standalone scaffold (not AppShell).
 /// Customs' two highest posts pick a yard and generate/view/print any report
@@ -26,17 +27,27 @@ class ExecutiveDashboardScreen extends ConsumerStatefulWidget {
 class _ExecutiveDashboardScreenState
     extends ConsumerState<ExecutiveDashboardScreen>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabController;
+  /// Tabs on this portal. Kept as a constant so the controller's length can
+  /// never drift out of step with the number of Tab widgets — when it does,
+  /// the bar still PAINTS every tab but clicks resolve against the shorter
+  /// controller, so tapping does nothing while swiping still works.
+  static const int _kTabCount = 4;
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+  // Not `late final`: a hot reload keeps the old controller alive, so a
+  // changed _kTabCount would leave a stale one behind. didUpdateWidget-style
+  // re-creation in build guards against that.
+  TabController? _tabController;
+
+  TabController _controllerOf(BuildContext context) {
+    final c = _tabController;
+    if (c != null && c.length == _kTabCount) return c;
+    c?.dispose();
+    return _tabController = TabController(length: _kTabCount, vsync: this);
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
+    _tabController?.dispose();
     super.dispose();
   }
 
@@ -44,6 +55,7 @@ class _ExecutiveDashboardScreenState
   Widget build(BuildContext context) {
     final accent = AppTheme.executiveTeal;
     final profile = ref.watch(currentProfileProvider);
+    final tabController = _controllerOf(context);
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -170,7 +182,7 @@ class _ExecutiveDashboardScreenState
                 border: Border.all(color: context.colors.borderColor),
               ),
               child: TabBar(
-                controller: _tabController,
+                controller: tabController,
                 splashFactory: NoSplash.splashFactory,
                 overlayColor: WidgetStateProperty.all(Colors.transparent),
                 indicatorSize: TabBarIndicatorSize.tab,
@@ -216,6 +228,16 @@ class _ExecutiveDashboardScreenState
                           Text('Unsold Goods'),
                         ]),
                   ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.account_balance_wallet_rounded, size: 18),
+                          Gap(8),
+                          Text('Financials'),
+                        ]),
+                  ),
                 ],
               ),
             ),
@@ -224,11 +246,12 @@ class _ExecutiveDashboardScreenState
           // ── Tab views ────────────────────────────────────────
           Expanded(
             child: TabBarView(
-              controller: _tabController,
+              controller: tabController,
               children: const [
                 ReportsScreen(executiveMode: true),
                 TenderCommitteeTab(),
                 UnsoldDecisionTab(),
+                FinancialsTab(),
               ],
             ),
           ),

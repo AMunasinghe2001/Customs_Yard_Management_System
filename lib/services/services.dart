@@ -3425,6 +3425,51 @@ class TendersService {
 // (cross-yard RLS) and manage Tender Sale records.
 
 class DisposalService {
+  // ── Financial expenses (High Panel Financials tab) ───────────────────────
+
+  /// Every recorded outgoing, newest first.
+  Future<List<FinancialExpenseModel>> getFinancialExpenses() async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('financial_expenses')
+        .select('*')
+        .order('incurred_on', ascending: false));
+    return (rows as List)
+        .map((e) => FinancialExpenseModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Record one outgoing. [kind] is a key of `kExpenseKinds`.
+  Future<void> addFinancialExpense({
+    required String kind,
+    required double amount,
+    String? description,
+    String? yard,
+    String? srNumber,
+    DateTime? incurredOn,
+  }) async {
+    final d = incurredOn ?? DateTime.now();
+    await AuthService._withNetworkRetry(
+        () => supabase.from('financial_expenses').insert({
+              'kind': kind,
+              'amount': amount,
+              if (description != null && description.trim().isNotEmpty)
+                'description': description.trim(),
+              if (yard != null) 'yard': yard,
+              if (srNumber != null && srNumber.trim().isNotEmpty)
+                'sr_number': srNumber.trim(),
+              'incurred_on':
+                  '${d.year}-${d.month.toString().padLeft(2, '0')}-'
+                      '${d.day.toString().padLeft(2, '0')}',
+              'created_by': supabase.auth.currentUser?.id,
+            }));
+  }
+
+  Future<void> deleteFinancialExpense(String id) async {
+    await AuthService._withNetworkRetry(
+        () => supabase.from('financial_expenses').delete().eq('id', id));
+  }
+
+
   /// Sold packages for a specific yard. The caller (disposal role) has
   /// cross-yard read access via RLS; the UI filters the [FINAL:SOLD] entries.
   /// Sold packages for a yard, or — when [yard] is null — across ALL yards.
