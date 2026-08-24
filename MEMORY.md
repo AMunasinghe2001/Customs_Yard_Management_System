@@ -642,3 +642,84 @@ The 30-day window froze every action on a pure date check (`isWithinAppealWindow
 - `getItemAppealOutcomes(packageId)` / **`itemAppealOutcomesProvider(packageId)`** for the Goods Actions sheet; `getAllItemAppealOutcomes()` / **`allItemAppealOutcomesProvider`** for tables, fetched once so a list does not issue a query per row. Both read `forfeited_packages` across all four sources, so Detain / Abandoned / "Other" goods work like forfeits.
 - The Goods Actions sheet now gates on `inAppealWindow && !decidedEarly`, plus a separate `blockedByHold`, and shows a green "Appeal decided · X" banner or an amber "On appeal hold" one instead of the countdown.
 - `AppealStateChip` takes an optional `outcome` and renders four states: **On Appeal Hold** (amber, beats the deadline), **Decided · X** (green, beats the countdown), **Appealing · Nd** (amber), **Enabled** (green). Wired into Warehouses, Abandoned and Other; the Forfeited screen already had the decision inline.
+
+## Detained Goods page + Sale/Destroy for detained goods (2026-08-24)
+
+Forfeited, Abandoned and "Other" each had a page that could send goods to Central Disposal for Sale or Destruction; **Detain had no route at all**. New **[detained_packages_screen.dart](lib/screens/packages/detained_packages_screen.dart)** at `/detained-packages` (nav sits before Abandoned, matching the lifecycle), plus the same Sale/Destroy option from the warehouse row's details dialog.
+
+- **Detention is a holding status, not a disposition** — unlike Abandoned/"Other" there is no `[DETAIN]` warehouse event to key off. An item counts as detained when its status is `detain`/`detained`/`held` AND no entry carries a `[FINAL:` / `[ABANDONED]` / `[OTHER]` / `[FORFEIT` note (i.e. it has not moved on).
+- `createDisposalRequest`'s key parser is source-agnostic, so `"<pkgId>:<itemId>:detain"` (or the 4-part per-entry form) already worked — `'source': source` passes straight through and `20260825_forfeited_source_detain.sql` had already widened the CHECK constraint. Only the reason line needed a case: new `_detainReasonFor(pkg)` prefers the goods' own reason, then the hold reason, then "Detained pending inquiry".
+- Both the page and the warehouse dialog gate Sale/Destroy on the SAME rule as the Goods Actions sheet: the appeal window blocks it, **an Appeal Directorate decision opens it early, and a hold blocks it either way**.
+- `PackageItem.status` is **non-nullable** — `(item.status ?? '')` triggers `dead_null_aware_expression`.
+
+### Detained Goods brought in line with Forfeited (2026-08-24)
+
+The first cut of the page had only a search box and two chips. It now mirrors Forfeited exactly: **Total / In Appeal / Actionable** chips counting the SAME rows the table renders, plus a **Send Disposal Request** button opening the shared `DisposalRequestDialog` (enabled once any row is actionable).
+
+- `getRequestableExpiredPackages()` gained a `source: 'detain'` branch, so detained goods appear in the bulk dialog alongside abandoned/"other" ones. The dialog's source chip gained a `'detain' => ('Detained', primaryGold)` case — without it they rendered as "Forfeit" via the fallback arm.
+- **Its window gate was a blanket `if (isWithinAppealWindow(entryDate)) continue;`**, which ignored early decisions entirely. It now loads `getAllItemAppealOutcomes()` once before the loop and filters per item via `itemPassesWindow(itemId)`: inside the window only DECIDED items pass, once it closes every item that is not on HOLD passes. Same rule as the Goods Actions sheet and the Detained page.
+- `isDetainSource` added beside `isAbandonedSource` / `isOtherSource`.
+
+### Disposal dialog: detained rows missing, and pending goods now listed (2026-08-24)
+
+Two fixes to `getRequestableExpiredPackages()` and the shared `DisposalRequestDialog`:
+
+- **Detained goods never appeared.** The new detain branch checked `otherFpItemKeys` — a set built from `source='other'` rows only — so its "already sent" test could never match the right rows. Added `detainFpItemKeys`, queried from `disposal_request_items` on `source='detain'` and keyed per item like "other" does.
+- **`includePending: true`** relaxes the four appeal-window gates (`itemRequestable`, the `baseForfeit` filter, the package-level `continue`, and `itemPassesWindow`) so goods still inside their window come back too. **An appeal HOLD stays excluded in both modes** — that appeal is still open. New `allDisposalCandidatesProvider` wraps it; `requestableForfeitedPackagesProvider` is unchanged, so the page-level "Actionable" counts still mean what they did.
+- The dialog now reads the full pool and renders non-actionable rows at 0.55 opacity with a null `onTap`/`onChanged`, a disabled disposition toggle, and an amber "In appeal · Nd" chip. **Select All skips them and the "N of M selected" denominator counts only `isActionable` rows**, so the two agree. Section title changed from "appeal period passed" to "Select Goods".
+
+### Post Status Activity filters, scoped per status (2026-08-24)
+
+Every activity dropdown was labelled "All Activities" and offered `kAllPostStatusActivities`, so a per-status page listed filters that could never match anything on it. Now labelled **"Post Status Activity"** everywhere, and each page offers only the group its status can carry — the same split `postStatusActivitiesFor(status)` applies on the SR form:
+
+| Page | List |
+|---|---|
+| Detained | `kDetainActivities` |
+| Abandoned | `kDisposalActivities` |
+| Warehouses, Released | `kAllPostStatusActivities` (every status is reachable there) |
+
+- The Detained page gained the filter outright (`detainedPackageActivityProvider`), matching on `row.reason`.
+- **The activity lives in `warehouse_entries.hold_reason`** — that is what these rows show and filter on. The Detained row's fallback had to be spelled `'Pending Inquiry'`, exactly as `kDetainActivities` does; the lowercase `'Pending inquiry'` could never be selected.
+- Forfeited and Other Goods deliberately have no such filter: Forfeited renders no Reason column, and Other's "Disposition" holds a custom free-text label rather than an activity.
+
+### The four status pages made consistent (2026-08-24)
+
+Detained / Abandoned / Forfeited / Other run the same process, so their headers and filters now match.
+
+- **Header chips are `Total · In Appeal · Actionable` on all four.** Previously each page invented its own (Abandoned/Other: "Abandoned"+"Requestable", Forfeited: "Total"+"In Appeal"+"Expired"). "In Appeal" is computed as `total - actionable`, NOT as `!isAppealExpired` — otherwise rows an appeal decision already freed would be counted as blocked and the two chips would overlap.
+- **Forfeited gained a Reason column and the activity filter.** Its `_ForfeitRow.reason` getter reads `entry.holdReason`, falling back to `item.reasons` then `forfeited.reason`. The filter is applied **after `_buildForfeitRows`**, not in the package-level `where` — the activity is a per-row value, so `row` does not exist at that point.
+- Other Goods gained the filter too (`otherPackageActivityProvider`, `kDisposalActivities`).
+
+### Detained popup honours the appeal decision; "Reason" renamed (2026-08-24)
+
+- The Detained page now passes **`appealDecisionLabel` + `appealDecisionCode`** to `PackageDetailsDialog`, exactly as Forfeited does: the popup banners "APPEAL DIRECTORATE DECISION — Proceed with: X" and `_isActionEnabled` restricts the Final Disposition sheet to the single decided action. `ItemAppealOutcome.label` was added to map the code to the yard's wording, mirroring `ForfeitedPackageModel.appealDecisionLabelForItem`.
+- **Sale / Destroy are always disabled in the Final Disposition sheet** (`_requestActions`) — by design, they go to Central Disposal through `onSaleOrDestroyRequest` / Send Disposal Request instead. So a SALE decision greys that row out there; the request flow is where it is acted on.
+- **All four status pages now pass it** — Detained, Abandoned, Other and Forfeited. The Other page's old comment claimed "Other goods have no appeal", which stopped being true once the 30-day window was extended to every status.
+- The **"Reason"** column header is now **"Post Status Activity"** on Detained, Abandoned, Forfeited and Warehouses — that is what the column holds. Other Goods keeps "Disposition": its value is a custom free-text label, not an activity.
+
+### Sale / Destroy are deliberately NOT offered in the Final Disposition sheet (2026-08-24)
+
+`_isActionEnabled` disables `_requestActions` (`SOLD`, `DESTROYED`) **unconditionally, and that is correct** — those two outcomes belong to the Central Disposal Directorate and must be started from the **"Send Disposal Request"** button on the status page, so one deliberate request covers every selected item. I briefly relaxed the gate to fire the (fully built) `onRequestDisposal` handler and the user rejected it: a per-item Sale/Destroy buried in a details popup is the wrong route.
+
+Consequence worth remembering: **a SALE or DESTROY appeal decision enables nothing in that sheet.** The decision banner still shows, but the action is carried out by sending the disposal request — the goods appear in the request dialog as actionable. Only RELEASE / RE-EXPORT / OTHER decisions light up a row there. `onSaleOrDestroyRequest` is still passed by all five callers but is unreachable under this gating.
+
+**A completed `[FINAL:OTHER]` row on the Other Goods page** showed an "Enabled" appeal chip while its popup correctly offered no footer (`completed: true`). It now renders a muted **"Completed"** chip naming the recorded outcome, so the absent footer reads as finished rather than broken.
+
+### The details popup lingered after recording a disposition (2026-08-24)
+
+`_showFinalDispositionDialog`'s `onConfirm` popped the details dialog **last** — after the `recordFinalDisposition` round trip and the provider invalidations. So the goods vanished from the table behind it while the popup sat there waiting, and it only closed once everything had reloaded.
+
+It now pops **before** the write: the write does not need the dialog, and the page it returns to refreshes itself. Two things had to move with it —
+
+- **Capture anything that reads a BuildContext BEFORE the pop.** The messenger and the two snackbar colours are taken up front; the State's own `context` is torn down with the dialog, so looking them up afterwards would fail. `ScaffoldMessenger.maybeOf(ctx)` gives the app-level messenger, which outlives the route.
+- The `mounted` guards are gone with it — the captured messenger is what shows the result, so it no longer matters whether this widget survived.
+
+`allItemAppealOutcomesProvider` was added to the invalidation list too: a recorded disposition changes what the appeal chips should read.
+
+### "Send Disposal Request" was slow to enable (2026-08-24)
+
+Abandoned and Other watched **`requestableForfeitedPackagesProvider`** to decide whether to enable the button and to fill the "Actionable" chip. That provider runs the heavy cross-table query (every package + nested joins, plus `getAllItemAppealOutcomes()`), so the button sat greyed out for a beat after the table had already painted.
+
+Both now compute it from data **already on screen** — a local `_isRowActionable(row, outcome)` over the rows the table just built and `allItemAppealOutcomesProvider` — which is the pattern the Detained page already used, and matches Forfeited (which counts `r.forfeited.isActionable` over `forfeitedPackagesProvider`). The rule is unchanged: window closed OR decided, and a hold always blocks. The provider is still invalidated after a submit; it is just no longer *watched* for the enable state.
+
+**All four status pages now agree** on how the header chips and the button are derived.

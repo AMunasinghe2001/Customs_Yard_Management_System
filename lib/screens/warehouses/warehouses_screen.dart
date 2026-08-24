@@ -224,6 +224,69 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
 
   WarehouseModel get warehouse => widget.warehouse;
 
+  /// True if this item is DETAINED and still awaiting a decision.
+  ///
+  /// Detention is a holding status, not a disposition: there is no `[DETAIN]`
+  /// event to record, so the item simply carries a detain status and has not
+  /// been finalised or moved to another status.
+  static bool _itemIsDetainedHere(PackageModel p, PackageItem item) {
+    const detainStatuses = {'detain', 'detained', 'held'};
+    if (!detainStatuses.contains(item.status.trim().toLowerCase())) {
+      return false;
+    }
+    return !p.warehouseEntries
+        .where((e) => e.packageItemId == item.id)
+        .any((e) {
+      final note = (e.returnNotes ?? '').trim().toUpperCase();
+      return note.startsWith('[FINAL:') ||
+          note.startsWith('[ABANDONED]') ||
+          note.startsWith('[OTHER]') ||
+          note.startsWith('[FORFEIT');
+    });
+  }
+
+  /// Whether detained goods can be sent for disposal yet. The 30-day appeal
+  /// window blocks it, EXCEPT once the Appeal Directorate has ruled. A hold
+  /// blocks it either way, because that appeal is still open.
+  static bool _detainActionable(PackageModel p, ItemAppealOutcome? outcome) {
+    if (outcome?.onHold ?? false) return false;
+    if (outcome?.unblocksAction ?? false) return true;
+    return !isWithinAppealWindow(p.entryDate ?? p.createdAt);
+  }
+
+  /// Sends ONE detained item to Central Disposal for Sale or Destruction.
+  /// `createDisposalRequest` creates the `source='detain'` forfeited_packages
+  /// row on the fly, exactly as it does for Abandoned and "Other" goods.
+  Future<void> _requestDetainDisposal(PackageModel pkg, String disposition,
+      {required String itemId, WarehouseEntryModel? entry}) async {
+    try {
+      final key = entry != null
+          ? '${pkg.id}:$itemId:${entry.id}:detain'
+          : '${pkg.id}:$itemId:detain';
+      await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
+        requestDate: DateTime.now(),
+        dispositions: {key: disposition},
+      );
+      ref.read(disposalRequestsRefreshProvider.notifier).trigger();
+      ref.invalidate(livePackagesProvider);
+      ref.invalidate(requestableForfeitedPackagesProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.successGreen,
+          content: Text('Disposal request sent for ${pkg.srNumber} '
+              '(${disposition == 'sale' ? 'Sale' : 'Destruction'}).'),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          backgroundColor: context.colors.dangerRed,
+          content: Text('Error: $e'),
+        ));
+      }
+    }
+  }
+
   String _formatWarehouseName(String name) {
     final regex = RegExp(r'(\d+)');
     final match = regex.firstMatch(name);
@@ -474,9 +537,12 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                             .watch(warehouseReasonFilterProvider(warehouse.id));
                         return StyledDropdownButton<String>(
                           value: rFilter == 'all' ? null : rFilter,
-                          allLabel: 'All Activities',
+                          allLabel: 'Post Status Activity',
                           icon: Icons.label_outline_rounded,
                           menuWidth: 320,
+                          // This page lists EVERY status, so every activity is
+                          // reachable — unlike the per-status pages, which
+                          // narrow to their own group.
                           options: kAllPostStatusActivities
                               .map((a) => StyledDropdownOption(a, a))
                               .toList(),
@@ -541,7 +607,8 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               label: Center(child: Text('Status')),
                               size: ColumnSize.M),
                           DataColumn2(
-                              label: Text('Reason'), size: ColumnSize.L),
+                              label: Text('Post Status Activity'),
+                              size: ColumnSize.L),
                           DataColumn2(
                               label: Center(child: Text('Entry Date')),
                               size: ColumnSize.M),
@@ -738,12 +805,41 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                   if (pkgFull != null && context.mounted) {
                                     showDialog(
                                       context: context,
-                                      builder: (_) => PackageDetailsDialog(
-                                        package: pkgFull,
-                                        storageRate: storageRateHistory,
-                                        highlightEntry: e,
-                                        useWarehouseSummary: true,
-                                      ),
+                                      builder: (_) {
+                                        // Detained goods can be sent to
+                                        // Central Disposal for Sale or
+                                        // Destruction from here, the same way
+                                        // Forfeited / Abandoned / Other can.
+                                        // The appeal window still gates it —
+                                        // and a decision opens it early.
+                                        final item = e.packageItemId == null
+                                            ? null
+                                            : pkgFull.items
+                                                .where((i) =>
+                                                    i.id == e.packageItemId)
+                                                .firstOrNull;
+                                        final outcome = appealOutcomes[
+                                            e.packageItemId ?? ''];
+                                        final canDispose = item != null &&
+                                            _itemIsDetainedHere(
+                                                pkgFull, item) &&
+                                            _detainActionable(pkgFull, outcome);
+                                        return PackageDetailsDialog(
+                                          package: pkgFull,
+                                          storageRate: storageRateHistory,
+                                          highlightEntry: e,
+                                          highlightItemId: e.packageItemId,
+                                          useWarehouseSummary: true,
+                                          forceFinalDisposition: canDispose,
+                                          allowFinalDisposition: canDispose,
+                                          onSaleOrDestroyRequest: canDispose
+                                              ? (disposition) =>
+                                                  _requestDetainDisposal(
+                                                      pkgFull, disposition,
+                                                      itemId: item.id, entry: e)
+                                              : null,
+                                        );
+                                      },
                                     );
                                   }
                                 },

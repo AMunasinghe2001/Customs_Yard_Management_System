@@ -116,6 +116,24 @@ class _AbandonedPackagesScreenState
   /// once per separate abandonment event (e.g. detained → partly abandoned).
   /// [sentKeys] — "pkgId:itemId" keys for items already sent in a disposal
   /// request; those rows are hidden from the table.
+
+  /// Whether these goods can be sent for disposal yet.
+  ///
+  /// Computed from data ALREADY on screen — the row and the appeal outcomes —
+  /// so the header and the Send Disposal Request button settle as soon as the
+  /// table does. Reading it from `requestableForfeitedPackagesProvider` meant
+  /// waiting on that provider's heavy cross-table query, which is why the
+  /// button took a moment to light up.
+  ///
+  /// The 30-day appeal window blocks it, EXCEPT once the Appeal Directorate
+  /// has ruled. A hold blocks it either way — that appeal is still open.
+  static bool _isRowActionable(_AbandonedRow row, ItemAppealOutcome? outcome) {
+    if (outcome?.onHold ?? false) return false;
+    if (outcome?.unblocksAction ?? false) return true;
+    return !isWithinAppealWindow(
+        row.package.entryDate ?? row.package.createdAt);
+  }
+
   List<_AbandonedRow> _buildRows(List<PackageModel> packages,
       {Set<String> sentKeys = const {}}) {
     final rows = <_AbandonedRow>[];
@@ -238,43 +256,64 @@ class _AbandonedPackagesScreenState
                                     .watch(sentAbandonedOtherFpKeysProvider)
                                     .valueOrNull ??
                                 {};
+                            final outcomes = ref
+                                    .watch(allItemAppealOutcomesProvider)
+                                    .valueOrNull ??
+                                const <String, ItemAppealOutcome>{};
                             return pkgs.when(
-                              data: (list) => _AbandonedStatChip(
-                                  label: 'Abandoned',
-                                  value:
-                                      '${_buildRows(list, sentKeys: sk).length}',
-                                  color: context.colors.accentLightBlue),
+                              data: (list) {
+                                // Counts the SAME rows the table renders, so
+                                // the header always agrees with the list below.
+                                final rows = _buildRows(list, sentKeys: sk);
+                                final total = rows.length;
+                                final actionable = rows
+                                    .where((r) => _isRowActionable(
+                                        r, outcomes[r.item.id]))
+                                    .length;
+                                return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _AbandonedStatChip(
+                                        label: 'Total',
+                                        value: '$total',
+                                        color: context.colors.accentLightBlue),
+                                    const Gap(8),
+                                    _AbandonedStatChip(
+                                        label: 'In Appeal',
+                                        value:
+                                            '${total - actionable < 0 ? 0 : total - actionable}',
+                                        color: context.colors.warningAmber),
+                                    const Gap(8),
+                                    _AbandonedStatChip(
+                                        label: 'Actionable',
+                                        value: '$actionable',
+                                        color: context.colors.successGreen),
+                                  ],
+                                );
+                              },
                               loading: () => const SizedBox(),
                               error: (_, __) => const SizedBox(),
                             );
                           },
                         ),
-                        const Gap(8),
-                        // Requestable count = abandoned packages not yet sent in
-                        // a disposal request (surfaced by the shared provider).
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final req =
-                                ref.watch(requestableForfeitedPackagesProvider);
-                            final n = req.maybeWhen(
-                                data: (list) => list
-                                    .where((p) => p.isAbandonedSource)
-                                    .length,
-                                orElse: () => 0);
-                            return _AbandonedStatChip(
-                                label: 'Requestable',
-                                value: '$n',
-                                color: context.colors.primaryGold);
-                          },
-                        ),
                         const Gap(16),
                         Consumer(
                           builder: (context, ref, child) {
-                            final req =
-                                ref.watch(requestableForfeitedPackagesProvider);
-                            final n = req.maybeWhen(
-                                data: (list) => list
-                                    .where((p) => p.isAbandonedSource)
+                            // Enabled from data already on screen, so the
+                            // button lights up with the table rather than
+                            // after a separate cross-table query.
+                            final sk = ref
+                                    .watch(sentAbandonedOtherFpKeysProvider)
+                                    .valueOrNull ??
+                                {};
+                            final outcomes = ref
+                                    .watch(allItemAppealOutcomesProvider)
+                                    .valueOrNull ??
+                                const <String, ItemAppealOutcome>{};
+                            final n = ref.watch(livePackagesProvider).maybeWhen(
+                                data: (list) => _buildRows(list, sentKeys: sk)
+                                    .where((r) => _isRowActionable(
+                                        r, outcomes[r.item.id]))
                                     .length,
                                 orElse: () => 0);
                             return ElevatedButton.icon(
@@ -532,10 +571,14 @@ class _AbandonedPackagesScreenState
                         const SizedBox(width: 8),
                         StyledDropdownButton<String>(
                           value: rFilter == 'all' ? null : rFilter,
-                          allLabel: 'All Activities',
+                          allLabel: 'Post Status Activity',
                           icon: Icons.label_outline_rounded,
                           menuWidth: 320,
-                          options: kAllPostStatusActivities
+                          // Abandoned goods only ever carry a DISPOSAL
+                          // activity (the SR form offers no other kind for
+                          // this status), so listing the detain ones would
+                          // only offer filters that can never match.
+                          options: kDisposalActivities
                               .map((a) => StyledDropdownOption(a, a))
                               .toList(),
                           onChanged: (v) => ref
@@ -634,7 +677,8 @@ class _AbandonedPackagesScreenState
                                 size: ColumnSize.S,
                                 fixedWidth: 130),
                             DataColumn2(
-                                label: Text('Reason'), size: ColumnSize.M),
+                                label: Text('Post Status Activity'),
+                                size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Abandoned Date'),
                                 size: ColumnSize.M),
@@ -697,6 +741,22 @@ class _AbandonedPackagesScreenState
                                             highlightEntry: row.entry,
                                             highlightItemId: row.item.id,
                                             useLegacySummary: true,
+                                            // When the Appeal Directorate
+                                            // has ruled, banner the ruling and
+                                            // enable ONLY that action — the
+                                            // yard carries out what was
+                                            // decided, it does not choose
+                                            // afresh.
+                                            appealDecisionLabel:
+                                                appealOutcomes[row.item.id]
+                                                    ?.label,
+                                            appealDecisionCode: (appealOutcomes[
+                                                            row.item.id]
+                                                        ?.isDecided ??
+                                                    false)
+                                                ? appealOutcomes[row.item.id]!
+                                                    .decision
+                                                : null,
                                             // Every row in this table is an
                                             // actionable abandoned item — force
                                             // the Final Disposition button.

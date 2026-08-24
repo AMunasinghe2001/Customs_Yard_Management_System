@@ -527,10 +527,15 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   // Final-disposition gating (Forfeited screen). The footer "Final Disposition"
   // button is shown ONLY when [allowFinalDisposition] is true — i.e. the appeal
   // window has passed. While an appeal is still open it is hidden entirely.
-  // When the admin picks Sale / Destroy, [onSaleOrDestroyRequest] is invoked
-  // ('sale' | 'destruction') so the caller can submit a disposal request to the
-  // Central Disposal Directorate (the dialog closes first).
   final bool allowFinalDisposition;
+
+  // Sale / Destroy are NOT offered in this dialog — `_isActionEnabled` always
+  // disables them. Those two outcomes belong to the Central Disposal
+  // Directorate and are started from the "Send Disposal Request" button on the
+  // status page, so that one deliberate request covers every selected item.
+  //
+  // The hook is kept for callers that want to route a Sale / Destroy pick
+  // somewhere of their own, but with the current gating it is never invoked.
   final void Function(String disposition)? onSaleOrDestroyRequest;
 
   // When true, the Final Disposition footer is shown unconditionally (skips the
@@ -1180,6 +1185,23 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
               },
         onConfirm: (String type, String? notes, DateTime date) async {
           Navigator.pop(dialogCtx);
+
+          // Capture everything that reads from a BuildContext BEFORE popping —
+          // this State's own context is torn down with the dialog, so looking
+          // any of it up afterwards would fail.
+          final messenger = material.ScaffoldMessenger.maybeOf(ctx);
+          final successColour = context.colors.successGreen;
+          final failColour = context.colors.dangerRed;
+
+          // Close the details dialog BEFORE the write, not after it.
+          //
+          // Popping last meant the popup stayed on screen through the round
+          // trip AND the invalidations that follow it, so the goods had
+          // already vanished from the table behind it while the dialog sat
+          // there. The write does not need this dialog, and the page it
+          // returns to refreshes itself.
+          Navigator.pop(ctx);
+
           try {
             await ref.read(warehouseServiceProvider).recordFinalDisposition(
                   packageItemId: item.id,
@@ -1196,24 +1218,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
             ref.invalidate(packageDataProvider(widget.package.id));
             ref.invalidate(forfeitedPackagesProvider);
             ref.invalidate(requestableForfeitedPackagesProvider);
-            if (mounted) {
-              material.ScaffoldMessenger.of(ctx).showSnackBar(
-                material.SnackBar(
-                  content: Text('Final disposition recorded: $type'),
-                  backgroundColor: context.colors.successGreen,
-                ),
-              );
-              Navigator.pop(ctx);
-            }
+            ref.invalidate(allItemAppealOutcomesProvider);
+            messenger?.showSnackBar(
+              material.SnackBar(
+                content: Text('Final disposition recorded: $type'),
+                backgroundColor: successColour,
+              ),
+            );
           } catch (e) {
-            if (mounted) {
-              material.ScaffoldMessenger.of(ctx).showSnackBar(
-                material.SnackBar(
-                  content: Text('Failed: $e'),
-                  backgroundColor: context.colors.dangerRed,
-                ),
-              );
-            }
+            messenger?.showSnackBar(
+              material.SnackBar(
+                content: Text('Failed: $e'),
+                backgroundColor: failColour,
+              ),
+            );
           }
         },
       ),
@@ -6858,8 +6876,9 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
     ),
   ];
 
-  // Sale and Destroy are disabled for everyone here — they are recorded by the
-  // Central Disposal Directorate, not from this dialog.
+  // Sale and Destroy are never written as a [FINAL:…] entry from this dialog —
+  // they are recorded by the Central Disposal Directorate. Picking one opens
+  // the disposal REQUEST flow instead (see [onRequestDisposal]).
   static const _requestActions = {'SOLD', 'DESTROYED'};
 
   // The final-action type that matches an Appeal Directorate decision code.
@@ -6882,9 +6901,14 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
 
   // Whether THIS user may trigger the given action.
   // - Officers: nothing is enabled.
-  // - Sale / Destroy: disabled here (they go to Central Disposal as a request).
+  // - Sale / Destroy: ALWAYS disabled here. Those two outcomes belong to the
+  //   Central Disposal Directorate, and the only way to start them is the
+  //   "Send Disposal Request" button on the status page — one request, sent
+  //   deliberately, rather than a per-item action buried in a details popup.
   // - When the Appeal Directorate has DECIDED, only the matching action is
-  //   enabled (the yard must proceed exactly as decided).
+  //   enabled (the yard must proceed exactly as decided). A SALE / DESTROY
+  //   decision therefore enables nothing here — it is carried out by sending
+  //   the disposal request.
   // - Otherwise (window passed, no decision): Release / Re-export / Other.
   bool _isActionEnabled(_FinalActionDef a) {
     if (widget.isOfficer) return false;

@@ -1108,6 +1108,25 @@ class ItemAppealOutcome {
   /// Whether the goods are actionable regardless of the appeal window. A hold
   /// always wins: an open appeal blocks action even once the window closes.
   bool get unblocksAction => isDecided && !onHold;
+
+  /// The decision in the wording the yard reads, matching
+  /// [ForfeitedPackageModel.appealDecisionLabelForItem].
+  String? get label {
+    switch ((decision ?? '').toUpperCase()) {
+      case 'RELEASE':
+        return 'Release to owner';
+      case 'SALE':
+        return 'Sell';
+      case 'DESTROY':
+        return 'Destroy';
+      case 'RE-EXPORT':
+        return 'Re-export';
+      case 'OTHER':
+        return 'Other';
+      default:
+        return null;
+    }
+  }
 }
 
 // ── Appeal window (shared by EVERY status) ───────────────────
@@ -1226,6 +1245,7 @@ class ForfeitedPackageModel {
   int get daysUntilDeadline => appealDeadline.difference(DateTime.now()).inDays;
   bool get isAbandonedSource => source == 'abandoned';
   bool get isOtherSource => source == 'other';
+  bool get isDetainSource => source == 'detain';
 
   /// True if THIS specific item (identified by [itemId]) is on hold.
   /// Falls back to package-level [appealHold] for single-item / legacy rows.

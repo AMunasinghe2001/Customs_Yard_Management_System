@@ -24,16 +24,21 @@ const _officerNav = [
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Zone Capacity', Icons.donut_large_rounded, '/zone-capacity'),
   NavItem('Goods History', Icons.inventory_2_rounded, '/packages'),
-  NavItem('Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem(
+      'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem('Detained Goods', Icons.gpp_maybe_rounded, '/detained-packages'),
   NavItem('Abandoned Goods', Icons.inbox_rounded, '/abandoned-packages'),
   NavItem('Forfeited Goods', Icons.gavel_rounded, '/forfeited-packages'),
   NavItem('Other Goods', Icons.label_important_rounded, '/other-packages'),
   NavItem('Sold Goods', Icons.sell_rounded, '/sold-packages'),
   NavItem('Unsold Goods', Icons.rule_folder_rounded, '/unsold-packages'),
-  NavItem('Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
-  NavItem('Re-exported Goods', Icons.flight_takeoff_rounded, '/reexported-packages'),
+  NavItem(
+      'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
+  NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
+      '/reexported-packages'),
   NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
-  NavItem('Destruction Sale', Icons.local_fire_department_rounded, '/destruction-disposals'),
+  NavItem('Destruction Sale', Icons.local_fire_department_rounded,
+      '/destruction-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
@@ -44,16 +49,21 @@ const _adminNav = [
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Zone Capacity', Icons.donut_large_rounded, '/zone-capacity'),
   NavItem('Goods History', Icons.inventory_2_rounded, '/packages'),
-  NavItem('Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem(
+      'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
+  NavItem('Detained Goods', Icons.gpp_maybe_rounded, '/detained-packages'),
   NavItem('Abandoned Goods', Icons.inbox_rounded, '/abandoned-packages'),
   NavItem('Forfeited Goods', Icons.gavel_rounded, '/forfeited-packages'),
   NavItem('Other Goods', Icons.label_important_rounded, '/other-packages'),
   NavItem('Sold Goods', Icons.sell_rounded, '/sold-packages'),
   NavItem('Unsold Goods', Icons.rule_folder_rounded, '/unsold-packages'),
-  NavItem('Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
-  NavItem('Re-exported Goods', Icons.flight_takeoff_rounded, '/reexported-packages'),
+  NavItem(
+      'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
+  NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
+      '/reexported-packages'),
   NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
-  NavItem('Destruction Sale', Icons.local_fire_department_rounded, '/destruction-disposals'),
+  NavItem('Destruction Sale', Icons.local_fire_department_rounded,
+      '/destruction-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];
@@ -83,7 +93,7 @@ class _AppShellState extends ConsumerState<AppShell> {
         ref.read(authServiceProvider).updateHeartbeat();
       }
     });
-    
+
     // Initial heartbeat
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(authServiceProvider).updateHeartbeat();
@@ -112,9 +122,13 @@ class _AppShellState extends ConsumerState<AppShell> {
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
-                colors: [context.colors.customsBlue, context.colors.customsBlueDark],
+                colors: [
+                  context.colors.customsBlue,
+                  context.colors.customsBlueDark
+                ],
               ),
-              border: Border(right: BorderSide(color: context.colors.borderColor)),
+              border:
+                  Border(right: BorderSide(color: context.colors.borderColor)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -123,13 +137,15 @@ class _AppShellState extends ConsumerState<AppShell> {
                 Container(
                   padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
                   decoration: BoxDecoration(
-                    border: const Border(bottom: BorderSide(color: Colors.white10)),
+                    border:
+                        const Border(bottom: BorderSide(color: Colors.white10)),
                     color: Colors.white.withOpacity(0.05),
                   ),
                   child: Row(
                     children: [
                       Container(
-                        width: 44, height: 44,
+                        width: 44,
+                        height: 44,
                         padding: const EdgeInsets.all(6),
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.15),
@@ -137,7 +153,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                         ),
                         child: SvgPicture.asset(
                           'Sri_Lanka_Customs_logo.svg',
-                          colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+                          colorFilter: const ColorFilter.mode(
+                              Colors.white, BlendMode.srcIn),
                         ),
                       ),
                       const SizedBox(width: 10),
@@ -146,9 +163,15 @@ class _AppShellState extends ConsumerState<AppShell> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text('SL Customs',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                                style: TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 15)),
                             Text('SR Management System',
-                                style: TextStyle(color: Colors.white70, fontSize: 10, height: 1.2)),
+                                style: TextStyle(
+                                    color: Colors.white70,
+                                    fontSize: 10,
+                                    height: 1.2)),
                           ],
                         ),
                       ),
@@ -160,9 +183,11 @@ class _AppShellState extends ConsumerState<AppShell> {
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: navItems.map((item) {
-                      final isActive = item.route == '/admin' 
-                          ? widget.currentRoute == '/admin' 
-                          : (widget.currentRoute == item.route || (widget.currentRoute.startsWith(item.route) && item.route.length > 1));
+                      final isActive = item.route == '/admin'
+                          ? widget.currentRoute == '/admin'
+                          : (widget.currentRoute == item.route ||
+                              (widget.currentRoute.startsWith(item.route) &&
+                                  item.route.length > 1));
                       return _NavTile(item: item, isActive: isActive);
                     }).toList(),
                   ),
@@ -175,7 +200,10 @@ class _AppShellState extends ConsumerState<AppShell> {
                     children: [
                       if (profile != null) ...[
                         Text(profile.fullName,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13),
                             overflow: TextOverflow.ellipsis),
                         Text(
                             // Admins are the yard's DC / SDDC officers — show
@@ -183,23 +211,36 @@ class _AppShellState extends ConsumerState<AppShell> {
                             profile.isAdmin
                                 ? 'DC / SDDC'
                                 : profile.role.toUpperCase(),
-                            style: TextStyle(color: context.colors.primaryGold, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1)),
-                          Text('Salary No: ${profile.badgeNumber}',
-                              style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 11)),
+                            style: TextStyle(
+                                color: context.colors.primaryGold,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 1)),
+                        Text('Salary No: ${profile.badgeNumber}',
+                            style: TextStyle(
+                                color: Colors.white.withOpacity(0.6),
+                                fontSize: 11)),
                         const SizedBox(height: 12),
                       ],
                       SizedBox(
                         width: double.infinity,
                         child: OutlinedButton.icon(
-                          icon: Icon(isDark ? Icons.light_mode_rounded : Icons.dark_mode_rounded, size: 16),
-                          label: Text(isDark ? 'Light Mode' : 'Dark Mode', style: const TextStyle(fontSize: 13)),
+                          icon: Icon(
+                              isDark
+                                  ? Icons.light_mode_rounded
+                                  : Icons.dark_mode_rounded,
+                              size: 16),
+                          label: Text(isDark ? 'Light Mode' : 'Dark Mode',
+                              style: const TextStyle(fontSize: 13)),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
-                            side: BorderSide(color: Colors.white.withOpacity(0.25)),
+                            side: BorderSide(
+                                color: Colors.white.withOpacity(0.25)),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () {
-                            ref.read(themeModeProvider.notifier).state = isDark ? ThemeMode.light : ThemeMode.dark;
+                            ref.read(themeModeProvider.notifier).state =
+                                isDark ? ThemeMode.light : ThemeMode.dark;
                           },
                         ),
                       ),
@@ -208,10 +249,12 @@ class _AppShellState extends ConsumerState<AppShell> {
                         width: double.infinity,
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.person_rounded, size: 16),
-                          label: const Text('Profile', style: TextStyle(fontSize: 13)),
+                          label: const Text('Profile',
+                              style: TextStyle(fontSize: 13)),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.white,
-                            side: BorderSide(color: Colors.white.withOpacity(0.25)),
+                            side: BorderSide(
+                                color: Colors.white.withOpacity(0.25)),
                             padding: const EdgeInsets.symmetric(vertical: 10),
                           ),
                           onPressed: () => context.go('/profile'),
@@ -222,7 +265,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                         width: double.infinity,
                         child: OutlinedButton.icon(
                           icon: const Icon(Icons.logout_rounded, size: 16),
-                          label: const Text('Sign Out', style: TextStyle(fontSize: 13)),
+                          label: const Text('Sign Out',
+                              style: TextStyle(fontSize: 13)),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: context.colors.dangerRed,
                             side: BorderSide(color: context.colors.dangerRed),
@@ -230,7 +274,8 @@ class _AppShellState extends ConsumerState<AppShell> {
                           ),
                           onPressed: () async {
                             await ref.read(authServiceProvider).signOut();
-                            ref.read(currentProfileProvider.notifier).state = null;
+                            ref.read(currentProfileProvider.notifier).state =
+                                null;
                             if (context.mounted) context.go('/');
                           },
                         ),
@@ -267,9 +312,14 @@ class _NavTile extends StatelessWidget {
             duration: const Duration(milliseconds: 200),
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
             decoration: BoxDecoration(
-              color: isActive ? context.colors.primaryGold.withOpacity(0.15) : Colors.transparent,
+              color: isActive
+                  ? context.colors.primaryGold.withOpacity(0.15)
+                  : Colors.transparent,
               borderRadius: BorderRadius.circular(10),
-              border: isActive ? Border.all(color: context.colors.primaryGold.withOpacity(0.3)) : null,
+              border: isActive
+                  ? Border.all(
+                      color: context.colors.primaryGold.withOpacity(0.3))
+                  : null,
             ),
             child: Row(
               children: [
@@ -289,7 +339,8 @@ class _NavTile extends StatelessWidget {
                         color: isActive
                             ? context.colors.primaryGold
                             : Colors.white.withOpacity(0.85),
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight:
+                            isActive ? FontWeight.w600 : FontWeight.w500,
                         fontSize: 14,
                       )),
                 ),

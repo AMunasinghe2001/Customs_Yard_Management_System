@@ -5,12 +5,14 @@ import 'package:intl/intl.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/providers.dart';
+import '../../core/post_status_activities.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/appeal_state_chip.dart';
@@ -21,7 +23,8 @@ class _StatChip extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
-  const _StatChip({required this.label, required this.value, required this.color});
+  const _StatChip(
+      {required this.label, required this.value, required this.color});
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -34,8 +37,18 @@ class _StatChip extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(value, style: TextStyle(color: color, fontSize: 20, fontWeight: FontWeight.bold, height: 1.1)),
-          Text(label, style: TextStyle(color: context.colors.textSecondary, fontSize: 11, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+          Text(value,
+              style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  height: 1.1)),
+          Text(label,
+              style: TextStyle(
+                  color: context.colors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.5)),
         ],
       ),
     );
@@ -46,7 +59,8 @@ class ForfeitedPackagesScreen extends ConsumerStatefulWidget {
   const ForfeitedPackagesScreen({super.key});
 
   @override
-  ConsumerState<ForfeitedPackagesScreen> createState() => _ForfeitedPackagesScreenState();
+  ConsumerState<ForfeitedPackagesScreen> createState() =>
+      _ForfeitedPackagesScreenState();
 }
 
 /// One forfeiture line — a single item (or disposition event) within a
@@ -73,12 +87,32 @@ class _ForfeitRow {
     this.item,
     this.entry,
   });
+
+  /// The Post Status Activity recorded for these goods — "Supposed to be Sold
+  /// / Auction", "Supposed to be Destroyed", and so on.
+  ///
+  /// It is stored in `warehouse_entries.hold_reason`, with the item's own
+  /// `reasons` as a fallback for rows that have no entry. Must be spelled
+  /// exactly as [kDisposalActivities] does, or the filter cannot match it.
+  String get reason {
+    final fromEntry = (entry?.holdReason ?? '').trim();
+    if (fromEntry.isNotEmpty) return fromEntry;
+    final fromItem = (item?.reasons ?? '').trim();
+    if (fromItem.isNotEmpty) return fromItem;
+    // Fall back to the forfeited row's own reason so the column is never blank.
+    final fromFp = forfeited.reason.trim();
+    return fromFp.isNotEmpty ? fromFp : '—';
+  }
 }
 
-class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScreen> {
+class _ForfeitedPackagesScreenState
+    extends ConsumerState<ForfeitedPackagesScreen> {
   String _searchQuery = '';
   DateTimeRange? _dateRange;
   String? _yearFilter;
+
+  /// Post Status Activity filter — 'all', or one of [kDisposalActivities].
+  String _activityFilter = 'all';
 
   /// Submits a single-package disposal request (Sale / Destruction) to the
   /// Central Disposal Directorate — used by the details popup's Final
@@ -100,9 +134,9 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
               ? '${fp.id}:${item.id}:forfeit'
               : fp.id;
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
-            requestDate: DateTime.now(),
-            dispositions: {key: disposition},
-          );
+        requestDate: DateTime.now(),
+        dispositions: {key: disposition},
+      );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(forfeitedPackagesProvider);
       if (mounted) {
@@ -125,7 +159,9 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
   bool _isForfeitStatus(String? status) {
     if (status == null) return false;
     final normalized = status.trim().toLowerCase();
-    return normalized == 'forfiet' || normalized == 'forfeit' || normalized == 'forfeited';
+    return normalized == 'forfiet' ||
+        normalized == 'forfeit' ||
+        normalized == 'forfeited';
   }
 
   /// A warehouse entry tagged as a FORFEIT disposition event in returnNotes.
@@ -170,8 +206,14 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
         // item leaves the Forfeited table like Sold/Destroyed/etc.
         final st = (item.status ?? '').trim().toLowerCase();
         final itemStatusLive = !({
-              'sold', 'destroyed', 'released', 'returned',
-              're-export', 're-exported', 'cleared', 'other',
+              'sold',
+              'destroyed',
+              'released',
+              'returned',
+              're-export',
+              're-exported',
+              'cleared',
+              'other',
             }.contains(st) ||
             st.startsWith('other:'));
         // A held item of a forfeit FP still inside the appeal lifecycle (on hold,
@@ -258,7 +300,8 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
       if (!addedAny && (!anyItemFinalized || pendingAppealAction)) {
         rows.add(_ForfeitRow(
           forfeited: fp,
-          itemName: items.isNotEmpty ? items.first.itemName : 'Multiple/Unspecified',
+          itemName:
+              items.isNotEmpty ? items.first.itemName : 'Multiple/Unspecified',
           hsCode: items.isNotEmpty ? items.first.hsCode : null,
           item: items.isNotEmpty ? items.first : null,
           entry: pkg?.warehouseEntries.firstOrNull,
@@ -295,17 +338,10 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                   // packages that produce no forfeit rows (e.g. fully sold).
                   final headerRows = _buildForfeitRows(packages);
                   final totalCount = headerRows.length;
-                  final appealingCount = headerRows
-                      .where((r) => !r.forfeited.isAppealExpired)
-                      .length;
-                  final expiredCount = headerRows
-                      .where((r) => r.forfeited.isAppealExpired)
-                      .length;
                   // The Send-Disposal button enables once ANY package is
                   // actionable: window passed OR an appeal decision is in.
-                  final actionableCount = headerRows
-                      .where((r) => r.forfeited.isActionable)
-                      .length;
+                  final actionableCount =
+                      headerRows.where((r) => r.forfeited.isActionable).length;
 
                   return SizedBox(
                     width: double.infinity,
@@ -314,45 +350,89 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                       crossAxisAlignment: WrapCrossAlignment.center,
                       runSpacing: 16,
                       children: [
-                            Column(
+                        Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Forfeited Goods', style: Theme.of(context).textTheme.headlineLarge),
+                            Text('Forfeited Goods',
+                                style:
+                                    Theme.of(context).textTheme.headlineLarge),
                             const Gap(4),
                             Text(
                               'Manage forfeited packages and their 30-day appeal periods',
-                              style: TextStyle(color: context.colors.textSecondary, fontSize: 14),
+                              style: TextStyle(
+                                  color: context.colors.textSecondary,
+                                  fontSize: 14),
                             ),
                           ],
-                        ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
+                        )
+                            .animate()
+                            .slideY(begin: 0.1, duration: 400.ms)
+                            .fadeIn(),
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            _StatChip(label: 'Total', value: totalCount.toString(), color: context.colors.accentLightBlue).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+                            _StatChip(
+                                    label: 'Total',
+                                    value: totalCount.toString(),
+                                    color: context.colors.accentLightBlue)
+                                .animate()
+                                .slideY(
+                                    begin: 0.1, duration: 400.ms, delay: 100.ms)
+                                .fadeIn(),
                             const Gap(8),
-                            _StatChip(label: 'In Appeal', value: appealingCount.toString(), color: context.colors.successGreen).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+                            // "In Appeal" counts what is BLOCKED, so it must
+                            // exclude rows an appeal decision already freed —
+                            // otherwise the two chips overlap.
+                            _StatChip(
+                                    label: 'In Appeal',
+                                    value: (totalCount - actionableCount)
+                                        .toString(),
+                                    color: context.colors.warningAmber)
+                                .animate()
+                                .slideY(
+                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
+                                .fadeIn(),
                             const Gap(8),
-                            _StatChip(label: 'Expired', value: expiredCount.toString(), color: context.colors.dangerRed).animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn(),
+                            _StatChip(
+                                    label: 'Actionable',
+                                    value: actionableCount.toString(),
+                                    color: context.colors.successGreen)
+                                .animate()
+                                .slideY(
+                                    begin: 0.1, duration: 400.ms, delay: 300.ms)
+                                .fadeIn(),
                             const Gap(16),
                             ElevatedButton.icon(
-                              icon: const Icon(Icons.local_shipping_rounded, size: 16),
+                              icon: const Icon(Icons.local_shipping_rounded,
+                                  size: 16),
                               label: const Text('Send Disposal Request'),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: actionableCount > 0 ? context.colors.primaryGold : context.colors.textMuted.withOpacity(0.2),
-                                foregroundColor: actionableCount > 0 ? Colors.white : context.colors.textMuted,
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                backgroundColor: actionableCount > 0
+                                    ? context.colors.primaryGold
+                                    : context.colors.textMuted.withOpacity(0.2),
+                                foregroundColor: actionableCount > 0
+                                    ? Colors.white
+                                    : context.colors.textMuted,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 20, vertical: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
                                 elevation: actionableCount > 0 ? 2 : 0,
                               ),
                               onPressed: actionableCount > 0
                                   ? () => showDialog(
                                         context: context,
                                         builder: (ctx) => DisposalRequestDialog(
-                                          onSubmitted: () => ref.invalidate(forfeitedPackagesProvider),
+                                          onSubmitted: () => ref.invalidate(
+                                              forfeitedPackagesProvider),
                                         ),
                                       )
                                   : null,
-                            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 400.ms).fadeIn(),
+                            )
+                                .animate()
+                                .slideY(
+                                    begin: 0.1, duration: 400.ms, delay: 400.ms)
+                                .fadeIn(),
                           ],
                         ),
                       ],
@@ -370,7 +450,8 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                 decoration: BoxDecoration(
                   color: context.colors.cardDark,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: context.colors.primaryGold.withOpacity(0.5)),
+                  border: Border.all(
+                      color: context.colors.primaryGold.withOpacity(0.5)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -379,11 +460,13 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                       style: TextStyle(color: context.colors.textPrimary),
                       decoration: InputDecoration(
                         hintText: 'Search by SR Number or Consignee...',
-                        prefixIcon: Icon(Icons.search_rounded, color: context.colors.textMuted),
+                        prefixIcon: Icon(Icons.search_rounded,
+                            color: context.colors.textMuted),
                         isDense: true,
                         border: InputBorder.none,
                       ),
-                      onChanged: (value) => setState(() => _searchQuery = value.toLowerCase()),
+                      onChanged: (value) =>
+                          setState(() => _searchQuery = value.toLowerCase()),
                     ),
                     const Gap(8),
                     Wrap(
@@ -395,8 +478,9 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           onPressed: () async {
                             final picked = await showDialog<dynamic>(
                               context: context,
-                              builder: (context) => custom.DateRangePickerDialog(
-                                  initialRange: _dateRange),
+                              builder: (context) =>
+                                  custom.DateRangePickerDialog(
+                                      initialRange: _dateRange),
                             );
                             if (picked is DateTimeRange) {
                               setState(() => _dateRange = picked);
@@ -442,6 +526,22 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                             constraints: const BoxConstraints(),
                           ),
                         const SizedBox(width: 8),
+                        StyledDropdownButton<String>(
+                          value:
+                              _activityFilter == 'all' ? null : _activityFilter,
+                          allLabel: 'Post Status Activity',
+                          icon: Icons.label_outline_rounded,
+                          menuWidth: 320,
+                          // Forfeited goods only ever carry a DISPOSAL
+                          // activity — the SR form offers no other kind for
+                          // this status.
+                          options: kDisposalActivities
+                              .map((a) => StyledDropdownOption(a, a))
+                              .toList(),
+                          onChanged: (v) =>
+                              setState(() => _activityFilter = v ?? 'all'),
+                        ),
+                        const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
                           years: srYears((forfeitedAsync.valueOrNull ??
@@ -453,14 +553,19 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                     ),
                   ],
                 ),
-              ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+              )
+                  .animate()
+                  .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
+                  .fadeIn(),
 
               const Gap(16),
 
               // ── Data Table ──────────────────────────────────────
               Expanded(
                 child: forfeitedAsync.when(
-                  loading: () => Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
+                  loading: () => Center(
+                      child: CircularProgressIndicator(
+                          color: context.colors.primaryGold)),
                   error: (error, stackTrace) => ErrorView(
                     error: error.toString(),
                     onRetry: () => ref.refresh(forfeitedPackagesProvider),
@@ -476,24 +581,39 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           .where((t) => t.isNotEmpty);
                       final srMatch = srLower.contains(_searchQuery) ||
                           srTokens.every((t) => srLower.contains(t));
-                      final consigneeMatch = pkg.consigneeName.toLowerCase().contains(_searchQuery);
+                      final consigneeMatch = pkg.consigneeName
+                          .toLowerCase()
+                          .contains(_searchQuery);
                       if (!srMatch && !consigneeMatch) return false;
                       if (_dateRange != null) {
                         final date = pkg.forfeitedAt;
                         final startOfDay = DateTime(_dateRange!.start.year,
                             _dateRange!.start.month, _dateRange!.start.day);
-                        final endOfDay = DateTime(_dateRange!.end.year,
-                            _dateRange!.end.month, _dateRange!.end.day,
-                            23, 59, 59);
-                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay)) {
+                        final endOfDay = DateTime(
+                            _dateRange!.end.year,
+                            _dateRange!.end.month,
+                            _dateRange!.end.day,
+                            23,
+                            59,
+                            59);
+                        if (date.isBefore(startOfDay) ||
+                            date.isAfter(endOfDay)) {
                           return false;
                         }
                       }
-                      if (!srYearMatches(pkg.srNumber, _yearFilter)) return false;
+                      if (!srYearMatches(pkg.srNumber, _yearFilter))
+                        return false;
                       return true;
                     }).toList();
 
-                    final rows = _buildForfeitRows(filtered);
+                    // The Post Status Activity is a per-ROW value (it comes
+                    // from the item's warehouse entry), so it can only be
+                    // applied once the rows exist.
+                    final rows = _buildForfeitRows(filtered)
+                        .where((r) =>
+                            _activityFilter == 'all' ||
+                            r.reason == _activityFilter)
+                        .toList();
                     // Most-recently forfeited first: use the actual forfeit
                     // moment (the warehouse entry's returned date) when we have
                     // it, else the anchored forfeited date.
@@ -523,18 +643,37 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                               subtitle:
                                   'Try adjusting the search or date filters.'),
                           columns: const [
-                            DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-                            DataColumn2(label: Text('HS Code'), size: ColumnSize.S, fixedWidth: 110),
-                            DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 70),
-                            DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Forfeited Date'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Appeal Deadline'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('SR Number'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Goods Name'), size: ColumnSize.L),
+                            DataColumn2(
+                                label: Text('HS Code'),
+                                size: ColumnSize.S,
+                                fixedWidth: 110),
+                            DataColumn2(
+                                label: Text('Qty'),
+                                size: ColumnSize.S,
+                                fixedWidth: 70),
+                            DataColumn2(
+                                label: Text('Post Status Activity'),
+                                size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Consignee'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Forfeited Date'),
+                                size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Appeal Deadline'),
+                                size: ColumnSize.M),
                             DataColumn2(
                                 label: Center(child: Text('Appeal')),
                                 size: ColumnSize.S,
                                 fixedWidth: 130),
-                            DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
+                            DataColumn2(
+                                label: Center(child: Text('Details')),
+                                size: ColumnSize.S,
+                                fixedWidth: 70),
                           ],
                           rows: rows.map((row) {
                             final pkg = row.forfeited;
@@ -560,35 +699,58 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                 pkg.appealDecisionLabelForItem(rowItemId);
 
                             return DataRow(
-                              color: WidgetStateProperty.resolveWith<Color?>((states) {
-                                if (isExpired) return context.colors.dangerRed.withOpacity(0.04);
+                              color: WidgetStateProperty.resolveWith<Color?>(
+                                  (states) {
+                                if (isExpired)
+                                  return context.colors.dangerRed
+                                      .withOpacity(0.04);
                                 return null;
                               }),
                               cells: [
-                                DataCell(TooltipText(pkg.srNumber, style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.bold))),
-                                DataCell(TooltipText(row.itemName, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500))),
+                                DataCell(TooltipText(pkg.srNumber,
+                                    style: TextStyle(
+                                        color: context.colors.accentLightBlue,
+                                        fontWeight: FontWeight.bold))),
+                                DataCell(TooltipText(row.itemName,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w500))),
                                 DataCell(TooltipText(
-                                    (row.hsCode != null && row.hsCode!.isNotEmpty)
+                                    (row.hsCode != null &&
+                                            row.hsCode!.isNotEmpty)
                                         ? row.hsCode!
                                         : '—',
                                     overflow: TextOverflow.ellipsis,
                                     style: const TextStyle(fontSize: 12))),
                                 DataCell(TooltipText('${row.qty}')),
-                                DataCell(TooltipText(pkg.consigneeName, overflow: TextOverflow.ellipsis)),
-                                DataCell(TooltipText(DateFormat('yyyy-MM-dd').format(row.forfeitedDate))),
+                                DataCell(TooltipText(row.reason,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: context.colors.textSecondary,
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic))),
+                                DataCell(TooltipText(pkg.consigneeName,
+                                    overflow: TextOverflow.ellipsis)),
+                                DataCell(TooltipText(DateFormat('yyyy-MM-dd')
+                                    .format(row.forfeitedDate))),
                                 DataCell(TooltipText(
-                                  DateFormat('yyyy-MM-dd').format(pkg.appealDeadline),
+                                  DateFormat('yyyy-MM-dd')
+                                      .format(pkg.appealDeadline),
                                   style: TextStyle(
-                                    color: isExpired ? context.colors.dangerRed : context.colors.textPrimary,
-                                    fontWeight: isExpired ? FontWeight.bold : FontWeight.normal
-                                  ),
+                                      color: isExpired
+                                          ? context.colors.dangerRed
+                                          : context.colors.textPrimary,
+                                      fontWeight: isExpired
+                                          ? FontWeight.bold
+                                          : FontWeight.normal),
                                 )),
                                 DataCell(Center(
                                   child: rowOnAppealHold
                                       // Appeal Directorate has placed a hold on
                                       // THIS item — it must NOT be sold/destroyed.
                                       ? Tooltip(
-                                          message: pkg.appealHoldNote?.isNotEmpty ==
+                                          message: pkg.appealHoldNote
+                                                      ?.isNotEmpty ==
                                                   true
                                               ? pkg.appealHoldNote!
                                               : 'Appeal received — do not sell or destroy',
@@ -619,7 +781,8 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                                                             .ellipsis,
                                                         style: TextStyle(
                                                             fontSize: 10.5,
-                                                            color: context.colors
+                                                            color: context
+                                                                .colors
                                                                 .warningAmber,
                                                             fontWeight:
                                                                 FontWeight
@@ -741,7 +904,10 @@ class _ForfeitedPackagesScreenState extends ConsumerState<ForfeitedPackagesScree
                           }).toList(),
                         ),
                       ),
-                    ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn();
+                    )
+                        .animate()
+                        .slideY(begin: 0.1, duration: 400.ms, delay: 100.ms)
+                        .fadeIn();
                   },
                 ),
               ),

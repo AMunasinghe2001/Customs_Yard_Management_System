@@ -2612,7 +2612,18 @@ class ForfeitedPackageService {
   /// not yet part of a disposal request — i.e. items a yard can request the
   /// Central Disposal Directorate to dispose of. RLS keeps this to the
   /// caller's own yard.
-  Future<List<ForfeitedPackageModel>> getRequestableExpiredPackages() async {
+  /// Goods the yard can send to Central Disposal.
+  ///
+  /// By default only ACTIONABLE goods are returned: the appeal window has
+  /// closed, or the Appeal Directorate has already ruled. Goods on an appeal
+  /// hold are always excluded — that appeal is still open.
+  ///
+  /// With [includePending] the still-in-appeal goods come back too, so the
+  /// request dialog can LIST them (greyed out, not selectable) instead of
+  /// hiding them. The officer then sees the whole picture and picks what to
+  /// send. Holds stay excluded either way.
+  Future<List<ForfeitedPackageModel>> getRequestableExpiredPackages(
+      {bool includePending = false}) async {
     // ── 1. Genuine forfeits whose appeal window has PASSED ───────────────────
     // Only appeal-expired forfeits can be sent in a disposal request. Excludes:
     //   • appeals still open (window not yet passed),
@@ -2671,6 +2682,9 @@ class ForfeitedPackageService {
       if (held) return false;
       final dec = (f.appealDecisionForItem(itemId) ?? '').toUpperCase();
       if (_nonDisposalDecisions.contains(dec)) return false;
+      // Listing pending goods keeps them in the pool; the dialog greys them
+      // out rather than hiding them.
+      if (includePending) return true;
       return f.isAppealExpired || dec == 'SALE' || dec == 'DESTROY';
     }
 
@@ -2691,6 +2705,7 @@ class ForfeitedPackageService {
         // Keep the package if the window passed OR any item carries a decision —
         // per-item actionability is enforced during expansion.
         .where((f) =>
+            includePending ||
             f.isAppealExpired ||
             f.itemAppealDecisions.isNotEmpty ||
             f.hasAppealDecisionForItem(null))
@@ -2815,17 +2830,58 @@ class ForfeitedPackageService {
       return itemId != null ? '$pkgId:$itemId' : pkgId;
     }).toSet();
 
+    // ── 4. DETAINED items already sent ──────────────────────────────────────
+    // Tracked per item, like "other": a detain row is created per item, so a
+    // sibling item of the same package must stay requestable.
+    final existingDetainFp = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_request_items')
+        .select('forfeited_packages!inner(package_id, item_id, source)')
+        .eq('forfeited_packages.source', 'detain'));
+    final detainFpItemKeys = (existingDetainFp as List).map((row) {
+      final e = (row as Map<String, dynamic>)['forfeited_packages']
+          as Map<String, dynamic>;
+      final pkgId = e['package_id'].toString();
+      final itemId = e['item_id']?.toString();
+      return itemId != null ? '$pkgId:$itemId' : pkgId;
+    }).toSet();
+
+    // Appeal rulings, keyed by item id — a decision lets goods into this pool
+    // before the window closes, a hold keeps them out after it does.
+    final appealOutcomes = await getAllItemAppealOutcomes();
+
     for (final raw in (pkgData as List)) {
       final pkg = PackageModel.fromJson(raw as Map<String, dynamic>);
       final alreadyAbandoned = abandonedFpPkgIds.contains(pkg.id);
 
-      // The 30-day appeal window applies to abandoned and "other" goods too,
-      // counted from the ENTRY DATE. While it is open the goods cannot be sent
-      // to Central Disposal at all, so they are left out of this pool.
-      // (These used to be stamped with a yesterday deadline, i.e. no window.)
+      // The 30-day appeal window applies to detained, abandoned and "other"
+      // goods too, counted from the ENTRY DATE. While it is open the goods
+      // cannot be sent to Central Disposal at all, so they are left out of
+      // this pool.
+      //
+      // …EXCEPT once the Appeal Directorate has ruled. A decision ends the
+      // wait — there is nothing left to appeal — so those goods join the pool
+      // straight away rather than sitting out the remaining days. Goods on an
+      // appeal HOLD stay out either way: that appeal is still open.
       final entryDate = pkg.entryDate ?? pkg.createdAt;
-      if (isWithinAppealWindow(entryDate)) continue;
+      final decidedItemIds = <String>{
+        for (final item in pkg.items)
+          if (appealOutcomes[item.id]?.unblocksAction ?? false) item.id,
+      };
+      if (!includePending &&
+          isWithinAppealWindow(entryDate) &&
+          decidedItemIds.isEmpty) {
+        continue;
+      }
       final windowDeadline = appealDeadlineFrom(entryDate);
+      // Inside the window only the decided items may be sent; once it closes
+      // every item that is not on hold may.
+      bool itemPassesWindow(String itemId) {
+        // A hold always excludes: that appeal is still open.
+        if (appealOutcomes[itemId]?.onHold ?? false) return false;
+        if (includePending) return true;
+        if (!isWithinAppealWindow(entryDate)) return true;
+        return decidedItemIds.contains(itemId);
+      }
 
       // One requestable row PER qualifying ITEM+EVENT:
       //   • Abandoned: one row per [ABANDONED] warehouse entry event, id =
@@ -2836,6 +2892,8 @@ class ForfeitedPackageService {
         // Check at item level so only the already-requested item is excluded.
         final alreadyOther = otherFpItemKeys.contains('${pkg.id}:${item.id}') ||
             otherFpItemKeys.contains(pkg.id);
+        if (!itemPassesWindow(item.id)) continue;
+
         if (!alreadyAbandoned) {
           final abandonedEntries = _abandonedEntriesForItem(pkg, item);
           for (final entry in abandonedEntries) {
@@ -2916,6 +2974,28 @@ class ForfeitedPackageService {
               itemName: item.itemName,
             ));
           }
+        }
+
+        // Detained goods. Detention is a HOLDING status, not a disposition —
+        // there is no `[DETAIN]` event to key off — so one row per item.
+        final alreadyDetain =
+            detainFpItemKeys.contains('${pkg.id}:${item.id}') ||
+                detainFpItemKeys.contains(pkg.id);
+        if (!alreadyDetain && _itemIsRequestableDetain(pkg, item)) {
+          result.add(ForfeitedPackageModel(
+            id: '${pkg.id}:${item.id}:detain',
+            packageId: pkg.id,
+            srNumber: pkg.srNumber,
+            consigneeName: pkg.consigneeName,
+            forfeitedAt: pkg.createdAt,
+            appealDeadline: windowDeadline,
+            reason: _detainReasonFor(pkg),
+            yard: AppSession.currentYard,
+            source: 'detain',
+            packageDetails: pkg,
+            itemId: item.id,
+            itemName: item.itemName,
+          ));
         }
       }
     }
@@ -3021,6 +3101,28 @@ class ForfeitedPackageService {
       return true;
     }
     return false;
+  }
+
+  /// True if a single item is DETAINED and can be sent in a disposal request.
+  ///
+  /// Detention is the yard's holding status: the goods sit under inquiry with
+  /// no disposition recorded yet. Unlike Abandoned or "Other" there is no
+  /// `[DETAIN]` disposition event — the item simply carries a detain status and
+  /// has not been finalised, released or moved on to another status.
+  bool _itemIsRequestableDetain(PackageModel p, PackageItem item) {
+    const detainStatuses = {'detain', 'detained', 'held'};
+    if (!detainStatuses.contains(item.status.trim().toLowerCase())) {
+      return false;
+    }
+    return !p.warehouseEntries
+        .where((e) => e.packageItemId == item.id)
+        .any((e) {
+      final note = (e.returnNotes ?? '').trim().toUpperCase();
+      return note.startsWith('[FINAL:') ||
+          note.startsWith('[ABANDONED]') ||
+          note.startsWith('[OTHER]') ||
+          note.startsWith('[FORFEIT');
+    });
   }
 
   /// Returns all [ABANDONED] warehouse entry events for a single item that are
@@ -3157,6 +3259,20 @@ class ForfeitedPackageService {
     }
     if (raw.isEmpty || raw.toLowerCase() == 'other') return 'Other';
     return raw;
+  }
+
+  /// Why a DETAINED package is being disposed of. Prefers the reason recorded
+  /// against the goods, falling back to the standard detention wording.
+  String _detainReasonFor(PackageModel p) {
+    for (final i in p.items) {
+      final r = (i.reasons ?? '').trim();
+      if (r.isNotEmpty) return r;
+    }
+    for (final e in p.warehouseEntries) {
+      final r = (e.holdReason).trim();
+      if (r.isNotEmpty) return r;
+    }
+    return 'Detained pending inquiry';
   }
 
   String _otherReasonFor(PackageModel p) {
@@ -3321,8 +3437,13 @@ class ForfeitedPackageService {
           .eq('id', packageId)
           .single());
       final pkg = PackageModel.fromJson(pkgRaw);
-      final reason =
-          source == 'other' ? _otherReasonFor(pkg) : _abandonReasonFor(pkg);
+      final reason = switch (source) {
+        'other' => _otherReasonFor(pkg),
+        // A detained package is held pending inquiry; that is what the yard
+        // is acting on when it sends the goods for sale or destruction.
+        'detain' => _detainReasonFor(pkg),
+        _ => _abandonReasonFor(pkg),
+      };
       // For per-entry abandoned rows, store the exact abandoned qty from the
       // originating warehouse entry so the Valuation / Central Disposal screens
       // price against that quantity (15 / 19) rather than the full item qty.

@@ -21,7 +21,7 @@ import '../../widgets/tooltip_text.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
 final returnedPackageReasonFilterProvider =
-  StateProvider<String>((ref) => 'all');
+    StateProvider<String>((ref) => 'all');
 final returnedPackageDateRangeProvider =
     StateProvider<DateTimeRange?>((ref) => null);
 
@@ -117,7 +117,6 @@ class _ReturnedPackagesScreenState
     return null;
   }
 
-
   @override
   void initState() {
     super.initState();
@@ -176,7 +175,7 @@ class _ReturnedPackagesScreenState
                         Text('Released Goods',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                          'View and search all goods that have been released',
+                            'View and search all goods that have been released',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
@@ -424,15 +423,17 @@ class _ReturnedPackagesScreenState
                         const SizedBox(width: 8),
                         StyledDropdownButton<String>(
                           value: rFilter == 'all' ? null : rFilter,
-                          allLabel: 'All Activities',
+                          allLabel: 'Post Status Activity',
                           icon: Icons.label_outline_rounded,
                           menuWidth: 320,
+                          // Goods reach this page from any status, so every
+                          // activity is reachable here.
                           options: kAllPostStatusActivities
                               .map((a) => StyledDropdownOption(a, a))
                               .toList(),
                           onChanged: (v) => ref
-                              .read(returnedPackageReasonFilterProvider
-                                  .notifier)
+                              .read(
+                                  returnedPackageReasonFilterProvider.notifier)
                               .state = v ?? 'all',
                         ),
                         const SizedBox(width: 8),
@@ -471,9 +472,7 @@ class _ReturnedPackagesScreenState
                         final s = search.toLowerCase();
                         final receiptNo = row.receiptNo?.toLowerCase() ?? '';
                         final itemName = row.itemName.toLowerCase();
-                        if (!row.package.srNumber
-                                .toLowerCase()
-                                .contains(s) &&
+                        if (!row.package.srNumber.toLowerCase().contains(s) &&
                             !row.package.consigneeName
                                 .toLowerCase()
                                 .contains(s) &&
@@ -517,133 +516,153 @@ class _ReturnedPackagesScreenState
                       children: [
                         Expanded(
                           child: Container(
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                          color: context.colors.cardDark,
-                          borderRadius: BorderRadius.circular(14),
-                          border:
-                              Border.all(color: context.colors.borderColor)),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: DataTable2(
-                          columnSpacing: 12,
-                          horizontalMargin: 12,
-                          fixedTopRows: 1,
-                          empty: const EmptyTableState(message: 'No released packages found'),
-                          isVerticalScrollBarVisible: true,
-                          isHorizontalScrollBarVisible: false,
-                            columns: const [
-                              DataColumn2(
-                                label: Text('SR Number'), size: ColumnSize.M),
-                              DataColumn2(
-                                label: Text('Goods Name'), size: ColumnSize.M),
-                              DataColumn2(
-                                label: Text('HS Code'),
-                                size: ColumnSize.S,
-                                fixedWidth: 110),
-                              DataColumn2(
-                                label: Text('Released Qty'),
-                                size: ColumnSize.S,
-                                fixedWidth: 110),
-                              DataColumn2(
-                                label: Text('Entry Date'),
-                                size: ColumnSize.M),
-                              DataColumn2(
-                                label: Text('Release Date'),
-                                size: ColumnSize.M),
-                              DataColumn2(
-                                label: Text('Warehouse Charge'),
-                                size: ColumnSize.M),
-                              DataColumn2(
-                                label: Text('Receipt No'), size: ColumnSize.M),
-                              DataColumn2(
-                                label: Center(child: Text('Details')),
-                                size: ColumnSize.S,
-                                fixedWidth: 55),
-                            ],
-                            rows: pageRows
-                              .map((row) => DataRow(cells: [
-                                    DataCell(TooltipText(row.package.srNumber,
-                                        style: TextStyle(
-                                            color:
-                                                context.colors.accentLightBlue,
-                                            fontWeight: FontWeight.w600))),
-                                    DataCell(TooltipText(row.itemName,
-                                        overflow: TextOverflow.ellipsis)),
-                                    DataCell(TooltipText((() {
-                                      final hs = row.package.items
-                                          .where((i) =>
-                                              i.id == row.entry.packageItemId)
-                                          .firstOrNull
-                                          ?.hsCode;
-                                      return (hs != null && hs.isNotEmpty)
-                                          ? hs
-                                          : '—';
-                                    })(),
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 12))),
-                                    DataCell(Center(
-                                        child: Text(
-                                            '${row.entry.itemCount}'))),
-                                    // Entry Date (SR form) — falls back to the
-                                    // warehouse admit date.
-                                    DataCell(TooltipText((() {
-                                      final d = row.package.entryDate ??
-                                          row.entry.admittedAt;
-                                      return DateFormat('yyyy-MM-dd').format(d);
-                                    })())),
-                                    // Release Date = the entry's returned date.
-                                    DataCell(TooltipText(row.entry.returnedAt != null
-                                        ? DateFormat('yyyy-MM-dd')
-                                            .format(row.entry.returnedAt!)
-                                        : '—')),
-                                    // Warehouse charge from the SR Entry Date →
-                                    // Release Date (not the warehouse admit date).
-                                    DataCell(TooltipText((() {
-                                      final e = row.entry;
-                                      final chargeStart =
-                                          row.package.entryDate ?? e.admittedAt;
-                                      final tempEntry = WarehouseEntryModel(
-                                        id: e.id,
-                                        packageId: e.packageId,
-                                        packageItemId: e.packageItemId,
-                                        warehouseId: e.warehouseId,
-                                        warehouseName: e.warehouseName,
-                                        warehouseCode: e.warehouseCode,
-                                        holdReason: e.holdReason,
-                                        itemCount: e.itemCount,
-                                        admittedAt: chargeStart,
-                                        dailyRate: e.dailyRate,
-                                        returnedAt: e.returnedAt,
-                                      );
-                                      return 'LKR ${NumberFormat('#,##0.00').format(tempEntry.calculatePackageCharge(row.package.items, storageRateHistory))}';
-                                    })(),
-                                        style: TextStyle(
-                                            color: context.colors.primaryGold,
-                                            fontWeight: FontWeight.bold))),
-                                    DataCell(TooltipText(row.receiptNo ?? '—',
-                                        overflow: TextOverflow.ellipsis)),
-                                    DataCell(Center(
-                                        child: IconButton(
-                                      icon: Icon(Icons.info_outline_rounded,
-                                          color: context.colors.accentLightBlue,
-                                          size: 18),
-                                      onPressed: () {
-                                        showDialog(
-                                          context: context,
-                                          builder: (_) => PackageDetailsDialog(
-                                            package: row.package,
-                                            storageRate: storageRateHistory,
-                                            highlightEntry: row.entry,
-                                            useLegacySummary: true,
-                                          ),
-                                        );
-                                      },
-                                    ))),
-                                  ]))
-                              .toList(),
-                        ),
-                      ),
+                            width: double.infinity,
+                            decoration: BoxDecoration(
+                                color: context.colors.cardDark,
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                    color: context.colors.borderColor)),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(14),
+                              child: DataTable2(
+                                columnSpacing: 12,
+                                horizontalMargin: 12,
+                                fixedTopRows: 1,
+                                empty: const EmptyTableState(
+                                    message: 'No released packages found'),
+                                isVerticalScrollBarVisible: true,
+                                isHorizontalScrollBarVisible: false,
+                                columns: const [
+                                  DataColumn2(
+                                      label: Text('SR Number'),
+                                      size: ColumnSize.M),
+                                  DataColumn2(
+                                      label: Text('Goods Name'),
+                                      size: ColumnSize.M),
+                                  DataColumn2(
+                                      label: Text('HS Code'),
+                                      size: ColumnSize.S,
+                                      fixedWidth: 110),
+                                  DataColumn2(
+                                      label: Text('Released Qty'),
+                                      size: ColumnSize.S,
+                                      fixedWidth: 110),
+                                  DataColumn2(
+                                      label: Text('Entry Date'),
+                                      size: ColumnSize.M),
+                                  DataColumn2(
+                                      label: Text('Release Date'),
+                                      size: ColumnSize.M),
+                                  DataColumn2(
+                                      label: Text('Warehouse Charge'),
+                                      size: ColumnSize.M),
+                                  DataColumn2(
+                                      label: Text('Receipt No'),
+                                      size: ColumnSize.M),
+                                  DataColumn2(
+                                      label: Center(child: Text('Details')),
+                                      size: ColumnSize.S,
+                                      fixedWidth: 55),
+                                ],
+                                rows: pageRows
+                                    .map((row) => DataRow(cells: [
+                                          DataCell(TooltipText(
+                                              row.package.srNumber,
+                                              style: TextStyle(
+                                                  color: context
+                                                      .colors.accentLightBlue,
+                                                  fontWeight:
+                                                      FontWeight.w600))),
+                                          DataCell(TooltipText(row.itemName,
+                                              overflow: TextOverflow.ellipsis)),
+                                          DataCell(TooltipText((() {
+                                            final hs = row.package.items
+                                                .where((i) =>
+                                                    i.id ==
+                                                    row.entry.packageItemId)
+                                                .firstOrNull
+                                                ?.hsCode;
+                                            return (hs != null && hs.isNotEmpty)
+                                                ? hs
+                                                : '—';
+                                          })(),
+                                              overflow: TextOverflow.ellipsis,
+                                              style: const TextStyle(
+                                                  fontSize: 12))),
+                                          DataCell(Center(
+                                              child: Text(
+                                                  '${row.entry.itemCount}'))),
+                                          // Entry Date (SR form) — falls back to the
+                                          // warehouse admit date.
+                                          DataCell(TooltipText((() {
+                                            final d = row.package.entryDate ??
+                                                row.entry.admittedAt;
+                                            return DateFormat('yyyy-MM-dd')
+                                                .format(d);
+                                          })())),
+                                          // Release Date = the entry's returned date.
+                                          DataCell(TooltipText(row
+                                                      .entry.returnedAt !=
+                                                  null
+                                              ? DateFormat('yyyy-MM-dd')
+                                                  .format(row.entry.returnedAt!)
+                                              : '—')),
+                                          // Warehouse charge from the SR Entry Date →
+                                          // Release Date (not the warehouse admit date).
+                                          DataCell(TooltipText((() {
+                                            final e = row.entry;
+                                            final chargeStart =
+                                                row.package.entryDate ??
+                                                    e.admittedAt;
+                                            final tempEntry =
+                                                WarehouseEntryModel(
+                                              id: e.id,
+                                              packageId: e.packageId,
+                                              packageItemId: e.packageItemId,
+                                              warehouseId: e.warehouseId,
+                                              warehouseName: e.warehouseName,
+                                              warehouseCode: e.warehouseCode,
+                                              holdReason: e.holdReason,
+                                              itemCount: e.itemCount,
+                                              admittedAt: chargeStart,
+                                              dailyRate: e.dailyRate,
+                                              returnedAt: e.returnedAt,
+                                            );
+                                            return 'LKR ${NumberFormat('#,##0.00').format(tempEntry.calculatePackageCharge(row.package.items, storageRateHistory))}';
+                                          })(),
+                                              style: TextStyle(
+                                                  color: context
+                                                      .colors.primaryGold,
+                                                  fontWeight:
+                                                      FontWeight.bold))),
+                                          DataCell(TooltipText(
+                                              row.receiptNo ?? '—',
+                                              overflow: TextOverflow.ellipsis)),
+                                          DataCell(Center(
+                                              child: IconButton(
+                                            icon: Icon(
+                                                Icons.info_outline_rounded,
+                                                color: context
+                                                    .colors.accentLightBlue,
+                                                size: 18),
+                                            onPressed: () {
+                                              showDialog(
+                                                context: context,
+                                                builder: (_) =>
+                                                    PackageDetailsDialog(
+                                                  package: row.package,
+                                                  storageRate:
+                                                      storageRateHistory,
+                                                  highlightEntry: row.entry,
+                                                  useLegacySummary: true,
+                                                ),
+                                              );
+                                            },
+                                          ))),
+                                        ]))
+                                    .toList(),
+                              ),
+                            ),
                           ),
                         ),
                         TablePager(
@@ -713,4 +732,3 @@ class _ReturnedRow {
     this.receiptDate,
   });
 }
-

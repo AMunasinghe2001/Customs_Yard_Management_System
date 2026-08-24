@@ -24,6 +24,7 @@ import '../screens/warehouses/warehouse_capacity_screen.dart';
 import '../screens/packages/packages_screen.dart';
 import '../screens/packages/returned_packages_screen.dart';
 import '../screens/packages/abandoned_packages_screen.dart';
+import '../screens/packages/detained_packages_screen.dart';
 import '../screens/packages/other_packages_screen.dart';
 import '../screens/packages/old_entries_screen.dart';
 import '../screens/packages/disposition_category_screen.dart';
@@ -47,7 +48,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       final user = supabase.auth.currentUser;
       final isLoggedIn = user != null;
       // ignore: avoid_print
-      print('[ROUTER] redirect matched=${state.matchedLocation} loggedIn=$isLoggedIn '
+      print(
+          '[ROUTER] redirect matched=${state.matchedLocation} loggedIn=$isLoggedIn '
           'profileAdmin=${ref.read(currentProfileProvider)?.isAdmin}');
       final publicRoutes = [
         '/',
@@ -65,7 +67,7 @@ final routerProvider = Provider<GoRouter>((ref) {
         '/executive/signup'
       ];
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
-      
+
       if (isLoggedIn) {
         // Run deep verification (email confirmed, active status)
         try {
@@ -79,7 +81,8 @@ final routerProvider = Provider<GoRouter>((ref) {
       }
 
       if (!isLoggedIn && !isPublicPage) return '/';
-      if (isLoggedIn && (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
+      if (isLoggedIn &&
+          (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
         final profile = ref.read(currentProfileProvider);
         if (profile?.isDisposal == true) return '/disposal';
         if (profile?.isAppeal == true) return '/appeal';
@@ -92,48 +95,163 @@ final routerProvider = Provider<GoRouter>((ref) {
     },
     routes: [
       GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
-      GoRoute(path: '/yard-access', builder: (_, __) => const YardAccessScreen()),
+      GoRoute(
+          path: '/yard-access', builder: (_, __) => const YardAccessScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),
-      GoRoute(path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
-      GoRoute(path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),
-      GoRoute(path: '/disposal/login', builder: (_, __) => const DisposalLoginScreen()),
-      GoRoute(path: '/disposal/signup', builder: (_, __) => const DisposalSignupScreen()),
-      GoRoute(path: '/disposal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DisposalDashboardScreen())),
-      GoRoute(path: '/valuation/login', builder: (_, __) => const ValuationLoginScreen()),
-      GoRoute(path: '/valuation/signup', builder: (_, __) => const ValuationSignupScreen()),
-      GoRoute(path: '/valuation', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ValuationDashboardScreen())),
-      GoRoute(path: '/executive/login', builder: (_, __) => const ExecutiveLoginScreen()),
-      GoRoute(path: '/executive/signup', builder: (_, __) => const ExecutiveSignupScreen()),
-      GoRoute(path: '/executive', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ExecutiveDashboardScreen())),
-      GoRoute(path: '/appeal/login', builder: (_, __) => const AppealLoginScreen()),
-      GoRoute(path: '/appeal/signup', builder: (_, __) => const AppealSignupScreen()),
-      GoRoute(path: '/appeal', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AppealDashboardScreen())),
+      GoRoute(
+          path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
+      GoRoute(
+          path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),
+      GoRoute(
+          path: '/disposal/login',
+          builder: (_, __) => const DisposalLoginScreen()),
+      GoRoute(
+          path: '/disposal/signup',
+          builder: (_, __) => const DisposalSignupScreen()),
+      GoRoute(
+          path: '/disposal',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const DisposalDashboardScreen())),
+      GoRoute(
+          path: '/valuation/login',
+          builder: (_, __) => const ValuationLoginScreen()),
+      GoRoute(
+          path: '/valuation/signup',
+          builder: (_, __) => const ValuationSignupScreen()),
+      GoRoute(
+          path: '/valuation',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const ValuationDashboardScreen())),
+      GoRoute(
+          path: '/executive/login',
+          builder: (_, __) => const ExecutiveLoginScreen()),
+      GoRoute(
+          path: '/executive/signup',
+          builder: (_, __) => const ExecutiveSignupScreen()),
+      GoRoute(
+          path: '/executive',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const ExecutiveDashboardScreen())),
+      GoRoute(
+          path: '/appeal/login', builder: (_, __) => const AppealLoginScreen()),
+      GoRoute(
+          path: '/appeal/signup',
+          builder: (_, __) => const AppealSignupScreen()),
+      GoRoute(
+          path: '/appeal',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const AppealDashboardScreen())),
       // Officers land here — same dashboard as admins (one shared dashboard),
       // just with the '/dashboard' nav item highlighted.
-      GoRoute(path: '/dashboard', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminDashboardScreen(currentRoute: '/dashboard'))),
-      GoRoute(path: '/inspection', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const InspectionScreen())),
-      GoRoute(path: '/warehouses', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehousesScreen())),
-      GoRoute(path: '/zone-capacity', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const WarehouseCapacityScreen())),
-      GoRoute(path: '/packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const PackagesScreen())),
-      GoRoute(path: '/old-entries', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const OldEntriesScreen())),
-      GoRoute(path: '/returned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ReturnedPackagesScreen())),
-      GoRoute(path: '/abandoned-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AbandonedPackagesScreen())),
-      GoRoute(path: '/forfeited-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const ForfeitedPackagesScreen())),
-      GoRoute(path: '/other-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const OtherPackagesScreen())),
-      GoRoute(path: '/sold-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/sold-packages', title: 'Sold Goods', subtitle: 'Goods disposed by sale', countLabel: 'Sold', finalTag: 'SOLD'))),
-      GoRoute(path: '/unsold-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const UnsoldPackagesScreen())),
-      GoRoute(path: '/destroyed-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/destroyed-packages', title: 'Destroyed Goods', subtitle: 'Goods that have been destroyed', countLabel: 'Destroyed', finalTag: 'DESTROYED'))),
-      GoRoute(path: '/reexported-packages', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DispositionCategoryScreen(route: '/reexported-packages', title: 'Re-exported Goods', subtitle: 'Goods sent back to country of origin', countLabel: 'Re-exported', finalTag: 'RE-EXPORTED'))),
-      GoRoute(path: '/tender-disposals', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const TenderDisposalScreen())),
-      GoRoute(path: '/destruction-disposals', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const DestructionDisposalScreen())),
-      GoRoute(path: '/admin', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const AdminDashboardScreen())),
-      GoRoute(path: '/admin/panel', pageBuilder: (_, state) {
-        final tabStr = state.uri.queryParameters['tab'];
-        final tabIndex = int.tryParse(tabStr ?? '0') ?? 0;
-        return NoTransitionPage(key: state.pageKey, child: AdminScreen(initialIndex: tabIndex));
-      }),
-      GoRoute(path: '/profile', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: const EditProfileScreen())),
-      GoRoute(path: '/reports', pageBuilder: (_, state) => NoTransitionPage(key: state.pageKey, child: AppShell(currentRoute: '/reports', child: const ReportsScreen()))),
+      GoRoute(
+          path: '/dashboard',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const AdminDashboardScreen(currentRoute: '/dashboard'))),
+      GoRoute(
+          path: '/inspection',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const InspectionScreen())),
+      GoRoute(
+          path: '/warehouses',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const WarehousesScreen())),
+      GoRoute(
+          path: '/zone-capacity',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const WarehouseCapacityScreen())),
+      GoRoute(
+          path: '/packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const PackagesScreen())),
+      GoRoute(
+          path: '/old-entries',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const OldEntriesScreen())),
+      GoRoute(
+          path: '/returned-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const ReturnedPackagesScreen())),
+      GoRoute(
+          path: '/abandoned-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const AbandonedPackagesScreen())),
+      GoRoute(
+          path: '/forfeited-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const ForfeitedPackagesScreen())),
+      GoRoute(
+          path: '/detained-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const DetainedPackagesScreen())),
+      GoRoute(
+          path: '/other-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const OtherPackagesScreen())),
+      GoRoute(
+          path: '/sold-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const DispositionCategoryScreen(
+                  route: '/sold-packages',
+                  title: 'Sold Goods',
+                  subtitle: 'Goods disposed by sale',
+                  countLabel: 'Sold',
+                  finalTag: 'SOLD'))),
+      GoRoute(
+          path: '/unsold-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const UnsoldPackagesScreen())),
+      GoRoute(
+          path: '/destroyed-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const DispositionCategoryScreen(
+                  route: '/destroyed-packages',
+                  title: 'Destroyed Goods',
+                  subtitle: 'Goods that have been destroyed',
+                  countLabel: 'Destroyed',
+                  finalTag: 'DESTROYED'))),
+      GoRoute(
+          path: '/reexported-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const DispositionCategoryScreen(
+                  route: '/reexported-packages',
+                  title: 'Re-exported Goods',
+                  subtitle: 'Goods sent back to country of origin',
+                  countLabel: 'Re-exported',
+                  finalTag: 'RE-EXPORTED'))),
+      GoRoute(
+          path: '/tender-disposals',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const TenderDisposalScreen())),
+      GoRoute(
+          path: '/destruction-disposals',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const DestructionDisposalScreen())),
+      GoRoute(
+          path: '/admin',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const AdminDashboardScreen())),
+      GoRoute(
+          path: '/admin/panel',
+          pageBuilder: (_, state) {
+            final tabStr = state.uri.queryParameters['tab'];
+            final tabIndex = int.tryParse(tabStr ?? '0') ?? 0;
+            return NoTransitionPage(
+                key: state.pageKey, child: AdminScreen(initialIndex: tabIndex));
+          }),
+      GoRoute(
+          path: '/profile',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const EditProfileScreen())),
+      GoRoute(
+          path: '/reports',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: AppShell(
+                  currentRoute: '/reports', child: const ReportsScreen()))),
     ],
   );
 });

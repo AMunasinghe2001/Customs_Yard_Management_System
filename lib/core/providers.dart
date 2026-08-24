@@ -819,6 +819,24 @@ final requestableForfeitedPackagesProvider =
       .getRequestableExpiredPackages();
 });
 
+/// The same pool, PLUS goods still inside their appeal window.
+///
+/// The disposal request dialog lists these greyed out rather than hiding them,
+/// so the officer sees every SR at once and picks what to send. Goods on an
+/// appeal hold are excluded here too — that appeal is still open.
+final allDisposalCandidatesProvider =
+    FutureProvider<List<ForfeitedPackageModel>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  ref.watch(disposalRequestsRefreshProvider);
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
+  return ref
+      .read(forfeitedPackageServiceProvider)
+      .getRequestableExpiredPackages(includePending: true);
+});
+
 /// Yard-side: set of "pkgId:itemId" keys for abandoned/other packages that
 /// have actually been SENT for disposal. Used by the Abandoned and Other table
 /// screens to hide rows already in a disposal request.

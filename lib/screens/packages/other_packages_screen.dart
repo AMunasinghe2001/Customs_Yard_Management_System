@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../core/theme.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../../core/providers.dart';
+import '../../core/post_status_activities.dart';
 import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
@@ -13,6 +14,7 @@ import '../../widgets/status_chip.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/appeal_state_chip.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
@@ -21,6 +23,9 @@ import '../../widgets/tooltip_text.dart';
 final otherPackageSearchProvider = StateProvider<String>((ref) => '');
 final otherPackageDateRangeProvider =
     StateProvider<DateTimeRange?>((ref) => null);
+
+/// Post Status Activity filter — 'all', or one of [kDisposalActivities].
+final otherPackageActivityProvider = StateProvider<String>((ref) => 'all');
 
 /// Genuine system statuses (set by the SR form dropdown or by later disposition
 /// actions). An item whose status is NONE of these — and isn't empty — is a
@@ -234,6 +239,24 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
   /// status, so they must be surfaced from the warehouse entries directly).
   /// [sentKeys] — "pkgId:itemId" keys for items already sent in a disposal
   /// request; those rows are hidden from the table.
+
+  /// Whether these goods can be sent for disposal yet.
+  ///
+  /// Computed from data ALREADY on screen — the row and the appeal outcomes —
+  /// so the header and the Send Disposal Request button settle as soon as the
+  /// table does. Reading it from `requestableForfeitedPackagesProvider` meant
+  /// waiting on that provider's heavy cross-table query, which is why the
+  /// button took a moment to light up.
+  ///
+  /// The 30-day appeal window blocks it, EXCEPT once the Appeal Directorate
+  /// has ruled. A hold blocks it either way — that appeal is still open.
+  static bool _isRowActionable(_OtherRow row, ItemAppealOutcome? outcome) {
+    if (outcome?.onHold ?? false) return false;
+    if (outcome?.unblocksAction ?? false) return true;
+    return !isWithinAppealWindow(
+        row.package.entryDate ?? row.package.createdAt);
+  }
+
   List<_OtherRow> _buildRows(List<PackageModel> packages,
       {Set<String> sentKeys = const {}}) {
     final rows = <_OtherRow>[];
@@ -337,6 +360,7 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
         ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
             const <String, ItemAppealOutcome>{};
     final dateRange = ref.watch(otherPackageDateRangeProvider);
+    final activity = ref.watch(otherPackageActivityProvider);
     final sentKeys =
         ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
 
@@ -378,42 +402,65 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                     .watch(sentAbandonedOtherFpKeysProvider)
                                     .valueOrNull ??
                                 {};
+                            final outcomes = ref
+                                    .watch(allItemAppealOutcomesProvider)
+                                    .valueOrNull ??
+                                const <String, ItemAppealOutcome>{};
                             return pkgs.when(
-                              data: (list) => _OtherStatChip(
-                                  label: 'Other',
-                                  value:
-                                      '${_buildRows(list, sentKeys: sk).length}',
-                                  color: context.colors.accentLightBlue),
+                              data: (list) {
+                                // Counts the SAME rows the table renders, so
+                                // the header always agrees with the list below.
+                                final rows = _buildRows(list, sentKeys: sk);
+                                final total = rows.length;
+                                final actionable = rows
+                                    .where((r) => _isRowActionable(
+                                        r, outcomes[r.item.id]))
+                                    .length;
+                                return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _OtherStatChip(
+                                        label: 'Total',
+                                        value: '$total',
+                                        color: context.colors.accentLightBlue),
+                                    const Gap(8),
+                                    _OtherStatChip(
+                                        label: 'In Appeal',
+                                        value:
+                                            '${total - actionable < 0 ? 0 : total - actionable}',
+                                        color: context.colors.warningAmber),
+                                    const Gap(8),
+                                    _OtherStatChip(
+                                        label: 'Actionable',
+                                        value: '$actionable',
+                                        color: context.colors.successGreen),
+                                  ],
+                                );
+                              },
                               loading: () => const SizedBox(),
                               error: (_, __) => const SizedBox(),
                             );
                           },
                         ),
-                        const Gap(8),
-                        // Requestable = "Other" packages not yet sent in a
-                        // disposal request (surfaced by the shared provider).
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final req =
-                                ref.watch(requestableForfeitedPackagesProvider);
-                            final n = req.maybeWhen(
-                                data: (list) =>
-                                    list.where((p) => p.isOtherSource).length,
-                                orElse: () => 0);
-                            return _OtherStatChip(
-                                label: 'Requestable',
-                                value: '$n',
-                                color: context.colors.primaryGold);
-                          },
-                        ),
                         const Gap(16),
                         Consumer(
                           builder: (context, ref, child) {
-                            final req =
-                                ref.watch(requestableForfeitedPackagesProvider);
-                            final n = req.maybeWhen(
-                                data: (list) =>
-                                    list.where((p) => p.isOtherSource).length,
+                            // Enabled from data already on screen, so the
+                            // button lights up with the table rather than
+                            // after a separate cross-table query.
+                            final sk = ref
+                                    .watch(sentAbandonedOtherFpKeysProvider)
+                                    .valueOrNull ??
+                                {};
+                            final outcomes = ref
+                                    .watch(allItemAppealOutcomesProvider)
+                                    .valueOrNull ??
+                                const <String, ItemAppealOutcome>{};
+                            final n = ref.watch(livePackagesProvider).maybeWhen(
+                                data: (list) => _buildRows(list, sentKeys: sk)
+                                    .where((r) => _isRowActionable(
+                                        r, outcomes[r.item.id]))
+                                    .length,
                                 orElse: () => 0);
                             return ElevatedButton.icon(
                               icon: const Icon(Icons.local_shipping_rounded,
@@ -663,6 +710,21 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                             constraints: const BoxConstraints(),
                           ),
                         const SizedBox(width: 8),
+                        StyledDropdownButton<String>(
+                          value: activity == 'all' ? null : activity,
+                          allLabel: 'Post Status Activity',
+                          icon: Icons.label_outline_rounded,
+                          menuWidth: 320,
+                          // "Other" goods carry a DISPOSAL activity, like
+                          // Forfeit and Abandoned do.
+                          options: kDisposalActivities
+                              .map((a) => StyledDropdownOption(a, a))
+                              .toList(),
+                          onChanged: (v) => ref
+                              .read(otherPackageActivityProvider.notifier)
+                              .state = v ?? 'all',
+                        ),
+                        const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
                           years: srYears(_buildRows(
@@ -712,6 +774,9 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                             dateRange.end.month, dateRange.end.day, 23, 59, 59);
                         if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
                           return false;
+                      }
+                      if (activity != 'all' && row.reason != activity) {
+                        return false;
                       }
                       if (!srYearMatches(row.package.srNumber, _yearFilter))
                         return false;
@@ -792,12 +857,22 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                             ? row.package.consigneeName
                                             : '—',
                                         overflow: TextOverflow.ellipsis)),
+                                    // A [FINAL:OTHER] row is a COMPLETED
+                                    // record — the outcome has already been
+                                    // carried out, so there is nothing left to
+                                    // appeal and no action to enable. Saying
+                                    // "Enabled" there invited a click that
+                                    // could do nothing.
                                     DataCell(Center(
-                                        child: AppealStateChip(
-                                            entryDate: row.package.entryDate ??
-                                                row.package.createdAt,
-                                            outcome:
-                                                appealOutcomes[row.item.id]))),
+                                        child: row.completed
+                                            ? _CompletedChip(
+                                                label: row.disposition)
+                                            : AppealStateChip(
+                                                entryDate:
+                                                    row.package.entryDate ??
+                                                        row.package.createdAt,
+                                                outcome: appealOutcomes[
+                                                    row.item.id]))),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
@@ -812,10 +887,24 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                             highlightEntry: row.entry,
                                             highlightItemId: row.item.id,
                                             useLegacySummary: true,
-                                            // Manageable "Other" goods have no
-                                            // appeal — disposition allowed
-                                            // immediately. Completed [FINAL:OTHER]
-                                            // outcomes are read-only (no actions).
+                                            // When the Appeal Directorate has
+                                            // ruled, banner the ruling and
+                                            // enable ONLY that action — the
+                                            // yard carries out what was
+                                            // decided, it does not choose
+                                            // afresh.
+                                            appealDecisionLabel:
+                                                appealOutcomes[row.item.id]
+                                                    ?.label,
+                                            appealDecisionCode: (appealOutcomes[
+                                                            row.item.id]
+                                                        ?.isDecided ??
+                                                    false)
+                                                ? appealOutcomes[row.item.id]!
+                                                    .decision
+                                                : null,
+                                            // Completed [FINAL:OTHER] outcomes
+                                            // are read-only (no actions).
                                             forceFinalDisposition:
                                                 !row.completed,
                                             allowFinalDisposition:
@@ -847,6 +936,41 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A finished "Other" outcome. Read-only: the disposition was already
+/// recorded, so no further action is offered on this row.
+class _CompletedChip extends StatelessWidget {
+  final String label;
+  const _CompletedChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final colour = context.colors.textMuted;
+    return Tooltip(
+      message: 'Completed · $label',
+      waitDuration: const Duration(milliseconds: 300),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: colour.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: colour.withOpacity(0.4)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.task_alt_rounded, size: 13, color: colour),
+          const Gap(5),
+          Flexible(
+            child: Text('Completed',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: colour, fontSize: 11, fontWeight: FontWeight.w700)),
+          ),
+        ]),
       ),
     );
   }

@@ -107,7 +107,8 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
       target = items.where((i) => i.id == f.itemId).firstOrNull;
     }
     target ??= items.length == 1 ? items.first : null;
-    if (target == null) return null; // multi-item row without per-item expansion
+    if (target == null)
+      return null; // multi-item row without per-item expansion
 
     final forfeitQty = (pkg?.warehouseEntries ?? const [])
         .where((e) => e.packageItemId == target!.id && _isForfeitEntry(e))
@@ -164,7 +165,10 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final expiredAsync = ref.watch(requestableForfeitedPackagesProvider);
+    // Lists EVERY candidate, including goods still inside their appeal window
+    // — those render greyed out and cannot be ticked, so the officer sees the
+    // whole picture instead of wondering where an SR went.
+    final expiredAsync = ref.watch(allDisposalCandidatesProvider);
     final selected = ref.watch(selectedRequestDispositionsProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -223,7 +227,9 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                       ),
                       child: Icon(Icons.local_shipping_rounded,
                           color: context.colors.primaryGold, size: 24),
-                    ).animate().scale(duration: 400.ms, curve: Curves.easeOutBack),
+                    )
+                        .animate()
+                        .scale(duration: 400.ms, curve: Curves.easeOutBack),
                     const Gap(16),
                     Expanded(
                       child: Column(
@@ -374,7 +380,10 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                       // Packages
                       _SectionContainer(
                         title:
-                            'Select Packages — appeal period passed (${selected.length} selected)',
+                            // The list now includes goods still in appeal
+                            // (greyed out), so the old "appeal period passed"
+                            // wording no longer describes it.
+                            'Select Goods (${selected.length} selected)',
                         icon: Icons.inventory_2_rounded,
                         delay: 200,
                         child: expiredAsync.when(
@@ -424,7 +433,10 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                 Row(
                                   children: [
                                     Text(
-                                      '${selected.length} of ${packages.length} selected',
+                                      // Counts only what CAN be sent, so the
+                                      // denominator matches Select All.
+                                      '${selected.length} of '
+                                      '${packages.where((p) => p.isActionable).length} selected',
                                       style: TextStyle(
                                           color: context.colors.textSecondary,
                                           fontSize: 12,
@@ -433,10 +445,14 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                     const Spacer(),
                                     TextButton.icon(
                                       onPressed: () {
+                                        // Skip the pending rows: they are
+                                        // listed for visibility only and
+                                        // cannot be sent yet.
                                         final map = <String, String>{};
                                         for (final p in packages) {
-                                          map[p.id] = selected[p.id] ??
-                                              'destruction';
+                                          if (!p.isActionable) continue;
+                                          map[p.id] =
+                                              selected[p.id] ?? 'destruction';
                                         }
                                         ref
                                             .read(
@@ -494,6 +510,9 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                         final pkg = packages[i];
                                         final disposition = selected[pkg.id];
                                         final isSelected = disposition != null;
+                                        // Still in its window with no ruling
+                                        // yet — listed, but not selectable.
+                                        final pending = !pkg.isActionable;
                                         return _PackageRequestRow(
                                           srNumber: pkg.srNumber,
                                           itemName: _itemSummary(pkg),
@@ -501,11 +520,17 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                           consignee: pkg.consigneeName,
                                           source: pkg.source,
                                           deadline: pkg.appealDeadline,
+                                          pending: pending,
+                                          daysLeft: pkg.appealDeadline
+                                              .difference(DateTime.now())
+                                              .inDays
+                                              .clamp(0, 999),
                                           isSelected: isSelected,
                                           disposition: disposition,
                                           onToggle: () {
-                                            final map = Map<String, String>.from(
-                                                selected);
+                                            final map =
+                                                Map<String, String>.from(
+                                                    selected);
                                             if (isSelected) {
                                               map.remove(pkg.id);
                                             } else {
@@ -518,8 +543,9 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                                 .state = map;
                                           },
                                           onDisposition: (d) {
-                                            final map = Map<String, String>.from(
-                                                selected);
+                                            final map =
+                                                Map<String, String>.from(
+                                                    selected);
                                             map[pkg.id] = d;
                                             ref
                                                 .read(
@@ -605,6 +631,14 @@ class _PackageRequestRow extends StatelessWidget {
   final VoidCallback onToggle;
   final ValueChanged<String> onDisposition;
 
+  /// Still inside its 30-day appeal window with no decision yet, so it cannot
+  /// be sent. Listed anyway — greyed out — so the officer can see it is there
+  /// and how long is left.
+  final bool pending;
+
+  /// Days remaining in that window, for the row's note.
+  final int daysLeft;
+
   const _PackageRequestRow({
     required this.srNumber,
     required this.itemName,
@@ -616,92 +650,122 @@ class _PackageRequestRow extends StatelessWidget {
     required this.disposition,
     required this.onToggle,
     required this.onDisposition,
+    this.pending = false,
+    this.daysLeft = 0,
   });
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
-      onTap: onToggle,
-      child: Container(
-        color: isSelected
-            ? context.colors.primaryGold.withOpacity(0.06)
-            : Colors.transparent,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            Checkbox(
-              activeColor: context.colors.primaryGold,
-              value: isSelected,
-              onChanged: (_) => onToggle(),
-            ),
-            const Gap(4),
-            Expanded(
-              flex: 5,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Flexible(
-                      child: Text(srNumber,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              fontWeight: FontWeight.w700,
-                              color: context.colors.accentLightBlue)),
-                    ),
-                    const Gap(8),
-                    _SourceChip(source: source),
-                  ]),
-                  Row(
-                    children: [
+      // A pending row is inert: tapping it must not select it.
+      onTap: pending ? null : onToggle,
+      child: Opacity(
+        opacity: pending ? 0.55 : 1,
+        child: Container(
+          color: isSelected
+              ? context.colors.primaryGold.withOpacity(0.06)
+              : Colors.transparent,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            children: [
+              Checkbox(
+                activeColor: context.colors.primaryGold,
+                value: isSelected,
+                onChanged: pending ? null : (_) => onToggle(),
+              ),
+              const Gap(4),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(children: [
                       Flexible(
-                        child: Text(itemName,
+                        child: Text(srNumber,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                fontSize: 12,
-                                color: context.colors.textSecondary)),
+                                fontWeight: FontWeight.w700,
+                                color: context.colors.accentLightBlue)),
                       ),
-                      if (quantity != null) ...[
-                        const Gap(6),
+                      const Gap(8),
+                      _SourceChip(source: source),
+                      if (pending) ...[
+                        const Gap(8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 1),
+                              horizontal: 7, vertical: 2),
                           decoration: BoxDecoration(
-                            color: context.colors.primaryGold.withOpacity(0.15),
-                            borderRadius: BorderRadius.circular(4),
+                            color:
+                                context.colors.warningAmber.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: context.colors.warningAmber
+                                    .withOpacity(0.4)),
                           ),
                           child: Text(
-                            'Qty $quantity',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: context.colors.primaryGold,
-                            ),
-                          ),
+                              daysLeft > 0
+                                  ? 'In appeal \u00b7 ${daysLeft}d'
+                                  : 'In appeal',
+                              style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: context.colors.warningAmber)),
                         ),
                       ],
-                    ],
-                  ),
-                ],
+                    ]),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(itemName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 12,
+                                  color: context.colors.textSecondary)),
+                        ),
+                        if (quantity != null) ...[
+                          const Gap(6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color:
+                                  context.colors.primaryGold.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              'Qty $quantity',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: context.colors.primaryGold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Expanded(
-              flex: 4,
-              child: Text(consignee,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: 13, color: context.colors.textPrimary)),
-            ),
-            const Gap(8),
-            // Disposition picker — active only when the row is selected.
-            _DispositionToggle(
-              value: disposition,
-              enabled: isSelected,
-              onChanged: onDisposition,
-            ),
-          ],
+              Expanded(
+                flex: 4,
+                child: Text(consignee,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        fontSize: 13, color: context.colors.textPrimary)),
+              ),
+              const Gap(8),
+              // Disposition picker — active only when the row is selected.
+              _DispositionToggle(
+                value: disposition,
+                enabled: isSelected && !pending,
+                onChanged: onDisposition,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -719,6 +783,7 @@ class _SourceChip extends StatelessWidget {
     final (label, color) = switch (source) {
       'abandoned' => ('Abandoned', context.colors.heldOrange),
       'other' => ('Other', context.colors.warningAmber),
+      'detain' => ('Detained', context.colors.primaryGold),
       _ => ('Forfeit', context.colors.accentBlue),
     };
     return Container(
@@ -756,8 +821,7 @@ class _DispositionToggle extends StatelessWidget {
             color: active ? color.withOpacity(0.15) : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
-                color:
-                    active ? color.withOpacity(0.6) : Colors.transparent),
+                color: active ? color.withOpacity(0.6) : Colors.transparent),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(icon,
@@ -850,14 +914,13 @@ class _SectionContainer extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
             decoration: BoxDecoration(
               color: context.colors.textPrimary.withOpacity(0.03),
               borderRadius:
                   const BorderRadius.vertical(top: Radius.circular(15)),
-              border: Border(
-                  bottom: BorderSide(color: context.colors.borderColor)),
+              border:
+                  Border(bottom: BorderSide(color: context.colors.borderColor)),
             ),
             child: Row(
               children: [
@@ -876,12 +939,10 @@ class _SectionContainer extends StatelessWidget {
                 ),
               ],
             ),
-          )
-              .animate()
-              .slideX(
-                  delay: Duration(milliseconds: delay),
-                  duration: 300.ms,
-                  begin: -0.1),
+          ).animate().slideX(
+              delay: Duration(milliseconds: delay),
+              duration: 300.ms,
+              begin: -0.1),
           Padding(
             padding: const EdgeInsets.all(16),
             child: child,
