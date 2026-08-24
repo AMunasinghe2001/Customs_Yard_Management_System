@@ -2362,6 +2362,87 @@ class ForfeitedPackageService {
     }
   }
 
+  /// The appeal outcome for every item of one package, keyed by item id.
+  ///
+  /// An appeal DECISION ends the wait: once the Appeal Directorate has ruled,
+  /// the yard may act on those goods immediately, without sitting out the rest
+  /// of the 30-day window. Items still on hold are reported too, because a
+  /// hold does the opposite — it freezes them even after the window closes.
+  ///
+  /// Reads `forfeited_packages` directly (all four sources), so it works for
+  /// Detain / Abandoned / "Other" goods as well as genuine forfeits.
+  Future<Map<String, ItemAppealOutcome>> getItemAppealOutcomes(
+      String packageId) async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select('*')
+        .eq('package_id', packageId));
+
+    final out = <String, ItemAppealOutcome>{};
+    for (final e in (data as List)) {
+      final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
+      // A package-level row speaks for every item; a per-item row for its own.
+      final ids = <String?>[if (f.itemId != null) f.itemId else null];
+      for (final id in ids) {
+        final decision = f.appealDecisionForItem(id);
+        final held = f.heldItemIds.isNotEmpty
+            ? f.heldItemIds.contains(id)
+            : f.appealHold;
+        if (id != null) {
+          out[id] = ItemAppealOutcome(decision: decision, onHold: held);
+        } else {
+          // Package-level: apply to any item that has no row of its own. The
+          // per-item map still wins where it names an item.
+          for (final entry in f.itemAppealDecisions.entries) {
+            out[entry.key] = ItemAppealOutcome(
+                decision: f.appealDecisionForItem(entry.key),
+                onHold: f.heldItemIds.contains(entry.key));
+          }
+          out[''] = ItemAppealOutcome(decision: decision, onHold: held);
+        }
+      }
+    }
+    return out;
+  }
+
+  /// Appeal outcomes for EVERY item across all packages, keyed by item id.
+  ///
+  /// The per-package variant issues one query per row, which a table cannot
+  /// afford; this fetches the lot once so a list can look each row up.
+  Future<Map<String, ItemAppealOutcome>> getAllItemAppealOutcomes() async {
+    final data = await AuthService._withNetworkRetry(
+        () => supabase.from('forfeited_packages').select('*'));
+
+    final out = <String, ItemAppealOutcome>{};
+    for (final e in (data as List)) {
+      final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
+      // A per-item row speaks for its own item.
+      if (f.itemId != null) {
+        out[f.itemId!] = ItemAppealOutcome(
+          decision: f.appealDecisionForItem(f.itemId),
+          onHold: f.heldItemIds.isNotEmpty
+              ? f.heldItemIds.contains(f.itemId)
+              : f.appealHold,
+        );
+        continue;
+      }
+      // A package-level row: its per-item map names the items it ruled on.
+      for (final itemId in f.itemAppealDecisions.keys) {
+        out[itemId] = ItemAppealOutcome(
+          decision: f.appealDecisionForItem(itemId),
+          onHold: f.heldItemIds.contains(itemId),
+        );
+      }
+      for (final itemId in f.heldItemIds) {
+        out.putIfAbsent(
+            itemId,
+            () => ItemAppealOutcome(
+                decision: f.appealDecisionForItem(itemId), onHold: true));
+      }
+    }
+    return out;
+  }
+
   /// Detain / Abandoned / "Other" goods whose 30-day appeal window is STILL
   /// OPEN, as synthetic [ForfeitedPackageModel]s the Appeal Directorate can
   /// raise an appeal against.
@@ -2373,10 +2454,30 @@ class ForfeitedPackageService {
   ///
   /// Cross-yard: the Appeal Directorate reviews every yard (RLS allows it).
   Future<List<ForfeitedPackageModel>> getInAppealNonForfeitPackages() async {
+    // Only goods still inside the 30-day window can be appealed, so ask the
+    // DATABASE for those rather than downloading every package in the system
+    // and discarding most of them here. Without this the query pulled the
+    // whole table plus its items, warehouse entries and profile joins on every
+    // load, and the portal sat spinning for a minute.
+    //
+    // Rows with a NULL entry_date fall back to created_at, matching what the
+    // loop below does when it computes the real deadline.
+    //
+    // The cutoff is a DATE, not a timestamp: PostgREST splits `or(...)` on dots,
+    // and an ISO timestamp's fractional seconds ("...T11:25:00.000") would cut
+    // the filter in half. A date is unambiguous and, since the window is
+    // measured in whole days, loses nothing. One extra day of slack keeps any
+    // timezone difference between client and server from clipping a row that
+    // is still inside the window; the exact check runs in the loop below.
+    final cut =
+        DateTime.now().subtract(const Duration(days: kAppealWindowDays + 1));
+    final cutoff = '${cut.year}-${cut.month.toString().padLeft(2, '0')}-'
+        '${cut.day.toString().padLeft(2, '0')}';
     final pkgData = await AuthService._withNetworkRetry(() => supabase
         .from('packages')
         .select(
-            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number))'));
+            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number))')
+        .or('entry_date.gte.$cutoff,and(entry_date.is.null,created_at.gte.$cutoff)'));
 
     // Once an appeal is lodged against Detain / Abandoned / "Other" goods a
     // REAL forfeited_packages row exists (`appeal_ensure_forfeited_row`). Load
@@ -4897,6 +4998,10 @@ class AppealService {
   /// point before the window passes. Packages already fully sold/destroyed
   /// (every item finalised) ARE dropped — there's nothing left to appeal.
   Future<List<ForfeitedPackageModel>> getForfeitedPackages() async {
+    // Deliberately NOT narrowed by deadline: the Decided tab needs forfeits
+    // whose window has long closed, and a held appeal outlives its deadline
+    // too. Per-item decisions live in a jsonb map that PostgREST cannot filter
+    // on, so any server-side cut risks hiding rows the portal must show.
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('forfeited_packages')
         .select(
@@ -4982,7 +5087,31 @@ class AppealService {
         }
       }
     }
-    return expanded;
+
+    // One row per (package, item), whatever the table holds.
+    //
+    // A PACKAGE-level row (item_id IS NULL) expands into every item, so when
+    // an SR carries several of them each one expands again and the list
+    // multiplies — three package-level rows over three items rendered nine
+    // times. De-duplicating here keeps the portal readable even before the
+    // underlying rows are cleaned up (see fix_appeal_duplicate_rows.sql).
+    //
+    // The row carrying the most appeal state wins, so a hold or a decision is
+    // never the copy that gets dropped.
+    final byTarget = <String, ForfeitedPackageModel>{};
+    for (final f in expanded) {
+      final key = '${f.packageId}:${f.itemId ?? ''}';
+      final existing = byTarget[key];
+      if (existing == null) {
+        byTarget[key] = f;
+        continue;
+      }
+      int weight(ForfeitedPackageModel m) =>
+          (m.hasAppealDecisionForItem(m.itemId) ? 2 : 0) +
+          (m.appealHold ? 1 : 0);
+      if (weight(f) > weight(existing)) byTarget[key] = f;
+    }
+    return byTarget.values.toList();
   }
 
   /// True if every package item has moved on to a final disposition

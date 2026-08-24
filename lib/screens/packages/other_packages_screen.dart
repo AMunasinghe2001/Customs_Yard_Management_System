@@ -28,14 +28,27 @@ final otherPackageDateRangeProvider =
 /// "Other: <text>" marker instead (see [_statusIsOther]). Kept in sync with
 /// ForfeitedPackageService._knownStatuses.
 const Set<String> _knownStatuses = {
-  'detain', 'detained', 'held',
-  'forfeit', 'forfiet', 'forfeited', 'confiscated',
+  'detain',
+  'detained',
+  'held',
+  'forfeit',
+  'forfiet',
+  'forfeited',
+  'confiscated',
   'abandoned',
-  'released', 'returned', 'cleared',
-  're-export', 're-exported', 'reexport',
-  'destroy', 'destroyed',
-  'sold', 'sale',
-  'inspecting', 'pending', '',
+  'released',
+  'returned',
+  'cleared',
+  're-export',
+  're-exported',
+  'reexport',
+  'destroy',
+  'destroyed',
+  'sold',
+  'sale',
+  'inspecting',
+  'pending',
+  '',
 };
 
 /// True if a status string is the explicit "Other" marker the SR form now
@@ -57,8 +70,7 @@ bool _isLegacyOtherStatus(String? s) {
 /// True if an item's status is an "Other" disposition. Recognises the explicit
 /// "Other"/"Other: <text>" marker (current) and, for backward compatibility,
 /// legacy free-text statuses.
-bool _statusIsOther(String? s) =>
-    _isOtherMarker(s) || _isLegacyOtherStatus(s);
+bool _statusIsOther(String? s) => _isOtherMarker(s) || _isLegacyOtherStatus(s);
 
 /// True if a warehouse entry is an "Other" disposition event — a custom
 /// disposition recorded from the warehouse Actions dialog. A PARTIAL "Other"
@@ -100,8 +112,8 @@ String _finalOtherLabel(WarehouseEntryModel e) {
 /// text inside the brackets after the "OTHER:" marker (falls back to 'Other').
 String _otherEntryLabel(WarehouseEntryModel e) {
   final notes = (e.returnNotes ?? '').trim();
-  final m = RegExp(r'^\[OTHER:\s*([^\]]*)\]', caseSensitive: false)
-      .firstMatch(notes);
+  final m =
+      RegExp(r'^\[OTHER:\s*([^\]]*)\]', caseSensitive: false).firstMatch(notes);
   if (m != null) {
     final t = m.group(1)!.trim();
     if (t.isNotEmpty) return t;
@@ -177,8 +189,7 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
   /// "Other" package — used by the details popup's Sale/Destroy buttons.
   /// createDisposalRequest creates the synthetic source='other' forfeited_packages
   /// row automatically.
-  Future<void> _requestSingleDisposal(
-      PackageModel pkg, String disposition,
+  Future<void> _requestSingleDisposal(PackageModel pkg, String disposition,
       {String? itemId, WarehouseEntryModel? entry}) async {
     try {
       // Include the entry id when this row is a partial "[OTHER]" disposition
@@ -191,11 +202,11 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
               ? '${pkg.id}:$itemId:other'
               : '${pkg.id}:other';
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
-            requestDate: DateTime.now(),
-            // item-level key: "pkgId:itemId:other" ensures each item gets its
-            // own forfeited_packages row and is not blocked by sibling items.
-            dispositions: {key: disposition},
-          );
+        requestDate: DateTime.now(),
+        // item-level key: "pkgId:itemId:other" ensures each item gets its
+        // own forfeited_packages row and is not blocked by sibling items.
+        dispositions: {key: disposition},
+      );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
       ref.invalidate(requestableForfeitedPackagesProvider);
@@ -320,6 +331,11 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final search = ref.watch(otherPackageSearchProvider);
+    // Appeal rulings, keyed by item id. A decision releases the goods early;
+    // a hold keeps them frozen past the deadline.
+    final appealOutcomes =
+        ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
+            const <String, ItemAppealOutcome>{};
     final dateRange = ref.watch(otherPackageDateRangeProvider);
     final sentKeys =
         ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
@@ -347,9 +363,9 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                         Text('Other Goods',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                          'Manage packages with an "Other" status — release, re-export or send for disposal',
-                          style:
-                              TextStyle(color: context.colors.textSecondary)),
+                            'Manage packages with an "Other" status — release, re-export or send for disposal',
+                            style:
+                                TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
                     Row(
@@ -406,8 +422,7 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: n > 0
                                     ? context.colors.primaryGold
-                                    : context.colors.textMuted
-                                        .withOpacity(0.2),
+                                    : context.colors.textMuted.withOpacity(0.2),
                                 foregroundColor: n > 0
                                     ? Colors.white
                                     : context.colors.textMuted,
@@ -424,7 +439,8 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                           onSubmitted: () {
                                             ref.invalidate(
                                                 requestableForfeitedPackagesProvider);
-                                            ref.invalidate(livePackagesProvider);
+                                            ref.invalidate(
+                                                livePackagesProvider);
                                           },
                                         ),
                                       )
@@ -650,7 +666,8 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                         YearFilterButton(
                           value: _yearFilter,
                           years: srYears(_buildRows(
-                                  packages.valueOrNull ?? const <PackageModel>[],
+                                  packages.valueOrNull ??
+                                      const <PackageModel>[],
                                   sentKeys: sentKeys)
                               .map((r) => r.package.srNumber)),
                           onChanged: (v) => setState(() => _yearFilter = v),
@@ -732,7 +749,8 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                 size: ColumnSize.S,
                                 fixedWidth: 70),
                             DataColumn2(
-                                label: Center(child: Text('Disposition')), size: ColumnSize.M),
+                                label: Center(child: Text('Disposition')),
+                                size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Date'), size: ColumnSize.M),
                             DataColumn2(
@@ -776,9 +794,10 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: AppealStateChip(
-                                            entryDate:
-                                                row.package.entryDate ??
-                                                    row.package.createdAt))),
+                                            entryDate: row.package.entryDate ??
+                                                row.package.createdAt,
+                                            outcome:
+                                                appealOutcomes[row.item.id]))),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
@@ -797,17 +816,19 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                                             // appeal — disposition allowed
                                             // immediately. Completed [FINAL:OTHER]
                                             // outcomes are read-only (no actions).
-                                            forceFinalDisposition: !row.completed,
+                                            forceFinalDisposition:
+                                                !row.completed,
                                             allowFinalDisposition:
                                                 !row.completed,
-                                            onSaleOrDestroyRequest: row.completed
-                                                ? null
-                                                : (disposition) =>
-                                                    _requestSingleDisposal(
-                                                        row.package,
-                                                        disposition,
-                                                        itemId: row.item.id,
-                                                        entry: row.entry),
+                                            onSaleOrDestroyRequest:
+                                                row.completed
+                                                    ? null
+                                                    : (disposition) =>
+                                                        _requestSingleDisposal(
+                                                            row.package,
+                                                            disposition,
+                                                            itemId: row.item.id,
+                                                            entry: row.entry),
                                           ),
                                         );
                                       },
@@ -899,6 +920,7 @@ class _OtherRow {
   final String disposition; // custom "Other Status" label, or 'Other'
   final String reason;
   final String officer;
+
   /// True for a FINAL "Other" outcome ([FINAL:OTHER]) — a completed record that
   /// is read-only (no further disposal actions).
   final bool completed;

@@ -52,11 +52,9 @@ bool _itemHasFinalDisposition(PackageModel p, String itemId) {
 /// item, or a partial/full abandonment disposition event.
 bool _packageHasAbandoned(PackageModel p) {
   for (final item in p.items) {
-    final entries =
-        p.warehouseEntries.where((e) => e.packageItemId == item.id);
+    final entries = p.warehouseEntries.where((e) => e.packageItemId == item.id);
     if (entries.any(_isAbandonedEntry)) return true;
-    if (_statusIsAbandoned(item.status) &&
-        !entries.any(_isAbandonedEntry)) {
+    if (_statusIsAbandoned(item.status) && !entries.any(_isAbandonedEntry)) {
       return true;
     }
   }
@@ -90,9 +88,9 @@ class _AbandonedPackagesScreenState
           ? '${pkg.id}:${item.id}:${entry.id}:abandoned'
           : '${pkg.id}:${item.id}:abandoned';
       await ref.read(forfeitedPackageServiceProvider).createDisposalRequest(
-            requestDate: DateTime.now(),
-            dispositions: {key: disposition},
-          );
+        requestDate: DateTime.now(),
+        dispositions: {key: disposition},
+      );
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
       ref.invalidate(livePackagesProvider);
       ref.invalidate(requestableForfeitedPackagesProvider);
@@ -134,8 +132,7 @@ class _AbandonedPackagesScreenState
 
         // 1. Disposition abandonment events ([ABANDONED] in returnNotes) —
         //    each event is its own row (partial/full, repeatable per item).
-        final abandonedEntries =
-            itemEntries.where(_isAbandonedEntry).toList();
+        final abandonedEntries = itemEntries.where(_isAbandonedEntry).toList();
         for (final entry in abandonedEntries) {
           rows.add(_AbandonedRow(
             package: package,
@@ -144,8 +141,7 @@ class _AbandonedPackagesScreenState
             qty: entry.itemCount,
             date: entry.returnedAt ?? entry.admittedAt,
             reason: entry.holdReason,
-            officer:
-                entry.returnedByName ?? entry.returnedByBadge ?? '—',
+            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
           ));
         }
 
@@ -160,9 +156,7 @@ class _AbandonedPackagesScreenState
             qty: ctx?.itemCount ?? item.quantity,
             date: ctx?.admittedAt,
             reason: ctx?.holdReason ??
-                (item.reasons?.isNotEmpty == true
-                    ? item.reasons!
-                    : '—'),
+                (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
             officer: ctx?.admittedByName ?? '—',
           ));
         }
@@ -196,6 +190,11 @@ class _AbandonedPackagesScreenState
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final search = ref.watch(abandonedPackageSearchProvider);
+    // Appeal rulings, keyed by item id. A decision releases the goods early;
+    // a hold keeps them frozen past the deadline.
+    final appealOutcomes =
+        ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
+            const <String, ItemAppealOutcome>{};
     final sentKeys =
         ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
     final dateRange = ref.watch(abandonedPackageDateRangeProvider);
@@ -224,9 +223,9 @@ class _AbandonedPackagesScreenState
                         Text('Abandoned Goods',
                             style: Theme.of(context).textTheme.headlineLarge),
                         Text(
-                          'Manage abandoned goods and send them for disposal',
-                          style: TextStyle(
-                              color: context.colors.textSecondary)),
+                            'Manage abandoned goods and send them for disposal',
+                            style:
+                                TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
                     Row(
@@ -302,7 +301,8 @@ class _AbandonedPackagesScreenState
                                           onSubmitted: () {
                                             ref.invalidate(
                                                 requestableForfeitedPackagesProvider);
-                                            ref.invalidate(livePackagesProvider);
+                                            ref.invalidate(
+                                                livePackagesProvider);
                                           },
                                         ),
                                       )
@@ -431,8 +431,7 @@ class _AbandonedPackagesScreenState
                               style:
                                   TextStyle(color: context.colors.textPrimary),
                               decoration: InputDecoration(
-                                hintText:
-                                    'Search SR #, consignee or item...',
+                                hintText: 'Search SR #, consignee or item...',
                                 prefixIcon: Icon(Icons.search_rounded,
                                     color: context.colors.textMuted),
                                 suffixIcon: controller.text.isNotEmpty
@@ -523,8 +522,8 @@ class _AbandonedPackagesScreenState
                             icon: Icon(Icons.clear_rounded,
                                 size: 16, color: context.colors.dangerRed),
                             onPressed: () => ref
-                                .read(abandonedPackageDateRangeProvider
-                                    .notifier)
+                                .read(
+                                    abandonedPackageDateRangeProvider.notifier)
                                 .state = null,
                             tooltip: 'Clear Date Filter',
                             padding: EdgeInsets.zero,
@@ -540,15 +539,16 @@ class _AbandonedPackagesScreenState
                               .map((a) => StyledDropdownOption(a, a))
                               .toList(),
                           onChanged: (v) => ref
-                              .read(abandonedPackageReasonFilterProvider
-                                  .notifier)
+                              .read(
+                                  abandonedPackageReasonFilterProvider.notifier)
                               .state = v ?? 'all',
                         ),
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
                           years: srYears(_buildRows(
-                                  packages.valueOrNull ?? const <PackageModel>[],
+                                  packages.valueOrNull ??
+                                      const <PackageModel>[],
                                   sentKeys: sentKeys)
                               .map((r) => r.package.srNumber)),
                           onChanged: (v) => setState(() => _yearFilter = v),
@@ -577,9 +577,7 @@ class _AbandonedPackagesScreenState
                       if (search.isNotEmpty) {
                         final s = search.toLowerCase();
                         final itemName = row.itemName.toLowerCase();
-                        if (!row.package.srNumber
-                                .toLowerCase()
-                                .contains(s) &&
+                        if (!row.package.srNumber.toLowerCase().contains(s) &&
                             !row.package.consigneeName
                                 .toLowerCase()
                                 .contains(s) &&
@@ -667,8 +665,7 @@ class _AbandonedPackagesScreenState
                                             : '—',
                                         overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(fontSize: 12))),
-                                    DataCell(Center(
-                                        child: Text('${row.qty}'))),
+                                    DataCell(Center(child: Text('${row.qty}'))),
                                     DataCell(TooltipText(row.reason,
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(TooltipText(row.date != null
@@ -682,9 +679,10 @@ class _AbandonedPackagesScreenState
                                         overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: AppealStateChip(
-                                            entryDate:
-                                                row.package.entryDate ??
-                                                    row.package.createdAt))),
+                                            entryDate: row.package.entryDate ??
+                                                row.package.createdAt,
+                                            outcome:
+                                                appealOutcomes[row.item.id]))),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,

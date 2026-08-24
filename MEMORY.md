@@ -617,3 +617,28 @@ A High Panel report listing every figure the Financials tab totals, **one row pe
 
 - **`PdfPreview` has no zoom of its own** — it scales each page to `maxPageWidth`, so zooming IS that number. `_ReportPreviewDialogState` now holds `_pageWidth` (default 700, clamped 400..3000, x1.25 per press) with +/- buttons and a tap-to-reset percentage in the header. Two details matter: the preview needs a `ValueKey(_pageWidth)` or it keeps the bitmap it already rasterised, and once the page is wider than the dialog it must be wrapped in a horizontal `SingleChildScrollView` sized to `_pageWidth + 40` (the `previewPageMargin`), because `PdfPreview` only scrolls vertically.
 - **`warehouses` is a SHARED table with no yard column**; the association exists only through `warehouse_entries.yard`. `getWarehouseIdsForYard(yard)` + **`warehousesForYardProvider(yard)`** derive the set, and the Reports filter bar narrows its picker to it once a yard is chosen. A yard with no entries yet yields the FULL list — an empty picker would leave nothing selectable. Changing the yard resets `_selectedWarehouse` to `'all'`, and the dropdown falls back to null when the held id is not in the narrowed list, so it can never display a value its menu cannot offer.
+
+## Appeal Directorate took a minute to load (2026-08-24)
+
+`getInAppealNonForfeitPackages()` fetched **every package in the system** — `packages` plus nested `package_items`, `warehouse_entries`, `warehouses` and profile joins — with no filter and no limit, then discarded the out-of-window ones in Dart. It now asks the database for the window instead (`entry_date >= cutoff OR (entry_date IS NULL AND created_at >= cutoff)`); the exact per-row check still runs in the loop. Migration **`20260831_appeal_window_index.sql`** indexes `packages(entry_date)`, `packages(created_at)` and `forfeited_packages(source)`.
+
+- **PostgREST splits `or(...)` arguments on DOTS**, so an ISO timestamp (`2026-07-25T11:25:00.000`) cuts the filter in half. The cutoff is formatted as a plain `YYYY-MM-DD` date, with one extra day of slack so a client/server timezone difference cannot clip a row that is still in the window.
+- `AppealService.getForfeitedPackages()` was left unnarrowed on purpose: the Decided tab needs forfeits whose window closed long ago, a held appeal outlives its deadline, and per-item decisions live in a jsonb map PostgREST cannot filter on — any server-side cut there would hide rows the portal must show.
+- **When a screen hangs, look for a `.select()` with no `.eq()`/`.limit()` before blaming the widget.** A nested select multiplies the payload by every join in it.
+
+## Appeal Directorate listed the same goods many times over (2026-08-24)
+
+One SR rendered nine rows for three goods. `AppealService.getForfeitedPackages()` expands a **package-level** `forfeited_packages` row (`item_id IS NULL`) into one row per package item, which is right when there is ONE such row. When an SR carries several, each expands into every item and the list multiplies: `package_level_rows x items_in_package`.
+
+- **`supabase/fix_appeal_duplicate_rows.sql`** normalises the table to one row per (package, item): package-level rows are split into per-item rows carrying their appeal state across (the hold's `held_item_ids` is re-scoped to the single item), then duplicates of the same (package, item) collapse. **The survivor is the row with the most appeal state** — a decision beats a hold, a hold beats an untouched row — so a recorded appeal is never the copy thrown away.
+- The service now de-duplicates by `"packageId:itemId"` after expanding, using the same weighting, so bad rows cannot multiply the portal again even before the SQL is run.
+- `supabase/diagnose_appeal_duplicates.sql` query 1 lists every SR whose `package_level_rows > 1` and computes `rows_shown` — what the portal will actually render.
+
+## An appeal decision unblocks goods immediately (2026-08-24)
+
+The 30-day window froze every action on a pure date check (`isWithinAppealWindow(entryDate)`), so goods the Appeal Directorate had already ruled on still sat blocked for the remaining days. **A decision ends the wait** — there is nothing left to appeal. A HOLD does the opposite: it keeps goods frozen even after the deadline, because that appeal is still open.
+
+- **`ItemAppealOutcome`** (models) carries `decision` + `onHold`, with `unblocksAction => isDecided && !onHold` — the hold always wins.
+- `getItemAppealOutcomes(packageId)` / **`itemAppealOutcomesProvider(packageId)`** for the Goods Actions sheet; `getAllItemAppealOutcomes()` / **`allItemAppealOutcomesProvider`** for tables, fetched once so a list does not issue a query per row. Both read `forfeited_packages` across all four sources, so Detain / Abandoned / "Other" goods work like forfeits.
+- The Goods Actions sheet now gates on `inAppealWindow && !decidedEarly`, plus a separate `blockedByHold`, and shows a green "Appeal decided · X" banner or an amber "On appeal hold" one instead of the countdown.
+- `AppealStateChip` takes an optional `outcome` and renders four states: **On Appeal Hold** (amber, beats the deadline), **Decided · X** (green, beats the countdown), **Appealing · Nd** (amber), **Enabled** (green). Wired into Warehouses, Abandoned and Other; the Forfeited screen already had the decision inline.

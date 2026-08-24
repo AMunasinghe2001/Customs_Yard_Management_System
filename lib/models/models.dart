@@ -1088,6 +1088,28 @@ class SrFinancials {
   bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
 }
 
+/// What the Appeal Directorate has ruled about one goods item.
+///
+/// A DECISION ends the 30-day wait: once the directorate has ruled, the yard
+/// may act on those goods immediately. A HOLD does the opposite — it freezes
+/// them even after the window closes, because the appeal is still open.
+class ItemAppealOutcome {
+  /// 'RELEASE' / 'SALE' / 'DESTROY' / 'RE-EXPORT' / 'OTHER', or null when the
+  /// directorate has not ruled.
+  final String? decision;
+
+  /// An appeal is lodged and still under review.
+  final bool onHold;
+
+  const ItemAppealOutcome({this.decision, this.onHold = false});
+
+  bool get isDecided => (decision ?? '').trim().isNotEmpty;
+
+  /// Whether the goods are actionable regardless of the appeal window. A hold
+  /// always wins: an open appeal blocks action even once the window closes.
+  bool get unblocksAction => isDecided && !onHold;
+}
+
 // ── Appeal window (shared by EVERY status) ───────────────────
 //
 // The 30-day appeal window is NOT a forfeit-only rule: a Detain, Abandoned or

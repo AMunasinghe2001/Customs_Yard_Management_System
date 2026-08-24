@@ -445,6 +445,29 @@ final forfeitedPackagesChangeTriggerProvider =
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
+/// The appeal outcome for each item of one package, keyed by item id.
+///
+/// The Goods Actions sheet watches this so an appeal DECISION unblocks the
+/// goods the moment it is recorded — the yard does not have to sit out the
+/// rest of the 30-day window. A hold still blocks, even past the deadline.
+final itemAppealOutcomesProvider =
+    FutureProvider.family<Map<String, ItemAppealOutcome>, String>(
+        (ref, packageId) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref
+      .read(forfeitedPackageServiceProvider)
+      .getItemAppealOutcomes(packageId);
+});
+
+/// Appeal outcomes for every item in the system, keyed by item id.
+///
+/// Fetched once so a table can look each row up without a query per row.
+final allItemAppealOutcomesProvider =
+    FutureProvider<Map<String, ItemAppealOutcome>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getAllItemAppealOutcomes();
+});
+
 final forfeitedPackagesProvider =
     FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);

@@ -98,7 +98,6 @@ import 'one_tap_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
 
-
 /// The valuation row shown in the Sale / Destruction sections.
 ///
 /// Shows the **LATEST** valuation: if the package was re-valued for a later
@@ -136,7 +135,8 @@ class _ValuationDetailRow extends ConsumerWidget {
               ?.quantity ??
           1;
     } else {
-      qty = fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
+      qty =
+          fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
     }
 
     final money = NumberFormat('#,##0.##');
@@ -150,7 +150,6 @@ class _ValuationDetailRow extends ConsumerWidget {
     );
   }
 }
-
 
 /// Per-round tender history for an unsold package: the valuation each round
 /// was offered at, and the bids that came in against it.
@@ -184,14 +183,13 @@ class TenderHistorySection extends ConsumerWidget {
     // Members only exist once the DG/ADG appointed the committee. Held in a
     // local so every branch below reads the same list.
     final committeeMembers = committee?.members ?? const <CommitteeMember>[];
-    final sales = ref.watch(tenderSalesProvider).valueOrNull ??
-        const <TenderSaleModel>[];
+    final sales =
+        ref.watch(tenderSalesProvider).valueOrNull ?? const <TenderSaleModel>[];
 
     // The rounds THIS package sat in, oldest first — that ordering is what
     // turns a sale id into "Valuation Tender" / "Tender 1" / ...
     final mine = sales
-        .where((s) =>
-            s.items.any((i) => i.forfeitedPackageId == forfeited.id))
+        .where((s) => s.items.any((i) => i.forfeitedPackageId == forfeited.id))
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
@@ -366,9 +364,8 @@ class _TenderRoundTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = revalued
-        ? context.colors.accentLightBlue
-        : context.colors.primaryGold;
+    final accent =
+        revalued ? context.colors.accentLightBlue : context.colors.primaryGold;
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -443,8 +440,7 @@ class _TenderRoundTile extends StatelessWidget {
                 ],
               ),
             ],
-          ]
-          else if (bids.isEmpty)
+          ] else if (bids.isEmpty)
             Text('No bids recorded',
                 style:
                     TextStyle(color: context.colors.textMuted, fontSize: 11.5))
@@ -943,7 +939,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         icon: Icons.gavel_rounded,
         color: const Color(0xFFE53935),
         label: 'Forfeit',
-        description: 'Package is forfeited to the state. No further charges apply.',
+        description:
+            'Package is forfeited to the state. No further charges apply.',
       ),
       'Abandoned': _DispositionMeta(
         icon: Icons.inbox_rounded,
@@ -964,12 +961,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         description: 'Package is destroyed. No further charges apply.',
       ),
     };
-    final m = meta[dispositionType] ?? _DispositionMeta(
-      icon: Icons.help_outline_rounded,
-      color: const Color(0xFF7E57C2),
-      label: dispositionType,
-      description: 'Custom disposition: $dispositionType',
-    );
+    final m = meta[dispositionType] ??
+        _DispositionMeta(
+          icon: Icons.help_outline_rounded,
+          color: const Color(0xFF7E57C2),
+          label: dispositionType,
+          description: 'Custom disposition: $dispositionType',
+        );
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -981,80 +979,92 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           Text('${m.label} Package Item'),
         ]),
         content: StatefulBuilder(
-          builder: (ctx, setLocalState) => Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: m.color.withOpacity(0.08),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: m.color.withOpacity(0.3)),
-            ),
-            child: Text(m.description, style: TextStyle(color: m.color, fontSize: 13)),
-          ),
-          // Forfeit date picker (Forfeit only). Defaults to today; a back-date is
-          // allowed. The 30-day appeal deadline is counted from this date.
-          // Date picker for EVERY disposition — defaults to today, future dates
-          // blocked (lastDate = now), same one-tap calendar as the SR form.
-          const Gap(16),
-          TextFormField(
-            controller: dispositionDateCtrl,
-            readOnly: true,
-            decoration: InputDecoration(
-              labelText: dateLabel,
-              isDense: true,
-              suffixIcon: Icon(Icons.calendar_month, color: m.color),
-            ),
-            onTap: () async {
-              final picked = await showDialog<DateTime>(
-                context: ctx,
-                builder: (_) => OneTapDatePicker(
-                  initialDate: dispositionDate,
-                  lastDate: DateTime.now(),
-                ),
-              );
-              if (picked != null) {
-                setLocalState(() {
-                  dispositionDate = picked;
-                  dispositionDateCtrl.text =
-                      '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
-                });
-              }
-            },
-          ),
-          if (preselectedQty != null)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Container(
-                margin: const EdgeInsets.only(top: 12),
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: m.color.withOpacity(0.06),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text('Packages selected:', style: TextStyle(fontSize: 12, color: m.color.withOpacity(0.7))),
-                    Text('$preselectedQty',
-                        style: TextStyle(fontWeight: FontWeight.bold, color: m.color)),
-                  ],
-                ),
-              ),
-            ),
-          const Gap(16),
-          TextFormField(
-            controller: notesCtrl,
-            decoration: const InputDecoration(
-              labelText: 'Notes / Remarks (optional)',
-              isDense: true,
-            ),
-            maxLines: 3,
-            minLines: 2,
-            keyboardType: TextInputType.multiline,
-          ),
-        ])),
+            builder: (ctx, setLocalState) => Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: m.color.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: m.color.withOpacity(0.3)),
+                        ),
+                        child: Text(m.description,
+                            style: TextStyle(color: m.color, fontSize: 13)),
+                      ),
+                      // Forfeit date picker (Forfeit only). Defaults to today; a back-date is
+                      // allowed. The 30-day appeal deadline is counted from this date.
+                      // Date picker for EVERY disposition — defaults to today, future dates
+                      // blocked (lastDate = now), same one-tap calendar as the SR form.
+                      const Gap(16),
+                      TextFormField(
+                        controller: dispositionDateCtrl,
+                        readOnly: true,
+                        decoration: InputDecoration(
+                          labelText: dateLabel,
+                          isDense: true,
+                          suffixIcon:
+                              Icon(Icons.calendar_month, color: m.color),
+                        ),
+                        onTap: () async {
+                          final picked = await showDialog<DateTime>(
+                            context: ctx,
+                            builder: (_) => OneTapDatePicker(
+                              initialDate: dispositionDate,
+                              lastDate: DateTime.now(),
+                            ),
+                          );
+                          if (picked != null) {
+                            setLocalState(() {
+                              dispositionDate = picked;
+                              dispositionDateCtrl.text =
+                                  '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                            });
+                          }
+                        },
+                      ),
+                      if (preselectedQty != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Container(
+                            margin: const EdgeInsets.only(top: 12),
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: m.color.withOpacity(0.06),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text('Packages selected:',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        color: m.color.withOpacity(0.7))),
+                                Text('$preselectedQty',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: m.color)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      const Gap(16),
+                      TextFormField(
+                        controller: notesCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Notes / Remarks (optional)',
+                          isDense: true,
+                        ),
+                        maxLines: 3,
+                        minLines: 2,
+                        keyboardType: TextInputType.multiline,
+                      ),
+                    ])),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
           ElevatedButton.icon(
             icon: Icon(m.icon, size: 16),
             label: Text('Confirm ${m.label}'),
@@ -1267,8 +1277,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     // highlightItemId OR a highlightEntry) — a decided/forfeited item may have
     // no warehouse entry, so relying on highlightEntry alone would fall back to
     // listing every sibling item. If no specific item is known, show all.
-    final legacyItems =
-        highlightedItem != null ? [highlightedItem] : p.items;
+    final legacyItems = highlightedItem != null ? [highlightedItem] : p.items;
     final legacyEntries =
         (widget.useLegacySummary && widget.highlightEntry != null)
             ? [widget.highlightEntry!]
@@ -1323,8 +1332,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     }
     // The actual disposition date is stored on the entry as returnedAt.
     final String? releaseDateText = widget.highlightEntry?.returnedAt != null
-        ? DateFormat('yyyy-MM-dd')
-            .format(widget.highlightEntry!.returnedAt!)
+        ? DateFormat('yyyy-MM-dd').format(widget.highlightEntry!.returnedAt!)
         : null;
     // Label that date by the disposition it records — the return_notes carry a
     // "[FINAL:RE-EXPORTED]" / "[FINAL:DESTROYED]" / "[RELEASED]" … tag, so the
@@ -1360,8 +1368,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
         dailyRate: e.dailyRate,
         returnedAt: e.returnedAt,
       );
-      releasedCharge =
-          tempEntry.calculatePackageCharge([highlightedItem], widget.storageRate);
+      releasedCharge = tempEntry
+          .calculatePackageCharge([highlightedItem], widget.storageRate);
     }
 
     final highlightReturnedById = widget.highlightEntry?.returnedBy;
@@ -1441,7 +1449,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
             _actionCountLabel = 'Other (This Action)';
           }
         } else {
-          _actionCountLabel = '${_dispoLabel(raw.toUpperCase(), raw)} (This Action)';
+          _actionCountLabel =
+              '${_dispoLabel(raw.toUpperCase(), raw)} (This Action)';
         }
       } else if (isNoChargeContext) {
         // No disposition tag but a no-charge status (form-level forfeit/abandoned/
@@ -1495,7 +1504,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         ])
                       : LinearGradient(
                           colors: isDark
-                              ? [context.colors.surfaceDark, context.colors.cardDark]
+                              ? [
+                                  context.colors.surfaceDark,
+                                  context.colors.cardDark
+                                ]
                               : [
                                   context.colors.customsBlue,
                                   context.colors.customsBlueDark
@@ -1513,7 +1525,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Icon(Icons.inventory_2_rounded,
-                          color: widget.headerAccentColor ?? context.colors.primaryGold, size: 24),
+                          color: widget.headerAccentColor ??
+                              context.colors.primaryGold,
+                          size: 24),
                     )
                         .animate()
                         .scale(duration: 400.ms, curve: Curves.easeOutBack),
@@ -1525,7 +1539,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           Text(
                             'SR REGISTER ENTRY',
                             style: material.TextStyle(
-                              color: widget.headerAccentColor ?? context.colors.primaryGold,
+                              color: widget.headerAccentColor ??
+                                  context.colors.primaryGold,
                               fontSize: 11,
                               letterSpacing: 1.2,
                               fontWeight: FontWeight.w800,
@@ -1588,8 +1603,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                 children: [
                                   Text('APPEAL DIRECTORATE DECISION',
                                       style: material.TextStyle(
-                                          color:
-                                              context.colors.accentLightBlue,
+                                          color: context.colors.accentLightBlue,
                                           fontSize: 10,
                                           letterSpacing: 1.0,
                                           fontWeight: FontWeight.w800)),
@@ -1764,262 +1778,273 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           ],
                                         ))
                                   : material.Container(
-                                  padding: const EdgeInsets.all(12),
-                                  decoration: BoxDecoration(
-                                    color: context.colors.surfaceDark,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                        color: context.colors.borderColor),
-                                  ),
-                                  child: isNoChargeContext
-                                      ? Column(
-                                          children: [
-                                            _DetailItem(
-                                              icon: Icons
-                                                  .label_important_rounded,
-                                              label: 'Goods Name',
-                                              value: highlightedItem.itemName,
-                                            ),
-                                            Row(
+                                      padding: const EdgeInsets.all(12),
+                                      decoration: BoxDecoration(
+                                        color: context.colors.surfaceDark,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                            color: context.colors.borderColor),
+                                      ),
+                                      child: isNoChargeContext
+                                          ? Column(
                                               children: [
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .view_in_ar_rounded,
-                                                    label: 'Total Packages',
-                                                    value:
-                                                        '${highlightedItem.effectiveQuantity}',
-                                                  ),
+                                                _DetailItem(
+                                                  icon: Icons
+                                                      .label_important_rounded,
+                                                  label: 'Goods Name',
+                                                  value:
+                                                      highlightedItem.itemName,
                                                 ),
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons
+                                                            .view_in_ar_rounded,
+                                                        label: 'Total Packages',
+                                                        value:
+                                                            '${highlightedItem.effectiveQuantity}',
+                                                      ),
+                                                    ),
+                                                    const Gap(12),
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons
+                                                            .inventory_2_rounded,
+                                                        label:
+                                                            _actionCountLabel ??
+                                                                'Quantity',
+                                                        value:
+                                                            '${widget.highlightEntry!.itemCount}',
+                                                        valueColor: context
+                                                            .colors.primaryGold,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons
+                                                            .straighten_rounded,
+                                                        label: 'Unit',
+                                                        value: highlightedItem
+                                                                    .unitOfMeasure ==
+                                                                'Other'
+                                                            ? (highlightedItem
+                                                                    .unitOther ??
+                                                                'Other')
+                                                            : (highlightedItem
+                                                                        .packagingLabel !=
+                                                                    null
+                                                                ? '${highlightedItem.effectiveQuantity} ${highlightedItem.effectiveUnit} (in ${highlightedItem.packagingLabel})'
+                                                                : highlightedItem
+                                                                    .effectiveUnit),
+                                                      ),
+                                                    ),
+                                                    const Gap(12),
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons
+                                                            .category_rounded,
+                                                        label: 'Category',
+                                                        value: (highlightedItem
+                                                                    .category
+                                                                    ?.isNotEmpty ==
+                                                                true)
+                                                            ? highlightedItem
+                                                                .category!
+                                                            : '—',
+                                                      ),
+                                                    ),
+                                                    const Gap(12),
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons.tag_rounded,
+                                                        label: 'HS Code',
+                                                        value: (highlightedItem
+                                                                    .hsCode
+                                                                    ?.isNotEmpty ==
+                                                                true)
+                                                            ? highlightedItem
+                                                                .hsCode!
+                                                            : '—',
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                _DetailItem(
+                                                  icon: Icons.payments_rounded,
+                                                  label: 'Value',
+                                                  value:
+                                                      'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                ),
+                                                if (highlightedItem
+                                                        .goodsDescription
+                                                        ?.isNotEmpty ==
+                                                    true)
+                                                  _DetailItem(
                                                     icon: Icons
-                                                        .inventory_2_rounded,
-                                                    label: _actionCountLabel ??
-                                                        'Quantity',
+                                                        .description_rounded,
+                                                    label: 'Goods Description',
+                                                    value: highlightedItem
+                                                        .goodsDescription!,
+                                                  ),
+                                                if (highlightedItem
+                                                        .reasons?.isNotEmpty ==
+                                                    true)
+                                                  _DetailItem(
+                                                    icon: Icons
+                                                        .warning_amber_rounded,
+                                                    label:
+                                                        'Post Status Activity',
+                                                    value: highlightedItem
+                                                        .reasons!,
+                                                  ),
+                                              ],
+                                            )
+                                          : Column(
+                                              children: [
+                                                _DetailItem(
+                                                  icon: Icons
+                                                      .label_important_rounded,
+                                                  label: 'Goods Name',
+                                                  value:
+                                                      highlightedItem.itemName,
+                                                ),
+                                                // Total Packages + Unit — always
+                                                // shown (incl. Sold context) so the
+                                                // popup lists the full item detail.
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons
+                                                            .view_in_ar_rounded,
+                                                        label: 'Total Packages',
+                                                        value:
+                                                            '${highlightedItem.effectiveQuantity}',
+                                                      ),
+                                                    ),
+                                                    const Gap(12),
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons
+                                                            .straighten_rounded,
+                                                        label: 'Unit',
+                                                        value: highlightedItem
+                                                                    .unitOfMeasure ==
+                                                                'Other'
+                                                            ? (highlightedItem
+                                                                    .unitOther ??
+                                                                'Other')
+                                                            : (highlightedItem
+                                                                        .packagingLabel !=
+                                                                    null
+                                                                ? '${highlightedItem.effectiveQuantity} ${highlightedItem.effectiveUnit} (in ${highlightedItem.packagingLabel})'
+                                                                : highlightedItem
+                                                                    .effectiveUnit),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                // Valuation / disposal context: how
+                                                // many of the total were actually
+                                                // sent for disposal (e.g. 6 of 10).
+                                                if (widget.valuationQty !=
+                                                        null &&
+                                                    widget.valuationQty !=
+                                                        highlightedItem
+                                                            .effectiveQuantity)
+                                                  _DetailItem(
+                                                    icon:
+                                                        Icons.outbound_rounded,
+                                                    label: 'Sent for Disposal',
                                                     value:
-                                                        '${widget.highlightEntry!.itemCount}',
+                                                        '${widget.valuationQty} of ${highlightedItem.effectiveQuantity}',
                                                     valueColor: context
                                                         .colors.primaryGold,
                                                   ),
-                                                ),
-                                              ],
-                                            ),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .straighten_rounded,
-                                                    label: 'Unit',
-                                                    value: highlightedItem
-                                                                .unitOfMeasure ==
-                                                            'Other'
-                                                        ? (highlightedItem
-                                                                .unitOther ??
-                                                            'Other')
-                                                        : (highlightedItem
-                                                                    .packagingLabel !=
-                                                                null
-                                                            ? '${highlightedItem.effectiveQuantity} ${highlightedItem.effectiveUnit} (in ${highlightedItem.packagingLabel})'
-                                                            : highlightedItem
-                                                                .effectiveUnit),
-                                                  ),
-                                                ),
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .category_rounded,
-                                                    label: 'Category',
-                                                    value: (highlightedItem
-                                                                .category
-                                                                ?.isNotEmpty ==
-                                                            true)
-                                                        ? highlightedItem
-                                                            .category!
-                                                        : '—',
-                                                  ),
-                                                ),
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons.tag_rounded,
-                                                    label: 'HS Code',
-                                                    value: (highlightedItem
-                                                                .hsCode
-                                                                ?.isNotEmpty ==
-                                                            true)
-                                                        ? highlightedItem
-                                                            .hsCode!
-                                                        : '—',
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            _DetailItem(
-                                              icon: Icons.payments_rounded,
-                                              label: 'Value',
-                                              value:
-                                                  'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
-                                            ),
-                                            if (highlightedItem
-                                                    .goodsDescription
-                                                    ?.isNotEmpty ==
-                                                true)
-                                              _DetailItem(
-                                                icon:
-                                                    Icons.description_rounded,
-                                                label: 'Goods Description',
-                                                value: highlightedItem
-                                                    .goodsDescription!,
-                                              ),
-                                            if (highlightedItem
-                                                    .reasons?.isNotEmpty ==
-                                                true)
-                                              _DetailItem(
-                                                icon: Icons
-                                                    .warning_amber_rounded,
-                                                label: 'Post Status Activity',
-                                                value: highlightedItem
-                                                    .reasons!,
-                                              ),
-                                          ],
-                                        )
-                                      : Column(
-                                          children: [
-                                            _DetailItem(
-                                              icon: Icons
-                                                  .label_important_rounded,
-                                              label: 'Goods Name',
-                                              value: highlightedItem.itemName,
-                                            ),
-                                            // Total Packages + Unit — always
-                                            // shown (incl. Sold context) so the
-                                            // popup lists the full item detail.
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .view_in_ar_rounded,
-                                                    label: 'Total Packages',
+                                                // Warehouse-entry count (Remaining /
+                                                // Released) only when an entry exists
+                                                // (never in the Sold context).
+                                                if (!isSoldContext &&
+                                                    widget.highlightEntry !=
+                                                        null)
+                                                  _DetailItem(
+                                                    icon: widget
+                                                            .useWarehouseSummary
+                                                        ? Icons
+                                                            .inventory_2_rounded
+                                                        : Icons
+                                                            .keyboard_return_rounded,
+                                                    label: widget
+                                                            .useWarehouseSummary
+                                                        ? 'Remaining (Current)'
+                                                        : (_actionCountLabel ??
+                                                            'Released (This Receipt)'),
                                                     value:
-                                                        '${highlightedItem.effectiveQuantity}',
-                                                  ),
-                                                ),
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons
-                                                        .straighten_rounded,
-                                                    label: 'Unit',
-                                                    value: highlightedItem
-                                                                .unitOfMeasure ==
-                                                            'Other'
-                                                        ? (highlightedItem
-                                                                .unitOther ??
-                                                            'Other')
-                                                        : (highlightedItem
-                                                                    .packagingLabel !=
-                                                                null
-                                                            ? '${highlightedItem.effectiveQuantity} ${highlightedItem.effectiveUnit} (in ${highlightedItem.packagingLabel})'
-                                                            : highlightedItem
-                                                                .effectiveUnit),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                            // Valuation / disposal context: how
-                                            // many of the total were actually
-                                            // sent for disposal (e.g. 6 of 10).
-                                            if (widget.valuationQty != null &&
-                                                widget.valuationQty !=
-                                                    highlightedItem
-                                                        .effectiveQuantity)
-                                              _DetailItem(
-                                                icon: Icons.outbound_rounded,
-                                                label: 'Sent for Disposal',
-                                                value:
-                                                    '${widget.valuationQty} of ${highlightedItem.effectiveQuantity}',
-                                                valueColor:
-                                                    context.colors.primaryGold,
-                                              ),
-                                            // Warehouse-entry count (Remaining /
-                                            // Released) only when an entry exists
-                                            // (never in the Sold context).
-                                            if (!isSoldContext &&
-                                                widget.highlightEntry != null)
-                                              _DetailItem(
-                                                icon: widget.useWarehouseSummary
-                                                    ? Icons.inventory_2_rounded
-                                                    : Icons
-                                                        .keyboard_return_rounded,
-                                                label: widget.useWarehouseSummary
-                                                    ? 'Remaining (Current)'
-                                                    : (_actionCountLabel ??
-                                                        'Released (This Receipt)'),
-                                                value:
-                                                    '${widget.highlightEntry!.itemCount}',
-                                                valueColor:
-                                                    widget.useWarehouseSummary
+                                                        '${widget.highlightEntry!.itemCount}',
+                                                    valueColor: widget
+                                                            .useWarehouseSummary
                                                         ? context
                                                             .colors.primaryGold
-                                                        : context
-                                                            .colors.successGreen,
-                                              ),
-                                            Row(
-                                              children: [
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon: Icons.tag_rounded,
-                                                    label: 'HS Code',
-                                                    value: (highlightedItem
-                                                                .hsCode
-                                                                ?.isNotEmpty ==
-                                                            true)
-                                                        ? highlightedItem
-                                                            .hsCode!
-                                                        : '—',
+                                                        : context.colors
+                                                            .successGreen,
                                                   ),
+                                                Row(
+                                                  children: [
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons.tag_rounded,
+                                                        label: 'HS Code',
+                                                        value: (highlightedItem
+                                                                    .hsCode
+                                                                    ?.isNotEmpty ==
+                                                                true)
+                                                            ? highlightedItem
+                                                                .hsCode!
+                                                            : '—',
+                                                      ),
+                                                    ),
+                                                    const Gap(12),
+                                                    Expanded(
+                                                      child: _DetailItem(
+                                                        icon: Icons
+                                                            .payments_rounded,
+                                                        label: 'Value',
+                                                        value:
+                                                            'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ),
-                                                const Gap(12),
-                                                Expanded(
-                                                  child: _DetailItem(
-                                                    icon:
-                                                        Icons.payments_rounded,
-                                                    label: 'Value',
-                                                    value:
-                                                        'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                if (highlightedItem
+                                                        .goodsDescription
+                                                        ?.isNotEmpty ==
+                                                    true)
+                                                  _DetailItem(
+                                                    icon: Icons
+                                                        .description_rounded,
+                                                    label: 'Goods Description',
+                                                    value: highlightedItem
+                                                        .goodsDescription!,
                                                   ),
-                                                ),
+                                                if (highlightedItem
+                                                        .reasons?.isNotEmpty ==
+                                                    true)
+                                                  _DetailItem(
+                                                    icon: Icons
+                                                        .warning_amber_rounded,
+                                                    label:
+                                                        'Post Status Activity',
+                                                    value: highlightedItem
+                                                        .reasons!,
+                                                  ),
                                               ],
                                             ),
-                                            if (highlightedItem
-                                                    .goodsDescription
-                                                    ?.isNotEmpty ==
-                                                true)
-                                              _DetailItem(
-                                                icon:
-                                                    Icons.description_rounded,
-                                                label: 'Goods Description',
-                                                value: highlightedItem
-                                                    .goodsDescription!,
-                                              ),
-                                            if (highlightedItem
-                                                    .reasons?.isNotEmpty ==
-                                                true)
-                                              _DetailItem(
-                                                icon: Icons
-                                                    .warning_amber_rounded,
-                                                label: 'Post Status Activity',
-                                                value:
-                                                    highlightedItem.reasons!,
-                                              ),
-                                          ],
-                                        ),
-                                ),
+                                    ),
                         ),
                         // Valuation Directorate cost (Central Disposal /
                         // Valuation request popups) — shown next to the package's
@@ -2085,7 +2110,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           borderRadius:
                                               BorderRadius.circular(12),
                                           border: Border.all(
-                                              color: context.colors.borderColor),
+                                              color:
+                                                  context.colors.borderColor),
                                         ),
                                         child: _DetailItem(
                                           icon: Icons.maps_home_work_rounded,
@@ -2218,13 +2244,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           (e.returnNotes ?? '').trim();
                                       final m = RegExp(r'^\[([^\]]+)\]')
                                           .firstMatch(notes);
-                                      final officer = e.returnedByName ??
-                                          e.returnedByBadge;
+                                      final officer =
+                                          e.returnedByName ?? e.returnedByBadge;
                                       if (m == null) {
                                         _releasedQty += e.itemCount;
                                         _releasedOfficer ??= officer;
-                                        _releasedChargesPaid +=
-                                            e.calculatePackageCharge(
+                                        _releasedChargesPaid += e
+                                            .calculatePackageCharge(
                                                 [item], widget.storageRate);
                                       } else {
                                         final raw = m.group(1)!.trim();
@@ -2241,33 +2267,39 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         item.status?.toLowerCase() ?? '';
                                     final isItemForfeited =
                                         _itemStatus == 'confiscated' ||
-                                        _itemStatus == 'forfeit' ||
-                                        _itemStatus == 'forfeited' ||
-                                        _itemStatus == 'forfiet';
+                                            _itemStatus == 'forfeit' ||
+                                            _itemStatus == 'forfeited' ||
+                                            _itemStatus == 'forfiet';
                                     final isItemAbandoned =
                                         _itemStatus == 'abandoned';
                                     final isItemDetained =
                                         _itemStatus == 'detained' ||
-                                        _itemStatus == 'detain';
+                                            _itemStatus == 'detain';
                                     final isItemReexport =
-                                      _itemStatus == 're-export';
+                                        _itemStatus == 're-export';
                                     final isItemDestroy =
-                                      _itemStatus == 'destroy';
+                                        _itemStatus == 'destroy';
                                     final isItemDisposed =
-                                      isItemReexport || isItemDestroy;
+                                        isItemReexport || isItemDestroy;
                                     final isItemConfiscated = isItemForfeited;
                                     final isItemTerminal = isItemForfeited ||
-                                      isItemAbandoned ||
-                                      isItemDetained ||
-                                      isItemDisposed;
+                                        isItemAbandoned ||
+                                        isItemDetained ||
+                                        isItemDisposed;
                                     // A custom ("Other") status — anything that
                                     // is not a known disposition and not a
                                     // neutral working/left-yard state — should
                                     // still get a status badge in this card.
                                     const _neutralStatuses = {
-                                      '', 'pending', 'held', 'inspecting',
-                                      'returned', 'released', 'sold',
-                                      're-exported', 'destroyed',
+                                      '',
+                                      'pending',
+                                      'held',
+                                      'inspecting',
+                                      'returned',
+                                      'released',
+                                      'sold',
+                                      're-exported',
+                                      'destroyed',
                                     };
                                     final isItemOther = !isItemTerminal &&
                                         !_neutralStatuses.contains(_itemStatus);
@@ -2278,22 +2310,29 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     final isItemReleased = _releasedQty > 0 &&
                                         heldQty == 0 &&
                                         _dispoCounts.isEmpty;
-                                    final showStatusBadge =
-                                        isItemTerminal ||
+                                    final showStatusBadge = isItemTerminal ||
                                         isItemOther ||
                                         isItemReleased;
 
                                     // Status-specific color
                                     Color _statusColor() {
-                                      if (isItemForfeited) return const Color(0xFFE53935);
-                                      if (isItemAbandoned) return const Color(0xFF9E9E9E);
-                                      if (isItemDetained) return const Color(0xFFFF8F00);
-                                      if (isItemReexport) return const Color(0xFF00ACC1);
-                                      if (isItemDestroy) return const Color(0xFFE64A19);
-                                      if (isItemReleased) return context.colors.successGreen;
-                                      if (isItemOther) return context.colors.accentLightBlue;
+                                      if (isItemForfeited)
+                                        return const Color(0xFFE53935);
+                                      if (isItemAbandoned)
+                                        return const Color(0xFF9E9E9E);
+                                      if (isItemDetained)
+                                        return const Color(0xFFFF8F00);
+                                      if (isItemReexport)
+                                        return const Color(0xFF00ACC1);
+                                      if (isItemDestroy)
+                                        return const Color(0xFFE64A19);
+                                      if (isItemReleased)
+                                        return context.colors.successGreen;
+                                      if (isItemOther)
+                                        return context.colors.accentLightBlue;
                                       return context.colors.borderColor;
                                     }
+
                                     final itemStatusColor = _statusColor();
 
                                     // Status label for badge
@@ -2305,7 +2344,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                       if (isItemDestroy) return 'DESTROYED';
                                       if (isItemReleased) return 'RELEASED';
                                       if (isItemOther) {
-                                        return (item.status ?? '').toUpperCase();
+                                        return (item.status ?? '')
+                                            .toUpperCase();
                                       }
                                       return '';
                                     }
@@ -2334,10 +2374,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                             children: [
                                               Expanded(
                                                 child: Row(
-                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
                                                   children: [
                                                     Padding(
-                                                      padding: const EdgeInsets.only(top: 2),
+                                                      padding:
+                                                          const EdgeInsets.only(
+                                                              top: 2),
                                                       child: Icon(
                                                           Icons
                                                               .label_important_rounded,
@@ -2410,38 +2453,52 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                 ),
                                               ),
                                               Column(
-                                                crossAxisAlignment: CrossAxisAlignment.end,
+                                                crossAxisAlignment:
+                                                    CrossAxisAlignment.end,
                                                 children: [
                                                   Row(
-                                                    mainAxisSize: MainAxisSize.min,
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
                                                     children: [
                                                       if (showStatusBadge) ...[
                                                         material.Container(
-                                                          padding: const EdgeInsets
-                                                              .symmetric(
-                                                              horizontal: 10,
-                                                              vertical: 4),
-                                                          decoration: BoxDecoration(
-                                                            color: itemStatusColor
-                                                                .withOpacity(0.15),
+                                                          padding:
+                                                              const EdgeInsets
+                                                                  .symmetric(
+                                                                  horizontal:
+                                                                      10,
+                                                                  vertical: 4),
+                                                          decoration:
+                                                              BoxDecoration(
+                                                            color:
+                                                                itemStatusColor
+                                                                    .withOpacity(
+                                                                        0.15),
                                                             borderRadius:
-                                                                BorderRadius.circular(
-                                                                    20),
+                                                                BorderRadius
+                                                                    .circular(
+                                                                        20),
                                                             border: Border.all(
                                                                 color: itemStatusColor
-                                                                    .withOpacity(0.4)),
+                                                                    .withOpacity(
+                                                                        0.4)),
                                                           ),
                                                           child: Text(
                                                             _statusLabel(),
                                                             maxLines: 1,
                                                             overflow:
-                                                                TextOverflow.ellipsis,
-                                                            style: material.TextStyle(
-                                                              color: itemStatusColor,
+                                                                TextOverflow
+                                                                    .ellipsis,
+                                                            style: material
+                                                                .TextStyle(
+                                                              color:
+                                                                  itemStatusColor,
                                                               fontSize: 10,
                                                               fontWeight:
-                                                                  FontWeight.w900,
-                                                              letterSpacing: 0.5,
+                                                                  FontWeight
+                                                                      .w900,
+                                                              letterSpacing:
+                                                                  0.5,
                                                             ),
                                                           ),
                                                         ),
@@ -2449,12 +2506,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       ],
                                                       Text(
                                                         'x${item.effectiveQuantity}',
-                                                        style: material.TextStyle(
+                                                        style:
+                                                            material.TextStyle(
                                                           color: isItemTerminal
-                                                              ? context.colors.textMuted
-                                                              : context
-                                                                  .colors.primaryGold,
-                                                          fontWeight: FontWeight.w900,
+                                                              ? context.colors
+                                                                  .textMuted
+                                                              : context.colors
+                                                                  .primaryGold,
+                                                          fontWeight:
+                                                              FontWeight.w900,
                                                           fontSize: 16,
                                                         ),
                                                       ),
@@ -2641,15 +2701,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               _dispoCounts.isNotEmpty) ...[
                                             const Gap(16),
                                             material.Container(
-                                              padding:
-                                                  const EdgeInsets.all(12),
+                                              padding: const EdgeInsets.all(12),
                                               decoration: BoxDecoration(
                                                 color: context.colors.cardDark,
                                                 borderRadius:
                                                     BorderRadius.circular(12),
                                                 border: Border.all(
-                                                  color: context.colors
-                                                      .borderColor,
+                                                  color: context
+                                                      .colors.borderColor,
                                                 ),
                                               ),
                                               child: Column(
@@ -2662,16 +2721,16 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       fontSize: 13,
                                                       fontWeight:
                                                           FontWeight.w700,
-                                                      color: context.colors
-                                                          .textPrimary,
+                                                      color: context
+                                                          .colors.textPrimary,
                                                     ),
                                                   ),
                                                   const Gap(12),
                                                   _DispositionRow(
                                                     label: 'Currently Held',
                                                     count: heldQty,
-                                                    color: context.colors
-                                                        .primaryGold,
+                                                    color: context
+                                                        .colors.primaryGold,
                                                     officer: null,
                                                   ),
                                                   if (_releasedQty > 0) ...[
@@ -2679,8 +2738,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                     _DispositionRow(
                                                       label: 'Released',
                                                       count: _releasedQty,
-                                                      color: context.colors
-                                                          .successGreen,
+                                                      color: context
+                                                          .colors.successGreen,
                                                       officer:
                                                           _releasedOfficer ??
                                                               'Unknown Officer',
@@ -2698,8 +2757,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       child: _DispositionRow(
                                                         label: _dispoLabel(
                                                             entry.key,
-                                                            _dispoRawLabel[
-                                                                    entry.key] ??
+                                                            _dispoRawLabel[entry
+                                                                    .key] ??
                                                                 entry.key),
                                                         count: entry.value,
                                                         color: _dispoColor(
@@ -2772,8 +2831,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                     .trim();
                             // New "[OTHER: <text>]" tag — the disposition label
                             // lives inside the bracket.
-                            final bracket = RegExp(
-                                    r'^\[OTHER:\s*([^\]]*)\]',
+                            final bracket = RegExp(r'^\[OTHER:\s*([^\]]*)\]',
                                     caseSensitive: false)
                                 .firstMatch(notes);
                             if (bracket != null &&
@@ -2873,16 +2931,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           ),
                         ),
                       if (() {
-                            // Sold Packages page: always show Sale & Financial.
-                            if (widget.isSoldPage) return true;
+                        // Sold Packages page: always show Sale & Financial.
+                        if (widget.isSoldPage) return true;
 
-                            // All other pages: only show if entry is SOLD.
-                            final entryNotes =
-                                widget.highlightEntry?.returnNotes ?? '';
-                            return entryNotes
-                                .toUpperCase()
-                                .contains('SOLD');
-                          }())
+                        // All other pages: only show if entry is SOLD.
+                        final entryNotes =
+                            widget.highlightEntry?.returnNotes ?? '';
+                        return entryNotes.toUpperCase().contains('SOLD');
+                      }())
                         _SaleFinancialsSection(
                           package: p,
                           packageItemId: widget.highlightEntry?.packageItemId ??
@@ -2936,8 +2992,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                     children: [
                       material.Tooltip(
                         message: !canUpdatePackage
-                          ? 'Package updates are restricted to DC / SDDC officers only'
-                          : '',
+                            ? 'Package updates are restricted to DC / SDDC officers only'
+                            : '',
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                             backgroundColor: canUpdatePackage
@@ -2968,7 +3024,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       if (widget.highlightEntry != null &&
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
-                            message: isOfficer
+                          message: isOfficer
                               ? 'Actions are restricted to DC / SDDC officers only'
                               : (isConfiscated
                                   ? 'Confiscated / Forfeited / Abandoned packages cannot be actioned'
@@ -3694,9 +3750,11 @@ class _SystemEntrySection extends StatelessWidget {
 class _SaleFinancialsSection extends ConsumerStatefulWidget {
   final PackageModel package;
   final String? packageItemId;
+
   /// Receipt number of THIS sale — pins the exact TSI row when one item was
   /// sold across several partial tenders (same package_item_id, distinct prices).
   final String? receipt;
+
   /// Officer who recorded the sale (shown here, not in the Sold table).
   final String? soldBy;
 
@@ -3711,10 +3769,12 @@ class _SaleFinancialsSection extends ConsumerStatefulWidget {
       this.soldBy,
       this.valuationQty});
   @override
-  ConsumerState<_SaleFinancialsSection> createState() => _SaleFinancialsSectionState();
+  ConsumerState<_SaleFinancialsSection> createState() =>
+      _SaleFinancialsSectionState();
 }
 
-class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> {
+class _SaleFinancialsSectionState
+    extends ConsumerState<_SaleFinancialsSection> {
   bool _toggling = false;
 
   String get _saleItemKey =>
@@ -3733,8 +3793,9 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
-          backgroundColor:
-              newValue ? context.colors.successGreen : context.colors.warningAmber,
+          backgroundColor: newValue
+              ? context.colors.successGreen
+              : context.colors.warningAmber,
         ));
         // Close the details popup on success.
         Navigator.of(context).pop();
@@ -3773,8 +3834,9 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
         // Only a yard (admin/officer) confirms delivery; Central Disposal views.
         final canEdit = profile != null && !profile.isDisposal;
         final delivered = saleItem.isDelivered;
-        final actionColor =
-            delivered ? context.colors.warningAmber : context.colors.successGreen;
+        final actionColor = delivered
+            ? context.colors.warningAmber
+            : context.colors.successGreen;
 
         return _DetailSection(
           title: 'Sale & Financial Information',
@@ -3846,8 +3908,8 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                   _DetailItem(
                     icon: Icons.event_available_rounded,
                     label: 'Delivery Date',
-                    value: DateFormat('yyyy-MM-dd')
-                        .format(saleItem.deliveredAt!),
+                    value:
+                        DateFormat('yyyy-MM-dd').format(saleItem.deliveredAt!),
                     valueColor: context.colors.successGreen,
                   ),
                 // Only show the action while the package is still pending —
@@ -3863,8 +3925,7 @@ class _SaleFinancialsSectionState extends ConsumerState<_SaleFinancialsSection> 
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.local_shipping_rounded, size: 18),
                       label: const Text('Mark Delivered'),
                       style: OutlinedButton.styleFrom(
@@ -4017,8 +4078,7 @@ class _DestructionDeliverySectionState
                   _DetailItem(
                     icon: Icons.event_available_rounded,
                     label: 'Delivery Date',
-                    value: DateFormat('yyyy-MM-dd')
-                        .format(item.deliveredAt!),
+                    value: DateFormat('yyyy-MM-dd').format(item.deliveredAt!),
                     valueColor: context.colors.successGreen,
                   ),
                 if (canEdit && !delivered) ...[
@@ -4031,8 +4091,7 @@ class _DestructionDeliverySectionState
                           ? const SizedBox(
                               width: 16,
                               height: 16,
-                              child:
-                                  CircularProgressIndicator(strokeWidth: 2))
+                              child: CircularProgressIndicator(strokeWidth: 2))
                           : const Icon(Icons.local_shipping_rounded, size: 18),
                       label: const Text('Mark Delivered'),
                       style: OutlinedButton.styleFrom(
@@ -4369,6 +4428,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
   late final TextEditingController _entryDateCtrl;
   late final TextEditingController _caseNumberCtrl;
   late final TextEditingController _containerNumberCtrl;
+
   /// Package-level deposit against the cost of destruction.
   late final TextEditingController _destroyingDepositCtrl;
   late final TextEditingController _descCtrl;
@@ -4703,8 +4763,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
         containerNumber: _containerNumberCtrl.text.trim().isEmpty
             ? null
             : _containerNumberCtrl.text.trim(),
-        destroyingDeposit:
-            double.tryParse(_destroyingDepositCtrl.text.trim()),
+        destroyingDeposit: double.tryParse(_destroyingDepositCtrl.text.trim()),
         entryDate: _entryDateCtrl.text.isNotEmpty
             ? DateTime.tryParse(_entryDateCtrl.text)
             : null,
@@ -5365,8 +5424,8 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                       'Meters',
                     ].map((u) => StyledDropdownOption(u, u)).toList(),
                     onChanged: (v) {
-                      setState(() =>
-                          widget.row.innerUnitCtrl.text = v ?? 'Pieces');
+                      setState(
+                          () => widget.row.innerUnitCtrl.text = v ?? 'Pieces');
                       widget.onChanged();
                     },
                   ),
@@ -5549,17 +5608,16 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
                         label: 'Activity ${rIdx + 1} *',
                         menuWidth: 300,
                         fillColor: context.colors.cardDark,
-                        value:
-                            activities.contains(widget.row.selectedReasons[rIdx])
-                                ? widget.row.selectedReasons[rIdx]
-                                : null,
+                        value: activities
+                                .contains(widget.row.selectedReasons[rIdx])
+                            ? widget.row.selectedReasons[rIdx]
+                            : null,
                         validator: (v) => v == null ? 'Required' : null,
                         options: activities
                             .map((a) => StyledDropdownOption(a, a))
                             .toList(),
                         onChanged: (v) {
-                          setState(
-                              () => widget.row.selectedReasons[rIdx] = v);
+                          setState(() => widget.row.selectedReasons[rIdx] = v);
                           widget.onChanged();
                         },
                       ),
@@ -5712,7 +5770,9 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 20),
           const Gap(12),
-          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w600))),
+          Expanded(
+              child: Text(message,
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
         ]),
         backgroundColor: const Color(0xFF2E7D32),
         behavior: SnackBarBehavior.floating,
@@ -5729,7 +5789,9 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
         content: Row(children: [
           const Icon(Icons.error_rounded, color: Colors.white, size: 20),
           const Gap(12),
-          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w600))),
+          Expanded(
+              child: Text(message,
+                  style: const TextStyle(fontWeight: FontWeight.w600))),
         ]),
         backgroundColor: const Color(0xFFC62828),
         behavior: SnackBarBehavior.floating,
@@ -5740,7 +5802,8 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
     );
   }
 
-  Future<void> _runAction(BuildContext ctx, Future<bool> Function() action, String successMsg) async {
+  Future<void> _runAction(BuildContext ctx, Future<bool> Function() action,
+      String successMsg) async {
     setState(() => _isLoading = true);
     try {
       final ok = await action();
@@ -5815,8 +5878,7 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
     // so the dialog stays correct after an action without closing.
     final pkg = ref.watch(packageDataProvider(widget.packageId)).valueOrNull;
     final entries = pkg?.warehouseEntries ?? [widget.fallbackEntry];
-    final item =
-        pkg?.items.where((i) => i.id == widget.itemId).firstOrNull;
+    final item = pkg?.items.where((i) => i.id == widget.itemId).firstOrNull;
     final total = item?.quantity ?? widget.fallbackEntry.itemCount;
     final processed = _computeProcessedSlots(widget.itemId, total, entries);
     final heldEntry = entries
@@ -5830,16 +5892,32 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
     // - Officers: no disposition actions enabled at all.
     // - Admins: Release, Re-export, Abandoned, Forfeit and Other are enabled.
     //   Destroy remains disabled for everyone.
-    final isOfficer =
-        ref.watch(currentProfileProvider)?.role == 'officer';
+    final isOfficer = ref.watch(currentProfileProvider)?.role == 'officer';
     const _disabledForAll = {'Destroy'};
     // The 30-day appeal window freezes EVERY action, whatever the status:
     // the owner may still appeal, so the goods cannot be released, forfeited,
     // abandoned, re-exported or destroyed until it closes.
-    final inAppealWindow = isWithinAppealWindow(widget.entryDate);
+    //
+    // …UNLESS the Appeal Directorate has already ruled. A decision ends the
+    // wait: there is nothing left to appeal, so the goods become actionable
+    // immediately rather than sitting out the remaining days. A HOLD does the
+    // opposite and keeps them frozen, because that appeal is still open.
+    final outcome =
+        ref.watch(itemAppealOutcomesProvider(widget.packageId)).valueOrNull;
+    final itemOutcome =
+        outcome?[widget.itemId] ?? outcome?[''] ?? const ItemAppealOutcome();
+    final decidedEarly = itemOutcome.unblocksAction;
+
+    final inAppealWindow =
+        isWithinAppealWindow(widget.entryDate) && !decidedEarly;
     final appealDaysRemaining = appealDaysLeft(widget.entryDate);
+    // An open appeal blocks action even after the window closes.
+    final blockedByHold = itemOutcome.onHold;
     bool isActionEnabled(String key) =>
-        !isOfficer && !_disabledForAll.contains(key) && !inAppealWindow;
+        !isOfficer &&
+        !_disabledForAll.contains(key) &&
+        !inAppealWindow &&
+        !blockedByHold;
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 400),
@@ -5870,384 +5948,537 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                     offset: const Offset(0, 15),
                   ),
                 ],
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // ── Dialog Header ──
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: isDark
-                        ? [context.colors.surfaceDark, context.colors.cardDark]
-                        : [context.colors.customsBlue, context.colors.customsBlueDark],
-                  ),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // ── Dialog Header ──
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 20),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isDark
+                            ? [
+                                context.colors.surfaceDark,
+                                context.colors.cardDark
+                              ]
+                            : [
+                                context.colors.customsBlue,
+                                context.colors.customsBlueDark
+                              ],
                       ),
-                      child: Icon(Icons.inventory_2_rounded, color: context.colors.primaryGold, size: 24),
-                    ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
-                    const Gap(16),
-                    Expanded(
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(Icons.inventory_2_rounded,
+                              color: context.colors.primaryGold, size: 24),
+                        )
+                            .animate()
+                            .slideY(begin: 0.1, duration: 400.ms)
+                            .fadeIn(),
+                        const Gap(16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'SR REGISTER ENTRY',
+                                style: TextStyle(
+                                  color: context.colors.primaryGold,
+                                  fontSize: 11,
+                                  letterSpacing: 1.2,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              )
+                                  .animate()
+                                  .slideY(
+                                      begin: 0.1,
+                                      duration: 400.ms,
+                                      delay: 100.ms)
+                                  .fadeIn(),
+                              Text(
+                                heldEntry.srNumber ?? '',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              )
+                                  .animate()
+                                  .slideY(
+                                      begin: 0.1,
+                                      duration: 400.ms,
+                                      delay: 150.ms)
+                                  .fadeIn(),
+                            ],
+                          ),
+                        ),
+                        const Gap(12),
+                        IconButton(
+                          icon: Icon(Icons.close_rounded,
+                              color: Colors.white.withOpacity(0.7)),
+                          splashRadius: 24,
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  // ── Dialog Body ──
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(24),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'SR REGISTER ENTRY',
-                            style: TextStyle(
-                              color: context.colors.primaryGold,
-                              fontSize: 11,
-                              letterSpacing: 1.2,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
-                          Text(
-                            heldEntry.srNumber ?? '',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 150.ms).fadeIn(),
+                          Row(
+                            children: [
+                              Icon(Icons.bolt_rounded,
+                                  color: context.colors.primaryGold, size: 24),
+                              const Gap(10),
+                              Text(
+                                'Goods Actions',
+                                style: TextStyle(
+                                  color: context.colors.textPrimary,
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ).animate().fadeIn(delay: 200.ms),
+                          const Gap(16),
+                          // The directorate has ruled, so the wait is over even
+                          // though the window has days left. Says which way.
+                          if (decidedEarly)
+                            material.Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.colors.successGreen
+                                    .withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: context.colors.successGreen
+                                        .withOpacity(0.4)),
+                              ),
+                              child: Row(children: [
+                                Icon(Icons.gavel_rounded,
+                                    color: context.colors.successGreen,
+                                    size: 18),
+                                const Gap(10),
+                                Expanded(
+                                  child: Text(
+                                      'Appeal decided \u00b7 '
+                                      '${itemOutcome.decision}. '
+                                      'These goods can be actioned now \u2014 the '
+                                      '30-day window no longer applies.',
+                                      style: TextStyle(
+                                          color: context.colors.successGreen,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ]),
+                            ).animate().fadeIn(delay: 220.ms),
+                          // An appeal is lodged and still open: frozen regardless
+                          // of the deadline.
+                          if (blockedByHold)
+                            material.Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.colors.warningAmber
+                                    .withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: context.colors.warningAmber
+                                        .withOpacity(0.4)),
+                              ),
+                              child: Row(children: [
+                                Icon(Icons.pan_tool_rounded,
+                                    color: context.colors.warningAmber,
+                                    size: 18),
+                                const Gap(10),
+                                Expanded(
+                                  child: Text(
+                                      'On appeal hold. The Appeal Directorate is '
+                                      'reviewing these goods \u2014 no action can '
+                                      'be taken until it rules.',
+                                      style: TextStyle(
+                                          color: context.colors.warningAmber,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ]),
+                            ).animate().fadeIn(delay: 220.ms),
+                          // Why everything is greyed out.
+                          if (inAppealWindow && !blockedByHold)
+                            material.Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.colors.warningAmber
+                                    .withOpacity(0.10),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: context.colors.warningAmber
+                                        .withOpacity(0.4)),
+                              ),
+                              child: Row(children: [
+                                Icon(Icons.gavel_rounded,
+                                    color: context.colors.warningAmber,
+                                    size: 18),
+                                const Gap(10),
+                                Expanded(
+                                  child: Text(
+                                      'Appealing · $appealDaysRemaining day'
+                                      '${appealDaysRemaining == 1 ? '' : 's'} left. '
+                                      'No action can be taken until the 30-day '
+                                      'appeal window closes.',
+                                      style: TextStyle(
+                                          color: context.colors.warningAmber,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w600)),
+                                ),
+                              ]),
+                            ).animate().fadeIn(delay: 220.ms),
+                          if (heldCount <= 0)
+                            material.Container(
+                              margin: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.colors.successGreen
+                                    .withOpacity(0.08),
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                    color: context.colors.successGreen
+                                        .withOpacity(0.3)),
+                              ),
+                              child: Row(children: [
+                                Icon(Icons.check_circle_rounded,
+                                    color: context.colors.successGreen,
+                                    size: 18),
+                                const Gap(10),
+                                Expanded(
+                                  child: Text(
+                                      'All $total packages have been processed.',
+                                      style: TextStyle(
+                                          color: context.colors.textSecondary,
+                                          fontSize: 12)),
+                                ),
+                              ]),
+                            ).animate().fadeIn(delay: 250.ms)
+                          else
+                            material.Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: material.Align(
+                                alignment: material.Alignment.centerLeft,
+                                child: Text(
+                                    '$heldCount of $total packages remaining',
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 13)),
+                              ),
+                            ).animate().fadeIn(delay: 250.ms),
+
+                          // Show all actions
+                          ..._actions.map((a) {
+                            final isOther = a.key == 'Other';
+                            // Disabled either by role-permission or because there
+                            // are no packages left to act on.
+                            final permitted = isActionEnabled(a.key);
+                            final isDisabled = !permitted || heldCount <= 0;
+                            // Greyed colour for disabled cards/labels.
+                            final cardColor =
+                                isDisabled ? context.colors.textMuted : a.color;
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                material.Opacity(
+                                  opacity: isDisabled ? 0.45 : 1.0,
+                                  child: material.Card(
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    elevation: 0,
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12),
+                                      side: BorderSide(
+                                        color: (isOther && _otherExpanded)
+                                            ? cardColor.withOpacity(0.6)
+                                            : cardColor.withOpacity(0.2),
+                                        width: (isOther && _otherExpanded)
+                                            ? 1.5
+                                            : 1,
+                                      ),
+                                    ),
+                                    color: cardColor.withOpacity(0.04),
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: isDisabled
+                                          ? null
+                                          : () async {
+                                              if (isOther) {
+                                                setState(() => _otherExpanded =
+                                                    !_otherExpanded);
+                                              } else {
+                                                // Show selection dialog with live processed slots
+                                                final slots =
+                                                    await showDialog<Set<int>>(
+                                                  context: context,
+                                                  builder: (ctx) =>
+                                                      _PackageSelectionDialog(
+                                                    actionColor: a.color,
+                                                    actionName:
+                                                        a.key == 'Release'
+                                                            ? 'Release'
+                                                            : a.key,
+                                                    totalQty: total,
+                                                    processedSlots: processed,
+                                                  ),
+                                                );
+                                                if (slots != null &&
+                                                    slots.isNotEmpty) {
+                                                  final list = slots.toList()
+                                                    ..sort();
+                                                  final ctx = context;
+                                                  if (a.key == 'Release') {
+                                                    await _runAction(
+                                                      ctx,
+                                                      () => widget.onRelease(
+                                                          heldEntry, list),
+                                                      '${list.length} package(s) released successfully.',
+                                                    );
+                                                  } else {
+                                                    await _runAction(
+                                                      ctx,
+                                                      () => widget.onDispose(
+                                                          heldEntry,
+                                                          a.key,
+                                                          list),
+                                                      '${list.length} package(s) marked as ${a.label} successfully.',
+                                                    );
+                                                  }
+                                                }
+                                              }
+                                            },
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 16, vertical: 14),
+                                        child: Row(children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(10),
+                                            decoration: BoxDecoration(
+                                              color:
+                                                  cardColor.withOpacity(0.12),
+                                              borderRadius:
+                                                  BorderRadius.circular(10),
+                                            ),
+                                            child: Icon(a.icon,
+                                                color: cardColor, size: 20),
+                                          ),
+                                          const Gap(16),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                Text(a.label,
+                                                    style: TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.w700,
+                                                        fontSize: 15,
+                                                        color: cardColor)),
+                                                const Gap(4),
+                                                Text(a.description,
+                                                    style: TextStyle(
+                                                        fontSize: 13,
+                                                        color: context
+                                                            .colors.textMuted)),
+                                              ],
+                                            ),
+                                          ),
+                                          Icon(
+                                            isOther
+                                                ? (_otherExpanded
+                                                    ? Icons.expand_less_rounded
+                                                    : Icons.expand_more_rounded)
+                                                : Icons.chevron_right_rounded,
+                                            color: cardColor.withOpacity(0.6),
+                                            size: 22,
+                                          ),
+                                        ]),
+                                      ),
+                                    ),
+                                  )
+                                      .animate()
+                                      .fadeIn(delay: 300.ms)
+                                      .slideY(begin: 0.05),
+                                ),
+                                // Inline "Other" text field
+                                if (isOther && _otherExpanded)
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.fromLTRB(4, 0, 4, 16),
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        TextFormField(
+                                          controller: _otherCtrl,
+                                          autofocus: true,
+                                          decoration: InputDecoration(
+                                            labelText: 'Disposition Type *',
+                                            hintText:
+                                                'e.g. Transferred, Seized for Analysis...',
+                                            border: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              borderSide: BorderSide(
+                                                  color: context
+                                                      .colors.borderColor),
+                                            ),
+                                            enabledBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              borderSide: BorderSide(
+                                                  color: context
+                                                      .colors.borderColor),
+                                            ),
+                                            focusedBorder: OutlineInputBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                              borderSide: BorderSide(
+                                                  color:
+                                                      const Color(0xFF7E57C2),
+                                                  width: 2),
+                                            ),
+                                            filled: true,
+                                            fillColor: context
+                                                .colors.textPrimary
+                                                .withOpacity(0.02),
+                                          ),
+                                        ).animate().fadeIn(),
+                                        const Gap(12),
+                                        ElevatedButton.icon(
+                                          icon: const Icon(Icons.check_rounded,
+                                              size: 18),
+                                          label: const Text(
+                                              'Confirm Other Disposition',
+                                              style: TextStyle(
+                                                  fontWeight: FontWeight.bold)),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor:
+                                                const Color(0xFF7E57C2),
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                                vertical: 14),
+                                            shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(10)),
+                                          ),
+                                          onPressed: () async {
+                                            final t = _otherCtrl.text.trim();
+                                            if (t.isEmpty) return;
+
+                                            final slots =
+                                                await showDialog<Set<int>>(
+                                              context: context,
+                                              builder: (ctx) =>
+                                                  _PackageSelectionDialog(
+                                                actionColor:
+                                                    const Color(0xFF7E57C2),
+                                                actionName: t,
+                                                totalQty: total,
+                                                processedSlots: processed,
+                                              ),
+                                            );
+                                            if (slots != null &&
+                                                slots.isNotEmpty) {
+                                              final list = slots.toList()
+                                                ..sort();
+                                              final ctx = context;
+                                              // Prefix the custom text with the "Other:"
+                                              // marker so the disposition is unambiguously
+                                              // an "Other" outcome — tagged "[OTHER: <text>]"
+                                              // in returnNotes (partial) and stored as item
+                                              // status "Other: <text>" (full). This is what
+                                              // the Other Packages table detects.
+                                              await _runAction(
+                                                ctx,
+                                                () => widget.onDispose(
+                                                    heldEntry,
+                                                    'Other: $t',
+                                                    list),
+                                                '${list.length} package(s) marked as "$t" successfully.',
+                                              );
+                                            }
+                                          },
+                                        ).animate().fadeIn(),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                            );
+                          }),
                         ],
                       ),
                     ),
-                    const Gap(12),
-                    IconButton(
-                      icon: Icon(Icons.close_rounded, color: Colors.white.withOpacity(0.7)),
-                      splashRadius: 24,
-                      onPressed: () => Navigator.pop(context),
-                    ),
-                  ],
-                ),
-              ),
-              
-              // ── Dialog Body ──
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(Icons.bolt_rounded, color: context.colors.primaryGold, size: 24),
-                          const Gap(10),
-                          Text(
-                            'Goods Actions',
-                            style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ).animate().fadeIn(delay: 200.ms),
-                      const Gap(16),
-                      // Why everything is greyed out.
-                      if (inAppealWindow)
-                        material.Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: context.colors.warningAmber.withOpacity(0.10),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: context.colors.warningAmber
-                                    .withOpacity(0.4)),
-                          ),
-                          child: Row(children: [
-                            Icon(Icons.gavel_rounded,
-                                color: context.colors.warningAmber, size: 18),
-                            const Gap(10),
-                            Expanded(
-                              child: Text(
-                                  'Appealing · $appealDaysRemaining day'
-                                  '${appealDaysRemaining == 1 ? '' : 's'} left. '
-                                  'No action can be taken until the 30-day '
-                                  'appeal window closes.',
-                                  style: TextStyle(
-                                      color: context.colors.warningAmber,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600)),
-                            ),
-                          ]),
-                        ).animate().fadeIn(delay: 220.ms),
-                      if (heldCount <= 0)
-                        material.Container(
-                          margin: const EdgeInsets.only(bottom: 16),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: context.colors.successGreen.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: context.colors.successGreen.withOpacity(0.3)),
-                          ),
-                          child: Row(children: [
-                            Icon(Icons.check_circle_rounded,
-                                color: context.colors.successGreen, size: 18),
-                            const Gap(10),
-                            Expanded(
-                              child: Text(
-                                  'All $total packages have been processed.',
-                                  style: TextStyle(
-                                      color: context.colors.textSecondary,
-                                      fontSize: 12)),
-                            ),
-                          ]),
-                        ).animate().fadeIn(delay: 250.ms)
-                      else
-                        material.Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: material.Align(
-                            alignment: material.Alignment.centerLeft,
-                            child: Text('$heldCount of $total packages remaining',
-                                style: TextStyle(
-                                    color: context.colors.textMuted, fontSize: 13)),
-                          ),
-                        ).animate().fadeIn(delay: 250.ms),
-                      
-                      // Show all actions
-                      ..._actions.map((a) {
-                        final isOther = a.key == 'Other';
-                        // Disabled either by role-permission or because there
-                        // are no packages left to act on.
-                        final permitted = isActionEnabled(a.key);
-                        final isDisabled = !permitted || heldCount <= 0;
-                        // Greyed colour for disabled cards/labels.
-                        final cardColor =
-                            isDisabled ? context.colors.textMuted : a.color;
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            material.Opacity(
-                              opacity: isDisabled ? 0.45 : 1.0,
-                              child: material.Card(
-                              margin: const EdgeInsets.only(bottom: 12),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                                side: BorderSide(
-                                  color: (isOther && _otherExpanded)
-                                      ? cardColor.withOpacity(0.6)
-                                      : cardColor.withOpacity(0.2),
-                                  width: (isOther && _otherExpanded) ? 1.5 : 1,
-                                ),
-                              ),
-                              color: cardColor.withOpacity(0.04),
-                              child: InkWell(
-                                borderRadius: BorderRadius.circular(12),
-                                onTap: isDisabled
-                                    ? null
-                                    : () async {
-                                  if (isOther) {
-                                    setState(() => _otherExpanded = !_otherExpanded);
-                                  } else {
-                                    // Show selection dialog with live processed slots
-                                    final slots = await showDialog<Set<int>>(
-                                      context: context,
-                                      builder: (ctx) => _PackageSelectionDialog(
-                                        actionColor: a.color,
-                                        actionName: a.key == 'Release' ? 'Release' : a.key,
-                                        totalQty: total,
-                                        processedSlots: processed,
-                                      ),
-                                    );
-                                    if (slots != null && slots.isNotEmpty) {
-                                      final list = slots.toList()..sort();
-                                      final ctx = context;
-                                      if (a.key == 'Release') {
-                                        await _runAction(
-                                          ctx,
-                                          () => widget.onRelease(heldEntry, list),
-                                          '${list.length} package(s) released successfully.',
-                                        );
-                                      } else {
-                                        await _runAction(
-                                          ctx,
-                                          () => widget.onDispose(heldEntry, a.key, list),
-                                          '${list.length} package(s) marked as ${a.label} successfully.',
-                                        );
-                                      }
-                                    }
-                                  }
-                                },
-                                child: Padding(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 16, vertical: 14),
-                                  child: Row(children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(10),
-                                      decoration: BoxDecoration(
-                                        color: cardColor.withOpacity(0.12),
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: Icon(a.icon,
-                                          color: cardColor, size: 20),
-                                    ),
-                                    const Gap(16),
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment: CrossAxisAlignment.start,
-                                        children: [
-                                          Text(a.label,
-                                              style: TextStyle(
-                                                  fontWeight: FontWeight.w700,
-                                                  fontSize: 15,
-                                                  color: cardColor)),
-                                          const Gap(4),
-                                          Text(a.description,
-                                              style: TextStyle(
-                                                  fontSize: 13,
-                                                  color:
-                                                      context.colors.textMuted)),
-                                        ],
-                                      ),
-                                    ),
-                                    Icon(
-                                      isOther
-                                          ? (_otherExpanded
-                                              ? Icons.expand_less_rounded
-                                              : Icons.expand_more_rounded)
-                                          : Icons.chevron_right_rounded,
-                                      color: cardColor.withOpacity(0.6),
-                                      size: 22,
-                                    ),
-                                  ]),
-                                ),
-                              ),
-                            ).animate().fadeIn(delay: 300.ms).slideY(begin: 0.05),
-                            ),
-                            // Inline "Other" text field
-                            if (isOther && _otherExpanded)
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(4, 0, 4, 16),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                                  children: [
-                                    TextFormField(
-                                      controller: _otherCtrl,
-                                      autofocus: true,
-                                      decoration: InputDecoration(
-                                        labelText: 'Disposition Type *',
-                                        hintText: 'e.g. Transferred, Seized for Analysis...',
-                                        border: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: context.colors.borderColor),
-                                        ),
-                                        enabledBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: context.colors.borderColor),
-                                        ),
-                                        focusedBorder: OutlineInputBorder(
-                                          borderRadius: BorderRadius.circular(12),
-                                          borderSide: BorderSide(color: const Color(0xFF7E57C2), width: 2),
-                                        ),
-                                        filled: true,
-                                        fillColor: context.colors.textPrimary.withOpacity(0.02),
-                                      ),
-                                    ).animate().fadeIn(),
-                                    const Gap(12),
-                                    ElevatedButton.icon(
-                                      icon: const Icon(Icons.check_rounded, size: 18),
-                                      label: const Text('Confirm Other Disposition', style: TextStyle(fontWeight: FontWeight.bold)),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: const Color(0xFF7E57C2),
-                                        foregroundColor: Colors.white,
-                                        padding: const EdgeInsets.symmetric(vertical: 14),
-                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                                      ),
-                                      onPressed: () async {
-                                        final t = _otherCtrl.text.trim();
-                                        if (t.isEmpty) return;
+                  ),
 
-                                        final slots = await showDialog<Set<int>>(
-                                          context: context,
-                                          builder: (ctx) => _PackageSelectionDialog(
-                                            actionColor: const Color(0xFF7E57C2),
-                                            actionName: t,
-                                            totalQty: total,
-                                            processedSlots: processed,
-                                          ),
-                                        );
-                                        if (slots != null && slots.isNotEmpty) {
-                                          final list = slots.toList()..sort();
-                                          final ctx = context;
-                                          // Prefix the custom text with the "Other:"
-                                          // marker so the disposition is unambiguously
-                                          // an "Other" outcome — tagged "[OTHER: <text>]"
-                                          // in returnNotes (partial) and stored as item
-                                          // status "Other: <text>" (full). This is what
-                                          // the Other Packages table detects.
-                                          await _runAction(
-                                            ctx,
-                                            () => widget.onDispose(
-                                                heldEntry, 'Other: $t', list),
-                                            '${list.length} package(s) marked as "$t" successfully.',
-                                          );
-                                        }
-                                      },
-                                    ).animate().fadeIn(),
-                                  ],
-                                ),
-                              ),
-                          ],
-                        );
-                      }),
-                    ],
+                  // ── Dialog Footer ──
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                    decoration: BoxDecoration(
+                      color: context.colors.surfaceDark,
+                      borderRadius: const BorderRadius.vertical(
+                          bottom: Radius.circular(20)),
+                      border: Border(
+                          top: BorderSide(color: context.colors.borderColor)),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: TextButton.styleFrom(
+                            foregroundColor: context.colors.textSecondary,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 24, vertical: 14),
+                          ),
+                          child: const Text('Cancel',
+                              style: TextStyle(fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── Loading overlay ──
+            if (_isLoading)
+              Positioned.fill(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black.withOpacity(0.45),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Center(
+                    child: CircularProgressIndicator(
+                      valueColor:
+                          AlwaysStoppedAnimation<Color>(Color(0xFFFFB300)),
+                      strokeWidth: 3,
+                    ),
                   ),
                 ),
               ),
-              
-              // ── Dialog Footer ──
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                decoration: BoxDecoration(
-                  color: context.colors.surfaceDark,
-                  borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
-                  border: Border(top: BorderSide(color: context.colors.borderColor)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      style: TextButton.styleFrom(
-                        foregroundColor: context.colors.textSecondary,
-                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                      ),
-                      child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.bold)),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        // ── Loading overlay ──
-        if (_isLoading)
-          Positioned.fill(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.45),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFFB300)),
-                  strokeWidth: 3,
-                ),
-              ),
-            ),
-          ),
           ],
         ),
       ),
@@ -6299,8 +6530,8 @@ bool _isForfeitStatusLocal(String? s) {
 String? _receiptNoOf(String? raw) {
   final s = raw?.trim();
   if (s == null || s.isEmpty) return null;
-  final m = RegExp(r'Receipt No:\s*([^|]+)', caseSensitive: false)
-      .firstMatch(s);
+  final m =
+      RegExp(r'Receipt No:\s*([^|]+)', caseSensitive: false).firstMatch(s);
   if (m != null) {
     final v = m.group(1)!.trim();
     return v.isEmpty ? null : v;
@@ -6313,8 +6544,7 @@ String? _receiptNoOf(String? raw) {
 String? _notesOf(String? raw) {
   final s = raw?.trim();
   if (s == null || s.isEmpty) return null;
-  final m =
-      RegExp(r'Notes:\s*(.+)$', caseSensitive: false).firstMatch(s);
+  final m = RegExp(r'Notes:\s*(.+)$', caseSensitive: false).firstMatch(s);
   final v = m?.group(1)?.trim();
   return (v == null || v.isEmpty) ? null : v;
 }
@@ -6587,7 +6817,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'RELEASED',
       icon: Icons.assignment_return_rounded,
       label: 'Release',
-      description: 'Return the goods to the owner. DC / SDDC approval required.',
+      description:
+          'Return the goods to the owner. DC / SDDC approval required.',
       color: Color(0xFF43A047),
       adminOnly: true,
     ),
@@ -6595,7 +6826,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'SOLD',
       icon: Icons.sell_rounded,
       label: 'Sale',
-      description: 'Send a disposal request to the Central Disposal Directorate.',
+      description:
+          'Send a disposal request to the Central Disposal Directorate.',
       color: Color(0xFFE8A826),
       adminOnly: false,
     ),
@@ -6603,7 +6835,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'DESTROYED',
       icon: Icons.delete_forever_rounded,
       label: 'Destroy',
-      description: 'Send a disposal request to the Central Disposal Directorate.',
+      description:
+          'Send a disposal request to the Central Disposal Directorate.',
       color: Color(0xFFE64A19),
       adminOnly: false,
     ),
@@ -6683,9 +6916,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
     // For OTHER the outcome detail is the note; append any extra remarks.
     final String? notes;
     if (otherDetail != null) {
-      notes = result.notes.isEmpty
-          ? otherDetail
-          : '$otherDetail — ${result.notes}';
+      notes =
+          result.notes.isEmpty ? otherDetail : '$otherDetail — ${result.notes}';
     } else {
       notes = result.notes.isEmpty ? null : result.notes;
     }
@@ -6736,10 +6968,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: isDark
-                        ? [
-                            context.colors.surfaceDark,
-                            context.colors.cardDark
-                          ]
+                        ? [context.colors.surfaceDark, context.colors.cardDark]
                         : [
                             context.colors.customsBlue,
                             context.colors.customsBlueDark
@@ -6771,7 +7000,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                       letterSpacing: 1.2,
                                       fontWeight: FontWeight.w800))
                               .animate()
-                              .slideY(begin: 0.1, duration: 400.ms, delay: 100.ms)
+                              .slideY(
+                                  begin: 0.1, duration: 400.ms, delay: 100.ms)
                               .fadeIn(),
                           Text(
                             '${widget.item.itemName} · ${widget.qty} unit(s)',
@@ -6783,7 +7013,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                 fontWeight: FontWeight.bold),
                           )
                               .animate()
-                              .slideY(begin: 0.1, duration: 400.ms, delay: 150.ms)
+                              .slideY(
+                                  begin: 0.1, duration: 400.ms, delay: 150.ms)
                               .fadeIn(),
                         ],
                       ),
@@ -6839,163 +7070,191 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       ],
                       const Gap(16),
                       ...visible.map((a) {
-                final isOther = a.type == 'OTHER';
-                final isEnabled = _isActionEnabled(a);
-                final cardColor =
-                    isEnabled ? a.color : context.colors.textMuted;
-                return Opacity(
-                  opacity: isEnabled ? 1.0 : 0.45,
-                  child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    material.Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                        side: BorderSide(
-                          color: (isOther && _otherExpanded)
-                              ? cardColor.withOpacity(0.6)
-                              : cardColor.withOpacity(0.2),
-                          width: (isOther && _otherExpanded) ? 1.5 : 1,
-                        ),
-                      ),
-                      color: cardColor.withOpacity(0.04),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: !isEnabled
-                            ? null
-                            : () {
-                          if (isOther) {
-                            setState(() => _otherExpanded = !_otherExpanded);
-                          } else if (_requestActions.contains(a.type)) {
-                            // Sale / Destroy → disposal request (not a direct
-                            // [FINAL:…] write).
-                            widget.onRequestDisposal!(
-                                a.type == 'SOLD' ? 'sale' : 'destruction');
-                          } else {
-                            // Release / Re-export → per-action confirm dialog
-                            // (date + notes) before recording, like the
-                            // warehouse action final step.
-                            _confirmFinalAction(a);
-                          }
-                        },
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 16, vertical: 12),
-                          child: Row(children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: cardColor.withOpacity(0.12),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(a.icon, color: cardColor, size: 20),
-                            ),
-                            const Gap(14),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Row(children: [
-                                    Text(a.label,
-                                        style: material.TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14,
-                                            color: cardColor)),
-                                    if (_requestActions.contains(a.type)) ...[
-                                      const Gap(6),
+                        final isOther = a.type == 'OTHER';
+                        final isEnabled = _isActionEnabled(a);
+                        final cardColor =
+                            isEnabled ? a.color : context.colors.textMuted;
+                        return Opacity(
+                          opacity: isEnabled ? 1.0 : 0.45,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              material.Card(
+                                margin: const EdgeInsets.only(bottom: 8),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: (isOther && _otherExpanded)
+                                        ? cardColor.withOpacity(0.6)
+                                        : cardColor.withOpacity(0.2),
+                                    width:
+                                        (isOther && _otherExpanded) ? 1.5 : 1,
+                                  ),
+                                ),
+                                color: cardColor.withOpacity(0.04),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(12),
+                                  onTap: !isEnabled
+                                      ? null
+                                      : () {
+                                          if (isOther) {
+                                            setState(() => _otherExpanded =
+                                                !_otherExpanded);
+                                          } else if (_requestActions
+                                              .contains(a.type)) {
+                                            // Sale / Destroy → disposal request (not a direct
+                                            // [FINAL:…] write).
+                                            widget.onRequestDisposal!(
+                                                a.type == 'SOLD'
+                                                    ? 'sale'
+                                                    : 'destruction');
+                                          } else {
+                                            // Release / Re-export → per-action confirm dialog
+                                            // (date + notes) before recording, like the
+                                            // warehouse action final step.
+                                            _confirmFinalAction(a);
+                                          }
+                                        },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16, vertical: 12),
+                                    child: Row(children: [
                                       Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 1),
+                                        padding: const EdgeInsets.all(8),
                                         decoration: BoxDecoration(
                                           color: cardColor.withOpacity(0.12),
                                           borderRadius:
-                                              BorderRadius.circular(4),
+                                              BorderRadius.circular(8),
                                         ),
-                                        child: Text('CENTRAL DISPOSAL',
-                                            style: material.TextStyle(
-                                                fontSize: 8,
-                                                fontWeight: FontWeight.w800,
-                                                color: cardColor,
-                                                letterSpacing: 0.5)),
+                                        child: Icon(a.icon,
+                                            color: cardColor, size: 20),
                                       ),
-                                    ] else if (a.adminOnly) ...[
-                                      const Gap(6),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 6, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: cardColor.withOpacity(0.12),
-                                          borderRadius:
-                                              BorderRadius.circular(4),
+                                      const Gap(14),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Row(children: [
+                                              Text(a.label,
+                                                  style: material.TextStyle(
+                                                      fontWeight:
+                                                          FontWeight.w700,
+                                                      fontSize: 14,
+                                                      color: cardColor)),
+                                              if (_requestActions
+                                                  .contains(a.type)) ...[
+                                                const Gap(6),
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: cardColor
+                                                        .withOpacity(0.12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            4),
+                                                  ),
+                                                  child: Text(
+                                                      'CENTRAL DISPOSAL',
+                                                      style: material.TextStyle(
+                                                          fontSize: 8,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          color: cardColor,
+                                                          letterSpacing: 0.5)),
+                                                ),
+                                              ] else if (a.adminOnly) ...[
+                                                const Gap(6),
+                                                Container(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 1),
+                                                  decoration: BoxDecoration(
+                                                    color: cardColor
+                                                        .withOpacity(0.12),
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            4),
+                                                  ),
+                                                  child: Text('DC / SDDC',
+                                                      style: material.TextStyle(
+                                                          fontSize: 8,
+                                                          fontWeight:
+                                                              FontWeight.w800,
+                                                          color: cardColor,
+                                                          letterSpacing: 0.5)),
+                                                ),
+                                              ],
+                                            ]),
+                                            const Gap(2),
+                                            Text(a.description,
+                                                style: material.TextStyle(
+                                                    fontSize: 12,
+                                                    color: context
+                                                        .colors.textMuted)),
+                                          ],
                                         ),
-                                        child: Text('DC / SDDC',
-                                            style: material.TextStyle(
-                                                fontSize: 8,
-                                                fontWeight: FontWeight.w800,
-                                                color: cardColor,
-                                                letterSpacing: 0.5)),
+                                      ),
+                                      Icon(
+                                        isOther
+                                            ? (_otherExpanded
+                                                ? Icons.expand_less_rounded
+                                                : Icons.expand_more_rounded)
+                                            : Icons.chevron_right_rounded,
+                                        color: cardColor.withOpacity(0.6),
+                                        size: 20,
+                                      ),
+                                    ]),
+                                  ),
+                                ),
+                              ),
+                              if (isOther && _otherExpanded)
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(4, 0, 4, 12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: [
+                                      TextFormField(
+                                        controller: _otherCtrl,
+                                        autofocus: true,
+                                        decoration: const InputDecoration(
+                                          labelText: 'Outcome detail *',
+                                          hintText:
+                                              'e.g. Donated, Transferred...',
+                                          isDense: true,
+                                        ),
+                                      ),
+                                      const Gap(10),
+                                      ElevatedButton.icon(
+                                        icon: const Icon(Icons.check_rounded,
+                                            size: 16),
+                                        label: const Text('Confirm Other'),
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor:
+                                              const Color(0xFF7E57C2),
+                                          foregroundColor: Colors.white,
+                                        ),
+                                        onPressed: () {
+                                          final t = _otherCtrl.text.trim();
+                                          if (t.isEmpty) return;
+                                          _confirmFinalAction(a,
+                                              otherDetail: t);
+                                        },
                                       ),
                                     ],
-                                  ]),
-                                  const Gap(2),
-                                  Text(a.description,
-                                      style: material.TextStyle(
-                                          fontSize: 12,
-                                          color: context.colors.textMuted)),
-                                ],
-                              ),
-                            ),
-                            Icon(
-                              isOther
-                                  ? (_otherExpanded
-                                      ? Icons.expand_less_rounded
-                                      : Icons.expand_more_rounded)
-                                  : Icons.chevron_right_rounded,
-                              color: cardColor.withOpacity(0.6),
-                              size: 20,
-                            ),
-                          ]),
-                        ),
-                      ),
-                    ),
-                    if (isOther && _otherExpanded)
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(4, 0, 4, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            TextFormField(
-                              controller: _otherCtrl,
-                              autofocus: true,
-                              decoration: const InputDecoration(
-                                labelText: 'Outcome detail *',
-                                hintText: 'e.g. Donated, Transferred...',
-                                isDense: true,
-                              ),
-                            ),
-                            const Gap(10),
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.check_rounded, size: 16),
-                              label: const Text('Confirm Other'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF7E57C2),
-                                foregroundColor: Colors.white,
-                              ),
-                              onPressed: () {
-                                final t = _otherCtrl.text.trim();
-                                if (t.isEmpty) return;
-                                _confirmFinalAction(a, otherDetail: t);
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.05),
-                );
-              }),
+                                  ),
+                                ),
+                            ],
+                          ).animate().fadeIn(delay: 250.ms).slideY(begin: 0.05),
+                        );
+                      }),
                     ],
                   ),
                 ),
@@ -7180,7 +7439,9 @@ class _DispositionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return OutlinedButton.icon(
       icon: Icon(icon, size: 14, color: color),
-      label: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+      label: Text(label,
+          style: TextStyle(
+              color: color, fontSize: 12, fontWeight: FontWeight.w600)),
       style: OutlinedButton.styleFrom(
         side: BorderSide(color: color.withOpacity(0.5)),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -7297,7 +7558,8 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
                           minimumSize: Size.zero,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
-                          tapTargetSize: material.MaterialTapTargetSize.shrinkWrap,
+                          tapTargetSize:
+                              material.MaterialTapTargetSize.shrinkWrap,
                         ),
                         child: const Text('Select All',
                             style: TextStyle(fontSize: 12)),
@@ -7309,7 +7571,8 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
                           minimumSize: Size.zero,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 8, vertical: 4),
-                          tapTargetSize: material.MaterialTapTargetSize.shrinkWrap,
+                          tapTargetSize:
+                              material.MaterialTapTargetSize.shrinkWrap,
                           foregroundColor: context.colors.textMuted,
                         ),
                         child: const Text('Clear All',
@@ -7343,8 +7606,7 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
                     ),
                     const Gap(12),
                     Text('of ${_heldSlots.length} available',
-                        style:
-                            TextStyle(color: context.colors.textSecondary)),
+                        style: TextStyle(color: context.colors.textSecondary)),
                   ],
                 )
               else
@@ -7374,13 +7636,12 @@ class _PackageSelectionDialogState extends State<_PackageSelectionDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text('Cancel',
-              style: TextStyle(color: context.colors.textMuted)),
+          child:
+              Text('Cancel', style: TextStyle(color: context.colors.textMuted)),
         ),
         ElevatedButton(
-          onPressed: canProceed
-              ? () => Navigator.pop(context, _selectedSlots)
-              : null,
+          onPressed:
+              canProceed ? () => Navigator.pop(context, _selectedSlots) : null,
           style: ElevatedButton.styleFrom(
             backgroundColor: widget.actionColor,
             foregroundColor: Colors.white,
@@ -7458,7 +7719,8 @@ class _PackageSlotChip extends StatelessWidget {
                 fontSize: 13,
                 fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
                 color: textColor,
-                decoration: isProcessed ? material.TextDecoration.lineThrough : null,
+                decoration:
+                    isProcessed ? material.TextDecoration.lineThrough : null,
               ),
             ),
           ],
