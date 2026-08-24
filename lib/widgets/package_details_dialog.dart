@@ -3039,7 +3039,14 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         ),
                       ),
                       const Gap(12),
-                      if (widget.highlightEntry != null &&
+                      // NOT offered on the WAREHOUSE dialog. Every status now
+                      // has its own page (Detained / Abandoned / Forfeited /
+                      // Other) where the goods are actioned, so the warehouse
+                      // is a view of what it holds: look, and Update. The
+                      // Appeal column in its table still shows where each item
+                      // stands.
+                      if (!widget.useWarehouseSummary &&
+                          widget.highlightEntry != null &&
                           !widget.highlightEntry!.isReturned)
                         material.Tooltip(
                           message: isOfficer
@@ -3079,8 +3086,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
               // Footer action shows ONLY when the caller actually wires up the
               // disposition callback (Forfeited screen). Read-only viewers like
               // Central Disposal / Valuation pass no callback → no button.
+              // NOT shown to the WAREHOUSE dialog, which is view + Update
+              // only: goods are actioned on their own status page. The status
+              // pages (Detained / Abandoned / Other / Forfeited) have no
+              // Actions button, so this footer is their only route.
               if (widget.allowFinalDisposition &&
                   widget.onSaleOrDestroyRequest != null &&
+                  !widget.useWarehouseSummary &&
                   (widget.useLegacySummary || widget.highlightItemId != null) &&
                   highlightedItem != null &&
                   (widget.forceFinalDisposition ||
@@ -5931,11 +5943,34 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
     final appealDaysRemaining = appealDaysLeft(widget.entryDate);
     // An open appeal blocks action even after the window closes.
     final blockedByHold = itemOutcome.onHold;
-    bool isActionEnabled(String key) =>
-        !isOfficer &&
-        !_disabledForAll.contains(key) &&
-        !inAppealWindow &&
-        !blockedByHold;
+    // The action key matching an Appeal Directorate decision code. SALE and
+    // DESTROY map to nothing here: those two are carried out by sending a
+    // disposal request to Central Disposal, never from this sheet.
+    String? actionKeyForDecision(String code) {
+      switch (code.trim().toUpperCase()) {
+        case 'RELEASE':
+          return 'Release';
+        case 'RE-EXPORT':
+          return 'Re-export';
+        case 'OTHER':
+          return 'Other';
+        default:
+          return null;
+      }
+    }
+
+    bool isActionEnabled(String key) {
+      if (isOfficer) return false;
+      if (_disabledForAll.contains(key)) return false;
+      if (inAppealWindow || blockedByHold) return false;
+      // Once the directorate has ruled, ONLY the decided action is open — the
+      // yard carries out what was decided rather than choosing afresh. This
+      // mirrors the Final Disposition sheet's own gating.
+      if (itemOutcome.isDecided) {
+        return key == actionKeyForDecision(itemOutcome.decision!);
+      }
+      return true;
+    }
 
     return TweenAnimationBuilder<double>(
       duration: const Duration(milliseconds: 400),

@@ -723,3 +723,16 @@ Abandoned and Other watched **`requestableForfeitedPackagesProvider`** to decide
 Both now compute it from data **already on screen** — a local `_isRowActionable(row, outcome)` over the rows the table just built and `allItemAppealOutcomesProvider` — which is the pattern the Detained page already used, and matches Forfeited (which counts `r.forfeited.isActionable` over `forfeitedPackagesProvider`). The rule is unchanged: window closed OR decided, and a hold always blocks. The provider is still invalidated after a submit; it is just no longer *watched* for the enable state.
 
 **All four status pages now agree** on how the header chips and the button are derived.
+
+### Warehouse row showed TWO footers, and its Goods Actions ignored the decision (2026-08-25)
+
+Wiring `onSaleOrDestroyRequest` into the warehouse screen (for detained goods) also switched on the **Final Disposition** footer, which then sat beside the warehouse dialog's own **Actions** footer — two buttons on one row opening near-identical sheets.
+
+- The Final Disposition footer is now suppressed when **`useWarehouseSummary`** is set. That flag is passed by the warehouse screen alone, which makes it the right signal; gating on `highlightEntry != null && !isReturned` would have wrongly hidden it on the Detained page, whose rows also carry a live entry.
+- **The warehouse's Goods Actions sheet did not restrict to the appeal decision** — it already read `itemAppealOutcomesProvider` for the window/hold logic but enabled every action regardless. It now mirrors `_FinalDispositionDialog._isActionEnabled`: once decided, only the matching key is open. `actionKeyForDecision` maps RELEASE/RE-EXPORT/OTHER to their keys and **returns null for SALE/DESTROY**, so those decisions open nothing there — correct, since they are carried out by sending a disposal request.
+
+### The Warehouses page is view + Update only (2026-08-25)
+
+Every status now has its own page for acting on goods — Detained, Abandoned, Forfeited, Other — so the warehouse dialog no longer offers any: its **"Actions"** button is gone and the Final Disposition footer stays suppressed there. It shows what the warehouse holds, and Update. The table's **Appeal column still shows where each item stands**, which is what the page is for.
+
+Both suppressions key on **`useWarehouseSummary`**, passed only by `warehouses_screen.dart`. The disposal wiring added there earlier (`_itemIsDetainedHere`, `_detainActionable`, `_requestDetainDisposal`) went with it. `allItemAppealOutcomesProvider` is still watched — the Appeal chip needs it.
