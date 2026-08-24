@@ -286,7 +286,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           if (selectedMonth > maxMonth) selectedMonth = maxMonth;
 
           return AlertDialog(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             backgroundColor: context.colors.cardDark,
             title: Text('Select Month & Year',
                 style: TextStyle(
@@ -374,7 +375,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           backgroundColor: context.colors.cardDark,
           title: Text('Select Year',
               style: TextStyle(
@@ -1736,12 +1738,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       final all = await ref.read(srFinancialsProvider.future);
       final taxesAsync = await ref.read(disposalTaxesProvider.future);
-      final configuredTaxNames = taxesAsync
-          .where((t) => t.isActive)
-          .map((t) => t.name)
-          .toList();
+      final configuredTaxNames =
+          taxesAsync.where((t) => t.isActive).map((t) => t.name).toList();
       final taxNames = <String>[
-        if (configuredTaxNames.isEmpty) ...['VAT', 'PAL'] else ...configuredTaxNames
+        if (configuredTaxNames.isEmpty) ...['VAT', 'PAL'] else
+          ...configuredTaxNames
       ];
       for (final r in all) {
         for (final k in r.taxesByName.keys) {
@@ -1777,8 +1778,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           _reportMoney(r.srCharges),
           _reportMoney(r.destroyingDeposit),
           _reportMoney(r.saleProceeds),
-          for (final tName in taxNames)
-            _reportMoney(r.taxesByName[tName] ?? 0),
+          for (final tName in taxNames) _reportMoney(r.taxesByName[tName] ?? 0),
           _reportMoney(r.taxes),
           _reportMoney(r.totalIncome),
           _reportMoney(r.destructionExpense),
@@ -1803,7 +1803,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         totalDestroyingDeposit += r.destroyingDeposit;
         totalSaleProceeds += r.saleProceeds;
         for (final tName in taxNames) {
-          taxTotalsMap[tName] = (taxTotalsMap[tName] ?? 0) + (r.taxesByName[tName] ?? 0);
+          taxTotalsMap[tName] =
+              (taxTotalsMap[tName] ?? 0) + (r.taxesByName[tName] ?? 0);
         }
         totalTaxes += r.taxes;
         totalDestruction += r.destructionExpense;
@@ -1823,8 +1824,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           _reportMoney(totalSrCharges),
           _reportMoney(totalDestroyingDeposit),
           _reportMoney(totalSaleProceeds),
-          for (final tName in taxNames)
-            _reportMoney(taxTotalsMap[tName] ?? 0),
+          for (final tName in taxNames) _reportMoney(taxTotalsMap[tName] ?? 0),
           _reportMoney(totalTaxes),
           _reportMoney(totalIncome),
           _reportMoney(totalDestruction),

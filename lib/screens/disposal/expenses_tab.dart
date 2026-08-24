@@ -74,8 +74,7 @@ class ExpensesTab extends ConsumerWidget {
               loading: () =>
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
-                  error: e,
-                  onRetry: () => ref.refresh(srFinancialsProvider)),
+                  error: e, onRetry: () => ref.refresh(srFinancialsProvider)),
               data: (all) {
                 final q =
                     ref.watch(disposalSearchProvider(_tabKey)).toLowerCase();
@@ -93,8 +92,8 @@ class ExpensesTab extends ConsumerWidget {
                       (r) => (r.yard ?? yardOfSrNumber(r.srNumber)) == yf);
                 }
                 if (q.isNotEmpty) {
-                  rows = rows.where((r) =>
-                      r.srNumber.toLowerCase().contains(q));
+                  rows =
+                      rows.where((r) => r.srNumber.toLowerCase().contains(q));
                 }
                 final list = rows.toList();
 
@@ -198,28 +197,27 @@ class _TotalChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Same padding and single-line layout as [StatChip] beside it, so the
+    // whole strip sits at one height.
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 18, color: color),
-        const Gap(10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(label,
-                style:
-                    TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
-            Text('LKR ${NumberFormat('#,##0.00').format(value)}',
-                style: TextStyle(
-                    color: color, fontSize: 15, fontWeight: FontWeight.w800)),
-          ],
-        ),
+        Icon(icon, size: 16, color: color),
+        const Gap(8),
+        Text(NumberFormat('#,##0.00').format(value),
+            style: TextStyle(
+                color: color, fontSize: 15, fontWeight: FontWeight.w800)),
+        const Gap(8),
+        Text(label,
+            style: TextStyle(
+                color: context.colors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w600)),
       ]),
     );
   }
@@ -233,8 +231,6 @@ class _ExpensesTable extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final money = NumberFormat('#,##0.00');
 
-    // Same shell as every other table in the portal: a 14-radius bordered card
-    // clipped to its own corners, with the heading row pinned.
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -245,38 +241,62 @@ class _ExpensesTable extends ConsumerWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
         child: DataTable2(
-          // Everything fits without sideways scrolling.
-          columnSpacing: 12,
+          columnSpacing: 10,
           horizontalMargin: 16,
           fixedTopRows: 1,
           headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
           empty: const EmptyTableState(
               icon: Icons.receipt_long_outlined,
               message: 'No SRs with a destroying deposit',
-              subtitle:
-                  'SRs carrying a deposit appear here once registered.'),
+              subtitle: 'SRs carrying a deposit appear here once registered.'),
           columns: const [
             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
             DataColumn2(
-                label: Text('Destroy Deposit'), size: ColumnSize.S, numeric: true),
+                label: Text('Destroy Deposit'),
+                size: ColumnSize.S,
+                numeric: true),
             DataColumn2(
                 label: Text('Destruction'), size: ColumnSize.S, numeric: true),
             DataColumn2(
                 label: Text('Advertising'), size: ColumnSize.S, numeric: true),
             DataColumn2(
+                label: Text('Total Exp.'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
                 label: Text('Refund'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Center(child: Text('Status')),
+                size: ColumnSize.S,
+                fixedWidth: 100),
             DataColumn2(
                 label: Center(child: Text('Record')),
                 size: ColumnSize.S,
-                fixedWidth: 110),
+                fixedWidth: 80),
+            DataColumn2(
+                label: Center(child: Text('Details')),
+                size: ColumnSize.S,
+                fixedWidth: 80),
           ],
           rows: [
             for (final r in rows)
               DataRow(cells: [
-                DataCell(TooltipText(r.srNumber,
-                    style: TextStyle(
-                        color: context.colors.accentLightBlue,
-                        fontWeight: FontWeight.w700))),
+                DataCell(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      TooltipText(r.srNumber,
+                          style: TextStyle(
+                              color: context.colors.accentLightBlue,
+                              fontWeight: FontWeight.w700)),
+                      if (r.goodsName != '—')
+                        Text(r.goodsName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                color: context.colors.textMuted, fontSize: 11)),
+                    ],
+                  ),
+                ),
                 DataCell(Text(money.format(r.destroyingDeposit))),
                 DataCell(Text(
                     r.destructionExpense == 0
@@ -296,8 +316,13 @@ class _ExpensesTable extends ConsumerWidget {
                             ? context.colors.textMuted
                             : context.colors.warningAmber,
                         fontWeight: FontWeight.w600))),
-                // The whole point of the row: what goes back once the costs are
-                // taken out of the deposit. A deficit is flagged in red instead.
+                DataCell(Text(
+                    r.depositSpent == 0 ? '—' : money.format(r.depositSpent),
+                    style: TextStyle(
+                        color: r.depositSpent == 0
+                            ? context.colors.textMuted
+                            : context.colors.textPrimary,
+                        fontWeight: FontWeight.w700))),
                 DataCell(r.deficit > 0
                     ? Tooltip(
                         message:
@@ -312,6 +337,9 @@ class _ExpensesTable extends ConsumerWidget {
                             color: context.colors.successGreen,
                             fontWeight: FontWeight.w800))),
                 DataCell(Center(
+                  child: _StatusBadge(r: r),
+                )),
+                DataCell(Center(
                   child: IconButton(
                     tooltip: 'Record costs for this SR',
                     icon: Icon(Icons.edit_note_rounded,
@@ -322,11 +350,235 @@ class _ExpensesTable extends ConsumerWidget {
                     ),
                   ),
                 )),
+                DataCell(Center(
+                  child: IconButton(
+                    tooltip: 'Every goods under this SR',
+                    icon: Icon(Icons.info_outline_rounded,
+                        size: 18, color: context.colors.accentLightBlue),
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (_) => _SrGoodsDialog(sr: r),
+                    ),
+                  ),
+                )),
               ]),
           ],
         ),
       ),
     ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.03);
+  }
+}
+
+/// Every goods item an SR covers, with what each one cost.
+///
+/// The table lists SRs because the destroying deposit is lodged once per SR —
+/// this is where that row is opened up. The deposit and the refund are shown
+/// once, at the SR level, because that is the only level they exist at; the
+/// per-goods columns are the costs that were charged against them.
+class _SrGoodsDialog extends StatelessWidget {
+  final SrFinancials sr;
+  const _SrGoodsDialog({required this.sr});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final green = context.colors.successGreen;
+
+    return StyledFormDialog(
+      label: 'SR DETAILS',
+      title: sr.srNumber,
+      icon: Icons.inventory_2_rounded,
+      headerAccentColor: green,
+      width: 640,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Close'),
+        ),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          StyledFormSection(
+            title: 'The SR',
+            icon: Icons.folder_rounded,
+            children: [
+              _KeyValue(label: 'Packages', value: '${sr.packageCount}'),
+              _KeyValue(label: 'Total Quantity', value: '${sr.quantity}'),
+              _KeyValue(
+                label: 'Destroying Deposit',
+                value: 'LKR ${money.format(sr.destroyingDeposit)}',
+                emphasise: true,
+                color: green,
+              ),
+            ],
+          ),
+          const Gap(14),
+          StyledFormSection(
+            title: 'Goods under this SR',
+            icon: Icons.list_alt_rounded,
+            children: [
+              // A header line, then one line per package. Costs only — the
+              // deposit and the refund belong to the SR, not to any one item.
+              Row(children: [
+                Expanded(
+                    flex: 4,
+                    child: Text('Goods',
+                        style: TextStyle(
+                            color: context.colors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700))),
+                Expanded(
+                    child: Text('Qty',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            color: context.colors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Destruction',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            color: context.colors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700))),
+                Expanded(
+                    flex: 2,
+                    child: Text('Advertising',
+                        textAlign: TextAlign.right,
+                        style: TextStyle(
+                            color: context.colors.textMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700))),
+              ]),
+              Divider(color: context.colors.borderColor, height: 14),
+              for (final g in sr.goods)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(children: [
+                    Expanded(
+                      flex: 4,
+                      child: Text(g.goodsName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    Expanded(
+                      child: Text('${g.quantity}',
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                              color: context.colors.textSecondary,
+                              fontSize: 12.5)),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                          g.destructionExpense == 0
+                              ? '\u2014'
+                              : money.format(g.destructionExpense),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                              color: g.destructionExpense == 0
+                                  ? context.colors.textMuted
+                                  : context.colors.dangerRed,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: Text(
+                          g.advertisingExpense == 0
+                              ? '\u2014'
+                              : money.format(g.advertisingExpense),
+                          textAlign: TextAlign.right,
+                          style: TextStyle(
+                              color: g.advertisingExpense == 0
+                                  ? context.colors.textMuted
+                                  : context.colors.warningAmber,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                ),
+            ],
+          ),
+          const Gap(14),
+          // The arithmetic that produced the row's Refund, at SR level.
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: (sr.deficit > 0 ? context.colors.dangerRed : green)
+                  .withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: (sr.deficit > 0 ? context.colors.dangerRed : green)
+                      .withOpacity(0.3)),
+            ),
+            child: Column(children: [
+              _KeyValue(
+                  label: 'Deposit',
+                  value: 'LKR ${money.format(sr.destroyingDeposit)}'),
+              _KeyValue(
+                  label: 'Less costs (all packages)',
+                  value: '\u2212 LKR ${money.format(sr.depositSpent)}'),
+              Divider(color: context.colors.borderColor, height: 18),
+              _KeyValue(
+                label: sr.deficit > 0 ? 'Shortfall' : 'Refund',
+                value: sr.deficit > 0
+                    ? '\u2212 LKR ${money.format(sr.deficit)}'
+                    : 'LKR ${money.format(sr.refund)}',
+                emphasise: true,
+                color: sr.deficit > 0 ? context.colors.dangerRed : green,
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusBadge extends StatelessWidget {
+  final SrFinancials r;
+  const _StatusBadge({required this.r});
+
+  @override
+  Widget build(BuildContext context) {
+    String label;
+    Color color;
+
+    if (r.depositSpent == 0) {
+      label = 'Pending';
+      color = context.colors.warningAmber;
+    } else if (r.deficit > 0) {
+      label = 'Shortfall';
+      color = context.colors.dangerRed;
+    } else {
+      label = 'Refundable';
+      color = context.colors.successGreen;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+    );
   }
 }
 
@@ -344,13 +596,11 @@ class _RecordExpenseDialog extends ConsumerStatefulWidget {
 class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
   late final TextEditingController _destruction;
   late final TextEditingController _advertising;
-  final _note = TextEditingController();
   bool _saving = false;
 
   @override
   void initState() {
     super.initState();
-    // Pre-filled with what is already recorded for the SR.
     _destruction = TextEditingController(
         text: widget.sr.destructionExpense == 0
             ? ''
@@ -369,7 +619,6 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
   void dispose() {
     _destruction.dispose();
     _advertising.dispose();
-    _note.dispose();
     super.dispose();
   }
 
@@ -392,20 +641,19 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
     setState(() => _saving = true);
     try {
       final svc = ref.read(disposalServiceProvider);
-      final note = _note.text.trim().isEmpty ? null : _note.text.trim();
       final itemId =
           widget.sr.goods.isNotEmpty ? widget.sr.goods.first.itemId : null;
       await svc.addFinancialExpense(
         kind: 'destruction_expense',
         amount: _destructionValue,
-        description: note,
+        description: 'Destruction expense recorded',
         srNumber: widget.sr.srNumber,
         packageItemId: itemId,
       );
       await svc.addFinancialExpense(
         kind: 'advertising_expense',
         amount: _advertisingValue,
-        description: note,
+        description: 'Advertising expense recorded',
         srNumber: widget.sr.srNumber,
         packageItemId: itemId,
       );
@@ -439,7 +687,11 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
         const Gap(8),
         ElevatedButton.icon(
           style: ElevatedButton.styleFrom(
-              backgroundColor: green, foregroundColor: Colors.white),
+            backgroundColor: green,
+            foregroundColor: Colors.white,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
           icon: _saving
               ? const SizedBox(
                   width: 16,
@@ -447,7 +699,8 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: Colors.white))
               : const Icon(Icons.check_rounded, size: 18),
-          label: const Text('Save Costs'),
+          label: const Text('Save Costs',
+              style: TextStyle(fontWeight: FontWeight.bold)),
           onPressed: _saving ? null : _save,
         ),
       ],
@@ -460,10 +713,13 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
             icon: Icons.folder_rounded,
             children: [
               _KeyValue(label: 'SR Number', value: widget.sr.srNumber),
+              if (widget.sr.goodsName != '—')
+                _KeyValue(label: 'Goods', value: widget.sr.goodsName),
               _KeyValue(
                 label: 'Destroying Deposit',
                 value: 'LKR ${money.format(widget.sr.destroyingDeposit)}',
                 emphasise: true,
+                color: green,
               ),
             ],
           ),
@@ -476,10 +732,14 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
                 controller: _destruction,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Destruction Expenses (LKR)',
                   hintText: '0.00',
-                  prefixIcon: Icon(Icons.local_fire_department_rounded),
+                  isDense: true,
+                  prefixIcon: Icon(Icons.local_fire_department_rounded,
+                      color: context.colors.dangerRed),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
               const Gap(12),
@@ -487,25 +747,49 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
                 controller: _advertising,
                 keyboardType:
                     const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   labelText: 'Advertising Expenses (LKR)',
                   hintText: '0.00',
-                  prefixIcon: Icon(Icons.campaign_rounded),
+                  isDense: true,
+                  prefixIcon: Icon(Icons.campaign_rounded,
+                      color: context.colors.warningAmber),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
                 ),
               ),
-              const Gap(12),
-              TextField(
-                controller: _note,
-                decoration: const InputDecoration(
-                  labelText: 'Note (optional)',
-                  prefixIcon: Icon(Icons.notes_rounded),
+              const Gap(14),
+              // ── Notice Box (Replaces Note Input Field) ──
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.colors.accentLightBlue.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: context.colors.accentLightBlue.withOpacity(0.3)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline_rounded,
+                        size: 18, color: context.colors.accentLightBlue),
+                    const Gap(10),
+                    Expanded(
+                      child: Text(
+                        'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
+                        style: TextStyle(
+                          color: context.colors.textSecondary,
+                          fontSize: 12,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
           const Gap(14),
-          // The arithmetic, spelled out — a refund is never typed in, it is
-          // what the deposit has left after these costs.
+          // Live arithmetic refund calculation card
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -558,11 +842,15 @@ class _KeyValue extends StatelessWidget {
         Text(label,
             style: TextStyle(color: context.colors.textMuted, fontSize: 12.5)),
         const Spacer(),
-        Text(value,
-            style: TextStyle(
-                color: color ?? context.colors.textPrimary,
-                fontSize: emphasise ? 14.5 : 13,
-                fontWeight: emphasise ? FontWeight.w800 : FontWeight.w600)),
+        Expanded(
+          child: Text(value,
+              textAlign: TextAlign.end,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: color ?? context.colors.textPrimary,
+                  fontSize: emphasise ? 14.5 : 13,
+                  fontWeight: emphasise ? FontWeight.w800 : FontWeight.w600)),
+        ),
       ]),
     );
   }

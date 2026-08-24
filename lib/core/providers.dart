@@ -1082,7 +1082,8 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
       if (itemId != null && itemId.isNotEmpty) {
         proceedsByItem[itemId] = (proceedsByItem[itemId] ?? 0) + it.soldPrice;
         taxesByItem[itemId] = (taxesByItem[itemId] ?? 0) + tax;
-        final m = taxesByNameByItem.putIfAbsent(itemId, () => <String, double>{});
+        final m =
+            taxesByNameByItem.putIfAbsent(itemId, () => <String, double>{});
         itemTaxMap.forEach((k, v) => m[k] = (m[k] ?? 0) + v);
       } else {
         final sr = it.forfeited?.srNumber ?? '';
@@ -1148,11 +1149,13 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
           final itemTaxesByName = <String, double>{};
           final byItemMap = taxesByNameByItem[item.id];
           if (byItemMap != null) {
-            byItemMap.forEach((k, v) => itemTaxesByName[k] = (itemTaxesByName[k] ?? 0) + v);
+            byItemMap.forEach(
+                (k, v) => itemTaxesByName[k] = (itemTaxesByName[k] ?? 0) + v);
           }
           final bySrMap = taxesByNameBySr[p.srNumber];
           if (bySrMap != null) {
-            bySrMap.forEach((k, v) => itemTaxesByName[k] = (itemTaxesByName[k] ?? 0) + v * share);
+            bySrMap.forEach((k, v) =>
+                itemTaxesByName[k] = (itemTaxesByName[k] ?? 0) + v * share);
           }
 
           double rawProceeds = (proceedsByItem[item.id] ?? 0) +
@@ -1160,7 +1163,8 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
           double rawTaxes = (taxesByItem[item.id] ?? 0) +
               (taxesBySr[p.srNumber] ?? 0) * share;
 
-          double rawSrCharges = (chargeByItem[item.id] ?? 0) + packageWideCharge * share;
+          double rawSrCharges =
+              (chargeByItem[item.id] ?? 0) + packageWideCharge * share;
           double rawDestruction = (destructionByItem[item.id] ?? 0) +
               (destructionBySr[p.srNumber] ?? 0) * share;
           double rawAdvertising = (advertisingByItem[item.id] ?? 0) +
@@ -1271,8 +1275,8 @@ FinancialSummary summariseSrs(Iterable<SrFinancials> rows) {
 }
 
 /// Builds [FinancialSummary] by summing the whole SR ledger, cross-yard.
-final financialSummaryProvider = FutureProvider<FinancialSummary>((ref) async =>
-    summariseSrs(await ref.watch(srFinancialsProvider.future)));
+final financialSummaryProvider = FutureProvider<FinancialSummary>(
+    (ref) async => summariseSrs(await ref.watch(srFinancialsProvider.future)));
 
 final disposalTaxesProvider =
     FutureProvider<List<DisposalTaxModel>>((ref) async {

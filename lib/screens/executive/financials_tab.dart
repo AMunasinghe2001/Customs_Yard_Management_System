@@ -21,7 +21,8 @@ import 'executive_header.dart';
 /// them, so narrowing to a yard or date range narrows EVERY figure on the page.
 final _finSearchProvider = StateProvider<String>((ref) => '');
 final _finYardProvider = StateProvider<String?>((ref) => null); // null = all
-final _finDateFilterTypeProvider = StateProvider<String>((ref) => 'all'); // 'all', 'range', 'day', 'month', 'year'
+final _finDateFilterTypeProvider = StateProvider<String>(
+    (ref) => 'all'); // 'all', 'range', 'day', 'month', 'year'
 final _finDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 final _finPageProvider = StateProvider<int>((ref) => 0);
 
@@ -61,8 +62,8 @@ class FinancialsTab extends ConsumerWidget {
 
     return rowsAsync.when(
       loading: () => Center(child: CircularProgressIndicator(color: accent)),
-      error: (e, _) => ErrorView(
-          error: e, onRetry: () => ref.refresh(srFinancialsProvider)),
+      error: (e, _) =>
+          ErrorView(error: e, onRetry: () => ref.refresh(srFinancialsProvider)),
       data: (all) {
         // Filter FIRST, then total — so every card on the page reports the
         // same slice the table below it lists.
@@ -75,8 +76,8 @@ class FinancialsTab extends ConsumerWidget {
           filtered = filtered.where((r) => _matchesDateRange(r, dateRange));
         }
         if (q.isNotEmpty) {
-          filtered = filtered.where((r) =>
-              r.srNumber.toLowerCase().contains(q));
+          filtered =
+              filtered.where((r) => r.srNumber.toLowerCase().contains(q));
         }
         final rows = filtered.toList();
         final sum = summariseSrs(rows);
@@ -133,7 +134,9 @@ class FinancialsTab extends ConsumerWidget {
                 const Gap(8),
                 // ── Date Filter Dropdown (Identical style & height to Yard Filter) ──
                 SizedBox(
-                  width: (dateRange != null && dateFilterType != 'all') ? 220 : 170,
+                  width: (dateRange != null && dateFilterType != 'all')
+                      ? 220
+                      : 170,
                   child: ExecutiveDateFilter(
                     filterType: dateFilterType,
                     label: _getDateFilterLabel(dateFilterType, dateRange),
@@ -145,12 +148,14 @@ class FinancialsTab extends ConsumerWidget {
                 if (dateRange != null && dateFilterType != 'all') ...[
                   const Gap(4),
                   IconButton(
-                    icon: Icon(Icons.clear_rounded, size: 18, color: context.colors.dangerRed),
+                    icon: Icon(Icons.clear_rounded,
+                        size: 18, color: context.colors.dangerRed),
                     tooltip: 'Clear date filter',
                     padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(),
                     onPressed: () {
-                      ref.read(_finDateFilterTypeProvider.notifier).state = 'all';
+                      ref.read(_finDateFilterTypeProvider.notifier).state =
+                          'all';
                       ref.read(_finDateRangeProvider.notifier).state = null;
                       ref.read(_finPageProvider.notifier).state = 0;
                     },
@@ -369,7 +374,9 @@ class _LedgerCard extends StatelessWidget {
             ),
             Text(_lkr(total),
                 style: TextStyle(
-                    color: colour, fontSize: 14.5, fontWeight: FontWeight.w800)),
+                    color: colour,
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800)),
           ]),
         ],
       ),
@@ -413,8 +420,8 @@ class _ProceedsSplitCard extends StatelessWidget {
               child: Text('of ${_lkr(split.proceeds)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                      color: context.colors.textMuted, fontSize: 12)),
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 12)),
             ),
           ]),
           const Gap(8),
@@ -528,7 +535,8 @@ class _SplitTile extends StatelessWidget {
           Text(share,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(color: context.colors.textMuted, fontSize: 10.5)),
+              style:
+                  TextStyle(color: context.colors.textMuted, fontSize: 10.5)),
           const Gap(4),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -669,8 +677,7 @@ class _GoodsBreakdownTable extends ConsumerWidget {
         _money2('SR Charges', gold),
         _money2('Destroy Deposit', gold),
         _money2('Sale Proceeds', gold),
-        for (final tName in taxNames)
-          _money2(tName, gold),
+        for (final tName in taxNames) _money2(tName, gold),
         _money2('Total Tax', gold),
         _money2('Total Income', gold),
 
@@ -723,9 +730,8 @@ class _GoodsBreakdownTable extends ConsumerWidget {
                 ? Tooltip(
                     message: 'Costs exceed the deposit by ${_lkr(r.deficit)}',
                     child: Text('\u2212${_money.format(r.deficit)}',
-                        style: TextStyle(
-                            color: red,
-                            fontWeight: FontWeight.w700)),
+                        style:
+                            TextStyle(color: red, fontWeight: FontWeight.w700)),
                   )
                 : Text(_dash(r.refund),
                     style: TextStyle(
@@ -868,12 +874,15 @@ Future<void> _handleDatePick(
   } else if (filterType == 'range') {
     final picked = await showDialog<dynamic>(
       context: context,
-      builder: (ctx) => custom.DateRangePickerDialog(initialRange: currentRange),
+      builder: (ctx) =>
+          custom.DateRangePickerDialog(initialRange: currentRange),
     );
     if (picked is DateTimeRange) {
       ref.read(_finDateRangeProvider.notifier).state = DateTimeRange(
-        start: DateTime(picked.start.year, picked.start.month, picked.start.day, 0, 0, 0),
-        end: DateTime(picked.end.year, picked.end.month, picked.end.day, 23, 59, 59),
+        start: DateTime(
+            picked.start.year, picked.start.month, picked.start.day, 0, 0, 0),
+        end: DateTime(
+            picked.end.year, picked.end.month, picked.end.day, 23, 59, 59),
       );
       ref.read(_finPageProvider.notifier).state = 0;
     } else if (picked == false) {
@@ -898,8 +907,18 @@ Future<({int year, int month})?> _showMonthPickerDialog(
 
   final years = List.generate(10, (i) => currentYear - i);
   final months = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    'January',
+    'February',
+    'March',
+    'April',
+    'May',
+    'June',
+    'July',
+    'August',
+    'September',
+    'October',
+    'November',
+    'December'
   ];
 
   return showDialog<({int year, int month})>(
@@ -910,7 +929,8 @@ Future<({int year, int month})?> _showMonthPickerDialog(
         if (selectedMonth > maxMonth) selectedMonth = maxMonth;
 
         return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           backgroundColor: context.colors.cardDark,
           title: Text('Select Month & Year',
               style: TextStyle(

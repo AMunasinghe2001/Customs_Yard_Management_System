@@ -1033,10 +1033,8 @@ class SrFinancials {
   /// Combined names of all goods covered by this SR.
   String get goodsName {
     if (goods.isEmpty) return '—';
-    final names = goods
-        .map((g) => g.goodsName)
-        .where((n) => n.trim().isNotEmpty)
-        .toSet();
+    final names =
+        goods.map((g) => g.goodsName).where((n) => n.trim().isNotEmpty).toSet();
     if (names.isEmpty) return '—';
     return names.join(', ');
   }
