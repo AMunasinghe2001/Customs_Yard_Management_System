@@ -84,6 +84,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   String _selectedWarehouse = 'all';
   // Executive mode: the yard whose reports are generated (null = none picked).
   String? _reportYard;
+
   /// Which valuation column(s) the "List of Goods Valued" report shows:
   /// 'all' = every round side by side, else one of [kValuationRounds].
   String _valuationRound = 'all';
@@ -103,13 +104,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     if (_reportYard == null) return rows;
     return rows.where((r) => yardOf(r) == _reportYard).toList();
   }
-  
+
   // Track loading state for each button uniquely
   final Map<String, bool> _loadingStates = {};
   final ScrollController _scrollController = ScrollController();
 
   bool _isLoading(String key) => _loadingStates[key] ?? false;
-  void _setLoading(String key, bool val) => setState(() => _loadingStates[key] = val);
+  void _setLoading(String key, bool val) =>
+      setState(() => _loadingStates[key] = val);
 
   @override
   void dispose() {
@@ -144,19 +146,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                             widget.disposalMode
                                 ? 'Goods by post status activity, across all yards.'
                                 : 'Choose periodic or standard warehouse reports.',
-                            style: TextStyle(color: context.colors.textSecondary)),
+                            style:
+                                TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
                     // Icon removed to match other pages
                   ],
                 ).animate().fadeIn(),
                 const Gap(20),
-                _buildFilterSection().animate().slideY(begin: 0.1).fadeIn(delay: 100.ms),
+                _buildFilterSection()
+                    .animate()
+                    .slideY(begin: 0.1)
+                    .fadeIn(delay: 100.ms),
                 const Gap(16),
               ],
             ),
           ),
-          
           Expanded(
             child: Scrollbar(
               controller: _scrollController,
@@ -177,12 +182,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   Future<void> _handleDatePick() async {
     final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     if (_dateFilterType == 'day') {
+      final initial = _startDate ?? today;
+      final clampedInitial = initial.isAfter(today) ? today : initial;
       final picked = await showDatePicker(
         context: context,
-        initialDate: _startDate ?? now,
+        initialDate: clampedInitial,
         firstDate: DateTime(2020),
-        lastDate: DateTime(2030),
+        lastDate: today,
         builder: (context, child) {
           return Theme(
             data: Theme.of(context).copyWith(
@@ -249,71 +257,108 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     int selectedYear = initialYear;
     int selectedMonth = initialMonth;
     final currentYear = DateTime.now().year;
+    final currentMonth = DateTime.now().month;
+    if (selectedYear > currentYear) selectedYear = currentYear;
+    if (selectedYear == currentYear && selectedMonth > currentMonth) {
+      selectedMonth = currentMonth;
+    }
     final years = List.generate(10, (i) => currentYear - i);
     final months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December'
     ];
 
     return showDialog<({int year, int month})>(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDlgState) => AlertDialog(
-          backgroundColor: context.colors.cardDark,
-          title: Text('Select Month & Year',
-              style: TextStyle(color: context.colors.textPrimary)),
-          content: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Expanded(
-                child: DropdownButton<int>(
-                  isExpanded: true,
-                  value: selectedMonth,
-                  dropdownColor: context.colors.cardDark,
-                  style: TextStyle(color: context.colors.textPrimary),
-                  items: List.generate(
-                      12,
-                      (i) => DropdownMenuItem(
-                            value: i + 1,
-                            child: Text(months[i]),
-                          )),
-                  onChanged: (v) {
-                    if (v != null) setDlgState(() => selectedMonth = v);
-                  },
-                ),
+        builder: (context, setDlgState) {
+          final maxMonth = (selectedYear == currentYear) ? currentMonth : 12;
+          if (selectedMonth > maxMonth) selectedMonth = maxMonth;
+
+          return AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            backgroundColor: context.colors.cardDark,
+            title: Text('Select Month & Year',
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold)),
+            content: SizedBox(
+              width: 320,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: StyledDropdownFormField<int>(
+                      label: 'Month',
+                      value: selectedMonth,
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      options: List.generate(
+                        maxMonth,
+                        (i) => StyledDropdownOption(i + 1, months[i]),
+                      ),
+                      menuWidth: 160,
+                      onChanged: (v) {
+                        if (v != null) setDlgState(() => selectedMonth = v);
+                      },
+                    ),
+                  ),
+                  const Gap(12),
+                  Expanded(
+                    child: StyledDropdownFormField<int>(
+                      label: 'Year',
+                      value: selectedYear,
+                      floatingLabelBehavior: FloatingLabelBehavior.never,
+                      options: years
+                          .map((y) => StyledDropdownOption(y, '$y'))
+                          .toList(),
+                      menuWidth: 140,
+                      onChanged: (v) {
+                        if (v != null) {
+                          setDlgState(() {
+                            selectedYear = v;
+                            if (selectedYear == currentYear &&
+                                selectedMonth > currentMonth) {
+                              selectedMonth = currentMonth;
+                            }
+                          });
+                        }
+                      },
+                    ),
+                  ),
+                ],
               ),
-              const Gap(12),
-              Expanded(
-                child: DropdownButton<int>(
-                  isExpanded: true,
-                  value: selectedYear,
-                  dropdownColor: context.colors.cardDark,
-                  style: TextStyle(color: context.colors.textPrimary),
-                  items: years
-                      .map((y) => DropdownMenuItem(
-                            value: y,
-                            child: Text('$y'),
-                          ))
-                      .toList(),
-                  onChanged: (v) {
-                    if (v != null) setDlgState(() => selectedYear = v);
-                  },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Cancel',
+                    style: TextStyle(color: context.colors.textMuted)),
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: context.colors.primaryGold,
+                  foregroundColor: Colors.black,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
                 ),
+                onPressed: () => Navigator.pop(
+                    ctx, (year: selectedYear, month: selectedMonth)),
+                child: const Text('Select',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              onPressed: () =>
-                  Navigator.pop(ctx, (year: selectedYear, month: selectedMonth)),
-              child: const Text('Select'),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }
@@ -322,28 +367,28 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       BuildContext context, int initialYear) async {
     int selectedYear = initialYear;
     final currentYear = DateTime.now().year;
+    if (selectedYear > currentYear) selectedYear = currentYear;
     final years = List.generate(10, (i) => currentYear - i);
 
     return showDialog<int>(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDlgState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           backgroundColor: context.colors.cardDark,
           title: Text('Select Year',
-              style: TextStyle(color: context.colors.textPrimary)),
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold)),
           content: SizedBox(
-            width: 240,
-            child: DropdownButton<int>(
-              isExpanded: true,
+            width: 260,
+            child: StyledDropdownFormField<int>(
+              label: 'Year',
               value: selectedYear,
-              dropdownColor: context.colors.cardDark,
-              style: TextStyle(color: context.colors.textPrimary),
-              items: years
-                  .map((y) => DropdownMenuItem(
-                        value: y,
-                        child: Text('$y'),
-                      ))
-                  .toList(),
+              floatingLabelBehavior: FloatingLabelBehavior.never,
+              options: years.map((y) => StyledDropdownOption(y, '$y')).toList(),
+              menuWidth: 200,
               onChanged: (v) {
                 if (v != null) setDlgState(() => selectedYear = v);
               },
@@ -352,11 +397,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
+              child: Text('Cancel',
+                  style: TextStyle(color: context.colors.textMuted)),
             ),
             ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.primaryGold,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
               onPressed: () => Navigator.pop(ctx, selectedYear),
-              child: const Text('Select'),
+              child: const Text('Select',
+                  style: TextStyle(fontWeight: FontWeight.bold)),
             ),
           ],
         ),
@@ -365,15 +418,25 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Widget _buildFilterSection() {
-    final warehouses = ref.watch(warehousesProvider).valueOrNull ?? const [];
+    // Warehouses are shared across yards, but each yard only uses some of
+    // them — and how many differs. Once a yard is picked, narrow the list to
+    // the warehouses that yard actually holds goods in.
+    final yard = _yardArg;
+    final warehouses = yard == null
+        ? (ref.watch(warehousesProvider).valueOrNull ?? const [])
+        : (ref.watch(warehousesForYardProvider(yard)).valueOrNull ?? const []);
 
     final hasDate = _startDate != null || _endDate != null;
     String dateLabel;
     if (!hasDate) {
-      if (_dateFilterType == 'day') dateLabel = 'Pick Day';
-      else if (_dateFilterType == 'month') dateLabel = 'Pick Month';
-      else if (_dateFilterType == 'year') dateLabel = 'Pick Year';
-      else dateLabel = 'Custom Range';
+      if (_dateFilterType == 'day')
+        dateLabel = 'Pick Day';
+      else if (_dateFilterType == 'month')
+        dateLabel = 'Pick Month';
+      else if (_dateFilterType == 'year')
+        dateLabel = 'Pick Year';
+      else
+        dateLabel = 'Custom Range';
     } else {
       if (_dateFilterType == 'day') {
         dateLabel = 'Day: ${DateFormat('yyyy-MM-dd').format(_startDate!)}';
@@ -382,7 +445,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       } else if (_dateFilterType == 'year') {
         dateLabel = 'Year: ${_startDate!.year}';
       } else {
-        dateLabel = '${DateFormat('MMM d').format(_startDate!)} - ${DateFormat('MMM d').format(_endDate!)}';
+        dateLabel =
+            '${DateFormat('MMM d').format(_startDate!)} - ${DateFormat('MMM d').format(_endDate!)}';
       }
     }
 
@@ -409,7 +473,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               options: kYards
                   .map((y) => StyledDropdownOption(y.code, y.name))
                   .toList(),
-              onChanged: (v) => setState(() => _reportYard = v),
+              onChanged: (v) => setState(() {
+                _reportYard = v;
+                // Warehouses differ from yard to yard, so a selection made
+                // under the previous yard may not exist under this one.
+                _selectedWarehouse = 'all';
+              }),
             ),
 
           // ── Date Filter Mode Selector ──
@@ -496,7 +565,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           // `disposal_read_all` RLS set, so the list would always be empty.
           if (!widget.disposalMode)
             StyledDropdownButton<String>(
-              value: _selectedWarehouse == 'all' ? null : _selectedWarehouse,
+              // A warehouse chosen before the yard narrowed the list may no
+              // longer be in it; fall back to "All" rather than showing a
+              // value the menu cannot offer.
+              value: warehouses.any((w) => w.id == _selectedWarehouse)
+                  ? _selectedWarehouse
+                  : null,
               allLabel: 'All Warehouses',
               icon: Icons.warehouse_rounded,
               menuWidth: 320,
@@ -560,8 +634,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   fontWeight: FontWeight.w600)),
           const Gap(6),
           Text('Use the “Select Yard” dropdown above.',
-              style:
-                  TextStyle(color: context.colors.textMuted, fontSize: 13)),
+              style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
         ],
       ),
     );
@@ -572,8 +645,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   // app (pretty table); PDF / Excel are secondary exports inside the viewer.
 
   static const List<String> _packageCols = [
-    'SR Number', 'Goods Name', 'HS Code', 'Qty', 'Consignee', 'Status',
-    'Entry Date', 'Value (LKR)'
+    'SR Number',
+    'Goods Name',
+    'HS Code',
+    'Qty',
+    'Consignee',
+    'Status',
+    'Entry Date',
+    'Value (LKR)'
   ];
   List<List<String>> _packageRows(List<PackageModel> pkgs) {
     final f = NumberFormat('#,##0');
@@ -599,26 +678,32 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }).toList();
   }
 
-
-
-  Future<void> _openDetailsForSr(String query, {String? itemId, String? itemName}) async {
+  Future<void> _openDetailsForSr(String query,
+      {String? itemId, String? itemName}) async {
     final storageRate =
         ref.read(storageRateProvider).valueOrNull ?? const <DateTime, double>{};
     try {
       final svc = ref.read(packageServiceProvider);
       final packages = await svc.getAllPackages(yard: _yardArg);
       final q = query.trim().toLowerCase();
-      final pkg = packages.where((p) =>
-          p.srNumber.toLowerCase() == q ||
-          (p.oldSrNumber ?? '').toLowerCase() == q ||
-          p.id == query).firstOrNull;
+      final pkg = packages
+          .where((p) =>
+              p.srNumber.toLowerCase() == q ||
+              (p.oldSrNumber ?? '').toLowerCase() == q ||
+              p.id == query)
+          .firstOrNull;
 
       if (pkg != null && mounted) {
         String? resolvedItemId = itemId;
-        if (resolvedItemId == null && itemName != null && itemName.isNotEmpty && itemName != '—') {
+        if (resolvedItemId == null &&
+            itemName != null &&
+            itemName.isNotEmpty &&
+            itemName != '—') {
           // Attempt to resolve item by item name if itemId is null
           final cleanName = itemName.split('+')[0].trim().toLowerCase();
-          final match = pkg.items.where((i) => i.itemName.trim().toLowerCase() == cleanName).firstOrNull;
+          final match = pkg.items
+              .where((i) => i.itemName.trim().toLowerCase() == cleanName)
+              .firstOrNull;
           if (match != null) {
             resolvedItemId = match.id;
           }
@@ -682,8 +767,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-              maxWidth: 1180,
-              maxHeight: MediaQuery.of(ctx).size.height * 0.86),
+              maxWidth: 1180, maxHeight: MediaQuery.of(ctx).size.height * 0.86),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -700,10 +784,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                                 color: context.colors.textPrimary,
                                 fontSize: 18,
                                 fontWeight: FontWeight.w800)),
-                        Text('${rows.length} record(s)${subtitle != null ? ' · $subtitle' : ''}',
+                        Text(
+                            '${rows.length} record(s)${subtitle != null ? ' · $subtitle' : ''}',
                             style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 12)),
+                                color: context.colors.textMuted, fontSize: 12)),
                       ],
                     ),
                   ),
@@ -748,9 +832,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       if (shouldAddDetails) {
                         final sr = r[0];
                         final itemName = r.length > 1 ? r[1] : null;
-                        final itemId = (rowItemIds != null && idx < rowItemIds.length)
-                            ? rowItemIds[idx]
-                            : null;
+                        final itemId =
+                            (rowItemIds != null && idx < rowItemIds.length)
+                                ? rowItemIds[idx]
+                                : null;
                         cells.add(
                           DataCell(
                             Center(
@@ -759,7 +844,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                                     color: context.colors.accentLightBlue,
                                     size: 18),
                                 tooltip: 'View Package Details',
-                                onPressed: () => _openDetailsForSr(sr, itemId: itemId, itemName: itemName),
+                                onPressed: () => _openDetailsForSr(sr,
+                                    itemId: itemId, itemName: itemName),
                               ),
                             ),
                           ),
@@ -793,8 +879,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       style: ElevatedButton.styleFrom(
                           backgroundColor: context.colors.customsBlue,
                           foregroundColor: Colors.white),
-                      icon: const Icon(Icons.picture_as_pdf_outlined,
-                          size: 16),
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
                       label: const Text('Save PDF'),
                       onPressed: () {
                         Navigator.pop(ctx);
@@ -814,18 +899,28 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Category & Zone Summary_view';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
+      final packages =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(yard: _yardArg);
       final withDatePkgs = _filterByDate(packages);
       final withDateEntries = _filterByDate(entries);
       if (withDatePkgs.isEmpty && withDateEntries.isEmpty) {
         _showNoDataMessage();
         return;
       }
-      final columns = ['Category / Zone', 'Package Count', 'Item Count', 'Total Declared Value (LKR)'];
+      final columns = [
+        'Category / Zone',
+        'Package Count',
+        'Item Count',
+        'Total Declared Value (LKR)'
+      ];
       final categoryMap = <String, ({int pkgs, int items, double val})>{};
       for (final p in withDatePkgs) {
-        final cat = (p.items.isNotEmpty && p.items.first.category != null && p.items.first.category!.isNotEmpty)
+        final cat = (p.items.isNotEmpty &&
+                p.items.first.category != null &&
+                p.items.first.category!.isNotEmpty)
             ? p.items.first.category!
             : 'Uncategorized';
         final cur = categoryMap[cat] ?? (pkgs: 0, items: 0, val: 0.0);
@@ -836,12 +931,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         );
       }
       final money = NumberFormat('#,##0');
-      final rows = categoryMap.entries.map((e) => [
-        e.key,
-        '${e.value.pkgs}',
-        '${e.value.items}',
-        money.format(e.value.val),
-      ]).toList();
+      final rows = categoryMap.entries
+          .map((e) => [
+                e.key,
+                '${e.value.pkgs}',
+                '${e.value.items}',
+                money.format(e.value.val),
+              ])
+          .toList();
 
       _showReportTable(
         title: 'Category & Zone Summary',
@@ -862,22 +959,33 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Warehouse Stock_view';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: false, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Reason', 'Admitted Date'];
-      final rows = filtered.map((e) => [
-        e.srNumber ?? '—',
-        e.itemName ?? '—',
-        e.consigneeName ?? '—',
-        e.warehouseCode,
-        e.holdReason,
-        df.format(e.admittedAt),
-      ]).toList();
+      final columns = [
+        'SR Number',
+        'Goods Name',
+        'Consignee',
+        'Warehouse',
+        'Reason',
+        'Admitted Date'
+      ];
+      final rows = filtered
+          .map((e) => [
+                e.srNumber ?? '—',
+                e.itemName ?? '—',
+                e.consigneeName ?? '—',
+                e.warehouseCode,
+                e.holdReason,
+                df.format(e.admittedAt),
+              ])
+          .toList();
       final itemIds = filtered.map((e) => e.packageItemId).toList();
       _showReportTable(
         title: 'Warehouse Stock (Held Goods)',
@@ -898,22 +1006,33 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Released Packages_view';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: true, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Returned Date', 'Return Notes'];
-      final rows = filtered.map((e) => [
-        e.srNumber ?? '—',
-        e.itemName ?? '—',
-        e.consigneeName ?? '—',
-        e.warehouseCode,
-        e.returnedAt != null ? df.format(e.returnedAt!) : '—',
-        e.returnNotes ?? '—',
-      ]).toList();
+      final columns = [
+        'SR Number',
+        'Goods Name',
+        'Consignee',
+        'Warehouse',
+        'Returned Date',
+        'Return Notes'
+      ];
+      final rows = filtered
+          .map((e) => [
+                e.srNumber ?? '—',
+                e.itemName ?? '—',
+                e.consigneeName ?? '—',
+                e.warehouseCode,
+                e.returnedAt != null ? df.format(e.returnedAt!) : '—',
+                e.returnNotes ?? '—',
+              ])
+          .toList();
       final itemIds = filtered.map((e) => e.packageItemId).toList();
       _showReportTable(
         title: 'Released Packages Report',
@@ -940,11 +1059,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         return;
       }
       final columns = ['Warehouse Code', 'Warehouse Name', 'Capacity'];
-      final rows = warehouses.map((w) => [
-        w.code,
-        w.name,
-        '${w.capacity}',
-      ]).toList();
+      final rows = warehouses
+          .map((w) => [
+                w.code,
+                w.name,
+                '${w.capacity}',
+              ])
+          .toList();
       _showReportTable(
         title: 'Warehouses List',
         columns: columns,
@@ -964,22 +1085,33 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Storage Charges_view';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(yard: _yardArg);
       final filteredEntries = _filterByDate(entries);
       if (filteredEntries.isEmpty) {
         _showNoDataMessage();
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Admitted Date', 'Status'];
-      final rows = filteredEntries.map((e) => [
-        e.srNumber ?? '—',
-        e.itemName ?? '—',
-        e.consigneeName ?? '—',
-        e.warehouseCode,
-        df.format(e.admittedAt),
-        e.isReturned ? 'Released' : 'Held',
-      ]).toList();
+      final columns = [
+        'SR Number',
+        'Goods Name',
+        'Consignee',
+        'Warehouse',
+        'Admitted Date',
+        'Status'
+      ];
+      final rows = filteredEntries
+          .map((e) => [
+                e.srNumber ?? '—',
+                e.itemName ?? '—',
+                e.consigneeName ?? '—',
+                e.warehouseCode,
+                df.format(e.admittedAt),
+                e.isReturned ? 'Released' : 'Held',
+              ])
+          .toList();
       final itemIds = filteredEntries.map((e) => e.packageItemId).toList();
       _showReportTable(
         title: 'Storage Charges Report',
@@ -1000,22 +1132,33 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Released Revenue_view';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: true, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
         return;
       }
       final df = DateFormat('yyyy-MM-dd');
-      final columns = ['SR Number', 'Goods Name', 'Consignee', 'Warehouse', 'Admitted Date', 'Released Date'];
-      final rows = filtered.map((e) => [
-        e.srNumber ?? '—',
-        e.itemName ?? '—',
-        e.consigneeName ?? '—',
-        e.warehouseCode,
-        df.format(e.admittedAt),
-        e.returnedAt != null ? df.format(e.returnedAt!) : '—',
-      ]).toList();
+      final columns = [
+        'SR Number',
+        'Goods Name',
+        'Consignee',
+        'Warehouse',
+        'Admitted Date',
+        'Released Date'
+      ];
+      final rows = filtered
+          .map((e) => [
+                e.srNumber ?? '—',
+                e.itemName ?? '—',
+                e.consigneeName ?? '—',
+                e.warehouseCode,
+                df.format(e.admittedAt),
+                e.returnedAt != null ? df.format(e.returnedAt!) : '—',
+              ])
+          .toList();
       final itemIds = filtered.map((e) => e.packageItemId).toList();
       _showReportTable(
         title: 'Released Revenue Report',
@@ -1071,12 +1214,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Item Categories_view';
     _setLoading(key, true);
     try {
-      final categories = await ref.read(packageCategoryServiceProvider).getCategories();
+      final categories =
+          await ref.read(packageCategoryServiceProvider).getCategories();
       if (categories.isEmpty) {
         _showNoDataMessage();
         return;
       }
-      final rows = categories.map((c) => [c.name, c.description ?? '—']).toList();
+      final rows =
+          categories.map((c) => [c.name, c.description ?? '—']).toList();
       _showReportTable(
         title: 'Item Categories List',
         columns: ['Category Name', 'Description'],
@@ -1100,9 +1245,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       // Status is resolved per ITEM inside _goodsData, not by the query — the
       // packages.status column is stale (always 'pending').
-      final pkgs = _filterByWarehouse(_filterByDate(
-          await ref.read(packageServiceProvider).getAllPackages(
-              yard: _yardArg)));
+      final pkgs = _filterByWarehouse(_filterByDate(await ref
+          .read(packageServiceProvider)
+          .getAllPackages(yard: _yardArg)));
       final base = title.replaceAll(' ', '_');
       final data = await _goodsData(pkgs, statusFilter: status);
       if (data.$2.isEmpty) {
@@ -1154,8 +1299,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _setLoading(key, false);
     }
   }
-
-
 
   /// View stock & revenue reconciliation statement in-app.
   Future<void> _viewStockReconciliation() async {
@@ -1251,8 +1394,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final itemIds = <String?>[];
       for (final p in packages) {
         for (final it in p.items) {
-          final status = _normStatus(
-              it.status.isNotEmpty ? it.status : p.status);
+          final status =
+              _normStatus(it.status.isNotEmpty ? it.status : p.status);
           if (_selectedStatus != 'all' &&
               status.toLowerCase() != _selectedStatus.toLowerCase()) {
             continue;
@@ -1530,15 +1673,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         final members = committees[f.id]?.members ?? const <CommitteeMember>[];
         final memberText = members.isEmpty
             ? 'No committee appointed'
-            : members
-                .map((m) {
-                  final desig = m.designation?.trim() ?? '';
-                  final sal = m.salaryNo?.trim() ?? '';
-                  return '${m.name.trim()}'
-                      '${desig.isNotEmpty ? ' ($desig)' : ''}'
-                      '${sal.isNotEmpty ? ' · $sal' : ''}';
-                })
-                .join('\n');
+            : members.map((m) {
+                final desig = m.designation?.trim() ?? '';
+                final sal = m.salaryNo?.trim() ?? '';
+                return '${m.name.trim()}'
+                    '${desig.isNotEmpty ? ' ($desig)' : ''}'
+                    '${sal.isNotEmpty ? ' · $sal' : ''}';
+              }).join('\n');
 
         final p = proposals[f.id];
         final decision = p == null
@@ -1583,6 +1724,160 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
+  /// Financials, SR BY SR — every figure the High Panel's Financials tab
+  /// totals, listed per SR so a headline can be traced to what produced it.
+  ///
+  /// Reads the same [srFinancialsProvider] the tab does, so the report and
+  /// the screen can never disagree. The refund column is DERIVED, never stored:
+  /// it is the unspent part of that SR's destroying deposit.
+  Future<void> _generateGoodsFinancialsReport(String format) async {
+    const key = 'Goods Financials';
+    _setLoading('${key}_$format', true);
+    try {
+      final all = await ref.read(srFinancialsProvider.future);
+      final taxesAsync = await ref.read(disposalTaxesProvider.future);
+      final configuredTaxNames = taxesAsync
+          .where((t) => t.isActive)
+          .map((t) => t.name)
+          .toList();
+      final taxNames = <String>[
+        if (configuredTaxNames.isEmpty) ...['VAT', 'PAL'] else ...configuredTaxNames
+      ];
+      for (final r in all) {
+        for (final k in r.taxesByName.keys) {
+          if (!taxNames.contains(k)) taxNames.add(k);
+        }
+      }
+
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+      var srsCounted = 0;
+      var totalSrCharges = 0.0;
+      var totalDestroyingDeposit = 0.0;
+      var totalSaleProceeds = 0.0;
+      final taxTotalsMap = <String, double>{};
+      var totalTaxes = 0.0;
+      var totalDestruction = 0.0;
+      var totalAdvertising = 0.0;
+      var refundTotal = 0.0;
+
+      for (final r in all) {
+        // SRs with nothing recorded would only pad the report out.
+        if (r.isEmpty) continue;
+        // Respect the portal's yard picker. Falls back to the SR prefix when a
+        // row carries no yard, the same way the tab's filter does.
+        if (_yardArg != null &&
+            (r.yard ?? yardOfSrNumber(r.srNumber)) != _yardArg) {
+          continue;
+        }
+
+        final split = r.split;
+        rows.add([
+          r.srNumber,
+          _reportMoney(r.srCharges),
+          _reportMoney(r.destroyingDeposit),
+          _reportMoney(r.saleProceeds),
+          for (final tName in taxNames)
+            _reportMoney(r.taxesByName[tName] ?? 0),
+          _reportMoney(r.taxes),
+          _reportMoney(r.totalIncome),
+          _reportMoney(r.destructionExpense),
+          _reportMoney(r.advertisingExpense),
+          // A deficit prints as a negative so an overrun is never mistaken for
+          // a refund of zero.
+          r.deficit > 0
+              ? '-${_reportMoney(r.deficit)}'
+              : _reportMoney(r.refund),
+          _reportMoney(r.totalExpenditure),
+          _reportMoney(r.netBalance),
+          _reportMoney(split.rewardFund),
+          _reportMoney(split.deputySecretaryTreasury),
+          _reportMoney(split.consolidatedFund),
+          _reportMoney(split.compFund),
+        ]);
+        itemIds.add(r.goods.isNotEmpty ? r.goods.first.itemId : null);
+
+        refundTotal += r.refund;
+        srsCounted++;
+        totalSrCharges += r.srCharges;
+        totalDestroyingDeposit += r.destroyingDeposit;
+        totalSaleProceeds += r.saleProceeds;
+        for (final tName in taxNames) {
+          taxTotalsMap[tName] = (taxTotalsMap[tName] ?? 0) + (r.taxesByName[tName] ?? 0);
+        }
+        totalTaxes += r.taxes;
+        totalDestruction += r.destructionExpense;
+        totalAdvertising += r.advertisingExpense;
+      }
+
+      if (rows.isNotEmpty) {
+        final totalIncome = totalSrCharges +
+            totalDestroyingDeposit +
+            totalSaleProceeds +
+            totalTaxes;
+        final totalSpent = totalDestruction + totalAdvertising;
+        final splitTotal = SaleProceedsSplit(totalSaleProceeds);
+
+        rows.add([
+          'TOTAL ($srsCounted SRs)',
+          _reportMoney(totalSrCharges),
+          _reportMoney(totalDestroyingDeposit),
+          _reportMoney(totalSaleProceeds),
+          for (final tName in taxNames)
+            _reportMoney(taxTotalsMap[tName] ?? 0),
+          _reportMoney(totalTaxes),
+          _reportMoney(totalIncome),
+          _reportMoney(totalDestruction),
+          _reportMoney(totalAdvertising),
+          _reportMoney(refundTotal),
+          _reportMoney(totalSpent + refundTotal),
+          _reportMoney(totalIncome - (totalSpent + refundTotal)),
+          _reportMoney(splitTotal.rewardFund),
+          _reportMoney(splitTotal.deputySecretaryTreasury),
+          _reportMoney(splitTotal.consolidatedFund),
+          _reportMoney(splitTotal.compFund),
+        ]);
+        itemIds.add(null);
+      }
+
+      await _emitDgReport(
+        key: key,
+        title: 'SR FINANCIALS',
+        fileBase: 'SR_Financials',
+        format: format,
+        columns: [
+          'SR Number',
+          'SR Charges',
+          'Destroy Deposit',
+          'Sale Proceeds',
+          for (final tName in taxNames) tName,
+          'Total Tax',
+          'Total Income',
+          'Destruction',
+          'Advertising',
+          'Refund',
+          'Total Expenditure',
+          'Net',
+          'Reward Fund',
+          'Treasury',
+          'Consolidated Fund',
+          'Comp Fund',
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
+    }
+  }
+
+  /// Money for a report cell: grouped, two decimals, and a bare dash for zero
+  /// so a populated figure stands out in a wall of numbers.
+  static String _reportMoney(double v) =>
+      v == 0 ? '-' : NumberFormat('#,##0.00').format(v);
+
   /// The package items a forfeited row covers: the one item it points at for
   /// per-item rows, otherwise every item of the package (`[null]` when the
   /// package details did not load, so the row still prints).
@@ -1602,9 +1897,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final key = '${activity}_$format';
     _setLoading(key, true);
     try {
-      final packages = await ref
-          .read(packageServiceProvider)
-          .getAllPackages(yard: _yardArg);
+      final packages =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
       final filtered = _filterByWarehouse(_filterByDate(packages));
       final data = await _goodsData(filtered,
           statusFilter: _selectedStatus, activityFilter: activity);
@@ -1713,7 +2007,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Widget _buildReportCards() {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossAxisCount = constraints.maxWidth > 900 ? 3 : (constraints.maxWidth > 600 ? 2 : 1);
+        final crossAxisCount = constraints.maxWidth > 900
+            ? 3
+            : (constraints.maxWidth > 600 ? 2 : 1);
 
         // Central Disposal sees only the Post Status Activity reports — the
         // rest of the Report Generator is yard-office business.
@@ -1727,14 +2023,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (snapshot.hasError) 
+                if (snapshot.hasError)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 20),
-                    child: ErrorView(error: snapshot.error!, onRetry: () => setState(() {})),
+                    child: ErrorView(
+                        error: snapshot.error!, onRetry: () => setState(() {})),
                   ),
 
                 // ── Section 1: SR Register & Inventory Reports ──
-                _buildSectionHeader('SR Register & Inventory Reports', Icons.article_rounded),
+                _buildSectionHeader(
+                    'SR Register & Inventory Reports', Icons.article_rounded),
                 const Gap(8),
                 GridView.count(
                   shrinkWrap: true,
@@ -1746,11 +2044,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   children: [
                     _buildReportCard(
                       title: 'Packages Inventory Audit',
-                      description: 'Generates report based on active filters above.',
+                      description:
+                          'Generates report based on active filters above.',
                       icon: Icons.inventory_2_rounded,
                       color: context.colors.primaryGold,
-                      onView: () =>
-                          _viewPackages(_selectedStatus, 'Packages Inventory Audit'),
+                      onView: () => _viewPackages(
+                          _selectedStatus, 'Packages Inventory Audit'),
                       onPdf: _generateAllPackagesPdf,
                       onExcel: _exportExcel,
                     ),
@@ -1760,7 +2059,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     if (!widget.executiveMode) ...[
                       _buildReportCard(
                         title: 'Category & Zone Summary',
-                        description: 'Inventory distribution by category & warehouse zones.',
+                        description:
+                            'Inventory distribution by category & warehouse zones.',
                         icon: Icons.pie_chart_rounded,
                         color: Colors.purpleAccent,
                         onView: _viewCategoryZone,
@@ -1843,10 +2143,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                             'Final valuation vs. the committee\'s figure.',
                         icon: Icons.balance_rounded,
                         color: const Color(0xFF00695C),
-                        onPdf: () =>
-                            _generateHighPanelValuationReport('pdf'),
+                        onPdf: () => _generateHighPanelValuationReport('pdf'),
                         onExcel: () =>
                             _generateHighPanelValuationReport('excel'),
+                      ),
+                      _buildReportCard(
+                        title: 'Goods Financials',
+                        description:
+                            'Income, expenditure & the proceeds split, per SR.',
+                        icon: Icons.account_balance_wallet_rounded,
+                        color: const Color(0xFF00838F),
+                        onPdf: () => _generateGoodsFinancialsReport('pdf'),
+                        onExcel: () => _generateGoodsFinancialsReport('excel'),
                       ),
                       _buildReportCard(
                         title: 'Not Sold Goods',
@@ -1864,8 +2172,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 // ── Section 3: Post Status Activity Reports ──
                 if (!widget.executiveMode) ...[
                   const Gap(24),
-                  _buildSectionHeader(
-                      'Post Status Activity Reports', Icons.warning_amber_rounded),
+                  _buildSectionHeader('Post Status Activity Reports',
+                      Icons.warning_amber_rounded),
                   const Gap(8),
                   _buildActivityGrid(crossAxisCount),
                 ],
@@ -1873,62 +2181,67 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 // ── Section 4: Goods Disposition Reports ──
                 // (How goods are classified: Forfeit / Abandon / Other / Re-export)
                 if (!widget.executiveMode) ...[
-                const Gap(24),
-                _buildSectionHeader(
-                    'Goods Disposition Reports', Icons.assignment_turned_in_rounded),
-                const Gap(8),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 2.3,
-                  children: [
-                    _buildReportCard(
-                      title: 'Forfeited Packages (Forfeited Goods)',
-                      description: 'All forfeited goods in this yard.',
-                      icon: Icons.gavel_rounded,
-                      color: const Color(0xFFC62828),
-                      onView: () => _generateForfeitedReport('view'),
-                      onPdf: () => _generateForfeitedReport('pdf'),
-                      onExcel: () => _generateForfeitedReport('excel'),
-                    ),
-                    _buildReportCard(
-                      title: 'Abandoned Packages (Abandoned Goods)',
-                      description: 'Goods abandoned by the consignee.',
-                      icon: Icons.inbox_rounded,
-                      color: const Color(0xFF8D6E63),
-                      onView: () => _generateSourceForfeitedReport(
-                          'abandoned', 'Abandoned Packages (Abandoned Goods)', 'view'),
-                      onPdf: () => _generateSourceForfeitedReport(
-                          'abandoned', 'Abandoned Packages (Abandoned Goods)', 'pdf'),
-                      onExcel: () => _generateSourceForfeitedReport(
-                          'abandoned', 'Abandoned Packages (Abandoned Goods)', 'excel'),
-                    ),
-                    _buildReportCard(
-                      title: 'Other Packages (Other Goods)',
-                      description: 'Packages routed via "Other" disposition.',
-                      icon: Icons.more_horiz_rounded,
-                      color: const Color(0xFF5E35B1),
-                      onView: () => _generateSourceForfeitedReport(
-                          'other', 'Other Packages (Other Goods)', 'view'),
-                      onPdf: () => _generateSourceForfeitedReport(
-                          'other', 'Other Packages (Other Goods)', 'pdf'),
-                      onExcel: () => _generateSourceForfeitedReport(
-                          'other', 'Other Packages (Other Goods)', 'excel'),
-                    ),
-                    _buildReportCard(
-                      title: 'Re-exported Packages (Re-exported Goods)',
-                      description: 'Packages routed via Re-export disposition.',
-                      icon: Icons.flight_takeoff_rounded,
-                      color: const Color(0xFF00796B),
-                      onView: () => _generateReexportedReport('view'),
-                      onPdf: () => _generateReexportedReport('pdf'),
-                      onExcel: () => _generateReexportedReport('excel'),
-                    ),
-                  ],
-                ),
+                  const Gap(24),
+                  _buildSectionHeader('Goods Disposition Reports',
+                      Icons.assignment_turned_in_rounded),
+                  const Gap(8),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 2.3,
+                    children: [
+                      _buildReportCard(
+                        title: 'Forfeited Packages (Forfeited Goods)',
+                        description: 'All forfeited goods in this yard.',
+                        icon: Icons.gavel_rounded,
+                        color: const Color(0xFFC62828),
+                        onView: () => _generateForfeitedReport('view'),
+                        onPdf: () => _generateForfeitedReport('pdf'),
+                        onExcel: () => _generateForfeitedReport('excel'),
+                      ),
+                      _buildReportCard(
+                        title: 'Abandoned Packages (Abandoned Goods)',
+                        description: 'Goods abandoned by the consignee.',
+                        icon: Icons.inbox_rounded,
+                        color: const Color(0xFF8D6E63),
+                        onView: () => _generateSourceForfeitedReport(
+                            'abandoned',
+                            'Abandoned Packages (Abandoned Goods)',
+                            'view'),
+                        onPdf: () => _generateSourceForfeitedReport('abandoned',
+                            'Abandoned Packages (Abandoned Goods)', 'pdf'),
+                        onExcel: () => _generateSourceForfeitedReport(
+                            'abandoned',
+                            'Abandoned Packages (Abandoned Goods)',
+                            'excel'),
+                      ),
+                      _buildReportCard(
+                        title: 'Other Packages (Other Goods)',
+                        description: 'Packages routed via "Other" disposition.',
+                        icon: Icons.more_horiz_rounded,
+                        color: const Color(0xFF5E35B1),
+                        onView: () => _generateSourceForfeitedReport(
+                            'other', 'Other Packages (Other Goods)', 'view'),
+                        onPdf: () => _generateSourceForfeitedReport(
+                            'other', 'Other Packages (Other Goods)', 'pdf'),
+                        onExcel: () => _generateSourceForfeitedReport(
+                            'other', 'Other Packages (Other Goods)', 'excel'),
+                      ),
+                      _buildReportCard(
+                        title: 'Re-exported Packages (Re-exported Goods)',
+                        description:
+                            'Packages routed via Re-export disposition.',
+                        icon: Icons.flight_takeoff_rounded,
+                        color: const Color(0xFF00796B),
+                        onView: () => _generateReexportedReport('view'),
+                        onPdf: () => _generateReexportedReport('pdf'),
+                        onExcel: () => _generateReexportedReport('excel'),
+                      ),
+                    ],
+                  ),
                 ],
 
                 // ── Section 5: Goods Disposal Reports ──
@@ -1947,7 +2260,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   children: [
                     _buildReportCard(
                       title: 'Sold Packages (Goods Sold - Tender)',
-                      description: 'Forfeited goods sold via tender during the period.',
+                      description:
+                          'Forfeited goods sold via tender during the period.',
                       icon: Icons.sell_rounded,
                       color: Colors.teal,
                       onView: () => _stockRevenueReport('sold', 'view'),
@@ -1992,8 +2306,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     ),
                     _buildReportCard(
                       title: 'Packages Inventory (Goods in SR)',
-                      description:
-                          'Total goods currently in the SR register.',
+                      description: 'Total goods currently in the SR register.',
                       icon: Icons.inventory_2_rounded,
                       color: context.colors.accentLightBlue,
                       onView: () => _stockRevenueReport('total', 'view'),
@@ -2002,8 +2315,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     ),
                     _buildReportCard(
                       title: 'Packages Added (Goods Added)',
-                      description:
-                          'Goods added during the selected period.',
+                      description: 'Goods added during the selected period.',
                       icon: Icons.add_box_rounded,
                       color: context.colors.successGreen,
                       onView: () => _stockRevenueReport('added', 'view'),
@@ -2028,14 +2340,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       color: context.colors.primaryGold,
                       onView: () => _viewStockReconciliation(),
                       onPdf: () => _stockRevenueReport('reconciliation', 'pdf'),
-                      onExcel: () => _stockRevenueReport('reconciliation', 'excel'),
+                      onExcel: () =>
+                          _stockRevenueReport('reconciliation', 'excel'),
                     ),
                   ],
                 ),
 
                 // ── Section 7: Warehouse & Movement Reports ──
                 const Gap(24),
-                _buildSectionHeader('Warehouse & Movement Reports', Icons.warehouse_rounded),
+                _buildSectionHeader(
+                    'Warehouse & Movement Reports', Icons.warehouse_rounded),
                 const Gap(8),
                 GridView.count(
                   shrinkWrap: true,
@@ -2068,7 +2382,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     if (!widget.executiveMode)
                       _buildReportCard(
                         title: 'Warehouses List',
-                        description: 'Registered warehouses & current occupancy.',
+                        description:
+                            'Registered warehouses & current occupancy.',
                         icon: Icons.domain_rounded,
                         color: const Color(0xFF6A1B9A),
                         onView: _viewWarehousesList,
@@ -2080,91 +2395,99 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
                 // ── Section 8: Financial Reports ──
                 if (!widget.executiveMode) ...[
-                const Gap(24),
-                _buildSectionHeader('Financial Reports', Icons.payments_rounded),
-                const Gap(8),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 2.3,
-                  children: [
-                    _buildReportCard(
-                      title: 'Storage Charges',
-                      description: 'Outstanding storage charges for held items.',
-                      icon: Icons.account_balance_wallet_rounded,
-                      color: const Color(0xFFC62828),
-                      onView: _viewStorageCharges,
-                      onPdf: _generateStorageChargesPdf,
-                      onExcel: _exportStorageChargesExcel,
-                    ),
-                    _buildReportCard(
-                      title: 'Released Revenue',
-                      description: 'Storage charges collected on released items.',
-                      icon: Icons.receipt_long_rounded,
-                      color: const Color(0xFF388E3C),
-                      onView: _viewReleasedRevenue,
-                      onPdf: _generateReleasedRevenuePdf,
-                      onExcel: _exportReleasedRevenueExcel,
-                    ),
-                  ],
-                ),
+                  const Gap(24),
+                  _buildSectionHeader(
+                      'Financial Reports', Icons.payments_rounded),
+                  const Gap(8),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 2.3,
+                    children: [
+                      _buildReportCard(
+                        title: 'Storage Charges',
+                        description:
+                            'Outstanding storage charges for held items.',
+                        icon: Icons.account_balance_wallet_rounded,
+                        color: const Color(0xFFC62828),
+                        onView: _viewStorageCharges,
+                        onPdf: _generateStorageChargesPdf,
+                        onExcel: _exportStorageChargesExcel,
+                      ),
+                      _buildReportCard(
+                        title: 'Released Revenue',
+                        description:
+                            'Storage charges collected on released items.',
+                        icon: Icons.receipt_long_rounded,
+                        color: const Color(0xFF388E3C),
+                        onView: _viewReleasedRevenue,
+                        onPdf: _generateReleasedRevenuePdf,
+                        onExcel: _exportReleasedRevenueExcel,
+                      ),
+                    ],
+                  ),
                 ],
 
                 // ── Section 9: System Configuration & Logs ──
                 if (!widget.executiveMode) ...[
-                const Gap(24),
-                _buildSectionHeader('System Configuration & Logs', Icons.settings_rounded),
-                const Gap(8),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 2.3,
-                  children: [
-                    _buildReportCard(
-                      title: 'Post Status Activity',
-                      description: 'System-wide post status activity list.',
-                      icon: Icons.rule_rounded,
-                      color: Colors.orange,
-                      onView: _viewPostStatusActivities,
-                      onPdf: _generatePostStatusActivitiesPdf,
-                      onExcel: _exportPostStatusActivitiesExcel,
-                    ),
-                    _buildReportCard(
-                      title: 'Item Categories',
-                      description: 'Package classification rules.',
-                      icon: Icons.category_rounded,
-                      color: Colors.teal,
-                      onView: _viewCategories,
-                      onPdf: _generateCategoriesPdf,
-                      onExcel: _exportCategoriesExcel,
-                    ),
-                  ],
-                ),
+                  const Gap(24),
+                  _buildSectionHeader(
+                      'System Configuration & Logs', Icons.settings_rounded),
+                  const Gap(8),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 2.3,
+                    children: [
+                      _buildReportCard(
+                        title: 'Post Status Activity',
+                        description: 'System-wide post status activity list.',
+                        icon: Icons.rule_rounded,
+                        color: Colors.orange,
+                        onView: _viewPostStatusActivities,
+                        onPdf: _generatePostStatusActivitiesPdf,
+                        onExcel: _exportPostStatusActivitiesExcel,
+                      ),
+                      _buildReportCard(
+                        title: 'Item Categories',
+                        description: 'Package classification rules.',
+                        icon: Icons.category_rounded,
+                        color: Colors.teal,
+                        onView: _viewCategories,
+                        onPdf: _generateCategoriesPdf,
+                        onExcel: _exportCategoriesExcel,
+                      ),
+                    ],
+                  ),
 
-                // ── Section 10: QR Code Labels ──
-                const Gap(24),
-                _buildSectionHeader('QR Code Labels', Icons.qr_code_2_rounded),
-                const Gap(8),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 2.3,
-                  children: [
-                    _buildQrCard(),
-                  ],
-                ),
+                  // ── Section 10: QR Code Labels ──
+                  const Gap(24),
+                  _buildSectionHeader(
+                      'QR Code Labels', Icons.qr_code_2_rounded),
+                  const Gap(8),
+                  GridView.count(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    crossAxisCount: crossAxisCount,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 2.3,
+                    children: [
+                      _buildQrCard(),
+                    ],
+                  ),
                 ],
               ],
-            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn();
+            )
+                .animate()
+                .slideY(begin: 0.1, duration: 400.ms, delay: 100.ms)
+                .fadeIn();
           },
         );
       },
@@ -2187,13 +2510,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           Row(children: [
             const Icon(Icons.qr_code_2_rounded, color: color, size: 18),
             const Gap(8),
-            Expanded(child: Text('Generate QR Labels',
-                style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14))),
+            Expanded(
+                child: Text('Generate QR Labels',
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14))),
           ]),
           const Gap(4),
           Text('Pick packages and print or download their QR-code labels.',
               style: TextStyle(color: context.colors.textMuted, fontSize: 11),
-              maxLines: 1, overflow: TextOverflow.ellipsis),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis),
           const Spacer(),
           SizedBox(
             width: double.infinity,
@@ -2261,12 +2589,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       children: [
         Icon(icon, size: 18, color: context.colors.primaryGold),
         const Gap(8),
-        Text(title, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 14)),
+        Text(title,
+            style: TextStyle(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 14)),
       ],
     );
   }
 
-  Widget _buildStatusCard(String title, String status, IconData icon, Color color) {
+  Widget _buildStatusCard(
+      String title, String status, IconData icon, Color color) {
     return _buildReportCard(
       title: title,
       description: 'Filter-based $status list.',
@@ -2281,7 +2614,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     final key = '${status}_$format';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages(status: status, yard: _yardArg);
+      final packages = await ref
+          .read(packageServiceProvider)
+          .getAllPackages(status: status, yard: _yardArg);
       final withDate = _filterByDate(packages);
       final filtered = _filterByWarehouse(withDate);
 
@@ -2308,7 +2643,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               recordCount: filtered.length,
               fileName: '${status}_Packages_Report.xlsx',
               onExport: () => ReportService().exportPackagesToExcel(filtered),
-              onSave: (bytes) => _handleFileSave(bytes, '${status}_Packages', 'xlsx'),
+              onSave: (bytes) =>
+                  _handleFileSave(bytes, '${status}_Packages', 'xlsx'),
             ),
           );
         }
@@ -2324,9 +2660,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Category & Zone Summary_pdf';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
-      
+      final packages =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(yard: _yardArg);
+
       final withDatePkgs = _filterByDate(packages);
       final withDateEntries = _filterByDate(entries);
 
@@ -2336,7 +2675,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
 
       _showPdfPreview(
-        (format) => ReportService().generateCategoryAndZonePdf(withDatePkgs, withDateEntries),
+        (format) => ReportService()
+            .generateCategoryAndZonePdf(withDatePkgs, withDateEntries),
         'Category_Zone_Summary_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
       );
     } catch (e) {
@@ -2350,9 +2690,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Category & Zone Summary_excel';
     _setLoading(key, true);
     try {
-      final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
-      
+      final packages =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(yard: _yardArg);
+
       final withDatePkgs = _filterByDate(packages);
       final withDateEntries = _filterByDate(entries);
 
@@ -2361,9 +2704,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         return;
       }
 
-      final bytes = await ReportService().exportCategoryAndZoneToExcel(withDatePkgs, withDateEntries);
+      final bytes = await ReportService()
+          .exportCategoryAndZoneToExcel(withDatePkgs, withDateEntries);
       if (bytes != null) {
-        _handleFileSave(bytes, 'Category_Zone_Summary_${DateFormat('yyyyMMdd').format(DateTime.now())}', 'xlsx');
+        _handleFileSave(
+            bytes,
+            'Category_Zone_Summary_${DateFormat('yyyyMMdd').format(DateTime.now())}',
+            'xlsx');
       }
     } catch (e) {
       _showError('Error exporting Category/Zone Excel: $e');
@@ -2378,9 +2725,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       // Status is resolved per ITEM (not from the stale packages.status column),
       // so it is applied inside _goodsData rather than in the query.
-      final packages = await ref
-          .read(packageServiceProvider)
-          .getAllPackages(yard: _yardArg);
+      final packages =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
       final withDate = _filterByDate(packages);
       final filtered = _filterByWarehouse(withDate);
 
@@ -2389,8 +2735,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         return;
       }
 
-      final statusTitle = _selectedStatus == 'all' ? 'ALL' : _selectedStatus.toUpperCase();
-      
+      final statusTitle =
+          _selectedStatus == 'all' ? 'ALL' : _selectedStatus.toUpperCase();
+
       String warehouseTitle = '';
       if (_selectedWarehouse != 'all') {
         final warehouses = ref.read(warehousesProvider).asData?.value;
@@ -2417,7 +2764,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           headline: '${data.$2.length} goods',
           columns: data.$1,
           rows: data.$2,
-          format: format.copyWith(marginLeft: 20, marginRight: 20, marginTop: 20, marginBottom: 20),
+          format: format.copyWith(
+              marginLeft: 20, marginRight: 20, marginTop: 20, marginBottom: 20),
         ),
         '${statusTitle.replaceAll(' ', '_')}${warehouseTitle.replaceAll(' ', '_')}_Audit_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
       );
@@ -2434,7 +2782,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     // Load all package SRs up front so the field can autocomplete/auto-fill.
     List<PackageModel> all;
     try {
-      all = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      all =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
     } catch (e) {
       _showError(e.toString());
       return;
@@ -2455,9 +2804,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               optionsBuilder: (v) {
                 final q = v.text.trim().toLowerCase();
                 if (q.isEmpty) return const Iterable<String>.empty();
-                return srList
-                    .where((s) => s.toLowerCase().contains(q))
-                    .take(8);
+                return srList.where((s) => s.toLowerCase().contains(q)).take(8);
               },
               onSelected: (s) => current = s,
               fieldViewBuilder: (context, ctrl, focus, onSubmit) {
@@ -2550,7 +2897,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         for (final dn in await disposal.getDestructions()) {
           for (final it in dn.items) {
             final iid = it.forfeited?.itemId;
-            if (it.destroyed && iid != null) destroyedByItem[iid] = it.destroyedAt;
+            if (it.destroyed && iid != null)
+              destroyedByItem[iid] = it.destroyedAt;
           }
         }
       } catch (_) {}
@@ -2558,7 +2906,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _showPdfPreview(
         (format) => ReportService().generateSinglePackagePdf(pkg,
             format: format.copyWith(
-                marginLeft: 20, marginRight: 20, marginTop: 20, marginBottom: 20),
+                marginLeft: 20,
+                marginRight: 20,
+                marginTop: 20,
+                marginBottom: 20),
             soldByItem: soldByItem,
             destroyedByItem: destroyedByItem,
             rates: rates),
@@ -2574,7 +2925,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   Future<void> _exportPackageHistoryExcel() async {
     List<PackageModel> all;
     try {
-      all = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      all =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
     } catch (e) {
       _showError(e.toString());
       return;
@@ -2620,7 +2972,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   borderRadius: BorderRadius.circular(8),
                   color: context.colors.cardDark,
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 240, maxWidth: 380),
+                    constraints:
+                        const BoxConstraints(maxHeight: 240, maxWidth: 380),
                     child: ListView(
                       shrinkWrap: true,
                       padding: EdgeInsets.zero,
@@ -2668,19 +3021,29 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
 
       final columns = [
-        'SR Number', 'Goods Name', 'HS Code', 'Quantity', 'Consignee',
-        'Status', 'Entry Date', 'Reason'
+        'SR Number',
+        'Goods Name',
+        'HS Code',
+        'Quantity',
+        'Consignee',
+        'Status',
+        'Entry Date',
+        'Reason'
       ];
-      final rows = pkg.items.map((i) => [
-        pkg.srNumber,
-        i.itemName,
-        i.hsCode ?? '—',
-        '${i.quantity}',
-        pkg.consigneeName,
-        pkg.status.toUpperCase(),
-        pkg.entryDate != null ? DateFormat('yyyy-MM-dd').format(pkg.entryDate!) : '—',
-        i.reasons ?? pkg.reason ?? '—',
-      ]).toList();
+      final rows = pkg.items
+          .map((i) => [
+                pkg.srNumber,
+                i.itemName,
+                i.hsCode ?? '—',
+                '${i.quantity}',
+                pkg.consigneeName,
+                pkg.status.toUpperCase(),
+                pkg.entryDate != null
+                    ? DateFormat('yyyy-MM-dd').format(pkg.entryDate!)
+                    : '—',
+                i.reasons ?? pkg.reason ?? '—',
+              ])
+          .toList();
 
       if (mounted) {
         showDialog(
@@ -2688,14 +3051,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           builder: (ctx) => ExcelExportDialog(
             title: 'Export History for ${pkg.srNumber}',
             recordCount: rows.length,
-            fileName: 'Package_${pkg.srNumber.replaceAll('/', '-')}_History.xlsx',
+            fileName:
+                'Package_${pkg.srNumber.replaceAll('/', '-')}_History.xlsx',
             onExport: () => ReportService().exportTableToExcel(
               title: 'PACKAGE HISTORY - ${pkg.srNumber}',
               subTitle: 'Consignee: ${pkg.consigneeName}',
               columns: columns,
               rows: rows,
             ),
-            onSave: (bytes) => _handleFileSave(bytes, 'Package_${pkg.srNumber.replaceAll('/', '-')}_History', 'xlsx'),
+            onSave: (bytes) => _handleFileSave(bytes,
+                'Package_${pkg.srNumber.replaceAll('/', '-')}_History', 'xlsx'),
           ),
         );
       }
@@ -2776,7 +3141,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       for (final dn in await disposal.getDestructions()) {
         for (final it in dn.items) {
           final iid = it.forfeited?.itemId;
-          if (it.destroyed && iid != null) destroyedByItem[iid] = it.destroyedAt;
+          if (it.destroyed && iid != null)
+            destroyedByItem[iid] = it.destroyedAt;
         }
       }
     } catch (_) {}
@@ -2794,8 +3160,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
 
     final columns = [
-      'SR Number', 'Goods Name', 'HS Code', 'Qty', 'Consignee', 'Reason',
-      'Status', 'Outcome Date', 'Receipt No', 'Value (LKR)', 'Entry Date'
+      'SR Number',
+      'Goods Name',
+      'HS Code',
+      'Qty',
+      'Consignee',
+      'Reason',
+      'Status',
+      'Outcome Date',
+      'Receipt No',
+      'Value (LKR)',
+      'Entry Date'
     ];
     final rows = <List<String>>[];
     final itemIds = <String?>[];
@@ -2809,9 +3184,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         String receipt = '—';
         final iid = it?.id;
         // Released? — a returned warehouse entry for this item.
-        final released = p.warehouseEntries.where((e) =>
-            e.isReturned &&
-            (it == null || e.packageItemId == it.id));
+        final released = p.warehouseEntries.where(
+            (e) => e.isReturned && (it == null || e.packageItemId == it.id));
         if (iid != null && soldByItem.containsKey(iid)) {
           status = 'Sold';
           final s = soldByItem[iid]!;
@@ -2860,7 +3234,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// Stock & revenue metric reports. [metric] ∈ initial, total, added, sold,
   /// destroyed, revenue. Period = the Date-Range filter above (day/week/month/
   /// year, whatever the user picked). "Goods" = packages.
-  Future<void> _stockRevenueReport(String metric, [String format = 'pdf']) async {
+  Future<void> _stockRevenueReport(String metric,
+      [String format = 'pdf']) async {
     final key = '${metric}_$format';
     _setLoading(key, true);
     final money = NumberFormat('#,##0.##');
@@ -2942,7 +3317,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             // Goods Description rather than HS Code / Sold Date: this listing
             // is about what was sold and for how much.
             if (f?.itemId != null) {
-              final match = pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
+              final match =
+                  pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
               final name = f?.itemName ?? match?.itemName ?? '—';
               final desc = match?.goodsDescription?.trim();
               rows.add([
@@ -2987,7 +3363,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             title = 'TENDER REVENUE & BALANCE';
             final added = packages
                 .where((p) => inPeriod(p.entryDate))
-                .fold<int>(0, (s, p) => s + (p.items.isEmpty ? 1 : p.items.length));
+                .fold<int>(
+                    0, (s, p) => s + (p.items.isEmpty ? 1 : p.items.length));
             final destructions = await disposal.getDestructions();
             final destroyed = [
               for (final dn in destructions)
@@ -3022,14 +3399,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   it
           ];
           title = 'GOODS DESTROYED IN DESTRUCTION TENDER';
-          columns = ['SR Number', 'Goods Name', 'HS Code', 'Destroyed Date', 'Qty'];
+          columns = [
+            'SR Number',
+            'Goods Name',
+            'HS Code',
+            'Destroyed Date',
+            'Qty'
+          ];
           rows = [];
           rowItemIds = [];
           for (final it in items) {
             final f = it.forfeited;
             final pkgItems = f?.packageDetails?.items ?? const <PackageItem>[];
             if (f?.itemId != null) {
-              final match = pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
+              final match =
+                  pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
               final name = f?.itemName ?? match?.itemName ?? '—';
               final hs = match?.hsCode ?? '—';
               final qty = match?.quantity ?? f?.entryQty ?? 1;
@@ -3046,7 +3430,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 rows.add([
                   f?.srNumber ?? '—',
                   i.itemName,
-                  (i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—',
+                  (i.hsCode?.trim().isNotEmpty == true)
+                      ? i.hsCode!.trim()
+                      : '—',
                   it.destroyedAt != null ? df.format(it.destroyedAt!) : '—',
                   '${i.quantity}',
                 ]);
@@ -3068,7 +3454,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
         case 'reconciliation':
           // Initial stock
-          final initialPkgs = packages.where((p) => start == null || (p.entryDate != null && !p.entryDate!.isAfter(start))).toList();
+          final initialPkgs = packages
+              .where((p) =>
+                  start == null ||
+                  (p.entryDate != null && !p.entryDate!.isAfter(start)))
+              .toList();
           final initialData = await _goodsData(initialPkgs);
           final initialCnt = initialData.$2.length;
           double initialVal = 0;
@@ -3078,7 +3468,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           }
 
           // Added goods
-          final addedPkgs = packages.where((p) => inPeriod(p.entryDate)).toList();
+          final addedPkgs =
+              packages.where((p) => inPeriod(p.entryDate)).toList();
           final addedData = await _goodsData(addedPkgs);
           final addedCnt = addedData.$2.length;
           double addedVal = 0;
@@ -3095,7 +3486,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           final soldItems = [
             for (final s in sales)
               for (final it in s.dedupedItems)
-                if (it.sold && inPeriod(it.soldAt) && (_yardArg == null || it.yard == _yardArg)) it
+                if (it.sold &&
+                    inPeriod(it.soldAt) &&
+                    (_yardArg == null || it.yard == _yardArg))
+                  it
           ];
           double soldVal = 0;
           for (final it in soldItems) {
@@ -3112,7 +3506,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           final destroyedItems = [
             for (final dn in destructions)
               for (final it in dn.items)
-                if (it.destroyed && inPeriod(it.destroyedAt) && (_yardArg == null || it.yard == _yardArg)) it
+                if (it.destroyed &&
+                    inPeriod(it.destroyedAt) &&
+                    (_yardArg == null || it.yard == _yardArg))
+                  it
           ];
           final destCnt = destroyedItems.length;
 
@@ -3124,7 +3521,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               '− Sold: $soldCnt (Value of Goods Sold: LKR ${money.format(soldVal)}) − Destroyed: $destCnt = Net Balance: $balCnt goods';
 
           columns = [
-            'SR Number', 'Goods Name', 'HS Code', 'Qty', 'Consignee', 'Status / Movement', 'Date', 'Value (LKR)'
+            'SR Number',
+            'Goods Name',
+            'HS Code',
+            'Qty',
+            'Consignee',
+            'Status / Movement',
+            'Date',
+            'Value (LKR)'
           ];
           rows = [];
           rowItemIds = [];
@@ -3191,7 +3595,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             columns: columns,
             rows: rows,
             format: format.copyWith(
-                marginLeft: 20, marginRight: 20, marginTop: 20, marginBottom: 20),
+                marginLeft: 20,
+                marginRight: 20,
+                marginTop: 20,
+                marginBottom: 20),
           ),
           '${title.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd').format(DateTime.now())}.pdf',
         );
@@ -3202,14 +3609,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             builder: (ctx) => ExcelExportDialog(
               title: 'Export $title',
               recordCount: rows.length,
-              fileName: '${title.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx',
+              fileName:
+                  '${title.replaceAll(' ', '_')}_${DateFormat('yyyyMMdd').format(DateTime.now())}.xlsx',
               onExport: () => ReportService().exportTableToExcel(
                 title: title,
                 subTitle: periodLabel,
                 columns: columns,
                 rows: rows,
               ),
-              onSave: (bytes) => _handleFileSave(bytes, title.replaceAll(' ', '_'), 'xlsx'),
+              onSave: (bytes) =>
+                  _handleFileSave(bytes, title.replaceAll(' ', '_'), 'xlsx'),
             ),
           );
         }
@@ -3221,12 +3630,15 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-  List<ForfeitedPackageModel> _filterByWarehouseForfeited(List<ForfeitedPackageModel> list) {
+  List<ForfeitedPackageModel> _filterByWarehouseForfeited(
+      List<ForfeitedPackageModel> list) {
     if (_selectedWarehouse == 'all') return list;
     return list.where((f) {
       final entries = f.packageDetails?.warehouseEntries ?? const [];
       if (entries.isEmpty) return false;
-      return entries.any((e) => e.warehouseId == _selectedWarehouse || e.warehouseCode == _selectedWarehouse);
+      return entries.any((e) =>
+          e.warehouseId == _selectedWarehouse ||
+          e.warehouseCode == _selectedWarehouse);
     }).toList();
   }
 
@@ -3333,8 +3745,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 title: 'Export $key',
                 recordCount: rows.length,
                 fileName: '${fileBase}_Report.xlsx',
-                onExport: () => ReportService()
-                    .exportForfeitedToExcel(list, title: title, dateHeader: dateHeader),
+                onExport: () => ReportService().exportForfeitedToExcel(list,
+                    title: title, dateHeader: dateHeader),
                 onSave: (bytes) => _handleFileSave(bytes, fileBase, 'xlsx'),
               ),
             );
@@ -3353,8 +3765,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             title: 'Export $key',
             recordCount: rows.length,
             fileName: '${fileBase}_Report.xlsx',
-            onExport: () => ReportService()
-                .exportForfeitedToExcel(list, title: title, dateHeader: dateHeader),
+            onExport: () => ReportService().exportForfeitedToExcel(list,
+                title: title, dateHeader: dateHeader),
             onSave: (bytes) => _handleFileSave(bytes, fileBase, 'xlsx'),
           ),
         );
@@ -3366,8 +3778,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-
-
   /// Opens the QR-label generator: pick one/several packages, then print or
   /// download their QR-code labels (regenerated live from the package data, so
   /// any previously registered package's labels can be produced again anytime).
@@ -3376,7 +3786,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     List<PackageModel> all;
     try {
-      all = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      all =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
     } catch (e) {
       _showError(e.toString());
       return;
@@ -3410,7 +3821,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       builder: (context) => ReportPreviewDialog(
         buildPdf: buildPdf,
         fileName: fileName,
-        onSave: (bytes, name) => _handleFileSave(bytes, name.replaceAll('.pdf', ''), 'pdf'),
+        onSave: (bytes, name) =>
+            _handleFileSave(bytes, name.replaceAll('.pdf', ''), 'pdf'),
       ),
     );
   }
@@ -3437,10 +3849,19 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 border: Border.all(color: color.withOpacity(0.2)),
               ),
               child: Icon(icon, color: color, size: 20),
-            ).animate(onPlay: (controller) => controller.repeat(reverse: true))
-             .shimmer(delay: 2.seconds, duration: 1500.ms, color: color.withOpacity(0.3)),
+            )
+                .animate(
+                    onPlay: (controller) => controller.repeat(reverse: true))
+                .shimmer(
+                    delay: 2.seconds,
+                    duration: 1500.ms,
+                    color: color.withOpacity(0.3)),
             const Gap(6),
-            Text(label, style: TextStyle(color: context.colors.textPrimary, fontSize: 11, fontWeight: FontWeight.w500)),
+            Text(label,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -3545,40 +3966,49 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     required VoidCallback onTap,
     bool isOutline = false,
   }) {
-    final style = isOutline 
-      ? OutlinedButton.styleFrom(
-          foregroundColor: color,
-          side: BorderSide(color: color),
-          padding: EdgeInsets.zero,
-          minimumSize: const Size(0, 32),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        )
-      : ElevatedButton.styleFrom(
-          backgroundColor: color,
-          foregroundColor: Colors.white,
-          elevation: 0,
-          padding: EdgeInsets.zero,
-          minimumSize: const Size(0, 32),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-        );
+    final style = isOutline
+        ? OutlinedButton.styleFrom(
+            foregroundColor: color,
+            side: BorderSide(color: color),
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 32),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          )
+        : ElevatedButton.styleFrom(
+            backgroundColor: color,
+            foregroundColor: Colors.white,
+            elevation: 0,
+            padding: EdgeInsets.zero,
+            minimumSize: const Size(0, 32),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          );
 
-    final child = isLoading 
-      ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-      : Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 14),
-            const Gap(4),
-            Text(label, style: const TextStyle(fontSize: 12)),
-          ],
-        );
+    final child = isLoading
+        ? const SizedBox(
+            width: 14,
+            height: 14,
+            child:
+                CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+        : Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14),
+              const Gap(4),
+              Text(label, style: const TextStyle(fontSize: 12)),
+            ],
+          );
 
-    return isOutline 
-      ? OutlinedButton(onPressed: isLoading ? null : onTap, style: style, child: child)
-      : ElevatedButton(onPressed: isLoading ? null : onTap, style: style, child: child);
+    return isOutline
+        ? OutlinedButton(
+            onPressed: isLoading ? null : onTap, style: style, child: child)
+        : ElevatedButton(
+            onPressed: isLoading ? null : onTap, style: style, child: child);
   }
 
-  Widget _buildSummaryCard(String title, IconData icon, Color color, String period) {
+  Widget _buildSummaryCard(
+      String title, IconData icon, Color color, String period) {
     return _buildReportCard(
       title: title,
       description: 'Package movement by $period.',
@@ -3589,12 +4019,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     );
   }
 
-  Future<void> _handleFileSave(Uint8List? bytes, String defaultName, String extension) async {
+  Future<void> _handleFileSave(
+      Uint8List? bytes, String defaultName, String extension) async {
     if (bytes == null) return;
-    
+
     final result = await FilePicker.platform.saveFile(
       dialogTitle: 'Save Report',
-      fileName: '${defaultName}_${DateFormat('yyyyMMdd').format(DateTime.now())}.$extension',
+      fileName:
+          '${defaultName}_${DateFormat('yyyyMMdd').format(DateTime.now())}.$extension',
       allowedExtensions: [extension],
       type: FileType.custom,
     );
@@ -3607,7 +4039,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
       final file = File(path);
       await file.writeAsBytes(bytes);
-      _showSuccess('Report saved successfully to ${path.split(Platform.pathSeparator).last}');
+      _showSuccess(
+          'Report saved successfully to ${path.split(Platform.pathSeparator).last}');
     }
   }
 
@@ -3615,20 +4048,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Warehouse Stock_pdf';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: false, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
       } else {
-      _showPdfPreview(
-        (format) => ReportService().generateWarehousePdf(
-          filtered, 
-          title: 'Current Warehouse Stock Report', 
-          isReturnedReport: false,
-          format: format,
-        ),
-        'Warehouse_Stock_Report.pdf',
-      );
+        _showPdfPreview(
+          (format) => ReportService().generateWarehousePdf(
+            filtered,
+            title: 'Current Warehouse Stock Report',
+            isReturnedReport: false,
+            format: format,
+          ),
+          'Warehouse_Stock_Report.pdf',
+        );
       }
     } catch (e) {
       _showError(e.toString());
@@ -3641,7 +4076,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Warehouse Stock_excel';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: false, yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: false, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
@@ -3653,8 +4090,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               title: 'Export Warehouse Stock',
               recordCount: filtered.length,
               fileName: 'Warehouse_Stock_Report.xlsx',
-              onExport: () => ReportService().exportWarehouseToExcel(filtered, isReturned: false),
-              onSave: (bytes) => _handleFileSave(bytes, 'Warehouse_Status', 'xlsx'),
+              onExport: () => ReportService()
+                  .exportWarehouseToExcel(filtered, isReturned: false),
+              onSave: (bytes) =>
+                  _handleFileSave(bytes, 'Warehouse_Status', 'xlsx'),
             ),
           );
         }
@@ -3670,7 +4109,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Released Packages_pdf';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: true, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
@@ -3678,7 +4119,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       }
       _showPdfPreview(
         (format) => ReportService().generateWarehousePdf(
-          filtered, 
+          filtered,
           title: 'Released Packages Report',
           isReturnedReport: true,
           format: format,
@@ -3696,7 +4137,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     const key = 'Released Packages_excel';
     _setLoading(key, true);
     try {
-      final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: true, yard: _yardArg);
       final filtered = _filterByDate(entries);
       if (filtered.isEmpty) {
         _showNoDataMessage();
@@ -3708,8 +4151,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               title: 'Export Released Data',
               recordCount: filtered.length,
               fileName: 'Released_Packages_Report.xlsx',
-              onExport: () => ReportService().exportWarehouseToExcel(filtered, isReturned: true),
-              onSave: (bytes) => _handleFileSave(bytes, 'Released_Packages', 'xlsx'),
+              onExport: () => ReportService()
+                  .exportWarehouseToExcel(filtered, isReturned: true),
+              onSave: (bytes) =>
+                  _handleFileSave(bytes, 'Released_Packages', 'xlsx'),
             ),
           );
         }
@@ -3730,8 +4175,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       final packages = await svc.getAllPackages(yard: _yardArg);
       // Only packages that carry a legacy SR number.
       var oldEntries = packages
-          .where((p) =>
-              p.oldSrNumber != null && p.oldSrNumber!.trim().isNotEmpty)
+          .where(
+              (p) => p.oldSrNumber != null && p.oldSrNumber!.trim().isNotEmpty)
           .toList();
       oldEntries = _filterByDate(oldEntries);
       oldEntries.sort((a, b) => (b.createdAt).compareTo(a.createdAt));
@@ -3751,15 +4196,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         'Consignee',
         'Status',
       ];
-      final rows = oldEntries.map((p) => [
-        p.oldSrNumber ?? '—',
-        p.srNumber,
-        (p.cusdecNo?.isNotEmpty == true) ? p.cusdecNo! : '—',
-        (p.cusdecDate?.isNotEmpty == true) ? p.cusdecDate! : '—',
-        p.entryDate != null ? df.format(p.entryDate!) : '—',
-        p.consigneeName,
-        _normStatus(p.status),
-      ]).toList();
+      final rows = oldEntries
+          .map((p) => [
+                p.oldSrNumber ?? '—',
+                p.srNumber,
+                (p.cusdecNo?.isNotEmpty == true) ? p.cusdecNo! : '—',
+                (p.cusdecDate?.isNotEmpty == true) ? p.cusdecDate! : '—',
+                p.entryDate != null ? df.format(p.entryDate!) : '—',
+                p.consigneeName,
+                _normStatus(p.status),
+              ])
+          .toList();
 
       final periodLabel = (_startDate != null && _endDate != null)
           ? '${df.format(_startDate!)} to ${df.format(_endDate!)}'
@@ -3828,8 +4275,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 columns: columns,
                 rows: rows,
               ),
-              onSave: (bytes) =>
-                  _handleFileSave(bytes, 'Old_Entries', 'xlsx'),
+              onSave: (bytes) => _handleFileSave(bytes, 'Old_Entries', 'xlsx'),
             ),
           );
         }
@@ -3842,13 +4288,16 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   Future<void> _generateSummaryReport(String periodType, String format) async {
-    final title = '${periodType.toUpperCase()[0]}${periodType.substring(1)} Summary';
+    final title =
+        '${periodType.toUpperCase()[0]}${periodType.substring(1)} Summary';
     final key = '${title}_$format';
     _setLoading(key, true);
     try {
-      final admitted = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
+      final admitted = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(yard: _yardArg);
       final filtered = _filterByDate(admitted);
-      
+
       if (filtered.isEmpty) {
         _showNoDataMessage();
         return;
@@ -3856,7 +4305,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
       final summary = _calculateSummary(filtered, periodType);
       final reportTitle = '$title Package Summary Report';
-      final periodLabel = periodType == 'day' ? 'Date' : (periodType == 'week' ? 'Week Reference' : 'Month');
+      final periodLabel = periodType == 'day'
+          ? 'Date'
+          : (periodType == 'week' ? 'Week Reference' : 'Month');
 
       if (format == 'pdf') {
         _showPdfPreview(
@@ -3865,7 +4316,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             summaryData: summary,
             periodLabel: periodLabel,
             format: format,
-          ), 
+          ),
           '${reportTitle.replaceAll(' ', '_')}.pdf',
         );
       } else {
@@ -3876,8 +4327,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               title: 'Export Summary Data',
               recordCount: summary.length,
               fileName: '${reportTitle.replaceAll(' ', '_')}.xlsx',
-              onExport: () => ReportService().exportSummaryToExcel(summary, periodLabel),
-              onSave: (bytes) => _handleFileSave(bytes, reportTitle.replaceAll(' ', '_'), 'xlsx'),
+              onExport: () =>
+                  ReportService().exportSummaryToExcel(summary, periodLabel),
+              onSave: (bytes) => _handleFileSave(
+                  bytes, reportTitle.replaceAll(' ', '_'), 'xlsx'),
             ),
           );
         }
@@ -3891,12 +4344,18 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
   // The disposition buckets a period summary tracks, beyond admit/release.
   static const List<String> _summaryDispoCols = [
-    'forfeit', 'abandoned', 're-export', 'destroy', 'sold', 'other'
+    'forfeit',
+    'abandoned',
+    're-export',
+    'destroy',
+    'sold',
+    'other'
   ];
 
   String _periodKey(DateTime d, String periodType) {
     if (periodType == 'day') return DateFormat('yyyy-MM-dd').format(d);
-    if (periodType == 'week') return 'Year ${d.year} - Week ${(d.day / 7).ceil()}';
+    if (periodType == 'week')
+      return 'Year ${d.year} - Week ${(d.day / 7).ceil()}';
     return DateFormat('yyyy-MM').format(d);
   }
 
@@ -3914,7 +4373,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     return null; // plain release
   }
 
-  List<Map<String, dynamic>> _calculateSummary(List<WarehouseEntryModel> entries, String periodType) {
+  List<Map<String, dynamic>> _calculateSummary(
+      List<WarehouseEntryModel> entries, String periodType) {
     final Map<String, Map<String, int>> groups = {};
     Map<String, int> blank() => {
           'admitted': 0,
@@ -3941,15 +4401,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
 
     final sortedKeys = groups.keys.toList()..sort((a, b) => b.compareTo(a));
-    return sortedKeys.map((k) => {
-      'period': k,
-      'admitted': groups[k]!['admitted'],
-      'returned': groups[k]!['returned'],
-      for (final c in _summaryDispoCols) c: groups[k]![c],
-    }).toList();
+    return sortedKeys
+        .map((k) => {
+              'period': k,
+              'admitted': groups[k]!['admitted'],
+              'returned': groups[k]!['returned'],
+              for (final c in _summaryDispoCols) c: groups[k]![c],
+            })
+        .toList();
   }
 
-List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
+  List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     if (_selectedWarehouse == 'all') return list;
     return list.where((p) {
       if (p.warehouseEntries.isEmpty) return false;
@@ -3962,9 +4424,8 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     _setLoading(key, true);
     try {
       // Status is resolved per ITEM inside _goodsData (see _generateAllPackagesPdf).
-      final packages = await ref
-          .read(packageServiceProvider)
-          .getAllPackages(yard: _yardArg);
+      final packages =
+          await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
 
       final withDate = _filterByDate(packages);
       final filtered = _filterByWarehouse(withDate);
@@ -3972,8 +4433,9 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
       if (filtered.isEmpty) {
         _showNoDataMessage();
       } else {
-        final statusName = _selectedStatus == 'all' ? 'ALL' : _selectedStatus.toUpperCase();
-        
+        final statusName =
+            _selectedStatus == 'all' ? 'ALL' : _selectedStatus.toUpperCase();
+
         String whSuffix = '';
         if (_selectedWarehouse != 'all') {
           final warehouses = ref.read(warehousesProvider).asData?.value;
@@ -3982,10 +4444,11 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
         }
 
         if (mounted) {
-          final dateRangeStr = (_startDate != null && _endDate != null) 
+          final dateRangeStr = (_startDate != null && _endDate != null)
               ? 'From ${DateFormat('yyyy-MM-dd').format(_startDate!)} To ${DateFormat('yyyy-MM-dd').format(_endDate!)}'
               : 'Full Historical Audit';
-          final data = await _goodsData(filtered, statusFilter: _selectedStatus);
+          final data =
+              await _goodsData(filtered, statusFilter: _selectedStatus);
           if (data.$2.isEmpty) {
             _showNoDataMessage();
             return;
@@ -3996,14 +4459,18 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
             builder: (ctx) => ExcelExportDialog(
               title: 'Export $statusName$whSuffix Inventory Audit',
               recordCount: data.$2.length,
-              fileName: '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit.xlsx',
+              fileName:
+                  '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit.xlsx',
               onExport: () => ReportService().exportTableToExcel(
                 title: '$statusName PACKAGES INVENTORY AUDIT$whSuffix',
                 subTitle: dateRangeStr,
                 columns: data.$1,
                 rows: data.$2,
               ),
-              onSave: (bytes) => _handleFileSave(bytes, '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit', 'xlsx'),
+              onSave: (bytes) => _handleFileSave(
+                  bytes,
+                  '${statusName}${whSuffix.replaceAll(' ', '_')}_Inventory_Audit',
+                  'xlsx'),
             ),
           );
         }
@@ -4070,7 +4537,8 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     const key = 'Item Categories_pdf';
     _setLoading(key, true);
     try {
-      final cats = await ref.read(packageCategoryServiceProvider).getCategories();
+      final cats =
+          await ref.read(packageCategoryServiceProvider).getCategories();
       if (cats.isEmpty) {
         _showNoDataMessage();
         return;
@@ -4090,7 +4558,8 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     const key = 'Item Categories_excel';
     _setLoading(key, true);
     try {
-      final cats = await ref.read(packageCategoryServiceProvider).getCategories();
+      final cats =
+          await ref.read(packageCategoryServiceProvider).getCategories();
       if (cats.isEmpty) {
         _showNoDataMessage();
         return;
@@ -4104,7 +4573,8 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
             recordCount: cats.length,
             fileName: 'Item_Categories_Audit.xlsx',
             onExport: () => ReportService().exportCategoriesToExcel(cats),
-            onSave: (bytes) => _handleFileSave(bytes, 'Item_Categories_Audit', 'xlsx'),
+            onSave: (bytes) =>
+                _handleFileSave(bytes, 'Item_Categories_Audit', 'xlsx'),
           ),
         );
       }
@@ -4121,13 +4591,16 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     const key = 'Warehouses List_pdf';
     _setLoading(key, true);
     try {
-      final warehouses = await ref.read(warehouseServiceProvider).getWarehouses();
-      final stats = await ref.read(warehouseServiceProvider).getWarehouseStats();
+      final warehouses =
+          await ref.read(warehouseServiceProvider).getWarehouses();
+      final stats =
+          await ref.read(warehouseServiceProvider).getWarehouseStats();
       if (warehouses.isEmpty) {
         _showNoDataMessage();
       } else {
         _showPdfPreview(
-          (format) => ReportService().generateWarehousesListPdf(warehouses, stats),
+          (format) =>
+              ReportService().generateWarehousesListPdf(warehouses, stats),
           'Warehouses_List_Audit.pdf',
         );
       }
@@ -4142,8 +4615,10 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     const key = 'Warehouses List_excel';
     _setLoading(key, true);
     try {
-      final warehouses = await ref.read(warehouseServiceProvider).getWarehouses();
-      final stats = await ref.read(warehouseServiceProvider).getWarehouseStats();
+      final warehouses =
+          await ref.read(warehouseServiceProvider).getWarehouses();
+      final stats =
+          await ref.read(warehouseServiceProvider).getWarehouseStats();
       if (warehouses.isEmpty) {
         _showNoDataMessage();
       } else {
@@ -4154,8 +4629,10 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
               title: 'Export Warehouses List',
               recordCount: warehouses.length,
               fileName: 'Warehouses_List_Audit.xlsx',
-              onExport: () => ReportService().exportWarehousesListToExcel(warehouses, stats),
-              onSave: (bytes) => _handleFileSave(bytes, 'Warehouses_List_Audit', 'xlsx'),
+              onExport: () => ReportService()
+                  .exportWarehousesListToExcel(warehouses, stats),
+              onSave: (bytes) =>
+                  _handleFileSave(bytes, 'Warehouses_List_Audit', 'xlsx'),
             ),
           );
         }
@@ -4168,115 +4645,140 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
   }
 
   Future<void> _generateStorageChargesPdf() async {
-     const key = 'Storage Charges_pdf';
-      _setLoading(key, true);
-      try {
-        // Include BOTH in-warehouse and released entries so the report shows
-        // released packages too (with their release date + receipt number).
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
-        final filteredEntries = _filterByDate(entries);
-        if (filteredEntries.isEmpty) {
-          _showNoDataMessage();
-        } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
-          final rates = await ref.read(storageRateProvider.future);
-          _showPdfPreview(
-            (format) => ReportService().generateFinancialPdf(filteredEntries, packages, rates, isRevenue: false),
-            'Storage_Charges_Report.pdf',
-          );
-        }
-      } catch (e) {
-        _showError(e.toString());
-      } finally {
-        _setLoading(key, false);
+    const key = 'Storage Charges_pdf';
+    _setLoading(key, true);
+    try {
+      // Include BOTH in-warehouse and released entries so the report shows
+      // released packages too (with their release date + receipt number).
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(yard: _yardArg);
+      final filteredEntries = _filterByDate(entries);
+      if (filteredEntries.isEmpty) {
+        _showNoDataMessage();
+      } else {
+        final packages = await ref
+            .read(packageServiceProvider)
+            .getAllPackages(yard: _yardArg);
+        final rates = await ref.read(storageRateProvider.future);
+        _showPdfPreview(
+          (format) => ReportService().generateFinancialPdf(
+              filteredEntries, packages, rates,
+              isRevenue: false),
+          'Storage_Charges_Report.pdf',
+        );
       }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
   }
 
   Future<void> _exportStorageChargesExcel() async {
-     const key = 'Storage Charges_excel';
-      _setLoading(key, true);
-      try {
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(yard: _yardArg);
-        final filteredEntries = _filterByDate(entries);
-        if (filteredEntries.isEmpty) {
-          _showNoDataMessage();
-        } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
-          final rates = await ref.read(storageRateProvider.future);
-          if (mounted) {
-            showDialog(
-              context: context,
-              builder: (ctx) => ExcelExportDialog(
-                title: 'Export Storage Charges',
-                recordCount: filteredEntries.length,
-                fileName: 'Storage_Charges_Report.xlsx',
-                onExport: () => ReportService().exportFinancialToExcel(filteredEntries, packages, rates, isRevenue: false),
-                onSave: (bytes) => _handleFileSave(bytes, 'Storage_Charges_Report', 'xlsx'),
-              ),
-            );
-          }
+    const key = 'Storage Charges_excel';
+    _setLoading(key, true);
+    try {
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(yard: _yardArg);
+      final filteredEntries = _filterByDate(entries);
+      if (filteredEntries.isEmpty) {
+        _showNoDataMessage();
+      } else {
+        final packages = await ref
+            .read(packageServiceProvider)
+            .getAllPackages(yard: _yardArg);
+        final rates = await ref.read(storageRateProvider.future);
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => ExcelExportDialog(
+              title: 'Export Storage Charges',
+              recordCount: filteredEntries.length,
+              fileName: 'Storage_Charges_Report.xlsx',
+              onExport: () => ReportService().exportFinancialToExcel(
+                  filteredEntries, packages, rates,
+                  isRevenue: false),
+              onSave: (bytes) =>
+                  _handleFileSave(bytes, 'Storage_Charges_Report', 'xlsx'),
+            ),
+          );
         }
-      } catch (e) {
-        _showError(e.toString());
-      } finally {
-        _setLoading(key, false);
       }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
   }
 
   Future<void> _generateReleasedRevenuePdf() async {
-      const key = 'Released Revenue_pdf';
-      _setLoading(key, true);
-      try {
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
-        final filteredEntries = _filterByDate(entries);
-        if (filteredEntries.isEmpty) {
-          _showNoDataMessage();
-        } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
-          final rates = await ref.read(storageRateProvider.future);
-          _showPdfPreview(
-            (format) => ReportService().generateFinancialPdf(filteredEntries, packages, rates, isRevenue: true),
-            'Released_Revenue_Report.pdf',
-          );
-        }
-      } catch (e) {
-        _showError(e.toString());
-      } finally {
-        _setLoading(key, false);
+    const key = 'Released Revenue_pdf';
+    _setLoading(key, true);
+    try {
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final filteredEntries = _filterByDate(entries);
+      if (filteredEntries.isEmpty) {
+        _showNoDataMessage();
+      } else {
+        final packages = await ref
+            .read(packageServiceProvider)
+            .getAllPackages(yard: _yardArg);
+        final rates = await ref.read(storageRateProvider.future);
+        _showPdfPreview(
+          (format) => ReportService().generateFinancialPdf(
+              filteredEntries, packages, rates,
+              isRevenue: true),
+          'Released_Revenue_Report.pdf',
+        );
       }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
   }
 
   Future<void> _exportReleasedRevenueExcel() async {
-     const key = 'Released Revenue_excel';
-      _setLoading(key, true);
-      try {
-        final entries = await ref.read(warehouseServiceProvider).getAllWarehouseEntries(isReturned: true, yard: _yardArg);
-        final filteredEntries = _filterByDate(entries);
-        if (filteredEntries.isEmpty) {
-          _showNoDataMessage();
-        } else {
-          final packages = await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
-          final rates = await ref.read(storageRateProvider.future);
-          if (mounted) {
-            showDialog(
-              context: context,
-              builder: (ctx) => ExcelExportDialog(
-                title: 'Export Released Revenue',
-                recordCount: filteredEntries.length,
-                fileName: 'Released_Revenue_Report.xlsx',
-                onExport: () => ReportService().exportFinancialToExcel(filteredEntries, packages, rates, isRevenue: true),
-                onSave: (bytes) => _handleFileSave(bytes, 'Released_Revenue_Report', 'xlsx'),
-              ),
-            );
-          }
+    const key = 'Released Revenue_excel';
+    _setLoading(key, true);
+    try {
+      final entries = await ref
+          .read(warehouseServiceProvider)
+          .getAllWarehouseEntries(isReturned: true, yard: _yardArg);
+      final filteredEntries = _filterByDate(entries);
+      if (filteredEntries.isEmpty) {
+        _showNoDataMessage();
+      } else {
+        final packages = await ref
+            .read(packageServiceProvider)
+            .getAllPackages(yard: _yardArg);
+        final rates = await ref.read(storageRateProvider.future);
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => ExcelExportDialog(
+              title: 'Export Released Revenue',
+              recordCount: filteredEntries.length,
+              fileName: 'Released_Revenue_Report.xlsx',
+              onExport: () => ReportService().exportFinancialToExcel(
+                  filteredEntries, packages, rates,
+                  isRevenue: true),
+              onSave: (bytes) =>
+                  _handleFileSave(bytes, 'Released_Revenue_Report', 'xlsx'),
+            ),
+          );
         }
-      } catch (e) {
-        _showError(e.toString());
-      } finally {
-        _setLoading(key, false);
       }
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading(key, false);
+    }
   }
-
 
   List<T> _filterByDate<T>(List<T> list) {
     if (_startDate == null && _endDate == null) return list;
@@ -4300,13 +4802,15 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
 
       // Start date normalization (midnight)
       if (_startDate != null) {
-        final start = DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
+        final start =
+            DateTime(_startDate!.year, _startDate!.month, _startDate!.day);
         if (dt.isBefore(start)) return false;
       }
 
       // End date normalization (end of day)
       if (_endDate != null) {
-        final end = DateTime(_endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59);
+        final end = DateTime(
+            _endDate!.year, _endDate!.month, _endDate!.day, 23, 59, 59);
         if (dt.isAfter(end)) return false;
       }
 
@@ -4330,12 +4834,13 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
     }
   }
 
-  Future<void> _exportSummaryExcel(String reportTitle, String periodLabel, List<Map<String, dynamic>> summary) async {
+  Future<void> _exportSummaryExcel(String reportTitle, String periodLabel,
+      List<Map<String, dynamic>> summary) async {
     final key = 'summary_xl';
     _setLoading(key, true);
     try {
       final fileName = '${reportTitle.replaceAll(' ', '_')}.xlsx';
-      
+
       if (mounted) {
         showDialog(
           context: context,
@@ -4343,8 +4848,10 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
             title: 'Export Summary Data',
             recordCount: summary.length,
             fileName: fileName,
-            onExport: () => ReportService().exportSummaryToExcel(summary, periodLabel),
-            onSave: (bytes) => _handleFileSave(bytes, fileName.replaceAll('.xlsx', ''), 'xlsx'),
+            onExport: () =>
+                ReportService().exportSummaryToExcel(summary, periodLabel),
+            onSave: (bytes) => _handleFileSave(
+                bytes, fileName.replaceAll('.xlsx', ''), 'xlsx'),
           ),
         );
       }
@@ -4370,7 +4877,8 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
             recordCount: profiles.length,
             fileName: fileName,
             onExport: () => ReportService().exportStaffToExcel(profiles),
-            onSave: (bytes) => _handleFileSave(bytes, fileName.replaceAll('.xlsx', ''), 'xlsx'),
+            onSave: (bytes) => _handleFileSave(
+                bytes, fileName.replaceAll('.xlsx', ''), 'xlsx'),
           ),
         );
       }
@@ -4389,7 +4897,9 @@ List<PackageModel> _filterByWarehouse(List<PackageModel> list) {
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Error: $msg'), backgroundColor: context.colors.dangerRed),
+      SnackBar(
+          content: Text('Error: $msg'),
+          backgroundColor: context.colors.dangerRed),
     );
   }
 
@@ -4422,19 +4932,44 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
   Uint8List? _pdfBytes;
   bool _isLoading = true;
 
+  /// How wide a page is drawn, in logical pixels. `PdfPreview` has no zoom of
+  /// its own — it scales each page to `maxPageWidth` — so zooming IS this
+  /// number. A wide table (the Goods Financials report carries seventeen money
+  /// columns) is unreadable at the default, and the reader can now push the
+  /// page well past the dialog's width and pan around it.
+  double _pageWidth = _kDefaultPageWidth;
+
+  static const double _kDefaultPageWidth = 700;
+  static const double _kMinPageWidth = 400;
+  static const double _kMaxPageWidth = 3000;
+
+  /// One press of + or -. Multiplicative, so each step feels the same size at
+  /// any zoom level.
+  static const double _kZoomStep = 1.25;
+
+  void _zoomBy(double factor) => setState(() =>
+      _pageWidth = (_pageWidth * factor).clamp(_kMinPageWidth, _kMaxPageWidth));
+
+  void _resetZoom() => setState(() => _pageWidth = _kDefaultPageWidth);
+
   @override
   void initState() {
     super.initState();
-    // Start with Landscape if it looks like a wide report (like Warehouse)
-    _isLandscape = widget.fileName.toLowerCase().contains('warehouse') || 
-             widget.fileName.toLowerCase().contains('released');
+    // Start with Landscape if it looks like a wide report (like Warehouse).
+    // Goods Financials carries seventeen money columns, so portrait would
+    // crush it — the toggle still lets the reader switch back.
+    final f = widget.fileName.toLowerCase();
+    _isLandscape = f.contains('warehouse') ||
+        f.contains('released') ||
+        f.contains('financials');
     _generatePdf();
   }
 
   Future<void> _generatePdf() async {
     setState(() => _isLoading = true);
     try {
-      final format = _isLandscape ? _baseFormat.landscape : _baseFormat.portrait;
+      final format =
+          _isLandscape ? _baseFormat.landscape : _baseFormat.portrait;
       final bytes = await widget.buildPdf(format);
       setState(() {
         _pdfBytes = bytes;
@@ -4463,7 +4998,10 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
           Expanded(child: _buildBody(context)),
           _buildBottomBar(context),
         ],
-      ).animate().fadeIn(duration: 400.ms).scale(begin: const Offset(0.95, 0.95), curve: Curves.easeOutBack),
+      )
+          .animate()
+          .fadeIn(duration: 400.ms)
+          .scale(begin: const Offset(0.95, 0.95), curve: Curves.easeOutBack),
     );
   }
 
@@ -4475,37 +5013,114 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
         children: [
           Row(
             children: [
-              Icon(Icons.description_rounded, color: context.colors.primaryGold, size: 20),
+              Icon(Icons.description_rounded,
+                  color: context.colors.primaryGold, size: 20),
               const Gap(12),
-              Text('Report Preview', style: Theme.of(context).textTheme.titleLarge?.copyWith(color: context.colors.textPrimary)),
+              Text('Report Preview',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleLarge
+                      ?.copyWith(color: context.colors.textPrimary)),
             ],
           ),
-          IconButton(
-            icon: Icon(Icons.close, color: context.colors.textSecondary),
-            onPressed: () => Navigator.pop(context),
-          ),
+          Row(mainAxisSize: MainAxisSize.min, children: [
+            _zoomButton(
+              context,
+              icon: Icons.remove_rounded,
+              tooltip: 'Zoom out',
+              onPressed: _pageWidth <= _kMinPageWidth
+                  ? null
+                  : () => _zoomBy(1 / _kZoomStep),
+            ),
+            // Tap the percentage to snap back to the default fit.
+            Tooltip(
+              message: 'Reset zoom',
+              child: TextButton(
+                onPressed: _pageWidth == _kDefaultPageWidth ? null : _resetZoom,
+                child: SizedBox(
+                  width: 52,
+                  child: Text(
+                    '${(_pageWidth / _kDefaultPageWidth * 100).round()}%',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ),
+            ),
+            _zoomButton(
+              context,
+              icon: Icons.add_rounded,
+              tooltip: 'Zoom in',
+              onPressed: _pageWidth >= _kMaxPageWidth
+                  ? null
+                  : () => _zoomBy(_kZoomStep),
+            ),
+            const Gap(8),
+            IconButton(
+              icon: Icon(Icons.close, color: context.colors.textSecondary),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ]),
         ],
       ),
     );
   }
 
+  Widget _zoomButton(BuildContext context,
+      {required IconData icon,
+      required String tooltip,
+      required VoidCallback? onPressed}) {
+    return IconButton(
+      tooltip: tooltip,
+      iconSize: 20,
+      icon: Icon(icon,
+          color: onPressed == null
+              ? context.colors.textMuted
+              : context.colors.primaryGold),
+      onPressed: onPressed,
+    );
+  }
+
   Widget _buildBody(BuildContext context) {
     if (_isLoading) {
-      return Center(child: CircularProgressIndicator(color: context.colors.primaryGold));
+      return Center(
+          child: CircularProgressIndicator(color: context.colors.primaryGold));
     }
     if (_pdfBytes == null) return const SizedBox();
 
-    return PdfPreview(
-      build: (format) => _pdfBytes!,
-      useActions: false,
-      canChangePageFormat: false,
-      canChangeOrientation: false,
-      canDebug: false,
-      maxPageWidth: 700,
-      pdfFileName: widget.fileName,
-      loadingWidget: Center(child: CircularProgressIndicator(color: context.colors.primaryGold)),
-      previewPageMargin: const EdgeInsets.all(20),
-    );
+    // Zoomed past the dialog's width, the page has to be pannable sideways —
+    // PdfPreview only scrolls vertically, so it is wrapped in a horizontal
+    // scroller and given exactly the width it was asked to draw at.
+    return LayoutBuilder(builder: (context, c) {
+      final preview = PdfPreview(
+        // The key forces a re-layout when the zoom changes; without it the
+        // preview keeps the page bitmap it already rasterised.
+        key: ValueKey(_pageWidth),
+        build: (format) => _pdfBytes!,
+        useActions: false,
+        canChangePageFormat: false,
+        canChangeOrientation: false,
+        canDebug: false,
+        maxPageWidth: _pageWidth,
+        pdfFileName: widget.fileName,
+        loadingWidget: Center(
+            child:
+                CircularProgressIndicator(color: context.colors.primaryGold)),
+        previewPageMargin: const EdgeInsets.all(20),
+      );
+
+      // Below the dialog's width there is nothing to pan; let it fill.
+      final needed = _pageWidth + 40; // + previewPageMargin
+      if (needed <= c.maxWidth) return preview;
+
+      return SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(width: needed, child: preview),
+      );
+    });
   }
 
   Widget _buildBottomBar(BuildContext context) {
@@ -4521,13 +5136,15 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
           // Simplified Orientation Toggle
           _buildOrientationButton(),
           const Gap(12),
-          Text('(Standard A4 Format)', style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+          Text('(Standard A4 Format)',
+              style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
           const Spacer(),
           // Actions
-          _buildActionItem(context, Icons.print_rounded, 'Send to Printer', context.colors.primaryGold, () {
+          _buildActionItem(context, Icons.print_rounded, 'Send to Printer',
+              context.colors.primaryGold, () {
             if (_pdfBytes != null) {
               Printing.layoutPdf(
-                onLayout: (f) => _pdfBytes!, 
+                onLayout: (f) => _pdfBytes!,
                 name: widget.fileName,
                 // Setting dynamicLayout to false ensures it follows our generated bytes strictly
                 dynamicLayout: false,
@@ -4535,8 +5152,9 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
             }
           }),
           const Gap(24),
-          _buildActionItem(context, Icons.download_rounded, 'Save PDF', Colors.green, () {
-             if (_pdfBytes != null) widget.onSave(_pdfBytes!, widget.fileName);
+          _buildActionItem(
+              context, Icons.download_rounded, 'Save PDF', Colors.green, () {
+            if (_pdfBytes != null) widget.onSave(_pdfBytes!, widget.fileName);
           }),
         ],
       ).animate().slideY(begin: 0.5, curve: Curves.easeOutExpo).fadeIn(),
@@ -4550,15 +5168,23 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         decoration: BoxDecoration(
-          color: isSelected ? context.colors.primaryGold.withOpacity(0.15) : Colors.transparent,
-          border: Border.all(color: isSelected ? context.colors.primaryGold : context.colors.borderColor),
+          color: isSelected
+              ? context.colors.primaryGold.withOpacity(0.15)
+              : Colors.transparent,
+          border: Border.all(
+              color: isSelected
+                  ? context.colors.primaryGold
+                  : context.colors.borderColor),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(label, style: TextStyle(
-          color: isSelected ? context.colors.primaryGold : context.colors.textSecondary,
-          fontSize: 12,
-          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-        )),
+        child: Text(label,
+            style: TextStyle(
+              color: isSelected
+                  ? context.colors.primaryGold
+                  : context.colors.textSecondary,
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            )),
       ),
     );
   }
@@ -4575,18 +5201,22 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
         ),
         child: Row(
           children: [
-            Icon(_isLandscape ? Icons.landscape_rounded : Icons.portrait_rounded, 
-                 size: 16, color: context.colors.textPrimary),
+            Icon(
+                _isLandscape ? Icons.landscape_rounded : Icons.portrait_rounded,
+                size: 16,
+                color: context.colors.textPrimary),
             const Gap(6),
-            Text(_isLandscape ? 'Landscape' : 'Portrait', 
-                 style: TextStyle(color: context.colors.textPrimary, fontSize: 11)),
+            Text(_isLandscape ? 'Landscape' : 'Portrait',
+                style:
+                    TextStyle(color: context.colors.textPrimary, fontSize: 11)),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildActionItem(BuildContext context, IconData icon, String label, Color color, VoidCallback onTap) {
+  Widget _buildActionItem(BuildContext context, IconData icon, String label,
+      Color color, VoidCallback onTap) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -4595,7 +5225,9 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
         children: [
           Icon(icon, color: color, size: 20),
           const Gap(2),
-          Text(label, style: TextStyle(color: context.colors.textPrimary, fontSize: 10)),
+          Text(label,
+              style:
+                  TextStyle(color: context.colors.textPrimary, fontSize: 10)),
         ],
       ),
     );
@@ -4652,11 +5284,13 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(Icons.table_view_rounded, color: Colors.green, size: 48)
-                .animate().scale(delay: 100.ms, curve: Curves.elasticOut),
+                .animate()
+                .scale(delay: 100.ms, curve: Curves.elasticOut),
             const Gap(16),
             Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
             const Gap(8),
-            Text('Excel Data Export', style: TextStyle(color: context.colors.textSecondary)),
+            Text('Excel Data Export',
+                style: TextStyle(color: context.colors.textSecondary)),
             const Gap(24),
             Container(
               padding: const EdgeInsets.all(16),
@@ -4681,7 +5315,8 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
                 Expanded(
                   child: TextButton(
                     onPressed: () => Navigator.pop(context),
-                    child: Text('Cancel', style: TextStyle(color: context.colors.textSecondary)),
+                    child: Text('Cancel',
+                        style: TextStyle(color: context.colors.textSecondary)),
                   ),
                 ),
                 const Gap(12),
@@ -4693,9 +5328,16 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
                       backgroundColor: Colors.green,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
-                    child: _isExporting 
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : const Text('Export Now', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+                    child: _isExporting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Text('Export Now',
+                            style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold)),
                   ),
                 ),
               ],
@@ -4710,8 +5352,14 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
-        Text(value, style: TextStyle(color: context.colors.textPrimary, fontWeight: FontWeight.bold, fontSize: 13)),
+        Text(label,
+            style:
+                TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+        Text(value,
+            style: TextStyle(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.bold,
+                fontSize: 13)),
       ],
     );
   }
@@ -4801,13 +5449,14 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
     final filtered = q.isEmpty
         ? widget.packages
         : widget.packages.where((p) {
-            final items = p.items.map((i) => i.itemName).join(' ').toLowerCase();
+            final items =
+                p.items.map((i) => i.itemName).join(' ').toLowerCase();
             return p.srNumber.toLowerCase().contains(q) ||
                 p.consigneeName.toLowerCase().contains(q) ||
                 items.contains(q);
           }).toList();
-    final allShownSelected = filtered.isNotEmpty &&
-        filtered.every((p) => _selected.contains(p.id));
+    final allShownSelected =
+        filtered.isNotEmpty && filtered.every((p) => _selected.contains(p.id));
 
     return Dialog(
       backgroundColor: Colors.transparent,
@@ -4831,8 +5480,7 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
           children: [
             // ── Header (matches the New Disposal Request dialog) ──
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: isDark
@@ -4906,8 +5554,7 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
                         decoration: BoxDecoration(
                           color: context.colors.cardDark,
                           borderRadius: BorderRadius.circular(14),
-                          border:
-                              Border.all(color: context.colors.borderColor),
+                          border: Border.all(color: context.colors.borderColor),
                         ),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -4928,8 +5575,8 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
                                 TextButton.icon(
                                   onPressed: allShownSelected
                                       ? null
-                                      : () => setState(() => _selected.addAll(
-                                          filtered.map((p) => p.id))),
+                                      : () => setState(() => _selected
+                                          .addAll(filtered.map((p) => p.id))),
                                   icon: Icon(Icons.done_all_rounded,
                                       size: 16, color: gold),
                                   label: Text('Select All',
@@ -4941,8 +5588,7 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
                                 TextButton.icon(
                                   onPressed: _selected.isEmpty
                                       ? null
-                                      : () =>
-                                          setState(() => _selected.clear()),
+                                      : () => setState(() => _selected.clear()),
                                   icon: Icon(Icons.remove_done_rounded,
                                       size: 16,
                                       color: context.colors.dangerRed),
@@ -4963,8 +5609,7 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
                                       padding: const EdgeInsets.all(28),
                                       child: Text('No matching packages',
                                           style: TextStyle(
-                                              color:
-                                                  context.colors.textMuted)),
+                                              color: context.colors.textMuted)),
                                     )
                                   : ListView.separated(
                                       shrinkWrap: true,
@@ -4977,8 +5622,7 @@ class _QrLabelPickerDialogState extends State<_QrLabelPickerDialog> {
                                         final p = filtered[i];
                                         return _QrPackageRow(
                                           package: p,
-                                          isSelected:
-                                              _selected.contains(p.id),
+                                          isSelected: _selected.contains(p.id),
                                           onToggle: () => setState(() {
                                             if (_selected.contains(p.id)) {
                                               _selected.remove(p.id);

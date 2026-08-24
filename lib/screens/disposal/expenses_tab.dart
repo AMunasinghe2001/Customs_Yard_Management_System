@@ -41,7 +41,7 @@ class ExpensesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
-    final rowsAsync = ref.watch(goodsFinancialsProvider);
+    final rowsAsync = ref.watch(srFinancialsProvider);
     final page = ref.watch(_expensePageProvider);
 
     return Padding(
@@ -75,13 +75,13 @@ class ExpensesTab extends ConsumerWidget {
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(goodsFinancialsProvider)),
+                  onRetry: () => ref.refresh(srFinancialsProvider)),
               data: (all) {
                 final q =
                     ref.watch(disposalSearchProvider(_tabKey)).toLowerCase();
                 final yf = ref.watch(disposalYardFilterProvider(_tabKey));
 
-                // Only goods that carry a deposit or already have a cost are
+                // Only SRs that carry a deposit or already have a cost are
                 // worth listing — the rest have nothing to account for.
                 var rows = all.where(
                     (r) => r.destroyingDeposit > 0 || r.depositSpent > 0);
@@ -94,8 +94,7 @@ class ExpensesTab extends ConsumerWidget {
                 }
                 if (q.isNotEmpty) {
                   rows = rows.where((r) =>
-                      r.srNumber.toLowerCase().contains(q) ||
-                      r.goodsName.toLowerCase().contains(q));
+                      r.srNumber.toLowerCase().contains(q));
                 }
                 final list = rows.toList();
 
@@ -114,7 +113,7 @@ class ExpensesTab extends ConsumerWidget {
                     // Counts the SAME rows the table shows.
                     Row(children: [
                       StatChip(
-                          label: 'Goods with a deposit',
+                          label: 'SRs with a deposit',
                           value: '${list.length}',
                           color: amber),
                       const Gap(12),
@@ -144,7 +143,7 @@ final _expensePageProvider = StateProvider<int>((ref) => 0);
 
 /// Running totals for whatever the table is currently showing.
 class _TotalsStrip extends StatelessWidget {
-  final List<GoodsFinancials> rows;
+  final List<SrFinancials> rows;
   const _TotalsStrip({required this.rows});
 
   @override
@@ -227,7 +226,7 @@ class _TotalChip extends StatelessWidget {
 }
 
 class _ExpensesTable extends ConsumerWidget {
-  final List<GoodsFinancials> rows;
+  final List<SrFinancials> rows;
   const _ExpensesTable({required this.rows});
 
   @override
@@ -253,14 +252,13 @@ class _ExpensesTable extends ConsumerWidget {
           headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
           empty: const EmptyTableState(
               icon: Icons.receipt_long_outlined,
-              message: 'No goods with a destroying deposit',
+              message: 'No SRs with a destroying deposit',
               subtitle:
-                  'Goods carrying a deposit appear here once they are registered.'),
+                  'SRs carrying a deposit appear here once registered.'),
           columns: const [
             DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-            DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
             DataColumn2(
-                label: Text('Deposit'), size: ColumnSize.S, numeric: true),
+                label: Text('Destroy Deposit'), size: ColumnSize.S, numeric: true),
             DataColumn2(
                 label: Text('Destruction'), size: ColumnSize.S, numeric: true),
             DataColumn2(
@@ -279,7 +277,6 @@ class _ExpensesTable extends ConsumerWidget {
                     style: TextStyle(
                         color: context.colors.accentLightBlue,
                         fontWeight: FontWeight.w700))),
-                DataCell(TooltipText(r.goodsName)),
                 DataCell(Text(money.format(r.destroyingDeposit))),
                 DataCell(Text(
                     r.destructionExpense == 0
@@ -316,12 +313,12 @@ class _ExpensesTable extends ConsumerWidget {
                             fontWeight: FontWeight.w800))),
                 DataCell(Center(
                   child: IconButton(
-                    tooltip: 'Record costs for these goods',
+                    tooltip: 'Record costs for this SR',
                     icon: Icon(Icons.edit_note_rounded,
                         size: 20, color: context.colors.successGreen),
                     onPressed: () => showDialog(
                       context: context,
-                      builder: (_) => _RecordExpenseDialog(goods: r),
+                      builder: (_) => _RecordExpenseDialog(sr: r),
                     ),
                   ),
                 )),
@@ -333,11 +330,11 @@ class _ExpensesTable extends ConsumerWidget {
   }
 }
 
-/// Records both costs for ONE goods item, and previews the resulting refund
+/// Records both costs for ONE SR, and previews the resulting refund
 /// live so the officer sees the consequence before saving.
 class _RecordExpenseDialog extends ConsumerStatefulWidget {
-  final GoodsFinancials goods;
-  const _RecordExpenseDialog({required this.goods});
+  final SrFinancials sr;
+  const _RecordExpenseDialog({required this.sr});
 
   @override
   ConsumerState<_RecordExpenseDialog> createState() =>
@@ -353,16 +350,15 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
   @override
   void initState() {
     super.initState();
-    // Pre-filled with what is already recorded: saving REPLACES the figure
-    // rather than adding to it, so the field must show the current value.
+    // Pre-filled with what is already recorded for the SR.
     _destruction = TextEditingController(
-        text: widget.goods.destructionExpense == 0
+        text: widget.sr.destructionExpense == 0
             ? ''
-            : widget.goods.destructionExpense.toStringAsFixed(2));
+            : widget.sr.destructionExpense.toStringAsFixed(2));
     _advertising = TextEditingController(
-        text: widget.goods.advertisingExpense == 0
+        text: widget.sr.advertisingExpense == 0
             ? ''
-            : widget.goods.advertisingExpense.toStringAsFixed(2));
+            : widget.sr.advertisingExpense.toStringAsFixed(2));
     _destruction.addListener(_refresh);
     _advertising.addListener(_refresh);
   }
@@ -383,12 +379,12 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
       double.tryParse(_advertising.text.trim()) ?? 0;
   double get _spent => _destructionValue + _advertisingValue;
   double get _refund {
-    final left = widget.goods.destroyingDeposit - _spent;
+    final left = widget.sr.destroyingDeposit - _spent;
     return left > 0 ? left : 0;
   }
 
   double get _deficit {
-    final over = _spent - widget.goods.destroyingDeposit;
+    final over = _spent - widget.sr.destroyingDeposit;
     return over > 0 ? over : 0;
   }
 
@@ -397,26 +393,26 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
     try {
       final svc = ref.read(disposalServiceProvider);
       final note = _note.text.trim().isEmpty ? null : _note.text.trim();
-      // Both are upserts keyed on (item, kind), so re-saving corrects the
-      // figure instead of double-counting it against the deposit.
+      final itemId =
+          widget.sr.goods.isNotEmpty ? widget.sr.goods.first.itemId : null;
       await svc.addFinancialExpense(
         kind: 'destruction_expense',
         amount: _destructionValue,
         description: note,
-        srNumber: widget.goods.srNumber,
-        packageItemId: widget.goods.itemId,
+        srNumber: widget.sr.srNumber,
+        packageItemId: itemId,
       );
       await svc.addFinancialExpense(
         kind: 'advertising_expense',
         amount: _advertisingValue,
         description: note,
-        srNumber: widget.goods.srNumber,
-        packageItemId: widget.goods.itemId,
+        srNumber: widget.sr.srNumber,
+        packageItemId: itemId,
       );
       ref.read(financialExpensesRefreshProvider.notifier).trigger();
       if (!mounted) return;
       Navigator.pop(context);
-      context.showSuccess('Costs recorded for ${widget.goods.goodsName}');
+      context.showSuccess('Costs recorded for ${widget.sr.srNumber}');
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -431,7 +427,7 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
 
     return StyledFormDialog(
       label: 'DISPOSAL EXPENSES',
-      title: widget.goods.goodsName,
+      title: widget.sr.srNumber,
       icon: Icons.receipt_long_rounded,
       headerAccentColor: green,
       width: 520,
@@ -460,14 +456,13 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
         mainAxisSize: MainAxisSize.min,
         children: [
           StyledFormSection(
-            title: 'Goods',
-            icon: Icons.inventory_2_rounded,
+            title: 'SR Details',
+            icon: Icons.folder_rounded,
             children: [
-              _KeyValue(label: 'SR Number', value: widget.goods.srNumber),
-              _KeyValue(label: 'Quantity', value: '${widget.goods.quantity}'),
+              _KeyValue(label: 'SR Number', value: widget.sr.srNumber),
               _KeyValue(
                 label: 'Destroying Deposit',
-                value: 'LKR ${money.format(widget.goods.destroyingDeposit)}',
+                value: 'LKR ${money.format(widget.sr.destroyingDeposit)}',
                 emphasise: true,
               ),
             ],
@@ -524,7 +519,7 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
             child: Column(children: [
               _KeyValue(
                   label: 'Deposit',
-                  value: 'LKR ${money.format(widget.goods.destroyingDeposit)}'),
+                  value: 'LKR ${money.format(widget.sr.destroyingDeposit)}'),
               _KeyValue(
                   label: 'Less costs', value: '− LKR ${money.format(_spent)}'),
               Divider(color: context.colors.borderColor, height: 18),

@@ -126,6 +126,81 @@ class ExecutiveYardFilter extends StatelessWidget {
   }
 }
 
+class ExecutiveDateFilter extends StatelessWidget {
+  final String? filterType;
+  final String label;
+  final ValueChanged<String?> onChanged;
+
+  const ExecutiveDateFilter({
+    super.key,
+    required this.filterType,
+    required this.label,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppTheme.executiveTeal;
+    final isSelected = filterType != null && filterType != 'all';
+    final activeColor = isSelected ? context.colors.primaryGold : accent;
+
+    return Theme(
+      data: Theme.of(context).copyWith(
+        inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+              filled: true,
+              fillColor: isSelected
+                  ? context.colors.primaryGold.withOpacity(0.08)
+                  : accent.withOpacity(0.06),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                      color: isSelected
+                          ? context.colors.primaryGold
+                          : accent.withOpacity(0.4))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(
+                      color: isSelected
+                          ? context.colors.primaryGold
+                          : accent.withOpacity(0.4))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: activeColor, width: 1.5)),
+            ),
+      ),
+      child: StyledDropdownFormField<String>(
+        label: isSelected ? label : 'Date Filter',
+        floatingLabelBehavior: FloatingLabelBehavior.never,
+        value: (filterType == null || filterType == 'all') ? '_all' : filterType,
+        helperText: null,
+        isDense: true,
+        menuWidth: 200,
+        splashRadius: 14,
+        contentPadding: kExecutiveFilterPadding,
+        prefixIcon: Icon(
+          filterType == 'day'
+              ? Icons.today_rounded
+              : (filterType == 'month'
+                  ? Icons.calendar_view_month_rounded
+                  : (filterType == 'year'
+                      ? Icons.calendar_view_week_rounded
+                      : Icons.calendar_month_rounded)),
+          color: activeColor,
+          size: 20,
+        ),
+        options: const [
+          StyledDropdownOption('_all', 'All Time'),
+          StyledDropdownOption('range', 'Custom Date Range'),
+          StyledDropdownOption('day', 'Single Day'),
+          StyledDropdownOption('month', 'By Month'),
+          StyledDropdownOption('year', 'By Year'),
+        ],
+        onChanged: (v) => onChanged((v == null || v == '_all') ? 'all' : v),
+      ),
+    );
+  }
+}
+
 Widget executiveFilterChip(
   BuildContext context, {
   required String label,

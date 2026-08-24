@@ -202,7 +202,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
     required this.onChanged,
     this.validator,
     this.isDense = true,
-    this.helperText = ' ',
+    this.helperText,
     this.columns = 1,
     this.perPage = 8,
     this.menuWidth = 260,
@@ -261,7 +261,9 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 labelStyle: labelStyle ?? const TextStyle(fontSize: 12),
                 floatingLabelBehavior: floatingLabelBehavior,
                 isDense: isDense,
-                helperText: helperText,
+                helperText: (helperText == null || helperText!.trim().isEmpty)
+                    ? null
+                    : helperText,
                 filled: fillColor != null,
                 fillColor: fillColor,
                 errorText: field.errorText,

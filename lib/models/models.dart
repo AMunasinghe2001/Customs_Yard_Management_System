@@ -104,8 +104,7 @@ class PackageModel {
       totalItemCount: json['total_item_count'] as int? ?? 1,
       description: json['description'] as String?,
       containerNumber: json['container_number'] as String?,
-      destroyingDeposit:
-          (json['destroying_deposit'] as num?)?.toDouble(),
+      destroyingDeposit: (json['destroying_deposit'] as num?)?.toDouble(),
       consigneeName: json['consignee_name'] as String,
       consigneeNic: json['consignee_nic'] as String?,
       consigneeAddress: json['consignee_address'] as String?,
@@ -268,7 +267,9 @@ class PackageModel {
   bool isItemForfeited(String itemId) {
     final item = items.where((i) => i.id == itemId).firstOrNull;
     final st = (item?.status ?? '').trim().toLowerCase();
-    if (st == 'forfeit' || st == 'forfeited' || st == 'forfiet' ||
+    if (st == 'forfeit' ||
+        st == 'forfeited' ||
+        st == 'forfiet' ||
         st == 'confiscated') {
       return true;
     }
@@ -576,7 +577,8 @@ class WarehouseEntryModel {
     }
     // Fallback: if no packageItemId but ALL items are seized/disposed, no charge
     if (packageItemId == null && items.isNotEmpty) {
-      final allSeized = items.every((i) => isNoChargeStatus(i.status.toLowerCase()));
+      final allSeized =
+          items.every((i) => isNoChargeStatus(i.status.toLowerCase()));
       if (allSeized) return 0;
     }
 
@@ -704,9 +706,13 @@ class ProfileModel {
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
       isOnline: json['is_online'] as bool? ?? false,
-      lastSeenAt: json['last_seen_at'] != null ? DateTime.parse(json['last_seen_at'] as String).toLocal() : null,
+      lastSeenAt: json['last_seen_at'] != null
+          ? DateTime.parse(json['last_seen_at'] as String).toLocal()
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
-      passwordUpdatedAt: json['password_updated_at'] != null ? DateTime.parse(json['password_updated_at'] as String).toLocal() : null,
+      passwordUpdatedAt: json['password_updated_at'] != null
+          ? DateTime.parse(json['password_updated_at'] as String).toLocal()
+          : null,
     );
   }
 
@@ -724,9 +730,8 @@ class ProfileModel {
 
   /// Accounts automatically deactivate 8 months after they were created.
   /// (Applies to admins and officers alike.)
-  DateTime get expiresAt =>
-      DateTime(createdAt.year, createdAt.month + 8, createdAt.day,
-          createdAt.hour, createdAt.minute, createdAt.second);
+  DateTime get expiresAt => DateTime(createdAt.year, createdAt.month + 8,
+      createdAt.day, createdAt.hour, createdAt.minute, createdAt.second);
 
   /// Appeal Directorate (AD/ADD) user — cross-yard forfeited-package review +
   /// appeal-hold authority.
@@ -744,7 +749,10 @@ class ProfileModel {
   /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC) are institutional and
   /// never auto-expire (officers transfer in/out of the post).
   bool get isExpired =>
-      !isDisposal && !isAppeal && !isValuation && !isExecutive &&
+      !isDisposal &&
+      !isAppeal &&
+      !isValuation &&
+      !isExecutive &&
       DateTime.now().isAfter(expiresAt);
 
   /// Whether the account may currently sign in: explicitly active AND not
@@ -949,9 +957,12 @@ class GoodsFinancials {
 
   /// Income attributable to these goods.
   final double srCharges;
-  final double destroyingDeposit;
   final double saleProceeds;
   final double taxes;
+
+  /// Breakdown of taxes by tax name (e.g. VAT, PAL).
+  final Map<String, double>? _taxesByName;
+  Map<String, double> get taxesByName => _taxesByName ?? const {};
 
   /// Costs Central Disposal recorded against these goods.
   final double destructionExpense;
@@ -964,23 +975,105 @@ class GoodsFinancials {
     this.yard,
     this.quantity = 0,
     this.srCharges = 0,
-    this.destroyingDeposit = 0,
     this.saleProceeds = 0,
     this.taxes = 0,
+    Map<String, double>? taxesByName,
     this.destructionExpense = 0,
     this.advertisingExpense = 0,
-  });
+  }) : _taxesByName = taxesByName;
 
-  /// What the deposit was spent on.
+  /// What this item cost to dispose of. Charged against its SR's deposit, not
+  /// against a deposit of its own — see [SrFinancials].
   double get depositSpent => destructionExpense + advertisingExpense;
 
-  /// Returned to the depositor: the unspent part of the deposit.
-  double get refund =>
-      (destroyingDeposit - depositSpent) > 0 ? destroyingDeposit - depositSpent : 0;
+  /// Whether anything at all was recorded for these goods. The deposit is NOT
+  /// consulted: it belongs to the SR, so a package whose only figure is its
+  /// SR's deposit has nothing of its own to report.
+  bool get isEmpty =>
+      srCharges == 0 && saleProceeds == 0 && taxes == 0 && depositSpent == 0;
+}
+
+/// One SR's financial position — the row the Financials tab and the Expenses
+/// tab both list.
+///
+/// **The destroying deposit is lodged once per SR**, not per goods, so the
+/// whole ledger is kept at SR level. An SR holding four packages has ONE
+/// deposit, and what is charged against it is the SUM of all four packages'
+/// destruction and advertising costs:
+///
+///     refund = destroyingDeposit - Σ(destruction + advertising)
+///
+/// floored at zero — a deposit cannot refund more than it held. When the costs
+/// exceed it the shortfall is reported by [deficit] instead.
+///
+/// Deriving the refund from the SR total is the only correct way to do it:
+/// splitting the deposit across packages and refunding each separately would
+/// let one package's surplus hide another's overspend.
+class SrFinancials {
+  final String srNumber;
+  final String? yard;
+  final DateTime? date;
+
+  /// The goods this SR covers, so a row can be expanded to its packages.
+  final List<GoodsFinancials> goods;
+
+  /// Lodged once for the whole SR.
+  final double destroyingDeposit;
+
+  const SrFinancials({
+    required this.srNumber,
+    this.yard,
+    this.date,
+    this.goods = const [],
+    this.destroyingDeposit = 0,
+  });
+
+  int get packageCount => goods.length;
+
+  /// Combined names of all goods covered by this SR.
+  String get goodsName {
+    if (goods.isEmpty) return '—';
+    final names = goods
+        .map((g) => g.goodsName)
+        .where((n) => n.trim().isNotEmpty)
+        .toSet();
+    if (names.isEmpty) return '—';
+    return names.join(', ');
+  }
+
+  int get quantity => goods.fold(0, (a, g) => a + g.quantity);
+
+  double get srCharges => goods.fold(0.0, (a, g) => a + g.srCharges);
+  double get saleProceeds => goods.fold(0.0, (a, g) => a + g.saleProceeds);
+  double get taxes => goods.fold(0.0, (a, g) => a + g.taxes);
+
+  Map<String, double> get taxesByName {
+    final result = <String, double>{};
+    for (final g in goods) {
+      g.taxesByName.forEach((k, v) {
+        result[k] = (result[k] ?? 0) + v;
+      });
+    }
+    return result;
+  }
+
+  double get destructionExpense =>
+      goods.fold(0.0, (a, g) => a + g.destructionExpense);
+  double get advertisingExpense =>
+      goods.fold(0.0, (a, g) => a + g.advertisingExpense);
+
+  /// Every package's costs together — this is what the single deposit pays.
+  double get depositSpent => destructionExpense + advertisingExpense;
+
+  /// Returned to the depositor: the unspent part of the SR's deposit.
+  double get refund => (destroyingDeposit - depositSpent) > 0
+      ? destroyingDeposit - depositSpent
+      : 0;
 
   /// Costs beyond what the deposit covered. Zero when the deposit was enough.
-  double get deficit =>
-      (depositSpent - destroyingDeposit) > 0 ? depositSpent - destroyingDeposit : 0;
+  double get deficit => (depositSpent - destroyingDeposit) > 0
+      ? depositSpent - destroyingDeposit
+      : 0;
 
   double get totalIncome =>
       srCharges + destroyingDeposit + saleProceeds + taxes;
@@ -989,7 +1082,11 @@ class GoodsFinancials {
 
   double get netBalance => totalIncome - totalExpenditure;
 
-  /// Whether anything at all was recorded for these goods.
+  /// Where this SR's sale proceeds are distributed. The same rule as the page
+  /// total, applied per SR, so the columns down the table add up to the cards.
+  SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
+
+  /// Whether anything at all was recorded against this SR.
   bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
 }
 
@@ -1037,24 +1134,29 @@ class ForfeitedPackageModel {
   final DateTime appealDeadline;
   final String reason;
   final String? yard;
+
   /// Where this package entered the disposal pipeline: 'forfeit' (the default,
   /// genuine forfeitures) or 'abandoned' (an abandoned package routed through
   /// the same pipeline via a synthetic forfeited_packages row).
   final String source;
+
   /// Set by the Appeal Directorate when an appeal is received before the appeal
   /// window passes — a held package cannot be sold or destroyed.
   final bool appealHold;
   final String? appealHoldNote;
   final DateTime? appealHeldAt;
+
   /// Per-item hold: IDs of specific package_items currently on hold.
   /// Empty = no per-item holds (falls back to appealHold for legacy rows).
   final List<String> heldItemIds;
+
   /// Recorded by the Appeal Directorate when an appeal hold is lifted — the
   /// decision the owning yard should act on: 'RELEASE', 'SALE', 'DESTROY',
   /// 'RE-EXPORT' or 'OTHER' (custom outcome carried in [appealDecisionNote]).
   final String? appealDecision;
   final String? appealDecisionNote;
   final DateTime? appealDecidedAt;
+
   /// Per-item appeal decisions: itemId → {decision, note, decided_at, decided_by}.
   /// The Appeal Directorate decides one item at a time, so a multi-item package
   /// can have some items decided (e.g. SALE) while siblings are still in appeal.
@@ -1067,9 +1169,11 @@ class ForfeitedPackageModel {
   /// each item separately. Null for genuine package-level forfeit rows.
   final String? itemId;
   final String? itemName;
+
   /// For per-entry abandoned rows: the quantity actually abandoned in that
   /// warehouse entry event (entry.itemCount), not the total item quantity.
   final int? entryQty;
+
   /// Valuation unit cost set by the Valuation Directorate (LKR per unit).
   final double? valuationCost;
 
@@ -1223,10 +1327,9 @@ class ForfeitedPackageModel {
       appealHeldAt: json['appeal_held_at'] != null
           ? DateTime.parse(json['appeal_held_at'] as String).toLocal()
           : null,
-      heldItemIds: (json['held_item_ids'] as List?)
-              ?.map((e) => e.toString())
-              .toList() ??
-          const [],
+      heldItemIds:
+          (json['held_item_ids'] as List?)?.map((e) => e.toString()).toList() ??
+              const [],
       appealDecision: json['appeal_decision'] as String?,
       appealDecisionNote: json['appeal_decision_note'] as String?,
       appealDecidedAt: json['appeal_decided_at'] != null
@@ -1736,8 +1839,7 @@ class TenderSaleItemModel {
 
   /// The yard this tender item belongs to; falls back to the forfeited package's
   /// yard when the `yard` column is empty (mirrors [DestructionItemModel]).
-  String? get effectiveYard =>
-      yard.isNotEmpty ? yard : forfeited?.yard;
+  String? get effectiveYard => yard.isNotEmpty ? yard : forfeited?.yard;
 }
 
 class TenderSaleModel {
@@ -1870,8 +1972,10 @@ class DestructionItemModel {
   final bool delivered;
   final DateTime? deliveredAt;
   final String? notes;
+
   /// Price recorded when the item was marked destroyed (0 until destroyed).
   final double destroyedPrice;
+
   /// Taxes applied to [destroyedPrice] — list of {name, percentage, amount}.
   final List<dynamic> appliedTaxes;
   final ForfeitedPackageModel? forfeited;
@@ -1919,8 +2023,7 @@ class DestructionItemModel {
   /// may have an empty `yard` column, which would wrongly drop the item from a
   /// yard's view-only Destruction Sale list — fall back to the forfeited
   /// package's yard so those rows stay visible (mirrors the Tender Sale page).
-  String? get effectiveYard =>
-      yard.isNotEmpty ? yard : forfeited?.yard;
+  String? get effectiveYard => yard.isNotEmpty ? yard : forfeited?.yard;
 }
 
 class DestructionModel {
@@ -2034,8 +2137,7 @@ const Map<String, String> kDispositions = {
   'sale': 'Sale',
 };
 
-String dispositionLabel(String? code) =>
-    kDispositions[code] ?? (code ?? '—');
+String dispositionLabel(String? code) => kDispositions[code] ?? (code ?? '—');
 
 class DisposalRequestItemModel {
   final String id;
@@ -2043,8 +2145,10 @@ class DisposalRequestItemModel {
   final String forfeitedPackageId;
   final String disposition; // 'destruction' | 'sale'
   final ForfeitedPackageModel? forfeited;
+
   /// Per-item cost set by the Valuation Directorate (null until valued).
   final double? valuationCost;
+
   /// Whether THIS item has been forwarded to Central Disposal (per-item gate).
   final bool forwarded;
 
@@ -2129,6 +2233,7 @@ class DisposalRequestModel {
   final DateTime createdAt;
   final String? createdByName;
   final List<DisposalRequestItemModel> items;
+
   /// Valuation gate: 'pending_valuation' (only the Valuation Directorate sees
   /// it) or 'forwarded' (released to the Central Disposal Directorate).
   final String valuationStatus;
@@ -2157,8 +2262,8 @@ class DisposalRequestModel {
   factory DisposalRequestModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['disposal_request_items'] as List? ?? const [];
     final items = itemsJson
-        .map((e) =>
-            DisposalRequestItemModel.fromJson(e as Map<String, dynamic>))
+        .map(
+            (e) => DisposalRequestItemModel.fromJson(e as Map<String, dynamic>))
         .toList();
     // 'profiles' is the created_by join; 'valued_profile' the valued_by join.
     return DisposalRequestModel(
@@ -2174,8 +2279,8 @@ class DisposalRequestModel {
       valuedAt: json['valued_at'] != null
           ? DateTime.parse(json['valued_at'] as String)
           : null,
-      valuedByName: (json['valued_profile'] as Map<String, dynamic>?)?[
-          'full_name'] as String?,
+      valuedByName: (json['valued_profile']
+          as Map<String, dynamic>?)?['full_name'] as String?,
     );
   }
 }

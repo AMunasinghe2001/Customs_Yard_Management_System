@@ -603,3 +603,17 @@ Each portal's tabs must carry the same search box, yard dropdown and chips. Tabs
 - **[executive_header.dart](lib/screens/executive/executive_header.dart)** — `ExecutiveSearchField`, `ExecutiveYardFilter`, `executiveFilterChip`, and **`kExecutiveFilterPadding`**. Both controls take their height from that padding: **never set an explicit height on either**, or they land on different levels and the dropdown's InkWell splash spills past its border.
 
 Central Disposal's Expenses tab and the High Panel's Financials tab both use these, plus the shared `TablePager` (`kClientPageSize` = 20). A filter can leave a pager past the end of the list, so both clamp the page index before slicing.
+
+## Goods Financials report (2026-08-24)
+
+A High Panel report listing every figure the Financials tab totals, **one row per goods item** — `_generateGoodsFinancialsReport` in [reports_screen.dart](lib/screens/reports/reports_screen.dart), carded in the "High Panel Officers Reports" section (PDF + Excel, no View, like its siblings).
+
+- Reads **`goodsFinancialsProvider`** — the same provider the tab watches — so the report and the screen can never disagree. Seventeen columns: SR · Goods · Qty, the four income lines + Total Income, the three expenditure lines + Total Expenditure, Net, then the four proceeds-split columns.
+- Honours the portal's yard picker, falling back to `yardOfSrNumber(srNumber)` when a row carries no yard, exactly as the tab's filter does.
+- **The refund total is accumulated inside the filter loop, not re-derived at the end.** Summing `all` would have leaked cross-yard figures into a filtered report, and computing it from the totals would let one item's shortfall eat another item's refund. Same reason `GoodsFinancials.split` exists per item: applying the split rule per goods keeps the columns adding up to the cards.
+- `ReportPreviewDialog` picks its orientation from the FILE NAME (`warehouse` / `released` / now `financials` start landscape). Seventeen money columns are unreadable on portrait A4.
+
+## Reports: PDF zoom + yard-scoped warehouse picker (2026-08-24)
+
+- **`PdfPreview` has no zoom of its own** — it scales each page to `maxPageWidth`, so zooming IS that number. `_ReportPreviewDialogState` now holds `_pageWidth` (default 700, clamped 400..3000, x1.25 per press) with +/- buttons and a tap-to-reset percentage in the header. Two details matter: the preview needs a `ValueKey(_pageWidth)` or it keeps the bitmap it already rasterised, and once the page is wider than the dialog it must be wrapped in a horizontal `SingleChildScrollView` sized to `_pageWidth + 40` (the `previewPageMargin`), because `PdfPreview` only scrolls vertically.
+- **`warehouses` is a SHARED table with no yard column**; the association exists only through `warehouse_entries.yard`. `getWarehouseIdsForYard(yard)` + **`warehousesForYardProvider(yard)`** derive the set, and the Reports filter bar narrows its picker to it once a yard is chosen. A yard with no entries yet yields the FULL list — an empty picker would leave nothing selectable. Changing the yard resets `_selectedWarehouse` to `'all'`, and the dropdown falls back to null when the held id is not in the narrowed list, so it can never display a value its menu cannot offer.
