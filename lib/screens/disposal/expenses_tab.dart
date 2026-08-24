@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
@@ -85,7 +86,11 @@ class ExpensesTab extends ConsumerWidget {
                 var rows = all.where(
                     (r) => r.destroyingDeposit > 0 || r.depositSpent > 0);
                 if (yf != null) {
-                  rows = rows.where((r) => r.yard == yf);
+                  // Fall back to the SR prefix when a row carries no yard of
+                  // its own, so the filter cannot silently hide goods that
+                  // plainly belong to the selected yard.
+                  rows = rows.where(
+                      (r) => (r.yard ?? yardOfSrNumber(r.srNumber)) == yf);
                 }
                 if (q.isNotEmpty) {
                   rows = rows.where((r) =>
@@ -229,93 +234,100 @@ class _ExpensesTable extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final money = NumberFormat('#,##0.00');
 
+    // Same shell as every other table in the portal: a 14-radius bordered card
+    // clipped to its own corners, with the heading row pinned.
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         color: context.colors.cardDark,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: context.colors.borderColor),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: DataTable2(
-        // Everything fits without sideways scrolling.
-        columnSpacing: 12,
-        horizontalMargin: 16,
-        headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
-        empty: const EmptyTableState(
-            icon: Icons.receipt_long_outlined,
-            message: 'No goods with a destroying deposit',
-            subtitle:
-                'Goods carrying a deposit appear here once they are registered.'),
-        columns: const [
-          DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-          DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
-          DataColumn2(
-              label: Text('Deposit'), size: ColumnSize.S, numeric: true),
-          DataColumn2(
-              label: Text('Destruction'), size: ColumnSize.S, numeric: true),
-          DataColumn2(
-              label: Text('Advertising'), size: ColumnSize.S, numeric: true),
-          DataColumn2(label: Text('Refund'), size: ColumnSize.S, numeric: true),
-          DataColumn2(
-              label: Center(child: Text('Record')),
-              size: ColumnSize.S,
-              fixedWidth: 110),
-        ],
-        rows: [
-          for (final r in rows)
-            DataRow(cells: [
-              DataCell(TooltipText(r.srNumber,
-                  style: TextStyle(
-                      color: context.colors.accentLightBlue,
-                      fontWeight: FontWeight.w700))),
-              DataCell(TooltipText(r.goodsName)),
-              DataCell(Text(money.format(r.destroyingDeposit))),
-              DataCell(Text(
-                  r.destructionExpense == 0
-                      ? '—'
-                      : money.format(r.destructionExpense),
-                  style: TextStyle(
-                      color: r.destructionExpense == 0
-                          ? context.colors.textMuted
-                          : context.colors.dangerRed,
-                      fontWeight: FontWeight.w600))),
-              DataCell(Text(
-                  r.advertisingExpense == 0
-                      ? '—'
-                      : money.format(r.advertisingExpense),
-                  style: TextStyle(
-                      color: r.advertisingExpense == 0
-                          ? context.colors.textMuted
-                          : context.colors.warningAmber,
-                      fontWeight: FontWeight.w600))),
-              // The whole point of the row: what goes back once the costs are
-              // taken out of the deposit. A deficit is flagged in red instead.
-              DataCell(r.deficit > 0
-                  ? Tooltip(
-                      message:
-                          'Costs exceed the deposit by LKR ${money.format(r.deficit)}',
-                      child: Text('−${money.format(r.deficit)}',
-                          style: TextStyle(
-                              color: context.colors.dangerRed,
-                              fontWeight: FontWeight.w800)),
-                    )
-                  : Text(money.format(r.refund),
-                      style: TextStyle(
-                          color: context.colors.successGreen,
-                          fontWeight: FontWeight.w800))),
-              DataCell(Center(
-                child: IconButton(
-                  tooltip: 'Record costs for these goods',
-                  icon: Icon(Icons.edit_note_rounded,
-                      size: 20, color: context.colors.successGreen),
-                  onPressed: () => showDialog(
-                    context: context,
-                    builder: (_) => _RecordExpenseDialog(goods: r),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: DataTable2(
+          // Everything fits without sideways scrolling.
+          columnSpacing: 12,
+          horizontalMargin: 16,
+          fixedTopRows: 1,
+          headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+          empty: const EmptyTableState(
+              icon: Icons.receipt_long_outlined,
+              message: 'No goods with a destroying deposit',
+              subtitle:
+                  'Goods carrying a deposit appear here once they are registered.'),
+          columns: const [
+            DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+            DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+            DataColumn2(
+                label: Text('Deposit'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Text('Destruction'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Text('Advertising'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Text('Refund'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Center(child: Text('Record')),
+                size: ColumnSize.S,
+                fixedWidth: 110),
+          ],
+          rows: [
+            for (final r in rows)
+              DataRow(cells: [
+                DataCell(TooltipText(r.srNumber,
+                    style: TextStyle(
+                        color: context.colors.accentLightBlue,
+                        fontWeight: FontWeight.w700))),
+                DataCell(TooltipText(r.goodsName)),
+                DataCell(Text(money.format(r.destroyingDeposit))),
+                DataCell(Text(
+                    r.destructionExpense == 0
+                        ? '—'
+                        : money.format(r.destructionExpense),
+                    style: TextStyle(
+                        color: r.destructionExpense == 0
+                            ? context.colors.textMuted
+                            : context.colors.dangerRed,
+                        fontWeight: FontWeight.w600))),
+                DataCell(Text(
+                    r.advertisingExpense == 0
+                        ? '—'
+                        : money.format(r.advertisingExpense),
+                    style: TextStyle(
+                        color: r.advertisingExpense == 0
+                            ? context.colors.textMuted
+                            : context.colors.warningAmber,
+                        fontWeight: FontWeight.w600))),
+                // The whole point of the row: what goes back once the costs are
+                // taken out of the deposit. A deficit is flagged in red instead.
+                DataCell(r.deficit > 0
+                    ? Tooltip(
+                        message:
+                            'Costs exceed the deposit by LKR ${money.format(r.deficit)}',
+                        child: Text('−${money.format(r.deficit)}',
+                            style: TextStyle(
+                                color: context.colors.dangerRed,
+                                fontWeight: FontWeight.w800)),
+                      )
+                    : Text(money.format(r.refund),
+                        style: TextStyle(
+                            color: context.colors.successGreen,
+                            fontWeight: FontWeight.w800))),
+                DataCell(Center(
+                  child: IconButton(
+                    tooltip: 'Record costs for these goods',
+                    icon: Icon(Icons.edit_note_rounded,
+                        size: 20, color: context.colors.successGreen),
+                    onPressed: () => showDialog(
+                      context: context,
+                      builder: (_) => _RecordExpenseDialog(goods: r),
+                    ),
                   ),
-                ),
-              )),
-            ]),
-        ],
+                )),
+              ]),
+          ],
+        ),
       ),
     ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.03);
   }

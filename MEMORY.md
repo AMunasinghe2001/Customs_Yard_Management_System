@@ -566,3 +566,40 @@ Fourth tab on the High Panel portal ([financials_tab.dart](lib/screens/executive
 - **`TabController` length must match the number of `Tab` widgets, and a `late final` one survives hot reload.** Adding the 4th High Panel tab left a 3-length controller live: the bar painted 4 tabs but clicks resolved against the old controller, so tapping did nothing while swiping still worked. The screen now holds a nullable controller and re-creates it in `build` whenever `_kTabCount` changes.
 - **`tender_bids` had NO read policy for the executive or yard roles** — only disposal / appeal / valuation. That is why the Tender History said "No bids recorded" in the High Panel and yard popups while Central Disposal showed them: the rows existed, RLS filtered them out. Migration **`20260828_tender_bids_read_access.sql`** adds `tender_bids_executive_read` (via `auth_user_is_executive()`) and `tender_bids_yard_read` (matching the bid's own `yard` column). Read-only — recording a bid stays with Central Disposal.
 - **When a section renders in one portal but is empty in another, suspect RLS before the widget.** Every join the Tender History makes has its own policy set: `tender_sales` (round order), `tender_revaluations` (prices), `tender_bids` (bids), `tender_committees` (members). `supabase/diagnose_tender_history.sql` dumps all four per SR from the SQL editor (which bypasses RLS), so the truth can be compared against what a portal shows.
+
+## Committee members never rendered — a call site that was never wired (2026-08-23)
+
+The Tender History's committee round showed "Priced by the tender committee · no bidding" in EVERY portal, never the members. It was not RLS (`tender_committees_auth_read` allows any authenticated read) and not missing data — an earlier edit added the `committeeMembers` **field and its rendering block** to `_TenderRoundTile`, but never added the argument at the `rows.add(_TenderRoundTile(...))` call site, so the `const []` default won every time. **When a feature is invisible in all portals at once, check the call site before suspecting the database.**
+
+- The round is also detected more defensively now: `isCommitteeRound` is true past Tender 3 **or** on the last round once `committee?.submittedValue != null`, so a package whose earlier rounds were never recorded still names its committee.
+- `committeeLoading` separates "the list has not arrived" from "nobody was appointed", so the tile can say which instead of silently listing none.
+- **`tender_revaluations` had no YARD policy** — Valuation, Disposal, Appeal and Executive only. That is why a yard's Unsold popup showed Tender 1/2/3 with no price and no "re-valued" mark while Central Disposal showed all of them. Migration **`20260829_tender_history_read_access.sql`** grants the owning yard (and any authenticated officer) read access, and re-asserts the committee read.
+
+## Expenses are recorded PER GOODS, and the refund is DERIVED (2026-08-24)
+
+Central Disposal records what each goods item cost to dispose of; the High Panel reads the result. Costs are incurred item by item — one SR holds many goods, each destroyed and advertised on its own.
+
+- **A refund is never entered.** The destroying deposit is money held against those costs, so whatever is left goes back:
+
+      refund = destroyingDeposit - (destruction + advertising)
+
+  floored at zero; the overrun is reported as `deficit` instead. Both live on **`GoodsFinancials`** in models. The refund must be derived **per goods and then summed** — computing it from the totals is wrong, because one item's shortfall would silently eat another item's refund.
+- Migration **`20260830_expenses_per_goods.sql`** adds `financial_expenses.package_item_id` and a UNIQUE `(package_item_id, kind)` constraint, so re-posting a cost REPLACES it instead of double-counting against the deposit. **Deliberately a full constraint, not a partial index: PostgREST can only infer a conflict target from a full unique constraint**, so `on_conflict=package_item_id,kind` would fail against a `where`-qualified one. Nulls never collide, so unattributed expenses stay insertable. The migration de-duplicates existing rows first, or the constraint cannot be added.
+- **`goodsFinancialsProvider`** builds one `GoodsFinancials` per goods item, cross-yard. Package-level figures (the destroying deposit, and any warehouse entry that names no item) are apportioned across items **by quantity**. `financialSummaryProvider` is now just `summariseGoods(...)` over that list, so the headline cards and the per-goods table can never disagree.
+- `summariseGoods(Iterable<GoodsFinancials>)` takes the rows rather than reading them, so a **filtered** view totals the same slice it lists. The Financials page filters FIRST and then totals — picking a yard narrows every card on the page, not just the table.
+- The High Panel's "Record Expense" button is gone; costs belong to Central Disposal now. `kRecordableExpenseKinds` (destruction + advertising) is what the UI offers; `'refund'` stays in the DB CHECK constraint only so historical rows survive, and `seed_disposal_expenses.sql` DELETEs any leftover refund rows because a stored one would be counted twice.
+
+## Neither PackageModel nor WarehouseEntryModel carries a yard (2026-08-24)
+
+`packages` has no yard column and `WarehouseEntryModel` does not expose the one on `warehouse_entries`. Every SR number is minted with its yard's prefix, so **`yardOfSrNumber(srNumber)`** in [yards.dart](lib/core/yards.dart) reads it back (`GL1/SR/01/2025` -> `GL1`), returning null for an unknown prefix rather than defaulting. Every `Yard.srPrefix` equals its `code`, and the yard dropdowns emit that same code, so the two match directly. Both yard filters also fall back to the prefix when a row's `yard` is null, so a filter can never silently hide goods that plainly belong to the selected yard. `supabase/diagnose_financials_yard.sql` lists the prefixes actually present and flags any that match no yard.
+
+**A provider whose body changed will not recompute on hot reload** — the cached value survives. After editing a `FutureProvider`, hot RESTART (`R`) or the page keeps showing figures built by the old code (this is what made a yard filter look broken when the code was already correct).
+
+## Shared header widgets per portal (2026-08-24)
+
+Each portal's tabs must carry the same search box, yard dropdown and chips. Tabs kept in their own files were drifting, so the real widgets were extracted rather than copied:
+
+- **[disposal_shared.dart](lib/screens/disposal/disposal_shared.dart)** — `DisposalSearch`, `YardAllFilter`, `StatChip`, and the per-tab `disposalSearchProvider` / `disposalYardFilterProvider` families (keyed by tab name). Used by the dashboard's tabs and by Expenses.
+- **[executive_header.dart](lib/screens/executive/executive_header.dart)** — `ExecutiveSearchField`, `ExecutiveYardFilter`, `executiveFilterChip`, and **`kExecutiveFilterPadding`**. Both controls take their height from that padding: **never set an explicit height on either**, or they land on different levels and the dropdown's InkWell splash spills past its border.
+
+Central Disposal's Expenses tab and the High Panel's Financials tab both use these, plus the shared `TablePager` (`kClientPageSize` = 20). A filter can leave a pager past the end of the list, so both clamp the page index before slicing.

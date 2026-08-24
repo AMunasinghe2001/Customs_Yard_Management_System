@@ -5,9 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/tooltip_text.dart';
@@ -62,7 +64,11 @@ class FinancialsTab extends ConsumerWidget {
         // same slice the table below it lists.
         var filtered = all.where((r) => !r.isEmpty);
         if (yardFilter != null) {
-          filtered = filtered.where((r) => r.yard == yardFilter);
+          // Fall back to the SR prefix when a row carries no yard of its own,
+          // so a filter can never silently hide goods that plainly belong to
+          // the selected yard.
+          filtered = filtered.where(
+              (r) => (r.yard ?? yardOfSrNumber(r.srNumber)) == yardFilter);
         }
         if (q.isNotEmpty) {
           filtered = filtered.where((r) =>
@@ -507,6 +513,9 @@ class _SplitTile extends StatelessWidget {
 ///
 /// Takes the rows already filtered by the page header, so the table and the
 /// cards above it always describe the same slice.
+///
+/// Laid out like every other table in the portal: the heading sits ABOVE the
+/// card, and the card holds nothing but the table.
 class _GoodsBreakdown extends ConsumerWidget {
   final List<GoodsFinancials> rows;
   const _GoodsBreakdown({required this.rows});
@@ -517,65 +526,57 @@ class _GoodsBreakdown extends ConsumerWidget {
 
     // A filter can leave the pager past the end of the list.
     final maxPage = rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
-    final safePage = page > maxPage ? maxPage : page;
+    final safePage = page.clamp(0, maxPage);
     final pageRows =
         rows.skip(safePage * kClientPageSize).take(kClientPageSize).toList();
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: context.colors.cardDark,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.colors.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(Icons.inventory_2_rounded,
-                size: 18, color: AppTheme.executiveTeal),
-            const Gap(8),
-            Text('Per Goods',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700)),
-            const Gap(10),
-            Expanded(
-              child: Text(
-                  'Every figure above, item by item \u00b7 costs recorded by Central Disposal',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 12)),
-            ),
-          ]),
-          const Gap(14),
-          if (rows.isEmpty)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              child: Center(
-                child: Text('Nothing recorded against these goods yet.',
-                    style: TextStyle(
-                        color: context.colors.textMuted, fontSize: 13)),
-              ),
-            )
-          else ...[
-            SizedBox(
-              // Tall enough to read, short enough to leave the cards above
-              // visible; the table scrolls inside itself.
-              height: pageRows.length * 48.0 + 56,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Heading above the card, not inside it.
+        Row(children: [
+          Icon(Icons.inventory_2_rounded,
+              size: 18, color: AppTheme.executiveTeal),
+          const Gap(8),
+          Text('Per Goods',
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700)),
+          const Gap(10),
+          Expanded(
+            child: Text(
+                'Every figure above, item by item \u00b7 costs recorded by Central Disposal',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(color: context.colors.textMuted, fontSize: 12)),
+          ),
+        ]),
+        const Gap(12),
+        Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: context.colors.cardDark,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: context.colors.borderColor),
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              // The page scrolls, so the table is given the exact height its
+              // rows need rather than its own scrollbar.
+              height: pageRows.isEmpty ? 220.0 : pageRows.length * 48.0 + 56,
               child: _GoodsBreakdownTable(rows: pageRows),
             ),
-            TablePager(
-              total: rows.length,
-              page: safePage,
-              onPageChanged: (p) =>
-                  ref.read(_finPageProvider.notifier).state = p,
-            ),
-          ],
-        ],
-      ),
+          ),
+        ),
+        TablePager(
+          total: rows.length,
+          page: safePage,
+          onPageChanged: (p) => ref.read(_finPageProvider.notifier).state = p,
+        ),
+      ],
     );
   }
 }
@@ -588,9 +589,15 @@ class _GoodsBreakdownTable extends StatelessWidget {
   Widget build(BuildContext context) {
     return DataTable2(
       // Fits without sideways scrolling.
-      columnSpacing: 10,
-      horizontalMargin: 12,
+      columnSpacing: 12,
+      horizontalMargin: 16,
+      fixedTopRows: 1,
       headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
+      empty: const EmptyTableState(
+          icon: Icons.inventory_2_outlined,
+          message: 'Nothing recorded against these goods yet',
+          subtitle:
+              'Central Disposal records the destruction and advertising costs.'),
       columns: const [
         DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
         DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
@@ -606,11 +613,19 @@ class _GoodsBreakdownTable extends StatelessWidget {
       rows: [
         for (final r in rows)
           DataRow(cells: [
-            DataCell(TooltipText(r.srNumber,
-                style: TextStyle(
-                    color: context.colors.accentLightBlue,
-                    fontWeight: FontWeight.w700))),
-            DataCell(TooltipText(r.goodsName)),
+            // Same treatment the portal's other tables give the SR: the
+            // accent colour, with the yard in the tooltip rather than its own
+            // column (the header already carries a Yard dropdown).
+            DataCell(Tooltip(
+              message: '${r.srNumber} · ${yardName(r.yard)}',
+              waitDuration: const Duration(milliseconds: 300),
+              child: Text(r.srNumber,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: AppTheme.executiveTeal,
+                      fontWeight: FontWeight.w700)),
+            )),
+            DataCell(TooltipText(r.goodsName, overflow: TextOverflow.ellipsis)),
             DataCell(Text(_money.format(r.totalIncome),
                 style: TextStyle(
                     color: context.colors.successGreen,
