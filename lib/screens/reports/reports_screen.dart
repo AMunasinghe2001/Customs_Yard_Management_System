@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:printing/printing.dart';
@@ -734,7 +735,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-  /// The shared in-app table dialog. Save PDF / Export Excel sit in the footer.
+  /// The shared in-app table dialog. Print / Export Excel sit in the footer.
   /// [rowItemIds] is an optional list (same length as [rows]) where each entry
   /// is the package-item ID for that row; when non-null the Details button will
   /// open the popup filtered to that specific item.
@@ -777,6 +778,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               Container(
                 padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
                 child: Row(children: [
+                  // The Customs emblem, so the on-screen report is headed the
+                  // same way the printed one is.
+                  SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                      width: 30,
+                      height: 30,
+                      theme:
+                          SvgTheme(currentColor: context.colors.primaryGold)),
+                  const Gap(12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -881,8 +890,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       style: ElevatedButton.styleFrom(
                           backgroundColor: context.colors.customsBlue,
                           foregroundColor: Colors.white),
-                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
-                      label: const Text('Save PDF'),
+                      icon: const Icon(Icons.print_rounded, size: 16),
+                      label: const Text('Print'),
                       onPressed: () {
                         Navigator.pop(ctx);
                         onSavePdf();
@@ -3932,8 +3941,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               if (onPdf != null)
                 Expanded(
                   child: _buildActionButton(
-                    label: 'PDF',
-                    icon: Icons.picture_as_pdf_outlined,
+                    // Opens the preview, where the report is READ and printed.
+                    // Saving a PDF is not offered — anything leaving the system
+                    // does so on paper, or as Excel.
+                    label: 'Print',
+                    icon: Icons.print_rounded,
                     color: context.colors.customsBlue,
                     isLoading: _isLoading('${title}_pdf'),
                     onTap: onPdf,
@@ -5013,8 +5025,13 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
         children: [
           Row(
             children: [
-              Icon(Icons.description_rounded,
-                  color: context.colors.primaryGold, size: 20),
+              // The Customs emblem, tinted to the header accent. MUST use
+              // SvgTheme(currentColor:) — a colorFilter srcIn flattens the
+              // eye/ship detail into a solid blob.
+              SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                  width: 26,
+                  height: 26,
+                  theme: SvgTheme(currentColor: context.colors.primaryGold)),
               const Gap(12),
               Text('Report Preview',
                   style: Theme.of(context)
@@ -5151,11 +5168,9 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
               );
             }
           }),
-          const Gap(24),
-          _buildActionItem(
-              context, Icons.download_rounded, 'Save PDF', Colors.green, () {
-            if (_pdfBytes != null) widget.onSave(_pdfBytes!, widget.fileName);
-          }),
+          // Saving the PDF is deliberately not offered: the preview is for
+          // READING the report on screen, and anything leaving the system does
+          // so on paper. Print, or export to Excel from the card.
         ],
       ).animate().slideY(begin: 0.5, curve: Curves.easeOutExpo).fadeIn(),
     );

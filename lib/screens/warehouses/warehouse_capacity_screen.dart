@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
-import 'package:data_table_2/data_table_2.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../widgets/app_shell.dart';
@@ -53,8 +52,8 @@ class WarehouseCapacityScreen extends ConsumerWidget {
               // ── Summary chips ──
               capacityAsync.maybeWhen(
                 data: (rows) {
-                  final totalCap = rows.fold<int>(
-                      0, (s, r) => s + (r['capacity'] as int));
+                  final totalCap =
+                      rows.fold<int>(0, (s, r) => s + (r['capacity'] as int));
                   final totalUsed =
                       rows.fold<int>(0, (s, r) => s + (r['used'] as int));
                   final overall =
@@ -95,8 +94,7 @@ class WarehouseCapacityScreen extends ConsumerWidget {
                           color: context.colors.primaryGold)),
                   error: (error, _) => ErrorView(
                     error: error.toString(),
-                    onRetry: () =>
-                        ref.refresh(yardWarehouseCapacityProvider),
+                    onRetry: () => ref.refresh(yardWarehouseCapacityProvider),
                   ),
                   data: (rows) {
                     if (rows.isEmpty) {
@@ -107,71 +105,178 @@ class WarehouseCapacityScreen extends ConsumerWidget {
                             'Admitted packages for this yard will appear here.',
                       );
                     }
-                    return Container(
-                      decoration: BoxDecoration(
-                        color: context.colors.cardDark,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: context.colors.borderColor),
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: DataTable2(
-                          columnSpacing: 12,
-                          horizontalMargin: 16,
-                          fixedTopRows: 1,
-                          headingRowColor: WidgetStateProperty.all(
-                              context.colors.surfaceDark),
-                          columns: const [
-                            DataColumn2(label: Text('Warehouse'), size: ColumnSize.L),
-                            DataColumn2(label: Text('Zones'), size: ColumnSize.L),
-                            DataColumn2(
-                                label: Text('Used'),
-                                size: ColumnSize.S,
-                                fixedWidth: 80,
-                                numeric: true),
-                            DataColumn2(
-                                label: Text('Capacity'),
-                                size: ColumnSize.S,
-                                fixedWidth: 90,
-                                numeric: true),
-                            DataColumn2(label: Text('Utilisation'), size: ColumnSize.L),
-                          ],
-                          rows: rows.map((r) {
-                            final used = r['used'] as int;
-                            final capacity = r['capacity'] as int;
-                            final percent = (r['percent'] as double);
-                            final zones = (r['zones'] as List).cast<String>();
-                            final color = _fillColor(context, percent);
-                            return DataRow(cells: [
-                              DataCell(Column(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(r['warehouseName'] as String,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                          fontWeight: FontWeight.w600)),
-                                  Text(r['warehouseCode'] as String,
+                    // One card per warehouse, listing its ZONES — capacity
+                    // is managed zone by zone, so that is the level the yard
+                    // needs to see. The warehouse line is just their total.
+                    return ListView.separated(
+                      itemCount: rows.length,
+                      separatorBuilder: (_, __) => const Gap(12),
+                      itemBuilder: (context, i) {
+                        final r = rows[i];
+                        final used = r['used'] as int;
+                        final capacity = r['capacity'] as int;
+                        final percent = r['percent'] as double;
+                        // Null-safe: a cached row from before zones existed,
+                        // or a warehouse whose zones have not loaded yet, has
+                        // no `zoneRows` at all — treat that as "no zones" and
+                        // let the card say so rather than crashing the page.
+                        final zoneRows = ((r['zoneRows'] as List?) ?? const [])
+                            .cast<Map<String, dynamic>>();
+                        final unzoned = (r['unzoned'] as int?) ?? 0;
+                        final color = _fillColor(context, percent);
+
+                        return Container(
+                          decoration: BoxDecoration(
+                            color: context.colors.cardDark,
+                            borderRadius: BorderRadius.circular(14),
+                            border:
+                                Border.all(color: context.colors.borderColor),
+                          ),
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ── The warehouse, and its zones' total ──
+                              Row(children: [
+                                Expanded(
+                                  flex: 3,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(r['warehouseName'] as String,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w700)),
+                                      Text(
+                                          '${r['warehouseCode']}  \u00b7  '
+                                          '${zoneRows.length} zone'
+                                          '${zoneRows.length == 1 ? '' : 's'}',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              color: context.colors.textMuted)),
+                                    ],
+                                  ),
+                                ),
+                                Expanded(
+                                  flex: 2,
+                                  child: Text('$used / $capacity',
+                                      textAlign: TextAlign.right,
                                       style: TextStyle(
-                                          fontSize: 11,
-                                          color: context.colors.textMuted)),
-                                ],
-                              )),
-                              DataCell(TooltipText(
-                                  zones.isEmpty ? '—' : zones.join(', '),
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 12))),
-                              DataCell(TooltipText('$used',
-                                  style: TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      color: context.colors.accentLightBlue))),
-                              DataCell(TooltipText('$capacity')),
-                              DataCell(_UtilisationBar(
-                                  percent: percent, color: color)),
-                            ]);
-                          }).toList(),
-                        ),
-                      ),
+                                          fontWeight: FontWeight.bold,
+                                          color:
+                                              context.colors.accentLightBlue)),
+                                ),
+                                const Gap(16),
+                                Expanded(
+                                  flex: 4,
+                                  child: _UtilisationBar(
+                                      percent: percent, color: color),
+                                ),
+                              ]),
+                              const Gap(12),
+                              Divider(
+                                  height: 1, color: context.colors.borderColor),
+                              const Gap(12),
+
+                              // ── Zone by zone ──
+                              if (zoneRows.isEmpty)
+                                Text(
+                                    'No zones defined \u2014 add them in the '
+                                    'Admin Panel so goods can be placed here.',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontStyle: FontStyle.italic,
+                                        color: context.colors.textMuted))
+                              else
+                                ...zoneRows.map((z) {
+                                  final zUsed = z['used'] as int;
+                                  final zCap = z['capacity'] as int;
+                                  final zPct = z['percent'] as double;
+                                  final zFree = z['free'] as int;
+                                  final zColor = _fillColor(context, zPct);
+                                  return Padding(
+                                    padding: const EdgeInsets.only(bottom: 8),
+                                    child: Row(children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: Row(children: [
+                                          Icon(Icons.grid_view_rounded,
+                                              size: 14,
+                                              color: context.colors.textMuted),
+                                          const Gap(8),
+                                          Flexible(
+                                            child: TooltipText(
+                                                'Zone ${z['name']}',
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight:
+                                                        FontWeight.w600)),
+                                          ),
+                                        ]),
+                                      ),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Text('$zUsed / $zCap',
+                                            textAlign: TextAlign.right,
+                                            style: TextStyle(
+                                                fontSize: 12.5,
+                                                color: context
+                                                    .colors.textSecondary)),
+                                      ),
+                                      const Gap(16),
+                                      Expanded(
+                                        flex: 4,
+                                        child: _UtilisationBar(
+                                            percent: zPct, color: zColor),
+                                      ),
+                                      const Gap(12),
+                                      SizedBox(
+                                        width: 96,
+                                        child: Text(
+                                            zFree == 0 ? 'FULL' : '$zFree free',
+                                            textAlign: TextAlign.right,
+                                            style: TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: zFree == 0
+                                                    ? FontWeight.w800
+                                                    : FontWeight.w600,
+                                                color: zFree == 0
+                                                    ? context.colors.dangerRed
+                                                    : context
+                                                        .colors.successGreen)),
+                                      ),
+                                    ]),
+                                  );
+                                }),
+
+                              // Goods held under no zone still occupy space,
+                              // so they are reported rather than hidden.
+                              if (unzoned > 0) ...[
+                                const Gap(4),
+                                Row(children: [
+                                  Icon(Icons.help_outline_rounded,
+                                      size: 14,
+                                      color: context.colors.warningAmber),
+                                  const Gap(8),
+                                  Expanded(
+                                    child: Text(
+                                        '$unzoned item'
+                                        '${unzoned == 1 ? '' : 's'} held '
+                                        'outside any defined zone',
+                                        style: TextStyle(
+                                            fontSize: 11.5,
+                                            color:
+                                                context.colors.warningAmber)),
+                                  ),
+                                ]),
+                              ],
+                            ],
+                          ),
+                        );
+                      },
                     ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn();
                   },
                 ),

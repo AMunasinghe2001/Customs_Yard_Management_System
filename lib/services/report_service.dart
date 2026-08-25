@@ -15,9 +15,58 @@ class ReportService {
 
   pw.Font? _font;
   pw.Font? _fontBold;
+
+  /// The Customs emblem, as raw SVG. Loaded once and reused — every report
+  /// header draws it, and re-reading the asset per page would be wasteful.
+  ///
+  /// Null when the asset cannot be read; the header then falls back to the
+  /// "SLC" monogram rather than failing to render at all.
+  static String? _logoSvg;
+  static bool _logoTried = false;
+
+  static Future<void> _loadLogo() async {
+    if (_logoTried) return;
+    _logoTried = true;
+    try {
+      _logoSvg = await rootBundle.loadString('Sri_Lanka_Customs_logo.svg');
+    } catch (_) {
+      _logoSvg = null;
+    }
+  }
+
+  /// The emblem for a report header, or the lettered fallback.
+  static pw.Widget _logoWidget({double size = 42}) {
+    final svg = _logoSvg;
+    if (svg != null) {
+      return pw.SizedBox(
+        width: size,
+        height: size,
+        child: pw.SvgImage(svg: svg),
+      );
+    }
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(6),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColor.fromInt(0xFF0D47A1), width: 2),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Text(
+        'SLC',
+        style: pw.TextStyle(
+          fontSize: 18,
+          fontWeight: pw.FontWeight.bold,
+          color: PdfColor.fromInt(0xFF0D47A1),
+        ),
+      ),
+    );
+  }
+
   pw.Font? _fontSinhala;
 
   Future<void> _ensureFontsLoaded() async {
+    // The emblem rides along with the fonts: every report needs both, and this
+    // runs before each one is built.
+    await _loadLogo();
     if (_font != null && _fontBold != null && _fontSinhala != null) return;
     _font = await PdfGoogleFonts.notoSansRegular();
     _fontBold = await PdfGoogleFonts.notoSansBold();
@@ -53,7 +102,8 @@ class ReportService {
   static String warehouseLabel(ForfeitedPackageModel f, [String? itemId]) {
     final entries = f.packageDetails?.warehouseEntries ?? const [];
     if (itemId != null) {
-      final itemEntries = entries.where((e) => e.packageItemId == itemId).toList();
+      final itemEntries =
+          entries.where((e) => e.packageItemId == itemId).toList();
       final codes = itemEntries
           .map((e) => e.warehouseCode.trim())
           .where((c) => c.isNotEmpty)
@@ -74,13 +124,16 @@ class ReportService {
   /// Reason helper: resolves the hold reason from forfeited package, item, or parent package.
   static String reasonOf(ForfeitedPackageModel f, PackageItem? match) {
     if (f.reason.trim().isNotEmpty) return f.reason.trim();
-    if (match?.reasons?.trim().isNotEmpty == true) return match!.reasons!.trim();
-    if (f.packageDetails?.reason?.trim().isNotEmpty == true) return f.packageDetails!.reason!.trim();
+    if (match?.reasons?.trim().isNotEmpty == true)
+      return match!.reasons!.trim();
+    if (f.packageDetails?.reason?.trim().isNotEmpty == true)
+      return f.packageDetails!.reason!.trim();
     return '—';
   }
 
   /// Generates a PDF report for report items with category summary and zone summary
-  Future<Uint8List> generateCategoryAndZonePdf(List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
+  Future<Uint8List> generateCategoryAndZonePdf(
+      List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -128,8 +181,12 @@ class ReportService {
 
           // ── Category section ──
           pw.Text('Inventory by Item Category',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
-          pw.Text('Total item quantity registered under each category (all items).',
+              style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromInt(0xFF0D47A1))),
+          pw.Text(
+              'Total item quantity registered under each category (all items).',
               style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
           pw.SizedBox(height: 8),
           pw.TableHelper.fromTextArray(
@@ -144,20 +201,35 @@ class ReportService {
                 ],
               ['', 'TOTAL', NumberFormat('#,##0').format(catTotal), '100%'],
             ],
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+                color: PdfColors.white),
             cellStyle: const pw.TextStyle(fontSize: 9),
-            headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
-            rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
+            headerDecoration:
+                const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+            rowDecoration: const pw.BoxDecoration(
+                border:
+                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
             columnWidths: {0: const pw.FixedColumnWidth(28)},
-            cellAlignments: {0: pw.Alignment.center, 1: pw.Alignment.centerLeft, 2: pw.Alignment.centerRight, 3: pw.Alignment.centerRight},
+            cellAlignments: {
+              0: pw.Alignment.center,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerRight,
+              3: pw.Alignment.centerRight
+            },
           ),
 
           pw.SizedBox(height: 26),
 
           // ── Zone section ──
           pw.Text('Active Inventory by Warehouse Zone',
-              style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold, color: PdfColor.fromInt(0xFF0D47A1))),
-          pw.Text('Currently held item quantity per warehouse zone (released items excluded).',
+              style: pw.TextStyle(
+                  fontSize: 14,
+                  fontWeight: pw.FontWeight.bold,
+                  color: PdfColor.fromInt(0xFF0D47A1))),
+          pw.Text(
+              'Currently held item quantity per warehouse zone (released items excluded).',
               style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey600)),
           pw.SizedBox(height: 8),
           pw.TableHelper.fromTextArray(
@@ -172,12 +244,23 @@ class ReportService {
                 ],
               ['', 'TOTAL', NumberFormat('#,##0').format(zoneTotal), '100%'],
             ],
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+                color: PdfColors.white),
             cellStyle: const pw.TextStyle(fontSize: 9),
-            headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
-            rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
+            headerDecoration:
+                const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+            rowDecoration: const pw.BoxDecoration(
+                border:
+                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
             columnWidths: {0: const pw.FixedColumnWidth(28)},
-            cellAlignments: {0: pw.Alignment.center, 1: pw.Alignment.centerLeft, 2: pw.Alignment.centerRight, 3: pw.Alignment.centerRight},
+            cellAlignments: {
+              0: pw.Alignment.center,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerRight,
+              3: pw.Alignment.centerRight
+            },
           ),
 
           pw.SizedBox(height: 18),
@@ -190,7 +273,8 @@ class ReportService {
   }
 
   /// Exports category and zone data to Excel
-  Future<Uint8List?> exportCategoryAndZoneToExcel(List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
+  Future<Uint8List?> exportCategoryAndZoneToExcel(
+      List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
     var excel = Excel.createExcel();
     excel.delete('Sheet1');
 
@@ -201,8 +285,10 @@ class ReportService {
     Sheet catSheet = excel['Category Summary'];
     catSheet.appendRow([TextCellValue('CATEGORY INVENTORY SUMMARY')]);
     catSheet.appendRow([
-      TextCellValue('#'), TextCellValue('Item Category'),
-      TextCellValue('Total Quantity'), TextCellValue('Share')
+      TextCellValue('#'),
+      TextCellValue('Item Category'),
+      TextCellValue('Total Quantity'),
+      TextCellValue('Share')
     ]);
 
     final categoryCounts = <String, int>{};
@@ -226,16 +312,20 @@ class ReportService {
       ]);
     }
     catSheet.appendRow([
-      TextCellValue(''), TextCellValue('TOTAL'),
-      IntCellValue(catTotal), TextCellValue('100%')
+      TextCellValue(''),
+      TextCellValue('TOTAL'),
+      IntCellValue(catTotal),
+      TextCellValue('100%')
     ]);
 
     // Zone Sheet (warehouse · zone, held qty, sorted desc, Share + TOTAL).
     Sheet zoneSheet = excel['Zone Summary'];
     zoneSheet.appendRow([TextCellValue('WAREHOUSE ZONE OCCUPANCY (HELD)')]);
     zoneSheet.appendRow([
-      TextCellValue('#'), TextCellValue('Warehouse · Zone'),
-      TextCellValue('Held Quantity'), TextCellValue('Share')
+      TextCellValue('#'),
+      TextCellValue('Warehouse · Zone'),
+      TextCellValue('Held Quantity'),
+      TextCellValue('Share')
     ]);
 
     final zoneCounts = <String, int>{};
@@ -260,16 +350,19 @@ class ReportService {
       ]);
     }
     zoneSheet.appendRow([
-      TextCellValue(''), TextCellValue('TOTAL'),
-      IntCellValue(zoneTotal), TextCellValue('100%')
+      TextCellValue(''),
+      TextCellValue('TOTAL'),
+      IntCellValue(zoneTotal),
+      TextCellValue('100%')
     ]);
 
     return Uint8List.fromList(excel.encode()!);
   }
 
   /// Generates a PDF report for a list of packages
-  Future<Uint8List> generatePackagePdf(List<PackageModel> packages, {
-    String? title, 
+  Future<Uint8List> generatePackagePdf(
+    List<PackageModel> packages, {
+    String? title,
     String? dateRange,
     PdfPageFormat? format,
   }) async {
@@ -281,7 +374,8 @@ class ReportService {
         pageFormat: format ?? PdfPageFormat.a4.landscape,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader(title ?? 'Package Inventory Audit', dateStr, dateRange ?? ''),
+          _buildHeader(
+              title ?? 'Package Inventory Audit', dateStr, dateRange ?? ''),
           pw.SizedBox(height: 20),
           _buildPackageTable(packages),
           pw.SizedBox(height: 20),
@@ -294,8 +388,9 @@ class ReportService {
   }
 
   /// Generates a PDF report for warehouse entries
-  Future<Uint8List> generateWarehousePdf(List<WarehouseEntryModel> entries, {
-    String? title, 
+  Future<Uint8List> generateWarehousePdf(
+    List<WarehouseEntryModel> entries, {
+    String? title,
     bool isReturnedReport = false,
     PdfPageFormat? format,
   }) async {
@@ -304,10 +399,16 @@ class ReportService {
 
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: format ?? PdfPageFormat.a4.landscape, 
+        pageFormat: format ?? PdfPageFormat.a4.landscape,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader(title ?? (isReturnedReport ? 'Released Packages Report' : 'Warehouse Status Report'), dateStr, ''),
+          _buildHeader(
+              title ??
+                  (isReturnedReport
+                      ? 'Released Packages Report'
+                      : 'Warehouse Status Report'),
+              dateStr,
+              ''),
           pw.SizedBox(height: 20),
           _buildWarehouseTable(entries, isReturnedReport: isReturnedReport),
           pw.SizedBox(height: 20),
@@ -340,7 +441,8 @@ class ReportService {
       if (t == 'held' || t == 'pending' || t == 'detained' || t == 'detain') {
         return 'Detain';
       }
-      if (t == 'forfeit' || t == 'forfeited' || t == 'forfiet') return 'Forfeit';
+      if (t == 'forfeit' || t == 'forfeited' || t == 'forfiet')
+        return 'Forfeit';
       if (t == 'abandoned') return 'Abandoned';
       if (t.isEmpty) return 'Detain';
       return '${t[0].toUpperCase()}${t.substring(1)}';
@@ -362,10 +464,12 @@ class ReportService {
     }
 
     // Helper to resolve an item's status, outcome date, receipt, and hold reason
-    ({String status, String outDate, String receipt, String reason}) resolveItemOutcome(PackageItem? it) {
+    ({String status, String outDate, String receipt, String reason})
+        resolveItemOutcome(PackageItem? it) {
       final iid = it?.id;
       final releasedEntries = p.warehouseEntries.where((e) =>
-          e.isReturned && (iid == null || e.packageItemId == null || e.packageItemId == iid));
+          e.isReturned &&
+          (iid == null || e.packageItemId == null || e.packageItemId == iid));
 
       String status;
       String outDate = '—';
@@ -385,21 +489,31 @@ class ReportService {
         final s = soldByItem[iid]!;
         outDate = s.at != null ? DateFormat('yyyy-MM-dd').format(s.at!) : '—';
         receipt = (s.receipt?.isNotEmpty == true) ? s.receipt! : '—';
-      } else if (iid != null && destroyedByItem != null && destroyedByItem.containsKey(iid)) {
+      } else if (iid != null &&
+          destroyedByItem != null &&
+          destroyedByItem.containsKey(iid)) {
         status = 'Destroyed';
         final dt = destroyedByItem[iid];
         outDate = dt != null ? DateFormat('yyyy-MM-dd').format(dt) : '—';
       } else if (releasedEntries.isNotEmpty) {
         status = 'Released';
         final e = releasedEntries.first;
-        outDate = e.returnedAt != null ? DateFormat('yyyy-MM-dd').format(e.returnedAt!) : '—';
+        outDate = e.returnedAt != null
+            ? DateFormat('yyyy-MM-dd').format(e.returnedAt!)
+            : '—';
         final r = receiptOf(e.returnNotes);
         if (r != '—') receipt = r;
       } else {
-        status = normStatus(it?.status.isNotEmpty == true ? it!.status : p.status);
+        status =
+            normStatus(it?.status.isNotEmpty == true ? it!.status : p.status);
       }
 
-      return (status: status, outDate: outDate, receipt: receipt, reason: reason);
+      return (
+        status: status,
+        outDate: outDate,
+        receipt: receipt,
+        reason: reason
+      );
     }
 
     // Overall package status for top summary block
@@ -444,8 +558,7 @@ class ReportService {
                                 fontSize: 8, color: PdfColors.grey600)),
                         pw.Text(f[1],
                             style: pw.TextStyle(
-                                fontSize: 10,
-                                fontWeight: pw.FontWeight.bold)),
+                                fontSize: 10, fontWeight: pw.FontWeight.bold)),
                       ],
                     ),
                   ),
@@ -512,33 +625,34 @@ class ReportService {
                   NumberFormat('#,##0.##').format(p.declaredValue),
                 ]
               else
-                for (var i = 0; i < p.items.length; i++)
-                  ...[
-                    (() {
-                      final item = p.items[i];
-                      final outcome = resolveItemOutcome(item);
-                      final qtyStr = '${item.quantity} ${item.unitOfMeasure}';
-                      return [
-                        '${i + 1}',
-                        item.itemName,
-                        item.hsCode ?? '—',
-                        qtyStr,
-                        outcome.reason,
-                        outcome.status,
-                        outcome.outDate,
-                        NumberFormat('#,##0.##').format(item.unitValue),
-                      ];
-                    })()
-                  ],
+                for (var i = 0; i < p.items.length; i++) ...[
+                  (() {
+                    final item = p.items[i];
+                    final outcome = resolveItemOutcome(item);
+                    final qtyStr = '${item.quantity} ${item.unitOfMeasure}';
+                    return [
+                      '${i + 1}',
+                      item.itemName,
+                      item.hsCode ?? '—',
+                      qtyStr,
+                      outcome.reason,
+                      outcome.status,
+                      outcome.outDate,
+                      NumberFormat('#,##0.##').format(item.unitValue),
+                    ];
+                  })()
+                ],
             ],
             headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 8,
+                color: PdfColors.white),
             cellStyle: const pw.TextStyle(fontSize: 7.5),
             headerDecoration:
                 const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
             rowDecoration: const pw.BoxDecoration(
-                border: pw.Border(
-                    bottom: pw.BorderSide(color: PdfColors.grey200))),
+                border:
+                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
             cellAlignments: {
               0: pw.Alignment.center,
               2: pw.Alignment.center,
@@ -559,7 +673,8 @@ class ReportService {
             (() {
               int getItemIndex(WarehouseEntryModel e) {
                 if (e.packageItemId != null) {
-                  final idx = p.items.indexWhere((i) => i.id == e.packageItemId);
+                  final idx =
+                      p.items.indexWhere((i) => i.id == e.packageItemId);
                   if (idx != -1) return idx;
                 }
                 if (e.itemName != null && e.itemName!.isNotEmpty) {
@@ -571,13 +686,14 @@ class ReportService {
                 return 999;
               }
 
-              final sortedEntries = List<WarehouseEntryModel>.from(p.warehouseEntries)
-                ..sort((a, b) {
-                  final idxA = getItemIndex(a);
-                  final idxB = getItemIndex(b);
-                  if (idxA != idxB) return idxA.compareTo(idxB);
-                  return a.admittedAt.compareTo(b.admittedAt);
-                });
+              final sortedEntries =
+                  List<WarehouseEntryModel>.from(p.warehouseEntries)
+                    ..sort((a, b) {
+                      final idxA = getItemIndex(a);
+                      final idxB = getItemIndex(b);
+                      if (idxA != idxB) return idxA.compareTo(idxB);
+                      return a.admittedAt.compareTo(b.admittedAt);
+                    });
 
               return pw.TableHelper.fromTextArray(
                 headers: [
@@ -593,42 +709,39 @@ class ReportService {
                   'Receipt No'
                 ],
                 data: [
-                  for (final e in sortedEntries)
-                    ...[
-                      (() {
-                        final itemIdx = getItemIndex(e);
-                        final itemNumStr =
-                            (itemIdx != 999 && p.items.isNotEmpty)
-                                ? '${itemIdx + 1}'
-                                : '—';
-                        final itemNameStr =
-                            (itemIdx != 999 && p.items.isNotEmpty)
-                                ? p.items[itemIdx].itemName
-                                : (e.itemName ?? '—');
-                        final charge = (rates != null)
-                            ? e.calculatePackageCharge(p.items, rates)
-                            : (e.accumulatedCharge ?? 0.0);
-                        final rDate = (e.isReturned && e.returnedAt != null)
-                            ? DateFormat('yyyy-MM-dd').format(e.returnedAt!)
-                            : '—';
-                        final rNo = e.isReturned ? receiptOf(e.returnNotes) : '—';
-                        final chargeStr = (e.isReturned || charge > 0)
-                            ? NumberFormat('#,##0.00').format(charge)
-                            : '—';
-                        return [
-                          itemNumStr,
-                          itemNameStr,
-                          e.warehouseName,
-                          e.zone ?? '—',
-                          '${e.itemCount}',
-                          DateFormat('yyyy-MM-dd').format(e.admittedAt),
-                          e.isReturned ? 'Released' : 'In Warehouse',
-                          rDate,
-                          chargeStr,
-                          rNo,
-                        ];
-                      })()
-                    ],
+                  for (final e in sortedEntries) ...[
+                    (() {
+                      final itemIdx = getItemIndex(e);
+                      final itemNumStr = (itemIdx != 999 && p.items.isNotEmpty)
+                          ? '${itemIdx + 1}'
+                          : '—';
+                      final itemNameStr = (itemIdx != 999 && p.items.isNotEmpty)
+                          ? p.items[itemIdx].itemName
+                          : (e.itemName ?? '—');
+                      final charge = (rates != null)
+                          ? e.calculatePackageCharge(p.items, rates)
+                          : (e.accumulatedCharge ?? 0.0);
+                      final rDate = (e.isReturned && e.returnedAt != null)
+                          ? DateFormat('yyyy-MM-dd').format(e.returnedAt!)
+                          : '—';
+                      final rNo = e.isReturned ? receiptOf(e.returnNotes) : '—';
+                      final chargeStr = (e.isReturned || charge > 0)
+                          ? NumberFormat('#,##0.00').format(charge)
+                          : '—';
+                      return [
+                        itemNumStr,
+                        itemNameStr,
+                        e.warehouseName,
+                        e.zone ?? '—',
+                        '${e.itemCount}',
+                        DateFormat('yyyy-MM-dd').format(e.admittedAt),
+                        e.isReturned ? 'Released' : 'In Warehouse',
+                        rDate,
+                        chargeStr,
+                        rNo,
+                      ];
+                    })()
+                  ],
                 ],
                 headerStyle: pw.TextStyle(
                     fontWeight: pw.FontWeight.bold,
@@ -664,7 +777,7 @@ class ReportService {
   Future<Uint8List> generateStockRevenuePdf({
     required String title,
     required String periodLabel,
-    required String headline,        // e.g. "42 goods" or "LKR 1,250,000"
+    required String headline, // e.g. "42 goods" or "LKR 1,250,000"
     required List<String> columns,
     required List<List<String>> rows,
     PdfPageFormat? format,
@@ -707,7 +820,8 @@ class ReportService {
           pw.SizedBox(height: 16),
           if (rows.isEmpty)
             pw.Text('No records for this period.',
-                style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600))
+                style:
+                    const pw.TextStyle(fontSize: 10, color: PdfColors.grey600))
           else
             pw.TableHelper.fromTextArray(
               headers: columns,
@@ -742,8 +856,22 @@ class ReportService {
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
     // Disposition breakdown columns (in addition to admit/release/net).
-    const dispoCols = ['forfeit', 'abandoned', 're-export', 'destroy', 'sold', 'other'];
-    const dispoHeaders = ['Forfeit', 'Abandoned', 'Re-export', 'Destroy', 'Sold', 'Other'];
+    const dispoCols = [
+      'forfeit',
+      'abandoned',
+      're-export',
+      'destroy',
+      'sold',
+      'other'
+    ];
+    const dispoHeaders = [
+      'Forfeit',
+      'Abandoned',
+      'Re-export',
+      'Destroy',
+      'Sold',
+      'Other'
+    ];
 
     pdf.addPage(
       pw.MultiPage(
@@ -754,19 +882,31 @@ class ReportService {
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
             headers: [
-              periodLabel, 'Admitted', 'Released', ...dispoHeaders, 'Net Change'
+              periodLabel,
+              'Admitted',
+              'Released',
+              ...dispoHeaders,
+              'Net Change'
             ],
-            data: summaryData.map((d) => [
-              d['period'],
-              d['admitted'].toString(),
-              d['returned'].toString(),
-              for (final c in dispoCols) (d[c] ?? 0).toString(),
-              (d['admitted'] - d['returned']).toString(),
-            ]).toList(),
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
+            data: summaryData
+                .map((d) => [
+                      d['period'],
+                      d['admitted'].toString(),
+                      d['returned'].toString(),
+                      for (final c in dispoCols) (d[c] ?? 0).toString(),
+                      (d['admitted'] - d['returned']).toString(),
+                    ])
+                .toList(),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 8,
+                color: PdfColors.white),
             cellStyle: const pw.TextStyle(fontSize: 8),
-            headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)), // Customs Blue
-            rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
+            headerDecoration: const pw.BoxDecoration(
+                color: PdfColor.fromInt(0xFF0D47A1)), // Customs Blue
+            rowDecoration: const pw.BoxDecoration(
+                border:
+                    pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
             cellAlignment: pw.Alignment.center,
             cellAlignments: {0: pw.Alignment.centerLeft},
           ),
@@ -780,15 +920,22 @@ class ReportService {
   }
 
   /// Exports warehouse data to Excel bytes
-  Future<Uint8List?> exportWarehouseToExcel(List<WarehouseEntryModel> entries, {bool isReturned = false}) async {
+  Future<Uint8List?> exportWarehouseToExcel(List<WarehouseEntryModel> entries,
+      {bool isReturned = false}) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel[isReturned ? 'Released' : 'In_Warehouse'];
     excel.delete('Sheet1');
 
     // Add Headers
     List<String> headers = [
-      'SR Number', 'Item', 'HS Code', 'Consignee', 'Warehouse', 'Admitted At',
-      'Reason', 'Items'
+      'SR Number',
+      'Item',
+      'HS Code',
+      'Consignee',
+      'Warehouse',
+      'Admitted At',
+      'Reason',
+      'Items'
     ];
     if (isReturned) {
       headers.addAll(['Released At', 'Release Notes']);
@@ -811,7 +958,8 @@ class ReportService {
       List<CellValue> row = [
         TextCellValue(e.srNumber ?? ''),
         TextCellValue(e.itemName ?? ''),
-        TextCellValue((e.hsCode?.trim().isNotEmpty == true) ? e.hsCode!.trim() : ''),
+        TextCellValue(
+            (e.hsCode?.trim().isNotEmpty == true) ? e.hsCode!.trim() : ''),
         TextCellValue(e.consigneeName ?? ''),
         TextCellValue(e.warehouseCode),
         TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(e.admittedAt)),
@@ -819,7 +967,9 @@ class ReportService {
         IntCellValue(e.itemCount),
       ];
       if (isReturned) {
-        row.add(TextCellValue(e.returnedAt != null ? DateFormat('yyyy-MM-dd HH:mm').format(e.returnedAt!) : ''));
+        row.add(TextCellValue(e.returnedAt != null
+            ? DateFormat('yyyy-MM-dd HH:mm').format(e.returnedAt!)
+            : ''));
         row.add(TextCellValue(e.returnNotes ?? ''));
       }
       sheetObject.appendRow(row);
@@ -829,13 +979,28 @@ class ReportService {
   }
 
   /// Exports summary data to Excel bytes
-  Future<Uint8List?> exportSummaryToExcel(List<Map<String, dynamic>> summaryData, String periodLabel) async {
+  Future<Uint8List?> exportSummaryToExcel(
+      List<Map<String, dynamic>> summaryData, String periodLabel) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['Summary'];
     excel.delete('Sheet1');
 
-    const dispoCols = ['forfeit', 'abandoned', 're-export', 'destroy', 'sold', 'other'];
-    const dispoHeaders = ['Forfeit', 'Abandoned', 'Re-export', 'Destroy', 'Sold', 'Other'];
+    const dispoCols = [
+      'forfeit',
+      'abandoned',
+      're-export',
+      'destroy',
+      'sold',
+      'other'
+    ];
+    const dispoHeaders = [
+      'Forfeit',
+      'Abandoned',
+      'Re-export',
+      'Destroy',
+      'Sold',
+      'Other'
+    ];
 
     sheetObject.appendRow([
       TextCellValue(periodLabel),
@@ -869,7 +1034,8 @@ class ReportService {
   }
 
   /// Exports package data to Excel bytes
-  Future<Uint8List?> exportPackagesToExcel(List<PackageModel> packages, {String? title, String? subTitle}) async {
+  Future<Uint8List?> exportPackagesToExcel(List<PackageModel> packages,
+      {String? title, String? subTitle}) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['Packages'];
     excel.delete('Sheet1');
@@ -877,14 +1043,26 @@ class ReportService {
     if (title != null) {
       sheetObject.appendRow([TextCellValue(title.toUpperCase())]);
       sheetObject.appendRow([TextCellValue(subTitle ?? '')]);
-      sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
+      sheetObject.appendRow([
+        TextCellValue(
+            'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
+      ]);
       sheetObject.appendRow([TextCellValue('')]);
     }
 
     // Add Headers (one row per item)
     List<String> headers = [
-      'SR Number', 'Item', 'HS Code', 'Qty', 'Date', 'Consignee', 'NIC',
-      'Status', 'Value (LKR)', 'Cusdec No', 'Description'
+      'SR Number',
+      'Item',
+      'HS Code',
+      'Qty',
+      'Date',
+      'Consignee',
+      'NIC',
+      'Status',
+      'Value (LKR)',
+      'Cusdec No',
+      'Description'
     ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
@@ -901,19 +1079,23 @@ class ReportService {
 
     // Add Data — one row per item (same SR repeats for each of its items).
     for (var p in packages) {
-      final dateStr =
-          p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : '';
+      final dateStr = p.entryDate != null
+          ? DateFormat('yyyy-MM-dd').format(p.entryDate!)
+          : '';
       final items = p.items.isEmpty ? [null] : p.items;
       for (final it in items) {
         sheetObject.appendRow([
           TextCellValue(p.srNumber),
           TextCellValue(it?.itemName ?? '—'),
-          TextCellValue((it?.hsCode?.trim().isNotEmpty == true) ? it!.hsCode!.trim() : '—'),
+          TextCellValue((it?.hsCode?.trim().isNotEmpty == true)
+              ? it!.hsCode!.trim()
+              : '—'),
           IntCellValue(it?.quantity ?? 0),
           TextCellValue(dateStr),
           TextCellValue(p.consigneeName),
           TextCellValue(p.consigneeNic ?? ''),
-          TextCellValue((it?.status.isNotEmpty == true ? it!.status : p.status).toUpperCase()),
+          TextCellValue((it?.status.isNotEmpty == true ? it!.status : p.status)
+              .toUpperCase()),
           DoubleCellValue(it?.unitValue ?? p.declaredValue),
           TextCellValue(p.cusdecNo ?? ''),
           TextCellValue(it?.goodsDescription ?? p.description ?? ''),
@@ -940,7 +1122,8 @@ class ReportService {
               'System Configuration Audit'),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
             cellAlignment: pw.Alignment.centerLeft,
             headers: ['Activity', 'Applies To Status'],
@@ -954,7 +1137,8 @@ class ReportService {
   }
 
   /// Generates a PDF report for package categories
-  Future<Uint8List> generateCategoriesPdf(List<PackageCategory> categories) async {
+  Future<Uint8List> generateCategoriesPdf(
+      List<PackageCategory> categories) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -963,18 +1147,27 @@ class ReportService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader('PACKAGE CATEGORIES AUDIT', dateStr, 'Classification & Routing Rules'),
+          _buildHeader('PACKAGE CATEGORIES AUDIT', dateStr,
+              'Classification & Routing Rules'),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            headers: ['Category Name', 'Description', 'Target Warehouse', 'Zone'],
-            data: categories.map((c) => [
-              c.name,
-              c.description ?? '-',
-              c.targetWarehouseName ?? 'Default',
-              c.targetZone ?? 'General',
-            ]).toList(),
+            headers: [
+              'Category Name',
+              'Description',
+              'Target Warehouse',
+              'Zone'
+            ],
+            data: categories
+                .map((c) => [
+                      c.name,
+                      c.description ?? '-',
+                      c.targetWarehouseName ?? 'Default',
+                      c.targetZone ?? 'General',
+                    ])
+                .toList(),
           ),
           _buildFooter(categories.length, label: 'Total Active Categories:'),
         ],
@@ -982,12 +1175,14 @@ class ReportService {
     );
     return pdf.save();
   }
+
   /// Generates a PDF report for audit logs
-  Future<Uint8List> generateLogsPdf(List<AuditLogModel> logs, String dateRange) async {
+  Future<Uint8List> generateLogsPdf(
+      List<AuditLogModel> logs, String dateRange) async {
     await _ensureFontsLoaded();
     final pdf = pw.Document(
       theme: pw.ThemeData.withFont(
-        base: _font, 
+        base: _font,
         bold: _fontBold,
         fontFallback: [_fontSinhala!],
       ),
@@ -1002,15 +1197,20 @@ class ReportService {
           _buildHeader('SYSTEM ACTIVITY LOG AUDIT', dateStr, dateRange),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white, font: _fontBold),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.white,
+                font: _fontBold),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
             cellAlignment: pw.Alignment.centerLeft,
             cellStyle: pw.TextStyle(fontSize: 8, font: _font),
             headers: ['Timestamp', 'Officer', 'Action', 'Entity', 'Details'],
             data: logs.map((l) {
-              String detailsText = l.details != null ? l.details.toString() : '-';
-              if (detailsText.length > 200) detailsText = '${detailsText.substring(0, 197)}...';
-              
+              String detailsText =
+                  l.details != null ? l.details.toString() : '-';
+              if (detailsText.length > 200)
+                detailsText = '${detailsText.substring(0, 197)}...';
+
               return [
                 DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt),
                 l.userFullName ?? 'System',
@@ -1037,7 +1237,10 @@ class ReportService {
 
     sheetObject.appendRow(
         [TextCellValue('POST STATUS ACTIVITY CONFIGURATION REPORT')]);
-    sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
+    sheetObject.appendRow([
+      TextCellValue(
+          'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
+    ]);
     sheetObject.appendRow([TextCellValue('')]);
 
     List<String> headers = ['Activity', 'Applies To Status'];
@@ -1045,7 +1248,10 @@ class ReportService {
 
     var headerRow = sheetObject.row(3);
     for (var cell in headerRow) {
-      if (cell != null) cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
+      if (cell != null)
+        cell.cellStyle = CellStyle(
+            bold: true,
+            backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
     }
 
     for (var r in rows) {
@@ -1055,7 +1261,8 @@ class ReportService {
   }
 
   /// Exports package categories to Excel
-  Future<Uint8List?> exportCategoriesToExcel(List<PackageCategory> categories) async {
+  Future<Uint8List?> exportCategoriesToExcel(
+      List<PackageCategory> categories) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['Categories'];
     excel.delete('Sheet1');
@@ -1065,7 +1272,7 @@ class ReportService {
 
     List<String> headers = ['Name', 'Description', 'Target Warehouse', 'Zone'];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
-    
+
     for (var c in categories) {
       sheetObject.appendRow([
         TextCellValue(c.name),
@@ -1076,8 +1283,10 @@ class ReportService {
     }
     return Uint8List.fromList(excel.encode()!);
   }
+
   /// Exports audit logs to Excel
-  Future<Uint8List?> exportLogsToExcel(List<AuditLogModel> logs, String subTitle) async {
+  Future<Uint8List?> exportLogsToExcel(
+      List<AuditLogModel> logs, String subTitle) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['AuditLogs'];
     excel.delete('Sheet1');
@@ -1086,9 +1295,15 @@ class ReportService {
     sheetObject.appendRow([TextCellValue(subTitle)]);
     sheetObject.appendRow([TextCellValue('')]);
 
-    List<String> headers = ['Timestamp', 'Officer', 'Action', 'Entity', 'Details'];
+    List<String> headers = [
+      'Timestamp',
+      'Officer',
+      'Action',
+      'Entity',
+      'Details'
+    ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
-    
+
     for (var l in logs) {
       sheetObject.appendRow([
         TextCellValue(DateFormat('yyyy-MM-dd HH:mm').format(l.createdAt)),
@@ -1102,7 +1317,8 @@ class ReportService {
   }
 
   /// Generates a PDF report for registered staff
-  Future<Uint8List> generateStaffPdf(List<ProfileModel> profiles, {PdfPageFormat? format}) async {
+  Future<Uint8List> generateStaffPdf(List<ProfileModel> profiles,
+      {PdfPageFormat? format}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1115,16 +1331,25 @@ class ReportService {
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
             headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold),
-            headers: ['Full Name', 'Badge No', 'Role', 'Status', 'Registered Date'],
-            data: profiles.map((p) => [
-              p.fullName,
-              p.badgeNumber ?? 'N/A',
-              p.role.toUpperCase(),
-              p.isActive ? 'Active' : 'Deactivated',
-              DateFormat('yyyy-MM-dd').format(p.createdAt),
-            ]).toList(),
+            headers: [
+              'Full Name',
+              'Badge No',
+              'Role',
+              'Status',
+              'Registered Date'
+            ],
+            data: profiles
+                .map((p) => [
+                      p.fullName,
+                      p.badgeNumber ?? 'N/A',
+                      p.role.toUpperCase(),
+                      p.isActive ? 'Active' : 'Deactivated',
+                      DateFormat('yyyy-MM-dd').format(p.createdAt),
+                    ])
+                .toList(),
           ),
-          _buildFooter(profiles.length, label: 'Confidential Staff Audit Log - Total:'),
+          _buildFooter(profiles.length,
+              label: 'Confidential Staff Audit Log - Total:'),
         ],
       ),
     );
@@ -1139,7 +1364,13 @@ class ReportService {
     excel.delete('Sheet1');
 
     // Add Headers
-    List<String> headers = ['Full Name', 'Badge Number', 'Role', 'Status', 'Registered Date'];
+    List<String> headers = [
+      'Full Name',
+      'Badge Number',
+      'Role',
+      'Status',
+      'Registered Date'
+    ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
     // Style the header row
@@ -1169,7 +1400,8 @@ class ReportService {
   // ── New Financial & Warehouse Reports ──
 
   /// Generates a PDF report for Warehouses List
-  Future<Uint8List> generateWarehousesListPdf(List<WarehouseModel> warehouses, Map<String, int> stats) async {
+  Future<Uint8List> generateWarehousesListPdf(
+      List<WarehouseModel> warehouses, Map<String, int> stats) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1178,12 +1410,20 @@ class ReportService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader('REGISTERED WAREHOUSES AUDIT', dateStr, 'Warehouse Occupancy & Status'),
+          _buildHeader('REGISTERED WAREHOUSES AUDIT', dateStr,
+              'Warehouse Occupancy & Status'),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            headers: ['Code', 'Name', 'Location', 'Capacity', 'Active Held Items'],
+            headers: [
+              'Code',
+              'Name',
+              'Location',
+              'Capacity',
+              'Active Held Items'
+            ],
             data: warehouses.map((w) {
               final activeCount = stats[w.code] ?? 0;
               return [
@@ -1194,7 +1434,13 @@ class ReportService {
                 activeCount.toString(),
               ];
             }).toList(),
-            cellAlignments: {0: pw.Alignment.centerLeft, 1: pw.Alignment.centerLeft, 2: pw.Alignment.centerLeft, 3: pw.Alignment.center, 4: pw.Alignment.center},
+            cellAlignments: {
+              0: pw.Alignment.centerLeft,
+              1: pw.Alignment.centerLeft,
+              2: pw.Alignment.centerLeft,
+              3: pw.Alignment.center,
+              4: pw.Alignment.center
+            },
           ),
           _buildFooter(warehouses.length, label: 'Total Warehouses:'),
         ],
@@ -1204,21 +1450,34 @@ class ReportService {
   }
 
   /// Exports Warehouses List to Excel
-  Future<Uint8List?> exportWarehousesListToExcel(List<WarehouseModel> warehouses, Map<String, int> stats) async {
+  Future<Uint8List?> exportWarehousesListToExcel(
+      List<WarehouseModel> warehouses, Map<String, int> stats) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['Warehouses'];
     excel.delete('Sheet1');
 
     sheetObject.appendRow([TextCellValue('REGISTERED WAREHOUSES AUDIT')]);
-    sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
+    sheetObject.appendRow([
+      TextCellValue(
+          'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
+    ]);
     sheetObject.appendRow([TextCellValue('')]);
 
-    List<String> headers = ['Code', 'Name', 'Location', 'Capacity', 'Active Held Items'];
+    List<String> headers = [
+      'Code',
+      'Name',
+      'Location',
+      'Capacity',
+      'Active Held Items'
+    ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
-    
+
     var headerRow = sheetObject.row(3);
     for (var cell in headerRow) {
-      if (cell != null) cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
+      if (cell != null)
+        cell.cellStyle = CellStyle(
+            bold: true,
+            backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
     }
 
     for (var w in warehouses) {
@@ -1234,10 +1493,12 @@ class ReportService {
   }
 
   /// Generates a PDF report for Storage Charges (Financial)
-  Future<Uint8List> generateFinancialPdf(List<WarehouseEntryModel> entries, List<PackageModel> packages, Map<DateTime, double> rates, {required bool isRevenue}) async {
+  Future<Uint8List> generateFinancialPdf(List<WarehouseEntryModel> entries,
+      List<PackageModel> packages, Map<DateTime, double> rates,
+      {required bool isRevenue}) async {
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
-    
+
     // Receipt number embedded in the release notes as "Receipt No: XXX".
     String receiptOf(String? notes) {
       if (notes == null || notes.trim().isEmpty) return '—';
@@ -1258,7 +1519,8 @@ class ReportService {
     final rowData = <List<String>>[];
 
     for (var entry in entries) {
-      final package = packages.firstWhere((p) => p.id == entry.packageId, orElse: () => packages.first);
+      final package = packages.firstWhere((p) => p.id == entry.packageId,
+          orElse: () => packages.first);
       final charge = entry.calculatePackageCharge(package.items, rates);
       totalCharge += charge;
 
@@ -1269,7 +1531,11 @@ class ReportService {
             ? entry.hsCode!.trim()
             : hsLabel(package.items),
         DateFormat('yyyy-MM-dd').format(entry.admittedAt),
-        entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : 'Released') : 'In Warehouse',
+        entry.isReturned
+            ? (entry.returnedAt != null
+                ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!)
+                : 'Released')
+            : 'In Warehouse',
         entry.isReturned ? receiptOf(entry.returnNotes) : '—',
         entry.itemCount.toString(),
         entry.storageDays.toString(),
@@ -1282,12 +1548,28 @@ class ReportService {
         pageFormat: PdfPageFormat.a4,
         margin: const pw.EdgeInsets.all(32),
         build: (context) => [
-          _buildHeader(isRevenue ? 'RELEASED REVENUE REPORT' : 'OUTSTANDING STORAGE CHARGES REPORT', dateStr, 'Financial Audit'),
+          _buildHeader(
+              isRevenue
+                  ? 'RELEASED REVENUE REPORT'
+                  : 'OUTSTANDING STORAGE CHARGES REPORT',
+              dateStr,
+              'Financial Audit'),
           pw.SizedBox(height: 20),
           pw.TableHelper.fromTextArray(
-            headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+            headerStyle: pw.TextStyle(
+                fontWeight: pw.FontWeight.bold, color: PdfColors.white),
             headerDecoration: const pw.BoxDecoration(color: PdfColors.blue900),
-            headers: ['SR Number', 'Item', 'HS Code', 'Entry Date', 'Release Date / Status', 'Receipt No', 'Items', 'Days', 'Calculated Charge'],
+            headers: [
+              'SR Number',
+              'Item',
+              'HS Code',
+              'Entry Date',
+              'Release Date / Status',
+              'Receipt No',
+              'Items',
+              'Days',
+              'Calculated Charge'
+            ],
             data: rowData,
             cellStyle: const pw.TextStyle(fontSize: 7.5),
             cellAlignments: {
@@ -1303,13 +1585,18 @@ class ReportService {
             },
           ),
           pw.SizedBox(height: 10),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.end,
-            children: [
-              pw.Text('Total: ', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
-              pw.Text(NumberFormat.currency(symbol: 'LKR ', decimalDigits: 2).format(totalCharge), style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14, color: PdfColors.blue900)),
-            ]
-          ),
+          pw.Row(mainAxisAlignment: pw.MainAxisAlignment.end, children: [
+            pw.Text('Total: ',
+                style:
+                    pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 14)),
+            pw.Text(
+                NumberFormat.currency(symbol: 'LKR ', decimalDigits: 2)
+                    .format(totalCharge),
+                style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 14,
+                    color: PdfColors.blue900)),
+          ]),
           pw.SizedBox(height: 10),
           _buildFooter(entries.length, label: 'Total Entries:'),
         ],
@@ -1319,13 +1606,22 @@ class ReportService {
   }
 
   /// Exports Financial Data to Excel
-  Future<Uint8List?> exportFinancialToExcel(List<WarehouseEntryModel> entries, List<PackageModel> packages, Map<DateTime, double> rates, {required bool isRevenue}) async {
+  Future<Uint8List?> exportFinancialToExcel(List<WarehouseEntryModel> entries,
+      List<PackageModel> packages, Map<DateTime, double> rates,
+      {required bool isRevenue}) async {
     var excel = Excel.createExcel();
     Sheet sheetObject = excel['Financial'];
     excel.delete('Sheet1');
 
-    sheetObject.appendRow([TextCellValue(isRevenue ? 'RELEASED REVENUE REPORT' : 'OUTSTANDING STORAGE CHARGES REPORT')]);
-    sheetObject.appendRow([TextCellValue('Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')]);
+    sheetObject.appendRow([
+      TextCellValue(isRevenue
+          ? 'RELEASED REVENUE REPORT'
+          : 'OUTSTANDING STORAGE CHARGES REPORT')
+    ]);
+    sheetObject.appendRow([
+      TextCellValue(
+          'Generated on: ${DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now())}')
+    ]);
     sheetObject.appendRow([TextCellValue('')]);
 
     String receiptOf(String? notes) {
@@ -1343,17 +1639,31 @@ class ReportService {
       return '—';
     }
 
-    List<String> headers = ['SR Number', 'Item', 'HS Code', 'Entry Date', 'Release Date / Status', 'Receipt No', 'Items', 'Days', 'Calculated Charge (LKR)'];
+    List<String> headers = [
+      'SR Number',
+      'Item',
+      'HS Code',
+      'Entry Date',
+      'Release Date / Status',
+      'Receipt No',
+      'Items',
+      'Days',
+      'Calculated Charge (LKR)'
+    ];
     sheetObject.appendRow(headers.map((e) => TextCellValue(e)).toList());
 
     var headerRow = sheetObject.row(3);
     for (var cell in headerRow) {
-      if (cell != null) cell.cellStyle = CellStyle(bold: true, backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
+      if (cell != null)
+        cell.cellStyle = CellStyle(
+            bold: true,
+            backgroundColorHex: ExcelColor.fromHexString('#E3F2FD'));
     }
 
     double totalCharge = 0;
     for (var entry in entries) {
-      final package = packages.firstWhere((p) => p.id == entry.packageId, orElse: () => packages.first);
+      final package = packages.firstWhere((p) => p.id == entry.packageId,
+          orElse: () => packages.first);
       final charge = entry.calculatePackageCharge(package.items, rates);
       totalCharge += charge;
 
@@ -1364,7 +1674,11 @@ class ReportService {
             ? entry.hsCode!.trim()
             : hsLabel(package.items)),
         TextCellValue(DateFormat('yyyy-MM-dd').format(entry.admittedAt)),
-        TextCellValue(entry.isReturned ? (entry.returnedAt != null ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!) : 'Released') : 'In Warehouse'),
+        TextCellValue(entry.isReturned
+            ? (entry.returnedAt != null
+                ? DateFormat('yyyy-MM-dd').format(entry.returnedAt!)
+                : 'Released')
+            : 'In Warehouse'),
         TextCellValue(entry.isReturned ? receiptOf(entry.returnNotes) : '—'),
         IntCellValue(entry.itemCount),
         IntCellValue(entry.storageDays),
@@ -1373,8 +1687,16 @@ class ReportService {
     }
 
     sheetObject.appendRow([TextCellValue('')]);
-    sheetObject.appendRow([TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue(''), TextCellValue('Total:'), DoubleCellValue(totalCharge)]);
-    
+    sheetObject.appendRow([
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue(''),
+      TextCellValue('Total:'),
+      DoubleCellValue(totalCharge)
+    ]);
+
     return Uint8List.fromList(excel.encode()!);
   }
 
@@ -1391,54 +1713,45 @@ class ReportService {
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
                   pw.Text(
-                    title, 
+                    title,
                     style: pw.TextStyle(
-                      fontSize: 20, 
-                      fontWeight: pw.FontWeight.bold, 
+                      fontSize: 20,
+                      fontWeight: pw.FontWeight.bold,
                       color: PdfColor.fromInt(0xFF0D47A1),
                     ),
                   ),
                   pw.SizedBox(height: 4),
                   pw.Text(
-                    subTitle, 
+                    subTitle,
                     style: pw.TextStyle(
-                      fontSize: 12, 
-                      fontWeight: pw.FontWeight.bold, 
+                      fontSize: 12,
+                      fontWeight: pw.FontWeight.bold,
                       color: PdfColors.grey700,
                     ),
                   ),
                   pw.SizedBox(height: 2),
                   pw.Text(
-                    'Sri Lanka Customs - SR Management System', 
+                    'Sri Lanka Customs - SR Management System',
                     style: pw.TextStyle(fontSize: 9, color: PdfColors.grey600),
                   ),
                 ],
               ),
             ),
             pw.SizedBox(width: 20),
-            pw.Container(
-              padding: const pw.EdgeInsets.all(6),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColor.fromInt(0xFF0D47A1), width: 2),
-                borderRadius: pw.BorderRadius.circular(4),
-              ),
-              child: pw.Text(
-                'SLC', 
-                style: pw.TextStyle(
-                  fontSize: 18, 
-                  fontWeight: pw.FontWeight.bold, 
-                  color: PdfColor.fromInt(0xFF0D47A1),
-                ),
-              ),
-            ),
+            // The Customs emblem, beside the title.
+            _logoWidget(),
           ],
         ),
         pw.SizedBox(height: 10),
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Report Type: Status Specific Inventory Audit', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
-            pw.Text('Generated on: $date', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+            pw.Text('Report Type: Status Specific Inventory Audit',
+                style:
+                    const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
+            pw.Text('Generated on: $date',
+                style:
+                    const pw.TextStyle(fontSize: 8, color: PdfColors.grey600)),
           ],
         ),
         pw.Divider(thickness: 1.5, color: PdfColor.fromInt(0xFF0D47A1)),
@@ -1448,7 +1761,13 @@ class ReportService {
 
   pw.Widget _buildPackageTable(List<PackageModel> packages) {
     const headers = [
-      'SR Number', 'Item', 'HS Code', 'Qty', 'Consignee', 'Status', 'Date',
+      'SR Number',
+      'Item',
+      'HS Code',
+      'Qty',
+      'Consignee',
+      'Status',
+      'Date',
       'Value (LKR)'
     ];
 
@@ -1456,12 +1775,18 @@ class ReportService {
     // same SR number). Packages with no items still get a single fallback row.
     final rows = <List<String>>[];
     for (final p in packages) {
-      final dateStr =
-          p.entryDate != null ? DateFormat('yyyy-MM-dd').format(p.entryDate!) : '-';
+      final dateStr = p.entryDate != null
+          ? DateFormat('yyyy-MM-dd').format(p.entryDate!)
+          : '-';
       if (p.items.isEmpty) {
         rows.add([
-          p.srNumber, '—', '—', '—', p.consigneeName,
-          p.status.toUpperCase(), dateStr,
+          p.srNumber,
+          '—',
+          '—',
+          '—',
+          p.consigneeName,
+          p.status.toUpperCase(),
+          dateStr,
           NumberFormat('#,##0').format(p.declaredValue),
         ]);
       } else {
@@ -1483,10 +1808,13 @@ class ReportService {
     return pw.TableHelper.fromTextArray(
       headers: headers,
       data: rows,
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
+      headerStyle: pw.TextStyle(
+          fontWeight: pw.FontWeight.bold, fontSize: 8, color: PdfColors.white),
       cellStyle: const pw.TextStyle(fontSize: 7),
-      headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
-      rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
+      headerDecoration:
+          const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+      rowDecoration: const pw.BoxDecoration(
+          border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
       cellHeight: 20,
       cellAlignments: {
         0: pw.Alignment.centerLeft,
@@ -1501,10 +1829,17 @@ class ReportService {
     );
   }
 
-  pw.Widget _buildWarehouseTable(List<WarehouseEntryModel> entries, {bool isReturnedReport = false}) {
+  pw.Widget _buildWarehouseTable(List<WarehouseEntryModel> entries,
+      {bool isReturnedReport = false}) {
     final headers = [
-      'SR No', 'Item', 'HS Code', 'Consignee', 'Warehouse', 'Reason',
-      'Admitted', 'Items'
+      'SR No',
+      'Item',
+      'HS Code',
+      'Consignee',
+      'Warehouse',
+      'Reason',
+      'Admitted',
+      'Items'
     ];
     if (isReturnedReport) {
       headers.add('Released');
@@ -1524,14 +1859,19 @@ class ReportService {
           e.itemCount.toString(),
         ];
         if (isReturnedReport) {
-          row.add(e.returnedAt != null ? DateFormat('yyyy-MM-dd').format(e.returnedAt!) : '-');
+          row.add(e.returnedAt != null
+              ? DateFormat('yyyy-MM-dd').format(e.returnedAt!)
+              : '-');
         }
         return row;
       }).toList(),
-      headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+      headerStyle: pw.TextStyle(
+          fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
       cellStyle: const pw.TextStyle(fontSize: 8),
-      headerDecoration: const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
-      rowDecoration: const pw.BoxDecoration(border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
+      headerDecoration:
+          const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
+      rowDecoration: const pw.BoxDecoration(
+          border: pw.Border(bottom: pw.BorderSide(color: PdfColors.grey200))),
       cellHeight: 20,
       cellAlignments: {
         0: pw.Alignment.centerLeft,
@@ -1554,8 +1894,14 @@ class ReportService {
         pw.Row(
           mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
           children: [
-            pw.Text('Report validated by SR Management System', style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
-            pw.Text('$label $count', style: pw.TextStyle(fontWeight: pw.FontWeight.bold, fontSize: 11, color: PdfColor.fromInt(0xFF0D47A1))),
+            pw.Text('Report validated by SR Management System',
+                style:
+                    const pw.TextStyle(fontSize: 9, color: PdfColors.grey500)),
+            pw.Text('$label $count',
+                style: pw.TextStyle(
+                    fontWeight: pw.FontWeight.bold,
+                    fontSize: 11,
+                    color: PdfColor.fromInt(0xFF0D47A1))),
           ],
         ),
       ],
@@ -1613,8 +1959,7 @@ class ReportService {
         // Package-level forfeit row: expand only items that are genuinely forfeited
         final forfeitItems =
             items.where((i) => pkg.isItemForfeited(i.id)).toList();
-        final effectiveItems =
-            forfeitItems.isNotEmpty ? forfeitItems : items;
+        final effectiveItems = forfeitItems.isNotEmpty ? forfeitItems : items;
 
         if (effectiveItems.isNotEmpty) {
           for (final i in effectiveItems) {
@@ -1684,7 +2029,9 @@ class ReportService {
           pw.TableHelper.fromTextArray(
             headers: headers,
             headerStyle: pw.TextStyle(
-                fontWeight: pw.FontWeight.bold, fontSize: 9, color: PdfColors.white),
+                fontWeight: pw.FontWeight.bold,
+                fontSize: 9,
+                color: PdfColors.white),
             headerDecoration:
                 const pw.BoxDecoration(color: PdfColor.fromInt(0xFF1A237E)),
             cellStyle: const pw.TextStyle(fontSize: 8),
@@ -1764,7 +2111,8 @@ class ReportService {
               'Reason',
             ],
             data: packages.map((p) {
-              final overdue = DateTime.now().difference(p.appealDeadline).inDays;
+              final overdue =
+                  DateTime.now().difference(p.appealDeadline).inDays;
               return [
                 p.srNumber,
                 p.consigneeName,
@@ -1850,8 +2198,7 @@ class ReportService {
     }
 
     for (var p in packages) {
-      final overdue =
-          DateTime.now().difference(p.appealDeadline).inDays;
+      final overdue = DateTime.now().difference(p.appealDeadline).inDays;
       sheetObject.appendRow([
         TextCellValue(p.srNumber),
         TextCellValue(p.consigneeName),

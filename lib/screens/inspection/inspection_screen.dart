@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../widgets/styled_form_dialog.dart';
 import '../../core/yards.dart';
 import '../../core/post_status_activities.dart';
 import '../../core/app_session.dart';
@@ -55,6 +56,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       text:
           "${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}");
   final _containerNumberCtrl = TextEditingController();
+
   /// Deposit lodged against the cost of destroying the goods. One figure
   /// per SR (package-level), not per goods item.
   final _destroyingDepositCtrl = TextEditingController();
@@ -134,8 +136,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
           : '';
       _descCtrl.text = pkg.description ?? '';
       _containerNumberCtrl.text = pkg.containerNumber ?? '';
-      _destroyingDepositCtrl.text =
-          pkg.destroyingDeposit?.toString() ?? '';
+      _destroyingDepositCtrl.text = pkg.destroyingDeposit?.toString() ?? '';
       _reasonCtrlMain.text = pkg.reason ?? '';
       _notesCtrl.text = pkg.notes ?? '';
       _oldSrNumberCtrl.text = pkg.oldSrNumber ?? '';
@@ -303,7 +304,8 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     // second click.
     if (_isChecking) return;
     final idx = _tabController.index;
-    final canGoToWarehouse = _tempPackageData != null && _tempPackageItems != null;
+    final canGoToWarehouse =
+        _tempPackageData != null && _tempPackageItems != null;
     final canGoToQr = _warehouseConfirmedPackage != null;
     if (idx == 1 && !canGoToWarehouse) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -442,10 +444,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         id: '',
         srNumber: _srNumberCtrl.text.trim(),
         // Old Entry mode: keep the legacy SR number; NULL for new entries.
-        oldSrNumber: _entryMode == 'old' &&
-                _oldSrNumberCtrl.text.trim().isNotEmpty
-            ? _oldSrNumberCtrl.text.trim()
-            : null,
+        oldSrNumber:
+            _entryMode == 'old' && _oldSrNumberCtrl.text.trim().isNotEmpty
+                ? _oldSrNumberCtrl.text.trim()
+                : null,
         originCountry: _originCtrl.text.trim(),
         declaredValue: double.tryParse(_valueCtrl.text) ?? 0,
         weightKg: double.tryParse(_weightCtrl.text) ?? 0,
@@ -454,8 +456,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         containerNumber: _containerNumberCtrl.text.trim().isEmpty
             ? null
             : _containerNumberCtrl.text.trim(),
-        destroyingDeposit:
-            double.tryParse(_destroyingDepositCtrl.text.trim()),
+        destroyingDeposit: double.tryParse(_destroyingDepositCtrl.text.trim()),
         consigneeName: _consigneeCtrl.text.trim(),
         consigneeNic: _consigneeNicCtrl.text,
         consigneePhone: _consigneePhoneCtrl.text,
@@ -682,484 +683,482 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                   dividerColor: Colors.transparent,
                 ),
               ),
-            ).animate().slideY(begin: 0.1, duration: 400.ms, delay: 100.ms).fadeIn(),
+            )
+                .animate()
+                .slideY(begin: 0.1, duration: 400.ms, delay: 100.ms)
+                .fadeIn(),
             Expanded(
               child: TabBarView(
                 controller: _tabController,
                 children: [
                   SingleChildScrollView(
-                      padding: const EdgeInsets.all(28),
-                      child: Form(
-                        key: _formKey,
-                        autovalidateMode: _showValidationErrors
-                            ? AutovalidateMode.always
-                            : AutovalidateMode.disabled,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            _SectionCard(
-                                    title: 'SR Register Information',
-                                    icon: Icons.inventory_2_rounded,
-                                    children: [
-                                  // ── Registration type: New Entry / Old Entry ──
-                                  StyledDropdownFormField<String>(
-                                    label: 'Registration Type',
-                                    menuWidth: 260,
-                                    // Match the roomier (non-dense) section
-                                    // fields below (Old SR Number / SR Number).
-                                    isDense: false,
-                                    contentPadding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 16),
-                                    valueStyle: TextStyle(
-                                        fontSize: 16,
-                                        color: context.colors.textPrimary),
-                                    labelStyle: const TextStyle(fontSize: 14),
-                                    value: _entryMode,
-                                    options: const [
-                                      StyledDropdownOption('new', 'New Entry'),
-                                      StyledDropdownOption('old', 'Old Entry'),
-                                    ],
-                                    onChanged: (v) => setState(
-                                        () => _entryMode = v ?? 'new'),
-                                  ),
-                                  const Gap(12),
-                                  if (_isUpdate)
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 8),
-                                      margin: const EdgeInsets.only(bottom: 12),
-                                      decoration: BoxDecoration(
-                                        color: context.colors.primaryGold
-                                            .withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                            color: context.colors.primaryGold
-                                                .withOpacity(0.4)),
-                                      ),
-                                      child: Row(children: [
-                                        Icon(Icons.edit_rounded,
-                                            color: context.colors.primaryGold,
-                                            size: 16),
-                                        const Gap(8),
-                                        Text(
-                                            'Editing existing SR entry – changes will update the record.',
-                                            style: TextStyle(
-                                                color:
-                                                    context.colors.primaryGold,
-                                                fontSize: 13)),
-                                      ]),
+                    padding: const EdgeInsets.all(28),
+                    child: Form(
+                      key: _formKey,
+                      autovalidateMode: _showValidationErrors
+                          ? AutovalidateMode.always
+                          : AutovalidateMode.disabled,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _SectionCard(
+                                  title: 'SR Register Information',
+                                  icon: Icons.inventory_2_rounded,
+                                  children: [
+                                // ── Registration type: New Entry / Old Entry ──
+                                StyledDropdownFormField<String>(
+                                  label: 'Registration Type',
+                                  menuWidth: 260,
+                                  // Match the roomier (non-dense) section
+                                  // fields below (Old SR Number / SR Number).
+                                  isDense: false,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 16),
+                                  valueStyle: TextStyle(
+                                      fontSize: 16,
+                                      color: context.colors.textPrimary),
+                                  labelStyle: const TextStyle(fontSize: 14),
+                                  value: _entryMode,
+                                  options: const [
+                                    StyledDropdownOption('new', 'New Entry'),
+                                    StyledDropdownOption('old', 'Old Entry'),
+                                  ],
+                                  onChanged: (v) =>
+                                      setState(() => _entryMode = v ?? 'new'),
+                                ),
+                                const Gap(12),
+                                if (_isUpdate)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 12, vertical: 8),
+                                    margin: const EdgeInsets.only(bottom: 12),
+                                    decoration: BoxDecoration(
+                                      color: context.colors.primaryGold
+                                          .withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: context.colors.primaryGold
+                                              .withOpacity(0.4)),
                                     ),
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        flex: 1,
-                                        // Locked to the signed-in user's own
-                                        // yard — every role (admins included) is
-                                        // scoped to a single yard, so the yard
-                                        // is shown for context but not editable.
-                                        child: TextFormField(
-                                          initialValue: yardByCode(AppSession.currentYard).name,
-                                          readOnly: true,
-                                          enabled: false,
-                                          style: TextStyle(color: context.colors.textPrimary),
-                                          decoration: _fieldDecoration(
-                                            labelText: 'Yard',
-                                          ).copyWith(
-                                            fillColor: Theme.of(context).brightness == Brightness.dark
-                                                ? Colors.grey.shade900
-                                                : Colors.grey.shade100,
-                                            filled: true,
-                                          ),
-                                        ),
-                                      ),
-                                      const Gap(12),
-                                      Expanded(
-                                        flex: 2,
-                                        child: TextFormField(
-                                          controller: _srNumberCtrl,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.allow(
-                                                RegExp(r'[a-zA-Z0-9/ ]')),
-                                            LengthLimitingTextInputFormatter(
-                                                30),
-                                          ],
-                                          decoration: _fieldDecoration(
-                                            labelText: 'SR Number *',
-                                            hintText:
-                                                'e.g. GL1/SR/01/2025 or GL1/MISC/187/2025',
-                                            suffixIcon: Tooltip(
-                                              message: isOfficer
-                                                  ? 'Loading existing SR entries is restricted to administrators only'
-                                                  : '',
-                                              child: IconButton(
-                                                icon: _isLookingUp
-                                                    ? SizedBox(
-                                                        width: 16,
-                                                        height: 16,
-                                                        child:
-                                                            CircularProgressIndicator(
-                                                                strokeWidth: 2,
-                                                                color: context
-                                                                    .colors
-                                                                    .primaryGold))
-                                                    : Icon(Icons.search_rounded,
-                                                        color: isOfficer
-                                                            ? context.colors
-                                                                .textMuted
-                                                            : context.colors
-                                                                .primaryGold),
-                                                onPressed:
-                                                    (isOfficer || _isLookingUp)
-                                                        ? null
-                                                        : _loadBySrNumber,
-                                              ),
-                                            ),
-                                          ),
-                                          validator: _requiredValidator,
-                                          onFieldSubmitted: (_) => isOfficer
-                                              ? null
-                                              : _loadBySrNumber(),
-                                          textCapitalization:
-                                              TextCapitalization.characters,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                  const Gap(16),
-                                  Row(children: [
-                                    Expanded(
-                                        child: _CusdecAutocompleteField(
-                                            controller: _cusdecCtrl,
-                                            decoration: _fieldDecoration(
-                                                labelText: 'Cusdec No *'),
-                                            validator: _requiredValidator)),
-                                    const Gap(12),
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _cusdecDateCtrl,
-                                            readOnly: true,
-                                            onTap: () => _selectDate(
-                                                _cusdecDateCtrl,
-                                                lastDate: DateTime.now()),
-                                            inputFormatters: [
-                                              MaskTextInputFormatter(
-                                                mask: '####-##-##',
-                                                filter: {"#": RegExp(r'[0-9]')},
-                                                type:
-                                                    MaskAutoCompletionType.lazy,
-                                              )
-                                            ],
-                                            decoration: _fieldDecoration(
-                                              labelText: 'Cusdec Date *',
-                                              hintText: 'YYYY-MM-DD',
-                                              suffixIcon: IconButton(
-                                                icon: Icon(Icons.calendar_month,
-                                                    color: context
-                                                        .colors.primaryGold),
-                                                onPressed: () => _selectDate(
-                                                    _cusdecDateCtrl,
-                                                    lastDate: DateTime.now()),
-                                              ),
-                                            ),
-                                            validator: _dateValidator)),
-                                  ]),
-                                  const Gap(16),
-                                  Row(children: [
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _caseNumberCtrl,
-                                            decoration: _fieldDecoration(
-                                                labelText: 'Case Number'),
-                                            validator: (v) => null)),
-                                    const Gap(12),
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _entryDateCtrl,
-                                            readOnly: true,
-                                            onTap: () => _selectDate(
-                                                _entryDateCtrl,
-                                                lastDate: DateTime.now()),
-                                            inputFormatters: [
-                                              MaskTextInputFormatter(
-                                                mask: '####-##-##',
-                                                filter: {"#": RegExp(r'[0-9]')},
-                                                type:
-                                                    MaskAutoCompletionType.lazy,
-                                              )
-                                            ],
-                                            decoration: _fieldDecoration(
-                                              labelText: 'Entry Date *',
-                                              hintText: 'YYYY-MM-DD',
-                                              suffixIcon: IconButton(
-                                                icon: Icon(Icons.calendar_month,
-                                                    color: context
-                                                        .colors.primaryGold),
-                                                onPressed: () => _selectDate(
-                                                    _entryDateCtrl,
-                                                    lastDate: DateTime.now()),
-                                              ),
-                                            ),
-                                            validator: _dateValidator)),
-                                  ]),
-                                  const Gap(16),
-                                  // Old SR Number (Old Entry only) + Container
-                                  // Number — half width each so the row is filled
-                                  // and neither field runs full-width.
-                                  Row(children: [
-                                    if (_entryMode == 'old') ...[
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: _oldSrNumberCtrl,
-                                          autovalidateMode: AutovalidateMode
-                                              .onUserInteraction,
-                                          inputFormatters: [
-                                            FilteringTextInputFormatter.allow(
-                                                RegExp(r'[a-zA-Z0-9/ ]')),
-                                            LengthLimitingTextInputFormatter(30),
-                                          ],
+                                    child: Row(children: [
+                                      Icon(Icons.edit_rounded,
+                                          color: context.colors.primaryGold,
+                                          size: 16),
+                                      const Gap(8),
+                                      Text(
+                                          'Editing existing SR entry – changes will update the record.',
                                           style: TextStyle(
-                                              color: context.colors.textPrimary),
-                                          decoration: _fieldDecoration(
-                                            labelText: 'Old SR Number *',
-                                            hintText: 'Previous register SR',
-                                          ),
-                                          validator: (v) =>
-                                              _entryMode == 'old' &&
-                                                      (v == null ||
-                                                          v.trim().isEmpty)
-                                                  ? 'Old SR number is required'
-                                                  : null,
+                                              color: context.colors.primaryGold,
+                                              fontSize: 13)),
+                                    ]),
+                                  ),
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      flex: 1,
+                                      // Locked to the signed-in user's own
+                                      // yard — every role (admins included) is
+                                      // scoped to a single yard, so the yard
+                                      // is shown for context but not editable.
+                                      child: TextFormField(
+                                        initialValue:
+                                            yardByCode(AppSession.currentYard)
+                                                .name,
+                                        readOnly: true,
+                                        enabled: false,
+                                        style: TextStyle(
+                                            color: context.colors.textPrimary),
+                                        decoration: _fieldDecoration(
+                                          labelText: 'Yard',
+                                        ).copyWith(
+                                          fillColor:
+                                              Theme.of(context).brightness ==
+                                                      Brightness.dark
+                                                  ? Colors.grey.shade900
+                                                  : Colors.grey.shade100,
+                                          filled: true,
                                         ),
                                       ),
-                                      const Gap(12),
-                                    ],
+                                    ),
+                                    const Gap(12),
                                     Expanded(
+                                      flex: 2,
                                       child: TextFormField(
-                                        controller: _containerNumberCtrl,
+                                        controller: _srNumberCtrl,
+                                        inputFormatters: [
+                                          FilteringTextInputFormatter.allow(
+                                              RegExp(r'[a-zA-Z0-9/ ]')),
+                                          LengthLimitingTextInputFormatter(30),
+                                        ],
                                         decoration: _fieldDecoration(
-                                          labelText: 'Container Number',
+                                          labelText: 'SR Number *',
+                                          hintText:
+                                              'e.g. GL1/SR/01/2025 or GL1/MISC/187/2025',
+                                          suffixIcon: Tooltip(
+                                            message: isOfficer
+                                                ? 'Loading existing SR entries is restricted to administrators only'
+                                                : '',
+                                            child: IconButton(
+                                              icon: _isLookingUp
+                                                  ? SizedBox(
+                                                      width: 16,
+                                                      height: 16,
+                                                      child:
+                                                          CircularProgressIndicator(
+                                                              strokeWidth: 2,
+                                                              color: context
+                                                                  .colors
+                                                                  .primaryGold))
+                                                  : Icon(Icons.search_rounded,
+                                                      color: isOfficer
+                                                          ? context
+                                                              .colors.textMuted
+                                                          : context.colors
+                                                              .primaryGold),
+                                              onPressed:
+                                                  (isOfficer || _isLookingUp)
+                                                      ? null
+                                                      : _loadBySrNumber,
+                                            ),
+                                          ),
                                         ),
+                                        validator: _requiredValidator,
+                                        onFieldSubmitted: (_) => isOfficer
+                                            ? null
+                                            : _loadBySrNumber(),
                                         textCapitalization:
                                             TextCapitalization.characters,
                                       ),
                                     ),
-                                    const Gap(12),
+                                  ],
+                                ),
+                                const Gap(16),
+                                Row(children: [
+                                  Expanded(
+                                      child: _CusdecAutocompleteField(
+                                          controller: _cusdecCtrl,
+                                          decoration: _fieldDecoration(
+                                              labelText: 'Cusdec No *'),
+                                          validator: _requiredValidator)),
+                                  const Gap(12),
+                                  Expanded(
+                                      child: TextFormField(
+                                          controller: _cusdecDateCtrl,
+                                          readOnly: true,
+                                          onTap: () => _selectDate(
+                                              _cusdecDateCtrl,
+                                              lastDate: DateTime.now()),
+                                          inputFormatters: [
+                                            MaskTextInputFormatter(
+                                              mask: '####-##-##',
+                                              filter: {"#": RegExp(r'[0-9]')},
+                                              type: MaskAutoCompletionType.lazy,
+                                            )
+                                          ],
+                                          decoration: _fieldDecoration(
+                                            labelText: 'Cusdec Date *',
+                                            hintText: 'YYYY-MM-DD',
+                                            suffixIcon: IconButton(
+                                              icon: Icon(Icons.calendar_month,
+                                                  color: context
+                                                      .colors.primaryGold),
+                                              onPressed: () => _selectDate(
+                                                  _cusdecDateCtrl,
+                                                  lastDate: DateTime.now()),
+                                            ),
+                                          ),
+                                          validator: _dateValidator)),
+                                ]),
+                                const Gap(16),
+                                Row(children: [
+                                  Expanded(
+                                      child: TextFormField(
+                                          controller: _caseNumberCtrl,
+                                          decoration: _fieldDecoration(
+                                              labelText: 'Case Number'),
+                                          validator: (v) => null)),
+                                  const Gap(12),
+                                  Expanded(
+                                      child: TextFormField(
+                                          controller: _entryDateCtrl,
+                                          readOnly: true,
+                                          onTap: () => _selectDate(
+                                              _entryDateCtrl,
+                                              lastDate: DateTime.now()),
+                                          inputFormatters: [
+                                            MaskTextInputFormatter(
+                                              mask: '####-##-##',
+                                              filter: {"#": RegExp(r'[0-9]')},
+                                              type: MaskAutoCompletionType.lazy,
+                                            )
+                                          ],
+                                          decoration: _fieldDecoration(
+                                            labelText: 'Entry Date *',
+                                            hintText: 'YYYY-MM-DD',
+                                            suffixIcon: IconButton(
+                                              icon: Icon(Icons.calendar_month,
+                                                  color: context
+                                                      .colors.primaryGold),
+                                              onPressed: () => _selectDate(
+                                                  _entryDateCtrl,
+                                                  lastDate: DateTime.now()),
+                                            ),
+                                          ),
+                                          validator: _dateValidator)),
+                                ]),
+                                const Gap(16),
+                                // Old SR Number (Old Entry only) + Container
+                                // Number — half width each so the row is filled
+                                // and neither field runs full-width.
+                                Row(children: [
+                                  if (_entryMode == 'old') ...[
                                     Expanded(
                                       child: TextFormField(
-                                        controller: _destroyingDepositCtrl,
-                                        decoration: _fieldDecoration(
-                                          labelText: 'Destroying Deposit (LKR)',
-                                        ),
-                                        keyboardType:
-                                            const TextInputType.numberWithOptions(
-                                                decimal: true),
+                                        controller: _oldSrNumberCtrl,
+                                        autovalidateMode:
+                                            AutovalidateMode.onUserInteraction,
                                         inputFormatters: [
                                           FilteringTextInputFormatter.allow(
-                                              RegExp(r'[0-9.]')),
+                                              RegExp(r'[a-zA-Z0-9/ ]')),
+                                          LengthLimitingTextInputFormatter(30),
                                         ],
-                                        validator: (v) {
-                                          final t = (v ?? '').trim();
-                                          if (t.isEmpty) return null; // optional
-                                          final d = double.tryParse(t);
-                                          if (d == null) return 'Enter a number';
-                                          if (d < 0) return 'Cannot be negative';
-                                          return null;
-                                        },
+                                        style: TextStyle(
+                                            color: context.colors.textPrimary),
+                                        decoration: _fieldDecoration(
+                                          labelText: 'Old SR Number *',
+                                          hintText: 'Previous register SR',
+                                        ),
+                                        validator: (v) => _entryMode == 'old' &&
+                                                (v == null || v.trim().isEmpty)
+                                            ? 'Old SR number is required'
+                                            : null,
                                       ),
                                     ),
-                                  ]),
-                                  const Gap(16),
-                                  TextFormField(
-                                      controller: _descCtrl,
+                                    const Gap(12),
+                                  ],
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _containerNumberCtrl,
                                       decoration: _fieldDecoration(
-                                          labelText: 'Package Description'),
-                                      maxLines: 2),
-                                ])
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 100.ms)
-                                .fadeIn(),
-                            const Gap(16),
-                            _SectionCard(
-                                    title: 'Consignee Information',
-                                    icon: Icons.person_rounded,
-                                    children: [
-                                  Row(children: [
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _consigneeCtrl,
-                                            decoration: _fieldDecoration(
-                                                labelText: 'Consignee Name *'),
-                                            validator: _requiredValidator)),
-                                    const Gap(12),
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _declarantCtrl,
-                                            decoration: _fieldDecoration(
-                                                labelText: 'Declarant Name *'),
-                                            validator: _requiredValidator)),
-                                  ]),
-                                  const Gap(16),
-                                  Row(children: [
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _consigneeNicCtrl,
-                                            decoration: _fieldDecoration(
-                                                labelText:
-                                                    'Declarant Address'))),
-                                    const Gap(12),
-                                    Expanded(
-                                        child: TextFormField(
-                                            controller: _consigneePhoneCtrl,
-                                            decoration: _fieldDecoration(
-                                                labelText:
-                                                    'Declarant Phone Number (10 digits) *'),
-                                            keyboardType: TextInputType.phone,
-                                            validator: (v) {
-                                              if (!_showValidationErrors) {
-                                                return null;
-                                              }
-                                              if (v == null || v.isEmpty)
-                                                return 'Required';
-                                              if (!RegExp(r'^\d{10}$')
-                                                  .hasMatch(v)) {
-                                                return 'Must be exactly 10 digits';
-                                              }
-                                              return null;
-                                            })),
-                                  ]),
-                                ])
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
-                                .fadeIn(),
-                            const Gap(16),
-                            _SectionCard(
-                              title: 'Package Goods',
-                              icon: Icons.list_alt_rounded,
-                              children: [
-                                ...List.generate(
-                                    _items.length,
-                                    (i) => Padding(
-                                          padding:
-                                              const EdgeInsets.only(bottom: 12),
-                                          child: _ItemRowWidget(
-                                            row: _items[i],
-                                            index: i + 1,
-                                            showValidationErrors:
-                                                _showValidationErrors,
-                                            onRemove: _items.length > 1
-                                                ? () => setState(
-                                                    () => _items.removeAt(i))
-                                                : null,
-                                            onChanged: () => setState(() {}),
-                                          ),
-                                        )),
-                                // Add Item below the list so registering a new
-                                // item needs no scroll back to the top; no item
-                                // count limit.
-                                const Gap(4),
-                                Align(
-                                  alignment: Alignment.centerLeft,
-                                  child: OutlinedButton.icon(
-                                    icon: const Icon(Icons.add_rounded, size: 18),
-                                    label: const Text('Add Goods'),
-                                    style: OutlinedButton.styleFrom(
-                                      foregroundColor: context.colors.primaryGold,
-                                      side: BorderSide(
-                                          color: context.colors.primaryGold
-                                              .withOpacity(0.5)),
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 20, vertical: 14),
-                                    ),
-                                    onPressed: () =>
-                                        setState(() => _items.add(_ItemRow())),
-                                  ),
-                                ),
-                              ],
-                            )
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 300.ms)
-                                .fadeIn(),
-                            const Gap(16),
-                            _SectionCard(
-                              title: 'Office Notice',
-                              icon: Icons.note_alt_rounded,
-                              children: [
-                                TextFormField(
-                                  controller: _notesCtrl,
-                                  decoration: _fieldDecoration(
-                                      labelText: 'Officer Remarks / Notes'),
-                                  maxLines: 3,
-                                ),
-                              ],
-                            )
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 350.ms)
-                                .fadeIn(),
-                            const Gap(24),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: SizedBox(
-                                    height: 52,
-                                    child: Tooltip(
-                                      message: isOfficer
-                                          ? 'Package entry/updates are restricted to administrators only'
-                                          : '',
-                                      child: ElevatedButton.icon(
-                                        icon: _isChecking
-                                            ? SizedBox(
-                                                width: 18,
-                                                height: 18,
-                                                child:
-                                                    CircularProgressIndicator(
-                                                        strokeWidth: 2,
-                                                        color: Colors.white))
-                                            : const Icon(
-                                                Icons.flash_on_rounded),
-                                        label: Text(_isChecking
-                                            ? 'Processing...'
-                                            : 'Next'),
-                                        onPressed:
-                                            _isChecking ? null : _checkPackage,
+                                        labelText: 'Container Number',
                                       ),
+                                      textCapitalization:
+                                          TextCapitalization.characters,
+                                    ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: TextFormField(
+                                      controller: _destroyingDepositCtrl,
+                                      decoration: _fieldDecoration(
+                                        labelText: 'Destroying Deposit (LKR)',
+                                      ),
+                                      keyboardType:
+                                          const TextInputType.numberWithOptions(
+                                              decimal: true),
+                                      inputFormatters: [
+                                        FilteringTextInputFormatter.allow(
+                                            RegExp(r'[0-9.]')),
+                                      ],
+                                      validator: (v) {
+                                        final t = (v ?? '').trim();
+                                        if (t.isEmpty) return null; // optional
+                                        final d = double.tryParse(t);
+                                        if (d == null) return 'Enter a number';
+                                        if (d < 0) return 'Cannot be negative';
+                                        return null;
+                                      },
+                                    ),
+                                  ),
+                                ]),
+                                const Gap(16),
+                                TextFormField(
+                                    controller: _descCtrl,
+                                    decoration: _fieldDecoration(
+                                        labelText: 'Package Description'),
+                                    maxLines: 2),
+                              ])
+                              .animate()
+                              .slideY(
+                                  begin: 0.1, duration: 400.ms, delay: 100.ms)
+                              .fadeIn(),
+                          const Gap(16),
+                          _SectionCard(
+                                  title: 'Consignee Information',
+                                  icon: Icons.person_rounded,
+                                  children: [
+                                Row(children: [
+                                  Expanded(
+                                      child: TextFormField(
+                                          controller: _consigneeCtrl,
+                                          decoration: _fieldDecoration(
+                                              labelText: 'Consignee Name *'),
+                                          validator: _requiredValidator)),
+                                  const Gap(12),
+                                  Expanded(
+                                      child: TextFormField(
+                                          controller: _declarantCtrl,
+                                          decoration: _fieldDecoration(
+                                              labelText: 'Declarant Name *'),
+                                          validator: _requiredValidator)),
+                                ]),
+                                const Gap(16),
+                                Row(children: [
+                                  Expanded(
+                                      child: TextFormField(
+                                          controller: _consigneeNicCtrl,
+                                          decoration: _fieldDecoration(
+                                              labelText: 'Declarant Address'))),
+                                  const Gap(12),
+                                  Expanded(
+                                      child: TextFormField(
+                                          controller: _consigneePhoneCtrl,
+                                          decoration: _fieldDecoration(
+                                              labelText:
+                                                  'Declarant Phone Number (10 digits) *'),
+                                          keyboardType: TextInputType.phone,
+                                          validator: (v) {
+                                            if (!_showValidationErrors) {
+                                              return null;
+                                            }
+                                            if (v == null || v.isEmpty)
+                                              return 'Required';
+                                            if (!RegExp(r'^\d{10}$')
+                                                .hasMatch(v)) {
+                                              return 'Must be exactly 10 digits';
+                                            }
+                                            return null;
+                                          })),
+                                ]),
+                              ])
+                              .animate()
+                              .slideY(
+                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
+                              .fadeIn(),
+                          const Gap(16),
+                          _SectionCard(
+                            title: 'Package Goods',
+                            icon: Icons.list_alt_rounded,
+                            children: [
+                              ...List.generate(
+                                  _items.length,
+                                  (i) => Padding(
+                                        padding:
+                                            const EdgeInsets.only(bottom: 12),
+                                        child: _ItemRowWidget(
+                                          row: _items[i],
+                                          index: i + 1,
+                                          showValidationErrors:
+                                              _showValidationErrors,
+                                          onRemove: _items.length > 1
+                                              ? () => setState(
+                                                  () => _items.removeAt(i))
+                                              : null,
+                                          onChanged: () => setState(() {}),
+                                        ),
+                                      )),
+                              // Add Item below the list so registering a new
+                              // item needs no scroll back to the top; no item
+                              // count limit.
+                              const Gap(4),
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: OutlinedButton.icon(
+                                  icon: const Icon(Icons.add_rounded, size: 18),
+                                  label: const Text('Add Goods'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: context.colors.primaryGold,
+                                    side: BorderSide(
+                                        color: context.colors.primaryGold
+                                            .withOpacity(0.5)),
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 14),
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _items.add(_ItemRow())),
+                                ),
+                              ),
+                            ],
+                          )
+                              .animate()
+                              .slideY(
+                                  begin: 0.1, duration: 400.ms, delay: 300.ms)
+                              .fadeIn(),
+                          const Gap(16),
+                          _SectionCard(
+                            title: 'Office Notice',
+                            icon: Icons.note_alt_rounded,
+                            children: [
+                              TextFormField(
+                                controller: _notesCtrl,
+                                decoration: _fieldDecoration(
+                                    labelText: 'Officer Remarks / Notes'),
+                                maxLines: 3,
+                              ),
+                            ],
+                          )
+                              .animate()
+                              .slideY(
+                                  begin: 0.1, duration: 400.ms, delay: 350.ms)
+                              .fadeIn(),
+                          const Gap(24),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 52,
+                                  child: Tooltip(
+                                    message: isOfficer
+                                        ? 'Package entry/updates are restricted to administrators only'
+                                        : '',
+                                    child: ElevatedButton.icon(
+                                      icon: _isChecking
+                                          ? SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                  strokeWidth: 2,
+                                                  color: Colors.white))
+                                          : const Icon(Icons.flash_on_rounded),
+                                      label: Text(_isChecking
+                                          ? 'Processing...'
+                                          : 'Next'),
+                                      onPressed:
+                                          _isChecking ? null : _checkPackage,
                                     ),
                                   ),
                                 ),
-                                const Gap(12),
-                                OutlinedButton(
-                                    onPressed: _reset,
-                                    child: const Text('Reset')),
-                              ],
-                            ),
-                          ],
-                        ),
+                              ),
+                              const Gap(12),
+                              OutlinedButton(
+                                  onPressed: _reset,
+                                  child: const Text('Reset')),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
+                  ),
                   _ResultPanel(
-                      key: _resultPanelKey,
-                      passed: _passed ?? true,
-                      violations: _violations,
-                      suggestedWarehouseId: _suggestedWarehouseId,
-                      yard: _selectedYard,
-                      tempPackageData: _tempPackageData,
-                      tempPackageItems: _tempPackageItems,
-                      onPackageSaved: (pkg) {
-                        setState(() {
-                          _warehouseConfirmedPackage = pkg;
-                        });
-                        _tabController.animateTo(2);
-                      },
-                      onReset: _reset,
+                    key: _resultPanelKey,
+                    passed: _passed ?? true,
+                    violations: _violations,
+                    suggestedWarehouseId: _suggestedWarehouseId,
+                    yard: _selectedYard,
+                    tempPackageData: _tempPackageData,
+                    tempPackageItems: _tempPackageItems,
+                    onPackageSaved: (pkg) {
+                      setState(() {
+                        _warehouseConfirmedPackage = pkg;
+                      });
+                      _tabController.animateTo(2);
+                    },
+                    onReset: _reset,
                   ),
                   _QrCodePage(
-                      package: _warehouseConfirmedPackage,
-                      onReset: _reset,
+                    package: _warehouseConfirmedPackage,
+                    onReset: _reset,
                   ),
                 ],
               ),
@@ -1172,7 +1171,6 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
 }
 
 // ── Result Panel ───────────────────────────────────────────────
-
 
 class _ResultPanel extends ConsumerStatefulWidget {
   final bool passed;
@@ -1235,6 +1233,71 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     return 'GL1/SR/$cleanName';
   }
 
+  /// Zones this consignment would overfill, as ready-to-show problems.
+  ///
+  /// Items are grouped by the zone they would land in, because several goods
+  /// of one SR can share a zone — checking them one at a time would let a
+  /// consignment slip past that its total does not fit.
+  Future<List<_CapacityProblem>> _findCapacityProblems() async {
+    final items = widget.tempPackageItems;
+    if (items == null || items.isEmpty) return const [];
+
+    final occupancy = await ref.read(zoneOccupancyProvider.future);
+    final zones = await ref.read(warehouseZonesProvider.future);
+    final cats = ref.read(packageCategoriesProvider).valueOrNull;
+
+    // "<warehouseId>|<zone lowercased>" → items this consignment adds.
+    final wanted = <String, int>{};
+    final labels = <String, String>{};
+    for (int i = 0; i < items.length; i++) {
+      final whId = _itemWarehouseSelections[i];
+      if (whId == null) continue;
+      final cat = cats?.where((c) => c.name == items[i].category).firstOrNull;
+      final zoneName = (cat?.targetZone ?? '').trim();
+      if (zoneName.isEmpty) continue; // no zone chosen → nothing to check
+      final key = '$whId|${zoneName.toLowerCase()}';
+      wanted[key] = (wanted[key] ?? 0) + items[i].quantity;
+      labels[key] = zoneName;
+    }
+
+    final problems = <_CapacityProblem>[];
+    for (final entry in wanted.entries) {
+      final parts = entry.key.split('|');
+      final whId = parts.first;
+      final zoneName = labels[entry.key] ?? parts.last;
+
+      final zone = zones
+          .where((z) =>
+              z.warehouseId == whId &&
+              z.name.trim().toLowerCase() == parts.last)
+          .firstOrNull;
+      // A zone the admin never defined cannot be capacity-checked; admitting
+      // is still allowed, and the capacity view reports it as unzoned.
+      if (zone == null) continue;
+
+      final occ = occupancy[zone.id];
+      final free = occ?.free ?? zone.capacity;
+      if (entry.value <= free) continue;
+
+      // Where else the same warehouse has room.
+      final alternatives = zones
+          .where((z) => z.warehouseId == whId && z.id != zone.id)
+          .map((z) => (z, occupancy[z.id]?.free ?? z.capacity))
+          .where((e) => e.$2 >= entry.value)
+          .map((e) => '${e.$1.name} (${e.$2} free)')
+          .toList();
+
+      problems.add(_CapacityProblem(
+        zoneName: zoneName,
+        needed: entry.value,
+        free: free,
+        capacity: zone.capacity,
+        alternatives: alternatives,
+      ));
+    }
+    return problems;
+  }
+
   Future<void> _sendToWarehouse() async {
     // Guard against the SnackBar "RETRY" action firing after this widget is
     // gone (e.g. user navigated away) — setState would throw otherwise.
@@ -1253,6 +1316,22 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
       ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Package data not found')));
       return;
+    }
+
+    // ── Capacity check ──────────────────────────────────────────────────────
+    // Nothing used to stop goods being admitted into a full warehouse, which
+    // is how one reached 128%. Space is managed zone by zone, so the check is
+    // per zone — and it counts EVERY item in this consignment together, since
+    // several can land in the same zone.
+    final blocked = await _findCapacityProblems();
+    if (blocked.isNotEmpty) {
+      if (!mounted) return;
+      final proceed = await showDialog<bool>(
+            context: context,
+            builder: (_) => _CapacityBlockedDialog(problems: blocked),
+          ) ??
+          false;
+      if (!proceed) return;
     }
 
     setState(() => _isSending = true);
@@ -1726,8 +1805,7 @@ class _CusdecAutocompleteFieldState extends State<_CusdecAutocompleteField> {
         widget.controller.selection =
             TextSelection.collapsed(offset: selection.length);
       },
-      fieldViewBuilder:
-          (context, textController, focusNode, onFieldSubmitted) {
+      fieldViewBuilder: (context, textController, focusNode, onFieldSubmitted) {
         return TextFormField(
           controller: textController,
           focusNode: focusNode,
@@ -1821,8 +1899,7 @@ class _CusdecOptionsListState extends State<_CusdecOptionsList> {
         return InkWell(
           onTap: () => widget.onSelected(option),
           child: Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: isHighlighted
                   ? context.colors.primaryGold.withOpacity(0.15)
@@ -1843,8 +1920,8 @@ class _CusdecOptionsListState extends State<_CusdecOptionsList> {
                       fontSize: 14)),
               const Gap(8),
               Text('+ number',
-                  style: TextStyle(
-                      color: context.colors.textMuted, fontSize: 12)),
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 12)),
             ]),
           ),
         );
@@ -1869,7 +1946,8 @@ class _QrCodePage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('QR Code Generate', style: Theme.of(context).textTheme.titleLarge),
+          Text('QR Code Generate',
+              style: Theme.of(context).textTheme.titleLarge),
           const Gap(20),
           Container(
             width: double.infinity,
@@ -2160,8 +2238,8 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     'Meters',
                   ].map((u) => StyledDropdownOption(u, u)).toList(),
                   onChanged: (v) {
-                    setState(() =>
-                        widget.row.innerUnitCtrl.text = v ?? 'Pieces');
+                    setState(
+                        () => widget.row.innerUnitCtrl.text = v ?? 'Pieces');
                     widget.onChanged();
                   },
                 ),
@@ -2410,13 +2488,13 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                       label: 'Activity ${rIdx + 1} *',
                       menuWidth: 300,
                       fillColor: context.colors.cardDark,
-                      value: activities.contains(widget.row.selectedReasons[rIdx])
-                          ? widget.row.selectedReasons[rIdx]
-                          : null,
-                      validator: (v) =>
-                          widget.showValidationErrors && v == null
-                              ? 'Required'
+                      value:
+                          activities.contains(widget.row.selectedReasons[rIdx])
+                              ? widget.row.selectedReasons[rIdx]
                               : null,
+                      validator: (v) => widget.showValidationErrors && v == null
+                          ? 'Required'
+                          : null,
                       options: activities.map((a) {
                         final isSelectedSomewhereElse =
                             widget.row.selectedReasons.any((res) => res == a);
@@ -2515,6 +2593,166 @@ class _SectionCard extends StatelessWidget {
         ]),
         const Gap(16),
         ...children,
+      ]),
+    );
+  }
+}
+
+/// One zone this consignment would overfill.
+class _CapacityProblem {
+  final String zoneName;
+
+  /// Items this consignment wants to put in the zone.
+  final int needed;
+
+  /// Room actually left.
+  final int free;
+  final int capacity;
+
+  /// Zones in the SAME warehouse that could take the whole lot.
+  final List<String> alternatives;
+
+  const _CapacityProblem({
+    required this.zoneName,
+    required this.needed,
+    required this.free,
+    required this.capacity,
+    this.alternatives = const [],
+  });
+}
+
+/// Stops a consignment that does not fit, and says where it would.
+///
+/// Not a hard block: the officer can still admit the goods (physical reality
+/// sometimes runs ahead of the record, and refusing outright would leave them
+/// nowhere to log it). But it can no longer happen by accident — the overflow
+/// is stated, and the alternatives are offered first.
+class _CapacityBlockedDialog extends StatelessWidget {
+  final List<_CapacityProblem> problems;
+  const _CapacityBlockedDialog({required this.problems});
+
+  @override
+  Widget build(BuildContext context) {
+    final red = context.colors.dangerRed;
+
+    return StyledFormDialog(
+      label: 'WAREHOUSE CAPACITY',
+      title: problems.length == 1
+          ? 'Zone ${problems.first.zoneName} is full'
+          : '${problems.length} zones are full',
+      icon: Icons.warehouse_rounded,
+      headerAccentColor: red,
+      width: 560,
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Change warehouse'),
+        ),
+        const Gap(8),
+        ElevatedButton.icon(
+          style: ElevatedButton.styleFrom(
+              backgroundColor: red, foregroundColor: Colors.white),
+          icon: const Icon(Icons.warning_amber_rounded, size: 18),
+          label: const Text('Admit anyway'),
+          onPressed: () => Navigator.pop(context, true),
+        ),
+      ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final p in problems) ...[
+            StyledFormSection(
+              title: 'Zone ${p.zoneName}',
+              icon: Icons.grid_view_rounded,
+              children: [
+                _CapacityLine(
+                    label: 'These goods need', value: '${p.needed} items'),
+                _CapacityLine(
+                    label: 'Room left',
+                    value: '${p.free} of ${p.capacity}',
+                    colour: red),
+                _CapacityLine(
+                    label: 'Over by',
+                    value: '${p.needed - p.free} items',
+                    colour: red,
+                    emphasise: true),
+                if (p.alternatives.isNotEmpty) ...[
+                  const Gap(10),
+                  Text('Zones in this warehouse with room:',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: context.colors.textSecondary)),
+                  const Gap(6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final a in p.alternatives)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color:
+                                context.colors.successGreen.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                                color: context.colors.successGreen
+                                    .withOpacity(0.4)),
+                          ),
+                          child: Text('Zone $a',
+                              style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: context.colors.successGreen)),
+                        ),
+                    ],
+                  ),
+                ] else ...[
+                  const Gap(10),
+                  Text(
+                      'No other zone in this warehouse has room for them — '
+                      'try a different warehouse.',
+                      style: TextStyle(
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                          color: context.colors.textMuted)),
+                ],
+              ],
+            ),
+            const Gap(12),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CapacityLine extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color? colour;
+  final bool emphasise;
+  const _CapacityLine(
+      {required this.label,
+      required this.value,
+      this.colour,
+      this.emphasise = false});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(children: [
+        Text(label,
+            style: TextStyle(color: context.colors.textMuted, fontSize: 12.5)),
+        const Spacer(),
+        Text(value,
+            style: TextStyle(
+                color: colour ?? context.colors.textPrimary,
+                fontSize: emphasise ? 14 : 13,
+                fontWeight: emphasise ? FontWeight.w800 : FontWeight.w600)),
       ]),
     );
   }

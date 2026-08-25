@@ -628,6 +628,72 @@ class WarehouseEntryModel {
   }
 }
 
+/// One zone inside a warehouse, with its own capacity.
+///
+/// Space is organised zone by zone, so that is where capacity lives. A
+/// warehouse's capacity is the SUM of its zones — never entered directly.
+class WarehouseZoneModel {
+  final String id;
+  final String warehouseId;
+
+  /// Short label as it appears on a warehouse entry: 'A', 'B', 'Cold Room' …
+  final String name;
+
+  /// The zone's own code, read like the warehouse's: 'W01-A'.
+  final String? code;
+  final String? description;
+  final int capacity;
+
+  const WarehouseZoneModel({
+    required this.id,
+    required this.warehouseId,
+    required this.name,
+    this.code,
+    this.description,
+    this.capacity = 500,
+  });
+
+  factory WarehouseZoneModel.fromJson(Map<String, dynamic> json) =>
+      WarehouseZoneModel(
+        id: json['id'].toString(),
+        warehouseId: json['warehouse_id'].toString(),
+        name: (json['name'] ?? '').toString(),
+        code: json['code'] as String?,
+        description: json['description'] as String?,
+        capacity: (json['capacity'] as num?)?.toInt() ?? 500,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'warehouse_id': warehouseId,
+        'name': name.trim(),
+        if (code != null && code!.trim().isNotEmpty) 'code': code!.trim(),
+        if (description != null && description!.trim().isNotEmpty)
+          'description': description!.trim(),
+        'capacity': capacity,
+      };
+}
+
+/// How full one zone is, and therefore whether more goods fit in it.
+class ZoneOccupancy {
+  final WarehouseZoneModel zone;
+  final int used;
+
+  const ZoneOccupancy({required this.zone, this.used = 0});
+
+  int get capacity => zone.capacity;
+
+  /// Room left. Never negative — an over-filled zone has no room, not
+  /// "minus room".
+  int get free => (capacity - used) > 0 ? capacity - used : 0;
+
+  double get percent => capacity > 0 ? (used / capacity) * 100 : 0;
+
+  bool get isFull => used >= capacity;
+
+  /// Whether [qty] more items fit.
+  bool fits(int qty) => qty <= free;
+}
+
 class WarehouseModel {
   final String id;
   final String name;

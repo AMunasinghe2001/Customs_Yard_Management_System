@@ -736,3 +736,38 @@ Wiring `onSaleOrDestroyRequest` into the warehouse screen (for detained goods) a
 Every status now has its own page for acting on goods — Detained, Abandoned, Forfeited, Other — so the warehouse dialog no longer offers any: its **"Actions"** button is gone and the Final Disposition footer stays suppressed there. It shows what the warehouse holds, and Update. The table's **Appeal column still shows where each item stands**, which is what the page is for.
 
 Both suppressions key on **`useWarehouseSummary`**, passed only by `warehouses_screen.dart`. The disposal wiring added there earlier (`_itemIsDetainedHere`, `_detainActionable`, `_requestDetainDisposal`) went with it. `allItemAppealOutcomesProvider` is still watched — the Appeal chip needs it.
+
+## Warehouse ZONES carry the capacity (2026-08-25)
+
+Capacity was a single number on `warehouses` and **nothing enforced it** — `addEntry` admitted goods with no check at all, which is how Warehouse 01 reached 128%. Space is really organised zone by zone, so that is where the number now lives.
+
+- **`warehouse_zones`** (migration `20260832_warehouse_zones.sql`): one row per zone, its own `capacity`, unique `(warehouse_id, name)` so `warehouse_entries.zone` resolves against it. Read by any authenticated user (the SR form needs it), written by admins only.
+- **A warehouse's capacity is the SUM of its zones — never entered.** `warehouses.capacity` is kept so older readers do not break, but is no longer the source of truth. The admin table shows the derived total and a **Zones** button (`_WarehouseZonesDialog`) where capacity is actually set.
+- The migration **backfills from the zones already in use**, splitting the old warehouse figure evenly among them, so existing data carries over and an over-full warehouse still reads over-full. A warehouse with no zones in use gets one default zone 'A' with the whole old capacity — otherwise it would show zero capacity and accept nothing.
+- **The SR form now blocks over-filling.** `_findCapacityProblems()` groups the consignment's items **by the zone they would land in** (several goods of one SR can share a zone, so checking one at a time would let a consignment slip past that its total does not fit), then `_CapacityBlockedDialog` states the overflow and lists **other zones in the same warehouse with room**. Deliberately not a hard block — "Admit anyway" remains, because physical reality can run ahead of the record and refusing outright would leave the officer nowhere to log it. It can just no longer happen by accident.
+- Entries whose `zone` matches no defined zone still count towards the warehouse's `used` and are surfaced as **unzoned** rather than being attributed to a zone that never held them.
+
+### Zone rollout follow-ups (2026-08-25)
+
+- **`type 'Null' is not a subtype of type 'List<dynamic>'`** on the Zone Capacity page: the screen cast `r['zoneRows']` unguarded, and `getWarehouseZones()` threw outright when `warehouse_zones` did not exist yet (migration not run). Both are now tolerant — the service returns an empty list and the screen reads `(r['zoneRows'] as List?) ?? const []`, so the page says "No zones defined" instead of showing a red error. **A new table's reader should degrade to empty, not throw, while its migration is still pending.**
+- The Admin Panel's Warehouses table now lists **each zone as its own row beneath its warehouse** (`_warehouseRowsWithZones`), repeating the warehouse name in grey so a zone is never orphaned. A warehouse with no zones gets a red "No zones — add one to set capacity" row with an inline Add Zone button.
+
+### Zones get a code, and are created with the warehouse (2026-08-25)
+
+- Migration **`20260833_warehouse_zone_code.sql`** adds `warehouse_zones.code`, backfilled as `<warehouse code>-<zone name>` (uppercased, spaces stripped) and unique per warehouse. A zone now reads like its warehouse: "Zone A" / "W01-A".
+- **`_AddWarehouseDialog`** replaces the old inline builder: warehouse name / code / description / location, then a repeatable zone row (**name · code · capacity**) with an **Add Zone** button and a running total. It **starts with one zone and refuses to create a warehouse with none** — capacity lives on the zones, so a warehouse without any could hold nothing. The zone code auto-suggests from the warehouse code, so it need not be typed. `warehouses.capacity` is still written, as the zones' sum, to keep legacy readers in step.
+- The admin table's third column is now **Description** (zones have one; a location belongs to the warehouse, which falls back to it). Zone rows fill all five columns — name (`Warehouse 01 · Zone A`, indented), code, description-or-usage, `capacity (N free)` / `(FULL)`, edit.
+
+### Item categories now point at REAL zones (2026-08-25)
+
+The category form offered a **hardcoded `List.generate(10, ...)`** — "Zone 1 … Zone 10" — with no connection to `warehouse_zones`, and stored the label verbatim (`"Zone 3"`). That is why zones picked there never appeared in the Warehouses table: they were never rows.
+
+- Both the add and edit dialogs now list the **actual zones of the selected warehouse**, labelled `name · N cap`, so a warehouse can have as many zones as it really has. Already-assigned zones stay shown-but-disabled, as before.
+- **`target_zone` now stores the zone's NAME.** Migration `20260834_category_zone_names.sql` normalises the legacy `"Zone 3"` values: strip the prefix where that zone exists, otherwise **create the missing zone** (capacity 500, flagged in its description) so a category that was pointing somewhere keeps pointing there instead of silently losing its target.
+- The edit dialog clears `selectedZone` when the warehouse no longer has it — a dropdown must never hold a value its menu cannot offer. The categories table renders such a zone in red as `"3 (not defined)"`.
+
+### Reports: print, don't save; and the emblem in every header (2026-08-25)
+
+- **Saving a PDF is no longer offered.** The preview exists to READ the report; anything leaving the system goes on paper or as Excel. The report cards' "PDF" button is now **"Print"** (it still opens the same preview), the preview footer's "Save PDF" action is gone, and the table dialog's footer button is "Print" too. `Printing.layoutPdf` in the preview footer is the print path.
+- **The Customs emblem now heads all three views.** In the PDF, `ReportService._logoWidget()` draws `Sri_Lanka_Customs_logo.svg` via **`pw.SvgImage`** (the `pdf` package renders SVG directly — no raster asset needed), falling back to the old "SLC" monogram if the asset cannot be read. The SVG is cached in a static and loaded from `_ensureFontsLoaded()`, which already runs before every report.
+- On screen, the preview dialog and the table dialog use `SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg')` with **`SvgTheme(currentColor:)`** — a `colorFilter` srcIn flattens the eye/ship detail into a solid blob (same rule as the portal headers).

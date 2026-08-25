@@ -878,6 +878,78 @@ class WarehouseService {
     };
   }
 
+  /// Every zone, newest warehouse first. Reference data — the SR form, the
+  /// capacity view and the admin panel all read it.
+  Future<List<WarehouseZoneModel>> getWarehouseZones() async {
+    try {
+      final data = await AuthService._withNetworkRetry(() => supabase
+          .from('warehouse_zones')
+          .select()
+          .order('warehouse_id')
+          .order('name'));
+      return (data as List)
+          .map((e) => WarehouseZoneModel.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      // The table only exists once 20260832_warehouse_zones.sql has run. Until
+      // then report NO zones rather than failing: every capacity view then
+      // shows "no zones defined", which is both true and actionable, instead
+      // of a red error screen.
+      return const [];
+    }
+  }
+
+  Future<void> saveWarehouseZone(WarehouseZoneModel zone) async {
+    final row = zone.toJson();
+    await AuthService._withNetworkRetry(() => zone.id.isEmpty
+        ? supabase.from('warehouse_zones').insert(row)
+        : supabase.from('warehouse_zones').update({
+            ...row,
+            'updated_at': DateTime.now().toIso8601String(),
+          }).eq('id', zone.id));
+  }
+
+  Future<void> deleteWarehouseZone(String id) async {
+    await AuthService._withNetworkRetry(
+        () => supabase.from('warehouse_zones').delete().eq('id', id));
+  }
+
+  /// How full every zone of this yard currently is, keyed by zone id.
+  ///
+  /// Counts only LIVE entries (`is_returned = false`) — goods that have left
+  /// no longer take up space. An entry whose zone does not match any real zone
+  /// is counted against the warehouse but against no zone, which is why the
+  /// capacity view shows a warehouse total as well.
+  Future<Map<String, ZoneOccupancy>> getZoneOccupancy() async {
+    final zones = await getWarehouseZones();
+    final yard = AppSession.currentYard;
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('warehouse_entries')
+        .select('item_count, zone, warehouse_id')
+        .eq('yard', yard)
+        .eq('is_returned', false));
+
+    // "<warehouseId>|<zone name lowercased>" → items held.
+    final used = <String, int>{};
+    for (final e in (data as List)) {
+      final row = e as Map<String, dynamic>;
+      final z = (row['zone'] ?? '').toString().trim().toLowerCase();
+      if (z.isEmpty || z == 'n/a') continue;
+      final key = '${row['warehouse_id']}|$z';
+      used[key] =
+          (used[key] ?? 0) + ((row['item_count'] as num?)?.toInt() ?? 0);
+    }
+
+    return {
+      for (final z in zones)
+        z.id: ZoneOccupancy(
+          zone: z,
+          used: used['${z.warehouseId}|${z.name.trim().toLowerCase()}'] ?? 0,
+        ),
+    };
+  }
+
   Future<List<WarehouseEntryModel>> getEntriesByWarehouse(String warehouseId,
       {bool? isReturned}) async {
     var query = supabase
@@ -1430,49 +1502,114 @@ class WarehouseService {
   ///   { 'warehouseName', 'warehouseCode', 'zones' (sorted List<String>),
   ///     'used' (int), 'capacity' (int), 'percent' (double 0..100+) }
   /// Warehouses are global, but the used count is scoped to AppSession yard.
+  /// Capacity of every warehouse in this yard, broken down by ZONE.
+  ///
+  /// A warehouse's capacity is the SUM of its zones — `warehouses.capacity` is
+  /// legacy and no longer consulted. Each row carries a `zoneRows` list so the
+  /// capacity view can show zone by zone, which is where space is actually
+  /// managed.
+  ///
+  /// Entries whose `zone` matches no real zone still count towards the
+  /// warehouse's `used`, so nothing held goes unreported; they appear under the
+  /// `unzoned` figure rather than being attributed to a zone that never had it.
   Future<List<Map<String, dynamic>>> getYardWarehouseCapacity() async {
     final yard = AppSession.currentYard;
 
-    final data = await supabase
+    final zones = await getWarehouseZones();
+    final data = await AuthService._withNetworkRetry(() => supabase
         .from('warehouse_entries')
-        .select(
-            'item_count, zone, warehouse_id, warehouses(name, code, capacity)')
+        .select('item_count, zone, warehouse_id, warehouses(name, code)')
         .eq('yard', yard)
-        .eq('is_returned', false);
+        .eq('is_returned', false));
 
-    // warehouse_id → aggregate
-    final Map<String, Map<String, dynamic>> byWarehouse = {};
+    // warehouse_id → { name, code, "<zone lowercased>" → used, unzoned }
+    final byWarehouse = <String, Map<String, dynamic>>{};
+
+    Map<String, dynamic> shell(String id, [Map? wh]) => byWarehouse.putIfAbsent(
+        id,
+        () => {
+              'warehouseName': wh?['name']?.toString() ?? 'Unknown',
+              'warehouseCode': wh?['code']?.toString() ?? '—',
+              'usedByZone': <String, int>{},
+              'unzoned': 0,
+            });
 
     for (final e in (data as List)) {
-      final wh = e['warehouses'] as Map?;
-      if (wh == null) continue;
-      final whId = e['warehouse_id']?.toString() ?? '';
-      final agg = byWarehouse.putIfAbsent(
-          whId,
-          () => {
-                'warehouseName': wh['name']?.toString() ?? 'Unknown',
-                'warehouseCode': wh['code']?.toString() ?? '—',
-                'capacity': (wh['capacity'] as num?)?.toInt() ?? 500,
-                'used': 0,
-                'zones': <String>{},
-              });
-      agg['used'] =
-          (agg['used'] as int) + ((e['item_count'] as num?)?.toInt() ?? 0);
-      final z = e['zone']?.toString();
-      if (z != null && z.trim().isNotEmpty && z.toUpperCase() != 'N/A') {
-        (agg['zones'] as Set<String>).add(z.trim());
+      final row = e as Map<String, dynamic>;
+      final whId = row['warehouse_id']?.toString() ?? '';
+      if (whId.isEmpty) continue;
+      final agg = shell(whId, row['warehouses'] as Map?);
+      final qty = (row['item_count'] as num?)?.toInt() ?? 0;
+      final z = (row['zone'] ?? '').toString().trim().toLowerCase();
+      if (z.isEmpty || z == 'n/a') {
+        agg['unzoned'] = (agg['unzoned'] as int) + qty;
+      } else {
+        final m = agg['usedByZone'] as Map<String, int>;
+        m[z] = (m[z] ?? 0) + qty;
       }
     }
 
-    final result = byWarehouse.values.map((v) {
-      final used = v['used'] as int;
-      final capacity = v['capacity'] as int;
-      final zones = (v['zones'] as Set<String>).toList()..sort();
+    // A warehouse with zones but nothing in it still belongs on the list.
+    final whNames = <String, Map<String, String>>{};
+    for (final e in (data as List)) {
+      final row = e as Map<String, dynamic>;
+      final wh = row['warehouses'] as Map?;
+      if (wh == null) continue;
+      whNames[row['warehouse_id'].toString()] = {
+        'name': wh['name']?.toString() ?? 'Unknown',
+        'code': wh['code']?.toString() ?? '—',
+      };
+    }
+    for (final z in zones) {
+      final agg = shell(z.warehouseId);
+      if (agg['warehouseName'] == 'Unknown' && whNames[z.warehouseId] != null) {
+        agg['warehouseName'] = whNames[z.warehouseId]!['name'];
+        agg['warehouseCode'] = whNames[z.warehouseId]!['code'];
+      }
+    }
+
+    final result = byWarehouse.entries.map((entry) {
+      final whId = entry.key;
+      final v = entry.value;
+      final usedByZone = v['usedByZone'] as Map<String, int>;
+      final mine = zones.where((z) => z.warehouseId == whId).toList()
+        ..sort((a, b) => a.name.compareTo(b.name));
+
+      final zoneRows = [
+        for (final z in mine)
+          () {
+            final used = usedByZone[z.name.trim().toLowerCase()] ?? 0;
+            return {
+              'id': z.id,
+              'name': z.name,
+              'capacity': z.capacity,
+              'used': used,
+              'free': (z.capacity - used) > 0 ? z.capacity - used : 0,
+              'percent': z.capacity > 0 ? (used / z.capacity) * 100 : 0.0,
+            };
+          }(),
+      ];
+
+      // Held in a zone this warehouse no longer defines — still occupying it.
+      final knownNames = mine.map((z) => z.name.trim().toLowerCase()).toSet();
+      final orphaned = usedByZone.entries
+          .where((e) => !knownNames.contains(e.key))
+          .fold<int>(0, (a, e) => a + e.value);
+
+      final capacity =
+          zoneRows.fold<int>(0, (a, z) => a + (z['capacity'] as int));
+      final used = zoneRows.fold<int>(0, (a, z) => a + (z['used'] as int)) +
+          (v['unzoned'] as int) +
+          orphaned;
       final percent = capacity > 0 ? (used / capacity) * 100 : 0.0;
+
       return {
+        'warehouseId': whId,
         'warehouseName': v['warehouseName'],
         'warehouseCode': v['warehouseCode'],
-        'zones': zones,
+        'zoneRows': zoneRows,
+        'zones': zoneRows.map((z) => z['name'] as String).toList(),
+        'unzoned': (v['unzoned'] as int) + orphaned,
         'used': used,
         'capacity': capacity,
         'percent': percent,

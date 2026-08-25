@@ -1367,6 +1367,24 @@ final categoryZoneSummaryProvider =
 
 /// Per-warehouse capacity utilisation for the current admin's yard (used by the
 /// Zone Capacity page). Refreshes whenever stock moves in/out of a warehouse.
+/// Every warehouse zone. Reference data — the SR form places goods into one,
+/// the capacity view reports on them, the admin panel edits them.
+final warehouseZonesProvider =
+    FutureProvider<List<WarehouseZoneModel>>((ref) async {
+  ref.watch(warehouseRefreshTriggerProvider);
+  return ref.read(warehouseServiceProvider).getWarehouseZones();
+});
+
+/// How full each zone of this yard is, keyed by zone id. Watched by the SR
+/// form so a zone that has filled up stops being offered.
+final zoneOccupancyProvider =
+    FutureProvider<Map<String, ZoneOccupancy>>((ref) async {
+  ref.watch(warehouseRefreshTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(packagesChangeTriggerProvider);
+  return ref.read(warehouseServiceProvider).getZoneOccupancy();
+});
+
 final yardWarehouseCapacityProvider =
     FutureProvider<List<Map<String, dynamic>>>((ref) async {
   ref.watch(packagesChangeTriggerProvider);
