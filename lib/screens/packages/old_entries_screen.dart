@@ -13,6 +13,8 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/date_range_picker_dialog.dart' as custom;
+import '../../widgets/year_filter.dart';
 
 final oldEntrySearchProvider = StateProvider<String>((ref) => '');
 
@@ -29,6 +31,8 @@ class OldEntriesScreen extends ConsumerStatefulWidget {
 
 class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
   final _searchCtrl = TextEditingController();
+  DateTimeRange? _dateRange;
+  String? _yearFilter;
   int _page = 0;
 
   @override
@@ -43,6 +47,30 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  List<String> _extractYears(List<PackageModel> packages) {
+    final yearRegex = RegExp(r'\b(19\d\d|20\d\d)\b');
+    final years = <String>{};
+    for (final p in packages) {
+      if (p.oldSrNumber != null) {
+        for (final m in yearRegex.allMatches(p.oldSrNumber!)) {
+          if (m.group(1) != null) years.add(m.group(1)!);
+        }
+      }
+      for (final m in yearRegex.allMatches(p.srNumber)) {
+        if (m.group(1) != null) years.add(m.group(1)!);
+      }
+      if (p.entryDate != null) {
+        years.add(p.entryDate!.year.toString());
+      }
+      if (p.cusdecDate != null) {
+        for (final m in yearRegex.allMatches(p.cusdecDate!)) {
+          if (m.group(1) != null) years.add(m.group(1)!);
+        }
+      }
+    }
+    return years.toList()..sort((a, b) => b.compareTo(a));
   }
 
   @override
@@ -76,38 +104,129 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
               ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
               const Gap(20),
 
-              // ── Search ──────────────────────────────────────────
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: context.colors.cardDark,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: context.colors.primaryGold.withOpacity(0.5)),
-                ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  style: TextStyle(color: context.colors.textPrimary),
-                  decoration: InputDecoration(
-                    hintText: 'Search by old SR, new SR or consignee...',
-                    prefixIcon: Icon(Icons.search_rounded,
-                        color: context.colors.textMuted),
-                    suffixIcon: _searchCtrl.text.isNotEmpty
-                        ? IconButton(
-                            icon: Icon(Icons.clear_rounded,
+              // ── Search & Filter Bar ──────────────────────────────
+              packagesAsync.maybeWhen(
+                data: (packages) {
+                  final oldPackages = packages
+                      .where((p) =>
+                          p.oldSrNumber != null &&
+                          p.oldSrNumber!.trim().isNotEmpty)
+                      .toList();
+                  final availableYears = _extractYears(oldPackages);
+
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: context.colors.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: context.colors.primaryGold.withOpacity(0.5)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: _searchCtrl,
+                          style: TextStyle(color: context.colors.textPrimary),
+                          decoration: InputDecoration(
+                            hintText:
+                                'Search by old SR, new SR, cusdec or consignee...',
+                            prefixIcon: Icon(Icons.search_rounded,
                                 color: context.colors.textMuted),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              ref.read(oldEntrySearchProvider.notifier).state =
-                                  '';
-                            },
-                          )
-                        : null,
-                    isDense: true,
-                  ),
-                  onChanged: (v) =>
-                      ref.read(oldEntrySearchProvider.notifier).state = v,
-                ),
+                            suffixIcon: _searchCtrl.text.isNotEmpty
+                                ? IconButton(
+                                    icon: Icon(Icons.clear_rounded,
+                                        color: context.colors.textMuted),
+                                    onPressed: () {
+                                      _searchCtrl.clear();
+                                      ref
+                                          .read(oldEntrySearchProvider.notifier)
+                                          .state = '';
+                                    },
+                                  )
+                                : null,
+                            isDense: true,
+                          ),
+                          onChanged: (v) => ref
+                              .read(oldEntrySearchProvider.notifier)
+                              .state = v,
+                        ),
+                        const Gap(10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () async {
+                                final picked = await showDialog<DateTimeRange>(
+                                  context: context,
+                                  builder: (_) => custom.DateRangePickerDialog(
+                                      initialRange: _dateRange),
+                                );
+                                if (picked != null) {
+                                  setState(() {
+                                    _dateRange = picked;
+                                    _page = 0;
+                                  });
+                                }
+                              },
+                              icon: Icon(Icons.date_range_rounded,
+                                  size: 16,
+                                  color: _dateRange != null
+                                      ? context.colors.primaryGold
+                                      : context.colors.textSecondary),
+                              label: Text(
+                                _dateRange == null
+                                    ? 'Date Range'
+                                    : '${DateFormat('yyyy-MM-dd').format(_dateRange!.start)} → ${DateFormat('yyyy-MM-dd').format(_dateRange!.end)}',
+                                style: TextStyle(
+                                    color: _dateRange != null
+                                        ? context.colors.primaryGold
+                                        : context.colors.textSecondary,
+                                    fontWeight: _dateRange != null
+                                        ? FontWeight.bold
+                                        : FontWeight.normal),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(
+                                    color: _dateRange != null
+                                        ? context.colors.primaryGold
+                                        : context.colors.borderColor),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                            if (_dateRange != null)
+                              IconButton(
+                                icon: Icon(Icons.clear_rounded,
+                                    size: 16, color: context.colors.dangerRed),
+                                onPressed: () => setState(() {
+                                  _dateRange = null;
+                                  _page = 0;
+                                }),
+                                tooltip: 'Clear Date Filter',
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            const SizedBox(width: 4),
+                            YearFilterButton(
+                              value: _yearFilter,
+                              years: availableYears,
+                              onChanged: (v) => setState(() {
+                                _yearFilter = v;
+                                _page = 0;
+                              }),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                },
+                orElse: () => const SizedBox.shrink(),
               )
                   .animate()
                   .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
@@ -131,6 +250,37 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                             p.oldSrNumber!.trim().isNotEmpty)
                         .toList();
 
+                    // Apply Year filter
+                    if (_yearFilter != null) {
+                      final y = _yearFilter!;
+                      rows = rows.where((p) {
+                        final oldHas = (p.oldSrNumber ?? '').contains(y);
+                        final newHas = p.srNumber.contains(y);
+                        final entryHas = p.entryDate?.year.toString() == y;
+                        final cusdecDateHas = (p.cusdecDate ?? '').contains(y);
+                        return oldHas || newHas || entryHas || cusdecDateHas;
+                      }).toList();
+                    }
+
+                    // Apply Date Range filter
+                    if (_dateRange != null) {
+                      final start = DateTime(_dateRange!.start.year,
+                          _dateRange!.start.month, _dateRange!.start.day);
+                      final end = DateTime(
+                          _dateRange!.end.year,
+                          _dateRange!.end.month,
+                          _dateRange!.end.day,
+                          23,
+                          59,
+                          59);
+                      rows = rows.where((p) {
+                        final date = p.entryDate ?? p.createdAt;
+                        return (date.isAfter(start) ||
+                                date.isAtSameMomentAs(start)) &&
+                            (date.isBefore(end) || date.isAtSameMomentAs(end));
+                      }).toList();
+                    }
+
                     final q = search.trim().toLowerCase();
                     if (q.isNotEmpty) {
                       rows = rows
@@ -139,7 +289,8 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                                   .toLowerCase()
                                   .contains(q) ||
                               p.srNumber.toLowerCase().contains(q) ||
-                              p.consigneeName.toLowerCase().contains(q))
+                              p.consigneeName.toLowerCase().contains(q) ||
+                              (p.cusdecNo ?? '').toLowerCase().contains(q))
                           .toList();
                     }
                     rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));

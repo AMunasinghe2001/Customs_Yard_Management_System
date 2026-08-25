@@ -161,7 +161,7 @@ class StatChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
         color: color.withOpacity(0.08),
         borderRadius: BorderRadius.circular(12),
@@ -170,8 +170,8 @@ class StatChip extends StatelessWidget {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text(value,
             style: TextStyle(
-                color: color, fontSize: 18, fontWeight: FontWeight.w800)),
-        const Gap(8),
+                color: color, fontSize: 14, fontWeight: FontWeight.w800)),
+        const Gap(6),
         Text(label,
             style: TextStyle(
                 color: context.colors.textSecondary,

@@ -21,6 +21,7 @@ import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/supabase_client.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/year_filter.dart';
 
 /// Item statuses whose goods have permanently left the yard — these must not
 /// appear in (or be counted by) the Warehouses view. Forfeit / Abandoned /
@@ -261,6 +262,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
             {DateTime(2020, 1, 1): 50.0};
 
         final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
+        final yearFilter = ref.watch(warehouseYearFilterProvider(warehouse.id));
         final showReturned = ref.watch(warehouseEntryFilterProvider);
         final filteredList = list.where((e) {
           if (e.isReturned) return false;
@@ -307,6 +309,12 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                 dateRange.end.day, 23, 59, 59);
             if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
               return false;
+          }
+          if (yearFilter != null) {
+            final sr = e.srNumber ?? '';
+            final srMatches = srYearMatches(sr, yearFilter);
+            final admittedMatches = e.admittedAt.year.toString() == yearFilter;
+            if (!srMatches && !admittedMatches) return false;
           }
           if (search.isNotEmpty) {
             final matchesSr =
@@ -489,6 +497,23 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                                     warehouseReasonFilterProvider(warehouse.id)
                                         .notifier)
                                 .state = v ?? 'all';
+                            setState(() => _page = 0);
+                          },
+                        );
+                      }),
+                      Consumer(builder: (context, ref, _) {
+                        final yFilter = ref
+                            .watch(warehouseYearFilterProvider(warehouse.id));
+                        final years =
+                            srYears(list.map((e) => e.srNumber ?? ''));
+                        return YearFilterButton(
+                          value: yFilter,
+                          years: years,
+                          onChanged: (v) {
+                            ref
+                                .read(warehouseYearFilterProvider(warehouse.id)
+                                    .notifier)
+                                .state = v;
                             setState(() => _page = 0);
                           },
                         );

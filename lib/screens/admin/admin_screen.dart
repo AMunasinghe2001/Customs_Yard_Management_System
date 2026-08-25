@@ -20,6 +20,41 @@ import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
 
+Widget _tableActionButton({
+  required BuildContext context,
+  required IconData icon,
+  required Color color,
+  required String tooltip,
+  required VoidCallback? onPressed,
+}) {
+  return Tooltip(
+    message: tooltip,
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(6),
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: color.withOpacity(0.25),
+              width: 0.8,
+            ),
+          ),
+          child: Icon(
+            icon,
+            size: 15,
+            color: onPressed == null ? context.colors.textMuted : color,
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
 class AdminScreen extends ConsumerWidget {
   final int initialIndex;
   const AdminScreen({super.key, this.initialIndex = 0});
@@ -270,6 +305,14 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                     fontSize: 13)),
                             size: ColumnSize.S,
                             fixedWidth: 130),
+                        DataColumn2(
+                            label: Text('Actions',
+                                style: TextStyle(
+                                    color: context.colors.primaryGold,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
+                            size: ColumnSize.S,
+                            fixedWidth: 90),
                       ],
                       rows: pageItems
                           .map((p) => DataRow(cells: [
@@ -285,6 +328,19 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                 DataCell(_RoleChip(role: p.role)),
                                 DataCell(_ExpiresInCell(profile: p)),
                                 DataCell(_AccountStatusChip(profile: p)),
+                                DataCell(Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _tableActionButton(
+                                      context: context,
+                                      icon: Icons.edit_rounded,
+                                      color: context.colors.accentLightBlue,
+                                      tooltip: 'Edit Officer',
+                                      onPressed: () =>
+                                          _showEditDialog(context, ref, p),
+                                    ),
+                                  ],
+                                )),
                               ]))
                           .toList(),
                     ),
@@ -952,7 +1008,8 @@ class _WarehousesTab extends ConsumerWidget {
                             fontSize: 13,
                           ),
                         ),
-                        size: ColumnSize.M,
+                        size: ColumnSize.S,
+                        fixedWidth: 100,
                       ),
                       DataColumn2(
                         label: Text(
@@ -974,8 +1031,8 @@ class _WarehousesTab extends ConsumerWidget {
                             fontSize: 13,
                           ),
                         ),
-                        size: ColumnSize.S,
-                        fixedWidth: 80,
+                        size: ColumnSize.M,
+                        fixedWidth: 190,
                       ),
                       DataColumn2(
                         label: Text(
@@ -987,7 +1044,7 @@ class _WarehousesTab extends ConsumerWidget {
                           ),
                         ),
                         size: ColumnSize.S,
-                        fixedWidth: 160,
+                        fixedWidth: 150,
                       ),
                     ],
                     // Each warehouse, then one row per ZONE beneath it —
@@ -1045,16 +1102,76 @@ class _WarehousesTab extends ConsumerWidget {
                                   .toList();
                               final total =
                                   mine.fold<int>(0, (a, z) => a + z.capacity);
-                              return TooltipText(
-                                mine.isEmpty
-                                    ? 'No zones'
-                                    : '$total  (${mine.length} zone'
-                                        '${mine.length == 1 ? '' : 's'})',
-                                style: TextStyle(
-                                  color: mine.isEmpty
-                                      ? context.colors.dangerRed
-                                      : context.colors.textMuted,
-                                  fontSize: 13,
+                              if (mine.isEmpty) {
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 3.5),
+                                  decoration: BoxDecoration(
+                                    color: context.colors.dangerRed
+                                        .withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: context.colors.dangerRed
+                                          .withOpacity(0.25),
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'No zones',
+                                    style: TextStyle(
+                                      color: context.colors.dangerRed,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                );
+                              }
+                              return Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  onTap: () => _showZonesDialog(context, ref, w),
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 3.5),
+                                    decoration: BoxDecoration(
+                                      color: context.colors.primaryGold
+                                          .withOpacity(0.08),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: context.colors.primaryGold
+                                            .withOpacity(0.25),
+                                        width: 0.8,
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.grid_view_rounded,
+                                          size: 13,
+                                          color: context.colors.primaryGold,
+                                        ),
+                                        const Gap(5),
+                                        Text(
+                                          '$total',
+                                          style: TextStyle(
+                                            color: context.colors.primaryGold,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 12.5,
+                                          ),
+                                        ),
+                                        const Gap(5),
+                                        Text(
+                                          '(${mine.length} zone${mine.length == 1 ? '' : 's'})',
+                                          style: TextStyle(
+                                            color: context.colors.textMuted,
+                                            fontSize: 11.5,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               );
                             },
@@ -1063,41 +1180,28 @@ class _WarehousesTab extends ConsumerWidget {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.grid_view_rounded,
-                                    size: 16,
-                                    color: context.colors.primaryGold,
-                                  ),
-                                  onPressed: () =>
-                                      _showZonesDialog(context, ref, w),
-                                  tooltip: 'Zones & capacity',
-                                ),
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.edit_rounded,
-                                    size: 16,
-                                    color: context.colors.accentLightBlue,
-                                  ),
+                                _tableActionButton(
+                                  context: context,
+                                  icon: Icons.edit_rounded,
+                                  color: context.colors.accentLightBlue,
+                                  tooltip: 'Edit Warehouse',
                                   onPressed: () => _showEditWarehouseDialog(
                                     context,
                                     ref,
                                     w,
                                   ),
-                                  tooltip: 'Edit',
                                 ),
-                                IconButton(
-                                  icon: Icon(
-                                    Icons.delete_rounded,
-                                    size: 16,
-                                    color: context.colors.dangerRed,
-                                  ),
+                                const Gap(6),
+                                _tableActionButton(
+                                  context: context,
+                                  icon: Icons.delete_outline_rounded,
+                                  color: context.colors.dangerRed,
+                                  tooltip: 'Delete Warehouse',
                                   onPressed: () => _showDeleteConfirmation(
                                     context,
                                     ref,
                                     w,
                                   ),
-                                  tooltip: 'Delete',
                                 ),
                               ],
                             ),
@@ -1160,9 +1264,18 @@ class _WarehousesTab extends ConsumerWidget {
           const DataCell(SizedBox()),
           DataCell(Align(
             alignment: Alignment.centerLeft,
-            child: TextButton.icon(
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: context.colors.primaryGold.withOpacity(0.15),
+                foregroundColor: context.colors.primaryGold,
+                elevation: 0,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                textStyle:
+                    const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              ),
               icon: const Icon(Icons.add_rounded, size: 14),
-              label: const Text('Add Zone', style: TextStyle(fontSize: 12)),
+              label: const Text('Add Zone'),
               onPressed: () => _showZonesDialog(context, ref, w),
             ),
           )),
@@ -1174,6 +1287,7 @@ class _WarehousesTab extends ConsumerWidget {
         final occ = occupancy[z.id];
         final used = occ?.used ?? 0;
         final free = occ?.free ?? z.capacity;
+        final isFull = free == 0;
         rows.add(DataRow(cells: [
           // Warehouse name repeated, greyed — the zone's parent.
           DataCell(Padding(
@@ -1201,24 +1315,73 @@ class _WarehousesTab extends ConsumerWidget {
                   ? z.description!.trim()
                   : '$used in use',
               style: TextStyle(fontSize: 12, color: context.colors.textMuted))),
-          DataCell(TooltipText(
-              free == 0
-                  ? '${z.capacity}  (FULL)'
-                  : '${z.capacity}  ($free free)',
-              style: TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w600,
-                  color: free == 0
-                      ? context.colors.dangerRed
-                      : context.colors.successGreen))),
-          DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
-            IconButton(
-              icon: Icon(Icons.edit_rounded,
-                  size: 15, color: context.colors.accentLightBlue),
-              tooltip: 'Edit zone',
-              onPressed: () => _showZonesDialog(context, ref, w),
+          DataCell(
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+              decoration: BoxDecoration(
+                color: isFull
+                    ? context.colors.dangerRed.withOpacity(0.1)
+                    : context.colors.successGreen.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(
+                  color: isFull
+                      ? context.colors.dangerRed.withOpacity(0.25)
+                      : context.colors.successGreen.withOpacity(0.25),
+                  width: 0.8,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '${z.capacity}',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: isFull
+                          ? context.colors.dangerRed
+                          : context.colors.textPrimary,
+                    ),
+                  ),
+                  const Gap(6),
+                  Text(
+                    isFull ? 'FULL' : '($free free)',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: isFull
+                          ? context.colors.dangerRed
+                          : context.colors.successGreen,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ])),
+          ),
+          DataCell(
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _tableActionButton(
+                  context: context,
+                  icon: Icons.edit_rounded,
+                  color: context.colors.accentLightBlue,
+                  tooltip: 'Edit Zone',
+                  onPressed: () => _showEditZoneDialog(context, ref, w, z),
+                ),
+                const Gap(6),
+                _tableActionButton(
+                  context: context,
+                  icon: Icons.delete_outline_rounded,
+                  color: context.colors.dangerRed,
+                  tooltip: 'Delete Zone',
+                  onPressed: () =>
+                      _showDeleteZoneConfirmation(context, ref, z),
+                ),
+              ],
+            ),
+          ),
         ]));
       }
     }
@@ -1232,6 +1395,165 @@ class _WarehousesTab extends ConsumerWidget {
       context: context,
       builder: (_) => _WarehouseZonesDialog(warehouse: warehouse),
     );
+  }
+
+  void _showEditZoneDialog(
+    BuildContext context,
+    WidgetRef ref,
+    WarehouseModel warehouse,
+    WarehouseZoneModel zone,
+  ) async {
+    final nameCtrl = TextEditingController(text: zone.name);
+    final codeCtrl = TextEditingController(text: zone.code ?? '');
+    final capCtrl = TextEditingController(text: zone.capacity.toString());
+    final descCtrl = TextEditingController(text: zone.description ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Edit Zone'),
+        content: SizedBox(
+          width: 360,
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+              controller: nameCtrl,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  labelText: 'Zone name *', hintText: 'A, B, Cold Room…'),
+            ),
+            const Gap(12),
+            TextField(
+              controller: codeCtrl,
+              decoration: InputDecoration(
+                  labelText: 'Zone Code',
+                  hintText:
+                      '${warehouse.code}-${nameCtrl.text.trim().toUpperCase()}'),
+            ),
+            const Gap(12),
+            TextField(
+              controller: capCtrl,
+              keyboardType: TextInputType.number,
+              decoration:
+                  const InputDecoration(labelText: 'Capacity (items) *'),
+            ),
+            const Gap(12),
+            TextField(
+              controller: descCtrl,
+              decoration:
+                  const InputDecoration(labelText: 'Description (optional)'),
+            ),
+          ]),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false),
+              child: const Text('Cancel')),
+          ElevatedButton(
+            onPressed: () {
+              if (nameCtrl.text.trim().isEmpty) return;
+              if ((int.tryParse(capCtrl.text.trim()) ?? -1) < 0) return;
+              Navigator.pop(c, true);
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true) return;
+    try {
+      await ref
+          .read(warehouseServiceProvider)
+          .saveWarehouseZone(WarehouseZoneModel(
+            id: zone.id,
+            warehouseId: warehouse.id,
+            name: nameCtrl.text.trim(),
+            code: codeCtrl.text.trim().isEmpty
+                ? '${warehouse.code}-${nameCtrl.text.trim().replaceAll(RegExp(r'\s+'), '').toUpperCase()}'
+                : codeCtrl.text.trim().toUpperCase(),
+            description:
+                descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+            capacity: int.tryParse(capCtrl.text.trim()) ?? zone.capacity,
+          ));
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      ref.invalidate(warehouseZonesProvider);
+      ref.invalidate(zoneOccupancyProvider);
+      ref.invalidate(yardWarehouseCapacityProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Zone updated successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showDeleteZoneConfirmation(
+    BuildContext context,
+    WidgetRef ref,
+    WarehouseZoneModel zone,
+  ) async {
+    final ok = await showDialog<bool>(
+          context: context,
+          builder: (c) => AlertDialog(
+            title: Text('Delete zone ${zone.name}?'),
+            content: const Text(
+                'Goods already recorded in this zone stay where they are, but '
+                'the zone stops counting towards capacity.'),
+            actions: [
+              TextButton(
+                  onPressed: () => Navigator.pop(c, false),
+                  child: const Text('Cancel')),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(c, true),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+    if (!ok) return;
+
+    try {
+      await ref.read(warehouseServiceProvider).deleteWarehouseZone(zone.id);
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      ref.invalidate(warehouseZonesProvider);
+      ref.invalidate(zoneOccupancyProvider);
+      ref.invalidate(yardWarehouseCapacityProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Zone deleted successfully'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
   }
 
   void _showEditWarehouseDialog(
@@ -1558,22 +1880,20 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                 DataCell(Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    IconButton(
-                                      icon: Icon(Icons.edit_rounded,
-                                          color: context.colors.primaryGold,
-                                          size: 22),
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
+                                    _tableActionButton(
+                                      context: context,
+                                      icon: Icons.edit_rounded,
+                                      color: context.colors.accentLightBlue,
+                                      tooltip: 'Edit Category',
                                       onPressed: () => _showEditCategoryDialog(
                                           context, ref, c),
                                     ),
-                                    const Gap(16),
-                                    IconButton(
-                                      icon: Icon(Icons.delete_outline_rounded,
-                                          color: context.colors.dangerRed,
-                                          size: 22),
-                                      padding: const EdgeInsets.all(4),
-                                      constraints: const BoxConstraints(),
+                                    const Gap(6),
+                                    _tableActionButton(
+                                      context: context,
+                                      icon: Icons.delete_outline_rounded,
+                                      color: context.colors.dangerRed,
+                                      tooltip: 'Delete Category',
                                       onPressed: () async {
                                         final ok = await showDialog<bool>(
                                             context: context,
@@ -2775,17 +3095,20 @@ class _WarehouseZonesDialogState extends ConsumerState<_WarehouseZonesDialog> {
                                 ? context.colors.dangerRed
                                 : context.colors.successGreen)),
                   ),
-                  const Gap(4),
-                  IconButton(
-                    icon: Icon(Icons.edit_rounded,
-                        size: 16, color: context.colors.accentLightBlue),
-                    tooltip: 'Edit',
+                  const Gap(8),
+                  _tableActionButton(
+                    context: context,
+                    icon: Icons.edit_rounded,
+                    color: context.colors.accentLightBlue,
+                    tooltip: 'Edit Zone',
                     onPressed: _busy ? null : () => _edit(existing: z),
                   ),
-                  IconButton(
-                    icon: Icon(Icons.delete_rounded,
-                        size: 16, color: context.colors.dangerRed),
-                    tooltip: 'Delete',
+                  const Gap(6),
+                  _tableActionButton(
+                    context: context,
+                    icon: Icons.delete_outline_rounded,
+                    color: context.colors.dangerRed,
+                    tooltip: 'Delete Zone',
                     onPressed: _busy ? null : () => _delete(z),
                   ),
                 ]),

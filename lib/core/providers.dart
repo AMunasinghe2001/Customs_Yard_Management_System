@@ -253,6 +253,8 @@ final warehouseSearchProvider =
     StateProvider.family<String, String>((ref, id) => '');
 final warehouseDateRangeProvider =
     StateProvider.family<DateTimeRange?, String>((ref, warehouseId) => null);
+final warehouseYearFilterProvider =
+    StateProvider.family<String?, String>((ref, warehouseId) => null);
 final warehouseReasonFilterProvider =
     StateProvider.family<String, String>((ref, warehouseId) => 'all');
 

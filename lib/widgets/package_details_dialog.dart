@@ -581,7 +581,10 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.forceFinalDisposition = false,
     this.isSoldPage = false,
     this.allowEdit = false,
+    this.srFinancials,
   });
+
+  final SrFinancials? srFinancials;
 
   @override
   ConsumerState<PackageDetailsDialog> createState() =>
@@ -1275,6 +1278,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     final canUpdatePackage = currentProfile?.isAdmin ?? false;
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final isOld = p.oldSrNumber != null && p.oldSrNumber!.trim().isNotEmpty;
 
     // Resolve which package item this popup is about. [highlightItemId] is the
     // caller's explicit choice (e.g. the Abandoned/Other table row's own item)
@@ -1554,19 +1558,62 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'SR REGISTER ENTRY',
-                            style: material.TextStyle(
-                              color: widget.headerAccentColor ??
-                                  context.colors.primaryGold,
-                              fontSize: 11,
-                              letterSpacing: 1.2,
-                              fontWeight: FontWeight.w800,
-                            ),
+                          Row(
+                            children: [
+                              Text(
+                                isOld
+                                    ? 'OLD ENTRY (MIGRATED)'
+                                    : 'SR REGISTER ENTRY',
+                                style: material.TextStyle(
+                                  color: widget.headerAccentColor ??
+                                      (isOld
+                                          ? context.colors.primaryGold
+                                          : context.colors.primaryGold),
+                                  fontSize: 11,
+                                  letterSpacing: 1.2,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const Gap(8),
+                              material.Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isOld
+                                      ? context.colors.primaryGold
+                                          .withOpacity(0.18)
+                                      : context.colors.accentLightBlue
+                                          .withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isOld
+                                        ? context.colors.primaryGold
+                                            .withOpacity(0.5)
+                                        : context.colors.accentLightBlue
+                                            .withOpacity(0.4),
+                                    width: 0.8,
+                                  ),
+                                ),
+                                child: Text(
+                                  isOld
+                                      ? 'Old SR: ${p.oldSrNumber}'
+                                      : 'NEW ENTRY',
+                                  style: material.TextStyle(
+                                    color: isOld
+                                        ? context.colors.primaryGold
+                                        : context.colors.accentLightBlue,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ).animate().fadeIn(duration: 400.ms, delay: 100.ms),
+                          const Gap(2),
                           Text(
                             p.srNumber,
-                            style: material.TextStyle(
+                            style: const material.TextStyle(
                               color: Colors.white,
                               fontSize: 22,
                               fontWeight: FontWeight.bold,
@@ -1645,74 +1692,151 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         delay: 100,
                         child: Column(
                           children: [
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.numbers_rounded,
-                                    label: 'SR Number',
-                                    value: p.srNumber,
-                                  ),
+                              if (isOld) ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.numbers_rounded,
+                                        label: 'New SR Number',
+                                        value: p.srNumber,
+                                        valueColor:
+                                            context.colors.accentLightBlue,
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.history_edu_rounded,
+                                        label: 'Old SR Number (Migrated)',
+                                        value: p.oldSrNumber!,
+                                        valueColor:
+                                            context.colors.primaryGold,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const Gap(12),
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.calendar_today_rounded,
-                                    label: 'Entry Date',
-                                    value: p.entryDate != null
-                                        ? DateFormat('yyyy-MM-dd')
-                                            .format(p.entryDate!)
-                                        : 'N/A',
-                                  ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.history_rounded,
+                                        label: 'Entry Type',
+                                        value: 'Old Entry (Migrated)',
+                                        valueColor:
+                                            context.colors.primaryGold,
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.calendar_today_rounded,
+                                        label: 'Entry Date',
+                                        value: p.entryDate != null
+                                            ? DateFormat('yyyy-MM-dd')
+                                                .format(p.entryDate!)
+                                            : 'N/A',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.receipt_long_rounded,
+                                        label: 'Cusdec No',
+                                        value: p.cusdecNo ?? 'N/A',
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.calendar_month_rounded,
+                                        label: 'Cusdec Date',
+                                        value: p.cusdecDate ?? 'N/A',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ] else ...[
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.numbers_rounded,
+                                        label: 'SR Number',
+                                        value: p.srNumber,
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.fiber_new_rounded,
+                                        label: 'Entry Type',
+                                        value: 'New Entry (Standard)',
+                                        valueColor:
+                                            context.colors.accentLightBlue,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.calendar_today_rounded,
+                                        label: 'Entry Date',
+                                        value: p.entryDate != null
+                                            ? DateFormat('yyyy-MM-dd')
+                                                .format(p.entryDate!)
+                                            : 'N/A',
+                                      ),
+                                    ),
+                                    const Gap(12),
+                                    Expanded(
+                                      child: _DetailItem(
+                                        icon: Icons.receipt_long_rounded,
+                                        label: 'Cusdec No',
+                                        value: p.cusdecNo ?? 'N/A',
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                _DetailItem(
+                                  icon: Icons.calendar_month_rounded,
+                                  label: 'Cusdec Date',
+                                  value: p.cusdecDate ?? 'N/A',
                                 ),
                               ],
-                            ),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.receipt_long_rounded,
-                                    label: 'Cusdec No',
-                                    value: p.cusdecNo ?? 'N/A',
-                                  ),
-                                ),
-                                const Gap(12),
-                                Expanded(
-                                  child: _DetailItem(
-                                    icon: Icons.calendar_month_rounded,
-                                    label: 'Cusdec Date',
-                                    value: p.cusdecDate ?? 'N/A',
-                                  ),
-                                ),
-                              ],
-                            ),
-                            _DetailItem(
-                              icon: Icons.gavel_rounded,
-                              label: 'Case Number',
-                              value: p.caseNumber ?? 'N/A',
-                            ),
-                            _DetailItem(
-                              icon: Icons.local_shipping_rounded,
-                              label: 'Container Number',
-                              value: p.containerNumber ?? 'N/A',
-                            ),
-                            // Package-level: one deposit per SR, taken at
-                            // registration against the cost of destruction.
-                            _DetailItem(
-                              icon: Icons.savings_rounded,
-                              label: 'Destroying Deposit',
-                              value: p.destroyingDeposit == null
-                                  ? 'N/A'
-                                  : 'LKR ${NumberFormat('#,##0.##').format(p.destroyingDeposit)}',
-                            ),
-                            _DetailItem(
-                              icon: Icons.description_rounded,
-                              label: 'Package Description',
-                              value: p.description ?? 'No description provided',
-                            ),
-                          ],
+                              _DetailItem(
+                                icon: Icons.gavel_rounded,
+                                label: 'Case Number',
+                                value: p.caseNumber ?? 'N/A',
+                              ),
+                              _DetailItem(
+                                icon: Icons.local_shipping_rounded,
+                                label: 'Container Number',
+                                value: p.containerNumber ?? 'N/A',
+                              ),
+                              // Package-level: one deposit per SR, taken at
+                              // registration against the cost of destruction.
+                              _DetailItem(
+                                icon: Icons.savings_rounded,
+                                label: 'Destroying Deposit',
+                                value: p.destroyingDeposit == null
+                                    ? 'N/A'
+                                    : 'LKR ${NumberFormat('#,##0.##').format(p.destroyingDeposit)}',
+                              ),
+                              _DetailItem(
+                                icon: Icons.description_rounded,
+                                label: 'Package Description',
+                                value:
+                                    p.description ?? 'No description provided',
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
 
                       // Consignee Information Section
                       _DetailSection(
@@ -2991,6 +3115,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           valuationQty: widget.valuationQty ??
                               widget.highlightEntry?.itemCount,
                         ),
+                      if (widget.srFinancials != null)
+                        _DisposalExpensesSection(sr: widget.srFinancials!),
                     ],
                   ),
                 ),
@@ -3192,6 +3318,316 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DisposalExpensesSection extends StatelessWidget {
+  final SrFinancials sr;
+  const _DisposalExpensesSection({required this.sr});
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final green = context.colors.successGreen;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return _DetailSection(
+      title: 'Disposal Expenses & Financials',
+      icon: Icons.receipt_long_rounded,
+      delay: 350,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.savings_rounded,
+                  label: 'Destroying Deposit',
+                  value: 'LKR ${money.format(sr.destroyingDeposit)}',
+                  valueColor: green,
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.payments_rounded,
+                  label: 'Total Expenses',
+                  value: 'LKR ${money.format(sr.depositSpent)}',
+                  valueColor:
+                      sr.depositSpent > 0 ? context.colors.dangerRed : null,
+                ),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.undo_rounded,
+                  label: sr.deficit > 0 ? 'Shortfall' : 'Refund Amount',
+                  value: sr.deficit > 0
+                      ? '− LKR ${money.format(sr.deficit)}'
+                      : 'LKR ${money.format(sr.refund)}',
+                  valueColor: sr.deficit > 0 ? context.colors.dangerRed : green,
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.info_outline_rounded,
+                  label: 'Expense Status',
+                  value: sr.depositSpent == 0
+                      ? 'Pending'
+                      : (sr.deficit > 0 ? 'Shortfall' : 'Refundable'),
+                  valueColor: sr.depositSpent == 0
+                      ? context.colors.warningAmber
+                      : (sr.deficit > 0 ? context.colors.dangerRed : green),
+                ),
+              ),
+            ],
+          ),
+          const Gap(12),
+          material.Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isDark ? context.colors.surfaceDark : Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: context.colors.borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Cost Breakdown',
+                  style: material.TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Gap(8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ExpenseCostBox(
+                        label: 'Destruction',
+                        amount: sr.destructionExpense,
+                        color: context.colors.dangerRed,
+                      ),
+                    ),
+                    const Gap(8),
+                    Expanded(
+                      child: _ExpenseCostBox(
+                        label: 'Advertising',
+                        amount: sr.advertisingExpense,
+                        color: context.colors.warningAmber,
+                      ),
+                    ),
+                    const Gap(8),
+                    Expanded(
+                      child: _ExpenseCostBox(
+                        label: 'Labour',
+                        amount: sr.labourExpense,
+                        color: context.colors.accentLightBlue,
+                      ),
+                    ),
+                  ],
+                ),
+                const Gap(8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _ExpenseCostBox(
+                        label: 'Transport',
+                        amount: sr.transportExpense,
+                        color: context.colors.customsBlue,
+                      ),
+                    ),
+                    const Gap(8),
+                    Expanded(
+                      child: _ExpenseCostBox(
+                        label: 'Auction',
+                        amount: sr.auctionExpense,
+                        color: context.colors.primaryGold,
+                      ),
+                    ),
+                    const Gap(8),
+                    Expanded(
+                      child: _ExpenseCostBox(
+                        label: 'Deposit',
+                        amount: sr.destroyingDeposit,
+                        color: green,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (sr.goods.isNotEmpty) ...[
+            const Gap(14),
+            material.Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color:
+                    isDark ? context.colors.surfaceDark : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Goods Cost Distribution',
+                    style: material.TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Gap(8),
+                  Row(children: [
+                    Expanded(
+                        flex: 4,
+                        child: Text('Goods Name',
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700))),
+                    Expanded(
+                        child: Text('Qty',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Destruction',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700))),
+                    Expanded(
+                        flex: 2,
+                        child: Text('Advertising',
+                            textAlign: TextAlign.right,
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700))),
+                  ]),
+                  material.Divider(
+                      color: context.colors.borderColor, height: 12),
+                  for (final g in sr.goods)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Row(children: [
+                        Expanded(
+                          flex: 4,
+                          child: Text(g.goodsName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  color: context.colors.textPrimary,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                        Expanded(
+                          child: Text('${g.quantity}',
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  color: context.colors.textSecondary,
+                                  fontSize: 12)),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                              g.destructionExpense == 0
+                                  ? '—'
+                                  : money.format(g.destructionExpense),
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  color: g.destructionExpense == 0
+                                      ? context.colors.textMuted
+                                      : context.colors.dangerRed,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                        Expanded(
+                          flex: 2,
+                          child: Text(
+                              g.advertisingExpense == 0
+                                  ? '—'
+                                  : money.format(g.advertisingExpense),
+                              textAlign: TextAlign.right,
+                              style: TextStyle(
+                                  color: g.advertisingExpense == 0
+                                      ? context.colors.textMuted
+                                      : context.colors.warningAmber,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600)),
+                        ),
+                      ]),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ExpenseCostBox extends StatelessWidget {
+  final String label;
+  final double amount;
+  final Color color;
+
+  const _ExpenseCostBox({
+    required this.label,
+    required this.amount,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    return material.Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: material.TextStyle(
+              color: context.colors.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const Gap(2),
+          Text(
+            amount == 0 ? '—' : 'LKR ${money.format(amount)}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: material.TextStyle(
+              color: amount == 0 ? context.colors.textMuted : color,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

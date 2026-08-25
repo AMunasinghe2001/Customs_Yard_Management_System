@@ -203,16 +203,6 @@ class _ExecutiveDashboardScreenState
                     child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.assessment_rounded, size: 18),
-                          Gap(8),
-                          Text('Reports'),
-                        ]),
-                  ),
-                  Tab(
-                    height: 44,
-                    child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
                           Icon(Icons.groups_rounded, size: 18),
                           Gap(8),
                           Text('Tender Committees'),
@@ -238,6 +228,16 @@ class _ExecutiveDashboardScreenState
                           Text('Financials'),
                         ]),
                   ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.assessment_rounded, size: 18),
+                          Gap(8),
+                          Text('Reports'),
+                        ]),
+                  ),
                 ],
               ),
             ),
@@ -248,10 +248,10 @@ class _ExecutiveDashboardScreenState
             child: TabBarView(
               controller: tabController,
               children: const [
-                ReportsScreen(executiveMode: true),
                 TenderCommitteeTab(),
                 UnsoldDecisionTab(),
                 FinancialsTab(),
+                ReportsScreen(executiveMode: true),
               ],
             ),
           ),
