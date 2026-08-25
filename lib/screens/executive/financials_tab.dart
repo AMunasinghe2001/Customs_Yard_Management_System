@@ -27,6 +27,8 @@ final _finDateRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 final _finPageProvider = StateProvider<int>((ref) => 0);
 
 final _money = NumberFormat('#,##0.00');
+
+
 String _lkr(double v) => 'LKR ${_money.format(v)}';
 
 /// High Panel · Financials.
@@ -220,6 +222,9 @@ class FinancialsTab extends ConsumerWidget {
                   lines: [
                     ('Destruction Expenses', sum.destructionExpenses),
                     ('Advertising Expenses', sum.advertisingExpenses),
+                    ('Labour Costs', sum.labourExpenses),
+                    ('Transport Costs', sum.transportExpenses),
+                    ('Auction Expenses', sum.auctionExpenses),
                     ('Refunds (unspent deposits)', sum.refunds),
                   ],
                 );
@@ -658,9 +663,9 @@ class _GoodsBreakdownTable extends ConsumerWidget {
     }
 
     return DataTable2(
-      columnSpacing: 12,
-      horizontalMargin: 16,
+      horizontalMargin: 8,
       fixedTopRows: 1,
+      columnSpacing: 4,
       headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
       empty: const EmptyTableState(
           icon: Icons.inventory_2_outlined,
@@ -669,23 +674,27 @@ class _GoodsBreakdownTable extends ConsumerWidget {
               'Central Disposal records the destruction and advertising costs.'),
       columns: [
         DataColumn2(
-            label: Text('SR No.',
-                style: TextStyle(color: gold, fontWeight: FontWeight.w700)),
-            size: ColumnSize.S),
+            label: Text('SR Number',
+                style: TextStyle(
+                    color: gold, fontWeight: FontWeight.w700, fontSize: 13)),
+            size: ColumnSize.M),
 
         // ── Income ──────────────────────────────────────────────
-        _money2('SR Charges', gold),
-        _money2('Destroy Deposit', gold),
-        _money2('Sale Proceeds', gold),
+        _money2('Charges', gold),
+        _money2('Deposit', gold),
+        _money2('Proceeds', gold),
         for (final tName in taxNames) _money2(tName, gold),
-        _money2('Total Tax', gold),
-        _money2('Total Income', gold),
+        _money2('Tax', gold),
+        _money2('Income', gold),
 
         // ── Expenditure ─────────────────────────────────────────
-        _money2('Destruction', gold),
-        _money2('Advertising', gold),
+        _money2('Destroy', gold),
+        _money2('Advert.', gold),
+        _money2('Labour', gold),
+        _money2('Transport', gold),
+        _money2('Auction', gold),
         _money2('Refund', gold),
-        _money2('Total Exp.', gold),
+        _money2('Expend.', gold),
 
         // ── Balance ─────────────────────────────────────────────
         _money2('Net', gold),
@@ -693,15 +702,12 @@ class _GoodsBreakdownTable extends ConsumerWidget {
         // ── Distribution of this SR's sale proceeds ───────────
         _money2('Reward', gold),
         _money2('Treasury', gold),
-        _money2('Consolidated', gold),
-        _money2('Comp Fund', gold),
+        _money2('Consol.', gold),
+        _money2('Comp', gold),
       ],
       rows: [
         for (final r in rows)
           DataRow(cells: [
-            // Same treatment the portal's other tables give the SR: the accent
-            // colour, with the yard in the tooltip rather than its own column
-            // (the header already carries a Yard dropdown).
             DataCell(Tooltip(
               message: '${r.srNumber} \u00b7 ${yardName(r.yard)}',
               waitDuration: const Duration(milliseconds: 300),
@@ -709,6 +715,7 @@ class _GoodsBreakdownTable extends ConsumerWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                       color: AppTheme.executiveTeal,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w700)),
             )),
 
@@ -724,18 +731,22 @@ class _GoodsBreakdownTable extends ConsumerWidget {
             // ── Expenditure ─────────────────────────────────────
             _cell(context, r.destructionExpense),
             _cell(context, r.advertisingExpense),
-            // Derived, never entered: the unspent part of this SR's deposit.
-            // A shortfall shows as a negative instead.
+            _cell(context, r.labourExpense),
+            _cell(context, r.transportExpense),
+            _cell(context, r.auctionExpense),
             DataCell(r.deficit > 0
                 ? Tooltip(
                     message: 'Costs exceed the deposit by ${_lkr(r.deficit)}',
                     child: Text('\u2212${_money.format(r.deficit)}',
-                        style:
-                            TextStyle(color: red, fontWeight: FontWeight.w700)),
+                        style: TextStyle(
+                            color: red,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700)),
                   )
                 : Text(_dash(r.refund),
                     style: TextStyle(
                         color: context.colors.textPrimary,
+                        fontSize: 12.5,
                         fontWeight: FontWeight.w600))),
             _cell(context, r.totalExpenditure, colour: red, bold: true),
 
@@ -743,6 +754,7 @@ class _GoodsBreakdownTable extends ConsumerWidget {
             DataCell(Text(_money.format(r.netBalance),
                 style: TextStyle(
                     color: r.netBalance >= 0 ? gold : red,
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w800))),
 
             // ── Distribution of this SR\'s sale proceeds ───────
@@ -755,11 +767,14 @@ class _GoodsBreakdownTable extends ConsumerWidget {
     );
   }
 
-  /// A right-aligned money column.
-  static DataColumn2 _money2(String label, Color colour) => DataColumn2(
+  /// A right-aligned money column with standard header typography.
+  static DataColumn2 _money2(String label, Color colour,
+          {ColumnSize size = ColumnSize.S}) =>
+      DataColumn2(
         label: Text(label,
-            style: TextStyle(color: colour, fontWeight: FontWeight.w700)),
-        size: ColumnSize.S,
+            style: TextStyle(
+                color: colour, fontWeight: FontWeight.w700, fontSize: 13)),
+        size: size,
         numeric: true,
       );
 
@@ -767,12 +782,19 @@ class _GoodsBreakdownTable extends ConsumerWidget {
   static DataCell _cell(BuildContext context, double v,
       {Color? colour, bool bold = false}) {
     final isZero = v == 0;
-    return DataCell(Text(_dash(v),
+    final text = Text(_dash(v),
         style: TextStyle(
+            fontSize: 12.5,
             color: isZero
                 ? context.colors.textMuted
                 : (colour ?? context.colors.textPrimary),
-            fontWeight: bold ? FontWeight.w800 : FontWeight.w600)));
+            fontWeight: bold ? FontWeight.w800 : FontWeight.w600));
+    return DataCell(isZero
+        ? text
+        : Tooltip(
+            message: 'LKR ${_money.format(v)}',
+            waitDuration: const Duration(milliseconds: 300),
+            child: text));
   }
 
   static String _dash(double v) => v == 0 ? '\u2014' : _money.format(v);

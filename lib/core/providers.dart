@@ -1054,6 +1054,9 @@ class FinancialSummary {
 
   final double destructionExpenses;
   final double advertisingExpenses;
+  final double labourExpenses;
+  final double transportExpenses;
+  final double auctionExpenses;
   final double refunds;
 
   const FinancialSummary({
@@ -1063,6 +1066,9 @@ class FinancialSummary {
     this.taxes = 0,
     this.destructionExpenses = 0,
     this.advertisingExpenses = 0,
+    this.labourExpenses = 0,
+    this.transportExpenses = 0,
+    this.auctionExpenses = 0,
     this.refunds = 0,
   });
 
@@ -1070,7 +1076,12 @@ class FinancialSummary {
       srCharges + destroyingDeposits + saleProceeds + taxes;
 
   double get totalExpenditure =>
-      destructionExpenses + advertisingExpenses + refunds;
+      destructionExpenses +
+      advertisingExpenses +
+      labourExpenses +
+      transportExpenses +
+      auctionExpenses +
+      refunds;
 
   double get netBalance => totalIncome - totalExpenditure;
 
@@ -1137,26 +1148,36 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
   }
 
   // ── Recorded costs, per goods item ────────────────────────────────────────
-  final destructionByItem = <String, double>{};
-  final advertisingByItem = <String, double>{};
+  // Keyed by KIND so adding another (labour, transport, auction…) needs no
+  // change here — only `kRecordableExpenseKinds` and the UI that offers it.
+  final byItem = <String, Map<String, double>>{
+    for (final k in kRecordableExpenseKinds.keys) k: <String, double>{},
+  };
   // Older rows predate per-item attribution; keep them in the SR's total by
   // holding them against the SR number.
-  final destructionBySr = <String, double>{};
-  final advertisingBySr = <String, double>{};
+  final bySr = <String, Map<String, double>>{
+    for (final k in kRecordableExpenseKinds.keys) k: <String, double>{},
+  };
   for (final e in expenses) {
     // A refund is derived from what is left of the deposit, never recorded.
-    if (e.kind == 'refund') continue;
-    final isDestruction = e.kind == 'destruction_expense';
+    final m = byItem[e.kind];
+    if (m == null) continue; // 'refund', or a kind this build does not know
     final itemId = e.packageItemId;
     if (itemId != null && itemId.isNotEmpty) {
-      final m = isDestruction ? destructionByItem : advertisingByItem;
       m[itemId] = (m[itemId] ?? 0) + e.amount;
     } else {
       final sr = e.srNumber ?? '';
-      final m = isDestruction ? destructionBySr : advertisingBySr;
-      m[sr] = (m[sr] ?? 0) + e.amount;
+      final t = bySr[e.kind]!;
+      t[sr] = (t[sr] ?? 0) + e.amount;
     }
   }
+
+  /// What one item carries for [kind]: its own figure, plus its share of
+  /// anything booked against the SR rather than a specific item.
+  // The `0.0` fallbacks must be doubles: `?? 0` yields an int, and an int
+  // result cannot satisfy a `double` return type at runtime.
+  double costFor(String kind, String itemId, String srNumber, double share) =>
+      (byItem[kind]?[itemId] ?? 0.0) + (bySr[kind]?[srNumber] ?? 0.0) * share;
 
   // ── One row per SR ────────────────────────────────────────────────────────
   final rows = <SrFinancials>[];
@@ -1206,10 +1227,16 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
 
           double rawSrCharges =
               (chargeByItem[item.id] ?? 0) + packageWideCharge * share;
-          double rawDestruction = (destructionByItem[item.id] ?? 0) +
-              (destructionBySr[p.srNumber] ?? 0) * share;
-          double rawAdvertising = (advertisingByItem[item.id] ?? 0) +
-              (advertisingBySr[p.srNumber] ?? 0) * share;
+          double rawDestruction =
+              costFor('destruction_expense', item.id, p.srNumber, share);
+          double rawAdvertising =
+              costFor('advertising_expense', item.id, p.srNumber, share);
+          double rawLabour =
+              costFor('labour_expense', item.id, p.srNumber, share);
+          double rawTransport =
+              costFor('transport_expense', item.id, p.srNumber, share);
+          double rawAuction =
+              costFor('auction_expense', item.id, p.srNumber, share);
 
           // ── Seed dummy figures when data is empty ──────────────
           if (rawProceeds == 0) {
@@ -1248,6 +1275,9 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
             taxesByName: itemTaxesByName,
             destructionExpense: rawDestruction,
             advertisingExpense: rawAdvertising,
+            labourExpense: rawLabour,
+            transportExpense: rawTransport,
+            auctionExpense: rawAuction,
           );
         }(),
     ];
@@ -1280,7 +1310,8 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
     ));
   }
 
-  rows.sort((a, b) => a.srNumber.compareTo(b.srNumber));
+  // Newest SR first — the most recent work is what the yard is looking for.
+  rows.sort((a, b) => compareSrNewestFirst(a.srNumber, b.srNumber));
   return rows;
 });
 
@@ -1292,6 +1323,7 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
 FinancialSummary summariseSrs(Iterable<SrFinancials> rows) {
   double srCharges = 0, deposits = 0, proceeds = 0, taxes = 0;
   double destruction = 0, advertising = 0, refunds = 0;
+  double labour = 0, transport = 0, auction = 0;
   for (final r in rows) {
     srCharges += r.srCharges;
     deposits += r.destroyingDeposit;
@@ -1299,6 +1331,9 @@ FinancialSummary summariseSrs(Iterable<SrFinancials> rows) {
     taxes += r.taxes;
     destruction += r.destructionExpense;
     advertising += r.advertisingExpense;
+    labour += r.labourExpense;
+    transport += r.transportExpense;
+    auction += r.auctionExpense;
     // Derived per SR, then summed — a refund is the unspent remainder of THAT
     // SR's single deposit, so it cannot be computed from the totals.
     refunds += r.refund;
@@ -1311,6 +1346,9 @@ FinancialSummary summariseSrs(Iterable<SrFinancials> rows) {
     taxes: taxes,
     destructionExpenses: destruction,
     advertisingExpenses: advertising,
+    labourExpenses: labour,
+    transportExpenses: transport,
+    auctionExpenses: auction,
     refunds: refunds,
   );
 }

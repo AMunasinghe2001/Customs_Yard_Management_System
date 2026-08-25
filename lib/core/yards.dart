@@ -54,6 +54,36 @@ Yard yardByCode(String? code) {
 String yardName(String? code) => yardByCode(code).name;
 String yardSrPrefix(String? code) => yardByCode(code).srPrefix;
 
+/// Orders SR numbers NEWEST FIRST — "GL1/SR/86/2026" before "GL1/SR/01/2025".
+///
+/// A plain string sort is wrong here: it puts "9" after "86" and ignores the
+/// year entirely. This compares the YEAR first, then the serial, both as
+/// numbers, falling back to the raw string when either cannot be read.
+///
+/// SR numbers look like "<yard>/SR/<serial>/<year>".
+int compareSrNewestFirst(String a, String b) {
+  (int, int)? parse(String sr) {
+    final parts = sr.split('/');
+    if (parts.length < 4) return null;
+    final serial = int.tryParse(parts[parts.length - 2].trim());
+    final year = int.tryParse(parts.last.trim());
+    if (serial == null || year == null) return null;
+    return (year, serial);
+  }
+
+  final pa = parse(a);
+  final pb = parse(b);
+  // Unparseable numbers sort last, in their own alphabetical order, rather
+  // than jumping to the top of the list.
+  if (pa == null && pb == null) return a.compareTo(b);
+  if (pa == null) return 1;
+  if (pb == null) return -1;
+
+  final byYear = pb.$1.compareTo(pa.$1);
+  if (byYear != 0) return byYear;
+  return pb.$2.compareTo(pa.$2);
+}
+
 /// The yard an SR number belongs to, read from its prefix ("GL1/SR/01/2025").
 ///
 /// Neither `packages` nor `warehouse_entries` expose a yard on their models,

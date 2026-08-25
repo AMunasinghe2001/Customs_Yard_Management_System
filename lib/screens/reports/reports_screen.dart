@@ -1769,6 +1769,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       var totalTaxes = 0.0;
       var totalDestruction = 0.0;
       var totalAdvertising = 0.0;
+      var totalLabour = 0.0;
+      var totalTransport = 0.0;
+      var totalAuction = 0.0;
       var refundTotal = 0.0;
 
       for (final r in all) {
@@ -1792,6 +1795,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           _reportMoney(r.totalIncome),
           _reportMoney(r.destructionExpense),
           _reportMoney(r.advertisingExpense),
+          _reportMoney(r.labourExpense),
+          _reportMoney(r.transportExpense),
+          _reportMoney(r.auctionExpense),
           // A deficit prints as a negative so an overrun is never mistaken for
           // a refund of zero.
           r.deficit > 0
@@ -1818,6 +1824,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         totalTaxes += r.taxes;
         totalDestruction += r.destructionExpense;
         totalAdvertising += r.advertisingExpense;
+        totalLabour += r.labourExpense;
+        totalTransport += r.transportExpense;
+        totalAuction += r.auctionExpense;
       }
 
       if (rows.isNotEmpty) {
@@ -1825,7 +1834,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             totalDestroyingDeposit +
             totalSaleProceeds +
             totalTaxes;
-        final totalSpent = totalDestruction + totalAdvertising;
+        final totalSpent = totalDestruction +
+            totalAdvertising +
+            totalLabour +
+            totalTransport +
+            totalAuction;
         final splitTotal = SaleProceedsSplit(totalSaleProceeds);
 
         rows.add([
@@ -1838,6 +1851,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           _reportMoney(totalIncome),
           _reportMoney(totalDestruction),
           _reportMoney(totalAdvertising),
+          _reportMoney(totalLabour),
+          _reportMoney(totalTransport),
+          _reportMoney(totalAuction),
           _reportMoney(refundTotal),
           _reportMoney(totalSpent + refundTotal),
           _reportMoney(totalIncome - (totalSpent + refundTotal)),
@@ -1864,6 +1880,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           'Total Income',
           'Destruction',
           'Advertising',
+          'Labour',
+          'Transport',
+          'Auction',
           'Refund',
           'Total Expenditure',
           'Net',

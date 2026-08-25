@@ -148,10 +148,14 @@ class _TotalsStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     double deposit = 0, destruction = 0, advertising = 0, refund = 0;
+    double labour = 0, transport = 0, auction = 0;
     for (final r in rows) {
       deposit += r.destroyingDeposit;
       destruction += r.destructionExpense;
       advertising += r.advertisingExpense;
+      labour += r.labourExpense;
+      transport += r.transportExpense;
+      auction += r.auctionExpense;
       refund += r.refund;
     }
 
@@ -174,6 +178,21 @@ class _TotalsStrip extends StatelessWidget {
             value: advertising,
             color: context.colors.warningAmber,
             icon: Icons.campaign_rounded),
+        _TotalChip(
+            label: 'Labour Costs',
+            value: labour,
+            color: context.colors.accentLightBlue,
+            icon: Icons.engineering_rounded),
+        _TotalChip(
+            label: 'Transport Costs',
+            value: transport,
+            color: context.colors.customsBlue,
+            icon: Icons.local_shipping_rounded),
+        _TotalChip(
+            label: 'Auction Expenses',
+            value: auction,
+            color: context.colors.primaryGold,
+            icon: Icons.gavel_rounded),
         _TotalChip(
             label: 'Refunds',
             value: refund,
@@ -244,6 +263,9 @@ class _ExpensesTable extends ConsumerWidget {
           columnSpacing: 10,
           horizontalMargin: 16,
           fixedTopRows: 1,
+          // Five cost columns plus the totals no longer fit; scroll rather
+          // than squeeze every figure into an unreadable width.
+          minWidth: 1500,
           headingRowColor: WidgetStateProperty.all(context.colors.surfaceDark),
           empty: const EmptyTableState(
               icon: Icons.receipt_long_outlined,
@@ -259,6 +281,12 @@ class _ExpensesTable extends ConsumerWidget {
                 label: Text('Destruction'), size: ColumnSize.S, numeric: true),
             DataColumn2(
                 label: Text('Advertising'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Text('Labour'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Text('Transport'), size: ColumnSize.S, numeric: true),
+            DataColumn2(
+                label: Text('Auction'), size: ColumnSize.S, numeric: true),
             DataColumn2(
                 label: Text('Total Exp.'), size: ColumnSize.S, numeric: true),
             DataColumn2(
@@ -315,6 +343,33 @@ class _ExpensesTable extends ConsumerWidget {
                         color: r.advertisingExpense == 0
                             ? context.colors.textMuted
                             : context.colors.warningAmber,
+                        fontWeight: FontWeight.w600))),
+                // The three costs added alongside destruction / advertising.
+                // All five come out of the same destroying deposit.
+                DataCell(Text(
+                    r.labourExpense == 0 ? '—' : money.format(r.labourExpense),
+                    style: TextStyle(
+                        color: r.labourExpense == 0
+                            ? context.colors.textMuted
+                            : context.colors.accentLightBlue,
+                        fontWeight: FontWeight.w600))),
+                DataCell(Text(
+                    r.transportExpense == 0
+                        ? '—'
+                        : money.format(r.transportExpense),
+                    style: TextStyle(
+                        color: r.transportExpense == 0
+                            ? context.colors.textMuted
+                            : context.colors.customsBlue,
+                        fontWeight: FontWeight.w600))),
+                DataCell(Text(
+                    r.auctionExpense == 0
+                        ? '—'
+                        : money.format(r.auctionExpense),
+                    style: TextStyle(
+                        color: r.auctionExpense == 0
+                            ? context.colors.textMuted
+                            : context.colors.primaryGold,
                         fontWeight: FontWeight.w600))),
                 DataCell(Text(
                     r.depositSpent == 0 ? '—' : money.format(r.depositSpent),
@@ -594,39 +649,80 @@ class _RecordExpenseDialog extends ConsumerStatefulWidget {
 }
 
 class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
-  late final TextEditingController _destruction;
-  late final TextEditingController _advertising;
+  /// One controller per recordable kind, keyed the same way the database is.
+  /// Driving the form off `kRecordableExpenseKinds` means adding another cost
+  /// needs no change here — only that map, and the icon table below.
+  late final Map<String, TextEditingController> _fields;
   bool _saving = false;
+
+  /// The figure already recorded for [kind] on this SR.
+  double _existing(String kind) {
+    switch (kind) {
+      case 'destruction_expense':
+        return widget.sr.destructionExpense;
+      case 'advertising_expense':
+        return widget.sr.advertisingExpense;
+      case 'labour_expense':
+        return widget.sr.labourExpense;
+      case 'transport_expense':
+        return widget.sr.transportExpense;
+      case 'auction_expense':
+        return widget.sr.auctionExpense;
+      default:
+        return 0;
+    }
+  }
+
+  static const _icons = <String, IconData>{
+    'destruction_expense': Icons.local_fire_department_rounded,
+    'advertising_expense': Icons.campaign_rounded,
+    'labour_expense': Icons.engineering_rounded,
+    'transport_expense': Icons.local_shipping_rounded,
+    'auction_expense': Icons.gavel_rounded,
+  };
+
+  Color _colourFor(BuildContext context, String kind) {
+    switch (kind) {
+      case 'destruction_expense':
+        return context.colors.dangerRed;
+      case 'advertising_expense':
+        return context.colors.warningAmber;
+      case 'labour_expense':
+        return context.colors.accentLightBlue;
+      case 'transport_expense':
+        return context.colors.customsBlue;
+      default:
+        return context.colors.primaryGold;
+    }
+  }
 
   @override
   void initState() {
     super.initState();
-    _destruction = TextEditingController(
-        text: widget.sr.destructionExpense == 0
-            ? ''
-            : widget.sr.destructionExpense.toStringAsFixed(2));
-    _advertising = TextEditingController(
-        text: widget.sr.advertisingExpense == 0
-            ? ''
-            : widget.sr.advertisingExpense.toStringAsFixed(2));
-    _destruction.addListener(_refresh);
-    _advertising.addListener(_refresh);
+    _fields = {
+      for (final kind in kRecordableExpenseKinds.keys)
+        kind: TextEditingController(
+            text:
+                _existing(kind) == 0 ? '' : _existing(kind).toStringAsFixed(2))
+          ..addListener(_refresh),
+    };
   }
 
   void _refresh() => setState(() {});
 
   @override
   void dispose() {
-    _destruction.dispose();
-    _advertising.dispose();
+    for (final c in _fields.values) {
+      c.dispose();
+    }
     super.dispose();
   }
 
-  double get _destructionValue =>
-      double.tryParse(_destruction.text.trim()) ?? 0;
-  double get _advertisingValue =>
-      double.tryParse(_advertising.text.trim()) ?? 0;
-  double get _spent => _destructionValue + _advertisingValue;
+  double _valueOf(String kind) =>
+      double.tryParse(_fields[kind]?.text.trim() ?? '') ?? 0;
+
+  double get _spent => _fields.keys.fold<double>(0, (a, k) => a + _valueOf(k));
+
   double get _refund {
     final left = widget.sr.destroyingDeposit - _spent;
     return left > 0 ? left : 0;
@@ -643,20 +739,17 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
       final svc = ref.read(disposalServiceProvider);
       final itemId =
           widget.sr.goods.isNotEmpty ? widget.sr.goods.first.itemId : null;
-      await svc.addFinancialExpense(
-        kind: 'destruction_expense',
-        amount: _destructionValue,
-        description: 'Destruction expense recorded',
-        srNumber: widget.sr.srNumber,
-        packageItemId: itemId,
-      );
-      await svc.addFinancialExpense(
-        kind: 'advertising_expense',
-        amount: _advertisingValue,
-        description: 'Advertising expense recorded',
-        srNumber: widget.sr.srNumber,
-        packageItemId: itemId,
-      );
+      // Every kind is written, zeros included: clearing a field must record
+      // the zero, not leave the old figure standing.
+      for (final entry in kRecordableExpenseKinds.entries) {
+        await svc.addFinancialExpense(
+          kind: entry.key,
+          amount: _valueOf(entry.key),
+          description: '${entry.value} recorded',
+          srNumber: widget.sr.srNumber,
+          packageItemId: itemId,
+        );
+      }
       ref.read(financialExpensesRefreshProvider.notifier).trigger();
       if (!mounted) return;
       Navigator.pop(context);
@@ -728,36 +821,27 @@ class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
             title: 'Costs Incurred',
             icon: Icons.payments_rounded,
             children: [
-              TextField(
-                controller: _destruction,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Destruction Expenses (LKR)',
-                  hintText: '0.00',
-                  isDense: true,
-                  prefixIcon: Icon(Icons.local_fire_department_rounded,
-                      color: context.colors.dangerRed),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
+              // One field per recordable kind, driven off the shared map so
+              // this form never drifts from what the database accepts.
+              for (final entry in kRecordableExpenseKinds.entries) ...[
+                TextField(
+                  controller: _fields[entry.key],
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: '${entry.value} (LKR)',
+                    hintText: '0.00',
+                    isDense: true,
+                    prefixIcon: Icon(
+                        _icons[entry.key] ?? Icons.payments_rounded,
+                        color: _colourFor(context, entry.key)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
+                  ),
                 ),
-              ),
-              const Gap(12),
-              TextField(
-                controller: _advertising,
-                keyboardType:
-                    const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(
-                  labelText: 'Advertising Expenses (LKR)',
-                  hintText: '0.00',
-                  isDense: true,
-                  prefixIcon: Icon(Icons.campaign_rounded,
-                      color: context.colors.warningAmber),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12)),
-                ),
-              ),
-              const Gap(14),
+                const Gap(12),
+              ],
+              const Gap(2),
               // ── Notice Box (Replaces Note Input Field) ──
               Container(
                 padding: const EdgeInsets.all(12),

@@ -771,3 +771,38 @@ The category form offered a **hardcoded `List.generate(10, ...)`** — "Zone 1 �
 - **Saving a PDF is no longer offered.** The preview exists to READ the report; anything leaving the system goes on paper or as Excel. The report cards' "PDF" button is now **"Print"** (it still opens the same preview), the preview footer's "Save PDF" action is gone, and the table dialog's footer button is "Print" too. `Printing.layoutPdf` in the preview footer is the print path.
 - **The Customs emblem now heads all three views.** In the PDF, `ReportService._logoWidget()` draws `Sri_Lanka_Customs_logo.svg` via **`pw.SvgImage`** (the `pdf` package renders SVG directly — no raster asset needed), falling back to the old "SLC" monogram if the asset cannot be read. The SVG is cached in a static and loaded from `_ensureFontsLoaded()`, which already runs before every report.
 - On screen, the preview dialog and the table dialog use `SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg')` with **`SvgTheme(currentColor:)`** — a `colorFilter` srcIn flattens the eye/ship detail into a solid blob (same rule as the portal headers).
+
+### Three more cost kinds, and SR tables sort newest-first (2026-08-25)
+
+- **Labour / Transport / Auction** join destruction and advertising as recorded costs (migration `20260835_more_expense_kinds.sql` widens the `kind` CHECK). They come out of the same destroying deposit, so the derived refund is now `deposit - Σ(all five)`. The one-per-`(package_item_id, kind)` constraint covers them without change — it is on the pair, not a list of kinds.
+- **The record form is now kind-driven**: `_RecordExpenseDialogState` holds `Map<String, TextEditingController>` built from `kRecordableExpenseKinds`, renders one field per entry, and saves in a loop. The provider's collection is keyed by kind the same way (`byItem` / `bySr` maps + a `costFor()` helper). **Adding a sixth cost now needs only that map and an icon** — no other edits. The save loop writes **every** kind including zeros, so clearing a field records the zero rather than leaving the old figure standing.
+- **`compareSrNewestFirst` in [yards.dart](lib/core/yards.dart)** orders SR numbers newest first. A plain string sort is wrong: it puts "9" after "86" and ignores the year. This parses `<yard>/SR/<serial>/<year>`, compares the year then the serial as NUMBERS, and sorts unparseable values last rather than to the top. `srFinancialsProvider` uses it, so the Financials table and the Goods Financials report both follow.
+
+### `type 'Null' is not a subtype of type 'double' of 'function result'` (2026-08-25)
+
+`costFor()` in `srFinancialsProvider` declared a `double` return but fell back with `?? 0` — an **int**. Assigning an int into a `double` variable or map is fine (the compiler inserts the conversion), but returning one from a function typed `double` fails at RUNTIME, which is why it only showed as a red screen on Financials and Expenses. Fixed to `?? 0.0`.
+
+**Rule worth keeping: inside a function with a declared `double` return, every literal fallback must be `0.0`, not `0`.** The analyzer does not catch it — the expression's static type is `num`, which is assignable.
+
+### The new cost kinds reach every surface (2026-08-25)
+
+Adding Labour / Transport / Auction to the model and the record form was not enough — each place that lists costs names its columns explicitly. All four now carry them:
+
+| Surface | Change |
+|---|---|
+| Central Disposal → Expenses table | 3 columns + 3 total chips, `minWidth: 1500` |
+| High Panel → Financials "Per SR" | 3 columns, `minWidth: 2400` (20 columns) |
+| Financials → Expenditure card | 3 lines |
+| Goods Financials report | 3 columns + 3 running totals |
+
+**A `minWidth` was needed on both tables**: neither set one, so the extra columns would have been crushed rather than scrolled. The provider and the record form are kind-driven, but these column lists are not — a sixth cost still means touching all four.
+
+### Financials "Per SR" fits without sideways scroll (2026-08-25)
+
+Twenty money columns needed `minWidth: 2400` and scrolled. Rather than crush the figures, the WIDTH DEMAND was reduced:
+
+- **`_compactMoney()`** renders `75,000.00` as **`75.0K`** and `1,234,567` as `1.23M` — twelve characters down to five. **Every cell carries the exact figure in a tooltip**, so nothing is lost, only the width.
+- Column labels abbreviated to match (`Destroy`, `Advert.`, `Expend.`, `Consol.`), at `fontSize: 11` with ellipsis — a long header sets the column's width and would undo what the compact figures gained.
+- Cell font 11.5, `columnSpacing: 6`, `horizontalMargin: 10`, and **`minWidth` removed entirely**.
+
+The deficit and net cells use `_compactMoney` too, each with its own exact-value tooltip.

@@ -923,15 +923,21 @@ class AuditLogModel {
 const Map<String, String> kExpenseKinds = {
   'destruction_expense': 'Destruction Expenses',
   'advertising_expense': 'Advertising Expenses',
+  'labour_expense': 'Labour Costs',
+  'transport_expense': 'Transport Costs',
+  'auction_expense': 'Auction Expenses',
   'refund': 'Refunds',
 };
 
 /// The kinds Central Disposal actually RECORDS. A refund is not typed in — it
-/// is what is left of the goods' destroying deposit once these two are paid,
-/// so it is derived (see [GoodsFinancials.refund]) rather than entered.
+/// is what is left of the goods' destroying deposit once these are paid, so it
+/// is derived (see [SrFinancials.refund]) rather than entered.
 const Map<String, String> kRecordableExpenseKinds = {
   'destruction_expense': 'Destruction Expenses',
   'advertising_expense': 'Advertising Expenses',
+  'labour_expense': 'Labour Costs',
+  'transport_expense': 'Transport Costs',
+  'auction_expense': 'Auction Expenses',
 };
 
 String expenseKindLabel(String? k) => kExpenseKinds[k] ?? (k ?? '—');
@@ -1033,6 +1039,9 @@ class GoodsFinancials {
   /// Costs Central Disposal recorded against these goods.
   final double destructionExpense;
   final double advertisingExpense;
+  final double labourExpense;
+  final double transportExpense;
+  final double auctionExpense;
 
   const GoodsFinancials({
     required this.itemId,
@@ -1046,11 +1055,19 @@ class GoodsFinancials {
     Map<String, double>? taxesByName,
     this.destructionExpense = 0,
     this.advertisingExpense = 0,
+    this.labourExpense = 0,
+    this.transportExpense = 0,
+    this.auctionExpense = 0,
   }) : _taxesByName = taxesByName;
 
   /// What this item cost to dispose of. Charged against its SR's deposit, not
   /// against a deposit of its own — see [SrFinancials].
-  double get depositSpent => destructionExpense + advertisingExpense;
+  double get depositSpent =>
+      destructionExpense +
+      advertisingExpense +
+      labourExpense +
+      transportExpense +
+      auctionExpense;
 
   /// Whether anything at all was recorded for these goods. The deposit is NOT
   /// consulted: it belongs to the SR, so a package whose only figure is its
@@ -1125,9 +1142,18 @@ class SrFinancials {
       goods.fold(0.0, (a, g) => a + g.destructionExpense);
   double get advertisingExpense =>
       goods.fold(0.0, (a, g) => a + g.advertisingExpense);
+  double get labourExpense => goods.fold(0.0, (a, g) => a + g.labourExpense);
+  double get transportExpense =>
+      goods.fold(0.0, (a, g) => a + g.transportExpense);
+  double get auctionExpense => goods.fold(0.0, (a, g) => a + g.auctionExpense);
 
   /// Every package's costs together — this is what the single deposit pays.
-  double get depositSpent => destructionExpense + advertisingExpense;
+  double get depositSpent =>
+      destructionExpense +
+      advertisingExpense +
+      labourExpense +
+      transportExpense +
+      auctionExpense;
 
   /// Returned to the depositor: the unspent part of the SR's deposit.
   double get refund => (destroyingDeposit - depositSpent) > 0
