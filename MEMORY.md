@@ -806,3 +806,32 @@ Twenty money columns needed `minWidth: 2400` and scrolled. Rather than crush the
 - Cell font 11.5, `columnSpacing: 6`, `horizontalMargin: 10`, and **`minWidth` removed entirely**.
 
 The deficit and net cells use `_compactMoney` too, each with its own exact-value tooltip.
+
+### Seeded goods had no category, so zones and the Items table disagreed (2026-08-25)
+
+Goods were admitted straight into zones 'A' / 'B' / 'C' with `package_items.category` null, so the Items table showed nothing for them and those zones matched no category. **`supabase/fix_category_zones.sql`** repairs it in three steps: create ten categories each owning a REAL `warehouse_zones` row (spread across W01/W02/W03), set `category` on every uncategorised item, then re-point its live warehouse entry at the zone its category names — so what the goods occupy and what the category says finally agree.
+
+Classification is **HS chapter first** (the authoritative code), falling back to keywords in the goods name. Traps found while testing the patterns against the real seed data:
+
+- **A `~*` pattern must stay on ONE line.** Wrapping it puts literal whitespace inside the regex, and it would silently never match.
+- Order matters in the `CASE`: Food is checked before the General rule so "Fruit Juice Cartons" is food, not a carton; Electronics carries `circuit|pcb` or "Printed Circuit Boards" falls through to General.
+- Toys / perfumery / stationery are **General Goods**, not Food.
+- **No `ON CONFLICT (name)` on `package_categories`** — the repo has no CREATE TABLE for it, so a unique constraint on `name` cannot be assumed; the script does an explicit `IF EXISTS … UPDATE … ELSE INSERT`.
+
+`supabase/diagnose_category_zones.sql` shows the before state — query 2 flags zones holding goods that no category points at.
+
+**`42803: subquery uses ungrouped column`** — a correlated subquery in the SELECT list may only reference columns the outer query GROUPS BY. Query 2 grouped by `trim(we.zone)` but its `exists(...)` referenced the raw `we.zone`, which no longer exists at that level. Fixed by grouping in a subquery FIRST, then doing the lookup against the already-grouped columns.
+
+### A DO block aborted partway, leaving categories with no zone (2026-08-25)
+
+After `fix_category_zones.sql` ran, several categories showed **"Building Materials (not defined)"** in red and their Target Zone dropdown was blank — the CATEGORY existed but its zone did not.
+
+Cause: **`warehouse_zones` carries TWO unique keys** — `(warehouse_id, name)` and `(warehouse_id, code)` — and an `ON CONFLICT` clause can only name ONE of them. The insert used `ON CONFLICT (warehouse_id, name)`, so when a generated code collided Postgres raised on the *code* index instead, which nothing caught, and the whole `DO $$ … $$` block died mid-loop. Everything before the clash was committed; everything after was skipped.
+
+**On a table with more than one unique key, `ON CONFLICT` is not enough — check explicitly.** Both scripts now `IF EXISTS … UPDATE … ELSE INSERT`, and a colliding code takes a numeric suffix rather than raising. `supabase/fix_missing_category_zones.sql` repairs a database left in the half-done state.
+
+### Never wrap a Supabase SQL-editor script in BEGIN/COMMIT (2026-08-25)
+
+`fix_category_zones.sql` was wrapped in `BEGIN; … COMMIT;`. **The Supabase SQL editor already runs each execution inside one transaction**, so the nested `BEGIN` is ignored — and when any statement errors, the editor rolls the ENTIRE run back. That is why re-running the script changed nothing: the DO block still failed, and the rollback took the rest with it, leaving the half-finished state from the very first run.
+
+Both scripts now run **without an explicit transaction**, so a failure costs only the statement that failed. `supabase/diagnose_zone_mismatch.sql` query 1 names the exact problem per unresolved category (missing row / wrong warehouse / case or whitespace mismatch) instead of guessing.

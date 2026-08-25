@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/supabase_client.dart';
 import '../core/app_session.dart';
@@ -890,11 +891,16 @@ class WarehouseService {
       return (data as List)
           .map((e) => WarehouseZoneModel.fromJson(e as Map<String, dynamic>))
           .toList();
-    } catch (_) {
+    } catch (e) {
       // The table only exists once 20260832_warehouse_zones.sql has run. Until
       // then report NO zones rather than failing: every capacity view then
       // shows "no zones defined", which is both true and actionable, instead
       // of a red error screen.
+      //
+      // Logged, though — an empty list here reads on screen as "zone not
+      // defined" for every category, which looks like bad DATA when it is
+      // really a failed fetch. Swallowing it silently cost real debugging time.
+      debugPrint('getWarehouseZones failed, reporting none: $e');
       return const [];
     }
   }
