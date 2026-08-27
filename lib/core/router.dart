@@ -202,6 +202,58 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/unsold-packages',
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey, child: const UnsoldPackagesScreen())),
+      // ── The High Panel's outcomes, one page each ──
+      //  Same screen as Unsold Goods, narrowed to a single decided outcome.
+      GoRoute(
+          path: '/government-use-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const UnsoldPackagesScreen(
+                  route: '/government-use-packages',
+                  title: 'Government Use Goods',
+                  subtitle: 'Unsold goods taken into government service',
+                  countLabel: 'For Government Use',
+                  proposalFilter: 'government_use'))),
+      GoRoute(
+          path: '/remanded-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const UnsoldPackagesScreen(
+                  route: '/remanded-packages',
+                  title: 'Remanded Goods',
+                  subtitle: 'Unsold goods remanded for further action',
+                  countLabel: 'Remanded',
+                  proposalFilter: 'remand'))),
+      GoRoute(
+          path: '/auction-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const UnsoldPackagesScreen(
+                  route: '/auction-packages',
+                  title: 'Auction Goods',
+                  subtitle: 'Unsold goods sent to public auction',
+                  countLabel: 'For Auction',
+                  proposalFilter: 'auction'))),
+      GoRoute(
+          path: '/converted-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const UnsoldPackagesScreen(
+                  route: '/converted-packages',
+                  title: 'Converted Goods',
+                  subtitle: 'Unsold goods converted to another use or form',
+                  countLabel: 'Converted',
+                  proposalFilter: 'convert'))),
+      GoRoute(
+          path: '/removed-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const UnsoldPackagesScreen(
+                  route: '/removed-packages',
+                  title: 'Removed from the Premises',
+                  subtitle: 'Unsold goods removed from the yard',
+                  countLabel: 'Removed',
+                  proposalFilter: 'remove_from_premises'))),
       GoRoute(
           path: '/destroyed-packages',
           pageBuilder: (_, state) => NoTransitionPage(

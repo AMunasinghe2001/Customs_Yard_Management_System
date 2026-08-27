@@ -36,6 +36,14 @@ const _officerNav = [
       'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
   NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
       '/reexported-packages'),
+  // The High Panel's outcomes for goods nothing could sell. Grouped after
+  // Re-exported so the whole disposal chain reads in order.
+  NavItem('Government Use', Icons.account_balance_rounded,
+      '/government-use-packages'),
+  NavItem('Remanded Goods', Icons.reply_all_rounded, '/remanded-packages'),
+  NavItem('Auction Goods', Icons.gavel_rounded, '/auction-packages'),
+  NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
+  NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
   NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
   NavItem('Destruction Sale', Icons.local_fire_department_rounded,
       '/destruction-disposals'),
@@ -61,6 +69,14 @@ const _adminNav = [
       'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
   NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
       '/reexported-packages'),
+  // The High Panel's outcomes for goods nothing could sell. Grouped after
+  // Re-exported so the whole disposal chain reads in order.
+  NavItem('Government Use', Icons.account_balance_rounded,
+      '/government-use-packages'),
+  NavItem('Remanded Goods', Icons.reply_all_rounded, '/remanded-packages'),
+  NavItem('Auction Goods', Icons.gavel_rounded, '/auction-packages'),
+  NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
+  NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
   NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
   NavItem('Destruction Sale', Icons.local_fire_department_rounded,
       '/destruction-disposals'),

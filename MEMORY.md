@@ -835,3 +835,91 @@ Cause: **`warehouse_zones` carries TWO unique keys** — `(warehouse_id, name)` 
 `fix_category_zones.sql` was wrapped in `BEGIN; … COMMIT;`. **The Supabase SQL editor already runs each execution inside one transaction**, so the nested `BEGIN` is ignored — and when any statement errors, the editor rolls the ENTIRE run back. That is why re-running the script changed nothing: the DO block still failed, and the rollback took the rest with it, leaving the half-finished state from the very first run.
 
 Both scripts now run **without an explicit transaction**, so a failure costs only the statement that failed. `supabase/diagnose_zone_mismatch.sql` query 1 names the exact problem per unresolved category (missing row / wrong warehouse / case or whitespace mismatch) instead of guessing.
+
+### A swallowed exception looked like bad data (2026-08-25)
+
+`getWarehouseZones()` had `catch (_) { return const []; }` so the app would tolerate the table not existing yet. But an empty list renders as **"(not defined)" against every category**, which reads as a DATA problem — and cost a long detour chasing SQL that was already correct (`unresolved = 0` in the database while the screen said otherwise). It now `debugPrint`s the error before returning empty.
+
+**A fallback that hides a failure must still say so.** Silence turns "the fetch broke" into "your data is wrong".
+
+### Admin tables aligned (2026-08-25)
+
+- Items table's Zone Code is **plain text**, not a tinted box — boxing a value that can wrap looked worse, and the Warehouses table shows its code plainly.
+- Both tables' Zone Code columns are **190px**, wide enough for `W01-VEHICLEPARTS` on one line; the Warehouses column was renamed **Code → Zone Code** (most of its rows are zones).
+- Widths matched between the two: first column 370, Zone Code 190, Actions 90.
+
+### Three more unsold outcomes (2026-08-26)
+
+The High Panel's final outcome for goods nothing could sell now has seven options, not four — **Re-export**, **Convert** and **Remove from the Premises** join Destroy / Remand / Government Use / Auction. Migration `20260836_more_unsold_outcomes.sql` widens the `unsold_proposals.proposal` CHECK; nothing stored becomes invalid.
+
+**Only two files needed editing**, because every surface is data-driven off them:
+- `kUnsoldProposals` + `unsoldProposalLabel()` in models — the decide dialog builds its radio list from the constant, and the report's "Proposed Decision" prints `UnsoldProposalModel.label`, which calls the same function.
+- `unsoldOutcomeStyle()` in `unsold_shared.dart` — icon + colour for the chip on all three Unsold tables (yard, Central Disposal, High Panel).
+
+The Final Outcome column went 190 → 235px (and `kUnsoldTableMinWidth` 900 → 945) so "Remove from the Premises" fits beside its icon.
+
+### Valuation report showed the wrong figure per column (2026-08-27)
+
+"List of Goods Valued" had FOUR columns (`Initial / 2nd / 3rd / Final Value`) for FIVE real stages, and its `valueAt()` special-cased the last column to print `chain.last` — so a package that stopped at Tender 1 showed that figure under "Final Value". The columns are now one-per-stage and strictly positional:
+
+**Initial Valuation · Tender 1 · Tender 2 · Tender 3 · High Panel Valuation**
+
+`getValuationChains()` also **never included the High Panel figure** — it lives on `tender_committees.submitted_value`, not in `tender_revaluations`. It is now appended last (guarded, so a role that cannot read committees still gets the rest of the chain).
+
+### Destroyed report columns (2026-08-27)
+
+Now **SR Number · Goods Name · Goods Description · Destroyed Price · Receipt Number**, replacing HS Code / Destroyed Date / Qty.
+
+`destruction_items` had **no receipt column** — the RPC stored the receipt in `notes`. Migration `20260837_destruction_receipt_number.sql` adds `receipt_number`, backfills it from `notes`, and keeps it in step with a **trigger** rather than redefining the RPC. That matters: `disposal_mark_destruction_item_destroyed` also writes the `[FINAL:DESTROYED]` warehouse entry and flips the item's status (20260630_destruction_price.sql), so a `create or replace` here would have been a copy that silently drops all of it.
+
+### Four new yard pages, one widget (2026-08-27)
+
+The High Panel's outcomes now each have a yard page: **Government Use · Remanded · Converted · Removed from the Premises**.
+
+Rather than copy `UnsoldPackagesScreen` four times, it took parameters — `route`, `title`, `subtitle`, `countLabel` and **`proposalFilter`**. Null keeps it the Unsold Goods page (every unsold package); set to an outcome code it lists only goods decided that way. One widget, six pages, and the header / filters / table / pager stay in step by construction.
+
+Two details worth keeping:
+- **`_visibleRows()` is used by BOTH the header count and the table.** Counting with `_yardRows` while listing with the narrowed set would have made an outcome page contradict its own header.
+- **The status chips are hidden when `proposalFilter` is set** — every row there is already decided the same way, so an "Awaiting decision / Decided" filter would offer nothing.
+
+Registered in `router.dart` and in **both** `_officerNav` and `_adminNav` (app_shell.dart has two lists; editing one silently leaves the other role without the page).
+
+### The outcome pages reach Central Disposal too (2026-08-27)
+
+`UnsoldProposalsTab` took the same treatment as the yard screen — `title`, `countNoun`, **`proposalFilter`** and **`tabKey`** — so Government Use / Remanded / Converted / Removed are four more tabs on the Central Disposal dashboard (12 → 16), styled by construction like the Unsold Goods tab beside them.
+
+**`tabKey` matters as much as the filter.** The search box, yard dropdown and pager are all `.family` providers keyed by tab; without a distinct key, five tabs sharing one widget would share one search term and one page number. `_unsoldPageProvider` had to become a family for exactly that reason.
+
+The outcome filter is applied **before** the yard and search filters, so the count pill, the table and the pager always describe the same set.
+
+### Reports trimmed to the agreed list; Auction pages added (2026-08-27)
+
+- **Auction Goods** joined the outcome pages — yard route `/auction-packages` and a Central Disposal tab (16 → 17). Same parameterised `UnsoldPackagesScreen` / `UnsoldProposalsTab` as the others.
+- **Reports cut to the requested set.** Removed: Stock & Revenue (whole section), Financial Reports (Storage Charges / Released Revenue), Item Categories, Warehouses List, Package History, Old Entries. Their generators are still in the file and now show as `unused_element` warnings — deliberately left, since the cards may come back.
+- **Four outcome reports added** (Unsold / Remanded / Auction / Converted) from one parameterised `_generateOutcomeReport`, differing only by which `unsold_proposals.proposal` they keep. Null lists every exhausted-unsold package including undecided ones.
+- **"List of the SRs" became "SR Register Inventory"**: SR Number · Goods Name · Goods Description · Post Status Activity · Entry Date · Value. The activity is read from `item.reasons`, falling back to the warehouse entry's `holdReason` — that is where the SR form writes it.
+- A **Post Status Activity dropdown** joined the filter bar (`_selectedActivity`), so the stock can be read one activity at a time.
+
+### Router changes need a FULL restart, not hot reload (2026-08-27)
+
+`/auction-packages` was in `router.dart` and in both nav lists, yet the app showed **"GoException: no routes for location"**. GoRouter builds its route table once at construction; neither hot reload nor `R` rebuilds it. **Stop the app and `flutter run` again after adding a route** — otherwise a correct route reads as a missing one.
+
+### Report cards trimmed and tightened (2026-08-27)
+
+The Post Status Activity section is gone (both the grid in section 3 and the lone card in section 9), leaving exactly the agreed list. `_buildActivityGrid` stays for `disposalMode`, which still shows only those reports.
+
+Cards were far taller than their content: a title, one line of description and two buttons, held apart by a `Spacer()` that fills whatever height the grid gives. Fixed at the grid — `childAspectRatio` 2.3 → **3.4** across all seven grids, and a **fourth column above 1400px**.
+
+### Warehouse filter showed every warehouse to every yard (2026-08-27)
+
+`warehousesForYardProvider` ended with **`if (ids.isEmpty) return all;`** — so a yard that owns no warehouse was told it had all three. `warehouses` is a SHARED table with no yard column; the only link is `warehouse_entries.yard`. A yard with no entries now gets an **empty list**, which is the truth, rather than filters that can never match a row.
+
+### Goods Financials took ~2 minutes (2026-08-27)
+
+`srFinancialsProvider` awaited four independent fetches **one after another** — `getAllPackages()` and `getTenderSales()` are both heavy nested queries — so the page waited for their SUM. Now `Future.wait`, so it waits for the slowest. **Sequential `await`s of independent calls are the default shape a provider drifts into; check for them when a screen is slow.**
+
+### Two "unsold" reports (2026-08-27)
+
+The parameterised `_generateOutcomeReport` with `outcome: null` duplicated the existing "Not Sold Goods" report. Dropped the duplicate and renamed the original to **Unsold Goods**; Remanded / Auction / Converted keep their outcome filters.
+
+The empty-result SnackBar was the default white and washed into the page — now **amber with an icon and dark text**, since an empty result is exactly the message a reader must not miss.

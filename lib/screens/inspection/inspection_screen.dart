@@ -1661,10 +1661,8 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                   _itemWarehouseSelections[index] != null;
 
                               return InkWell(
-                                onTap: (hasAutoSelection && !isSelected)
-                                    ? null
-                                    : () => setState(() =>
-                                        _itemWarehouseSelections[index] = w.id),
+                                onTap: () => setState(() =>
+                                    _itemWarehouseSelections[index] = w.id),
                                 child: Container(
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 12, vertical: 8),
@@ -1672,10 +1670,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                     color: isSelected
                                         ? context.colors.primaryGold
                                             .withOpacity(0.15)
-                                        : (hasAutoSelection
-                                            ? context.colors.surfaceDark
-                                                .withOpacity(0.5)
-                                            : context.colors.surfaceDark),
+                                        : context.colors.surfaceDark,
                                     borderRadius: BorderRadius.circular(8),
                                     border: Border.all(
                                       color: isSelected
@@ -1690,10 +1685,7 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                                     style: TextStyle(
                                       color: isSelected
                                           ? context.colors.primaryGold
-                                          : (hasAutoSelection
-                                              ? context.colors.textSecondary
-                                                  .withOpacity(0.3)
-                                              : context.colors.textSecondary),
+                                          : context.colors.textSecondary,
                                       fontSize: 12,
                                       fontWeight: isSelected
                                           ? FontWeight.bold
@@ -2058,6 +2050,10 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
   @override
   Widget build(BuildContext context) {
     final categories = ref.watch(packageCategoriesProvider);
+    final zones = ref.watch(warehouseZonesProvider).valueOrNull ??
+        const <WarehouseZoneModel>[];
+    final occupancy = ref.watch(zoneOccupancyProvider).valueOrNull ??
+        const <String, ZoneOccupancy>{};
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -2338,11 +2334,27 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                       .firstOrNull;
                   return StyledDropdownFormField<String>(
                     label: 'Category',
-                    menuWidth: 240,
+                    menuWidth: 280,
                     value: selectedCategory?.name,
-                    options: list
-                        .map((c) => StyledDropdownOption(c.name, c.name))
-                        .toList(),
+                    options: list.map((c) {
+                      final zn = c.targetZone?.trim();
+                      final zone = (zn != null && zn.isNotEmpty)
+                          ? zones
+                              .where((z) =>
+                                  z.warehouseId == c.targetWarehouseId &&
+                                  z.name.trim().toLowerCase() ==
+                                      zn.toLowerCase())
+                              .firstOrNull
+                          : null;
+                      final occ = zone != null ? occupancy[zone.id] : null;
+                      final free = occ?.free ?? zone?.capacity ?? 0;
+                      final isFull = zone != null && free <= 0;
+
+                      final label = isFull
+                          ? '${c.name} [Zone $zn FULL 🔴]'
+                          : c.name;
+                      return StyledDropdownOption(c.name, label);
+                    }).toList(),
                     onChanged: (v) {
                       widget.row.categoryCtrl.text = v ?? '';
                       setState(() {});
@@ -2405,6 +2417,44 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     .where((c) => c.name == widget.row.categoryCtrl.text)
                     .firstOrNull;
                 if (cat != null && cat.targetWarehouseId != null) {
+                  final zn = (cat.targetZone ?? '').trim();
+                  final zone = zn.isNotEmpty
+                      ? zones
+                          .where((z) =>
+                              z.warehouseId == cat.targetWarehouseId &&
+                              z.name.trim().toLowerCase() ==
+                                  zn.toLowerCase())
+                          .firstOrNull
+                      : null;
+                  final occ = zone != null ? occupancy[zone.id] : null;
+                  final free = occ?.free ?? zone?.capacity ?? 0;
+                  final isFull = zone != null && free <= 0;
+
+                  if (isFull) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                          color: context.colors.dangerRed.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                              color: context.colors.dangerRed
+                                  .withOpacity(0.4),
+                              width: 1)),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.warning_amber_rounded,
+                            size: 15, color: context.colors.dangerRed),
+                        const Gap(6),
+                        Text(
+                            '${_formatWarehouseName(cat.targetWarehouseName ?? cat.targetWarehouseId ?? '')} | Zone ${cat.targetZone ?? '—'} (FULL - No space available)',
+                            style: TextStyle(
+                                color: context.colors.dangerRed,
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700))
+                      ]),
+                    );
+                  }
+
                   return Container(
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -2424,7 +2474,8 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                                   '') +
                               (cat.targetZone != null
                                   ? ' | Zone ${cat.targetZone}'
-                                  : ''),
+                                  : '') +
+                              (zone != null ? ' ($free free)' : ''),
                           style: TextStyle(
                               color: context.colors.primaryGold,
                               fontSize: 11,

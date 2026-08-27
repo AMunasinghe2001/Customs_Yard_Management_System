@@ -4341,7 +4341,8 @@ class DisposalService {
       chains.putIfAbsent(id, () => []).add(cost);
     }
 
-    // 2. Re-valuations — one per unsold tender round, oldest first.
+    // 2. Re-valuations — one per unsold tender round, oldest first. These
+    //    price Tender 1 / 2 / 3.
     final revals = await AuthService._withNetworkRetry(() => supabase
         .from('tender_revaluations')
         .select('forfeited_package_id, valuation_cost, created_at')
@@ -4351,6 +4352,31 @@ class DisposalService {
       final cost = (e['valuation_cost'] as num?)?.toDouble();
       if (id == null || cost == null) continue;
       chains.putIfAbsent(id, () => []).add(cost);
+    }
+
+    // 3. The HIGH PANEL valuation — the figure the ADG submitted from the
+    //    tender committee, which prices the final committee round. It lives on
+    //    `tender_committees`, not in the re-valuations, so without this the
+    //    last stage of the chain was missing from every report.
+    //
+    //    Appended last so the chain reads in order:
+    //      initial -> Tender 1 -> Tender 2 -> Tender 3 -> High Panel
+    try {
+      final committees = await AuthService._withNetworkRetry(() => supabase
+          .from('tender_committees')
+          .select('forfeited_package_id, submitted_value, submitted_at')
+          .not('submitted_value', 'is', null)
+          .order('submitted_at', ascending: true));
+      for (final e in (committees as List)) {
+        final id = e['forfeited_package_id']?.toString();
+        final cost = (e['submitted_value'] as num?)?.toDouble();
+        if (id == null || cost == null) continue;
+        chains.putIfAbsent(id, () => []).add(cost);
+      }
+    } catch (e) {
+      // A role without read access to tender_committees still gets the rest of
+      // the chain rather than an empty report.
+      debugPrint('getValuationChains: committee values unavailable: $e');
     }
     return chains;
   }

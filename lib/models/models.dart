@@ -1684,12 +1684,15 @@ class UnsoldProposalModel {
       );
 }
 
-/// The four outcomes, in the order the High Panel sees them.
+/// The outcomes, in the order the High Panel sees them.
 const List<String> kUnsoldProposals = [
   'destroy',
   'remand',
   'government_use',
   'auction',
+  're_export',
+  'convert',
+  'remove_from_premises',
 ];
 
 String unsoldProposalLabel(String? p) {
@@ -1702,6 +1705,12 @@ String unsoldProposalLabel(String? p) {
       return 'Government Use';
     case 'auction':
       return 'Auction';
+    case 're_export':
+      return 'Re-export';
+    case 'convert':
+      return 'Convert';
+    case 'remove_from_premises':
+      return 'Remove from the Premises';
     default:
       return p ?? '—';
   }
@@ -2110,6 +2119,10 @@ class DestructionItemModel {
 
   /// Taxes applied to [destroyedPrice] — list of {name, percentage, amount}.
   final List<dynamic> appliedTaxes;
+
+  /// The receipt the destruction was recorded against — the destruction's
+  /// counterpart to `tender_sale_items.receipt_number`.
+  final String? receiptNumber;
   final ForfeitedPackageModel? forfeited;
 
   const DestructionItemModel({
@@ -2124,6 +2137,7 @@ class DestructionItemModel {
     this.notes,
     this.destroyedPrice = 0,
     this.appliedTaxes = const [],
+    this.receiptNumber,
     this.forfeited,
   });
 
@@ -2144,6 +2158,7 @@ class DestructionItemModel {
       notes: json['notes'] as String?,
       destroyedPrice: (json['destroyed_price'] as num?)?.toDouble() ?? 0,
       appliedTaxes: (json['applied_taxes'] as List?) ?? const [],
+      receiptNumber: json['receipt_number'] as String?,
       forfeited: json['forfeited_packages'] != null
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)

@@ -2282,14 +2282,36 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         _DetailItem(
                                           icon: Icons.warehouse_rounded,
                                           label: 'Warehouse',
-                                          value:
-                                              legacyEntries.first.warehouseName,
+                                          value: legacyEntries
+                                              .map((e) => e.warehouseName.trim())
+                                              .where((w) => w.isNotEmpty)
+                                              .toSet()
+                                              .join(', '),
                                         ),
                                         _DetailItem(
                                           icon: Icons.location_on_rounded,
                                           label: 'Zone',
-                                          value:
-                                              legacyEntries.first.warehouseCode,
+                                          value: () {
+                                            final zones = legacyEntries
+                                                .map((e) {
+                                                  final zn = e.zone?.trim();
+                                                  if (zn != null &&
+                                                      zn.isNotEmpty) {
+                                                    return zn.toLowerCase().startsWith('zone')
+                                                        ? zn
+                                                        : 'Zone $zn';
+                                                  }
+                                                  return e.warehouseCode.trim().isNotEmpty
+                                                      ? e.warehouseCode.trim()
+                                                      : null;
+                                                })
+                                                .where((z) => z != null)
+                                                .cast<String>()
+                                                .toSet();
+                                            return zones.isEmpty
+                                                ? '—'
+                                                : zones.join(', ');
+                                          }(),
                                         ),
                                         _DetailItem(
                                           icon: Icons.calendar_month_rounded,

@@ -52,7 +52,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 12,
+      length: 17,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -96,7 +96,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             color: context.colors.textPrimary,
                             fontSize: 17,
                             fontWeight: FontWeight.w800)),
-                    Text('Sold & forfeited items across all yards · tender sales',
+                    Text(
+                        'Sold & forfeited items across all yards · tender sales',
                         style: TextStyle(
                             color: context.colors.textMuted, fontSize: 12)),
                   ],
@@ -199,8 +200,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
                   splashFactory: NoSplash.splashFactory,
-                  overlayColor:
-                      WidgetStateProperty.all(Colors.transparent),
+                  overlayColor: WidgetStateProperty.all(Colors.transparent),
                   indicatorSize: TabBarIndicatorSize.tab,
                   indicatorPadding: const EdgeInsets.all(4),
                   dividerColor: Colors.transparent,
@@ -216,88 +216,176 @@ class DisposalDashboardScreen extends ConsumerWidget {
                   tabs: const [
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.sell_rounded, size: 18),
-                          Gap(8),
-                          Text('Sold Goods'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.sell_rounded, size: 18),
+                              Gap(8),
+                              Text('Sold Goods'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.pending_actions_rounded, size: 18),
-                          Gap(8),
-                          Text('Unsold Goods'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.pending_actions_rounded, size: 18),
+                              Gap(8),
+                              Text('Unsold Goods'),
+                            ])),
+                    // ── The High Panel's outcomes, one tab each ──
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.delete_forever_rounded, size: 18),
-                          Gap(8),
-                          Text('Destroyed Goods'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.account_balance_rounded, size: 18),
+                              Gap(8),
+                              Text('Government Use'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.assignment_turned_in_rounded, size: 18),
-                          Gap(8),
-                          Text('Disposal Requests'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.reply_all_rounded, size: 18),
+                              Gap(8),
+                              Text('Remanded'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.storefront_rounded, size: 18),
-                          Gap(8),
-                          Text('Tender Sales'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.gavel_rounded, size: 18),
+                              Gap(8),
+                              Text('Auction'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.replay_rounded, size: 18),
-                          Gap(8),
-                          Text('Unsold Tenders'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.autorenew_rounded, size: 18),
+                              Gap(8),
+                              Text('Converted'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.gavel_rounded, size: 18),
-                          Gap(8),
-                          Text('Destructions'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.logout_rounded, size: 18),
+                              Gap(8),
+                              Text('Removed'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.auto_delete_rounded, size: 18),
-                          Gap(8),
-                          Text('Undestroyed'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.delete_forever_rounded, size: 18),
+                              Gap(8),
+                              Text('Destroyed Goods'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.groups_rounded, size: 18),
-                          Gap(8),
-                          Text('Committees'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.assignment_turned_in_rounded,
+                                  size: 18),
+                              Gap(8),
+                              Text('Disposal Requests'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.receipt_long_rounded, size: 18),
-                          Gap(8),
-                          Text('Taxes'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.storefront_rounded, size: 18),
+                              Gap(8),
+                              Text('Tender Sales'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.payments_rounded, size: 18),
-                          Gap(8),
-                          Text('Expenses'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.replay_rounded, size: 18),
+                              Gap(8),
+                              Text('Unsold Tenders'),
+                            ])),
                     Tab(
                         height: 44,
-                        child: Row(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, children: [
-                          Icon(Icons.assessment_rounded, size: 18),
-                          Gap(8),
-                          Text('Reports'),
-                        ])),
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.gavel_rounded, size: 18),
+                              Gap(8),
+                              Text('Destructions'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.auto_delete_rounded, size: 18),
+                              Gap(8),
+                              Text('Undestroyed'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.groups_rounded, size: 18),
+                              Gap(8),
+                              Text('Committees'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.receipt_long_rounded, size: 18),
+                              Gap(8),
+                              Text('Taxes'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.payments_rounded, size: 18),
+                              Gap(8),
+                              Text('Expenses'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.assessment_rounded, size: 18),
+                              Gap(8),
+                              Text('Reports'),
+                            ])),
                   ],
                 ),
               ),
@@ -306,6 +394,31 @@ class DisposalDashboardScreen extends ConsumerWidget {
               child: TabBarView(children: [
                 _SoldPackagesTab(),
                 UnsoldProposalsTab(),
+                UnsoldProposalsTab(
+                    title: 'Government Use Goods',
+                    countNoun: 'For government use',
+                    proposalFilter: 'government_use',
+                    tabKey: 'outcome-government-use'),
+                UnsoldProposalsTab(
+                    title: 'Remanded Goods',
+                    countNoun: 'Remanded',
+                    proposalFilter: 'remand',
+                    tabKey: 'outcome-remand'),
+                UnsoldProposalsTab(
+                    title: 'Auction Goods',
+                    countNoun: 'For auction',
+                    proposalFilter: 'auction',
+                    tabKey: 'outcome-auction'),
+                UnsoldProposalsTab(
+                    title: 'Converted Goods',
+                    countNoun: 'Converted',
+                    proposalFilter: 'convert',
+                    tabKey: 'outcome-convert'),
+                UnsoldProposalsTab(
+                    title: 'Removed from the Premises',
+                    countNoun: 'Removed',
+                    proposalFilter: 'remove_from_premises',
+                    tabKey: 'outcome-removed'),
                 _DestroyedPackagesTab(),
                 _DisposalRequestsTab(),
                 _TenderSalesTab(),
@@ -328,7 +441,10 @@ class DisposalDashboardScreen extends ConsumerWidget {
 // ── Shared widgets ────────────────────────────────────────────────
 
 /// Page index for the Unsold Packages tab's client-side pager.
-final _unsoldPageProvider = StateProvider<int>((ref) => 0);
+/// Page index, keyed by tab — the outcome tabs share this widget, so a single
+/// provider would carry one tab's page number into the next.
+final _unsoldPageProvider =
+    StateProvider.family<int, String>((ref, tabKey) => 0);
 
 /// Packages that exhausted every avenue — the Valuation Tender, Tender 1-3 and
 /// the committee-valued tender all failed. READ-ONLY here: the DG decides the
@@ -337,7 +453,28 @@ final _unsoldPageProvider = StateProvider<int>((ref) => 0);
 /// Uses the shared Unsold table (see `unsold_shared.dart`) so this tab, the
 /// yard's Unsold page and the High Panel's tab show identical details.
 class UnsoldProposalsTab extends ConsumerWidget {
-  const UnsoldProposalsTab({super.key});
+  /// Page title, and the word inside the count pill.
+  final String title;
+  final String countNoun;
+
+  /// One of [kUnsoldProposals], or null to list every unsold package.
+  ///
+  /// Null keeps this the Unsold Goods tab; set to an outcome code it lists
+  /// only the goods the High Panel decided that way, so Government Use /
+  /// Remand / Convert / Removed each get a tab without a copy of this file.
+  final String? proposalFilter;
+
+  /// Keys this tab's own search box, yard filter and pager, so switching tabs
+  /// does not carry one tab's search into another.
+  final String tabKey;
+
+  const UnsoldProposalsTab({
+    super.key,
+    this.title = 'Unsold Goods',
+    this.countNoun = 'Unsold',
+    this.proposalFilter,
+    this.tabKey = 'unsold-proposals',
+  });
 
   static const int _pageSize = 20;
 
@@ -348,10 +485,8 @@ class UnsoldProposalsTab extends ConsumerWidget {
     // The shared "every avenue exhausted" list, so this tab, the yard page and
     // the High Panel all show exactly the same packages.
     final async = ref.watch(exhaustedUnsoldProvider);
-    final q =
-        ref.watch(disposalSearchProvider('unsold-proposals')).toLowerCase();
-    final yardFilter =
-        ref.watch(disposalYardFilterProvider('unsold-proposals'));
+    final q = ref.watch(disposalSearchProvider(tabKey)).toLowerCase();
+    final yardFilter = ref.watch(disposalYardFilterProvider(tabKey));
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
@@ -363,6 +498,14 @@ class UnsoldProposalsTab extends ConsumerWidget {
       error: (_, __) => const <ReTenderSaleInfo>[],
       data: (list) {
         var filtered = list;
+        // The outcome this tab is for. Applied FIRST so the count pill, the
+        // table and the pager all describe the same set.
+        if (proposalFilter != null) {
+          filtered = filtered
+              .where((info) =>
+                  proposals[info.forfeited.id]?.proposal == proposalFilter)
+              .toList();
+        }
         if (yardFilter != null) {
           filtered = filtered
               .where((info) => info.forfeited.yard == yardFilter)
@@ -382,7 +525,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
     );
 
     final maxPage = rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
-    final page = ref.watch(_unsoldPageProvider).clamp(0, maxPage);
+    final page = ref.watch(_unsoldPageProvider(tabKey)).clamp(0, maxPage);
     final pageRows = rows.skip(page * _pageSize).take(_pageSize).toList();
 
     return Padding(
@@ -395,7 +538,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
           Row(
             children: [
               Text(
-                'Unsold Goods',
+                title,
                 style: TextStyle(
                   color: context.colors.textPrimary,
                   fontSize: 22,
@@ -403,19 +546,17 @@ class UnsoldProposalsTab extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              const DisposalSearch(
-                tabKey: 'unsold-proposals',
+              DisposalSearch(
+                tabKey: tabKey,
                 hint: 'Search SR / item / consignee...',
               ),
               const Gap(12),
               YardAllFilter(
                 value: yardFilter,
                 onChanged: (v) {
-                  ref
-                      .read(disposalYardFilterProvider('unsold-proposals')
-                          .notifier)
-                      .state = v;
-                  ref.read(_unsoldPageProvider.notifier).state = 0;
+                  ref.read(disposalYardFilterProvider(tabKey).notifier).state =
+                      v;
+                  ref.read(_unsoldPageProvider(tabKey).notifier).state = 0;
                 },
               ),
             ],
@@ -426,7 +567,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
             padding: const EdgeInsets.only(bottom: 14),
             child: StatChip(
                 label:
-                    'Unsold in ${yardFilter == null ? 'all yards' : yardName(yardFilter)}',
+                    '$countNoun in ${yardFilter == null ? 'all yards' : yardName(yardFilter)}',
                 value: '${rows.length}',
                 color: amber),
           ),
@@ -505,8 +646,9 @@ class UnsoldProposalsTab extends ConsumerWidget {
                         total: rows.length,
                         page: page,
                         pageSize: _pageSize,
-                        onPageChanged: (p) =>
-                            ref.read(_unsoldPageProvider.notifier).state = p,
+                        onPageChanged: (p) => ref
+                            .read(_unsoldPageProvider(tabKey).notifier)
+                            .state = p,
                       ),
                     ],
                   ),
@@ -516,7 +658,6 @@ class UnsoldProposalsTab extends ConsumerWidget {
     );
   }
 }
-
 
 class _YardFilter extends ConsumerWidget {
   const _YardFilter();
@@ -551,18 +692,21 @@ class _StyledYardPicker extends StatelessWidget {
       child: Theme(
         data: Theme.of(context).copyWith(
           inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
-            filled: true,
-            fillColor: context.colors.primaryGold.withOpacity(0.06),
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
-            enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.colors.primaryGold.withOpacity(0.4))),
-            focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
-                borderSide: BorderSide(color: context.colors.primaryGold, width: 1.5)),
-          ),
+                filled: true,
+                fillColor: context.colors.primaryGold.withOpacity(0.06),
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(
+                        color: context.colors.primaryGold.withOpacity(0.4))),
+                enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(
+                        color: context.colors.primaryGold.withOpacity(0.4))),
+                focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide(
+                        color: context.colors.primaryGold, width: 1.5)),
+              ),
         ),
         child: StyledDropdownFormField<String>(
           value: value,
@@ -570,9 +714,10 @@ class _StyledYardPicker extends StatelessWidget {
           helperText: null,
           isDense: true,
           menuWidth: width,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          prefixIcon:
-              Icon(Icons.warehouse_rounded, color: context.colors.primaryGold, size: 20),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          prefixIcon: Icon(Icons.warehouse_rounded,
+              color: context.colors.primaryGold, size: 20),
           options: [
             for (final y in kYards) StyledDropdownOption(y.code, y.name),
           ],
@@ -751,10 +896,14 @@ Widget _sourceChip(BuildContext context, String? source) {
   final (label, color) = switch (s) {
     'abandoned' => ('Abandoned', context.colors.heldOrange),
     'other' => ('Other', context.colors.warningAmber),
-    'forfeit' || 'forfeited' || 'forfiet' =>
-      ('Forfeit', context.colors.accentBlue),
-    _ => (source == null || source.isEmpty ? '—' : source,
-        context.colors.textMuted),
+    'forfeit' || 'forfeited' || 'forfiet' => (
+        'Forfeit',
+        context.colors.accentBlue
+      ),
+    _ => (
+        source == null || source.isEmpty ? '—' : source,
+        context.colors.textMuted
+      ),
   };
   if (label == '—') {
     return Text('—', style: TextStyle(color: context.colors.textMuted));
@@ -768,8 +917,8 @@ Widget _sourceChip(BuildContext context, String? source) {
     ),
     child: Text(label,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-            color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+        style:
+            TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
   );
 }
 
@@ -785,8 +934,8 @@ class _SoldRow {
   /// several partial-sale TSI rows (same package_item_id) this row maps to.
   String get receiptNo {
     final notes = entry.returnNotes ?? '';
-    final m = RegExp(r'Receipt:\s*([^\|—]+)', caseSensitive: false)
-        .firstMatch(notes);
+    final m =
+        RegExp(r'Receipt:\s*([^\|—]+)', caseSensitive: false).firstMatch(notes);
     return m == null ? '' : m.group(1)!.trim();
   }
 
@@ -815,8 +964,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
     for (final p in packages) {
       for (final e in p.warehouseEntries) {
         if (!_isSoldEntry(e)) continue;
-        final item =
-            p.items.where((i) => i.id == e.packageItemId).firstOrNull;
+        final item = p.items.where((i) => i.id == e.packageItemId).firstOrNull;
         // Resolve the item name from the entry's own package_item_id. NEVER fall
         // back to items.first for a multi-item package — that mislabels an
         // un-linked (legacy NULL-item) entry as the wrong product (the old
@@ -937,7 +1085,8 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                           columns: const [
                             DataColumn2(
                                 label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Qty'),
                                 size: ColumnSize.S,
@@ -947,10 +1096,14 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                             DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.S),
                             DataColumn2(
-                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
+                                label: Text('Valuation'),
+                                size: ColumnSize.S,
+                                fixedWidth: 132),
                             DataColumn2(
                                 label: Text('Sold Price'), size: ColumnSize.M),
-                            DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
+                            DataColumn2(
+                                label: Center(child: Text('Delivery')),
+                                fixedWidth: 120),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -965,19 +1118,24 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                             fontWeight: FontWeight.w600))),
                                     DataCell(TooltipText(r.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(TooltipText('${r.entry.itemCount}')),
-                                    DataCell(TooltipText(r.entry.returnedAt != null
-                                        ? DateFormat('yyyy-MM-dd')
-                                            .format(r.entry.returnedAt!)
-                                        : '—')),
                                     DataCell(
-                                        _SaleReceiptCell(saleItemKey: r.saleItemKey)),
+                                        TooltipText('${r.entry.itemCount}')),
+                                    DataCell(TooltipText(
+                                        r.entry.returnedAt != null
+                                            ? DateFormat('yyyy-MM-dd')
+                                                .format(r.entry.returnedAt!)
+                                            : '—')),
+                                    DataCell(_SaleReceiptCell(
+                                        saleItemKey: r.saleItemKey)),
                                     DataCell(_SaleValuationCell(
                                         saleItemKey: r.saleItemKey,
                                         qty: r.entry.itemCount)),
-                                    DataCell(
-                                        _SaleFinancialsCell(saleItemKey: r.saleItemKey)),
-                                    DataCell(Center(child: _DeliveryStatusCell(package: r.package, saleItemKey: r.saleItemKey))),
+                                    DataCell(_SaleFinancialsCell(
+                                        saleItemKey: r.saleItemKey)),
+                                    DataCell(Center(
+                                        child: _DeliveryStatusCell(
+                                            package: r.package,
+                                            saleItemKey: r.saleItemKey))),
                                     DataCell(Center(
                                       child: IconButton(
                                         icon: Icon(Icons.info_outline_rounded,
@@ -1104,8 +1262,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
     for (final p in packages) {
       for (final e in p.warehouseEntries) {
         if (!_isDestroyedEntry(e)) continue;
-        final item =
-            p.items.where((i) => i.id == e.packageItemId).firstOrNull;
+        final item = p.items.where((i) => i.id == e.packageItemId).firstOrNull;
         // Never mislabel an un-linked entry as items.first in a multi-item
         // package (see the Sold tab note).
         final itemName = item?.itemName ??
@@ -1225,7 +1382,8 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                           columns: const [
                             DataColumn2(
                                 label: Text('SR Number'), size: ColumnSize.M),
-                            DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Goods Name'), size: ColumnSize.M),
                             DataColumn2(
                                 label: Text('Qty'),
                                 size: ColumnSize.S,
@@ -1236,11 +1394,15 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                             DataColumn2(
                                 label: Text('Receipt No'), size: ColumnSize.S),
                             DataColumn2(
-                                label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
+                                label: Text('Valuation'),
+                                size: ColumnSize.S,
+                                fixedWidth: 132),
                             DataColumn2(
                                 label: Text('Destruction Price'),
                                 size: ColumnSize.M),
-                            DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 130),
+                            DataColumn2(
+                                label: Center(child: Text('Delivery')),
+                                fixedWidth: 130),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -1255,11 +1417,13 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                             fontWeight: FontWeight.w600))),
                                     DataCell(TooltipText(r.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(TooltipText('${r.entry.itemCount}')),
-                                    DataCell(TooltipText(r.entry.returnedAt != null
-                                        ? DateFormat('yyyy-MM-dd')
-                                            .format(r.entry.returnedAt!)
-                                        : '—')),
+                                    DataCell(
+                                        TooltipText('${r.entry.itemCount}')),
+                                    DataCell(TooltipText(
+                                        r.entry.returnedAt != null
+                                            ? DateFormat('yyyy-MM-dd')
+                                                .format(r.entry.returnedAt!)
+                                            : '—')),
                                     DataCell(TooltipText(
                                         _parseDestroyReceipt(
                                                 r.entry.returnNotes) ??
@@ -1272,8 +1436,9 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                     DataCell(_DestructionPriceCell(
                                         package: r.package,
                                         packageItemId: r.entry.packageItemId)),
-                                    DataCell(Center(child: _DestroyedDeliveryCell(
-                                        package: r.package))),
+                                    DataCell(Center(
+                                        child: _DestroyedDeliveryCell(
+                                            package: r.package))),
                                     DataCell(Center(
                                       child: IconButton(
                                         icon: Icon(Icons.info_outline_rounded,
@@ -1331,10 +1496,11 @@ class _DestroyedDeliveryCell extends ConsumerWidget {
       // which reads as the whole table constantly refreshing.
       skipLoadingOnReload: true,
       loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
-      data: (item) =>
-          DeliveryStatusChip(delivered: item?.delivered ?? false),
+      data: (item) => DeliveryStatusChip(delivered: item?.delivered ?? false),
     );
   }
 }
@@ -1343,8 +1509,8 @@ class _DestroyedDeliveryCell extends ConsumerWidget {
 String? _parseDestroyReceipt(String? returnNotes) {
   if (returnNotes == null) return null;
   var s = returnNotes;
-  final tag = RegExp(r'Receipt/Notes:\s*(.+)$', caseSensitive: false)
-      .firstMatch(s);
+  final tag =
+      RegExp(r'Receipt/Notes:\s*(.+)$', caseSensitive: false).firstMatch(s);
   if (tag != null) s = tag.group(1)!;
   // Peel an inner "Receipt No:" prefix and drop any "| Notes:" tail → just the no.
   s = s.replaceFirst(RegExp(r'^\s*Receipt No:\s*', caseSensitive: false), '');
@@ -1356,6 +1522,7 @@ String? _parseDestroyReceipt(String? returnNotes) {
 class _DestructionValuationCell extends ConsumerWidget {
   final PackageModel package;
   final String? packageItemId;
+
   /// The quantity shown in the row's Qty column — the valuation must multiply
   /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
   final int? qty;
@@ -1371,8 +1538,11 @@ class _DestructionValuationCell extends ConsumerWidget {
       // which reads as the whole table constantly refreshing.
       skipLoadingOnReload: true,
       loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2)),
+      error: (_, __) =>
+          Text('—', style: TextStyle(color: context.colors.textMuted)),
       data: (item) {
         final fp = item?.forfeited;
         final unitCost = fp?.valuationCost;
@@ -1391,9 +1561,9 @@ class _DestructionValuationCell extends ConsumerWidget {
                   ?.quantity ??
               1;
         } else {
-          effQty = fp.packageDetails?.items
-                  .fold<int>(0, (s, i) => s + i.quantity) ??
-              1;
+          effQty =
+              fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ??
+                  1;
         }
         final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
@@ -1406,7 +1576,8 @@ class _DestructionValuationCell extends ConsumerWidget {
                     color: context.colors.primaryGold,
                     fontWeight: FontWeight.w700)),
             Text('@ ${fmt.format(unitCost)} × $effQty',
-                style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
+                style:
+                    TextStyle(fontSize: 11, color: context.colors.textMuted)),
           ],
         );
       },
@@ -1429,7 +1600,9 @@ class _DestructionPriceCell extends ConsumerWidget {
       // which reads as the whole table constantly refreshing.
       skipLoadingOnReload: true,
       loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
       data: (item) {
         if (item == null) return const Text('—');
@@ -1439,7 +1612,6 @@ class _DestructionPriceCell extends ConsumerWidget {
     );
   }
 }
-
 
 // Read-only sold price + tax total (watches the per-item provider so each sold
 // row shows its own price when a package has multiple separately-priced items).
@@ -1457,7 +1629,9 @@ class _SaleReceiptCell extends ConsumerWidget {
       // which reads as the whole table constantly refreshing.
       skipLoadingOnReload: true,
       loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
       data: (item) {
         final receipt = item?.receiptNumber?.trim();
@@ -1488,7 +1662,9 @@ class _SaleValuationCell extends ConsumerWidget {
       // which reads as the whole table constantly refreshing.
       skipLoadingOnReload: true,
       loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
       data: (item) {
         final fp = item?.forfeited;
@@ -1496,11 +1672,9 @@ class _SaleValuationCell extends ConsumerWidget {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
         // Prefer the LATEST tender re-valuation for this package, if any.
-        final revals = ref
-                .watch(tenderRevaluationsProvider(fp.id))
-                .asData
-                ?.value ??
-            const <String, TenderRevaluationModel>{};
+        final revals =
+            ref.watch(tenderRevaluationsProvider(fp.id)).asData?.value ??
+                const <String, TenderRevaluationModel>{};
         final reval = _latestReval(revals);
         final isRevalued = reval != null;
         final unitCost = reval?.valuationCost ?? fp.valuationCost;
@@ -1519,9 +1693,9 @@ class _SaleValuationCell extends ConsumerWidget {
                   ?.quantity ??
               1;
         } else {
-          effQty = fp.packageDetails?.items
-                  .fold<int>(0, (s, i) => s + i.quantity) ??
-              1;
+          effQty =
+              fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ??
+                  1;
         }
         final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
@@ -1538,18 +1712,20 @@ class _SaleValuationCell extends ConsumerWidget {
           children: [
             Row(mainAxisSize: MainAxisSize.min, children: [
               Text('Rs ${fmt.format(total)}',
-                  style:
-                      TextStyle(color: priceColor, fontWeight: FontWeight.w700)),
+                  style: TextStyle(
+                      color: priceColor, fontWeight: FontWeight.w700)),
               if (isRevalued) ...[
                 const Gap(5),
                 Icon(Icons.price_change_rounded,
                     size: 12, color: context.colors.accentLightBlue),
               ],
             ]),
-            Text('@ ${fmt.format(unitCost)} × $effQty${isRevalued ? ' · re-valued' : ''}',
+            Text(
+                '@ ${fmt.format(unitCost)} × $effQty${isRevalued ? ' · re-valued' : ''}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
+                style:
+                    TextStyle(fontSize: 11, color: context.colors.textMuted)),
           ],
         );
       },
@@ -1569,7 +1745,9 @@ class _SaleFinancialsCell extends ConsumerWidget {
       // which reads as the whole table constantly refreshing.
       skipLoadingOnReload: true,
       loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
       data: (item) {
         if (item == null) return const Text('—');
@@ -1584,7 +1762,8 @@ class _SaleFinancialsCell extends ConsumerWidget {
             Text('Rs ${item.soldPrice.toStringAsFixed(2)}',
                 style: const TextStyle(fontWeight: FontWeight.bold)),
             Text('Tax: Rs ${taxSum.toStringAsFixed(2)}',
-                style: TextStyle(fontSize: 11, color: context.colors.textMuted)),
+                style:
+                    TextStyle(fontSize: 11, color: context.colors.textMuted)),
           ],
         );
       },
@@ -1608,7 +1787,9 @@ class _DeliveryStatusCell extends ConsumerWidget {
       // which reads as the whole table constantly refreshing.
       skipLoadingOnReload: true,
       loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+          width: 16,
+          height: 16,
+          child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
       data: (item) => item == null
           ? const Text('—')
@@ -1637,13 +1818,12 @@ class DeliveryStatusChip extends StatelessWidget {
             size: 13, color: color),
         const Gap(5),
         Text(delivered ? 'Delivered' : 'Pending',
-            style:
-                TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
       ]),
     );
   }
 }
-
 
 // ── Disposal Requests (per yard, per submission) ──────────────────
 // null = all yards.
@@ -1689,9 +1869,8 @@ class _DisposalRequestsTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(disposalRequestsProvider)),
               data: (list) {
-                final q = ref
-                    .watch(disposalSearchProvider('requests'))
-                    .toLowerCase();
+                final q =
+                    ref.watch(disposalSearchProvider('requests')).toLowerCase();
                 var filtered = yardFilter == null
                     ? list
                     : list.where((r) => r.yard == yardFilter).toList();
@@ -1766,7 +1945,8 @@ class _RequestCard extends ConsumerWidget {
     }
     // Expand package-level FP rows (itemId==null, multiple pkg items) so each
     // item appears as its own table row.
-    final expandedRows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+    final expandedRows =
+        <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
     for (final it in items) {
       final fpItems = it.forfeited?.packageDetails?.items ?? const [];
       final pid = it.forfeited?.packageId;
@@ -1822,8 +2002,7 @@ class _RequestCard extends ConsumerWidget {
                       Icon(Icons.calendar_today_rounded,
                           size: 12, color: context.colors.textMuted),
                       const Gap(4),
-                      Text(
-                          DateFormat('yyyy-MM-dd').format(request.requestDate),
+                      Text(DateFormat('yyyy-MM-dd').format(request.requestDate),
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12,
@@ -1839,7 +2018,8 @@ class _RequestCard extends ConsumerWidget {
                       ],
                     ]),
                     const Gap(2),
-                    Text('${expandedRows.length} package${expandedRows.length == 1 ? '' : 's'} requested',
+                    Text(
+                        '${expandedRows.length} package${expandedRows.length == 1 ? '' : 's'} requested',
                         style: TextStyle(
                             color: context.colors.textMuted, fontSize: 11)),
                   ],
@@ -1890,7 +2070,8 @@ class _RequestCard extends ConsumerWidget {
                         size: ColumnSize.S,
                         fixedWidth: 64,
                         numeric: true),
-                    DataColumn2(label: Center(child: Text('Source')),
+                    DataColumn2(
+                        label: Center(child: Text('Source')),
                         size: ColumnSize.S,
                         fixedWidth: 110),
                     DataColumn2(
@@ -1915,7 +2096,8 @@ class _RequestCard extends ConsumerWidget {
                     // Show/price only the forfeited quantity (e.g. 6 of 10).
                     final displayQty = _disposalForfeitedQty(it, pkgItem) ??
                         (pkgItem != null ? pkgItem.quantity : it.totalQuantity);
-                    final highlightId = pkgItem?.id ?? f?.itemId ??
+                    final highlightId = pkgItem?.id ??
+                        f?.itemId ??
                         (f?.packageDetails?.items.isNotEmpty == true
                             ? f!.packageDetails!.items.first.id
                             : null);
@@ -1938,8 +2120,11 @@ class _RequestCard extends ConsumerWidget {
                               color: context.colors.textSecondary,
                               fontWeight: FontWeight.w600,
                               fontSize: 12))),
-                      DataCell(Center(child: _SourceChip(source: f?.source ?? 'forfeit'))),
-                      DataCell(Center(child: _DispositionChip(disposition: it.disposition))),
+                      DataCell(Center(
+                          child: _SourceChip(source: f?.source ?? 'forfeit'))),
+                      DataCell(Center(
+                          child:
+                              _DispositionChip(disposition: it.disposition))),
                       DataCell(it.valuationCost != null
                           ? Column(
                               mainAxisSize: MainAxisSize.min,
@@ -1973,11 +2158,12 @@ class _RequestCard extends ConsumerWidget {
                                     builder: (_) => PackageDetailsDialog(
                                       package: f!.packageDetails!,
                                       storageRate: storageRate,
-                                      headerAccentColor: context.colors.successGreen,
+                                      headerAccentColor:
+                                          context.colors.successGreen,
                                       useLegacySummary: true,
                                       highlightItemId: highlightId,
-                                      yardLabel: yardName(
-                                          f.yard ?? request.yard),
+                                      yardLabel:
+                                          yardName(f.yard ?? request.yard),
                                       valuationUnitCost: it.unitCost,
                                       valuationTotalCost: it.totalCost,
                                       valuationQty: displayQty,
@@ -2030,8 +2216,7 @@ class _DispositionChip extends StatelessWidget {
     final isSale = disposition == 'sale';
     final color =
         isSale ? context.colors.successGreen : context.colors.dangerRed;
-    final icon =
-        isSale ? Icons.sell_rounded : Icons.delete_forever_rounded;
+    final icon = isSale ? Icons.sell_rounded : Icons.delete_forever_rounded;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
@@ -2142,23 +2327,23 @@ class _UnsoldReTenderTab extends ConsumerWidget {
             ),
             const Gap(12),
             async.maybeWhen(
-                  data: (list) => ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: green, foregroundColor: Colors.white),
-                    icon: const Icon(Icons.gavel_rounded, size: 18),
-                    label: const Text('Re-tender',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    onPressed: list.isEmpty
-                        ? null
-                        : () => showDialog(
-                              context: context,
-                              builder: (_) =>
-                                  const _TenderSaleFormDialog(reTender: true),
-                            ).then((_) {
-                              ref.invalidate(unsoldTenderSalesProvider);
-                              ref.invalidate(tenderSalesProvider);
-                            }),
-                  ),
+              data: (list) => ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: green, foregroundColor: Colors.white),
+                icon: const Icon(Icons.gavel_rounded, size: 18),
+                label: const Text('Re-tender',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                onPressed: list.isEmpty
+                    ? null
+                    : () => showDialog(
+                          context: context,
+                          builder: (_) =>
+                              const _TenderSaleFormDialog(reTender: true),
+                        ).then((_) {
+                          ref.invalidate(unsoldTenderSalesProvider);
+                          ref.invalidate(tenderSalesProvider);
+                        }),
+              ),
               orElse: () => const SizedBox(),
             ),
           ]).animate().fadeIn(duration: 300.ms),
@@ -2170,7 +2355,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                   label: 'Unsold — re-tenderable',
                   // Counts the SAME rows the table shows — exhausted packages
                   // are excluded there, so they must not be counted here.
-                  value: '${list.where((i) => !exhausted.contains(i.forfeited.id)).length}',
+                  value:
+                      '${list.where((i) => !exhausted.contains(i.forfeited.id)).length}',
                   color: amber),
             ).animate().fadeIn(duration: 300.ms),
             orElse: () => const SizedBox.shrink(),
@@ -2226,16 +2412,21 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                      DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
-                      DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
+                      DataColumn2(
+                          label: Text('Goods Name'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Center(child: Text('Source')),
+                          size: ColumnSize.S),
                       DataColumn2(
                           label: Text('Qty'),
                           size: ColumnSize.S,
                           fixedWidth: 56),
-                      DataColumn2(
-                          label: Text('Reason'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
+                      DataColumn2(
+                          label: Text('Valuation'),
+                          size: ColumnSize.S,
+                          fixedWidth: 132),
                       DataColumn2(
                           label: Center(child: Text('Tenders')),
                           size: ColumnSize.S,
@@ -2271,7 +2462,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                         DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
                         DataCell(Center(child: _SourceChip(source: f.source))),
-                        DataCell(TooltipText('${f.entryQty ?? item?.quantity ?? '—'}')),
+                        DataCell(TooltipText(
+                            '${f.entryQty ?? item?.quantity ?? '—'}')),
                         DataCell(Builder(builder: (_) {
                           final reason = _forfeitReasonText(item, f);
                           return Tooltip(
@@ -2319,7 +2511,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                       highlightItemId: f.itemId,
                                       yardLabel: yardName(f.yard),
                                       valuationUnitCost: f.valuationCost,
-                                      valuationTotalCost: f.valuationCost != null
+                                      valuationTotalCost: f.valuationCost !=
+                                              null
                                           ? f.valuationCost! * (f.entryQty ?? 1)
                                           : null,
                                       valuationQty: f.entryQty,
@@ -2405,8 +2598,7 @@ class _TenderSalesTab extends ConsumerWidget {
                       DateTime.now().isAfter(s.unsoldDeadline!);
                   return !windowClosed;
                 }).toList();
-                final yf =
-                    ref.watch(disposalYardFilterProvider('tendersales'));
+                final yf = ref.watch(disposalYardFilterProvider('tendersales'));
                 if (yf != null) {
                   visible = visible.where((s) => s.yard == yf).toList();
                 }
@@ -2518,17 +2710,19 @@ Widget _retenderBadge(BuildContext context, {String label = 'Re-tender'}) {
       Icon(Icons.repeat_rounded, size: 12, color: c),
       const Gap(4),
       Text(label,
-          style: TextStyle(
-              color: c, fontSize: 10.5, fontWeight: FontWeight.w800)),
+          style:
+              TextStyle(color: c, fontSize: 10.5, fontWeight: FontWeight.w800)),
     ]),
   );
 }
 
 class TenderSaleCard extends ConsumerStatefulWidget {
   final TenderSaleModel sale;
+
   /// Yard-side, view-only mode: shows every item (sold included) with a
   /// read-only Sold/Pending status chip instead of the Mark-Sold action.
   final bool readOnly;
+
   /// True when this sale re-tenders an item that went unsold in an earlier
   /// tender sale — shown as a "Re-tender" badge in the card header.
   final bool isRetender;
@@ -2562,9 +2756,10 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
 
   String _warehouseFor(PackageModel? pkg, String itemId) {
     if (pkg == null) return '—';
-    final entries =
-        pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
-          ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
+    final entries = pkg.warehouseEntries
+        .where((e) => e.packageItemId == itemId)
+        .toList()
+      ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
     if (entries.isEmpty) return '—';
     final w = entries.first;
     return w.zone != null && w.zone!.isNotEmpty
@@ -2617,7 +2812,8 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
       } else if (fpItemId != null) {
         // Per-item FP row — show only the specific item it refers to.
         final match = pkgItems.where((i) => i.id == fpItemId).firstOrNull;
-        rows.add(_TsRow(si, match, match != null ? _warehouseFor(pkg!, match.id) : '—'));
+        rows.add(_TsRow(
+            si, match, match != null ? _warehouseFor(pkg!, match.id) : '—'));
       } else {
         // Package-level FP row — show one row per package item (legacy data).
         for (final it in pkgItems) {
@@ -2646,9 +2842,8 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
         color: context.colors.cardDark,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-            color: allSold
-                ? green.withOpacity(0.4)
-                : context.colors.borderColor),
+            color:
+                allSold ? green.withOpacity(0.4) : context.colors.borderColor),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2694,7 +2889,8 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                       const Gap(4),
                       Text(
                           widget.sale.saleDate != null
-                              ? DateFormat('yyyy-MM-dd').format(widget.sale.saleDate!)
+                              ? DateFormat('yyyy-MM-dd')
+                                  .format(widget.sale.saleDate!)
                               : '—',
                           style: TextStyle(
                               color: context.colors.textSecondary,
@@ -2704,15 +2900,16 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                         child: Text(widget.sale.typeLabel,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 12)),
+                                color: context.colors.textMuted, fontSize: 12)),
                       ),
                     ]),
                     // Live "Sell within" countdown to the unsold deadline — once
                     // it closes, the remaining items drop to Unsold Tenders.
                     // Central Disposal only — the yard's read-only view never
                     // shows the timer (the window is the directorate's concern).
-                    if (!widget.readOnly && !allSold && widget.sale.unsoldDeadline != null) ...[
+                    if (!widget.readOnly &&
+                        !allSold &&
+                        widget.sale.unsoldDeadline != null) ...[
                       const Gap(6),
                       _DeadlineCountdown(
                           deadline: widget.sale.unsoldDeadline,
@@ -2760,13 +2957,15 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                   fixedTopRows: 1,
                   minWidth: 1080,
                   headingRowColor: _headingColor(context),
-                  empty:
-                      const EmptyTableState(message: 'No packages in this sale'),
+                  empty: const EmptyTableState(
+                      message: 'No packages in this sale'),
                   columns: [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
-                    DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
+                    DataColumn2(
+                        label: Center(child: Text('Source')),
+                        size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
@@ -2777,7 +2976,8 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     // Fixed + centered so it sits snug next to Status (no gap).
                     DataColumn2(
                         label: Center(
-                            child: Text(widget.readOnly ? 'Value' : 'Valuation')),
+                            child:
+                                Text(widget.readOnly ? 'Value' : 'Valuation')),
                         size: ColumnSize.S,
                         fixedWidth: 120),
                     DataColumn2(
@@ -2799,12 +2999,13 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                               fontWeight: FontWeight.w600))),
                       DataCell(TooltipText(pkg?.caseNumber ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(TooltipText(r.item?.itemName ?? 'Multiple/Unspecified',
+                      DataCell(TooltipText(
+                          r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Center(child: _sourceChip(context, f?.source))),
                       DataCell(Center(
-                          child:
-                              Text('${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
+                          child: Text(
+                              '${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
                       DataCell(Builder(builder: (_) {
                         final reason = _forfeitReasonText(r.item, f);
                         return Tooltip(
@@ -2887,7 +3088,8 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     return canSell
                                         ? btn
                                         : Tooltip(
-                                            message: _saleLockMessage(widget.sale),
+                                            message:
+                                                _saleLockMessage(widget.sale),
                                             child: btn);
                                   }()),
                       )),
@@ -2904,7 +3106,8 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     storageRate: storageRate,
                                     // Yard (read-only) uses the default blue
                                     // header like Forfeited; Central keeps green.
-                                    headerAccentColor: widget.readOnly ? null : green,
+                                    headerAccentColor:
+                                        widget.readOnly ? null : green,
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),
@@ -2912,12 +3115,15 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     // figure — never shown in the yard (widget.readOnly)
                                     // view. Passing null hides the popup's
                                     // Valuation section for yards.
-                                    valuationUnitCost:
-                                        widget.readOnly ? null : f?.valuationCost,
+                                    valuationUnitCost: widget.readOnly
+                                        ? null
+                                        : f?.valuationCost,
                                     valuationTotalCost: (!widget.readOnly &&
                                             f?.valuationCost != null)
                                         ? f!.valuationCost! *
-                                            (f.entryQty ?? r.item?.quantity ?? 1)
+                                            (f.entryQty ??
+                                                r.item?.quantity ??
+                                                1)
                                         : null,
                                     valuationQty: widget.readOnly
                                         ? null
@@ -3042,11 +3248,10 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
         icon: Icons.receipt_rounded,
         children: [
           Text(
-            '${widget.item.forfeited?.srNumber ?? 'Package'} — ${yardName(widget.item.yard)}. '
-            'This records the package as SOLD.',
-            style: TextStyle(
-              color: context.colors.textSecondary, fontSize: 13)
-          ),
+              '${widget.item.forfeited?.srNumber ?? 'Package'} — ${yardName(widget.item.yard)}. '
+              'This records the package as SOLD.',
+              style:
+                  TextStyle(color: context.colors.textSecondary, fontSize: 13)),
           TextField(
             controller: _receiptC,
             decoration: const InputDecoration(labelText: 'Receipt Number *'),
@@ -3066,31 +3271,33 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('${t.name} (${t.percentage}%)'),
-                  Text('Rs ${(price * (t.percentage / 100)).toStringAsFixed(2)}'),
+                  Text(
+                      'Rs ${(price * (t.percentage / 100)).toStringAsFixed(2)}'),
                 ],
               ),
             const Divider(),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('Grand Total:', style: TextStyle(fontWeight: FontWeight.bold)),
-                Text('Rs ${grandTotal.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                const Text('Grand Total:',
+                    style: TextStyle(fontWeight: FontWeight.bold)),
+                Text('Rs ${grandTotal.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
               ],
             ),
           ],
           if (_error != null) ...[
             const Gap(12),
             Text(_error!,
-                style: TextStyle(
-                    color: context.colors.dangerRed, fontSize: 12.5)),
+                style:
+                    TextStyle(color: context.colors.dangerRed, fontSize: 12.5)),
           ],
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel')
-        ),
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel')),
         StyledDialogPrimaryButton(
           labelText: 'Confirm Sold',
           icon: Icons.check_circle_rounded,
@@ -3113,17 +3320,23 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
               _loading = true;
             });
             try {
-              await widget.ref.read(disposalServiceProvider).markTenderSaleItemSold(
-                tenderSaleItemId: widget.item.id,
-                receipt: receiptNo,
-                soldPrice: enteredPrice,
-                appliedTaxes: appliedTaxesList,
-              );
+              await widget.ref
+                  .read(disposalServiceProvider)
+                  .markTenderSaleItemSold(
+                    tenderSaleItemId: widget.item.id,
+                    receipt: receiptNo,
+                    soldPrice: enteredPrice,
+                    appliedTaxes: appliedTaxesList,
+                  );
               // Fire every related trigger so this session's views update
               // instantly (the realtime round-trip handles other sessions).
               widget.ref.read(tenderSalesRefreshProvider.notifier).trigger();
-              widget.ref.read(tenderSaleItemsRefreshProvider.notifier).trigger();
-              widget.ref.read(packagesRefreshTriggerProvider.notifier).trigger();
+              widget.ref
+                  .read(tenderSaleItemsRefreshProvider.notifier)
+                  .trigger();
+              widget.ref
+                  .read(packagesRefreshTriggerProvider.notifier)
+                  .trigger();
               if (mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -3186,7 +3399,8 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   String? _validate() {
     if (_saleDate == null) return 'Tender Sale Date is required.';
     if (_saleTime == null) return 'Sale Start Time is required.';
-    if (_tenderType == null || _tenderType!.isEmpty) return 'Tender Sale Type is required.';
+    if (_tenderType == null || _tenderType!.isEmpty)
+      return 'Tender Sale Type is required.';
     if (_selected.isEmpty) return 'Select at least one package.';
     return null;
   }
@@ -3296,12 +3510,17 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               decoration: BoxDecoration(
                 color: context.colors.dangerRed.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+                border: Border.all(
+                    color: context.colors.dangerRed.withOpacity(0.4)),
               ),
               child: Row(children: [
-                Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
+                Icon(Icons.error_outline,
+                    color: context.colors.dangerRed, size: 18),
                 const Gap(10),
-                Expanded(child: Text(_error!, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
+                Expanded(
+                    child: Text(_error!,
+                        style: TextStyle(
+                            color: context.colors.dangerRed, fontSize: 13))),
               ]),
             ),
             const Gap(12),
@@ -3412,8 +3631,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                               : 'No "Sale" packages awaiting a tender sale.\n'
                                   'Yards mark packages for Sale in a Disposal Request.',
                           textAlign: TextAlign.center,
-                          style:
-                              TextStyle(color: context.colors.textSecondary),
+                          style: TextStyle(color: context.colors.textSecondary),
                         ),
                       ),
                     );
@@ -3431,9 +3649,11 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                   }
                   // Expand package-level DR items (itemId==null, multiple pkg
                   // items) so each item appears as its own selectable row.
-                  final rows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+                  final rows =
+                      <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
                   for (final it in items) {
-                    final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+                    final fpItems =
+                        it.forfeited?.packageDetails?.items ?? const [];
                     final pid = it.forfeited?.packageId;
                     if (it.forfeited?.itemId == null && fpItems.length > 1) {
                       for (final pkgItem in fpItems) {
@@ -3466,121 +3686,123 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                       ),
                       const Gap(8),
                       ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: rows.length,
-                      separatorBuilder: (_, __) => Divider(
-                          height: 1,
-                          color: context.colors.borderColor.withOpacity(0.5)),
-                      itemBuilder: (context, i) {
-                        final r = rows[i];
-                        final it = r.it;
-                        final pkgItem = r.pkgItem;
-                        final rowKey = pkgItem != null
-                            ? '${it.id}_${pkgItem.id}'
-                            : it.id;
-                        final yard = it.forfeited?.yard ?? '';
-                        final selected = _selected.containsKey(rowKey);
-                        final displayName = pkgItem?.itemName ?? _summary(it);
-                        // Show the forfeited quantity (e.g. 6 of 10).
-                        final qty = _disposalForfeitedQty(it, pkgItem) ??
-                            (pkgItem != null
-                                ? pkgItem.quantity
-                                : it.totalQuantity);
-                        return InkWell(
-                          onTap: () => setState(() {
-                            if (selected) {
-                              _selected.remove(rowKey);
-                            } else {
-                              _selected[rowKey] = yard;
-                            }
-                          }),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 6),
-                            child: Row(children: [
-                              Checkbox(
-                                activeColor: green,
-                                value: selected,
-                                onChanged: (_) => setState(() {
-                                  if (selected) {
-                                    _selected.remove(rowKey);
-                                  } else {
-                                    _selected[rowKey] = yard;
-                                  }
-                                }),
-                              ),
-                              Expanded(
-                                flex: 5,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Row(children: [
-                                      Flexible(
-                                        child: Text(
-                                            it.forfeited?.srNumber ?? '—',
+                        constraints: const BoxConstraints(maxHeight: 280),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: rows.length,
+                          separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              color:
+                                  context.colors.borderColor.withOpacity(0.5)),
+                          itemBuilder: (context, i) {
+                            final r = rows[i];
+                            final it = r.it;
+                            final pkgItem = r.pkgItem;
+                            final rowKey = pkgItem != null
+                                ? '${it.id}_${pkgItem.id}'
+                                : it.id;
+                            final yard = it.forfeited?.yard ?? '';
+                            final selected = _selected.containsKey(rowKey);
+                            final displayName =
+                                pkgItem?.itemName ?? _summary(it);
+                            // Show the forfeited quantity (e.g. 6 of 10).
+                            final qty = _disposalForfeitedQty(it, pkgItem) ??
+                                (pkgItem != null
+                                    ? pkgItem.quantity
+                                    : it.totalQuantity);
+                            return InkWell(
+                              onTap: () => setState(() {
+                                if (selected) {
+                                  _selected.remove(rowKey);
+                                } else {
+                                  _selected[rowKey] = yard;
+                                }
+                              }),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 6),
+                                child: Row(children: [
+                                  Checkbox(
+                                    activeColor: green,
+                                    value: selected,
+                                    onChanged: (_) => setState(() {
+                                      if (selected) {
+                                        _selected.remove(rowKey);
+                                      } else {
+                                        _selected[rowKey] = yard;
+                                      }
+                                    }),
+                                  ),
+                                  Expanded(
+                                    flex: 5,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(children: [
+                                          Flexible(
+                                            child: Text(
+                                                it.forfeited?.srNumber ?? '—',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    color: context.colors
+                                                        .accentLightBlue)),
+                                          ),
+                                          const Gap(8),
+                                          _SourceChip(
+                                              source: it.forfeited?.source ??
+                                                  'forfeit'),
+                                        ]),
+                                        Text(displayName,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
                                                 color: context
-                                                    .colors.accentLightBlue)),
-                                      ),
-                                      const Gap(8),
-                                      _SourceChip(
-                                          source:
-                                              it.forfeited?.source ?? 'forfeit'),
-                                    ]),
-                                    Text(displayName,
+                                                    .colors.textSecondary)),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 4,
+                                    child: Text(
+                                        it.forfeited?.consigneeName ?? '—',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                            fontSize: 12,
-                                            color: context
-                                                .colors.textSecondary)),
-                                  ],
-                                ),
+                                            fontSize: 13,
+                                            color: context.colors.textPrimary)),
+                                  ),
+                                  const Gap(10),
+                                  Text('Qty $qty',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: context.colors.textMuted)),
+                                  const Gap(8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                          color: green.withOpacity(0.3)),
+                                    ),
+                                    child: Text(yardName(yard),
+                                        style: TextStyle(
+                                            color: green,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700)),
+                                  ),
+                                ]),
                               ),
-                              Expanded(
-                                flex: 4,
-                                child: Text(
-                                    it.forfeited?.consigneeName ?? '—',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: context.colors.textPrimary)),
-                              ),
-                              const Gap(10),
-                              Text('Qty $qty',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: context.colors.textMuted)),
-                              const Gap(8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border:
-                                      Border.all(color: green.withOpacity(0.3)),
-                                ),
-                                child: Text(yardName(yard),
-                                    style: TextStyle(
-                                        color: green,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700)),
-                              ),
-                            ]),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                            );
+                          },
+                        ),
+                      ),
                     ],
                   );
                 },
@@ -3603,7 +3825,10 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               setState(() => _error = err);
               return;
             }
-            setState(() { _loading = true; _error = null; });
+            setState(() {
+              _loading = true;
+              _error = null;
+            });
             // Build forfeitedPackageId→yard from composite _selected keys.
             // Re-tender picks from the UNSOLD pool (mapped the same way the form
             // builds its rows); a fresh sale picks from the sale-request pool.
@@ -3626,9 +3851,8 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
             final packageItems = <String, String?>{};
             for (final key in _selected.keys) {
               final drItemId = key.contains('_') ? key.split('_').first : key;
-              final drItem = allDrItems
-                  .where((it) => it.id == drItemId)
-                  .firstOrNull;
+              final drItem =
+                  allDrItems.where((it) => it.id == drItemId).firstOrNull;
               if (drItem != null) {
                 packageYards[drItem.forfeitedPackageId] =
                     drItem.forfeited?.yard ?? _formYard;
@@ -3642,12 +3866,15 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
             }
             try {
               await ref.read(disposalServiceProvider).createTenderSale(
-                    saleNumber: _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
+                    saleNumber: _numberC.text.trim().isEmpty
+                        ? null
+                        : _numberC.text.trim(),
                     saleDate: _saleDate,
                     saleTime:
                         _saleTime == null ? null : _timeOfDayToHHmm(_saleTime!),
-                    serial:
-                        _serialC.text.trim().isEmpty ? null : _serialC.text.trim(),
+                    serial: _serialC.text.trim().isEmpty
+                        ? null
+                        : _serialC.text.trim(),
                     year: int.tryParse(_yearC.text.trim()),
                     tenderType: _tenderType,
                     yard: _formYard,
@@ -3682,7 +3909,8 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
 }
 
 // ── Tender Committees (read-only view of DG-appointed committees) ─────────────
-final _committeesYardProvider = StateProvider<String?>((ref) => null); // null=all
+final _committeesYardProvider =
+    StateProvider<String?>((ref) => null); // null=all
 
 String _committeeItemName(ForfeitedPackageModel f) {
   if (f.itemName != null) return f.itemName!;
@@ -3773,7 +4001,9 @@ class _CommitteesTab extends ConsumerWidget {
                 if (yf != null) {
                   rows = rows.where((i) => i.forfeited.yard == yf).toList();
                 }
-                final qq = ref.watch(disposalSearchProvider('committees')).toLowerCase();
+                final qq = ref
+                    .watch(disposalSearchProvider('committees'))
+                    .toLowerCase();
                 if (qq.isNotEmpty) {
                   rows = rows.where((info) {
                     final f = info.forfeited;
@@ -3815,9 +4045,7 @@ class _CommitteeCard extends StatelessWidget {
   final TenderCommitteeModel committee;
   final Map<DateTime, double> storageRate;
   const _CommitteeCard(
-      {required this.info,
-      required this.committee,
-      required this.storageRate});
+      {required this.info, required this.committee, required this.storageRate});
 
   @override
   Widget build(BuildContext context) {
@@ -3949,8 +4177,7 @@ class _CommitteeCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: context.colors.surfaceDark,
                           borderRadius: BorderRadius.circular(10),
-                          border:
-                              Border.all(color: context.colors.borderColor),
+                          border: Border.all(color: context.colors.borderColor),
                         ),
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Container(
@@ -3987,7 +4214,8 @@ class _CommitteeCard extends StatelessWidget {
                                       m.salaryNo!.isNotEmpty)
                                     'Salary No. ${m.salaryNo}',
                                 ];
-                                if (bits.isEmpty) return const SizedBox.shrink();
+                                if (bits.isEmpty)
+                                  return const SizedBox.shrink();
                                 return Text(bits.join(' · '),
                                     style: TextStyle(
                                         color: context.colors.textMuted,
@@ -3999,8 +4227,7 @@ class _CommitteeCard extends StatelessWidget {
                       ),
                   ],
                 ),
-                if (committee.note != null &&
-                    committee.note!.isNotEmpty) ...[
+                if (committee.note != null && committee.note!.isNotEmpty) ...[
                   const Gap(10),
                   Text(committee.note!,
                       style: TextStyle(
@@ -4070,8 +4297,7 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
             if (isLatest) ...[
               const Gap(8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: context.colors.primaryGold.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
@@ -4106,8 +4332,7 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
         SizedBox(
           width: 130,
           child: Text(k,
-              style: TextStyle(
-                  color: context.colors.textMuted, fontSize: 12)),
+              style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
         ),
         Expanded(
           child: Text(v,
@@ -4120,7 +4345,6 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
     );
   }
 }
-
 
 // ── Tender bids (recorded on unsold packages) ─────────────────
 
@@ -4300,38 +4524,38 @@ class _ReTenderStatusChip extends StatelessWidget {
       message: tip,
       waitDuration: const Duration(milliseconds: 300),
       child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(
-            eligible
-                ? Icons.check_circle_rounded
-                : (awaitingAdg
-                    ? (committeeValued
-                        ? Icons.price_check_rounded
-                        : Icons.how_to_reg_rounded)
-                    : Icons.hourglass_bottom_rounded),
-            size: 13,
-            color: color),
-        const Gap(5),
-        Flexible(
-          child: Text(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(0.4)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(
               eligible
-                  ? 'Re-valued'
+                  ? Icons.check_circle_rounded
                   : (awaitingAdg
                       ? (committeeValued
-                          ? 'Committee valued'
-                          : 'Awaiting ADG')
-                      : 'Awaiting value'),
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-        ),
-      ]),
+                          ? Icons.price_check_rounded
+                          : Icons.how_to_reg_rounded)
+                      : Icons.hourglass_bottom_rounded),
+              size: 13,
+              color: color),
+          const Gap(5),
+          Flexible(
+            child: Text(
+                eligible
+                    ? 'Re-valued'
+                    : (awaitingAdg
+                        ? (committeeValued
+                            ? 'Committee valued'
+                            : 'Awaiting ADG')
+                        : 'Awaiting value'),
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                    color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+          ),
+        ]),
       ),
     );
   }
@@ -4350,9 +4574,8 @@ class _BidsCell extends ConsumerWidget {
     // valueOrNull, NOT asData?.value: asData is null while the provider
     // re-fetches, so the count flips to 0 and back — the table then looks
     // like it is constantly refreshing.
-    final count = async.valueOrNull?.values
-            .fold<int>(0, (s, l) => s + l.length) ??
-        0;
+    final count =
+        async.valueOrNull?.values.fold<int>(0, (s, l) => s + l.length) ?? 0;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () => showDialog(
@@ -4402,8 +4625,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   bool _saving = false;
 
   // Tender rounds oldest→newest so they read as Tender 1, 2, 3…
-  List<TenderSaleModel> get _rounds =>
-      [...widget.info.sales]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+  List<TenderSaleModel> get _rounds => [...widget.info.sales]
+    ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
   TenderSaleModel get _current => _rounds.last;
 
@@ -4526,9 +4749,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     final f = widget.info.forfeited;
     if (f.entryQty != null) return f.entryQty!;
     if (f.itemId != null) {
-      final it = f.packageDetails?.items
-          .where((i) => i.id == f.itemId)
-          .firstOrNull;
+      final it =
+          f.packageDetails?.items.where((i) => i.id == f.itemId).firstOrNull;
       if (it != null) return it.quantity;
     }
     return f.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
@@ -4610,8 +4832,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                       color: blue, fontWeight: FontWeight.w800, fontSize: 13)),
               TextSpan(
                   text: '  (@ ${_fmt(unit)} × $_qty)',
-                  style: TextStyle(
-                      color: context.colors.textMuted, fontSize: 11)),
+                  style:
+                      TextStyle(color: context.colors.textMuted, fontSize: 11)),
             ]),
           ),
         ),
@@ -4650,9 +4872,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
             ),
             Text('Recorded',
                 style: TextStyle(
-                    color: muted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600)),
+                    color: muted, fontSize: 11, fontWeight: FontWeight.w600)),
           ]),
           const Gap(12),
           // Valuation first (the value is decided before/at tendering) …
@@ -4680,8 +4900,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
               children: [
                 for (final b in amounts)
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
                       color: context.colors.cardDark,
                       borderRadius: BorderRadius.circular(8),
@@ -4713,8 +4933,9 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     if (c == null || c.committeeValue == null) return const SizedBox.shrink();
 
     final submitted = c.submittedValue != null;
-    final colour =
-        submitted ? context.colors.successGreen : context.colors.accentLightBlue;
+    final colour = submitted
+        ? context.colors.successGreen
+        : context.colors.accentLightBlue;
     final unit = c.submittedValue ?? c.committeeValue!;
     final total = unit * _qty;
 
@@ -4793,9 +5014,9 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// The saved bids of a locked round, shown as read-only chips (highest first)
   /// — the same presentation a past round gets.
   Widget _lockedBidChips() {
-    final amounts = [..._controllers.map((c) => double.tryParse(c.text.trim()) ?? 0)]
-        .where((a) => a > 0)
-        .toList()
+    final amounts = [
+      ..._controllers.map((c) => double.tryParse(c.text.trim()) ?? 0)
+    ].where((a) => a > 0).toList()
       ..sort((a, b) => b.compareTo(a));
     if (amounts.isEmpty) {
       return Text('No bids recorded',
@@ -4870,8 +5091,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
         Expanded(
           child: TextField(
             controller: _controllers[i],
-            keyboardType:
-                const TextInputType.numberWithOptions(decimal: true),
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
               FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))
             ],
@@ -4965,7 +5185,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                         alignment: Alignment.centerLeft,
                         child: TextButton.icon(
                           onPressed: _addRow,
-                          icon: Icon(Icons.add_rounded, size: 18, color: accent),
+                          icon:
+                              Icon(Icons.add_rounded, size: 18, color: accent),
                           label: Text('Add bid',
                               style: TextStyle(
                                   color: accent, fontWeight: FontWeight.w700)),
@@ -4983,17 +5204,17 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
             onPressed: _saving ? null : () => Navigator.pop(context),
             child: Text(_currentRoundLocked ? 'Close' : 'Cancel')),
         if (!_currentRoundLocked)
-        FilledButton(
-          onPressed: (_loading || _saving) ? null : _save,
-          style: FilledButton.styleFrom(backgroundColor: accent),
-          child: _saving
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : const Text('Save Bids'),
-        ),
+          FilledButton(
+            onPressed: (_loading || _saving) ? null : _save,
+            style: FilledButton.styleFrom(backgroundColor: accent),
+            child: _saving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white))
+                : const Text('Save Bids'),
+          ),
       ],
     );
   }
@@ -5121,9 +5342,11 @@ class _DestRow {
 
 class DestructionCard extends ConsumerWidget {
   final DestructionModel sale;
+
   /// Yard view-only mode: hides the countdown timer, never drops rows when the
   /// window closes, and disables Mark Destroyed (those are the directorate's).
   final bool readOnly;
+
   /// True when this destruction re-schedules an item left undestroyed by an
   /// earlier destruction sale — shown as a "Re-tender" badge in the header.
   final bool isRetender;
@@ -5132,9 +5355,10 @@ class DestructionCard extends ConsumerWidget {
 
   String _warehouseFor(PackageModel? pkg, String itemId) {
     if (pkg == null) return '—';
-    final entries =
-        pkg.warehouseEntries.where((e) => e.packageItemId == itemId).toList()
-          ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
+    final entries = pkg.warehouseEntries
+        .where((e) => e.packageItemId == itemId)
+        .toList()
+      ..sort((a, b) => b.admittedAt.compareTo(a.admittedAt));
     if (entries.isEmpty) return '—';
     final w = entries.first;
     return w.zone != null && w.zone!.isNotEmpty
@@ -5166,7 +5390,8 @@ class DestructionCard extends ConsumerWidget {
       } else if (fpItemId != null) {
         // Per-item FP row — show only the specific item it refers to.
         final match = pkgItems.where((i) => i.id == fpItemId).firstOrNull;
-        rows.add(_DestRow(si, match, match != null ? _warehouseFor(pkg, match.id) : '—'));
+        rows.add(_DestRow(
+            si, match, match != null ? _warehouseFor(pkg, match.id) : '—'));
       } else {
         // Package-level FP row — show one row per package item (legacy data).
         for (final it in pkgItems) {
@@ -5253,8 +5478,7 @@ class DestructionCard extends ConsumerWidget {
                         child: Text(sale.typeLabel,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 12)),
+                                color: context.colors.textMuted, fontSize: 12)),
                       ),
                     ]),
                     // Live "Destroy within" countdown to the undestroyed deadline
@@ -5279,8 +5503,9 @@ class DestructionCard extends ConsumerWidget {
                       .withOpacity(0.15),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                      color: (allDestroyed ? green : context.colors.warningAmber)
-                          .withOpacity(0.4)),
+                      color:
+                          (allDestroyed ? green : context.colors.warningAmber)
+                              .withOpacity(0.4)),
                 ),
                 child: Text(
                   total == 0 ? 'No packages' : '$destroyed / $total destroyed',
@@ -5310,13 +5535,15 @@ class DestructionCard extends ConsumerWidget {
                   fixedTopRows: 1,
                   minWidth: 1080,
                   headingRowColor: _headingColor(context),
-                  empty:
-                      const EmptyTableState(message: 'No packages in this sale'),
+                  empty: const EmptyTableState(
+                      message: 'No packages in this sale'),
                   columns: [
                     DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                     DataColumn2(label: Text('Case No'), size: ColumnSize.S),
                     DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
-                    DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
+                    DataColumn2(
+                        label: Center(child: Text('Source')),
+                        size: ColumnSize.S),
                     DataColumn2(
                         label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
@@ -5348,12 +5575,13 @@ class DestructionCard extends ConsumerWidget {
                               fontWeight: FontWeight.w600))),
                       DataCell(TooltipText(pkg?.caseNumber ?? '—',
                           overflow: TextOverflow.ellipsis)),
-                      DataCell(TooltipText(r.item?.itemName ?? 'Multiple/Unspecified',
+                      DataCell(TooltipText(
+                          r.item?.itemName ?? 'Multiple/Unspecified',
                           overflow: TextOverflow.ellipsis)),
                       DataCell(Center(child: _sourceChip(context, f?.source))),
                       DataCell(Center(
-                          child:
-                              Text('${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
+                          child: Text(
+                              '${f?.entryQty ?? r.item?.quantity ?? '—'}'))),
                       DataCell(Builder(builder: (_) {
                         final reason = _forfeitReasonText(r.item, f);
                         return Tooltip(
@@ -5419,35 +5647,35 @@ class DestructionCard extends ConsumerWidget {
                                             context.colors.warningAmber);
                                   }())
                                 : (() {
-                                // Mark Destroyed only unlocks once the scheduled
-                                // destruction moment (date + time) has passed.
-                                final canDestroy = sale.saleTimePassed;
-                                final btn = OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: green,
-                                    side: BorderSide(
-                                        color: green.withOpacity(0.5)),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 10, vertical: 6),
-                                    minimumSize: const Size(0, 32),
-                                  ),
-                                  icon:
-                                      const Icon(Icons.sell_rounded, size: 14),
-                                  label: const Text('Mark Destroyed',
-                                      style: TextStyle(
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.w700)),
-                                  onPressed: canDestroy
-                                      ? () => _markDestroyed(
-                                          context, ref, r.saleItem)
-                                      : null,
-                                );
-                                return canDestroy
-                                    ? btn
-                                    : Tooltip(
-                                        message: _destroyLockMessage(sale),
-                                        child: btn);
-                              }()),
+                                    // Mark Destroyed only unlocks once the scheduled
+                                    // destruction moment (date + time) has passed.
+                                    final canDestroy = sale.saleTimePassed;
+                                    final btn = OutlinedButton.icon(
+                                      style: OutlinedButton.styleFrom(
+                                        foregroundColor: green,
+                                        side: BorderSide(
+                                            color: green.withOpacity(0.5)),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 10, vertical: 6),
+                                        minimumSize: const Size(0, 32),
+                                      ),
+                                      icon: const Icon(Icons.sell_rounded,
+                                          size: 14),
+                                      label: const Text('Mark Destroyed',
+                                          style: TextStyle(
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.w700)),
+                                      onPressed: canDestroy
+                                          ? () => _markDestroyed(
+                                              context, ref, r.saleItem)
+                                          : null,
+                                    );
+                                    return canDestroy
+                                        ? btn
+                                        : Tooltip(
+                                            message: _destroyLockMessage(sale),
+                                            child: btn);
+                                  }()),
                       )),
                       DataCell(Center(
                         child: pkg != null
@@ -5472,11 +5700,13 @@ class DestructionCard extends ConsumerWidget {
                                     // Valuation section for yards.
                                     valuationUnitCost:
                                         readOnly ? null : f?.valuationCost,
-                                    valuationTotalCost: (!readOnly &&
-                                            f?.valuationCost != null)
-                                        ? f!.valuationCost! *
-                                            (f.entryQty ?? r.item?.quantity ?? 1)
-                                        : null,
+                                    valuationTotalCost:
+                                        (!readOnly && f?.valuationCost != null)
+                                            ? f!.valuationCost! *
+                                                (f.entryQty ??
+                                                    r.item?.quantity ??
+                                                    1)
+                                            : null,
                                     valuationQty: readOnly
                                         ? null
                                         : (f?.entryQty ?? r.item?.quantity),
@@ -5557,8 +5787,7 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
           // Order: Receipt No → Price → Notes. Receipt No + Price required.
           TextField(
             controller: _receiptC,
-            decoration:
-                const InputDecoration(labelText: 'Receipt No *'),
+            decoration: const InputDecoration(labelText: 'Receipt No *'),
           ),
           const Gap(16),
           // Destruction records a price only — no taxes (unlike a tender sale).
@@ -5574,14 +5803,13 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             maxLines: 3,
             minLines: 2,
             keyboardType: TextInputType.multiline,
-            decoration:
-                const InputDecoration(labelText: 'Notes (optional)'),
+            decoration: const InputDecoration(labelText: 'Notes (optional)'),
           ),
           if (_error != null) ...[
             const Gap(12),
             Text(_error!,
-                style: TextStyle(
-                    color: context.colors.dangerRed, fontSize: 12.5)),
+                style:
+                    TextStyle(color: context.colors.dangerRed, fontSize: 12.5)),
           ],
         ],
       ),
@@ -5599,15 +5827,13 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
             // stale — the field has no onChanged, so it never rebuilt).
             final receiptNo = _receiptC.text.trim();
             final notes = _notesC.text.trim();
-            final enteredPrice =
-                double.tryParse(_priceC.text.trim()) ?? 0.0;
+            final enteredPrice = double.tryParse(_priceC.text.trim()) ?? 0.0;
             if (receiptNo.isEmpty) {
               setState(() => _error = 'Receipt No is required.');
               return;
             }
             if (_priceC.text.trim().isEmpty || enteredPrice <= 0) {
-              setState(
-                  () => _error = 'Enter a valid Destruction Price.');
+              setState(() => _error = 'Enter a valid Destruction Price.');
               return;
             }
             setState(() {
@@ -5626,7 +5852,9 @@ class _MarkDestroyedDialogState extends State<_MarkDestroyedDialog> {
                     destroyedPrice: enteredPrice,
                   );
               widget.ref.read(destructionsRefreshProvider.notifier).trigger();
-              widget.ref.read(packagesRefreshTriggerProvider.notifier).trigger();
+              widget.ref
+                  .read(packagesRefreshTriggerProvider.notifier)
+                  .trigger();
               if (mounted) {
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -5663,7 +5891,8 @@ class _DestructionFormDialog extends ConsumerStatefulWidget {
       _DestructionFormDialogState();
 }
 
-class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> {
+class _DestructionFormDialogState
+    extends ConsumerState<_DestructionFormDialog> {
   final _numberC = TextEditingController();
   final _serialC = TextEditingController();
   final _yearC = TextEditingController(text: DateTime.now().year.toString());
@@ -5681,7 +5910,8 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
   String? _validate() {
     if (_saleDate == null) return 'Destruction Sale Date is required.';
     if (_saleTime == null) return 'Sale Start Time is required.';
-    if (_destructionType == null || _destructionType!.isEmpty) return 'Destruction Sale Type is required.';
+    if (_destructionType == null || _destructionType!.isEmpty)
+      return 'Destruction Sale Type is required.';
     if (_selected.isEmpty) return 'Select at least one package.';
     return null;
   }
@@ -5734,7 +5964,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
     final year = _yearC.text;
     final serial = _serialC.text;
     if (year.isEmpty || serial.isEmpty) return;
-    
+
     String saleNum = 'CDU/TS/$year/$serial';
     if (_destructionType == 'special') {
       saleNum += '(Special)';
@@ -5761,7 +5991,8 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
     // the undestroyed packages shown on the Undestroyed Destructions page.
     // Either way, only the packages belonging to the yard selected in this form
     // are shown (and destroyed).
-    final AsyncValue<List<DisposalRequestItemModel>> pool = (widget.reDestruction
+    final AsyncValue<List<DisposalRequestItemModel>> pool = (widget
+                .reDestruction
             ? ref.watch(undestroyedDestructionsProvider).whenData((list) => list
                 .map((info) => DisposalRequestItemModel(
                       id: info.forfeited.id,
@@ -5776,7 +6007,8 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
             list.where((it) => it.forfeited?.yard == _formYard).toList());
     return StyledFormDialog(
       label: 'Destruction Sale',
-      title: widget.reDestruction ? 'Re-destruction Sale' : 'New Destruction Sale',
+      title:
+          widget.reDestruction ? 'Re-destruction Sale' : 'New Destruction Sale',
       headerAccentColor: context.colors.successGreen,
       icon: Icons.gavel_rounded,
       width: 720,
@@ -5789,12 +6021,17 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
               decoration: BoxDecoration(
                 color: context.colors.dangerRed.withOpacity(0.1),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+                border: Border.all(
+                    color: context.colors.dangerRed.withOpacity(0.4)),
               ),
               child: Row(children: [
-                Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
+                Icon(Icons.error_outline,
+                    color: context.colors.dangerRed, size: 18),
                 const Gap(10),
-                Expanded(child: Text(_error!, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
+                Expanded(
+                    child: Text(_error!,
+                        style: TextStyle(
+                            color: context.colors.dangerRed, fontSize: 13))),
               ]),
             ),
             const Gap(12),
@@ -5900,8 +6137,7 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                           'No "Destruction" packages awaiting a destruction sale.\n'
                           'Yards mark packages for Destruction in a Disposal Request.',
                           textAlign: TextAlign.center,
-                          style:
-                              TextStyle(color: context.colors.textSecondary),
+                          style: TextStyle(color: context.colors.textSecondary),
                         ),
                       ),
                     );
@@ -5919,9 +6155,11 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                   }
                   // Expand package-level DR items (itemId==null, multiple pkg
                   // items) so each item appears as its own selectable row.
-                  final rows = <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
+                  final rows =
+                      <({DisposalRequestItemModel it, PackageItem? pkgItem})>[];
                   for (final it in items) {
-                    final fpItems = it.forfeited?.packageDetails?.items ?? const [];
+                    final fpItems =
+                        it.forfeited?.packageDetails?.items ?? const [];
                     final pid = it.forfeited?.packageId;
                     if (it.forfeited?.itemId == null && fpItems.length > 1) {
                       for (final pkgItem in fpItems) {
@@ -5954,121 +6192,123 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
                       ),
                       const Gap(8),
                       ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 280),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: rows.length,
-                      separatorBuilder: (_, __) => Divider(
-                          height: 1,
-                          color: context.colors.borderColor.withOpacity(0.5)),
-                      itemBuilder: (context, i) {
-                        final r = rows[i];
-                        final it = r.it;
-                        final pkgItem = r.pkgItem;
-                        final rowKey = pkgItem != null
-                            ? '${it.id}_${pkgItem.id}'
-                            : it.id;
-                        final yard = it.forfeited?.yard ?? '';
-                        final selected = _selected.containsKey(rowKey);
-                        final displayName = pkgItem?.itemName ?? _summary(it);
-                        // Show the forfeited quantity (e.g. 6 of 10).
-                        final qty = _disposalForfeitedQty(it, pkgItem) ??
-                            (pkgItem != null
-                                ? pkgItem.quantity
-                                : it.totalQuantity);
-                        return InkWell(
-                          onTap: () => setState(() {
-                            if (selected) {
-                              _selected.remove(rowKey);
-                            } else {
-                              _selected[rowKey] = yard;
-                            }
-                          }),
-                          child: Padding(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 6),
-                            child: Row(children: [
-                              Checkbox(
-                                activeColor: green,
-                                value: selected,
-                                onChanged: (_) => setState(() {
-                                  if (selected) {
-                                    _selected.remove(rowKey);
-                                  } else {
-                                    _selected[rowKey] = yard;
-                                  }
-                                }),
-                              ),
-                              Expanded(
-                                flex: 5,
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  children: [
-                                    Row(children: [
-                                      Flexible(
-                                        child: Text(
-                                            it.forfeited?.srNumber ?? '—',
+                        constraints: const BoxConstraints(maxHeight: 280),
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: rows.length,
+                          separatorBuilder: (_, __) => Divider(
+                              height: 1,
+                              color:
+                                  context.colors.borderColor.withOpacity(0.5)),
+                          itemBuilder: (context, i) {
+                            final r = rows[i];
+                            final it = r.it;
+                            final pkgItem = r.pkgItem;
+                            final rowKey = pkgItem != null
+                                ? '${it.id}_${pkgItem.id}'
+                                : it.id;
+                            final yard = it.forfeited?.yard ?? '';
+                            final selected = _selected.containsKey(rowKey);
+                            final displayName =
+                                pkgItem?.itemName ?? _summary(it);
+                            // Show the forfeited quantity (e.g. 6 of 10).
+                            final qty = _disposalForfeitedQty(it, pkgItem) ??
+                                (pkgItem != null
+                                    ? pkgItem.quantity
+                                    : it.totalQuantity);
+                            return InkWell(
+                              onTap: () => setState(() {
+                                if (selected) {
+                                  _selected.remove(rowKey);
+                                } else {
+                                  _selected[rowKey] = yard;
+                                }
+                              }),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 4, vertical: 6),
+                                child: Row(children: [
+                                  Checkbox(
+                                    activeColor: green,
+                                    value: selected,
+                                    onChanged: (_) => setState(() {
+                                      if (selected) {
+                                        _selected.remove(rowKey);
+                                      } else {
+                                        _selected[rowKey] = yard;
+                                      }
+                                    }),
+                                  ),
+                                  Expanded(
+                                    flex: 5,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Row(children: [
+                                          Flexible(
+                                            child: Text(
+                                                it.forfeited?.srNumber ?? '—',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: TextStyle(
+                                                    fontWeight: FontWeight.w700,
+                                                    color: context.colors
+                                                        .accentLightBlue)),
+                                          ),
+                                          const Gap(8),
+                                          _SourceChip(
+                                              source: it.forfeited?.source ??
+                                                  'forfeit'),
+                                        ]),
+                                        Text(displayName,
                                             maxLines: 1,
                                             overflow: TextOverflow.ellipsis,
                                             style: TextStyle(
-                                                fontWeight: FontWeight.w700,
+                                                fontSize: 12,
                                                 color: context
-                                                    .colors.accentLightBlue)),
-                                      ),
-                                      const Gap(8),
-                                      _SourceChip(
-                                          source:
-                                              it.forfeited?.source ?? 'forfeit'),
-                                    ]),
-                                    Text(displayName,
+                                                    .colors.textSecondary)),
+                                      ],
+                                    ),
+                                  ),
+                                  Expanded(
+                                    flex: 4,
+                                    child: Text(
+                                        it.forfeited?.consigneeName ?? '—',
                                         maxLines: 1,
                                         overflow: TextOverflow.ellipsis,
                                         style: TextStyle(
-                                            fontSize: 12,
-                                            color: context
-                                                .colors.textSecondary)),
-                                  ],
-                                ),
+                                            fontSize: 13,
+                                            color: context.colors.textPrimary)),
+                                  ),
+                                  const Gap(10),
+                                  Text('Qty $qty',
+                                      style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: context.colors.textMuted)),
+                                  const Gap(8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: green.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                          color: green.withOpacity(0.3)),
+                                    ),
+                                    child: Text(yardName(yard),
+                                        style: TextStyle(
+                                            color: green,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700)),
+                                  ),
+                                ]),
                               ),
-                              Expanded(
-                                flex: 4,
-                                child: Text(
-                                    it.forfeited?.consigneeName ?? '—',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        color: context.colors.textPrimary)),
-                              ),
-                              const Gap(10),
-                              Text('Qty $qty',
-                                  style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: context.colors.textMuted)),
-                              const Gap(8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: green.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border:
-                                      Border.all(color: green.withOpacity(0.3)),
-                                ),
-                                child: Text(yardName(yard),
-                                    style: TextStyle(
-                                        color: green,
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w700)),
-                              ),
-                            ]),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+                            );
+                          },
+                        ),
+                      ),
                     ],
                   );
                 },
@@ -6091,7 +6331,10 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
               setState(() => _error = err);
               return;
             }
-            setState(() { _loading = true; _error = null; });
+            setState(() {
+              _loading = true;
+              _error = null;
+            });
             // Build forfeitedPackageId→yard map from _selected keys.
             // Keys are either plain it.id or "${it.id}_${pkgItem.id}" for
             // expanded per-item rows — both cases point to the same
@@ -6119,9 +6362,8 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
             final packageItems = <String, String?>{};
             for (final key in _selected.keys) {
               final drItemId = key.contains('_') ? key.split('_').first : key;
-              final drItem = allDrItems
-                  .where((it) => it.id == drItemId)
-                  .firstOrNull;
+              final drItem =
+                  allDrItems.where((it) => it.id == drItemId).firstOrNull;
               if (drItem != null) {
                 packageYards[drItem.forfeitedPackageId] =
                     drItem.forfeited?.yard ?? _formYard;
@@ -6133,12 +6375,15 @@ class _DestructionFormDialogState extends ConsumerState<_DestructionFormDialog> 
             }
             try {
               await ref.read(disposalServiceProvider).createDestruction(
-                    saleNumber: _numberC.text.trim().isEmpty ? null : _numberC.text.trim(),
+                    saleNumber: _numberC.text.trim().isEmpty
+                        ? null
+                        : _numberC.text.trim(),
                     saleDate: _saleDate,
                     saleTime:
                         _saleTime == null ? null : _timeOfDayToHHmm(_saleTime!),
-                    serial:
-                        _serialC.text.trim().isEmpty ? null : _serialC.text.trim(),
+                    serial: _serialC.text.trim().isEmpty
+                        ? null
+                        : _serialC.text.trim(),
                     year: int.tryParse(_yearC.text.trim()),
                     tenderType: _destructionType,
                     yard: _formYard,
@@ -6225,8 +6470,7 @@ class _DestructionSaleHistoryDialog extends StatelessWidget {
             if (isLatest) ...[
               const Gap(8),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
                   color: context.colors.primaryGold.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(6),
@@ -6261,8 +6505,7 @@ class _DestructionSaleHistoryDialog extends StatelessWidget {
         SizedBox(
           width: 130,
           child: Text(k,
-              style: TextStyle(
-                  color: context.colors.textMuted, fontSize: 12)),
+              style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
         ),
         Expanded(
           child: Text(v,
@@ -6321,23 +6564,23 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
             ),
             const Gap(12),
             async.maybeWhen(
-                  data: (list) => ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                        backgroundColor: green, foregroundColor: Colors.white),
-                    icon: const Icon(Icons.auto_delete_rounded, size: 18),
-                    label: const Text('Re-destruction',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
-                    onPressed: list.isEmpty
-                        ? null
-                        : () => showDialog(
-                              context: context,
-                              builder: (_) =>
-                                  const _DestructionFormDialog(reDestruction: true),
-                            ).then((_) {
-                              ref.invalidate(undestroyedDestructionsProvider);
-                              ref.invalidate(destructionsProvider);
-                            }),
-                  ),
+              data: (list) => ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: green, foregroundColor: Colors.white),
+                icon: const Icon(Icons.auto_delete_rounded, size: 18),
+                label: const Text('Re-destruction',
+                    style: TextStyle(fontWeight: FontWeight.w600)),
+                onPressed: list.isEmpty
+                    ? null
+                    : () => showDialog(
+                          context: context,
+                          builder: (_) =>
+                              const _DestructionFormDialog(reDestruction: true),
+                        ).then((_) {
+                          ref.invalidate(undestroyedDestructionsProvider);
+                          ref.invalidate(destructionsProvider);
+                        }),
+              ),
               orElse: () => const SizedBox(),
             ),
           ]).animate().fadeIn(duration: 300.ms),
@@ -6364,8 +6607,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                 final q = ref
                     .watch(disposalSearchProvider('undestroyed'))
                     .toLowerCase();
-                final yf =
-                    ref.watch(disposalYardFilterProvider('undestroyed'));
+                final yf = ref.watch(disposalYardFilterProvider('undestroyed'));
                 if (yf != null) {
                   list =
                       list.where((info) => info.forfeited.yard == yf).toList();
@@ -6399,16 +6641,21 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     columns: const [
                       DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
                       DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                      DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
-                      DataColumn2(label: Center(child: Text('Source')), size: ColumnSize.S),
+                      DataColumn2(
+                          label: Text('Goods Name'), size: ColumnSize.M),
+                      DataColumn2(
+                          label: Center(child: Text('Source')),
+                          size: ColumnSize.S),
                       DataColumn2(
                           label: Text('Qty'),
                           size: ColumnSize.S,
                           fixedWidth: 56),
-                      DataColumn2(
-                          label: Text('Reason'), size: ColumnSize.M),
+                      DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 132),
+                      DataColumn2(
+                          label: Text('Valuation'),
+                          size: ColumnSize.S,
+                          fixedWidth: 132),
                       DataColumn2(
                           label: Center(child: Text('Destructions')),
                           size: ColumnSize.S,
@@ -6436,7 +6683,8 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                         DataCell(TooltipText(_itemName(f),
                             overflow: TextOverflow.ellipsis)),
                         DataCell(Center(child: _SourceChip(source: f.source))),
-                        DataCell(TooltipText('${f.entryQty ?? item?.quantity ?? '—'}')),
+                        DataCell(TooltipText(
+                            '${f.entryQty ?? item?.quantity ?? '—'}')),
                         DataCell(Builder(builder: (_) {
                           final reason = _forfeitReasonText(item, f);
                           return Tooltip(
@@ -6479,7 +6727,8 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                                       highlightItemId: f.itemId,
                                       yardLabel: yardName(f.yard),
                                       valuationUnitCost: f.valuationCost,
-                                      valuationTotalCost: f.valuationCost != null
+                                      valuationTotalCost: f.valuationCost !=
+                                              null
                                           ? f.valuationCost! * (f.entryQty ?? 1)
                                           : null,
                                       valuationQty: f.entryQty,
@@ -6580,10 +6829,11 @@ class _OneTapDateField extends StatelessWidget {
           suffixIcon: const Icon(Icons.calendar_month_rounded),
         ),
         child: Text(
-          value != null ? DateFormat('yyyy-MM-dd').format(value!) : 'Select sale date',
-          style: value == null
-              ? TextStyle(color: context.colors.textMuted)
-              : null,
+          value != null
+              ? DateFormat('yyyy-MM-dd').format(value!)
+              : 'Select sale date',
+          style:
+              value == null ? TextStyle(color: context.colors.textMuted) : null,
         ),
       ),
     );
@@ -6605,7 +6855,8 @@ class _OneTapTimeField extends StatelessWidget {
       onTap: () async {
         final picked = await showDialog<TimeOfDay>(
           context: context,
-          builder: (_) => OneTapTimePicker(initialTime: value ?? TimeOfDay.now()),
+          builder: (_) =>
+              OneTapTimePicker(initialTime: value ?? TimeOfDay.now()),
         );
         if (picked != null) onChanged(picked);
       },
@@ -6616,9 +6867,8 @@ class _OneTapTimeField extends StatelessWidget {
         ),
         child: Text(
           value != null ? value!.format(context) : 'Select time',
-          style: value == null
-              ? TextStyle(color: context.colors.textMuted)
-              : null,
+          style:
+              value == null ? TextStyle(color: context.colors.textMuted) : null,
         ),
       ),
     );
@@ -6633,9 +6883,11 @@ class _ValuationCell extends StatelessWidget {
   // shown — instead this cell shows the SR-form package item's own declared
   // Value. The valuation price is Central-Disposal-only.
   final bool useItemValue;
+
   /// The quantity shown in the row's Qty column — the valuation must multiply
   /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
   final int? qty;
+
   /// When set, this unit cost is shown instead of the package's original
   /// [ForfeitedPackageModel.valuationCost] — used to surface the LATEST tender
   /// re-valuation on the Unsold Tenders page.
@@ -6676,9 +6928,7 @@ class _ValuationCell extends StatelessWidget {
     // style, which is Central-Disposal-only).
     if (useItemValue) {
       final item = fp.itemId != null
-          ? fp.packageDetails?.items
-              .where((i) => i.id == fp.itemId)
-              .firstOrNull
+          ? fp.packageDetails?.items.where((i) => i.id == fp.itemId).firstOrNull
           : fp.packageDetails?.items.firstOrNull;
       final unitValue = item?.unitValue ?? 0;
       final total = unitValue * effQty;

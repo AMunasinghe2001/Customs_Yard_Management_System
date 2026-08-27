@@ -18,14 +18,44 @@ import '../executive/unsold_shared.dart';
 
 /// The yard's own packages that could not be sold by any means.
 ///
-/// READ-ONLY: the High Panel decides the final outcome (destroy / remand /
-/// government use / auction); this page tells the yard what was decided so
-/// they can act on goods still sitting in their warehouses.
+/// READ-ONLY: the High Panel decides the final outcome; this page tells the
+/// yard what was decided so they can act on goods still sitting in their
+/// warehouses.
+///
+/// One widget serves SIX pages. With [proposalFilter] null it lists every
+/// unsold package (the Unsold Goods page); set to an outcome code it lists
+/// only the goods decided that way — Government Use, Remand, Convert and
+/// "Removed from the Premises" each get their own page that way, without
+/// duplicating the header, filters, table and pager five times over.
 ///
 /// Laid out to match the Sold Packages page exactly — same header, same search
 /// + Date Range + Year + status chips card, same table shell and pager.
 class UnsoldPackagesScreen extends ConsumerStatefulWidget {
-  const UnsoldPackagesScreen({super.key});
+  /// The route this page is mounted at, so the sidebar highlights correctly.
+  final String route;
+
+  /// Page title and the line under it.
+  final String title;
+  final String subtitle;
+
+  /// The word beside the count in the header ("3 Unsold").
+  final String countLabel;
+
+  /// One of [kUnsoldProposals], or null to list every unsold package.
+  ///
+  /// When set, the status chips are hidden: every row already carries the same
+  /// outcome, so filtering by "decided" would be meaningless.
+  final String? proposalFilter;
+
+  const UnsoldPackagesScreen({
+    super.key,
+    this.route = '/unsold-packages',
+    this.title = 'Unsold Goods',
+    this.subtitle = 'Goods that could not be sold by any means',
+    this.countLabel = 'Unsold',
+    this.proposalFilter,
+  });
+
   @override
   ConsumerState<UnsoldPackagesScreen> createState() =>
       _UnsoldPackagesScreenState();
@@ -38,6 +68,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
   String _search = '';
   DateTimeRange? _dateRange;
   String? _yearFilter;
+
   /// null = all · false = awaiting the High Panel · true = decided
   bool? _decidedFilter;
   int _page = 0;
@@ -79,6 +110,21 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
     return all.where((i) => i.forfeited.yard == myYard).toList();
   }
 
+  /// This yard's rows, narrowed to the outcome this page is for.
+  ///
+  /// The header count and the table must agree, so both go through here — an
+  /// outcome page that counted every unsold package would contradict its own
+  /// list.
+  List<ReTenderSaleInfo> _visibleRows(List<ReTenderSaleInfo> all,
+      String? myYard, Map<String, UnsoldProposalModel> proposals) {
+    final mine = _yardRows(all, myYard);
+    final want = widget.proposalFilter;
+    if (want == null) return mine;
+    return mine
+        .where((i) => proposals[i.forfeited.id]?.proposal == want)
+        .toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
@@ -90,7 +136,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
     final myYard = ref.watch(currentProfileProvider)?.yard;
 
     return AppShell(
-      currentRoute: '/unsold-packages',
+      currentRoute: widget.route,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Padding(
@@ -109,16 +155,17 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Unsold Goods',
+                        Text(widget.title,
                             style: Theme.of(context).textTheme.headlineLarge),
-                        Text('Goods that could not be sold by any means',
-                            style: TextStyle(
-                                color: context.colors.textSecondary)),
+                        Text(widget.subtitle,
+                            style:
+                                TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
                     async.when(
                       data: (list) => Text(
-                          '${_yardRows(list, myYard).length} Unsold',
+                          '${_visibleRows(list, myYard, proposals).length} '
+                          '${widget.countLabel}',
                           style: TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 13,
@@ -218,8 +265,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                 color: _dateRange != null
                                     ? gold
                                     : context.colors.borderColor),
-                            padding:
-                                const EdgeInsets.symmetric(horizontal: 12),
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(8)),
                           ),
@@ -247,11 +293,16 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                             _page = 0;
                           }),
                         ),
-                        _statusChip('All', null, Icons.all_inbox_rounded),
-                        _statusChip('Awaiting decision', false,
-                            Icons.schedule_rounded),
-                        _statusChip(
-                            'Decided', true, Icons.check_circle_rounded),
+                        // Hidden on an outcome page: every row there is
+                        // already decided the same way, so filtering by
+                        // decided/awaiting would offer nothing.
+                        if (widget.proposalFilter == null) ...[
+                          _statusChip('All', null, Icons.all_inbox_rounded),
+                          _statusChip('Awaiting decision', false,
+                              Icons.schedule_rounded),
+                          _statusChip(
+                              'Decided', true, Icons.check_circle_rounded),
+                        ],
                       ],
                     ),
                   ],
@@ -271,7 +322,10 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                       error: e,
                       onRetry: () => ref.refresh(exhaustedUnsoldProvider)),
                   data: (list) {
-                    final rows = _yardRows(list, myYard).where((info) {
+                    // Same narrowing the header count uses, so the two can
+                    // never disagree.
+                    final rows =
+                        _visibleRows(list, myYard, proposals).where((info) {
                       final f = info.forfeited;
                       if (_search.isNotEmpty) {
                         final s = _search.toLowerCase();
@@ -285,9 +339,13 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                         final d = f.forfeitedAt;
                         final start = DateTime(_dateRange!.start.year,
                             _dateRange!.start.month, _dateRange!.start.day);
-                        final end = DateTime(_dateRange!.end.year,
-                            _dateRange!.end.month, _dateRange!.end.day,
-                            23, 59, 59);
+                        final end = DateTime(
+                            _dateRange!.end.year,
+                            _dateRange!.end.month,
+                            _dateRange!.end.day,
+                            23,
+                            59,
+                            59);
                         if (d.isBefore(start) || d.isAfter(end)) return false;
                       }
                       if (_yearFilter != null &&
@@ -304,7 +362,8 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                     final maxPage =
                         rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
                     final page = _page.clamp(0, maxPage);
-                    final pageRows = rows.skip(page * _pageSize).take(_pageSize);
+                    final pageRows =
+                        rows.skip(page * _pageSize).take(_pageSize);
 
                     return Column(
                       children: [
@@ -314,8 +373,8 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                             decoration: BoxDecoration(
                               color: context.colors.cardDark,
                               borderRadius: BorderRadius.circular(14),
-                              border: Border.all(
-                                  color: context.colors.borderColor),
+                              border:
+                                  Border.all(color: context.colors.borderColor),
                             ),
                             child: ClipRRect(
                               borderRadius: BorderRadius.circular(14),
@@ -328,8 +387,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                 // squeezed out.
                                 minWidth: kUnsoldTableMinWidth,
                                 empty: const EmptyTableState(
-                                    message:
-                                        'No unsold packages in this yard'),
+                                    message: 'No unsold packages in this yard'),
                                 headingRowColor: WidgetStateProperty.all(
                                     context.colors.surfaceDark),
                                 columns: kUnsoldColumns,

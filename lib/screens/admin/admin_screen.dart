@@ -997,11 +997,17 @@ class _WarehousesTab extends ConsumerWidget {
                             fontSize: 13,
                           ),
                         ),
+                        // Widest column: zone rows indent under their
+                        // warehouse and repeat its name, so they need room.
                         size: ColumnSize.L,
+                        fixedWidth: 370,
                       ),
                       DataColumn2(
+                        // Warehouse rows show the warehouse's code, zone rows
+                        // their own — the column is named for the zone, since
+                        // that is what most rows carry.
                         label: Text(
-                          'Code',
+                          'Zone Code',
                           style: TextStyle(
                             color: context.colors.primaryGold,
                             fontWeight: FontWeight.w700,
@@ -1009,7 +1015,9 @@ class _WarehousesTab extends ConsumerWidget {
                           ),
                         ),
                         size: ColumnSize.S,
-                        fixedWidth: 100,
+                        // Matches the Items table so the two read alike, and
+                        // holds "W01-VEHICLEPARTS" on one line.
+                        fixedWidth: 190,
                       ),
                       DataColumn2(
                         label: Text(
@@ -1044,7 +1052,8 @@ class _WarehousesTab extends ConsumerWidget {
                           ),
                         ),
                         size: ColumnSize.S,
-                        fixedWidth: 150,
+                        // Same as the Items table — both hold two buttons.
+                        fixedWidth: 90,
                       ),
                     ],
                     // Each warehouse, then one row per ZONE beneath it —
@@ -1129,7 +1138,8 @@ class _WarehousesTab extends ConsumerWidget {
                               return Material(
                                 color: Colors.transparent,
                                 child: InkWell(
-                                  onTap: () => _showZonesDialog(context, ref, w),
+                                  onTap: () =>
+                                      _showZonesDialog(context, ref, w),
                                   borderRadius: BorderRadius.circular(6),
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(
@@ -1317,8 +1327,7 @@ class _WarehousesTab extends ConsumerWidget {
               style: TextStyle(fontSize: 12, color: context.colors.textMuted))),
           DataCell(
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
               decoration: BoxDecoration(
                 color: isFull
                     ? context.colors.dangerRed.withOpacity(0.1)
@@ -1376,8 +1385,7 @@ class _WarehousesTab extends ConsumerWidget {
                   icon: Icons.delete_outline_rounded,
                   color: context.colors.dangerRed,
                   tooltip: 'Delete Zone',
-                  onPressed: () =>
-                      _showDeleteZoneConfirmation(context, ref, z),
+                  onPressed: () => _showDeleteZoneConfirmation(context, ref, z),
                 ),
               ],
             ),
@@ -1800,22 +1808,23 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.L),
+                            fixedWidth: 200),
                         DataColumn2(
-                            label: Text('Warehouse',
+                            label: Text('Storage Location',
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.L),
+                            fixedWidth: 370),
                         DataColumn2(
-                            label: Text('Zone',
+                            label: Text('Zone Code',
                                 style: TextStyle(
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.S,
-                            fixedWidth: 100),
+                            // Wide enough for the longest generated code
+                            // ("W01-VEHICLEPARTS") to sit on one line.
+                            fixedWidth: 190),
                         DataColumn2(
                             label: Text('Description',
                                 style: TextStyle(
@@ -1829,8 +1838,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                     color: context.colors.primaryGold,
                                     fontWeight: FontWeight.w700,
                                     fontSize: 13)),
-                            size: ColumnSize.S,
-                            fixedWidth: 120),
+                            fixedWidth: 90),
                       ],
                       rows: pageItems
                           .map((c) => DataRow(cells: [
@@ -1839,17 +1847,161 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                         color: context.colors.textPrimary,
                                         fontWeight: FontWeight.w600,
                                         fontSize: 13))),
-                                DataCell(TooltipText(
-                                    c.targetWarehouseName ?? '—',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 12))),
-                                // Flags a zone the warehouse no longer has, so
-                                // a category pointing nowhere is visible.
+                                // ── Storage Location: Warehouse → Zone ──
                                 DataCell(Builder(builder: (_) {
-                                  final zn = c.targetZone?.trim();
-                                  if (zn == null || zn.isEmpty) {
-                                    return TooltipText('—',
+                                  final whName =
+                                      c.targetWarehouseName?.trim() ?? '';
+                                  final zn = c.targetZone?.trim() ?? '';
+                                  if (whName.isEmpty && zn.isEmpty) {
+                                    return Text('— Not assigned',
+                                        style: TextStyle(
+                                            color: context.colors.textMuted,
+                                            fontStyle: FontStyle.italic,
+                                            fontSize: 12));
+                                  }
+                                  // Look up zone model for capacity/status
+                                  final zone = zn.isEmpty
+                                      ? null
+                                      : (ref
+                                                  .watch(warehouseZonesProvider)
+                                                  .valueOrNull ??
+                                              const <WarehouseZoneModel>[])
+                                          .where((z) =>
+                                              z.warehouseId ==
+                                                  c.targetWarehouseId &&
+                                              z.name.trim() == zn)
+                                          .firstOrNull;
+                                  final occupancy = ref
+                                          .watch(zoneOccupancyProvider)
+                                          .valueOrNull ??
+                                      const <String, ZoneOccupancy>{};
+                                  final occ =
+                                      zone != null ? occupancy[zone.id] : null;
+                                  final used = occ?.used ?? 0;
+                                  final free = occ?.free ?? zone?.capacity ?? 0;
+                                  final isFull = zone != null && free == 0;
+
+                                  return Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      // Warehouse badge
+                                      if (whName.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 7, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: context
+                                                .colors.accentLightBlue
+                                                .withOpacity(0.12),
+                                            borderRadius:
+                                                BorderRadius.circular(5),
+                                          ),
+                                          child: Text(
+                                            whName,
+                                            style: TextStyle(
+                                              color: context
+                                                  .colors.accentLightBlue,
+                                              fontSize: 11.5,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      if (whName.isNotEmpty && zn.isNotEmpty)
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 5),
+                                          child: Icon(
+                                            Icons.arrow_forward_rounded,
+                                            size: 13,
+                                            color: context.colors.textMuted,
+                                          ),
+                                        ),
+                                      // Zone name with status
+                                      if (zn.isNotEmpty)
+                                        Flexible(
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(
+                                                horizontal: 7, vertical: 3),
+                                            decoration: BoxDecoration(
+                                              color: zone == null
+                                                  ? context.colors.dangerRed
+                                                      .withOpacity(0.1)
+                                                  : isFull
+                                                      ? context.colors.dangerRed
+                                                          .withOpacity(0.1)
+                                                      : context
+                                                          .colors.primaryGold
+                                                          .withOpacity(0.1),
+                                              borderRadius:
+                                                  BorderRadius.circular(5),
+                                              border: Border.all(
+                                                color: zone == null
+                                                    ? context.colors.dangerRed
+                                                        .withOpacity(0.25)
+                                                    : isFull
+                                                        ? context
+                                                            .colors.dangerRed
+                                                            .withOpacity(0.25)
+                                                        : context
+                                                            .colors.primaryGold
+                                                            .withOpacity(0.2),
+                                                width: 0.7,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  zone == null
+                                                      ? Icons
+                                                          .warning_amber_rounded
+                                                      : Icons.grid_view_rounded,
+                                                  size: 12,
+                                                  color: zone == null
+                                                      ? context.colors.dangerRed
+                                                      : isFull
+                                                          ? context
+                                                              .colors.dangerRed
+                                                          : context.colors
+                                                              .primaryGold,
+                                                ),
+                                                const Gap(4),
+                                                Flexible(
+                                                  child: Text(
+                                                    zone == null
+                                                        ? 'Zone $zn (missing!)'
+                                                        : isFull
+                                                            ? 'Zone $zn  ·  FULL'
+                                                            : 'Zone $zn  ·  $used/${zone.capacity} ($free free)',
+                                                    style: TextStyle(
+                                                      color: zone == null
+                                                          ? context
+                                                              .colors.dangerRed
+                                                          : isFull
+                                                              ? context.colors
+                                                                  .dangerRed
+                                                              : context.colors
+                                                                  .textPrimary,
+                                                      fontSize: 11.5,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                                    overflow:
+                                                        TextOverflow.ellipsis,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  );
+                                })),
+                                // ── Zone Code (from warehouse_zones) ──
+                                DataCell(Builder(builder: (_) {
+                                  final zn = c.targetZone?.trim() ?? '';
+                                  if (zn.isEmpty) {
+                                    return Text('—',
                                         style: TextStyle(
                                             color: context.colors.textMuted,
                                             fontSize: 12));
@@ -1863,15 +2015,25 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                                               c.targetWarehouseId &&
                                           z.name.trim() == zn)
                                       .firstOrNull;
+                                  final code =
+                                      zone?.code?.trim().isNotEmpty == true
+                                          ? zone!.code!.trim()
+                                          : '—';
+                                  // Plain text, like the Warehouses table's
+                                  // code column — a tinted box around every
+                                  // code only added noise, and boxing a value
+                                  // that can wrap made it worse.
                                   return TooltipText(
-                                      zone == null
-                                          ? '$zn (not defined)'
-                                          : '$zn  ·  ${zone.capacity} cap',
-                                      style: TextStyle(
-                                          color: zone == null
-                                              ? context.colors.dangerRed
-                                              : context.colors.textMuted,
-                                          fontSize: 12));
+                                    code,
+                                    style: TextStyle(
+                                      fontFamily: 'monospace',
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: code == '—'
+                                          ? context.colors.textMuted
+                                          : context.colors.textSecondary,
+                                    ),
+                                  );
                                 })),
                                 DataCell(TooltipText(c.description ?? '—',
                                     style: TextStyle(

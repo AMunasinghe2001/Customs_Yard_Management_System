@@ -164,7 +164,10 @@ final warehousesForYardProvider =
   final all = await ref.watch(warehousesProvider.future);
   final ids =
       await ref.read(warehouseServiceProvider).getWarehouseIdsForYard(yard);
-  if (ids.isEmpty) return all;
+  // A yard with no warehouses of its own gets an EMPTY list, not every
+  // warehouse in the system. `warehouses` is shared, so falling back to all of
+  // them told a yard it had three warehouses when it had none — and offered
+  // filters that could never match a single row.
   return all.where((w) => ids.contains(w.id)).toList();
 });
 
@@ -1104,11 +1107,20 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
   ref.watch(destructionsChangeTriggerProvider);
   ref.watch(financialExpensesRefreshProvider);
 
-  final packages = await ref.read(packageServiceProvider).getAllPackages();
-  final rates = await ref.watch(storageRateProvider.future);
-  final sales = await ref.read(disposalServiceProvider).getTenderSales();
-  final expenses =
-      await ref.read(disposalServiceProvider).getFinancialExpenses();
+  // Four independent fetches, two of them heavy nested queries. Awaiting them
+  // one after another meant the page waited for the SUM of all four; in
+  // parallel it waits for the slowest.
+  final disposal = ref.read(disposalServiceProvider);
+  final results = await Future.wait([
+    ref.read(packageServiceProvider).getAllPackages(),
+    ref.watch(storageRateProvider.future),
+    disposal.getTenderSales(),
+    disposal.getFinancialExpenses(),
+  ]);
+  final packages = results[0] as List<PackageModel>;
+  final rates = results[1] as Map<DateTime, double>;
+  final sales = results[2] as List<TenderSaleModel>;
+  final expenses = results[3] as List<FinancialExpenseModel>;
 
   // ── Sale proceeds + taxes, per goods item ─────────────────────────────────
   final proceedsByItem = <String, double>{};

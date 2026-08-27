@@ -85,8 +85,23 @@ String unsoldLocation(PackageModel? pkg, String? itemId) {
       );
     case 'auction':
       return (icon: Icons.gavel_rounded, colour: context.colors.warningAmber);
+    case 're_export':
+      return (
+        icon: Icons.flight_takeoff_rounded,
+        colour: context.colors.accentLightBlue
+      );
+    case 'convert':
+      return (
+        icon: Icons.autorenew_rounded,
+        colour: context.colors.primaryGold
+      );
+    case 'remove_from_premises':
+      return (icon: Icons.logout_rounded, colour: context.colors.heldOrange);
     default:
-      return (icon: Icons.help_outline_rounded, colour: context.colors.textMuted);
+      return (
+        icon: Icons.help_outline_rounded,
+        colour: context.colors.textMuted
+      );
   }
 }
 
@@ -94,7 +109,7 @@ String unsoldLocation(PackageModel? pkg, String? itemId) {
 /// carries ONLY the columns needed to identify a package and act on it.
 /// Everything else (case no, HS code, valuation breakdown, tender history)
 /// lives behind the Details button.
-const double kUnsoldTableMinWidth = 900;
+const double kUnsoldTableMinWidth = 945;
 
 /// The shared column set. Order and widths are fixed so the three tables line
 /// up column-for-column.
@@ -111,9 +126,13 @@ const List<DataColumn2> kUnsoldColumns = [
   DataColumn2(
       label: Center(child: Text('Final Outcome')),
       size: ColumnSize.M,
-      fixedWidth: 190),
+      // Wide enough for the longest outcome — "Remove from the Premises" —
+      // beside its icon, so the chip is never cut short.
+      fixedWidth: 235),
   DataColumn2(
-      label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 66),
+      label: Center(child: Text('Details')),
+      size: ColumnSize.S,
+      fixedWidth: 66),
 ];
 
 /// The shared cells, in the same order as [kUnsoldColumns].
