@@ -390,7 +390,13 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                     message: 'No unsold packages in this yard'),
                                 headingRowColor: WidgetStateProperty.all(
                                     context.colors.surfaceDark),
-                                columns: kUnsoldColumns,
+                                // An outcome page already filters to one
+                                // outcome, so a Final Outcome column would
+                                // repeat the page title on every row; it shows
+                                // the decision DATE instead.
+                                columns: widget.proposalFilter == null
+                                    ? kUnsoldColumns
+                                    : kUnsoldDecidedColumns,
                                 rows: pageRows.map((info) {
                                   final f = info.forfeited;
                                   final pkg = f.packageDetails;
@@ -407,10 +413,13 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                           context.colors.textPrimary,
                                       // READ-ONLY: the DG decides, the yard
                                       // acts on what was decided.
-                                      outcome: Center(
-                                        child: UnsoldOutcomeChip(
-                                            proposal: proposals[f.id]),
-                                      ),
+                                      outcome: widget.proposalFilter == null
+                                          ? Center(
+                                              child: UnsoldOutcomeChip(
+                                                  proposal: proposals[f.id]),
+                                            )
+                                          : unsoldDecidedOnCell(
+                                              context, proposals[f.id]),
                                       onDetails: pkg == null
                                           ? null
                                           : () => showDialog(

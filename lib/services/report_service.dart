@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter/services.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -22,22 +23,33 @@ class ReportService {
   /// Null when the asset cannot be read; the header then falls back to the
   /// "SLC" monogram rather than failing to render at all.
   static String? _logoSvg;
-  static bool _logoTried = false;
 
   static Future<void> _loadLogo() async {
-    if (_logoTried) return;
-    _logoTried = true;
+    if (_logoSvg != null && _logoSvg!.isNotEmpty) return;
     try {
-      _logoSvg = await rootBundle.loadString('Sri_Lanka_Customs_logo.svg');
-    } catch (_) {
+      final raw =
+          await rootBundle.loadString('Sri_Lanka_Customs_logo_tinted.svg');
+      _logoSvg = raw.replaceAll('currentColor', '#0D47A1');
+      return;
+    } catch (e) {
+      debugPrint('report logo: tinted SVG unavailable ($e), trying plain');
+    }
+    try {
+      final raw = await rootBundle.loadString('Sri_Lanka_Customs_logo.svg');
+      _logoSvg = raw;
+    } catch (e) {
+      // Falling back to the lettered "SLC" monogram. Logged, because an
+      // emblem silently missing from every report reads as a design choice
+      // rather than a failed asset load.
+      debugPrint('report logo: no SVG could be loaded ($e), using SLC');
       _logoSvg = null;
     }
   }
 
   /// The emblem for a report header, or the lettered fallback.
-  static pw.Widget _logoWidget({double size = 42}) {
+  static pw.Widget _logoWidget({double size = 46}) {
     final svg = _logoSvg;
-    if (svg != null) {
+    if (svg != null && svg.isNotEmpty) {
       return pw.SizedBox(
         width: size,
         height: size,
@@ -134,6 +146,7 @@ class ReportService {
   /// Generates a PDF report for report items with category summary and zone summary
   Future<Uint8List> generateCategoryAndZonePdf(
       List<PackageModel> packages, List<WarehouseEntryModel> entries) async {
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -366,6 +379,9 @@ class ReportService {
     String? dateRange,
     PdfPageFormat? format,
   }) async {
+    // Loads the fonts AND the Customs emblem; without it this report
+    // fell back to the lettered "SLC" monogram.
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -394,6 +410,9 @@ class ReportService {
     bool isReturnedReport = false,
     PdfPageFormat? format,
   }) async {
+    // Loads the fonts AND the Customs emblem; without it this report
+    // fell back to the lettered "SLC" monogram.
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -785,16 +804,29 @@ class ReportService {
     await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
+    final pageFmt = format ?? PdfPageFormat.a4;
+    final isLandscape = pageFmt.width > pageFmt.height;
+    final colCount = columns.length;
+
+    final double headerFontSize = isLandscape
+        ? (colCount > 12 ? 6.5 : (colCount > 7 ? 7.5 : 8.5))
+        : (colCount > 7 ? 6.0 : (colCount > 5 ? 7.0 : 8.0));
+    final double cellFontSize = isLandscape
+        ? (colCount > 12 ? 6.0 : (colCount > 7 ? 7.0 : 8.0))
+        : (colCount > 7 ? 5.5 : (colCount > 5 ? 6.5 : 7.5));
+    final double cellPaddingH = (colCount > 7) ? 2.5 : 4.0;
+    final double cellPaddingV = (colCount > 7) ? 2.5 : 4.0;
+
     pdf.addPage(
       pw.MultiPage(
-        pageFormat: format ?? PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(32),
+        pageFormat: pageFmt,
+        margin: const pw.EdgeInsets.all(24),
         theme: pw.ThemeData.withFont(base: _font, bold: _fontBold),
         build: (context) => [
           _buildHeader(title, dateStr, periodLabel),
-          pw.SizedBox(height: 16),
+          pw.SizedBox(height: 14),
           pw.Container(
-            padding: const pw.EdgeInsets.all(14),
+            padding: const pw.EdgeInsets.all(12),
             decoration: pw.BoxDecoration(
               color: const PdfColor.fromInt(0xFFE3F2FD),
               borderRadius: pw.BorderRadius.circular(6),
@@ -804,20 +836,19 @@ class ReportService {
               children: [
                 pw.Text('Total',
                     style: pw.TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: pw.FontWeight.bold,
                         color: PdfColors.grey700)),
                 pw.SizedBox(height: 2),
-                // Wraps (and honours \n) so a long revenue/balance line fits.
                 pw.Text(headline,
                     style: pw.TextStyle(
-                        fontSize: 14,
+                        fontSize: 13,
                         fontWeight: pw.FontWeight.bold,
                         color: const PdfColor.fromInt(0xFF0D47A1))),
               ],
             ),
           ),
-          pw.SizedBox(height: 16),
+          pw.SizedBox(height: 14),
           if (rows.isEmpty)
             pw.Text('No records for this period.',
                 style:
@@ -828,16 +859,18 @@ class ReportService {
               data: rows,
               headerStyle: pw.TextStyle(
                   fontWeight: pw.FontWeight.bold,
-                  fontSize: 8,
+                  fontSize: headerFontSize,
                   color: PdfColors.white),
-              cellStyle: const pw.TextStyle(fontSize: 8),
+              cellStyle: pw.TextStyle(fontSize: cellFontSize),
+              cellPadding: pw.EdgeInsets.symmetric(
+                  horizontal: cellPaddingH, vertical: cellPaddingV),
               headerDecoration:
                   const pw.BoxDecoration(color: PdfColor.fromInt(0xFF0D47A1)),
               rowDecoration: const pw.BoxDecoration(
                   border: pw.Border(
                       bottom: pw.BorderSide(color: PdfColors.grey200))),
             ),
-          pw.SizedBox(height: 16),
+          pw.SizedBox(height: 14),
           _buildFooter(rows.length, label: 'Goods:'),
         ],
       ),
@@ -852,6 +885,7 @@ class ReportService {
     required String periodLabel,
     PdfPageFormat? format,
   }) async {
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1110,6 +1144,9 @@ class ReportService {
   /// statuses it is offered for.
   Future<Uint8List> generatePostStatusActivitiesPdf(
       List<List<String>> rows) async {
+    // Loads the fonts AND the Customs emblem; without it this report
+    // fell back to the lettered "SLC" monogram.
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1139,6 +1176,9 @@ class ReportService {
   /// Generates a PDF report for package categories
   Future<Uint8List> generateCategoriesPdf(
       List<PackageCategory> categories) async {
+    // Loads the fonts AND the Customs emblem; without it this report
+    // fell back to the lettered "SLC" monogram.
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1319,6 +1359,9 @@ class ReportService {
   /// Generates a PDF report for registered staff
   Future<Uint8List> generateStaffPdf(List<ProfileModel> profiles,
       {PdfPageFormat? format}) async {
+    // Loads the fonts AND the Customs emblem; without it this report
+    // fell back to the lettered "SLC" monogram.
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1402,6 +1445,7 @@ class ReportService {
   /// Generates a PDF report for Warehouses List
   Future<Uint8List> generateWarehousesListPdf(
       List<WarehouseModel> warehouses, Map<String, int> stats) async {
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1496,6 +1540,7 @@ class ReportService {
   Future<Uint8List> generateFinancialPdf(List<WarehouseEntryModel> entries,
       List<PackageModel> packages, Map<DateTime, double> rates,
       {required bool isRevenue}) async {
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
 
@@ -1912,26 +1957,60 @@ class ReportService {
 
   /// Helper that builds consistent headers, table rows, and item IDs for
   /// forfeited package reports (used by View, PDF, and Excel).
+  /// Rows for the Forfeited / Abandoned / Other goods reports.
+  ///
+  /// Five columns: SR Number \u00b7 Goods Name \u00b7 Goods Description \u00b7 the date
+  /// the status was recorded \u00b7 the FINAL DISPOSITION.
+  ///
+  /// The final disposition is what ultimately happened to the goods, read from
+  /// the `[FINAL:...]` warehouse entry the disposition dialog writes. Goods
+  /// still awaiting one report "Pending".
   (List<String>, List<List<String>>, List<String?>) buildForfeitedReportRows(
     List<ForfeitedPackageModel> packages, {
     String dateHeader = 'Date',
   }) {
     final headers = [
       'SR Number',
-      'Item',
-      'HS Code',
-      'Qty',
-      'Consignee',
-      'Warehouse',
-      'Reason',
+      'Goods Name',
+      'Goods Description',
       dateHeader,
+      'Final Disposition',
     ];
     final rows = <List<String>>[];
     final itemIds = <String?>[];
 
+    /// What finally happened to one item, from its `[FINAL:...]` entry.
+    String dispositionOf(PackageModel? pkg, String? itemId) {
+      if (pkg == null) return 'Pending';
+      for (final e in pkg.warehouseEntries) {
+        if (itemId != null && e.packageItemId != itemId) continue;
+        final note = (e.returnNotes ?? '').trim();
+        if (!note.toUpperCase().startsWith('[FINAL:')) continue;
+        // "[FINAL:DESTROYED]" or "[FINAL:OTHER] \u2014 <text>".
+        final close = note.indexOf(']');
+        if (close <= 7) continue;
+        final tag = note.substring(7, close).trim();
+        final rest = note
+            .substring(close + 1)
+            .replaceFirst(RegExp(r'^\s*[\u2014-]\s*'), '')
+            .trim();
+        final label = tag.isEmpty
+            ? 'Recorded'
+            : tag[0].toUpperCase() + tag.substring(1).toLowerCase();
+        return rest.isEmpty ? label : '$label \u2014 $rest';
+      }
+      return 'Pending';
+    }
+
+    String descOf(PackageItem? i) {
+      final d = i?.goodsDescription?.trim();
+      return (d != null && d.isNotEmpty) ? d : '\u2014';
+    }
+
     for (final f in packages) {
       final pkg = f.packageDetails;
       final items = pkg?.items ?? const <PackageItem>[];
+      final dateStr = DateFormat('yyyy-MM-dd').format(f.forfeitedAt);
 
       if (f.itemId != null) {
         PackageItem? match;
@@ -1941,22 +2020,16 @@ class ReportService {
             break;
           }
         }
-        final name = f.itemName ?? match?.itemName ?? '—';
-        final hs = match?.hsCode ?? '—';
-        final qty = f.entryQty ?? match?.quantity ?? 1;
         rows.add([
           f.srNumber,
-          name,
-          (hs.trim().isNotEmpty) ? hs.trim() : '—',
-          '$qty',
-          f.consigneeName,
-          warehouseLabel(f, f.itemId),
-          reasonOf(f, match),
-          DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+          f.itemName ?? match?.itemName ?? '\u2014',
+          descOf(match),
+          dateStr,
+          dispositionOf(pkg, f.itemId),
         ]);
         itemIds.add(f.itemId);
       } else if (pkg != null) {
-        // Package-level forfeit row: expand only items that are genuinely forfeited
+        // Package-level row: expand only the items genuinely in this status.
         final forfeitItems =
             items.where((i) => pkg.isItemForfeited(i.id)).toList();
         final effectiveItems = forfeitItems.isNotEmpty ? forfeitItems : items;
@@ -1966,53 +2039,46 @@ class ReportService {
             rows.add([
               f.srNumber,
               i.itemName,
-              (i.hsCode?.trim().isNotEmpty == true) ? i.hsCode!.trim() : '—',
-              '${i.quantity}',
-              f.consigneeName,
-              warehouseLabel(f, i.id),
-              reasonOf(f, i),
-              DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+              descOf(i),
+              dateStr,
+              dispositionOf(pkg, i.id),
             ]);
             itemIds.add(i.id);
           }
         } else {
           rows.add([
             f.srNumber,
-            f.itemName ?? '—',
-            '—',
-            '${f.entryQty ?? 1}',
-            f.consigneeName,
-            warehouseLabel(f),
-            reasonOf(f, null),
-            DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+            f.itemName ?? '\u2014',
+            '\u2014',
+            dateStr,
+            dispositionOf(pkg, null),
           ]);
           itemIds.add(null);
         }
       } else {
         rows.add([
           f.srNumber,
-          f.itemName ?? '—',
-          '—',
-          '${f.entryQty ?? 1}',
-          f.consigneeName,
-          warehouseLabel(f),
-          reasonOf(f, null),
-          DateFormat('yyyy-MM-dd').format(f.forfeitedAt),
+          f.itemName ?? '\u2014',
+          '\u2014',
+          dateStr,
+          'Pending',
         ]);
         itemIds.add(null);
       }
     }
+
     return (headers, rows, itemIds);
   }
 
-  /// PDF for any list of forfeited packages (used by the yard-page reports:
-  /// Forfeited, Sold, Destroyed, etc.). [title]/[subTitle] label the report.
   Future<Uint8List> generateForfeitedPdf(
     List<ForfeitedPackageModel> packages, {
     required String title,
     String subTitle = '',
     String dateHeader = 'Date',
   }) async {
+    // Loads the fonts AND the Customs emblem; without it this report
+    // fell back to the lettered "SLC" monogram.
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
     final data = buildForfeitedReportRows(packages, dateHeader: dateHeader);
@@ -2077,6 +2143,7 @@ class ReportService {
     required String tenderNumber,
     required DateTime tenderDate,
   }) async {
+    await _ensureFontsLoaded();
     final pdf = pw.Document();
     final dateStr = DateFormat('yyyy-MM-dd HH:mm').format(DateTime.now());
     final tenderDateStr = DateFormat('yyyy-MM-dd').format(tenderDate);

@@ -147,15 +147,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                            widget.disposalMode
-                                ? 'Post Status Activity Reports'
-                                : 'Report Generator',
+                        Text('Report Generator',
                             style: Theme.of(context).textTheme.headlineLarge),
-                        Text(
-                            widget.disposalMode
-                                ? 'Goods by post status activity, across all yards.'
-                                : 'Choose periodic or standard warehouse reports.',
+                        Text('Choose periodic or standard warehouse reports.',
                             style:
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
@@ -433,10 +427,20 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     // Warehouses are shared across yards, but each yard only uses some of
     // them — and how many differs. Once a yard is picked, narrow the list to
     // the warehouses that yard actually holds goods in.
+    // In executive/disposal mode, if no yard is picked yet, show nothing —
+    // the user must select a yard first so the list is meaningful.
     final yard = _yardArg;
-    final warehouses = yard == null
-        ? (ref.watch(warehousesProvider).valueOrNull ?? const [])
-        : (ref.watch(warehousesForYardProvider(yard)).valueOrNull ?? const []);
+    final List<WarehouseModel> warehouses;
+    if (yard != null) {
+      warehouses =
+          ref.watch(warehousesForYardProvider(yard)).valueOrNull ?? const [];
+    } else if (widget.executiveMode || widget.disposalMode) {
+      // No yard selected yet → empty list; don't show all warehouses
+      warehouses = const [];
+    } else {
+      // Officer mode: RLS scopes to the officer's own yard
+      warehouses = ref.watch(warehousesProvider).valueOrNull ?? const [];
+    }
 
     final hasDate = _startDate != null || _endDate != null;
     String dateLabel;
@@ -572,41 +576,39 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             onChanged: (v) => setState(() => _selectedActivity = v ?? 'all'),
           ),
 
-          // ── Valuation Round (Executive Office only) ──
+          // ── Valuation Round ──
           // Drives the "List of Goods Valued" report: every round side by
           // side, or one round on its own.
-          if (widget.executiveMode)
-            StyledDropdownButton<String>(
-              value: _valuationRound == 'all' ? null : _valuationRound,
-              allLabel: 'All Valuations',
-              icon: Icons.stacked_line_chart_rounded,
-              menuWidth: 240,
-              options: kValuationRounds
-                  .map((r) => StyledDropdownOption(r, r))
-                  .toList(),
-              onChanged: (v) => setState(() => _valuationRound = v ?? 'all'),
-            ),
+          StyledDropdownButton<String>(
+            value: _valuationRound == 'all' ? null : _valuationRound,
+            allLabel: 'All Valuations',
+            icon: Icons.stacked_line_chart_rounded,
+            menuWidth: 240,
+            options: kValuationRounds
+                .map((r) => StyledDropdownOption(r, r))
+                .toList(),
+            onChanged: (v) => setState(() => _valuationRound = v ?? 'all'),
+          ),
 
           // ── Warehouse ──
-          // Hidden for Central Disposal: `warehouses` is not in the
-          // `disposal_read_all` RLS set, so the list would always be empty.
-          if (!widget.disposalMode)
-            StyledDropdownButton<String>(
-              // A warehouse chosen before the yard narrowed the list may no
-              // longer be in it; fall back to "All" rather than showing a
-              // value the menu cannot offer.
-              value: warehouses.any((w) => w.id == _selectedWarehouse)
-                  ? _selectedWarehouse
-                  : null,
-              allLabel: 'All Warehouses',
-              icon: Icons.warehouse_rounded,
-              menuWidth: 320,
-              options: warehouses
-                  .map((w) =>
-                      StyledDropdownOption(w.id, '${w.code} - ${w.name}'))
-                  .toList(),
-              onChanged: (v) => setState(() => _selectedWarehouse = v ?? 'all'),
-            ),
+          // Shown on every portal. Central Disposal reads `warehouses` through
+          // the policy added in 20260838_disposal_read_warehouses.sql; before
+          // that their list came back empty and the filter had to be hidden.
+          StyledDropdownButton<String>(
+            // A warehouse chosen before the yard narrowed the list may no
+            // longer be in it; fall back to "All" rather than showing a
+            // value the menu cannot offer.
+            value: warehouses.any((w) => w.id == _selectedWarehouse)
+                ? _selectedWarehouse
+                : null,
+            allLabel: 'All Warehouses',
+            icon: Icons.warehouse_rounded,
+            menuWidth: 320,
+            options: warehouses
+                .map((w) => StyledDropdownOption(w.id, '${w.code} - ${w.name}'))
+                .toList(),
+            onChanged: (v) => setState(() => _selectedWarehouse = v ?? 'all'),
+          ),
         ],
       ),
     );
@@ -1023,7 +1025,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           .toList();
       final itemIds = filtered.map((e) => e.packageItemId).toList();
       _showReportTable(
-        title: 'Warehouse Stock (Held Goods)',
+        title: 'Warehouse Stock',
         columns: columns,
         rows: rows,
         rowItemIds: itemIds,
@@ -1070,7 +1072,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           .toList();
       final itemIds = filtered.map((e) => e.packageItemId).toList();
       _showReportTable(
-        title: 'Released Packages Report',
+        title: 'Released Goods Report',
         columns: columns,
         rows: rows,
         rowItemIds: itemIds,
@@ -1377,10 +1379,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             columns: columns,
             rows: rows,
             format: f.copyWith(
-                marginLeft: 20,
-                marginRight: 20,
-                marginTop: 20,
-                marginBottom: 20),
+                marginLeft: 15,
+                marginRight: 15,
+                marginTop: 15,
+                marginBottom: 15),
           ),
           '$fileBase.pdf',
         );
@@ -1418,6 +1420,84 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       savePdf();
     } else {
       exportExcel();
+    }
+  }
+
+  /// **Released Goods Report**
+  ///
+  /// Columns: SR Number · Goods Name · Goods Description · Entry Date · Released Date · Quantity · Warehouse Charges (LKR).
+  Future<void> _generateReleasedGoodsReport(String format) async {
+    const key = 'Released Goods';
+    _setLoading('${key}_$format', true);
+    try {
+      final packages = _filterByWarehouse(_filterByDate(await ref
+          .read(packageServiceProvider)
+          .getAllPackages(yard: _yardArg)));
+      final rates = ref.read(storageRateProvider).valueOrNull;
+
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+      final df = DateFormat('yyyy-MM-dd');
+      final money = NumberFormat('#,##0.00');
+
+      for (final p in packages) {
+        for (final entry in p.warehouseEntries) {
+          if (!entry.isReturned) continue;
+
+          PackageItem? matchItem;
+          if (entry.packageItemId != null) {
+            matchItem =
+                p.items.where((i) => i.id == entry.packageItemId).firstOrNull;
+          }
+          matchItem ??= (p.items.isNotEmpty ? p.items.first : null);
+
+          final itemName = entry.itemName ?? matchItem?.itemName ?? '—';
+          final desc = matchItem?.goodsDescription?.trim();
+          final goodsDesc = (desc?.isNotEmpty == true) ? desc! : '—';
+          final entryDate = entry.admittedAt;
+          final releasedDate = entry.returnedAt;
+          final qty = entry.itemCount > 0
+              ? entry.itemCount
+              : (matchItem?.quantity ?? 1);
+
+          final charge = (rates != null)
+              ? entry.calculatePackageCharge(p.items, rates)
+              : (entry.accumulatedCharge ?? 0.0);
+
+          rows.add([
+            p.srNumber,
+            itemName,
+            goodsDesc,
+            df.format(entryDate),
+            releasedDate != null ? df.format(releasedDate) : '—',
+            '$qty',
+            money.format(charge),
+          ]);
+          itemIds.add(matchItem?.id ?? entry.packageItemId);
+        }
+      }
+
+      await _emitDgReport(
+        key: key,
+        title: 'RELEASED GOODS',
+        fileBase: 'Released_Goods',
+        format: format,
+        columns: const [
+          'SR Number',
+          'Goods Name',
+          'Goods Description',
+          'Entry Date',
+          'Released Date',
+          'Quantity',
+          'Warehouse Charges (LKR)',
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
     }
   }
 
@@ -1868,8 +1948,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
       await _emitDgReport(
         key: key,
-        title: 'NOT SOLD PACKAGES',
-        fileBase: 'Not_Sold_Packages',
+        title: 'UNSOLD GOODS',
+        fileBase: 'Unsold_Goods',
         format: format,
         columns: const [
           'SR Number',
@@ -2139,6 +2219,79 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
+  /// **Appeal Goods** — every goods item an appeal has touched.
+  ///
+  /// SR Number \u00b7 Goods Name \u00b7 Goods Description \u00b7 Appeal Date \u00b7 Decision.
+  ///
+  /// A goods item still under review reports **"Appeal Hold"** rather than a
+  /// decision, which is the state the yard needs to see: it is why the goods
+  /// cannot be acted on.
+  Future<void> _generateAppealGoodsReport(String format) async {
+    const key = 'Appeal Goods';
+    _setLoading('${key}_$format', true);
+    try {
+      // Every forfeited row across all four sources — an appeal can be lodged
+      // against Detain / Abandoned / Other as well as a genuine forfeit.
+      final rowsIn = _filterByYard(
+          await ref.read(disposalServiceProvider).getAllForfeitedForReports(),
+          (f) => f.yard);
+
+      final df = DateFormat('yyyy-MM-dd');
+      final rows = <List<String>>[];
+      final itemIds = <String?>[];
+
+      for (final f in _filterByDate(rowsIn)) {
+        for (final it in _reportItemsOf(f)) {
+          final id = it?.id ?? f.itemId;
+
+          final held = f.heldItemIds.isNotEmpty
+              ? f.heldItemIds.contains(id)
+              : f.appealHold;
+          final decision = f.appealDecisionLabelForItem(id);
+
+          // Only goods an appeal actually touched belong in this report.
+          if (!held && decision == null) continue;
+
+          // A hold outranks a decision: while it stands the goods are frozen.
+          final state = held ? 'Appeal Hold' : (decision ?? '\u2014');
+
+          final when = f.appealDecidedAt ?? f.appealHeldAt;
+
+          rows.add([
+            f.srNumber,
+            it?.itemName ?? f.itemName ?? '\u2014',
+            (it?.goodsDescription?.trim().isNotEmpty == true)
+                ? it!.goodsDescription!.trim()
+                : '\u2014',
+            when != null ? df.format(when) : '\u2014',
+            state,
+          ]);
+          itemIds.add(id);
+        }
+      }
+
+      await _emitDgReport(
+        key: key,
+        title: 'APPEAL GOODS',
+        fileBase: 'Appeal_Goods',
+        format: format,
+        columns: const [
+          'SR Number',
+          'Goods Name',
+          'Goods Description',
+          'Appeal Date',
+          'Decision',
+        ],
+        rows: rows,
+        rowItemIds: itemIds,
+      );
+    } catch (e) {
+      _showError(e.toString());
+    } finally {
+      _setLoading('${key}_$format', false);
+    }
+  }
+
   /// The package items a forfeited row covers: the one item it points at for
   /// per-item rows, otherwise every item of the package (`[null]` when the
   /// package details did not load, so the row still prints).
@@ -2277,12 +2430,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 ? 3
                 : (constraints.maxWidth > 600 ? 2 : 1));
 
-        // Central Disposal sees only the Post Status Activity reports — the
-        // rest of the Report Generator is yard-office business.
-        if (widget.disposalMode) {
-          return _buildActivityGrid(crossAxisCount);
-        }
-
         return FutureBuilder<ProfileModel?>(
           future: ref.read(authServiceProvider).getCurrentProfile(),
           builder: (context, snapshot) {
@@ -2337,205 +2484,211 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   ],
                 ),
 
-                // ── Section 2: High Panel Officers Reports ──
-                // Executive Office only — fixed-column listings the DG signs
-                // off on. Hidden from yard officers/admins entirely.
-                if (widget.executiveMode) ...[
-                  const Gap(24),
-                  _buildSectionHeader("High Panel Officers Reports",
-                      Icons.account_balance_rounded),
-                  const Gap(8),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 3.4,
-                    children: [
-                      _buildReportCard(
-                        title: 'SR Register Inventory',
-                        description:
-                            'SR No · Goods · Description · Activity · Entry Date · Value.',
-                        icon: Icons.list_alt_rounded,
-                        color: context.colors.primaryGold,
-                        onView: () => _generateSrListReport('view'),
-                        onPdf: () => _generateSrListReport('pdf'),
-                        onExcel: () => _generateSrListReport('excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'List of Goods for Valuation',
-                        description:
-                            'Goods sent for valuation, with their initial value.',
-                        icon: Icons.price_check_rounded,
-                        color: const Color(0xFF00897B),
-                        onView: () => _generateForValuationReport('view'),
-                        onPdf: () => _generateForValuationReport('pdf'),
-                        onExcel: () => _generateForValuationReport('excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'List of Goods Valued',
-                        description: _valuationRound == 'all'
-                            ? 'Every valuation round side by side.'
-                            : 'Goods valued — ${_valuationRound.toLowerCase()} only.',
-                        icon: Icons.stacked_line_chart_rounded,
-                        color: const Color(0xFF3949AB),
-                        onView: () => _generateValuedReport('view'),
-                        onPdf: () => _generateValuedReport('pdf'),
-                        onExcel: () => _generateValuedReport('excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'High Panel Valuation',
-                        description:
-                            'Final valuation vs. the committee\'s figure.',
-                        icon: Icons.balance_rounded,
-                        color: const Color(0xFF00695C),
-                        onPdf: () => _generateHighPanelValuationReport('pdf'),
-                        onExcel: () =>
-                            _generateHighPanelValuationReport('excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'Goods Financials',
-                        description:
-                            'Income, expenditure & the proceeds split, per SR.',
-                        icon: Icons.account_balance_wallet_rounded,
-                        color: const Color(0xFF00838F),
-                        onPdf: () => _generateGoodsFinancialsReport('pdf'),
-                        onExcel: () => _generateGoodsFinancialsReport('excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'Unsold Goods',
-                        description:
-                            'Committee members & the DG\'s proposed decision.',
-                        icon: Icons.rule_folder_rounded,
-                        color: const Color(0xFFEF6C00),
-                        onPdf: () => _generateNotSoldReport('pdf'),
-                        onExcel: () => _generateNotSoldReport('excel'),
-                      ),
-                      // ── The High Panel's outcomes, one report each ──
-                      _buildReportCard(
-                        title: 'Remanded Goods',
-                        description:
-                            'Unsold goods remanded for further action.',
-                        icon: Icons.reply_all_rounded,
-                        color: const Color(0xFF1565C0),
-                        onPdf: () => _generateOutcomeReport('pdf',
-                            key: 'Remanded Goods',
-                            title: 'REMANDED GOODS',
-                            fileBase: 'Remanded_Goods',
-                            outcome: 'remand'),
-                        onExcel: () => _generateOutcomeReport('excel',
-                            key: 'Remanded Goods',
-                            title: 'REMANDED GOODS',
-                            fileBase: 'Remanded_Goods',
-                            outcome: 'remand'),
-                      ),
-                      _buildReportCard(
-                        title: 'Auction Goods',
-                        description: 'Unsold goods sent to public auction.',
-                        icon: Icons.gavel_rounded,
-                        color: const Color(0xFFF9A825),
-                        onPdf: () => _generateOutcomeReport('pdf',
-                            key: 'Auction Goods',
-                            title: 'AUCTION GOODS',
-                            fileBase: 'Auction_Goods',
-                            outcome: 'auction'),
-                        onExcel: () => _generateOutcomeReport('excel',
-                            key: 'Auction Goods',
-                            title: 'AUCTION GOODS',
-                            fileBase: 'Auction_Goods',
-                            outcome: 'auction'),
-                      ),
-                      _buildReportCard(
-                        title: 'Converted Goods',
-                        description:
-                            'Unsold goods converted to another use or form.',
-                        icon: Icons.autorenew_rounded,
-                        color: const Color(0xFF6A1B9A),
-                        onPdf: () => _generateOutcomeReport('pdf',
-                            key: 'Converted Goods',
-                            title: 'CONVERTED GOODS',
-                            fileBase: 'Converted_Goods',
-                            outcome: 'convert'),
-                        onExcel: () => _generateOutcomeReport('excel',
-                            key: 'Converted Goods',
-                            title: 'CONVERTED GOODS',
-                            fileBase: 'Converted_Goods',
-                            outcome: 'convert'),
-                      ),
-                    ],
-                  ),
-                ],
-
-                // ── Section 4: Goods Disposition Reports ──
+                // ── Section 2: Goods Disposition Reports ──
                 // (How goods are classified: Forfeit / Abandon / Other / Re-export)
-                if (!widget.executiveMode) ...[
-                  const Gap(24),
-                  _buildSectionHeader('Goods Disposition Reports',
-                      Icons.assignment_turned_in_rounded),
-                  const Gap(8),
-                  GridView.count(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    crossAxisCount: crossAxisCount,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 3.4,
-                    children: [
-                      _buildReportCard(
-                        title: 'Forfeited Goods',
-                        description: 'All forfeited goods in this yard.',
-                        icon: Icons.gavel_rounded,
-                        color: const Color(0xFFC62828),
-                        onView: () => _generateForfeitedReport('view'),
-                        onPdf: () => _generateForfeitedReport('pdf'),
-                        onExcel: () => _generateForfeitedReport('excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'Abandoned Goods',
-                        description: 'Goods abandoned by the consignee.',
-                        icon: Icons.inbox_rounded,
-                        color: const Color(0xFF8D6E63),
-                        onView: () => _generateSourceForfeitedReport(
-                            'abandoned',
-                            'Abandoned Goods',
-                            'view'),
-                        onPdf: () => _generateSourceForfeitedReport(
-                            'abandoned', 'Abandoned Goods', 'pdf'),
-                        onExcel: () => _generateSourceForfeitedReport(
-                            'abandoned', 'Abandoned Goods', 'excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'Other Goods',
-                        description: 'Goods routed via "Other" disposition.',
-                        icon: Icons.more_horiz_rounded,
-                        color: const Color(0xFF5E35B1),
-                        onView: () => _generateSourceForfeitedReport(
-                            'other', 'Other Goods', 'view'),
-                        onPdf: () => _generateSourceForfeitedReport(
-                            'other', 'Other Goods', 'pdf'),
-                        onExcel: () => _generateSourceForfeitedReport(
-                            'other', 'Other Goods', 'excel'),
-                      ),
-                      _buildReportCard(
-                        title: 'Re-exported Goods',
-                        description:
-                            'Goods routed via Re-export disposition.',
-                        icon: Icons.flight_takeoff_rounded,
-                        color: const Color(0xFF00796B),
-                        onView: () => _generateReexportedReport('view'),
-                        onPdf: () => _generateReexportedReport('pdf'),
-                        onExcel: () => _generateReexportedReport('excel'),
-                      ),
-                    ],
-                  ),
-                ],
-
-                // ── Section 5: Goods Disposal Reports ──
-                // (What happens to forfeited goods: Sold via Tender / Destroyed)
                 const Gap(24),
-                _buildSectionHeader(
-                    'Goods Disposal Reports', Icons.recycling_rounded),
+                _buildSectionHeader('Goods Disposition Reports',
+                    Icons.assignment_turned_in_rounded),
+                const Gap(8),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 3.4,
+                  children: [
+                    _buildReportCard(
+                      title: 'Forfeited Goods',
+                      description: 'All forfeited goods in this yard.',
+                      icon: Icons.gavel_rounded,
+                      color: const Color(0xFFC62828),
+                      onView: () => _generateForfeitedReport('view'),
+                      onPdf: () => _generateForfeitedReport('pdf'),
+                      onExcel: () => _generateForfeitedReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Abandoned Goods',
+                      description: 'Goods abandoned by the consignee.',
+                      icon: Icons.inbox_rounded,
+                      color: const Color(0xFF8D6E63),
+                      onView: () => _generateSourceForfeitedReport(
+                          'abandoned', 'Abandoned Goods', 'view'),
+                      onPdf: () => _generateSourceForfeitedReport(
+                          'abandoned', 'Abandoned Goods', 'pdf'),
+                      onExcel: () => _generateSourceForfeitedReport(
+                          'abandoned', 'Abandoned Goods', 'excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Other Goods',
+                      description: 'Goods routed via "Other" disposition.',
+                      icon: Icons.more_horiz_rounded,
+                      color: const Color(0xFF5E35B1),
+                      onView: () => _generateSourceForfeitedReport(
+                          'other', 'Other Goods', 'view'),
+                      onPdf: () => _generateSourceForfeitedReport(
+                          'other', 'Other Goods', 'pdf'),
+                      onExcel: () => _generateSourceForfeitedReport(
+                          'other', 'Other Goods', 'excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Appeal Goods',
+                      description:
+                          'Goods under appeal, with the decision or hold.',
+                      icon: Icons.gavel_rounded,
+                      color: const Color(0xFF7B1FA2),
+                      onPdf: () => _generateAppealGoodsReport('pdf'),
+                      onExcel: () => _generateAppealGoodsReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Re-exported Goods',
+                      description: 'Goods routed via Re-export disposition.',
+                      icon: Icons.flight_takeoff_rounded,
+                      color: const Color(0xFF00796B),
+                      onView: () => _generateReexportedReport('view'),
+                      onPdf: () => _generateReexportedReport('pdf'),
+                      onExcel: () => _generateReexportedReport('excel'),
+                    ),
+                  ],
+                ),
+
+                // ── Section 3: Valuation & Financial Reports ──
+                const Gap(24),
+                _buildSectionHeader("Valuation & Financial Reports",
+                    Icons.account_balance_rounded),
+                const Gap(8),
+                GridView.count(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  crossAxisCount: crossAxisCount,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                  childAspectRatio: 3.4,
+                  children: [
+                    _buildReportCard(
+                      title: 'List of Goods for Valuation',
+                      description:
+                          'Goods sent for valuation, with their initial value.',
+                      icon: Icons.price_check_rounded,
+                      color: const Color(0xFF00897B),
+                      onView: () => _generateForValuationReport('view'),
+                      onPdf: () => _generateForValuationReport('pdf'),
+                      onExcel: () => _generateForValuationReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'List of Goods Valued',
+                      description: _valuationRound == 'all'
+                          ? 'Every valuation round side by side.'
+                          : 'Goods valued — ${_valuationRound.toLowerCase()} only.',
+                      icon: Icons.stacked_line_chart_rounded,
+                      color: const Color(0xFF3949AB),
+                      onView: () => _generateValuedReport('view'),
+                      onPdf: () => _generateValuedReport('pdf'),
+                      onExcel: () => _generateValuedReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'High Panel Valuation',
+                      description:
+                          'Final valuation vs. the committee\'s figure.',
+                      icon: Icons.balance_rounded,
+                      color: const Color(0xFF00695C),
+                      onView: () => _generateHighPanelValuationReport('view'),
+                      onPdf: () => _generateHighPanelValuationReport('pdf'),
+                      onExcel: () => _generateHighPanelValuationReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Goods Financials',
+                      description:
+                          'Income, expenditure & the proceeds split, per SR.',
+                      icon: Icons.account_balance_wallet_rounded,
+                      color: const Color(0xFF00838F),
+                      onView: () => _generateGoodsFinancialsReport('view'),
+                      onPdf: () => _generateGoodsFinancialsReport('pdf'),
+                      onExcel: () => _generateGoodsFinancialsReport('excel'),
+                    ),
+                    _buildReportCard(
+                      title: 'Unsold Goods',
+                      description:
+                          'Committee members & the DG\'s proposed decision.',
+                      icon: Icons.rule_folder_rounded,
+                      color: const Color(0xFFEF6C00),
+                      onView: () => _generateNotSoldReport('view'),
+                      onPdf: () => _generateNotSoldReport('pdf'),
+                      onExcel: () => _generateNotSoldReport('excel'),
+                    ),
+                    // ── The Outcomes, one report each ──
+                    _buildReportCard(
+                      title: 'Remanded Goods',
+                      description: 'Unsold goods remanded for further action.',
+                      icon: Icons.reply_all_rounded,
+                      color: const Color(0xFF1565C0),
+                      onView: () => _generateOutcomeReport('view',
+                          key: 'Remanded Goods',
+                          title: 'REMANDED GOODS',
+                          fileBase: 'Remanded_Goods',
+                          outcome: 'remand'),
+                      onPdf: () => _generateOutcomeReport('pdf',
+                          key: 'Remanded Goods',
+                          title: 'REMANDED GOODS',
+                          fileBase: 'Remanded_Goods',
+                          outcome: 'remand'),
+                      onExcel: () => _generateOutcomeReport('excel',
+                          key: 'Remanded Goods',
+                          title: 'REMANDED GOODS',
+                          fileBase: 'Remanded_Goods',
+                          outcome: 'remand'),
+                    ),
+                    _buildReportCard(
+                      title: 'Auction Goods',
+                      description: 'Unsold goods sent to public auction.',
+                      icon: Icons.gavel_rounded,
+                      color: const Color(0xFFF9A825),
+                      onView: () => _generateOutcomeReport('view',
+                          key: 'Auction Goods',
+                          title: 'AUCTION GOODS',
+                          fileBase: 'Auction_Goods',
+                          outcome: 'auction'),
+                      onPdf: () => _generateOutcomeReport('pdf',
+                          key: 'Auction Goods',
+                          title: 'AUCTION GOODS',
+                          fileBase: 'Auction_Goods',
+                          outcome: 'auction'),
+                      onExcel: () => _generateOutcomeReport('excel',
+                          key: 'Auction Goods',
+                          title: 'AUCTION GOODS',
+                          fileBase: 'Auction_Goods',
+                          outcome: 'auction'),
+                    ),
+                    _buildReportCard(
+                      title: 'Converted Goods',
+                      description:
+                          'Unsold goods converted to another use or form.',
+                      icon: Icons.autorenew_rounded,
+                      color: const Color(0xFF6A1B9A),
+                      onView: () => _generateOutcomeReport('view',
+                          key: 'Converted Goods',
+                          title: 'CONVERTED GOODS',
+                          fileBase: 'Converted_Goods',
+                          outcome: 'convert'),
+                      onPdf: () => _generateOutcomeReport('pdf',
+                          key: 'Converted Goods',
+                          title: 'CONVERTED GOODS',
+                          fileBase: 'Converted_Goods',
+                          outcome: 'convert'),
+                      onExcel: () => _generateOutcomeReport('excel',
+                          key: 'Converted Goods',
+                          title: 'CONVERTED GOODS',
+                          fileBase: 'Converted_Goods',
+                          outcome: 'convert'),
+                    ),
+                  ],
+                ),
+
+                // ── Section 4: Goods Disposal & Release Reports ──
+                // (What happens to goods: Sold via Tender / Destroyed / Released)
+                const Gap(24),
+                _buildSectionHeader('Goods Disposal & Release Reports',
+                    Icons.recycling_rounded),
                 const Gap(8),
                 GridView.count(
                   shrinkWrap: true,
@@ -2565,47 +2718,21 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: () => _stockRevenueReport('destroyed', 'pdf'),
                       onExcel: () => _stockRevenueReport('destroyed', 'excel'),
                     ),
-                  ],
-                ),
-
-                // ── Section 7: Warehouse & Movement Reports ──
-                const Gap(24),
-                _buildSectionHeader(
-                    'Warehouse & Movement Reports', Icons.warehouse_rounded),
-                const Gap(8),
-                GridView.count(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  crossAxisCount: crossAxisCount,
-                  crossAxisSpacing: 12,
-                  mainAxisSpacing: 12,
-                  childAspectRatio: 3.4,
-                  children: [
-                    // Warehouse Stock / Warehouses List are yard housekeeping.
-                    if (!widget.executiveMode)
-                      _buildReportCard(
-                        title: 'Warehouse Stock (Held Goods)',
-                        description: 'Currently held items in warehouses.',
-                        icon: Icons.warehouse_rounded,
-                        color: const Color(0xFF1565C0),
-                        onView: _viewWarehouseStock,
-                        onPdf: _generateWarehouseStockPdf,
-                        onExcel: _exportWarehouseStockExcel,
-                      ),
                     _buildReportCard(
                       title: 'Released Goods',
-                      description: 'All released goods entries.',
+                      description:
+                          'All released goods with entry & release dates & charges.',
                       icon: Icons.keyboard_return_rounded,
                       color: const Color(0xFF2E7D32),
-                      onView: _viewReturnedPackages,
-                      onPdf: _generateReturnedPdf,
-                      onExcel: _exportReturnedExcel,
+                      onView: () => _generateReleasedGoodsReport('view'),
+                      onPdf: () => _generateReleasedGoodsReport('pdf'),
+                      onExcel: () => _generateReleasedGoodsReport('excel'),
                     ),
                   ],
                 ),
 
-                if (!widget.executiveMode) ...[
-                  // ── Section 10: QR Code Labels ──
+                if (!widget.executiveMode && !widget.disposalMode) ...[
+                  // ── Section 5: QR Code Labels (Yard Mode Only) ──
                   const Gap(24),
                   _buildSectionHeader(
                       'QR Code Labels', Icons.qr_code_2_rounded),
@@ -2768,7 +2895,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
         _showPdfPreview(
           (format) => ReportService().generatePackagePdf(
             filtered,
-            title: '${status.toUpperCase()} Packages Report',
+            title: '${status.toUpperCase()} GOODS Report',
             format: format,
           ),
           '${status}_Packages_Report.pdf',
@@ -3538,29 +3665,33 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                   it
           ];
           title = 'GOODS DESTROYED IN DESTRUCTION TENDER';
-          // SR \u00b7 goods \u00b7 description \u00b7 what it was destroyed at \u00b7
-          // the receipt it was recorded against.
           columns = [
             'SR Number',
             'Goods Name',
             'Goods Description',
-            'Destroyed Price',
-            'Receipt Number',
+            'Valuation (LKR)',
+            'Destroyed Price (LKR)',
           ];
           rows = [];
           rowItemIds = [];
 
-          String receiptOf(DestructionItemModel it) =>
-              (it.receiptNumber?.trim().isNotEmpty == true)
-                  ? it.receiptNumber!.trim()
-                  : '\u2014';
+          String valuationOf(ForfeitedPackageModel? f, PackageItem? match) {
+            if (f?.valuationCost != null && f!.valuationCost! > 0) {
+              final qty = f.entryQty ?? match?.quantity ?? 1;
+              return money.format(f.valuationCost! * qty);
+            }
+            if (match != null && match.unitValue > 0) {
+              return money.format(match.unitValue * match.quantity);
+            }
+            if (f?.packageDetails?.declaredValue != null &&
+                f!.packageDetails!.declaredValue > 0) {
+              return money.format(f.packageDetails!.declaredValue);
+            }
+            return '—';
+          }
 
-          // The destroyed price is recorded per DESTRUCTION ITEM, so a
-          // multi-item package shows it once against the item that carries it
-          // rather than repeating the same figure on every line.
-          String priceOf(DestructionItemModel it) => it.destroyedPrice > 0
-              ? money.format(it.destroyedPrice)
-              : '\u2014';
+          String priceOf(DestructionItemModel it) =>
+              it.destroyedPrice > 0 ? money.format(it.destroyedPrice) : '—';
 
           for (final it in items) {
             final f = it.forfeited;
@@ -3568,35 +3699,35 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             if (f?.itemId != null) {
               final match =
                   pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
-              final name = f?.itemName ?? match?.itemName ?? '\u2014';
+              final name = f?.itemName ?? match?.itemName ?? '—';
               final desc = match?.goodsDescription?.trim();
               rows.add([
-                f?.srNumber ?? '\u2014',
+                f?.srNumber ?? '—',
                 name,
-                (desc?.isNotEmpty == true) ? desc! : '\u2014',
+                (desc?.isNotEmpty == true) ? desc! : '—',
+                valuationOf(f, match),
                 priceOf(it),
-                receiptOf(it),
               ]);
               rowItemIds.add(f?.itemId);
             } else if (pkgItems.isNotEmpty) {
               for (final i in pkgItems) {
                 final desc = i.goodsDescription?.trim();
                 rows.add([
-                  f?.srNumber ?? '\u2014',
+                  f?.srNumber ?? '—',
                   i.itemName,
-                  (desc?.isNotEmpty == true) ? desc! : '\u2014',
+                  (desc?.isNotEmpty == true) ? desc! : '—',
+                  valuationOf(f, i),
                   priceOf(it),
-                  receiptOf(it),
                 ]);
                 rowItemIds.add(i.id);
               }
             } else {
               rows.add([
-                f?.srNumber ?? '\u2014',
-                f?.itemName ?? '\u2014',
-                '\u2014',
+                f?.srNumber ?? '—',
+                f?.itemName ?? '—',
+                '—',
+                valuationOf(f, null),
                 priceOf(it),
-                receiptOf(it),
               ]);
               rowItemIds.add(null);
             }
@@ -3799,9 +3930,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// Forfeited Packages page report (all genuine forfeits in this yard).
   Future<void> _generateForfeitedReport(String format) async {
     await _emitForfeitedReport(
-      key: 'Forfeited Packages',
-      title: 'FORFEITED PACKAGES',
-      fileBase: 'Forfeited_Packages',
+      key: 'Forfeited Goods',
+      title: 'FORFEITED GOODS',
+      fileBase: 'Forfeited_Goods',
       dateHeader: 'Forfeited On',
       format: format,
       fetch: () =>
@@ -3827,9 +3958,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// Packages marked Re-exported in this yard.
   Future<void> _generateReexportedReport(String format) async {
     await _emitForfeitedReport(
-      key: 'Re-exported Packages',
-      title: 'RE-EXPORTED PACKAGES',
-      fileBase: 'Reexported_Packages',
+      key: 'Re-exported Goods',
+      title: 'RE-EXPORTED GOODS',
+      fileBase: 'Reexported_Goods',
       dateHeader: 'Re-exported On',
       format: format,
       fetch: () async {
@@ -4029,9 +4160,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     Future<void> Function()? onPdf,
     Future<void> Function()? onExcel,
   }) {
-    // The High Panel take their reports away as documents, so their cards
-    // offer PDF + Excel only — no in-app View. Central Disposal keeps it.
-    final showView = widget.disposalMode && onView != null;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
@@ -4070,17 +4198,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           const Spacer(),
           Row(
             children: [
-              if (showView)
-                Expanded(
-                  child: _buildActionButton(
-                    label: 'View',
-                    icon: Icons.table_rows_rounded,
-                    color: color,
-                    isLoading: _isLoading('${title}_view'),
-                    onTap: onView,
-                  ),
-                ),
-              if (showView && (onPdf != null || onExcel != null)) const Gap(4),
               if (onPdf != null)
                 Expanded(
                   child: _buildActionButton(
@@ -4275,7 +4392,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       _showPdfPreview(
         (format) => ReportService().generateWarehousePdf(
           filtered,
-          title: 'Released Packages Report',
+          title: 'Released Goods Report',
           isReturnedReport: true,
           format: format,
         ),
@@ -5101,14 +5218,15 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
   Uint8List? _pdfBytes;
   bool _isLoading = true;
 
-  /// How wide a page is drawn, in logical pixels. `PdfPreview` has no zoom of
-  /// its own — it scales each page to `maxPageWidth` — so zooming IS this
-  /// number. A wide table (the Goods Financials report carries seventeen money
-  /// columns) is unreadable at the default, and the reader can now push the
-  /// page well past the dialog's width and pan around it.
-  double _pageWidth = _kDefaultPageWidth;
+  /// The width a page opens at.
+  ///
+  /// A landscape page is 1.414x wider than a portrait one, so at 880 it filled
+  /// far more of the dialog and read as roughly 125% while the label said
+  /// 100%. Opening it at the SAME width as portrait means the whole sheet is
+  /// visible at a comparable scale, and the reader zooms in from there.
+  double get _defaultWidth => 680.0;
+  late double _pageWidth;
 
-  static const double _kDefaultPageWidth = 700;
   static const double _kMinPageWidth = 400;
   static const double _kMaxPageWidth = 3000;
 
@@ -5119,18 +5237,25 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
   void _zoomBy(double factor) => setState(() =>
       _pageWidth = (_pageWidth * factor).clamp(_kMinPageWidth, _kMaxPageWidth));
 
-  void _resetZoom() => setState(() => _pageWidth = _kDefaultPageWidth);
+  void _resetZoom() => setState(() => _pageWidth = _defaultWidth);
 
   @override
   void initState() {
     super.initState();
-    // Start with Landscape if it looks like a wide report (like Warehouse).
-    // Goods Financials carries seventeen money columns, so portrait would
-    // crush it — the toggle still lets the reader switch back.
+    // Landscape for the reports whose tables are genuinely wide; portrait for
+    // everything else. Matched on the FILE NAME, which is the only thing this
+    // dialog knows about the report it is showing.
+    //
+    // 'register' / 'inventory' were in this list but their reports are six
+    // narrow columns — they belong in portrait, and forcing landscape left a
+    // half-empty sheet.
     final f = widget.fileName.toLowerCase();
     _isLandscape = f.contains('warehouse') ||
         f.contains('released') ||
-        f.contains('financials');
+        f.contains('financials') ||
+        f.contains('valued') ||
+        f.contains('valuation');
+    _pageWidth = _defaultWidth;
     _generatePdf();
   }
 
@@ -5150,7 +5275,10 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
   }
 
   void _toggleOrientation() {
-    setState(() => _isLandscape = !_isLandscape);
+    setState(() {
+      _isLandscape = !_isLandscape;
+      _pageWidth = _defaultWidth;
+    });
     _generatePdf();
   }
 
@@ -5210,11 +5338,12 @@ class _ReportPreviewDialogState extends State<ReportPreviewDialog> {
             Tooltip(
               message: 'Reset zoom',
               child: TextButton(
-                onPressed: _pageWidth == _kDefaultPageWidth ? null : _resetZoom,
+                onPressed:
+                    (_pageWidth - _defaultWidth).abs() < 1 ? null : _resetZoom,
                 child: SizedBox(
                   width: 52,
                   child: Text(
-                    '${(_pageWidth / _kDefaultPageWidth * 100).round()}%',
+                    '${(_pageWidth / _defaultWidth * 100).round()}%',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                         color: context.colors.textPrimary,
@@ -5451,7 +5580,7 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         padding: const EdgeInsets.all(24),
-        width: 400,
+        width: 460,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -5459,7 +5588,16 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
                 .animate()
                 .scale(delay: 100.ms, curve: Curves.elasticOut),
             const Gap(16),
-            Text(widget.title, style: Theme.of(context).textTheme.titleLarge),
+            Text(
+              widget.title,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleLarge
+                  ?.copyWith(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
             const Gap(8),
             Text('Excel Data Export',
                 style: TextStyle(color: context.colors.textSecondary)),
@@ -5522,16 +5660,26 @@ class _ExcelExportDialogState extends State<ExcelExportDialog> {
 
   Widget _buildStatRow(String label, String value) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(label,
-            style:
-                TextStyle(color: context.colors.textSecondary, fontSize: 13)),
-        Text(value,
+        Text(
+          label,
+          style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
+        ),
+        const Gap(16),
+        Expanded(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 1,
             style: TextStyle(
-                color: context.colors.textPrimary,
-                fontWeight: FontWeight.bold,
-                fontSize: 13)),
+              color: context.colors.textPrimary,
+              fontWeight: FontWeight.bold,
+              fontSize: 13,
+            ),
+          ),
+        ),
       ],
     );
   }

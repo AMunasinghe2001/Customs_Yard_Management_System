@@ -116,6 +116,12 @@ const double kUnsoldTableMinWidth = 945;
 ///
 /// Deliberately NOT here: **Tenders** — every package on this table has
 /// exhausted all four rounds, so a "4×" badge on every row says nothing.
+///
+/// The same reasoning governs the last data column. On the Unsold Goods page
+/// the outcome varies row to row, so **Final Outcome** earns its place. On a
+/// single-outcome page (Government Use, Remanded, Auction, Converted, Removed)
+/// every row carries the SAME chip — it is the page's own title repeated — so
+/// those pages show **Decided On** instead, which does differ per row.
 const List<DataColumn2> kUnsoldColumns = [
   DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
   DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
@@ -134,6 +140,51 @@ const List<DataColumn2> kUnsoldColumns = [
       size: ColumnSize.S,
       fixedWidth: 66),
 ];
+
+/// [kUnsoldColumns] with the outcome column replaced by **Decided On**, for a
+/// page that already filters to one outcome.
+const List<DataColumn2> kUnsoldDecidedColumns = [
+  DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+  DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
+  DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
+  DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
+  DataColumn2(label: Text('Location'), size: ColumnSize.M),
+  DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 120),
+  DataColumn2(
+      label: Center(child: Text('Decided On')),
+      size: ColumnSize.M,
+      fixedWidth: 235),
+  DataColumn2(
+      label: Center(child: Text('Details')),
+      size: ColumnSize.S,
+      fixedWidth: 66),
+];
+
+/// The date the High Panel recorded this outcome, for [kUnsoldDecidedColumns].
+///
+/// The note the DG left is worth surfacing, so it rides in the tooltip rather
+/// than taking a column of its own.
+Widget unsoldDecidedOnCell(
+    BuildContext context, UnsoldProposalModel? proposal) {
+  if (proposal == null) {
+    return Center(
+      child: Text('—', style: TextStyle(color: context.colors.textMuted)),
+    );
+  }
+  final note = proposal.note?.trim();
+  return Center(
+    child: Tooltip(
+      message: (note != null && note.isNotEmpty)
+          ? '${proposal.label}\n$note'
+          : proposal.label,
+      waitDuration: const Duration(milliseconds: 300),
+      child: Text(DateFormat('yyyy-MM-dd').format(proposal.decidedAt),
+          style: TextStyle(
+              color: context.colors.textSecondary,
+              fontWeight: FontWeight.w600)),
+    ),
+  );
+}
 
 /// The shared cells, in the same order as [kUnsoldColumns].
 ///

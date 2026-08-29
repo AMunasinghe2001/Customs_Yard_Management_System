@@ -923,3 +923,55 @@ Cards were far taller than their content: a title, one line of description and t
 The parameterised `_generateOutcomeReport` with `outcome: null` duplicated the existing "Not Sold Goods" report. Dropped the duplicate and renamed the original to **Unsold Goods**; Remanded / Auction / Converted keep their outcome filters.
 
 The empty-result SnackBar was the default white and washed into the page — now **amber with an icon and dark text**, since an empty result is exactly the message a reader must not miss.
+
+### The emblem was missing from most reports (2026-08-27)
+
+Every PDF builder shares `_buildHeader`, which draws `_logoWidget()` — yet many reports still showed the lettered **"SLC"** fallback. Cause: the emblem is loaded by **`_ensureFontsLoaded()`**, and **six builders never called it** (`generatePackagePdf`, `generateWarehousePdf`, `generatePostStatusActivitiesPdf`, `generateCategoriesPdf`, `generateStaffPdf`, `generateForfeitedPdf`). All fourteen now do.
+
+**A shared header is not enough — check every entry point calls the loader it depends on.** The fallback made this look like a design choice rather than a bug.
+
+### Preview orientation and zoom (2026-08-27)
+
+- Landscape opened at width **880** against portrait's 680. A landscape sheet is 1.414x wider, so it filled far more of the dialog and read as ~125% while the label said 100%. Both now open at **680**, so the whole sheet is visible at a comparable scale either way.
+- `'register'` and `'inventory'` were forcing landscape, but those reports are six narrow columns — dropped, so they open portrait and no longer leave a half-empty sheet. Landscape remains the default only for `warehouse`, `released`, `financials`, `valued`, `valuation`.
+
+### Forfeited-family reports reshaped; Appeal Goods added (2026-08-28)
+
+- **`buildForfeitedReportRows` now emits five columns** — SR Number · Goods Name · Goods Description · <date> · **Final Disposition** — replacing Item / HS Code / Qty / Consignee / Warehouse / Reason. One builder serves Forfeited, Abandoned, Other and Re-exported, so all four changed together.
+- The **final disposition** is parsed from the `[FINAL:...]` warehouse entry the disposition dialog writes (`[FINAL:OTHER] — <text>` keeps its trailing text). Goods without one report **"Pending"**.
+- Titles: `FORFEITED PACKAGES` → **`FORFEITED GOODS`**, same for Re-exported; file bases follow.
+- **New "Appeal Goods" report**: SR · Goods Name · Description · Appeal Date · Decision. Reads every source (an appeal can touch Detain / Abandoned / Other too), keeps only goods an appeal actually touched, and **a hold outranks a decision** — while it stands the row reads "Appeal Hold", because that is why the goods cannot be acted on.
+
+### Central Disposal's Reports tab matched the others (2026-08-28)
+
+Its page was a different product: heading **"Post Status Activity Reports"**, a separate `_buildActivityGrid` instead of the normal sections, and a third **View** button on every card. Three edits, all in `reports_screen.dart`:
+
+- The heading is unconditionally **"Report Generator"** — the `disposalMode` ternary is gone.
+- The early `if (widget.disposalMode) return _buildActivityGrid(...)` is removed, so every portal builds the same card list. `_buildActivityGrid` is now unreferenced but kept.
+- **The in-app View button is gone everywhere.** It was Central Disposal's alone (`showView = widget.disposalMode && onView != null`); every card now carries Print + Excel, and the preview is where a report is read.
+
+QR Code Labels stay yard-only (`!executiveMode && !disposalMode`) — they are printed at the yard.
+
+### The Warehouse filter reaches Central Disposal (2026-08-28)
+
+It was hidden behind `if (!widget.disposalMode)` for a real reason: **`warehouses` had a SELECT policy for the executive role only**, so the list came back empty for Central Disposal. Migration `20260838_disposal_read_warehouses.sql` grants them read on `warehouses` and `warehouse_zones` (`auth_user_is_disposal()`), and the guard is gone — every portal now carries the same filter row.
+
+Still scoped: with no yard picked the list stays **empty** rather than showing every warehouse, matching the earlier `warehousesForYardProvider` fix. **A UI element hidden "because the data is empty" is usually an RLS gap, not a design choice — check the policy before removing the guard.**
+
+### A column that says the same thing on every row is not a column (2026-08-28)
+
+The outcome pages (Government Use, Remanded, Auction, Converted, Removed) filter to ONE outcome, so their **Final Outcome** column repeated the page title on every row. `unsold_shared.dart` already applied this reasoning to the Tenders column — every row there is 4x, so the badge was dropped.
+
+Added **`kUnsoldDecidedColumns`** (Final Outcome → **Decided On**) and **`unsoldDecidedOnCell()`**, which shows `decidedAt` with the outcome and the DG's note in its tooltip. Both the yard screen and the Central Disposal tab pick the column set from `proposalFilter == null`, so the unfiltered Unsold page keeps Final Outcome — there it genuinely varies.
+
+### Mouse scrolling on desktop (2026-08-29)
+
+Flutter's desktop `ScrollBehavior` omits touch/mouse from `dragDevices` and hides the scrollbar, assuming a wheel is always available. On a PC where the wheel does not reach a nested list there was then **no way to scroll at all**.
+
+`_DesktopScrollBehavior` in `main.dart` (passed to `MaterialApp.router`) adds every `PointerDeviceKind` to `dragDevices` so content can be dragged with the mouse, and wraps vertical scrollables in a `Scrollbar` with `thumbVisibility` + `interactive`. **Vertical only** — a horizontal bar over a wide `DataTable2` sits on top of the last row.
+
+Applies everywhere at once, since it is set on the app rather than per screen.
+
+### The report logo, again (2026-08-29)
+
+`_loadLogo()` swallowed both asset-load failures silently, so a missing emblem looked like a design choice. Both `catch` blocks now `debugPrint` before falling back to the "SLC" monogram. The load path itself is correct (tinted SVG with `currentColor` replaced, then the plain one) and `_ensureFontsLoaded()` awaits it before every builder — if the monogram still appears, the terminal now says why.

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,11 +13,16 @@ import 'core/holidays.dart';
 import 'services/services.dart';
 
 class _NoPersistLocalStorage extends LocalStorage {
-  @override Future<void> initialize() async {}
-  @override Future<bool> hasAccessToken() async => false;
-  @override Future<String?> accessToken() async => null;
-  @override Future<void> removePersistedSession() async {}
-  @override Future<void> persistSession(String persistSessionString) async {}
+  @override
+  Future<void> initialize() async {}
+  @override
+  Future<bool> hasAccessToken() async => false;
+  @override
+  Future<String?> accessToken() async => null;
+  @override
+  Future<void> removePersistedSession() async {}
+  @override
+  Future<void> persistSession(String persistSessionString) async {}
 }
 
 void main() async {
@@ -142,14 +148,14 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
   @override
   void onWindowClose() async {
     print('DEBUG: Global window close caught...');
-    
+
     // Hide the window immediately so the user feels an instant close
     await windowManager.hide();
-    
+
     try {
       final user = supabase.auth.currentUser;
       print('DEBUG: App closing. Current user ID: ${user?.id}');
-      
+
       if (user != null) {
         await AuditLogService().recordLog(
           userId: user.id,
@@ -160,11 +166,15 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
         // Direct database call skipping Riverpod providers entirely. Null
         // last_seen_at too so the (heartbeat-based) online list drops them
         // instantly instead of holding them online for ~90s after close.
-        await supabase.from('profiles').update({
-          'is_online': false,
-          'last_seen_at': null,
-        }).eq('id', user.id).timeout(const Duration(seconds: 2));
-        
+        await supabase
+            .from('profiles')
+            .update({
+              'is_online': false,
+              'last_seen_at': null,
+            })
+            .eq('id', user.id)
+            .timeout(const Duration(seconds: 2));
+
         print('DEBUG: Successfully set user offline in Database directly.');
       } else {
         print('DEBUG: No logged in user. Taking no DB action.');
@@ -189,6 +199,48 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
       themeMode: themeMode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      // Desktop scrolling. Flutter hides the scrollbar and disables
+      // drag-to-scroll on desktop, assuming a wheel is always present — but on
+      // a machine without one (or where the wheel does not reach a nested
+      // list) there is then no way to scroll at all. This shows the bar on
+      // every scrollable and lets it be dragged with the mouse.
+      scrollBehavior: const _DesktopScrollBehavior(),
     );
+  }
+}
+
+/// Scrolling that works with a mouse as well as a trackpad.
+///
+/// Flutter's desktop default omits touch and stylus from [dragDevices], so a
+/// list can only be scrolled by the wheel. Adding the mouse makes the content
+/// itself draggable, and an always-visible scrollbar gives a target to drag.
+class _DesktopScrollBehavior extends MaterialScrollBehavior {
+  const _DesktopScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.invertedStylus,
+        PointerDeviceKind.unknown,
+      };
+
+  @override
+  Widget buildScrollbar(
+      BuildContext context, Widget child, ScrollableDetails details) {
+    // Only the vertical axis: a horizontal bar over a wide table would sit on
+    // top of the last row.
+    if (details.direction == AxisDirection.up ||
+        details.direction == AxisDirection.down) {
+      return Scrollbar(
+        controller: details.controller,
+        thumbVisibility: true,
+        interactive: true,
+        child: child,
+      );
+    }
+    return child;
   }
 }

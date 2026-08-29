@@ -593,7 +593,12 @@ class UnsoldProposalsTab extends ConsumerWidget {
                             fixedTopRows: 1,
                             minWidth: kUnsoldTableMinWidth,
                             headingRowColor: _headingColor(context),
-                            columns: kUnsoldColumns,
+                            // An outcome tab already filters to one outcome,
+                            // so a Final Outcome column would repeat the tab
+                            // title on every row; it shows the date instead.
+                            columns: proposalFilter == null
+                                ? kUnsoldColumns
+                                : kUnsoldDecidedColumns,
                             rows: pageRows.map((info) {
                               final f = info.forfeited;
                               final pkg = f.packageDetails;
@@ -605,10 +610,13 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                   srColor: blue,
                                   // READ-ONLY: the DG decides the outcome,
                                   // this directorate carries it out.
-                                  outcome: Center(
-                                    child: UnsoldOutcomeChip(
-                                        proposal: proposals[f.id]),
-                                  ),
+                                  outcome: proposalFilter == null
+                                      ? Center(
+                                          child: UnsoldOutcomeChip(
+                                              proposal: proposals[f.id]),
+                                        )
+                                      : unsoldDecidedOnCell(
+                                          context, proposals[f.id]),
                                   onDetails: pkg == null
                                       ? null
                                       : () => showDialog(
