@@ -74,6 +74,54 @@ class PgDatabase {
   /// the first one is still handshaking.
   Future<Connection>? _connecting;
 
+  /// Who the database should believe is running each statement.
+  ///
+  /// This is what makes RLS work without a rewrite. Supabase gave every policy
+  /// `auth.uid()`; here `auth.uid()` is a SQL function that reads the session
+  /// variable `app.current_user_id`, so the 73 existing policies keep working
+  /// exactly as written — see supabase_compat in the schema.
+  ///
+  /// Null while signed out, which makes `auth.uid()` null and every
+  /// user-scoped policy deny. That is the correct default: a bug that forgets
+  /// to set it locks the user out rather than showing them everything.
+  String? _currentUserId;
+
+  /// The role name `auth.role()` reports. Supabase used 'authenticated' for a
+  /// signed-in user and 'anon' otherwise; policies test for the former.
+  String get _currentRole => _currentUserId == null ? 'anon' : 'authenticated';
+
+  /// Tells the database who is acting. Called on sign-in, and cleared on
+  /// sign-out.
+  ///
+  /// Applied to the live connection immediately AND remembered, because the
+  /// setting is per-session: a reconnect starts a fresh session that would
+  /// otherwise come back as 'anon'.
+  Future<void> setCurrentUser(String? userId) async {
+    _currentUserId = userId;
+    final conn = _conn;
+    if (conn != null && conn.isOpen) await _applySession(conn);
+  }
+
+  String? get currentUserId => _currentUserId;
+
+  /// Writes the session variables the compatibility functions read.
+  ///
+  /// `set_config(..., false)` makes them last for the whole session rather
+  /// than one transaction, so every later query sees them.
+  Future<void> _applySession(Connection conn) async {
+    await conn.execute(
+      Sql.named(
+          "select set_config('app.current_user_id', @uid, false), "
+          "set_config('app.current_role', @role, false)"),
+      parameters: {
+        // An empty string, not null: `current_setting` returns '' for an unset
+        // variable anyway, and the SQL side treats '' as "nobody".
+        'uid': _currentUserId ?? '',
+        'role': _currentRole,
+      },
+    );
+  }
+
   /// Whether a live connection is currently held. Never assume from this that
   /// the next query will succeed — the socket can drop between the check and
   /// the query, which is why [_run] retries.
@@ -93,6 +141,9 @@ class PgDatabase {
     try {
       final conn = await future;
       _conn = conn;
+      // A new session starts with no settings, so the signed-in user has to be
+      // re-declared or RLS would see 'anon' after every reconnect.
+      await _applySession(conn);
       debugPrint('PostgreSQL connected: ${PgConfig.describe}');
       return conn;
     } finally {
