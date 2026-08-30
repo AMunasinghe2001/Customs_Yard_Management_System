@@ -4315,7 +4315,7 @@ class _SaleFinancialsSectionState
 
         double taxSum = 0;
         for (final t in saleItem.appliedTaxes) {
-          taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
+          taxSum += parseDbNum(t['amount']) ?? 0;
         }
 
         final profile = ref.watch(currentProfileProvider);

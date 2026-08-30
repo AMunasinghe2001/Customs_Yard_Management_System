@@ -44,10 +44,52 @@ def make_rerunnable(sql: str) -> str:
                  'CREATE TABLE IF NOT EXISTS ', sql)
     sql = re.sub(r'(?i)\bCREATE INDEX\s+(?!IF NOT EXISTS)',
                  'CREATE INDEX IF NOT EXISTS ', sql)
-    # Seed rows would duplicate on a second run.
-    sql = re.sub(r'(?i)\bINSERT INTO\s+(\w+)([^;]*);',
-                 lambda m: f'INSERT INTO {m.group(1)}{m.group(2)}\n  ON CONFLICT DO NOTHING;',
-                 sql)
+    # ADD COLUMN is the other statement that is not re-runnable, and it bites
+    # HARDER than the CREATEs: the base schema and the early migrations add
+    # several of the same columns (warehouse_entries.package_item_id and .zone
+    # are added in both), so the stitched file fails on a FIRST run, not just a
+    # second one. Postgres accepts IF NOT EXISTS here, and it is a no-op when
+    # the column is genuinely new.
+    sql = re.sub(r'(?i)\bADD COLUMN\s+(?!IF NOT EXISTS)',
+                 'ADD COLUMN IF NOT EXISTS ', sql)
+
+    # CREATE TRIGGER has no IF NOT EXISTS in Postgres, so it needs an explicit
+    # DROP in front — the base schema and the migrations define several of the
+    # same triggers.
+    sql = re.sub(
+        r'(?i)\bCREATE TRIGGER\s+(\w+)([\s\S]*?\bON\s+([\w.]+))',
+        lambda m: 'DROP TRIGGER IF EXISTS %s ON %s;\nCREATE TRIGGER %s%s'
+                  % (m.group(1), m.group(3), m.group(1), m.group(2)),
+        sql)
+    # Seed rows would duplicate on a second run, so top-level INSERTs get an
+    # ON CONFLICT DO NOTHING.
+    #
+    # ⚠️ Only OUTSIDE function bodies. An INSERT inside a `$$ ... $$` body is
+    # program logic, not seed data: appending the clause there produced
+    # `... ON CONFLICT DO NOTHING;\n end if;` — a syntax error — and would in
+    # any case silently swallow writes the app depends on. Split the file on
+    # dollar-quoted blocks and rewrite only the parts between them.
+    def add_on_conflict(chunk: str) -> str:
+        # Skip an INSERT that already states its own conflict behaviour.
+        return re.sub(
+            r'(?i)\bINSERT INTO\s+([\w."]+)((?:[^;\'"]|\'[^\']*\'|"[^"]*")*);',
+            lambda m: m.group(0)
+            if re.search(r'(?i)\bON\s+CONFLICT\b', m.group(2))
+            else f'INSERT INTO {m.group(1)}{m.group(2)}\n  ON CONFLICT DO NOTHING;',
+            chunk)
+
+    # Walk the dollar-quoted blocks rather than re.split: split() also returns
+    # every INNER capture group as its own piece, so the tag of `$fn$ ... $fn$`
+    # came back as a bare "fn" that was then re-joined into the output,
+    # producing `$fn$fn;` — a syntax error.
+    out = []
+    pos = 0
+    for m in re.finditer(r'\$(\w*)\$[\s\S]*?\$\1\$', sql):
+        out.append(add_on_conflict(sql[pos:m.start()]))
+        out.append(m.group(0))  # function body: left exactly as written
+        pos = m.end()
+    out.append(add_on_conflict(sql[pos:]))
+    sql = ''.join(out)
 
     # The base schema's 20 policies have no DROP before them, so a second run
     # would fail on "policy already exists". Emit the drop the migrations all
@@ -88,16 +130,66 @@ if os.path.exists(base):
         '--  BASE SCHEMA (supabase/schema.sql)\n'
         '-- ' + '=' * 74 + '\n\n' + make_rerunnable(body) + '\n')
 
-names = sorted(f for f in os.listdir(MIG) if f.endswith('.sql'))
+# Same-day migrations sort by FILENAME, which is not the order they were
+# applied in. Alphabetically `20260611_taxes_and_delivery` comes before
+# `20260611_tender_sale_items`, but the first ALTERs the table the second
+# CREATEs — so a from-scratch build died on
+# `relation "public.tender_sale_items" does not exist`.
+#
+# Rather than rename files (which would break anyone tracking what has already
+# been applied), pin the few that must come earlier than their name implies.
+# Anything not listed keeps its alphabetical position.
+EARLY = {
+    # creates tender_sale_items, which its same-day siblings then ALTER
+    '20260611_tender_sale_items.sql': '20260611_a_tender_sale_items.sql',
+    # adds destruction_items.package_item_id, which the same-day
+    # `autofill_package_item` migration reads
+    '20260625_destruction_per_di_item.sql':
+        '20260625_a_destruction_per_di_item.sql',
+}
+
+
+def sort_key(name: str) -> str:
+    return EARLY.get(name, name)
+
+
+names = sorted((f for f in os.listdir(MIG) if f.endswith('.sql')), key=sort_key)
+
+# The multi-yard migration lives OUTSIDE supabase/migrations (in migrations/)
+# and the README says to run it afterwards. That order works on a database that
+# already has data, but not on a fresh build: `20260620_seed_data.sql` inserts
+# rows carrying a `yard` value, and the column does not exist until multi-yard
+# has run. Fold it in ahead of the migrations that depend on it.
+MULTI_YARD = os.path.join(ROOT, 'migrations', '001_multi_yard.sql')
+YARD_ISOLATION = os.path.join(ROOT, 'migrations', '002_strict_yard_isolation.sql')
+def emit(label: str, body: str) -> None:
+    parts.append(
+        '\n-- ' + '=' * 74 + '\n'
+        f'--  {label}\n'
+        '-- ' + '=' * 74 + '\n\n' + make_rerunnable(body) + '\n')
+
+
+# Inserted before the first migration that needs `yard` to exist.
+_yard_done = False
 for name in names:
+    if not _yard_done and name >= '20260620_seed_data.sql':
+        if os.path.exists(MULTI_YARD):
+            emit('migrations/001_multi_yard.sql (folded in — adds the yard '
+                 'column the seed data below writes to)',
+                 io.open(MULTI_YARD, encoding='utf-8').read())
+        _yard_done = True
+
     body = io.open(os.path.join(MIG, name), encoding='utf-8').read()
     # Migrations are already guarded, with a handful of exceptions that would
     # fail on a second run; guard_policy skips any that already have a DROP.
-    body = make_rerunnable(body)
-    parts.append(
-        '\n-- ' + '=' * 74 + '\n'
-        f'--  {name}\n'
-        '-- ' + '=' * 74 + '\n\n' + body + '\n')
+    emit(name, body)
+
+# Strict per-yard RLS goes LAST: it locks every table down to the caller's own
+# yard, so anything that runs after it would be filtered by policies rather
+# than seeing the whole table.
+if os.path.exists(YARD_ISOLATION):
+    emit('migrations/002_strict_yard_isolation.sql (folded in)',
+         io.open(YARD_ISOLATION, encoding='utf-8').read())
 
 parts[0] = HEADER.format(n=len(names))
 

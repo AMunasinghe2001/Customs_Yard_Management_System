@@ -4,36 +4,78 @@ import 'dart:io' show SocketException;
 import 'package:flutter/foundation.dart';
 import 'package:postgres/postgres.dart';
 
+import '../app_env.dart';
+
 /// Where the office server's PostgreSQL lives.
 ///
-/// Everything here is a compile-time default that a deployment can override
-/// with `--dart-define`, so one build runs against any office without a code
-/// change:
+/// Each setting is resolved at START-UP, in this order:
+///
+///   1. `--dart-define=PG_HOST=...` — a build-time override always wins, so
+///      any existing deployment that passes one behaves exactly as before.
+///   2. `PG_HOST=...` in a `.env` beside the executable (or the project root
+///      when running from source). Editing that file and restarting is enough
+///      to point the app at another server — no rebuild.
+///   3. The compiled-in default below.
+///
+/// ⚠️ A `.env` on a desktop app is NOT a secret store — it ships to the user's
+/// machine and can be read in Notepad. Its real value is keeping the password
+/// out of the source tree and out of git. See [AppEnv].
 ///
 ///     flutter run --dart-define=PG_HOST=192.168.1.50 --dart-define=PG_PASSWORD=...
 class PgConfig {
+  // ── The raw --dart-define values ──────────────────────────────────────────
+  //  These must be `const` initialisers: String.fromEnvironment is only folded
+  //  by the compiler, so it cannot be called with a runtime key. They are read
+  //  here and handed to AppEnv, which applies the precedence above.
+  static const String _hostDefine = String.fromEnvironment('PG_HOST');
+  static const int _portDefine = int.fromEnvironment('PG_PORT', defaultValue: -1);
+  static const String _databaseDefine = String.fromEnvironment('PG_DATABASE');
+  static const String _userDefine = String.fromEnvironment('PG_USER');
+  static const String _passwordDefine = String.fromEnvironment('PG_PASSWORD');
+  static const bool _sslDefine = bool.fromEnvironment('PG_SSL');
+  static const bool _sslVerifyDefine = bool.fromEnvironment('PG_SSL_VERIFY');
+  static const int _connectTimeoutDefine =
+      int.fromEnvironment('PG_CONNECT_TIMEOUT', defaultValue: -1);
+  static const int _queryTimeoutDefine =
+      int.fromEnvironment('PG_QUERY_TIMEOUT', defaultValue: -1);
+
   /// The server PC on the office LAN. `localhost` suits running the app on the
   /// same machine as the database.
-  static const String host =
-      String.fromEnvironment('PG_HOST', defaultValue: 'localhost');
+  static String get host => AppEnv.read('PG_HOST',
+      dartDefine: _hostDefine, fallback: 'localhost');
 
-  static const int port =
-      int.fromEnvironment('PG_PORT', defaultValue: 5432);
+  static int get port => AppEnv.readInt('PG_PORT',
+      dartDefine: _portDefine, fallback: 5432, dartDefineSentinel: -1);
 
   /// Created in pgAdmin 4 as `Customs_SR_DB`.
-  static const String database =
-      String.fromEnvironment('PG_DATABASE', defaultValue: 'Customs_SR_DB');
+  static String get database => AppEnv.read('PG_DATABASE',
+      dartDefine: _databaseDefine, fallback: 'Customs_SR_DB');
 
-  static const String username =
-      String.fromEnvironment('PG_USER', defaultValue: 'postgres');
+  static String get username => AppEnv.read('PG_USER',
+      dartDefine: _userDefine, fallback: 'postgres');
 
-  static const String password =
-      String.fromEnvironment('PG_PASSWORD', defaultValue: 'postgres');
+  static String get password => AppEnv.read('PG_PASSWORD',
+      dartDefine: _passwordDefine, fallback: 'postgres');
 
   /// A LAN server usually has no TLS certificate, so the default is a plain
   /// connection. Set `PG_SSL=true` where the server does offer TLS.
-  static const bool useSsl =
-      bool.fromEnvironment('PG_SSL', defaultValue: false);
+  static bool get useSsl =>
+      AppEnv.readBool('PG_SSL', dartDefine: _sslDefine, fallback: false);
+
+  /// Whether to VERIFY the server's certificate, not merely encrypt.
+  ///
+  /// ⚠️ This matters the moment the database stops being on the office LAN.
+  /// `SslMode.require` encrypts but accepts **any** certificate, so anything
+  /// sitting between the app and a cloud database (AWS RDS, another office)
+  /// can present its own certificate and read every query in clear — a
+  /// man-in-the-middle, despite the traffic "being TLS".
+  ///
+  /// On a LAN with a self-signed certificate that is usually an acceptable
+  /// trade. Over the public internet, carrying seizure records and officer
+  /// credentials, it is not: set `PG_SSL_VERIFY=true` there. It is not the
+  /// default only because it would break existing self-signed LAN installs.
+  static bool get verifySsl => AppEnv.readBool('PG_SSL_VERIFY',
+      dartDefine: _sslVerifyDefine, fallback: false);
 
   static Endpoint get endpoint => Endpoint(
         host: host,
@@ -43,16 +85,41 @@ class PgConfig {
         password: password,
       );
 
+  static SslMode get sslMode {
+    if (!useSsl) return SslMode.disable;
+    return verifySsl ? SslMode.verifyFull : SslMode.require;
+  }
+
   static ConnectionSettings get settings => ConnectionSettings(
-        sslMode: useSsl ? SslMode.require : SslMode.disable,
+        sslMode: sslMode,
         // The app is long-running and mostly idle between actions; without a
         // timeout a dropped LAN link would hang the first query after it.
-        connectTimeout: const Duration(seconds: 10),
-        queryTimeout: const Duration(seconds: 60),
+        //
+        // A cloud database is several hundred ms away rather than one hop, and
+        // a laptop on mobile data is slower still, so the connect timeout is
+        // overridable — 10s is right for a LAN and tight for the internet.
+        connectTimeout: Duration(seconds: connectTimeoutSeconds),
+        queryTimeout: Duration(seconds: queryTimeoutSeconds),
       );
 
+  static int get connectTimeoutSeconds => AppEnv.readInt('PG_CONNECT_TIMEOUT',
+      dartDefine: _connectTimeoutDefine, fallback: 10, dartDefineSentinel: -1);
+
+  static int get queryTimeoutSeconds => AppEnv.readInt('PG_QUERY_TIMEOUT',
+      dartDefine: _queryTimeoutDefine, fallback: 60, dartDefineSentinel: -1);
+
   /// Human-readable target, for error messages and the connection banner.
-  static String get describe => '$username@$host:$port/$database';
+  ///
+  /// Names the TLS state too: "no TLS" against a remote host is the single
+  /// most important thing to notice on the connection-failure screen.
+  static String get describe {
+    final tls = !useSsl
+        ? 'no TLS'
+        : verifySsl
+            ? 'TLS, verified'
+            : 'TLS, unverified';
+    return '$username@$host:$port/$database ($tls)';
+  }
 }
 
 /// The app's single PostgreSQL connection.

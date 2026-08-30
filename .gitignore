@@ -35,9 +35,11 @@ run_flutter.ps1
 *.bak
 *.orig
 
-# Environment files
+# Environment files — real credentials, never committed.
 .env
 .env.*
+# …except the template, which carries no secrets and documents every key.
+!.env.example
 
 # Flutter/Dart/Pub related
 **/doc/api/

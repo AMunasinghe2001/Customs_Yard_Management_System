@@ -50,6 +50,13 @@ void main() {
           column: 'inspected_by',
           target: 'profiles',
           targetColumn: 'id'),
+      // audit_logs -> profiles, for the embed-filter tests below.
+      PgForeignKey(
+          constraint: 'audit_logs_user_id_fkey',
+          table: 'audit_logs',
+          column: 'user_id',
+          target: 'profiles',
+          targetColumn: 'id'),
     ]);
   });
 
@@ -257,6 +264,113 @@ void main() {
       expect(sql, isNot(contains('"admitted_by"')));
       // packages -> profiles is the inspected_by key, the only one there.
       expect(sql, contains('"inspected_by"'));
+    });
+  });
+
+  group('filters on an embedded table', () {
+    // PostgREST let a filter name a column on an EMBED (`profiles.role`), and
+    // the app relies on it: AuditLogService.getAllLogs keeps only rows whose
+    // ACTOR is yard staff. The builder used to quote the whole thing as one
+    // identifier, emitting t."profiles.role" -> `column t.profiles.role does
+    // not exist`, which the dashboard reported to the user as
+    // "check your internet connection".
+    test('embed.column becomes a correlated EXISTS, not a bare column', () {
+      final sql = PgQuery('audit_logs')
+          .select('*, profiles!inner(full_name, role)')
+          .inFilter('profiles.role', ['admin', 'officer']).debugSql();
+
+      // The bug, stated directly.
+      expect(sql, isNot(contains('"profiles.role"')),
+          reason: 'the embed filter was quoted as a single identifier');
+
+      expect(sql, contains('exists (select 1 from "profiles"'));
+      // Correlated back to the parent row through the foreign key.
+      expect(sql, contains('"user_id"'));
+      expect(sql, contains('"role" = any('));
+    });
+
+    test('an ordinary column filter is untouched', () {
+      final sql = PgQuery('audit_logs')
+          .select('*')
+          .eq('yard', 'GL1')
+          .debugSql();
+      expect(sql, isNot(contains('exists (select 1')));
+      expect(sql, contains('"yard" ='));
+    });
+
+    test('a dotted name that is NOT an embed stays a plain column', () {
+      // Nothing named `foo` is embedded here, so this must not be rewritten
+      // into an EXISTS against a table that does not exist.
+      final sql =
+          PgQuery('audit_logs').select('*').eq('foo.bar', 1).debugSql();
+      expect(sql, isNot(contains('exists (select 1')));
+      expect(sql, contains('"foo.bar"'));
+    });
+
+    test('every filter operator gets wrapped, not just `in`', () {
+      final eq = PgQuery('audit_logs')
+          .select('*, profiles(role)')
+          .eq('profiles.role', 'admin')
+          .debugSql();
+      expect(eq, contains('exists (select 1 from "profiles"'));
+
+      final isNull = PgQuery('audit_logs')
+          .select('*, profiles(role)')
+          .is_('profiles.role', null)
+          .debugSql();
+      expect(isNull, contains('exists (select 1 from "profiles"'));
+      expect(isNull, contains('is null'));
+    });
+  });
+
+  group('or() boolean groups', () {
+    // The appeal portal asks for "inside the window, OR undated and created
+    // inside the window". The parser used to split every term on '.', so the
+    // nested and(...) became the column `and(entry_date` and the query died
+    // with `syntax error at or near "$2"` — shown to the user as
+    // "Something went wrong".
+    test('a nested and(...) group is parsed, not split on dots', () {
+      final sql = PgQuery('packages')
+          .select('*')
+          .or('entry_date.gte.2026-01-01,'
+              'and(entry_date.is.null,created_at.gte.2026-01-01)')
+          .debugSql();
+
+      expect(sql, isNot(contains('and(entry_date')),
+          reason: 'the nested group was treated as a column name');
+      // Outer OR of a leaf and a parenthesised AND.
+      expect(sql, contains(' or '));
+      expect(sql, contains(' and '));
+      expect(sql, contains('"entry_date" is null'));
+      expect(sql, contains('"created_at" >='));
+    });
+
+    test('is.null becomes SQL syntax, not a bound parameter', () {
+      // `col is @p` does not parse, so `is` must inline its operand.
+      final sql =
+          PgQuery('packages').select('*').or('entry_date.is.null').debugSql();
+      expect(sql, contains('is null'));
+      expect(sql, isNot(matches(RegExp(r'is\s+@'))));
+    });
+
+    test('a flat or() still works', () {
+      final sql = PgQuery('packages')
+          .select('*')
+          .or('sr_number.ilike.%X%,consignee_name.ilike.%X%')
+          .debugSql();
+      expect(sql, contains(' or '));
+      expect(sql, contains('"sr_number"'));
+      expect(sql, contains('"consignee_name"'));
+    });
+
+    test('a nested or(...) inside an or() nests correctly', () {
+      final sql = PgQuery('packages')
+          .select('*')
+          .or('status.eq.held,or(status.eq.pending,status.eq.cleared)')
+          .debugSql();
+      expect(sql, isNot(contains('or(status')));
+      // Three comparisons in total.
+      expect('@'.allMatches(sql).length, greaterThanOrEqualTo(3));
     });
   });
 }

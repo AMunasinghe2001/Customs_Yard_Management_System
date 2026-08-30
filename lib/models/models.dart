@@ -1,6 +1,67 @@
 import 'dart:convert';
 import '../core/holidays.dart';
 
+/// Reads a timestamp column that may arrive as either a `DateTime` or a String.
+///
+/// ⚠️ This is the seam between the two database layers. Supabase returned JSON,
+/// so every timestamp arrived as an ISO **String** and the models cast it with
+/// `json['x'] as String`. The local PostgreSQL driver decodes `timestamptz`
+/// into a real **DateTime** — so that cast throws
+/// `type 'DateTime' is not a subtype of type 'String'`, and it throws at
+/// SIGN-IN, before any screen renders.
+///
+/// Returns local time, matching the `.toLocal()` the models always applied.
+DateTime? parseDbDate(Object? value) {
+  if (value == null) return null;
+  if (value is DateTime) return value.toLocal();
+  if (value is String) {
+    if (value.trim().isEmpty) return null;
+    return DateTime.tryParse(value)?.toLocal();
+  }
+  return null;
+}
+
+/// [parseDbDate] for a NOT NULL column, falling back to the epoch rather than
+/// throwing — a row that somehow lacks a created_at should still render.
+DateTime parseDbDateRequired(Object? value) =>
+    parseDbDate(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+
+/// Reads a numeric column that may arrive as a num OR a String.
+///
+/// ⚠️ The same seam as [parseDbDate]. Supabase serialised `numeric` to a JSON
+/// number, so the models cast `json['x'] as num?`. The PostgreSQL driver
+/// returns `numeric` as a **String** — deliberately, since a `numeric(12,2)`
+/// cannot always survive a round trip through a double — so that cast throws
+/// `type 'String' is not a subtype of type 'num?'`.
+///
+/// Money here is rupees to two decimals, well inside a double's exact range,
+/// so converting is safe. Returns null when the value is absent or unparseable
+/// rather than throwing, so one odd row cannot blank a whole screen.
+double? parseDbNum(Object? value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) {
+    final t = value.trim();
+    if (t.isEmpty) return null;
+    return double.tryParse(t);
+  }
+  return null;
+}
+
+/// [parseDbNum] for an integer column (`int4`, `int8`, and counts stored as
+/// `numeric`). Truncates toward zero, matching the old `as int?` behaviour.
+int? parseDbInt(Object? value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) {
+    final t = value.trim();
+    if (t.isEmpty) return null;
+    return int.tryParse(t) ?? double.tryParse(t)?.toInt();
+  }
+  return null;
+}
+
 class PackageModel {
   final String id;
   final String srNumber;
@@ -99,12 +160,12 @@ class PackageModel {
       oldSrNumber: json['old_sr_number'] as String?,
       caseNumber: json['case_number'] as String?,
       originCountry: json['origin_country'] as String? ?? '',
-      declaredValue: (json['declared_value'] as num?)?.toDouble() ?? 0,
-      weightKg: (json['weight_kg'] as num?)?.toDouble() ?? 0,
-      totalItemCount: json['total_item_count'] as int? ?? 1,
+      declaredValue: parseDbNum(json['declared_value']) ?? 0,
+      weightKg: parseDbNum(json['weight_kg']) ?? 0,
+      totalItemCount: parseDbInt(json['total_item_count']) ?? 1,
       description: json['description'] as String?,
       containerNumber: json['container_number'] as String?,
-      destroyingDeposit: (json['destroying_deposit'] as num?)?.toDouble(),
+      destroyingDeposit: parseDbNum(json['destroying_deposit']),
       consigneeName: json['consignee_name'] as String,
       consigneeNic: json['consignee_nic'] as String?,
       consigneeAddress: json['consignee_address'] as String?,
@@ -112,9 +173,7 @@ class PackageModel {
       declarantName: json['declarant_name'] as String?,
       cusdecNo: json['cusdec_no'] as String?,
       cusdecDate: json['cusdec_date'] as String?,
-      entryDate: json['entry_date'] != null
-          ? DateTime.parse(json['entry_date'] as String)
-          : null,
+      entryDate: parseDbDate(json['entry_date']),
       reason: json['reason'] as String?,
       status: json['status'] as String? ?? 'pending',
       inspectedBy: json['inspected_by'] as String?,
@@ -124,15 +183,11 @@ class PackageModel {
       inspectedByBadge: json['profiles'] != null
           ? json['profiles']['badge_number'] as String?
           : null,
-      inspectedAt: json['inspected_at'] != null
-          ? DateTime.parse(json['inspected_at'] as String)
-          : null,
-      clearedAt: json['cleared_at'] != null
-          ? DateTime.parse(json['cleared_at'] as String)
-          : null,
+      inspectedAt: parseDbDate(json['inspected_at']),
+      clearedAt: parseDbDate(json['cleared_at']),
       notes: json['notes'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
+      updatedAt: parseDbDateRequired(json['updated_at']),
       items: (json['package_items'] as List<dynamic>?)
               ?.map((e) => PackageItem.fromJson(e as Map<String, dynamic>))
               .toList() ??
@@ -351,12 +406,12 @@ class PackageItem {
       packageId: json['package_id'] as String,
       itemName: json['item_name'] as String,
       goodsDescription: json['goods_description'] as String?,
-      quantity: json['quantity'] as int,
+      quantity: (parseDbInt(json['quantity']) ?? 0),
       unitOfMeasure: json['unit_of_measure'] as String? ?? 'Pieces',
       unitOther: json['unit_other'] as String?,
       innerUnit: json['inner_unit'] as String?,
-      innerQuantity: json['inner_quantity'] as int?,
-      unitValue: (json['unit_value'] as num?)?.toDouble() ?? 0,
+      innerQuantity: parseDbInt(json['inner_quantity']),
+      unitValue: parseDbNum(json['unit_value']) ?? 0,
       hsCode: json['hs_code'] as String?,
       category: json['category'] as String?,
       isProhibited: json['is_prohibited'] as bool? ?? false,
@@ -515,26 +570,24 @@ class WarehouseEntryModel {
       warehouseCode: warehouse?['code'] as String? ?? '',
       zone: json['zone'] as String?,
       holdReason: json['hold_reason'] as String,
-      itemCount: json['item_count'] as int,
+      itemCount: (parseDbInt(json['item_count']) ?? 0),
       admittedBy: json['admitted_by'] as String?,
       admittedByName: (json['admitted_profile']
           as Map<String, dynamic>?)?['full_name'] as String?,
       admittedByBadge: (json['admitted_profile']
           as Map<String, dynamic>?)?['badge_number'] as String?,
-      admittedAt: DateTime.parse(json['admitted_at'] as String),
+      admittedAt: parseDbDateRequired(json['admitted_at']),
       isReturned: json['is_returned'] as bool? ?? false,
-      returnedAt: json['returned_at'] != null
-          ? DateTime.parse(json['returned_at'] as String)
-          : null,
+      returnedAt: parseDbDate(json['returned_at']),
       returnedBy: json['returned_by'] as String?,
       returnedByName: (json['returned_profile']
           as Map<String, dynamic>?)?['full_name'] as String?,
       returnedByBadge: (json['returned_profile']
           as Map<String, dynamic>?)?['badge_number'] as String?,
       returnNotes: json['return_notes'] as String?,
-      dailyRate: (json['daily_rate'] as num?)?.toDouble() ?? 0,
+      dailyRate: parseDbNum(json['daily_rate']) ?? 0,
       accumulatedCharge:
-          (json['accumulated_storage_charge'] as num?)?.toDouble() ?? 0,
+          parseDbNum(json['accumulated_storage_charge']) ?? 0,
       srNumber: package?['sr_number'] as String?,
       consigneeName: package?['consignee_name'] as String?,
       packageStatus: package?['status'] as String?,
@@ -660,7 +713,7 @@ class WarehouseZoneModel {
         name: (json['name'] ?? '').toString(),
         code: json['code'] as String?,
         description: json['description'] as String?,
-        capacity: (json['capacity'] as num?)?.toInt() ?? 500,
+        capacity: parseDbInt(json['capacity']) ?? 500,
       );
 
   Map<String, dynamic> toJson() => {
@@ -718,7 +771,7 @@ class WarehouseModel {
       code: json['code'] as String,
       description: json['description'] as String?,
       location: json['location'] as String?,
-      capacity: json['capacity'] as int? ?? 500,
+      capacity: parseDbInt(json['capacity']) ?? 500,
     );
   }
 }
@@ -778,13 +831,9 @@ class ProfileModel {
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
       isOnline: json['is_online'] as bool? ?? false,
-      lastSeenAt: json['last_seen_at'] != null
-          ? DateTime.parse(json['last_seen_at'] as String).toLocal()
-          : null,
-      createdAt: DateTime.parse(json['created_at'] as String).toLocal(),
-      passwordUpdatedAt: json['password_updated_at'] != null
-          ? DateTime.parse(json['password_updated_at'] as String).toLocal()
-          : null,
+      lastSeenAt: parseDbDate(json['last_seen_at']),
+      createdAt: parseDbDateRequired(json['created_at']),
+      passwordUpdatedAt: parseDbDate(json['password_updated_at']),
     );
   }
 
@@ -921,7 +970,7 @@ class AuditLogModel {
       entityType: json['entity_type'] as String,
       entityId: json['entity_id'] as String,
       details: json['details'] as Map<String, dynamic>?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
       userFullName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -988,7 +1037,7 @@ class FinancialExpenseModel {
       FinancialExpenseModel(
         id: j['id'].toString(),
         kind: (j['kind'] ?? '').toString(),
-        amount: (j['amount'] as num?)?.toDouble() ?? 0,
+        amount: parseDbNum(j['amount']) ?? 0,
         description: j['description'] as String?,
         yard: j['yard'] as String?,
         srNumber: j['sr_number'] as String?,
@@ -1461,24 +1510,20 @@ class ForfeitedPackageModel {
       packageId: json['package_id'] as String,
       srNumber: json['sr_number'] as String,
       consigneeName: json['consignee_name'] as String,
-      forfeitedAt: DateTime.parse(json['forfeited_at'] as String),
-      appealDeadline: DateTime.parse(json['appeal_deadline'] as String),
+      forfeitedAt: parseDbDateRequired(json['forfeited_at']),
+      appealDeadline: parseDbDateRequired(json['appeal_deadline']),
       reason: json['reason'] as String? ?? '',
       yard: json['yard'] as String?,
       source: json['source'] as String? ?? 'forfeit',
       appealHold: json['appeal_hold'] as bool? ?? false,
       appealHoldNote: json['appeal_hold_note'] as String?,
-      appealHeldAt: json['appeal_held_at'] != null
-          ? DateTime.parse(json['appeal_held_at'] as String).toLocal()
-          : null,
+      appealHeldAt: parseDbDate(json['appeal_held_at']),
       heldItemIds:
           (json['held_item_ids'] as List?)?.map((e) => e.toString()).toList() ??
               const [],
       appealDecision: json['appeal_decision'] as String?,
       appealDecisionNote: json['appeal_decision_note'] as String?,
-      appealDecidedAt: json['appeal_decided_at'] != null
-          ? DateTime.parse(json['appeal_decided_at'] as String).toLocal()
-          : null,
+      appealDecidedAt: parseDbDate(json['appeal_decided_at']),
       itemAppealDecisions:
           (json['item_appeal_decisions'] as Map?)?.cast<String, dynamic>() ??
               const {},
@@ -1489,19 +1534,19 @@ class ForfeitedPackageModel {
       // package-level forfeits). Lets request rows show exactly their item.
       itemId: json['item_id'] as String?,
       // Exact abandoned qty for per-entry abandoned rows (null otherwise).
-      entryQty: json['entry_qty'] as int?,
+      entryQty: parseDbInt(json['entry_qty']),
       // valuation_cost lives on disposal_request_items, not forfeited_packages.
       // When this model is hydrated from a nested join (getTenderSales /
       // getDestructions), the disposal_request_items list is included; pick the
       // first non-null cost from it. Fall back to the direct column in case the
       // column is ever added to the table in future.
       valuationCost: (() {
-        final direct = (json['valuation_cost'] as num?)?.toDouble();
+        final direct = parseDbNum(json['valuation_cost']);
         if (direct != null) return direct;
         final items = json['disposal_request_items'] as List?;
         if (items == null) return null;
         for (final row in items) {
-          final cost = (row['valuation_cost'] as num?)?.toDouble();
+          final cost = parseDbNum(row['valuation_cost']);
           if (cost != null) return cost;
         }
         return null;
@@ -1553,13 +1598,13 @@ class TenderModel {
     return TenderModel(
       id: json['id'] as String,
       tenderNumber: json['tender_number'] as String,
-      tenderDate: DateTime.parse(json['tender_date'] as String),
+      tenderDate: parseDbDateRequired(json['tender_date']),
       saleDate: json['sale_date'] != null
           ? DateTime.tryParse(json['sale_date'].toString())
           : null,
       saleTime: json['sale_time'] as String?,
       forfeitedPackageIds: ids,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -1607,8 +1652,8 @@ class TenderBidModel {
         id: json['id'] as String,
         forfeitedPackageId: json['forfeited_package_id'] as String,
         tenderSaleId: json['tender_sale_id'] as String?,
-        amount: (json['amount'] as num).toDouble(),
-        createdAt: DateTime.parse(json['created_at'] as String),
+        amount: (parseDbNum(json['amount']) ?? 0),
+        createdAt: parseDbDateRequired(json['created_at']),
       );
 }
 
@@ -1655,9 +1700,9 @@ class TenderRevaluationModel {
         id: json['id'] as String,
         forfeitedPackageId: json['forfeited_package_id'] as String,
         tenderSaleId: json['tender_sale_id'] as String?,
-        valuationCost: (json['valuation_cost'] as num).toDouble(),
+        valuationCost: (parseDbNum(json['valuation_cost']) ?? 0),
         note: json['note'] as String?,
-        createdAt: DateTime.parse(json['created_at'] as String),
+        createdAt: parseDbDateRequired(json['created_at']),
       );
 }
 
@@ -1692,7 +1737,7 @@ class UnsoldProposalModel {
         proposal: json['proposal'] as String,
         note: json['note'] as String?,
         yard: json['yard'] as String?,
-        decidedAt: DateTime.parse(json['decided_at'].toString()),
+        decidedAt: parseDbDateRequired(json['decided_at']),
       );
 }
 
@@ -1799,13 +1844,13 @@ class TenderCommitteeModel {
             .where((m) => m.name.isNotEmpty)
             .toList(),
         note: json['note'] as String?,
-        createdAt: DateTime.parse(json['created_at'] as String),
-        committeeValue: (json['committee_value'] as num?)?.toDouble(),
+        createdAt: parseDbDateRequired(json['created_at']),
+        committeeValue: parseDbNum(json['committee_value']),
         committeeValuedAt: json['committee_valued_at'] != null
             ? DateTime.tryParse(json['committee_valued_at'].toString())
             : null,
         committeeNote: json['committee_note'] as String?,
-        submittedValue: (json['submitted_value'] as num?)?.toDouble(),
+        submittedValue: parseDbNum(json['submitted_value']),
         submittedAt: json['submitted_at'] != null
             ? DateTime.tryParse(json['submitted_at'].toString())
             : null,
@@ -1843,7 +1888,7 @@ class TenderDisposalModel {
       disposalType: json['disposal_type'] as String,
       receiptNumber: json['receipt_number'] as String?,
       otherDetails: json['other_details'] as String?,
-      disposedAt: DateTime.parse(json['disposed_at'] as String),
+      disposedAt: parseDbDateRequired(json['disposed_at']),
       disposedByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -1938,7 +1983,7 @@ class DirectorateModel {
         code: json['code'] as String,
         name: json['name'] as String,
         srPrefix: json['sr_prefix'] as String,
-        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 100,
+        sortOrder: parseDbInt(json['sort_order']) ?? 100,
         isActive: json['is_active'] as bool? ?? true,
       );
 }
@@ -1963,7 +2008,7 @@ class YardModel {
         code: json['code'] as String,
         name: json['name'] as String,
         srPrefix: json['sr_prefix'] as String,
-        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 100,
+        sortOrder: parseDbInt(json['sort_order']) ?? 100,
         isActive: json['is_active'] as bool? ?? true,
       );
 }
@@ -2052,7 +2097,7 @@ class TenderSaleItemModel {
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)
           : null,
-      soldPrice: (json['sold_price'] as num?)?.toDouble() ?? 0.0,
+      soldPrice: parseDbNum(json['sold_price']) ?? 0.0,
       appliedTaxes: json['applied_taxes'] as List<dynamic>? ?? const [],
       isDelivered: json['is_delivered'] as bool? ?? false,
       deliveredAt: json['delivered_at'] != null
@@ -2161,11 +2206,11 @@ class TenderSaleModel {
           ? DateTime.tryParse(json['sale_date'].toString())
           : null,
       serial: json['serial'] as String?,
-      year: (json['year'] as num?)?.toInt(),
+      year: parseDbInt(json['year']),
       tenderType: json['tender_type'] as String?,
       yard: json['yard'] as String?,
       saleTime: json['sale_time'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
       items: itemsJson
@@ -2239,7 +2284,7 @@ class DestructionItemModel {
           ? DateTime.tryParse(json['delivered_at'].toString())
           : null,
       notes: json['notes'] as String?,
-      destroyedPrice: (json['destroyed_price'] as num?)?.toDouble() ?? 0,
+      destroyedPrice: parseDbNum(json['destroyed_price']) ?? 0,
       appliedTaxes: (json['applied_taxes'] as List?) ?? const [],
       receiptNumber: json['receipt_number'] as String?,
       forfeited: json['forfeited_packages'] != null
@@ -2328,11 +2373,11 @@ class DestructionModel {
           ? DateTime.tryParse(json['sale_date'].toString())
           : null,
       serial: json['serial']?.toString(),
-      year: (json['year'] as num?)?.toInt(),
+      year: parseDbInt(json['year']),
       tenderType: json['tender_type'] as String?,
       yard: json['yard'] as String?,
       saleTime: json['sale_time'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
       items: itemsJson
@@ -2449,7 +2494,7 @@ class DisposalRequestItemModel {
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)
           : null,
-      valuationCost: (json['valuation_cost'] as num?)?.toDouble(),
+      valuationCost: parseDbNum(json['valuation_cost']),
       forwarded: json['forwarded'] as bool? ?? false,
     );
   }
@@ -2499,16 +2544,14 @@ class DisposalRequestModel {
     return DisposalRequestModel(
       id: json['id'] as String,
       yard: json['yard'] as String? ?? '',
-      requestDate: DateTime.parse(json['request_date'].toString()),
+      requestDate: parseDbDateRequired(json['request_date']),
       status: json['status'] as String? ?? 'pending',
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
       items: items,
       valuationStatus: json['valuation_status'] as String? ?? 'forwarded',
-      valuedAt: json['valued_at'] != null
-          ? DateTime.parse(json['valued_at'] as String)
-          : null,
+      valuedAt: parseDbDate(json['valued_at']),
       valuedByName: (json['valued_profile']
           as Map<String, dynamic>?)?['full_name'] as String?,
     );
@@ -2543,7 +2586,7 @@ class PackageCategory {
       targetWarehouseName:
           (json['warehouses'] as Map<String, dynamic>?)?['name'] as String?,
       targetZone: json['target_zone'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt: parseDbDateRequired(json['created_at']),
     );
   }
 }
@@ -2567,9 +2610,9 @@ class DisposalTaxModel {
     return DisposalTaxModel(
       id: json['id'] as String,
       name: json['name'] as String,
-      percentage: (json['percentage'] as num).toDouble(),
+      percentage: (parseDbNum(json['percentage']) ?? 0),
       isActive: json['is_active'] as bool? ?? true,
-      createdAt: DateTime.parse(json['created_at'].toString()),
+      createdAt: parseDbDateRequired(json['created_at']),
     );
   }
 

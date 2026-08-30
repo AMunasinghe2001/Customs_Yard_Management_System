@@ -127,7 +127,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
               ).animate().fadeIn(),
               const Gap(20),
 
-              // â”€â”€ Unified Search & Filter Bar â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Unified Search & Filter Bar ──────────────────────
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -492,9 +492,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                             color:
                                                 context.colors.accentLightBlue,
                                             fontWeight: FontWeight.w600))),
-                                DataCell(TooltipText(p.cusdecNo ?? 'â€”',
+                                DataCell(TooltipText(p.cusdecNo ?? '—',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(TooltipText(p.cusdecDate ?? 'â€”',
+                                DataCell(TooltipText(p.cusdecDate ?? '—',
                                   overflow: TextOverflow.ellipsis)),
                                 DataCell(TooltipText(p.entryDate != null
                                     ? DateFormat('yyyy-MM-dd')
@@ -503,9 +503,9 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                                         .format(p.createdAt))),
                                 DataCell(TooltipText(p.consigneeName,
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(TooltipText(p.declarantName ?? 'â€”',
+                                DataCell(TooltipText(p.declarantName ?? '—',
                                   overflow: TextOverflow.ellipsis)),
-                                DataCell(TooltipText(p.consigneePhone ?? 'â€”',
+                                DataCell(TooltipText(p.consigneePhone ?? '—',
                                   overflow: TextOverflow.ellipsis)),
                                     DataCell(Center(
                                         child: IconButton(
@@ -582,7 +582,7 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
   }
 }
 
-// â”€â”€ SR Search Result Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── SR Search Result Card ──────────────────────────────────────
 
 class _SrResultCard extends ConsumerWidget {
   final PackageModel package;
@@ -756,7 +756,7 @@ class _SrResultCard extends ConsumerWidget {
   }
 }
 
-// â”€â”€ Warehouse Pill (for table) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Warehouse Pill (for table) ──────────────────────────────────
 
 class _WarehousePill extends StatelessWidget {
   final List<WarehouseEntryModel> warehouseEntries;
@@ -779,7 +779,7 @@ class _WarehousePill extends StatelessWidget {
   Widget build(BuildContext context) {
     final active = warehouseEntries.where((e) => !e.isReturned).toList();
     if (active.isEmpty)
-      return Text('â€”', style: TextStyle(color: context.colors.textMuted));
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
     return Wrap(
         spacing: 4,
         children: active

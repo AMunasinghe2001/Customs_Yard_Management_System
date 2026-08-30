@@ -528,7 +528,12 @@ class PackageService {
           query.or('sr_number.ilike.%$search%,consignee_name.ilike.%$search%');
     }
     final data = await query.order('created_at', ascending: false);
-    return data.map((e) => PackageModel.fromJson(e)).toList();
+    // Typed explicitly: `data` is dynamic, so a bare .map().toList() infers
+    // List<dynamic> and throws on return. Supabase's builder carried a static
+    // type that made the inference work; the local one does not.
+    return [
+      for (final e in (data as List)) PackageModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   /// Server-side paged fetch for the Package History page so it opens fast even
@@ -822,9 +827,7 @@ class PackageService {
           srNumber: pkgData['sr_number'] as String,
           consigneeName: pkgData['consignee_name'] as String,
           reason: pkgData['reason'] as String? ?? 'Status updated to forfeited',
-          entryDate: pkgData['entry_date'] != null
-              ? DateTime.tryParse(pkgData['entry_date'] as String)
-              : null,
+          entryDate: parseDbDate(pkgData['entry_date']),
         );
       }
     } else {
@@ -898,7 +901,7 @@ class PackageService {
         .limit(1);
 
     final storageRate = latestRate.isNotEmpty
-        ? (latestRate.first['rate'] as num).toDouble()
+        ? (parseDbNum(latestRate.first['rate']) ?? 0)
         : 0.0;
 
     return {
@@ -916,7 +919,10 @@ class PackageService {
 class WarehouseService {
   Future<List<WarehouseModel>> getWarehouses() async {
     final data = await supabase.from('warehouses').select().order('code');
-    return data.map((e) => WarehouseModel.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        WarehouseModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   /// The warehouse ids a given yard actually holds goods in.
@@ -1002,7 +1008,7 @@ class WarehouseService {
       if (z.isEmpty || z == 'n/a') continue;
       final key = '${row['warehouse_id']}|$z';
       used[key] =
-          (used[key] ?? 0) + ((row['item_count'] as num?)?.toInt() ?? 0);
+          (used[key] ?? 0) + (parseDbInt(row['item_count']) ?? 0);
     }
 
     return {
@@ -1023,7 +1029,10 @@ class WarehouseService {
         .eq('warehouse_id', warehouseId);
     if (isReturned != null) query = query.eq('is_returned', isReturned);
     final data = await query.order('admitted_at', ascending: false);
-    return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        WarehouseEntryModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   Future<List<WarehouseEntryModel>> getAllWarehouseEntries(
@@ -1034,7 +1043,10 @@ class WarehouseService {
     // Executive-Office reports scope by yard; officers rely on RLS.
     if (yard != null) query = query.eq('yard', yard);
     final data = await query.order('admitted_at', ascending: false);
-    return data.map((e) => WarehouseEntryModel.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        WarehouseEntryModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   Future<void> addEntry({
@@ -1106,7 +1118,7 @@ class WarehouseService {
           .single();
 
       final itemId = entryRes['package_item_id'] as String?;
-      int currentTotal = entryRes['item_count'] as int;
+      int currentTotal = parseDbInt(entryRes['item_count']) ?? 0;
 
       // AUTO-REPAIR OLD DATA (where item_count was saved as 1 due to bug)
       if (itemId != null &&
@@ -1117,7 +1129,7 @@ class WarehouseService {
             .select('quantity')
             .eq('id', itemId)
             .single();
-        int trueQty = itemRes['quantity'] as int;
+        int trueQty = parseDbInt(itemRes['quantity']) ?? 0;
         if (trueQty > 1) {
           // Find if there are already returned entries
           final returnedRes = await supabase
@@ -1126,7 +1138,7 @@ class WarehouseService {
               .eq('package_item_id', itemId)
               .eq('is_returned', true);
           int returnedSum = (returnedRes as List)
-              .fold(0, (sum, e) => sum + (e['item_count'] as int));
+              .fold(0, (sum, e) => sum + (parseDbInt(e['item_count']) ?? 0));
           if (returnedSum < trueQty) {
             currentTotal = trueQty - returnedSum;
             await supabase
@@ -1233,7 +1245,7 @@ class WarehouseService {
         .single();
 
     final itemId = entryRes['package_item_id'] as String?;
-    final currentTotal = entryRes['item_count'] as int;
+    final currentTotal = parseDbInt(entryRes['item_count']) ?? 0;
     final disposeQty =
         (qty != null && qty > 0 && qty < currentTotal) ? qty : currentTotal;
     // Record the specific package numbers chosen so they (not just a count)
@@ -1319,10 +1331,7 @@ class WarehouseService {
                 : (pkgRow['reason'] as String? ?? 'Forfeited via disposition'),
             // The officer-chosen Forfeit Date wins; fall back to the SR Entry
             // Date. Both forfeited_at and the 30-day appeal deadline anchor here.
-            entryDate: forfeitDate ??
-                (pkgRow['entry_date'] != null
-                    ? DateTime.tryParse(pkgRow['entry_date'] as String)
-                    : null),
+            entryDate: forfeitDate ?? parseDbDate(pkgRow['entry_date']),
           );
         }
       }
@@ -1506,7 +1515,7 @@ class WarehouseService {
 
       if (activeEntries.isEmpty) {
         // e.g. pending or confiscated without a warehouse entry
-        itemActiveQty = (row['quantity'] as num?)?.toInt() ?? 0;
+        itemActiveQty = parseDbInt(row['quantity']) ?? 0;
 
         // Add default targeted zone if available and not already held somewhere
         if (categoryZoneMap.containsKey(catLower)) {
@@ -1521,7 +1530,7 @@ class WarehouseService {
       } else {
         // It has warehouse entries, sum the active counts
         for (final e in activeEntries) {
-          itemActiveQty += (e['item_count'] as num?)?.toInt() ?? 0;
+          itemActiveQty += parseDbInt(e['item_count']) ?? 0;
 
           final wh = e['warehouses'] as Map?;
           if (wh != null && wh['code'] != null) {
@@ -1603,7 +1612,7 @@ class WarehouseService {
       final whId = row['warehouse_id']?.toString() ?? '';
       if (whId.isEmpty) continue;
       final agg = shell(whId, row['warehouses'] as Map?);
-      final qty = (row['item_count'] as num?)?.toInt() ?? 0;
+      final qty = parseDbInt(row['item_count']) ?? 0;
       final z = (row['zone'] ?? '').toString().trim().toLowerCase();
       if (z.isEmpty || z == 'n/a') {
         agg['unzoned'] = (agg['unzoned'] as int) + qty;
@@ -1801,7 +1810,7 @@ class WarehouseService {
 
     final totalItems = activeEntries.fold<int>(
       0,
-      (sum, entry) => sum + (entry['item_count'] as int),
+      (sum, entry) => sum + (parseDbInt(entry['item_count']) ?? 0),
     );
 
     return {
@@ -1823,7 +1832,10 @@ class WarehouseService {
 class AdminService {
   Future<List<ProfileModel>> getAllProfiles() async {
     final data = await supabase.from('profiles').select().order('created_at');
-    return data.map((e) => ProfileModel.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        ProfileModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   /// Whether a Disposal Directorate position (DC/SDDC) is still free to claim.
@@ -2631,7 +2643,10 @@ class AuditLogService {
         .inFilter('profiles.role', ['admin', 'officer'])
         .gte('created_at', oneYearAgo)
         .order('created_at', ascending: false);
-    return data.map((e) => AuditLogModel.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        AuditLogModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   Future<void> recordLog({
@@ -2695,7 +2710,10 @@ class PackageCategoryService {
         .from('package_categories')
         .select('*, warehouses(name)')
         .order('name');
-    return data.map((e) => PackageCategory.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        PackageCategory.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   Future<void> createCategory(String name,
@@ -3659,7 +3677,13 @@ class ForfeitedPackageService {
         .order('sale_date', ascending: true)
         .limit(1)
         .maybeSingle();
-    final nextTenderSaleDate = nextSale?['sale_date'] as String?;
+    // `date` comes back as a DateTime from the local driver and as a String
+    // from Supabase; normalise to the yyyy-MM-dd the UI expects.
+    final nextSaleRaw = nextSale?['sale_date'];
+    final nextTenderSaleDate = nextSaleRaw == null
+        ? null
+        : (parseDbDate(nextSaleRaw)?.toIso8601String().split('T').first ??
+            nextSaleRaw.toString());
 
     return {
       'appealHold': appealHold,
@@ -4119,7 +4143,10 @@ class TendersService {
         .from('tenders')
         .select('*, profiles(full_name)')
         .order('tender_date', ascending: false);
-    return data.map((e) => TenderModel.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        TenderModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 
   /// Create a new tender and delete associated forfeited packages
@@ -4286,7 +4313,10 @@ class TendersService {
         .select('*, profiles(full_name)')
         .eq('tender_package_id', tenderPackageId)
         .order('disposed_at', ascending: false);
-    return data.map((e) => TenderDisposalModel.fromJson(e)).toList();
+    return [
+      for (final e in (data as List))
+        TenderDisposalModel.fromJson(e as Map<String, dynamic>)
+    ];
   }
 }
 
@@ -4504,7 +4534,7 @@ class DisposalService {
     for (final e in (rows as List)) {
       byRound
           .putIfAbsent((e['tender_sale_id'] as String?) ?? '', () => [])
-          .add((e['amount'] as num).toDouble());
+          .add(parseDbNum(e['amount']) ?? 0);
     }
     return byRound;
   }
@@ -4554,7 +4584,7 @@ class DisposalService {
       byPkg
           .putIfAbsent(e['forfeited_package_id'] as String, () => {})
           .putIfAbsent((e['tender_sale_id'] as String?) ?? '', () => [])
-          .add((e['amount'] as num).toDouble());
+          .add(parseDbNum(e['amount']) ?? 0);
     }
     if (byPkg.isEmpty) return [];
 
@@ -4789,7 +4819,7 @@ class DisposalService {
         .select('forfeited_package_id, valuation_cost'));
     for (final e in (initial as List)) {
       final id = e['forfeited_package_id']?.toString();
-      final cost = (e['valuation_cost'] as num?)?.toDouble();
+      final cost = parseDbNum(e['valuation_cost']);
       if (id == null || cost == null) continue;
       chains.putIfAbsent(id, () => []).add(cost);
     }
@@ -4802,7 +4832,7 @@ class DisposalService {
         .order('created_at', ascending: true));
     for (final e in (revals as List)) {
       final id = e['forfeited_package_id']?.toString();
-      final cost = (e['valuation_cost'] as num?)?.toDouble();
+      final cost = parseDbNum(e['valuation_cost']);
       if (id == null || cost == null) continue;
       chains.putIfAbsent(id, () => []).add(cost);
     }
@@ -4822,7 +4852,7 @@ class DisposalService {
           .order('submitted_at', ascending: true));
       for (final e in (committees as List)) {
         final id = e['forfeited_package_id']?.toString();
-        final cost = (e['submitted_value'] as num?)?.toDouble();
+        final cost = parseDbNum(e['submitted_value']);
         if (id == null || cost == null) continue;
         chains.putIfAbsent(id, () => []).add(cost);
       }

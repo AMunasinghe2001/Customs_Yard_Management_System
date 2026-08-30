@@ -79,7 +79,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // â”€â”€ Header: title + date Â· yard badge + staff stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Header: title + date · yard badge + staff stats ──────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 crossAxisAlignment: CrossAxisAlignment.center,
@@ -118,11 +118,23 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                 ref.watch(recentPackagesProvider),
                 ref.watch(yardWarehouseCapacityProvider),
               ].any((a) => a.hasError)) ...[
-                _ConnectionBanner(onRetry: _refreshAll),
+                _ConnectionBanner(
+                  onRetry: _refreshAll,
+                  // The actual failure, so the banner can say whether this is
+                  // the network or a bug. It used to assert "check your
+                  // internet connection" for every cause, including plain SQL
+                  // errors.
+                  error: [
+                    pkgStats,
+                    ref.watch(forfeitLifecycleProvider),
+                    ref.watch(recentPackagesProvider),
+                    ref.watch(yardWarehouseCapacityProvider),
+                  ].firstWhere((a) => a.hasError).error,
+                ),
                 const Gap(16),
               ],
 
-              // â”€â”€ Operational stat cards â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+              // ── Operational stat cards ───────────────────────────────────
               pkgStats
                   .when(
                     loading: () => const _StatsLoadingRow(),
@@ -175,7 +187,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
               const Gap(20),
 
-              // â”€â”€ Body: two columns that fill the height (minimal scrolling) â”€
+              // ── Body: two columns that fill the height (minimal scrolling) ─
               Expanded(
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -369,7 +381,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
 }
 
-// â”€â”€ Reusable bits â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// ── Reusable bits ─────────────────────────────────────────────────────────
 
 /// A quiet in-panel placeholder shown when a single panel fails to load. It
 /// carries NO retry button — the one top banner owns the retry, so the user
@@ -394,33 +406,82 @@ class _QuietPanelError extends StatelessWidget {
   }
 }
 
-/// The single connection-error banner for the whole dashboard. Shown once at
-/// the top when any panel fails to load; its one Retry reloads everything.
+/// The single error banner for the whole dashboard. Shown once at the top when
+/// any panel fails to load; its one Retry reloads everything.
+///
+/// ⚠️ It reports WHICH kind of failure happened. It used to say "check your
+/// internet connection" unconditionally, so a SQL bug in one panel's query
+/// sent the user to look at their network.
 class _ConnectionBanner extends StatelessWidget {
   final VoidCallback onRetry;
-  const _ConnectionBanner({required this.onRetry});
+  final Object? error;
+  const _ConnectionBanner({required this.onRetry, this.error});
+
+  /// True only for a genuine unreachable-server error. A Postgres message can
+  /// contain the word "connection" without the network being at fault.
+  bool get _isNetwork {
+    final e = error;
+    if (e == null) return true;
+    final s = e.toString().toLowerCase();
+    if (s.contains('severity.error') ||
+        s.contains('does not exist') ||
+        s.contains('syntax error') ||
+        s.contains('is not a subtype')) {
+      return false;
+    }
+    return e is SocketException ||
+        s.contains('socketexception') ||
+        s.contains('failed host lookup') ||
+        s.contains('timed out') ||
+        s.contains('network is unreachable');
+  }
 
   @override
   Widget build(BuildContext context) {
+    final network = _isNetwork;
+    final tint =
+        network ? context.colors.warningAmber : context.colors.dangerRed;
+    final message = network
+        ? "Couldn't load some data — the server did not answer. Check that "
+            'it is running and that this PC is on the network.'
+        : "Couldn't load some data — the database rejected a request. This is "
+            'a fault in the app; send the details to ICT.';
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
-        color: context.colors.warningAmber.withOpacity(0.1),
+        color: tint.withOpacity(0.1),
         borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: context.colors.warningAmber.withOpacity(0.4)),
+        border: Border.all(color: tint.withOpacity(0.4)),
       ),
       child: Row(children: [
-        Icon(Icons.wifi_off_rounded,
-            size: 18, color: context.colors.warningAmber),
+        Icon(network ? Icons.wifi_off_rounded : Icons.error_outline_rounded,
+            size: 18, color: tint),
         const Gap(12),
         Expanded(
-          child: Text(
-            "Couldn't load some data — check your internet connection.",
-            style: TextStyle(
-                color: context.colors.textSecondary,
-                fontSize: 13,
-                fontWeight: FontWeight.w500),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                message,
+                style: TextStyle(
+                    color: context.colors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500),
+              ),
+              if (!network && error != null) ...[
+                const Gap(4),
+                SelectableText(
+                  error.toString().replaceFirst(
+                      RegExp(r'^Severity\.\w+\s*'), ''),
+                  maxLines: 2,
+                  style: TextStyle(
+                      color: context.colors.textMuted,
+                      fontFamily: 'monospace',
+                      fontSize: 11),
+                ),
+              ],
+            ],
           ),
         ),
         const Gap(12),
@@ -429,9 +490,8 @@ class _ConnectionBanner extends StatelessWidget {
           icon: const Icon(Icons.refresh_rounded, size: 16),
           label: const Text('Retry'),
           style: OutlinedButton.styleFrom(
-            foregroundColor: context.colors.warningAmber,
-            side: BorderSide(
-                color: context.colors.warningAmber.withOpacity(0.5)),
+            foregroundColor: tint,
+            side: BorderSide(color: tint.withOpacity(0.5)),
             padding: const EdgeInsets.symmetric(horizontal: 16),
           ),
         ),
@@ -841,7 +901,7 @@ class _NextTenderSaleBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final has = date != null && date!.isNotEmpty;
     final gold = context.colors.primaryGold;
-    String pretty = 'â€”';
+    String pretty = '—';
     if (has) {
       final parsed = DateTime.tryParse(date!);
       pretty = parsed != null
@@ -908,10 +968,10 @@ class _WarehouseChargeCard extends StatelessWidget {
 
     final rateText = rate.maybeWhen(
         data: (r) => 'LKR ${NumberFormat('#,##0').format(r)}',
-        orElse: () => 'â€¦');
+        orElse: () => '…');
     final accruedText = accrued.maybeWhen(
         data: (c) => 'Accrued: LKR ${NumberFormat('#,##0').format(c)}',
-        orElse: () => 'Accruedâ€¦');
+        orElse: () => 'Accrued…');
 
     return Container(
       // Match _StatCard padding exactly so this card is the same height.

@@ -2147,8 +2147,8 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
     if (details == null || details.isEmpty) return '—';
 
     if (log.entityType == 'storage_rate') {
-      final oldRate = details['old_rate'] as num?;
-      final newRate = details['new_rate'] as num?;
+      final oldRate = parseDbNum(details['old_rate']);
+      final newRate = parseDbNum(details['new_rate']);
       if (oldRate != null || newRate != null) {
         final oldText =
             oldRate != null ? NumberFormat('#,##0.00').format(oldRate) : '—';

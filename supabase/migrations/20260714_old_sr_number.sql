@@ -9,4 +9,3 @@
 
 alter table public.packages
   add column if not exists old_sr_number text;
-r

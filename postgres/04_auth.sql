@@ -26,6 +26,14 @@
 
 set client_min_messages = warning;
 
+-- ⚠️ Dropped before creating: CREATE OR REPLACE cannot change a function's
+--  RETURN TYPE, and these gained an `email_confirmed_at` column. Without the
+--  drop, re-running this file against an older database fails with
+--  "cannot change return type of existing function".
+drop function if exists auth.sign_in(text, text);
+drop function if exists auth.sign_up(text, text, jsonb);
+drop function if exists auth.user_by_id(uuid);
+
 -- ── Sign in ─────────────────────────────────────────────────────────────────
 --  `p_identifier` may be an email OR a username: officers are issued
 --  usernames, and public.email_for_login() already resolves either to an
@@ -38,9 +46,17 @@ create or replace function auth.sign_in(
   p_password   text
 )
 returns table (
-  id    uuid,
-  email text,
-  meta  jsonb
+  id                 uuid,
+  email              text,
+  meta               jsonb,
+  -- ⚠️ Returned because the app GATES ON IT. AuthService.verifyUserSession
+  -- signs the user out and throws 'email_not_confirmed' when
+  -- user.emailConfirmedAt is null, and the router turns that into a redirect
+  -- back to '/'. Leaving this column out of the result made every single
+  -- sign-in look successful and then bounce straight back to the portal
+  -- picker — the password was right, the profile was fine, and the only
+  -- thing wrong was that this function never reported the column.
+  email_confirmed_at timestamptz
 )
 language plpgsql
 security definer
@@ -65,7 +81,7 @@ begin
      and u.encrypted_password is not null
      -- bcrypt: re-hash the attempt with the stored salt, then compare.
      and u.encrypted_password = crypt(p_password, u.encrypted_password)
-  returning u.id, u.email, u.raw_user_meta_data;
+  returning u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at;
 end;
 $fn$;
 
@@ -79,9 +95,12 @@ create or replace function auth.sign_up(
   p_meta     jsonb default '{}'::jsonb
 )
 returns table (
-  id    uuid,
-  email text,
-  meta  jsonb
+  id                 uuid,
+  email              text,
+  meta               jsonb,
+  -- Mirrors auth.sign_in: the app gates on emailConfirmedAt, so every function
+  -- that produces an AuthUser has to report it.
+  email_confirmed_at timestamptz
 )
 language plpgsql
 security definer
@@ -115,7 +134,7 @@ begin
   returning users.id into v_id;
 
   return query
-  select u.id, u.email, u.raw_user_meta_data
+  select u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at
     from auth.users u
    where u.id = v_id;
 end;
@@ -194,16 +213,17 @@ $fn$;
 --  Restores a session on app start from the stored user id.
 create or replace function auth.user_by_id(p_user_id uuid)
 returns table (
-  id    uuid,
-  email text,
-  meta  jsonb
+  id                 uuid,
+  email              text,
+  meta               jsonb,
+  email_confirmed_at timestamptz
 )
 language sql
 security definer
 stable
 set search_path = auth, public
 as $fn$
-  select u.id, u.email, u.raw_user_meta_data
+  select u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at
     from auth.users u
    where u.id = p_user_id;
 $fn$;
@@ -236,9 +256,12 @@ declare
 begin
   delete from auth.users where email = 'verify.probe@local.invalid';
 
+  -- 'officer', not a made-up 'probe': a trigger mirrors this metadata into
+  -- public.profiles, whose profiles_role_check only accepts the real roles.
+  -- With 'probe' the whole file failed here on a fresh database.
   select s.id into v_id
     from auth.sign_up('verify.probe@local.invalid', 'probe-password-123',
-                      '{"role":"probe"}'::jsonb) s;
+                      '{"role":"officer"}'::jsonb) s;
 
   select count(*) into v_n
     from auth.sign_in('verify.probe@local.invalid', 'probe-password-123');

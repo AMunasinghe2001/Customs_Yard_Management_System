@@ -273,11 +273,78 @@ FROM packages
 GROUP BY DATE(created_at)
 ORDER BY stat_date DESC;
 
-ALTER TABLE package_categories ADD COLUMN target_warehouse_id UUID REFERENCES warehouses(id);
-ALTER TABLE package_categories ADD COLUMN target_zone TEXT;
+-- ⚠️ These two tables were created by hand in the Supabase dashboard and were
+-- never written down here, so this file only ever ALTERed them. That went
+-- unnoticed for as long as the live database already had them — but it meant
+-- the schema could NOT be built from scratch: a fresh
+-- `psql -f schema.sql` died at the ALTER below with
+-- `relation "package_categories" does not exist`. The definitions are
+-- reconstructed here from what the app reads (PackageCategory in
+-- lib/models/models.dart) and from the ALTERs that follow.
+CREATE TABLE IF NOT EXISTS package_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  description TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- ⚠️ The column is `reason_text`, not `name`. Nothing in this repo ever
+-- created this table (it was made in the Supabase dashboard), so the shape
+-- here is taken from the live database rather than guessed.
+CREATE TABLE IF NOT EXISTS hold_reasons (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  reason_text TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+-- Same story: made in the dashboard, never written down. Columns follow
+-- AuditLogModel (lib/models/models.dart) and AuditLogService.recordLog.
+-- `yard` is added later by the multi-yard migration, so it is not here.
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  details JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- The log is read newest-first, filtered to the last year (see
+-- purge_old_audit_logs), so this is the index that query needs.
+CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx
+  ON audit_logs (created_at DESC);
+
+-- The warehouse storage charge, kept as a HISTORY rather than a single value:
+-- a package accrues at whichever rate was in force on each day, so changing
+-- the rate must not rewrite what older packages already owe. The app reads the
+-- whole table ordered by effective_from and picks per-day (storageRateProvider).
+CREATE TABLE IF NOT EXISTS storage_rates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rate NUMERIC(12,2) NOT NULL,
+  effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS storage_rates_effective_from_idx
+  ON storage_rates (effective_from DESC);
+
+-- Guarded because the CREATEs above already run on a fresh database, while an
+-- existing one reaches here with the columns long since added.
+ALTER TABLE package_categories ADD COLUMN IF NOT EXISTS target_warehouse_id UUID REFERENCES warehouses(id);
+ALTER TABLE package_categories ADD COLUMN IF NOT EXISTS target_zone TEXT;
 
 ALTER TABLE warehouse_entries ADD COLUMN zone TEXT;
 
-ALTER TABLE hold_reasons ADD COLUMN description TEXT;
-ALTER TABLE hold_reasons ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE hold_reasons ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE hold_reasons ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
+-- ⚠️ Online presence — added in the Supabase dashboard and never written down,
+-- like the four tables above. The app writes both on every sign-in, heartbeat
+-- and sign-out (AuthService.updateHeartbeat / setUserOffline) and reads them
+-- for the "Online in <yard>" panel on the dashboard. Without them each of
+-- those writes failed with 42703; the failure is caught and logged, so
+-- sign-in still worked while the presence list stayed permanently empty.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_online BOOLEAN NOT NULL DEFAULT false;
+-- Nulled (not just stale) on sign-out, so the heartbeat-based list drops the
+-- user instantly instead of holding them online for ~90s.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
 ALTER TABLE warehouse_entries ADD COLUMN IF NOT EXISTS package_item_id UUID REFERENCES package_items(id) ON DELETE CASCADE;

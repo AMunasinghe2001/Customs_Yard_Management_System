@@ -918,7 +918,7 @@ class _SaleFinancialsCell extends ConsumerWidget {
         if (item == null) return const Text('—');
         double taxSum = 0;
         for (final t in item.appliedTaxes) {
-          taxSum += (t['amount'] as num?)?.toDouble() ?? 0;
+          taxSum += parseDbNum(t['amount']) ?? 0;
         }
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,

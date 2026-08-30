@@ -3575,7 +3575,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           for (final it in soldItems) {
             double tax = 0;
             for (final t in it.appliedTaxes) {
-              tax += (t is Map ? (t['amount'] as num?)?.toDouble() : 0) ?? 0;
+              tax += (t is Map ? parseDbNum(t['amount']) : 0) ?? 0;
             }
             totalRev += it.soldPrice + tax;
             final f = it.forfeited;
@@ -3778,7 +3778,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           for (final it in soldItems) {
             double tax = 0;
             for (final t in it.appliedTaxes) {
-              tax += (t is Map ? (t['amount'] as num?)?.toDouble() : 0) ?? 0;
+              tax += (t is Map ? parseDbNum(t['amount']) : 0) ?? 0;
             }
             soldVal += it.soldPrice + tax;
           }

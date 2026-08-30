@@ -149,22 +149,87 @@ class PgQuery implements Future<dynamic> {
   /// Parsed into real SQL rather than pasted in, so the values stay
   /// parameterised — the string is built from user input at some call sites.
   PgQuery or(String filters) {
-    final parts = _splitTopLevel(filters);
+    _filters.add(_Filter('', 'raw', null, raw: _parseGroup(filters, 'or')));
+    return this;
+  }
+
+  /// Renders one PostgREST boolean group into SQL.
+  ///
+  /// A group is a comma-separated list of terms joined by [joiner]. Each term
+  /// is either a leaf (`column.op.value`) or a NESTED group
+  /// (`and(...)` / `or(...)`), which recurses.
+  ///
+  /// ⚠️ The nesting is the part that used to be missing. The appeal portal asks
+  /// for `entry_date.gte.X,and(entry_date.is.null,created_at.gte.X)` — "inside
+  /// the window, or undated and created inside the window". The old code split
+  /// every term on '.', so the nested group became the nonsense column
+  /// `and(entry_date` with op `is`, and the generated SQL died with
+  /// `syntax error at or near "$2"`. The screen reported that as
+  /// "Something went wrong".
+  String _parseGroup(String body, String joiner) {
     final terms = <String>[];
-    for (final p in parts) {
-      final bits = p.split('.');
+    for (final part in _splitTopLevel(body)) {
+      final t = part.trim();
+
+      // Nested group: and(...) / or(...)
+      final lower = t.toLowerCase();
+      if ((lower.startsWith('and(') || lower.startsWith('or(')) &&
+          t.endsWith(')')) {
+        final inner = lower.startsWith('and(')
+            ? t.substring(4, t.length - 1)
+            : t.substring(3, t.length - 1);
+        terms.add(_parseGroup(inner, lower.startsWith('and(') ? 'and' : 'or'));
+        continue;
+      }
+
+      // `not.op.value` negates the leaf.
+      var negate = false;
+      var leaf = t;
+      if (leaf.toLowerCase().startsWith('not.')) {
+        negate = true;
+        leaf = leaf.substring(4);
+      }
+
+      final bits = leaf.split('.');
       if (bits.length < 3) {
-        throw PgQueryException('cannot parse or() term: $p');
+        throw PgQueryException('cannot parse or() term: $part');
       }
       final col = bits[0];
       final op = bits[1];
       final value = bits.sublist(2).join('.');
-      final param = _nextParam();
-      _orParams[param] = _coerce(op, value);
-      terms.add('${_quoteIdent(col)} ${_sqlOp(op)} @$param');
+
+      String sql;
+      if (op == 'is') {
+        // `is` takes null/true/false as SYNTAX, not as a bound parameter:
+        // `col is @p` does not parse.
+        final v = value.toLowerCase();
+        final lit = (v == 'null') ? 'null' : (v == 'true' ? 'true' : 'false');
+        sql = '${_quoteIdent(col)} is $lit';
+      } else if (op == 'in') {
+        // in.(a,b,c)
+        final list = value
+            .replaceAll(RegExp(r'^\(|\)$'), '')
+            .split(',')
+            .map((e) => e.trim())
+            .where((e) => e.isNotEmpty)
+            .toList();
+        if (list.isEmpty) {
+          sql = 'false';
+        } else {
+          final param = _nextParam();
+          _orParams[param] = list;
+          sql = '${_quoteIdent(col)} = any(@$param)';
+        }
+      } else {
+        final param = _nextParam();
+        _orParams[param] = _coerce(op, value);
+        sql = '${_quoteIdent(col)} ${_sqlOp(op)} @$param';
+      }
+
+      terms.add(negate ? 'not ($sql)' : sql);
     }
-    _filters.add(_Filter('', 'raw', null, raw: '(${terms.join(' or ')})'));
-    return this;
+    if (terms.isEmpty) return '(true)';
+    return '(${terms.join(' $joiner ')})';
   }
 
   final Map<String, Object?> _orParams = {};
@@ -311,6 +376,46 @@ class PgQuery implements Future<dynamic> {
   /// That distinction is what the models rely on: `json['profiles']` is read
   /// as a Map, `json['package_items']` as a List. Getting it backwards would
   /// not throw here — it would throw much later inside fromJson.
+  /// The foreign key joining [parentTable] to [childTable], plus which way it
+  /// points. Shared by [_embed] and by the WHERE builder, which needs the same
+  /// answer to turn `profiles.role` into a correlated EXISTS.
+  (PgForeignKey, bool) _resolveJoin(
+      String parentTable, String childTable, String? hint) {
+    final schema = PgSchema.instance;
+    if (hint != null) {
+      final fk = schema.byConstraintOrColumn(parentTable, childTable, hint);
+      if (fk == null) {
+        throw PgQueryException(
+            'no foreign key "$hint" between $parentTable and $childTable');
+      }
+      // The hint resolved to a key ON the parent -> the parent points out.
+      return (fk, fk.table == parentTable);
+    }
+    final down = schema.childToParent(parentTable, childTable);
+    final up = schema.parentToChild(parentTable, childTable);
+    if (down != null && up == null) return (down, true);
+    if (up != null && down == null) return (up, false);
+    if (down != null && up != null) {
+      // Ambiguous both ways: prefer the to-one reading, which is what
+      // PostgREST did for a singular embed with no hint.
+      return (down, true);
+    }
+    throw PgQueryException(
+        'no unique foreign key between $parentTable and $childTable — '
+        'add a hint like $childTable!column_name');
+  }
+
+  /// `child.fk = parent.pk` (or the reverse), for a given pair of aliases.
+  String _joinOn(PgForeignKey fk, bool toOne, String parentAlias,
+          String childAlias) =>
+      toOne
+          // parent.col = child.pk
+          ? '$childAlias.${_quoteIdent(fk.targetColumn)} = '
+              '$parentAlias.${_quoteIdent(fk.column)}'
+          // child.col = parent.pk
+          : '$childAlias.${_quoteIdent(fk.column)} = '
+              '$parentAlias.${_quoteIdent(fk.targetColumn)}';
+
   String _embed(
     String parentTable,
     String parentAlias,
@@ -318,50 +423,13 @@ class PgQuery implements Future<dynamic> {
     Map<String, Object?> params,
     _Counter c,
   ) {
-    final schema = PgSchema.instance;
     final childTable = f.name;
     final childAlias = 'e${c.next()}';
 
-    PgForeignKey? fk;
-    var toOne = false;
-
-    if (f.hint != null) {
-      fk = schema.byConstraintOrColumn(parentTable, childTable, f.hint!);
-      if (fk == null) {
-        throw PgQueryException(
-            'no foreign key "${f.hint}" between $parentTable and $childTable');
-      }
-      // The hint resolved to a key ON the parent -> the parent points out.
-      toOne = fk.table == parentTable;
-    } else {
-      final down = schema.childToParent(parentTable, childTable);
-      final up = schema.parentToChild(parentTable, childTable);
-      if (down != null && up == null) {
-        fk = down;
-        toOne = true;
-      } else if (up != null && down == null) {
-        fk = up;
-        toOne = false;
-      } else if (down != null && up != null) {
-        // Ambiguous both ways: prefer the to-one reading, which is what
-        // PostgREST did for a singular embed with no hint.
-        fk = down;
-        toOne = true;
-      } else {
-        throw PgQueryException(
-            'no unique foreign key between $parentTable and $childTable — '
-            'add a hint like $childTable!column_name');
-      }
-    }
+    final (fk, toOne) = _resolveJoin(parentTable, childTable, f.hint);
 
     final inner = _selectList(childTable, childAlias, f.children, params, c);
-    final joinOn = toOne
-        // parent.col = child.pk
-        ? '$childAlias.${_quoteIdent(fk.targetColumn)} = '
-            '$parentAlias.${_quoteIdent(fk.column)}'
-        // child.col = parent.pk
-        : '$childAlias.${_quoteIdent(fk.column)} = '
-            '$parentAlias.${_quoteIdent(fk.targetColumn)}';
+    final joinOn = _joinOn(fk, toOne, parentAlias, childAlias);
 
     final key = _quoteIdent(f.outputName);
 
@@ -421,26 +489,61 @@ class PgQuery implements Future<dynamic> {
         continue;
       }
       final p = 'p${seq++}';
-      final col = '$alias.${_quoteIdent(f.column)}';
+
+      // `profiles.role` filters the EMBEDDED table, not this one — PostgREST
+      // allowed it and the app relies on it (getAllLogs filters the actor's
+      // role). Naively quoting it produced t."profiles.role", i.e.
+      // `column t.profiles.role does not exist`, and the caller reported that
+      // as "check your internet connection".
+      //
+      // Rendered as a correlated EXISTS so the row survives only when a
+      // matching embedded row satisfies the condition — the same meaning
+      // PostgREST gave it with !inner.
+      String col;
+      String Function(String) wrap = (sql) => sql;
+      final dot = f.column.indexOf('.');
+      if (dot > 0) {
+        final embedName = f.column.substring(0, dot);
+        final embedCol = f.column.substring(dot + 1);
+        // Only treat it as an embed when the select actually names one, so a
+        // column that genuinely contains a dot is left alone.
+        final field = _fields.firstWhere(
+          (x) => x.isEmbed && (x.outputName == embedName || x.name == embedName),
+          orElse: () => PgField(name: ''),
+        );
+        if (field.name.isNotEmpty) {
+          final childTable = field.name;
+          final childAlias = 'f${c.next()}';
+          final (fk, toOne) = _resolveJoin(table, childTable, field.hint);
+          final on = _joinOn(fk, toOne, alias, childAlias);
+          col = '$childAlias.${_quoteIdent(embedCol)}';
+          wrap = (sql) => 'exists (select 1 from ${_quoteIdent(childTable)} '
+              '$childAlias where $on and $sql)';
+        } else {
+          col = '$alias.${_quoteIdent(f.column)}';
+        }
+      } else {
+        col = '$alias.${_quoteIdent(f.column)}';
+      }
       switch (f.op) {
         case 'in':
           final list = f.value as List<Object?>;
           if (list.isEmpty) {
             // `in ()` is a syntax error, and an empty set matches nothing.
-            where.add('false');
+            where.add(wrap('false'));
           } else {
             params[p] = list;
-            where.add('$col = any(@$p)');
+            where.add(wrap('$col = any(@$p)'));
           }
         case 'is':
           // `is` only takes null / true / false, and those cannot be bound as
           // parameters — they are part of the syntax.
           final v = f.value;
           final lit = v == null ? 'null' : (v == true ? 'true' : 'false');
-          where.add('$col is $lit');
+          where.add(wrap('$col is $lit'));
         case '@>':
           params[p] = f.value is String ? f.value : jsonEncode(f.value);
-          where.add('$col @> @$p');
+          where.add(wrap('$col @> @$p'));
         default:
           if (f.op.startsWith('not.')) {
             final innerOp = f.op.substring(4);
@@ -450,14 +553,14 @@ class PgQuery implements Future<dynamic> {
               // produce `col is @p0`, which does not parse.
               final v = f.value;
               final lit = v == null ? 'null' : (v == true ? 'true' : 'false');
-              where.add('$col is not $lit');
+              where.add(wrap('$col is not $lit'));
             } else {
               params[p] = f.value;
-              where.add('not ($col ${_sqlOp(innerOp)} @$p)');
+              where.add(wrap('not ($col ${_sqlOp(innerOp)} @$p)'));
             }
           } else {
             params[p] = f.value;
-            where.add('$col ${f.op} @$p');
+            where.add(wrap('$col ${f.op} @$p'));
           }
       }
     }
@@ -599,7 +702,9 @@ class PgQuery implements Future<dynamic> {
     final rows = await PgDatabase.instance.query(sql, parameters: params);
 
     if (_countOnly) {
-      return rows.isEmpty ? 0 : (rows.first['count'] as int? ?? 0);
+      return rows.isEmpty
+        ? 0
+        : (int.tryParse('${rows.first['count']}') ?? 0);
     }
 
     if (_single) {

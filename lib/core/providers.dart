@@ -342,8 +342,8 @@ final storageRateProvider = FutureProvider<Map<DateTime, double>>((ref) async {
 
   final Map<DateTime, double> rates = {};
   for (var row in data) {
-    final date = DateTime.parse(row['effective_from'] as String);
-    final rate = (row['rate'] as num).toDouble();
+    final date = parseDbDateRequired(row['effective_from']);
+    final rate = parseDbNum(row['rate']) ?? 0;
     rates[DateTime(date.year, date.month, date.day)] = rate;
   }
 
@@ -373,17 +373,20 @@ final storageRateHistoryProvider =
       .select('rate, effective_from, id')
       .order('effective_from', ascending: false);
 
-  return data
-      .map((row) => AuditLogModel(
-            id: row['id'].toString(),
-            userId: 'system',
-            action: 'RATE_UPDATE',
-            entityType: 'storage_rate',
-            entityId: row['id'].toString(),
-            createdAt: DateTime.parse(row['effective_from'] as String),
-            details: {'rate': (row['rate'] as num).toDouble()},
-          ))
-      .toList();
+  // Typed explicitly: `data` is dynamic, so a bare .map().toList() infers
+  // List<dynamic> and throws on return.
+  return [
+    for (final row in (data as List))
+      AuditLogModel(
+        id: row['id'].toString(),
+        userId: 'system',
+        action: 'RATE_UPDATE',
+        entityType: 'storage_rate',
+        entityId: row['id'].toString(),
+        createdAt: parseDbDateRequired(row['effective_from']),
+        details: {'rate': parseDbNum(row['rate']) ?? 0},
+      )
+  ];
 });
 
 final packageDataProvider =
@@ -1210,7 +1213,7 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
       final itemTaxMap = <String, double>{};
       for (final t in it.appliedTaxes) {
         if (t is Map) {
-          final amt = (t['amount'] as num?)?.toDouble() ?? 0;
+          final amt = parseDbNum(t['amount']) ?? 0;
           final name = (t['name'] as String?)?.trim() ?? 'Tax';
           tax += amt;
           itemTaxMap[name] = (itemTaxMap[name] ?? 0) + amt;

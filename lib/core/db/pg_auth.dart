@@ -143,7 +143,7 @@ class PgAuth {
     required String password,
   }) async {
     final rows = await PgDatabase.instance.query(
-      'select id, email, meta from auth.sign_in(@id, @pw)',
+      'select id, email, meta, email_confirmed_at from auth.sign_in(@id, @pw)',
       parameters: {'id': email.trim(), 'pw': password},
     );
     if (rows.isEmpty) {
@@ -163,7 +163,7 @@ class PgAuth {
   }) async {
     try {
       final rows = await PgDatabase.instance.query(
-        'select id, email, meta from auth.sign_up(@e, @pw, @meta)',
+        'select id, email, meta, email_confirmed_at from auth.sign_up(@e, @pw, @meta)',
         parameters: {
           'e': email.trim(),
           'pw': password,
@@ -233,7 +233,7 @@ class PgAuth {
   /// who is signed in. Kept so those call sites compile and stay correct.
   Future<AuthResponse> setSession(String refreshToken) async {
     final rows = await PgDatabase.instance.query(
-      'select id, email, meta from auth.user_by_id(@id)',
+      'select id, email, meta, email_confirmed_at from auth.user_by_id(@id)',
       parameters: {'id': refreshToken},
     );
     if (rows.isEmpty) {

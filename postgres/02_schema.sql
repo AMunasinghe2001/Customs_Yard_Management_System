@@ -2,7 +2,7 @@
 --  02 · Schema — every table, function, policy and trigger
 --
 --  GENERATED. Do not edit by hand: it is the base schema followed by all
---  76 migrations in date order, exactly as they were applied to Supabase.
+--  78 migrations in date order, exactly as they were applied to Supabase.
 --  Regenerate with scratchpad/build_schema.py after adding a migration.
 --
 --  Why stitched rather than consolidated: the migrations ARE the source of
@@ -248,12 +248,15 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS update_packages_updated_at ON packages;
 CREATE TRIGGER update_packages_updated_at BEFORE UPDATE ON packages
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_warehouse_entries_updated_at ON warehouse_entries;
 CREATE TRIGGER update_warehouse_entries_updated_at BEFORE UPDATE ON warehouse_entries
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
 CREATE TRIGGER update_profiles_updated_at BEFORE UPDATE ON profiles
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -266,12 +269,12 @@ BEGIN
     NEW.id,
     COALESCE(NEW.raw_user_meta_data->>'full_name', 'New User'),
     COALESCE(NEW.raw_user_meta_data->>'role', 'officer')
-  )
-  ON CONFLICT DO NOTHING;
+  );
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION handle_new_user();
@@ -314,13 +317,76 @@ FROM packages
 GROUP BY DATE(created_at)
 ORDER BY stat_date DESC;
 
-ALTER TABLE package_categories ADD COLUMN target_warehouse_id UUID REFERENCES warehouses(id);
-ALTER TABLE package_categories ADD COLUMN target_zone TEXT;
+-- ⚠️ These two tables were created by hand in the Supabase dashboard and were
+-- never written down here, so this file only ever ALTERed them. That went
+-- unnoticed for as long as the live database already had them — but it meant
+-- the schema could NOT be built from scratch: a fresh
+-- `psql -f schema.sql` died at the ALTER below with
+-- `relation "package_categories" does not exist`. The definitions are
+-- reconstructed here from what the app reads (PackageCategory in
+-- lib/models/models.dart) and from the ALTERs that follow.
+CREATE TABLE IF NOT EXISTS package_categories (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-ALTER TABLE warehouse_entries ADD COLUMN zone TEXT;
+CREATE TABLE IF NOT EXISTS hold_reasons (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name TEXT NOT NULL UNIQUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
-ALTER TABLE hold_reasons ADD COLUMN description TEXT;
-ALTER TABLE hold_reasons ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;
+-- Same story: made in the dashboard, never written down. Columns follow
+-- AuditLogModel (lib/models/models.dart) and AuditLogService.recordLog.
+-- `yard` is added later by the multi-yard migration, so it is not here.
+CREATE TABLE IF NOT EXISTS audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  action TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id TEXT NOT NULL,
+  details JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- The log is read newest-first, filtered to the last year (see
+-- purge_old_audit_logs), so this is the index that query needs.
+CREATE INDEX IF NOT EXISTS audit_logs_created_at_idx
+  ON audit_logs (created_at DESC);
+
+-- The warehouse storage charge, kept as a HISTORY rather than a single value:
+-- a package accrues at whichever rate was in force on each day, so changing
+-- the rate must not rewrite what older packages already owe. The app reads the
+-- whole table ordered by effective_from and picks per-day (storageRateProvider).
+CREATE TABLE IF NOT EXISTS storage_rates (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  rate NUMERIC(12,2) NOT NULL,
+  effective_from TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS storage_rates_effective_from_idx
+  ON storage_rates (effective_from DESC);
+
+-- Guarded because the CREATEs above already run on a fresh database, while an
+-- existing one reaches here with the columns long since added.
+ALTER TABLE package_categories ADD COLUMN IF NOT EXISTS target_warehouse_id UUID REFERENCES warehouses(id);
+ALTER TABLE package_categories ADD COLUMN IF NOT EXISTS target_zone TEXT;
+
+ALTER TABLE warehouse_entries ADD COLUMN IF NOT EXISTS zone TEXT;
+
+ALTER TABLE hold_reasons ADD COLUMN IF NOT EXISTS description TEXT;
+ALTER TABLE hold_reasons ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true;
+
+-- ⚠️ Online presence — added in the Supabase dashboard and never written down,
+-- like the four tables above. The app writes both on every sign-in, heartbeat
+-- and sign-out (AuthService.updateHeartbeat / setUserOffline) and reads them
+-- for the "Online in <yard>" panel on the dashboard. Without them each of
+-- those writes failed with 42703; the failure is caught and logged, so
+-- sign-in still worked while the presence list stayed permanently empty.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_online BOOLEAN NOT NULL DEFAULT false;
+-- Nulled (not just stale) on sign-out, so the heartbeat-based list drops the
+-- user instantly instead of holding them online for ~90s.
+ALTER TABLE profiles ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
 ALTER TABLE warehouse_entries ADD COLUMN IF NOT EXISTS package_item_id UUID REFERENCES package_items(id) ON DELETE CASCADE;
 
 
@@ -330,8 +396,8 @@ ALTER TABLE warehouse_entries ADD COLUMN IF NOT EXISTS package_item_id UUID REFE
 
 
 -- Update warehouse_entries to support individual items and zones
-ALTER TABLE warehouse_entries ADD COLUMN package_item_id UUID REFERENCES package_items(id) ON DELETE CASCADE;
-ALTER TABLE warehouse_entries ADD COLUMN zone TEXT;
+ALTER TABLE warehouse_entries ADD COLUMN IF NOT EXISTS package_item_id UUID REFERENCES package_items(id) ON DELETE CASCADE;
+ALTER TABLE warehouse_entries ADD COLUMN IF NOT EXISTS zone TEXT;
 
 -- Migration: If there are existing entries, they might not be linked to specific items.
 -- We keep them linked to the package overall, which is fine for backward compatibility.
@@ -464,12 +530,15 @@ CREATE POLICY "Admins can manage tender disposals" ON tender_disposals
 -- ────────────────────────────────────────────────────────────────
 -- TRIGGERS
 -- ────────────────────────────────────────────────────────────────
+DROP TRIGGER IF EXISTS update_forfeited_packages_updated_at ON forfeited_packages;
 CREATE TRIGGER update_forfeited_packages_updated_at BEFORE UPDATE ON forfeited_packages
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_tenders_updated_at ON tenders;
 CREATE TRIGGER update_tenders_updated_at BEFORE UPDATE ON tenders
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
+DROP TRIGGER IF EXISTS update_tender_disposals_updated_at ON tender_disposals;
 CREATE TRIGGER update_tender_disposals_updated_at BEFORE UPDATE ON tender_disposals
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
@@ -695,6 +764,170 @@ grant execute on function public.disposal_position_available(text) to anon, auth
 drop policy if exists disposal_read_all on public.forfeited_packages;
 create policy disposal_read_all on public.forfeited_packages
   for select using (public.auth_user_is_disposal());
+
+-- Done.
+
+
+-- ==========================================================================
+--  20260611_tender_sale_items.sql
+-- ==========================================================================
+
+-- ============================================================================
+--  Tender Sale line items + "mark sold" for the Central Disposal Directorate.
+--  Run after 20260611_disposal_requests.sql.
+--
+--  A Tender Sale now carries the actual packages being sold (only packages a
+--  yard tagged "sale" in a disposal request can be added). The Disposal
+--  Directorate can later mark each package SOLD; that writes a [FINAL:SOLD]
+--  warehouse entry IN THE PACKAGE'S OWN YARD (via a SECURITY DEFINER RPC) so it
+--  surfaces in that yard's Warehouses view and the cross-yard Sold Packages tab.
+-- ============================================================================
+
+-- 1. ── Line items ───────────────────────────────────────────────────────────
+create table if not exists public.tender_sale_items (
+  id                   uuid primary key default uuid_generate_v4(),
+  tender_sale_id       uuid not null references public.tender_sales(id) on delete cascade,
+  forfeited_package_id uuid not null references public.forfeited_packages(id) on delete cascade,
+  yard                 text not null,
+  sold                 boolean not null default false,
+  sold_at              timestamptz,
+  receipt_number       text,
+  created_at           timestamptz not null default now(),
+  unique (forfeited_package_id)
+);
+
+create index if not exists idx_tender_sale_items_sale on public.tender_sale_items(tender_sale_id);
+create index if not exists idx_tender_sale_items_forfeited on public.tender_sale_items(forfeited_package_id);
+
+alter table public.tender_sale_items enable row level security;
+
+-- Disposal Directorate manages every row; a yard can read its own.
+drop policy if exists tender_sale_items_disposal on public.tender_sale_items;
+create policy tender_sale_items_disposal on public.tender_sale_items
+  for all
+  using (public.auth_user_is_disposal())
+  with check (public.auth_user_is_disposal());
+
+drop policy if exists tender_sale_items_yard_read on public.tender_sale_items;
+create policy tender_sale_items_yard_read on public.tender_sale_items
+  for select
+  using (yard = (select yard from public.profiles where id = auth.uid()));
+
+-- 2. ── Mark a tender-sale package SOLD (cross-yard, security definer) ────────
+create or replace function public.disposal_mark_sale_item_sold(
+  p_item_id uuid,
+  p_receipt text default null
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_forfeited uuid;
+  v_package   uuid;
+  v_yard      text;
+  r           record;
+  v_wh    uuid;
+  v_zone  text;
+  v_hold  text;
+  v_adm   uuid;
+  v_admat timestamptz;
+  v_rate  numeric;
+  v_inserted int := 0;
+  v_note  text;
+begin
+  if not public.auth_user_is_disposal() then
+    raise exception 'not authorized';
+  end if;
+
+  select forfeited_package_id, yard
+    into v_forfeited, v_yard
+    from public.tender_sale_items
+   where id = p_item_id;
+  if v_forfeited is null then
+    raise exception 'tender sale item not found';
+  end if;
+
+  select package_id into v_package
+    from public.forfeited_packages
+   where id = v_forfeited;
+
+  v_note := '[FINAL:SOLD]' ||
+    case when coalesce(p_receipt, '') <> ''
+         then ' — Receipt: ' || p_receipt else '' end;
+
+  -- For each not-yet-finalised item write a [FINAL:SOLD] entry. The warehouse
+  -- context prefers the item's own latest entry but falls back to ANY entry on
+  -- the package (entries are often admitted package-level, with no item link).
+  for r in
+    select pi.id as item_id, pi.quantity as qty
+      from public.package_items pi
+     where pi.package_id = v_package
+       and lower(pi.status) not in
+           ('sold', 'destroyed', 'released', 're-exported', 'other')
+  loop
+    select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
+      into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
+      from public.warehouse_entries
+     where package_id = v_package
+     order by (package_item_id = r.item_id) desc nulls last, admitted_at desc
+     limit 1;
+
+    if v_wh is not null then
+      insert into public.warehouse_entries(
+        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
+        item_count, admitted_by, admitted_at, daily_rate,
+        is_returned, returned_at, returned_by, return_notes)
+      values (
+        v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
+        r.qty, v_adm, coalesce(v_admat, now()), v_rate,
+        true, now(), auth.uid(), v_note);
+
+      update public.package_items set status = 'sold' where id = r.item_id;
+
+      delete from public.warehouse_entries
+       where package_item_id = r.item_id and is_returned = false;
+
+      v_inserted := v_inserted + 1;
+    end if;
+  end loop;
+
+  -- Nothing item-level was written (no items, or none linkable). Still surface
+  -- the sale with one package-level [FINAL:SOLD] entry. Use any package entry;
+  -- as a last resort anchor it to any warehouse so it appears in the lists.
+  if v_inserted = 0 then
+    select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
+      into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
+      from public.warehouse_entries
+     where package_id = v_package
+     order by admitted_at desc
+     limit 1;
+
+    if v_wh is null then
+      select id into v_wh from public.warehouses order by created_at limit 1;
+      v_hold := 'Forfeit';
+    end if;
+
+    if v_wh is not null then
+      insert into public.warehouse_entries(
+        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
+        item_count, admitted_by, admitted_at, daily_rate,
+        is_returned, returned_at, returned_by, return_notes)
+      values (
+        v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
+        1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
+        true, now(), auth.uid(), v_note);
+    end if;
+  end if;
+
+  update public.tender_sale_items
+     set sold = true, sold_at = now(), receipt_number = p_receipt
+   where id = p_item_id;
+end;
+$$;
+
+grant execute on function public.disposal_mark_sale_item_sold(uuid, text)
+  to authenticated;
 
 -- Done.
 
@@ -953,15 +1186,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -986,15 +1218,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -1050,172 +1281,6 @@ alter table public.tender_disposals
 alter table public.tender_disposals
   add constraint tender_disposals_disposal_type_check
   check (disposal_type in ('sold', 're_export', 'govt_use', 'destroy', 'other', 'release'));
-
--- Done.
-
-
--- ==========================================================================
---  20260611_tender_sale_items.sql
--- ==========================================================================
-
--- ============================================================================
---  Tender Sale line items + "mark sold" for the Central Disposal Directorate.
---  Run after 20260611_disposal_requests.sql.
---
---  A Tender Sale now carries the actual packages being sold (only packages a
---  yard tagged "sale" in a disposal request can be added). The Disposal
---  Directorate can later mark each package SOLD; that writes a [FINAL:SOLD]
---  warehouse entry IN THE PACKAGE'S OWN YARD (via a SECURITY DEFINER RPC) so it
---  surfaces in that yard's Warehouses view and the cross-yard Sold Packages tab.
--- ============================================================================
-
--- 1. ── Line items ───────────────────────────────────────────────────────────
-create table if not exists public.tender_sale_items (
-  id                   uuid primary key default uuid_generate_v4(),
-  tender_sale_id       uuid not null references public.tender_sales(id) on delete cascade,
-  forfeited_package_id uuid not null references public.forfeited_packages(id) on delete cascade,
-  yard                 text not null,
-  sold                 boolean not null default false,
-  sold_at              timestamptz,
-  receipt_number       text,
-  created_at           timestamptz not null default now(),
-  unique (forfeited_package_id)
-);
-
-create index if not exists idx_tender_sale_items_sale on public.tender_sale_items(tender_sale_id);
-create index if not exists idx_tender_sale_items_forfeited on public.tender_sale_items(forfeited_package_id);
-
-alter table public.tender_sale_items enable row level security;
-
--- Disposal Directorate manages every row; a yard can read its own.
-drop policy if exists tender_sale_items_disposal on public.tender_sale_items;
-create policy tender_sale_items_disposal on public.tender_sale_items
-  for all
-  using (public.auth_user_is_disposal())
-  with check (public.auth_user_is_disposal());
-
-drop policy if exists tender_sale_items_yard_read on public.tender_sale_items;
-create policy tender_sale_items_yard_read on public.tender_sale_items
-  for select
-  using (yard = (select yard from public.profiles where id = auth.uid()));
-
--- 2. ── Mark a tender-sale package SOLD (cross-yard, security definer) ────────
-create or replace function public.disposal_mark_sale_item_sold(
-  p_item_id uuid,
-  p_receipt text default null
-) returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  v_forfeited uuid;
-  v_package   uuid;
-  v_yard      text;
-  r           record;
-  v_wh    uuid;
-  v_zone  text;
-  v_hold  text;
-  v_adm   uuid;
-  v_admat timestamptz;
-  v_rate  numeric;
-  v_inserted int := 0;
-  v_note  text;
-begin
-  if not public.auth_user_is_disposal() then
-    raise exception 'not authorized';
-  end if;
-
-  select forfeited_package_id, yard
-    into v_forfeited, v_yard
-    from public.tender_sale_items
-   where id = p_item_id;
-  if v_forfeited is null then
-    raise exception 'tender sale item not found';
-  end if;
-
-  select package_id into v_package
-    from public.forfeited_packages
-   where id = v_forfeited;
-
-  v_note := '[FINAL:SOLD]' ||
-    case when coalesce(p_receipt, '') <> ''
-         then ' — Receipt: ' || p_receipt else '' end;
-
-  -- For each not-yet-finalised item write a [FINAL:SOLD] entry. The warehouse
-  -- context prefers the item's own latest entry but falls back to ANY entry on
-  -- the package (entries are often admitted package-level, with no item link).
-  for r in
-    select pi.id as item_id, pi.quantity as qty
-      from public.package_items pi
-     where pi.package_id = v_package
-       and lower(pi.status) not in
-           ('sold', 'destroyed', 'released', 're-exported', 'other')
-  loop
-    select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
-      into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
-      from public.warehouse_entries
-     where package_id = v_package
-     order by (package_item_id = r.item_id) desc nulls last, admitted_at desc
-     limit 1;
-
-    if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
-        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
-        item_count, admitted_by, admitted_at, daily_rate,
-        is_returned, returned_at, returned_by, return_notes)
-      values (
-        v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
-        r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
-
-      update public.package_items set status = 'sold' where id = r.item_id;
-
-      delete from public.warehouse_entries
-       where package_item_id = r.item_id and is_returned = false;
-
-      v_inserted := v_inserted + 1;
-    end if;
-  end loop;
-
-  -- Nothing item-level was written (no items, or none linkable). Still surface
-  -- the sale with one package-level [FINAL:SOLD] entry. Use any package entry;
-  -- as a last resort anchor it to any warehouse so it appears in the lists.
-  if v_inserted = 0 then
-    select warehouse_id, zone, hold_reason, admitted_by, admitted_at, daily_rate
-      into v_wh, v_zone, v_hold, v_adm, v_admat, v_rate
-      from public.warehouse_entries
-     where package_id = v_package
-     order by admitted_at desc
-     limit 1;
-
-    if v_wh is null then
-      select id into v_wh from public.warehouses order by created_at limit 1;
-      v_hold := 'Forfeit';
-    end if;
-
-    if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
-        package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
-        item_count, admitted_by, admitted_at, daily_rate,
-        is_returned, returned_at, returned_by, return_notes)
-      values (
-        v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
-        1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
-    end if;
-  end if;
-
-  update public.tender_sale_items
-     set sold = true, sold_at = now(), receipt_number = p_receipt
-   where id = p_item_id;
-end;
-$$;
-
-grant execute on function public.disposal_mark_sale_item_sold(uuid, text)
-  to authenticated;
 
 -- Done.
 
@@ -1321,15 +1386,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -1354,15 +1418,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -1461,15 +1524,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -1494,15 +1556,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -1682,15 +1743,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'destroyed' where id = r.item_id;
 
@@ -1715,15 +1775,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -1832,15 +1891,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -1865,15 +1923,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 end;
@@ -2101,15 +2158,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -2134,15 +2190,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -2222,15 +2277,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'destroyed' where id = r.item_id;
 
@@ -2255,15 +2309,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -2372,7 +2425,8 @@ $$ language plpgsql security definer;
 
 -- Trigger for auth.users
 drop trigger if exists on_auth_user_password_update on auth.users;
-create trigger on_auth_user_password_update
+DROP TRIGGER IF EXISTS on_auth_user_password_update ON auth.users;
+CREATE TRIGGER on_auth_user_password_update
   after update on auth.users
   for each row execute procedure public.handle_password_update();
 
@@ -2732,8 +2786,7 @@ begin
     update public.disposal_requests
        set valuation_status = 'forwarded',
            valued_at = coalesce(valued_at, created_at);
-    INSERT INTO public.app_migration_flags(flag) values ('valuation_directorate_backfilled')
-  ON CONFLICT DO NOTHING;
+    insert into public.app_migration_flags(flag) values ('valuation_directorate_backfilled');
   end if;
 end $$;
 
@@ -2955,6 +3008,96 @@ grant execute on function public.set_appeal_hold(uuid, boolean, text, uuid) to a
 
 
 -- ==========================================================================
+--  migrations/001_multi_yard.sql (folded in — adds the yard column the seed data below writes to)
+-- ==========================================================================
+
+-- ============================================================================
+--  Multi-yard support for SL Customs SR Management System
+--  Run this once in the Supabase SQL editor.
+--
+--  Adds a `yard` column to every data table, backfills existing rows to the
+--  default yard (GL1 / Grey Line 1), and enables Row-Level Security so each
+--  signed-in user can only see/modify rows belonging to their own yard.
+--
+--  Yard codes: GL1, GL2, RCT, BQ, JCT, NNR, CVT
+-- ============================================================================
+
+-- 1. ── Add the yard column everywhere ──────────────────────────────────────
+alter table public.profiles          add column if not exists yard text;
+alter table public.packages          add column if not exists yard text;
+alter table public.package_items     add column if not exists yard text;
+alter table public.warehouse_entries add column if not exists yard text;
+alter table public.forfeited_packages add column if not exists yard text;
+alter table public.tenders           add column if not exists yard text;
+alter table public.tender_disposals  add column if not exists yard text;
+alter table public.audit_logs        add column if not exists yard text;
+
+-- 2. ── Backfill existing data to Grey Line 1 ───────────────────────────────
+update public.profiles          set yard = 'GL1' where yard is null;
+update public.packages          set yard = 'GL1' where yard is null;
+update public.package_items     set yard = 'GL1' where yard is null;
+update public.warehouse_entries set yard = 'GL1' where yard is null;
+update public.forfeited_packages set yard = 'GL1' where yard is null;
+update public.tenders           set yard = 'GL1' where yard is null;
+update public.tender_disposals  set yard = 'GL1' where yard is null;
+update public.audit_logs        set yard = 'GL1' where yard is null;
+
+-- 3. ── Default + helper to read the current user's yard ────────────────────
+alter table public.profiles alter column yard set default 'GL1';
+
+create or replace function public.auth_user_yard()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select yard from public.profiles where id = auth.uid();
+$$;
+
+-- 4. ── Enable RLS and add per-yard policies ────────────────────────────────
+--    Each policy restricts rows to the caller's yard. A user can always read
+--    their own profile row; data tables are fully yard-scoped.
+
+-- profiles: a user sees profiles in their own yard (and always their own row)
+alter table public.profiles enable row level security;
+drop policy if exists yard_profiles_select on public.profiles;
+create policy yard_profiles_select on public.profiles
+  for select using (id = auth.uid() or yard = public.auth_user_yard());
+drop policy if exists yard_profiles_update on public.profiles;
+create policy yard_profiles_update on public.profiles
+  for update using (id = auth.uid());
+drop policy if exists yard_profiles_insert on public.profiles;
+create policy yard_profiles_insert on public.profiles
+  for insert with check (id = auth.uid());
+
+-- Generic per-yard policy generator for the data tables
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'packages','package_items','warehouse_entries',
+    'forfeited_packages','tenders','tender_disposals','audit_logs'
+  ]
+  loop
+    execute format('alter table public.%I enable row level security;', t);
+    execute format('drop policy if exists yard_all on public.%I;', t);
+    execute format($f$
+      create policy yard_all on public.%I
+        for all
+        using (yard = public.auth_user_yard())
+        with check (yard = public.auth_user_yard());
+    $f$, t);
+  end loop;
+end $$;
+
+-- 5. ── Shared reference tables stay global (NOT yard-scoped) ───────────────
+--    hold_reasons and package_categories are shared lookups; leave as-is.
+
+-- Done.
+
+
+-- ==========================================================================
 --  20260620_seed_data.sql
 -- ==========================================================================
 
@@ -3067,22 +3210,19 @@ VALUES (p1, 'GL1/SR/101/2026', 'CASE/2026/101', 'GL1', 'China',
   'Saman Kumara', 'C1001', '2026-05-10', '2026-05-12',
   'Undeclared items found during inspection', 'held',
   'Requires further review by supervisor.',
-  NOW() - INTERVAL '40 days', NOW() - INTERVAL '40 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '40 days', NOW() - INTERVAL '40 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
 VALUES (i1a, p1, 'Mobile Phones',
   'Samsung Galaxy S24 smartphones in original sealed boxes',
   15, 'Pieces', 3000, '8517120000', 'Electronics', false, 'Detain',
-  'Undeclared quantity — declared 5, found 15')
-  ON CONFLICT DO NOTHING;
+  'Undeclared quantity — declared 5, found 15');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
 VALUES (p1, i1a, wh1, 'GL1', '3', 'Undeclared items found during inspection',
-  15, 50, NOW() - INTERVAL '39 days', false)
-  ON CONFLICT DO NOTHING;
+  15, 50, NOW() - INTERVAL '39 days', false);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P2 · GL1/SR/102/2026 · cleared · 4 items
@@ -3098,8 +3238,7 @@ VALUES (p2, 'GL1/SR/102/2026', 'CASE/2026/102', 'GL1', 'India',
   'Nirosha Fernando', '199203702345', '15 Temple Road, Kandy', '0762345678',
   'Pradeep Wickramasinghe', 'C1002', '2026-05-12', '2026-05-14',
   NULL, 'cleared', NULL,
-  NOW() - INTERVAL '35 days', NOW() - INTERVAL '35 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '35 days', NOW() - INTERVAL '35 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status)
@@ -3115,8 +3254,7 @@ VALUES
    '5007200000', 'Garments', false, 'Other'),
   (i2d, p2, 'Silk Scarves',
    'Pure silk neck scarves, 90×90 cm', 50, 'Pieces', 450,
-   '6214100000', 'Garments', false, 'Other')
-  ON CONFLICT DO NOTHING;
+   '6214100000', 'Garments', false, 'Other');
 
 -- Cleared: warehouse entry returned
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
@@ -3124,8 +3262,7 @@ INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   is_returned, returned_at, return_notes)
 VALUES (p2, i2a, wh2, 'GL1', '5', 'Routine inspection hold',
   480, 20, NOW() - INTERVAL '34 days', true,
-  NOW() - INTERVAL '32 days', 'All documents verified. Goods released.')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '32 days', 'All documents verified. Goods released.');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P3 · GL1/SR/103/2026 · forfeited · 1 item · WINDOW PASSED (45 days ago)
@@ -3142,30 +3279,26 @@ VALUES (p3, 'GL1/SR/103/2026', 'CASE/2026/103', 'GL1', 'UAE',
   'Lalith Gunaratne', 'C1003', '2026-04-20', '2026-04-22',
   'Counterfeit luxury goods — trademark infringement', 'forfeited',
   'Goods confiscated under Customs Ordinance Section 84.',
-  NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
 VALUES (i3a, p3, 'Counterfeit Watches',
   'Fake Rolex and Omega watches in individual branded boxes',
   48, 'Pieces', 2600, '9102110000', 'Luxury Goods', true, 'Forfeit',
-  'Trademark infringement — Customs Ordinance Section 84')
-  ON CONFLICT DO NOTHING;
+  'Trademark infringement — Customs Ordinance Section 84');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
 VALUES (p3, i3a, wh3, 'GL1', '1', 'Forfeited — trademark infringement',
-  48, 50, NOW() - INTERVAL '44 days', false)
-  ON CONFLICT DO NOTHING;
+  48, 50, NOW() - INTERVAL '44 days', false);
 
 INSERT INTO public.forfeited_packages (id, package_id, sr_number, consignee_name,
   forfeited_at, appeal_deadline, reason, yard, source, appeal_hold, created_at, updated_at)
 VALUES (f3, p3, 'GL1/SR/103/2026', 'Roshan Jayawardena',
   NOW() - INTERVAL '45 days', NOW() - INTERVAL '15 days',
   'Counterfeit luxury goods — trademark infringement', 'GL1', 'forfeit', false,
-  NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '45 days', NOW() - INTERVAL '45 days');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P4 · GL1/SR/104/2026 · forfeited · 3 items · WINDOW PASSED (35 days ago)
@@ -3182,8 +3315,7 @@ VALUES (p4, 'GL1/SR/104/2026', 'CASE/2026/104', 'GL1', 'Pakistan',
   'Buddhika Rathnayake', 'C1004', '2026-04-28', '2026-04-30',
   'Prohibited electrical goods without proper certification', 'forfeited',
   'No SLS certification for electrical items.',
-  NOW() - INTERVAL '35 days', NOW() - INTERVAL '35 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '35 days', NOW() - INTERVAL '35 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
@@ -3196,24 +3328,21 @@ VALUES
    '8504401000', 'Electronics', true, 'Forfeit', 'Uncertified electrical equipment'),
   (i4c, p4, 'Extension Cords',
    '5-socket extension boards, 3 m cable, no earthing', 100, 'Pieces', 380,
-   '8544422000', 'Electronics', true, 'Forfeit', 'Safety hazard — no earthing')
-  ON CONFLICT DO NOTHING;
+   '8544422000', 'Electronics', true, 'Forfeit', 'Safety hazard — no earthing');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
 VALUES
   (p4, i4a, wh1, 'GL1', '2', 'Forfeited — uncertified electrical goods', 60, 50, NOW() - INTERVAL '34 days', false),
   (p4, i4b, wh1, 'GL1', '2', 'Forfeited — uncertified electrical goods', 200, 20, NOW() - INTERVAL '34 days', false),
-  (p4, i4c, wh1, 'GL1', '2', 'Forfeited — uncertified electrical goods', 100, 20, NOW() - INTERVAL '34 days', false)
-  ON CONFLICT DO NOTHING;
+  (p4, i4c, wh1, 'GL1', '2', 'Forfeited — uncertified electrical goods', 100, 20, NOW() - INTERVAL '34 days', false);
 
 INSERT INTO public.forfeited_packages (id, package_id, sr_number, consignee_name,
   forfeited_at, appeal_deadline, reason, yard, source, appeal_hold, created_at, updated_at)
 VALUES (f4, p4, 'GL1/SR/104/2026', 'Chamari Dissanayake',
   NOW() - INTERVAL '35 days', NOW() - INTERVAL '5 days',
   'Prohibited electrical goods without proper certification', 'GL1', 'forfeit', false,
-  NOW() - INTERVAL '35 days', NOW() - INTERVAL '35 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '35 days', NOW() - INTERVAL '35 days');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P5 · GL1/SR/105/2026 · forfeited · 2 items · ACTIVE WINDOW (20 days left)
@@ -3229,8 +3358,7 @@ VALUES (p5, 'GL1/SR/105/2026', 'CASE/2026/105', 'GL1', 'Japan',
   'Tech World Pvt Ltd', '200123450001', '45 IT Park, Malabe', '0112345678',
   'Asanka Wijesekara', 'C1005', '2026-06-05', '2026-06-07',
   'Misdeclaration of goods value', 'forfeited', NULL,
-  NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
@@ -3242,23 +3370,20 @@ VALUES
   (i5b, p5, 'Gaming Monitors',
    '32″ 4K gaming monitors, 144 Hz refresh', 10, 'Pieces', 1200,
    '8528590000', 'Electronics', false, 'Forfeit',
-   'Misdeclared as "display screens"')
-  ON CONFLICT DO NOTHING;
+   'Misdeclared as "display screens"');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
 VALUES
   (p5, i5a, wh2, 'GL1', '4', 'Forfeited — misdeclaration of value', 20, 50, NOW() - INTERVAL '9 days', false),
-  (p5, i5b, wh2, 'GL1', '4', 'Forfeited — misdeclaration of value', 10, 50, NOW() - INTERVAL '9 days', false)
-  ON CONFLICT DO NOTHING;
+  (p5, i5b, wh2, 'GL1', '4', 'Forfeited — misdeclaration of value', 10, 50, NOW() - INTERVAL '9 days', false);
 
 INSERT INTO public.forfeited_packages (id, package_id, sr_number, consignee_name,
   forfeited_at, appeal_deadline, reason, yard, source, appeal_hold, created_at, updated_at)
 VALUES (f5, p5, 'GL1/SR/105/2026', 'Tech World Pvt Ltd',
   NOW() - INTERVAL '10 days', NOW() + INTERVAL '20 days',
   'Misdeclaration of goods value', 'GL1', 'forfeit', false,
-  NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '10 days', NOW() - INTERVAL '10 days');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P6 · GL1/SR/106/2026 · forfeited · 1 item · ACTIVE WINDOW (25 days left)
@@ -3275,30 +3400,26 @@ VALUES (p6, 'GL1/SR/106/2026', 'CASE/2026/106', 'GL1', 'China',
   'Rasika Mendis', 'C1006', '2026-06-10', '2026-06-12',
   'Pharmaceutical goods without import licence', 'forfeited',
   'No NMRA approval for pharmaceutical imports.',
-  NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
 VALUES (i6a, p6, 'Herbal Supplements',
   'Unregistered herbal weight-loss capsules, 500 mg bottles',
   500, 'Bottles', 69, '2106909000', 'Pharmaceuticals', true, 'Forfeit',
-  'No NMRA licence — unregistered pharmaceutical product')
-  ON CONFLICT DO NOTHING;
+  'No NMRA licence — unregistered pharmaceutical product');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
 VALUES (p6, i6a, wh3, 'GL1', '6', 'Forfeited — no pharmaceutical import licence',
-  500, 20, NOW() - INTERVAL '4 days', false)
-  ON CONFLICT DO NOTHING;
+  500, 20, NOW() - INTERVAL '4 days', false);
 
 INSERT INTO public.forfeited_packages (id, package_id, sr_number, consignee_name,
   forfeited_at, appeal_deadline, reason, yard, source, appeal_hold, created_at, updated_at)
 VALUES (f6, p6, 'GL1/SR/106/2026', 'Smart Fix Repairs',
   NOW() - INTERVAL '5 days', NOW() + INTERVAL '25 days',
   'Pharmaceutical goods without import licence', 'GL1', 'forfeit', false,
-  NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P7 · GL1/SR/107/2026 · pending · 5 items · Large mixed electronics
@@ -3313,8 +3434,7 @@ VALUES (p7, 'GL1/SR/107/2026', 'CASE/2026/107', 'GL1', 'South Korea',
   'Sampath Electronics', '200089230003', '78 Baseline Road, Colombo 09', '0117890123',
   'Dulshan Karunaratne', 'C1007', '2026-06-14', '2026-06-15',
   NULL, 'pending', 'Awaiting inspection clearance.',
-  NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '5 days', NOW() - INTERVAL '5 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status)
@@ -3323,8 +3443,7 @@ VALUES
   (i7b, p7, 'Washing Machines', 'Front-load washing machine, 7 kg', 5, 'Pieces', 95000, '8450110000', 'Home Appliances', false, 'Detain'),
   (i7c, p7, 'Air Conditioners', '1.5-ton inverter split AC', 4, 'Pieces', 145000, '8415100000', 'Home Appliances', false, 'Detain'),
   (i7d, p7, 'Microwave Ovens', '28 L convection microwave with grill', 10, 'Pieces', 32000, '8516500000', 'Home Appliances', false, 'Detain'),
-  (i7e, p7, 'Bluetooth Speakers', 'Portable waterproof speaker, 30 W', 25, 'Pieces', 8500, '8518220000', 'Electronics', false, 'Detain')
-  ON CONFLICT DO NOTHING;
+  (i7e, p7, 'Bluetooth Speakers', 'Portable waterproof speaker, 30 W', 25, 'Pieces', 8500, '8518220000', 'Electronics', false, 'Detain');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
@@ -3333,8 +3452,7 @@ VALUES
   (p7, i7b, wh1, 'GL1', '1', 'Pending inspection', 5, 50, NOW() - INTERVAL '4 days', false),
   (p7, i7c, wh1, 'GL1', '2', 'Pending inspection', 4, 50, NOW() - INTERVAL '4 days', false),
   (p7, i7d, wh1, 'GL1', '2', 'Pending inspection', 10, 20, NOW() - INTERVAL '4 days', false),
-  (p7, i7e, wh1, 'GL1', '2', 'Pending inspection', 25, 20, NOW() - INTERVAL '4 days', false)
-  ON CONFLICT DO NOTHING;
+  (p7, i7e, wh1, 'GL1', '2', 'Pending inspection', 25, 20, NOW() - INTERVAL '4 days', false);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P8 · GL1/SR/108/2026 · held · 2 items · Agricultural produce
@@ -3350,8 +3468,7 @@ VALUES (p8, 'GL1/SR/108/2026', 'CASE/2026/108', 'GL1', 'Thailand',
   'Nilanka Seneviratne', 'C1008', '2026-06-16', '2026-06-17',
   'Phytosanitary certificate not produced', 'held',
   'Held for phytosanitary inspection. DOA notification sent.',
-  NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
@@ -3361,15 +3478,13 @@ VALUES
    'No phytosanitary certificate'),
   (i8b, p8, 'Palm Oil', 'Refined palm olein, 18 L cans',
    100, 'Cans', 340, '1511902000', 'Food & Agriculture', false, 'Detain',
-   'Label not in Sinhala / Tamil as required')
-  ON CONFLICT DO NOTHING;
+   'Label not in Sinhala / Tamil as required');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
 VALUES
   (p8, i8a, wh2, 'GL1', '7', 'Held — phytosanitary certificate missing', 200, 20, NOW() - INTERVAL '2 days', false),
-  (p8, i8b, wh2, 'GL1', '7', 'Held — labelling non-compliance',           100, 20, NOW() - INTERVAL '2 days', false)
-  ON CONFLICT DO NOTHING;
+  (p8, i8b, wh2, 'GL1', '7', 'Held — labelling non-compliance',           100, 20, NOW() - INTERVAL '2 days', false);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P9 · GL1/SR/109/2026 · cleared · 3 items · Motor vehicle parts
@@ -3384,8 +3499,7 @@ VALUES (p9, 'GL1/SR/109/2026', NULL, 'GL1', 'Japan',
   'AutoParts Lanka Pvt Ltd', '200201230005', '56 Nawala Road, Rajagiriya', '0112901234',
   'Manjula Pathirana', 'C1009', '2026-06-17', '2026-06-18',
   NULL, 'cleared', NULL,
-  NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '2 days', NOW() - INTERVAL '2 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status)
@@ -3395,8 +3509,7 @@ VALUES
   (i9b, p9, 'Brake Pads', 'Ceramic brake pads, front and rear sets',
    120, 'Sets', 2800, '8708302000', 'Auto Parts', false, 'Other'),
   (i9c, p9, 'Shock Absorbers', 'KYB Gas shock absorbers, front pair',
-   36, 'Pieces', 12000, '8708803000', 'Auto Parts', false, 'Other')
-  ON CONFLICT DO NOTHING;
+   36, 'Pieces', 12000, '8708803000', 'Auto Parts', false, 'Other');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at,
@@ -3407,8 +3520,7 @@ VALUES
   (p9, i9b, wh3, 'GL1', '8', 'Routine inspection hold', 120, 20, NOW() - INTERVAL '2 days',
    true, NOW() - INTERVAL '1 day', 'Documents verified. Goods released.'),
   (p9, i9c, wh3, 'GL1', '8', 'Routine inspection hold', 36, 20, NOW() - INTERVAL '2 days',
-   true, NOW() - INTERVAL '1 day', 'Documents verified. Goods released.')
-  ON CONFLICT DO NOTHING;
+   true, NOW() - INTERVAL '1 day', 'Documents verified. Goods released.');
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P10 · GL1/SR/110/2026 · pending · 1 item · Controlled chemicals
@@ -3424,22 +3536,19 @@ VALUES (p10, 'GL1/SR/110/2026', 'CASE/2026/110', 'GL1', 'Germany',
   'Tharaka Silva', 'C1010', '2026-06-18', '2026-06-18',
   'Controlled chemical — licence verification pending', 'pending',
   'Awaiting National Dangerous Drugs Board clearance.',
-  NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
 VALUES (i10a, p10, 'Controlled Chemicals',
   'Acetone, methanol and precursor reagents in 25 L drums',
   48, 'Drums', 15000, '2914110000', 'Chemicals', true, 'Detain',
-  'Precursor chemicals — NDDB licence required')
-  ON CONFLICT DO NOTHING;
+  'Precursor chemicals — NDDB licence required');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
 VALUES (p10, i10a, wh2, 'GL1', '9', 'Controlled substance — pending NDDB clearance',
-  48, 50, NOW() - INTERVAL '20 hours', false)
-  ON CONFLICT DO NOTHING;
+  48, 50, NOW() - INTERVAL '20 hours', false);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P11 · GL1/SR/111/2026 · held · 4 items · High-value jewellery
@@ -3455,8 +3564,7 @@ VALUES (p11, 'GL1/SR/111/2026', 'CASE/2026/111', 'GL1', 'Italy',
   'Sumudu Rajapaksa', 'C1011', '2026-06-19', '2026-06-19',
   'Undeclared jewellery exceeding duty-free threshold', 'held',
   'Held — duties and taxes outstanding. Owner notified.',
-  NOW() - INTERVAL '12 hours', NOW() - INTERVAL '12 hours')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '12 hours', NOW() - INTERVAL '12 hours');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status, reasons)
@@ -3472,8 +3580,7 @@ VALUES
    'Aggregate value far exceeds declared amount'),
   (i11d, p11, 'Pearl Earrings', 'South Sea cultured pearl drop earrings, 12 mm',
    15, 'Pairs', 95000, '7116100000', 'Jewellery', false, 'Detain',
-   'No certificate of authenticity')
-  ON CONFLICT DO NOTHING;
+   'No certificate of authenticity');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
@@ -3481,8 +3588,7 @@ VALUES
   (p11, i11a, wh3, 'GL1', '10', 'Held — undeclared high-value jewellery, duties outstanding', 12, 50, NOW() - INTERVAL '11 hours', false),
   (p11, i11b, wh3, 'GL1', '10', 'Held — undeclared high-value jewellery, duties outstanding', 8,  50, NOW() - INTERVAL '11 hours', false),
   (p11, i11c, wh3, 'GL1', '10', 'Held — undeclared high-value jewellery, duties outstanding', 20, 50, NOW() - INTERVAL '11 hours', false),
-  (p11, i11d, wh3, 'GL1', '10', 'Held — undeclared high-value jewellery, duties outstanding', 15, 50, NOW() - INTERVAL '11 hours', false)
-  ON CONFLICT DO NOTHING;
+  (p11, i11d, wh3, 'GL1', '10', 'Held — undeclared high-value jewellery, duties outstanding', 15, 50, NOW() - INTERVAL '11 hours', false);
 
 -- ════════════════════════════════════════════════════════════════════════════
 -- P12 · GL1/SR/120/2026 · pending · 5 items · Mixed Apple devices
@@ -3497,8 +3603,7 @@ VALUES (p12, 'GL1/SR/120/2026', 'CASE/2026/120', 'GL1', 'Singapore',
   'rtvgubii Trading', '200045670008', '22 Tech City, Homagama', '0788314247',
   'Anushanga Munasinghe', 'C1012', '2026-05-14', '2026-05-19',
   'Excess Weight', 'pending', NULL,
-  NOW() - INTERVAL '31 days', NOW() - INTERVAL '31 days')
-  ON CONFLICT DO NOTHING;
+  NOW() - INTERVAL '31 days', NOW() - INTERVAL '31 days');
 
 INSERT INTO public.package_items (id, package_id, item_name, goods_description,
   quantity, unit_of_measure, unit_value, hs_code, category, is_prohibited, status)
@@ -3507,8 +3612,7 @@ VALUES
   (i12b, p12, 'Laptop Computers', 'MacBook Pro M3 14″, 16 GB / 512 GB SSD',   10, 'Pieces', 9500, '8471300000', 'Electronics', false, 'Detain'),
   (i12c, p12, 'Wireless Earbuds', 'AirPods Pro 2nd Gen with MagSafe case',     50, 'Pieces', 800,  '8518300000', 'Electronics', false, 'Detain'),
   (i12d, p12, 'Smart Watches',   'Apple Watch Series 9, GPS 45 mm',            20, 'Pieces', 2100, '9102120000', 'Electronics', false, 'Detain'),
-  (i12e, p12, 'Tablet Computers','iPad Air M2, 256 GB Wi-Fi',                  15, 'Pieces', 4200, '8471300000', 'Electronics', false, 'Detain')
-  ON CONFLICT DO NOTHING;
+  (i12e, p12, 'Tablet Computers','iPad Air M2, 256 GB Wi-Fi',                  15, 'Pieces', 4200, '8471300000', 'Electronics', false, 'Detain');
 
 INSERT INTO public.warehouse_entries (package_id, package_item_id, warehouse_id,
   yard, zone, hold_reason, item_count, daily_rate, admitted_at, is_returned)
@@ -3517,8 +3621,7 @@ VALUES
   (p12, i12b, wh2, 'GL1', '3', 'Excess weight — pending re-weigh', 10, 50, NOW() - INTERVAL '30 days', false),
   (p12, i12c, wh2, 'GL1', '3', 'Excess weight — pending re-weigh', 50, 20, NOW() - INTERVAL '30 days', false),
   (p12, i12d, wh2, 'GL1', '3', 'Excess weight — pending re-weigh', 20, 20, NOW() - INTERVAL '30 days', false),
-  (p12, i12e, wh2, 'GL1', '3', 'Excess weight — pending re-weigh', 15, 20, NOW() - INTERVAL '30 days', false)
-  ON CONFLICT DO NOTHING;
+  (p12, i12e, wh2, 'GL1', '3', 'Excess weight — pending re-weigh', 15, 20, NOW() - INTERVAL '30 days', false);
 
 END $$;
 
@@ -3607,15 +3710,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         r.qty, v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'destroyed' where id = r.item_id;
 
@@ -3642,15 +3744,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -3816,15 +3917,14 @@ begin
      limit 1;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, r.item_id, v_wh, v_zone, v_hold,
         coalesce(v_fp_entry_qty, r.qty), v_adm, coalesce(v_admat, now()), v_rate,
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
 
       update public.package_items set status = 'sold' where id = r.item_id;
 
@@ -3832,7 +3932,7 @@ begin
        where package_item_id = r.item_id and is_returned = false;
 
       -- Upsert a per-item TSI row (copies price/taxes from the package-level row).
-      INSERT INTO public.tender_sale_items(
+      insert into public.tender_sale_items(
         tender_sale_id, forfeited_package_id, package_item_id,
         yard, sold, sold_at, receipt_number,
         sold_price, applied_taxes)
@@ -3848,8 +3948,7 @@ begin
         sold_at       = now(),
         receipt_number = p_receipt,
         sold_price    = p_price,
-        applied_taxes = p_taxes
-  ON CONFLICT DO NOTHING;
+        applied_taxes = p_taxes;
 
       v_inserted := v_inserted + 1;
     end if;
@@ -3870,15 +3969,14 @@ begin
     end if;
 
     if v_wh is not null then
-      INSERT INTO public.warehouse_entries(
+      insert into public.warehouse_entries(
         package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
         item_count, admitted_by, admitted_at, daily_rate,
         is_returned, returned_at, returned_by, return_notes)
       values (
         v_package, v_yard, null, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
         1, v_adm, coalesce(v_admat, now()), coalesce(v_rate, 0),
-        true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+        true, now(), auth.uid(), v_note);
     end if;
   end if;
 
@@ -3923,112 +4021,6 @@ create policy tender_sales_yard_read on public.tender_sales
          and tsi.yard = p.yard
     )
   );
-
-
--- ==========================================================================
---  20260625_autofill_package_item.sql
--- ==========================================================================
-
--- ============================================================================
---  BULLETPROOF item-scoping for tender / destruction sale rows.
---
---  Problem: tender_sale_items / destruction_items rows sometimes had
---  package_item_id = NULL (e.g. the app build that created them predated the
---  client-side stamping). With a NULL item id the mark-sold / mark-destroyed
---  RPC could not tell which item to process and bulk-processed the whole
---  package — selling Palm Oil alongside Jasmine Rice.
---
---  This migration makes the item id self-healing at the DATABASE layer, so it
---  works regardless of which app build inserts the row:
---
---    1. BEFORE INSERT triggers auto-fill package_item_id from the forfeited
---       package's own item_id whenever the client leaves it NULL.
---    2. A one-time backfill repairs existing rows the same way (skipping any
---       that would collide with an already-stamped sibling row).
---
---  Pair this with 20260625_mark_sold_per_tsi_item.sql /
---  20260625_destruction_per_di_item.sql (the guarded RPCs) for full coverage:
---  if an FP row is genuinely package-level (item_id NULL) the RPC refuses to
---  bulk-process instead of corrupting data.
---
---  Idempotent.
--- ============================================================================
-
--- 1. ── Auto-fill function (shared shape, one per table for clarity) ──────────
-create or replace function public.tsi_autofill_package_item()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if new.package_item_id is null then
-    select fp.item_id
-      into new.package_item_id
-      from public.forfeited_packages fp
-     where fp.id = new.forfeited_package_id;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_tsi_autofill_package_item on public.tender_sale_items;
-create trigger trg_tsi_autofill_package_item
-  before insert on public.tender_sale_items
-  for each row execute function public.tsi_autofill_package_item();
-
-create or replace function public.di_autofill_package_item()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if new.package_item_id is null then
-    select fp.item_id
-      into new.package_item_id
-      from public.forfeited_packages fp
-     where fp.id = new.forfeited_package_id;
-  end if;
-  return new;
-end;
-$$;
-
-drop trigger if exists trg_di_autofill_package_item on public.destruction_items;
-create trigger trg_di_autofill_package_item
-  before insert on public.destruction_items
-  for each row execute function public.di_autofill_package_item();
-
--- 2. ── Backfill existing rows from the FP's item_id (collision-safe) ─────────
---  Only stamps a row when the FP names a specific item AND no sibling row for
---  the same (forfeited_package_id, item_id) already exists.
-update public.tender_sale_items tsi
-   set package_item_id = fp.item_id
-  from public.forfeited_packages fp
- where tsi.forfeited_package_id = fp.id
-   and tsi.package_item_id is null
-   and fp.item_id is not null
-   and not exists (
-     select 1 from public.tender_sale_items x
-      where x.forfeited_package_id = tsi.forfeited_package_id
-        and x.package_item_id = fp.item_id
-        and x.id <> tsi.id
-   );
-
-update public.destruction_items di
-   set package_item_id = fp.item_id
-  from public.forfeited_packages fp
- where di.forfeited_package_id = fp.id
-   and di.package_item_id is null
-   and fp.item_id is not null
-   and not exists (
-     select 1 from public.destruction_items x
-      where x.forfeited_package_id = di.forfeited_package_id
-        and x.package_item_id = fp.item_id
-        and x.id <> di.id
-   );
-
--- Done.
 
 
 -- ==========================================================================
@@ -4166,15 +4158,14 @@ begin
         from public.package_items pi where pi.id = v_target_item;
     end if;
 
-    INSERT INTO public.warehouse_entries(
+    insert into public.warehouse_entries(
       package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
       item_count, admitted_by, admitted_at, daily_rate,
       is_returned, returned_at, returned_by, return_notes)
     values (
       v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
       coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-      coalesce(v_rate, 0), true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
 
     update public.package_items set status = 'destroyed' where id = v_target_item;
 
@@ -4190,6 +4181,114 @@ $$;
 
 grant execute on function public.disposal_mark_destruction_item_destroyed(uuid, text)
   to authenticated;
+
+-- Done.
+
+
+-- ==========================================================================
+--  20260625_autofill_package_item.sql
+-- ==========================================================================
+
+-- ============================================================================
+--  BULLETPROOF item-scoping for tender / destruction sale rows.
+--
+--  Problem: tender_sale_items / destruction_items rows sometimes had
+--  package_item_id = NULL (e.g. the app build that created them predated the
+--  client-side stamping). With a NULL item id the mark-sold / mark-destroyed
+--  RPC could not tell which item to process and bulk-processed the whole
+--  package — selling Palm Oil alongside Jasmine Rice.
+--
+--  This migration makes the item id self-healing at the DATABASE layer, so it
+--  works regardless of which app build inserts the row:
+--
+--    1. BEFORE INSERT triggers auto-fill package_item_id from the forfeited
+--       package's own item_id whenever the client leaves it NULL.
+--    2. A one-time backfill repairs existing rows the same way (skipping any
+--       that would collide with an already-stamped sibling row).
+--
+--  Pair this with 20260625_mark_sold_per_tsi_item.sql /
+--  20260625_destruction_per_di_item.sql (the guarded RPCs) for full coverage:
+--  if an FP row is genuinely package-level (item_id NULL) the RPC refuses to
+--  bulk-process instead of corrupting data.
+--
+--  Idempotent.
+-- ============================================================================
+
+-- 1. ── Auto-fill function (shared shape, one per table for clarity) ──────────
+create or replace function public.tsi_autofill_package_item()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.package_item_id is null then
+    select fp.item_id
+      into new.package_item_id
+      from public.forfeited_packages fp
+     where fp.id = new.forfeited_package_id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_tsi_autofill_package_item on public.tender_sale_items;
+DROP TRIGGER IF EXISTS trg_tsi_autofill_package_item ON public.tender_sale_items;
+CREATE TRIGGER trg_tsi_autofill_package_item
+  before insert on public.tender_sale_items
+  for each row execute function public.tsi_autofill_package_item();
+
+create or replace function public.di_autofill_package_item()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.package_item_id is null then
+    select fp.item_id
+      into new.package_item_id
+      from public.forfeited_packages fp
+     where fp.id = new.forfeited_package_id;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_di_autofill_package_item on public.destruction_items;
+DROP TRIGGER IF EXISTS trg_di_autofill_package_item ON public.destruction_items;
+CREATE TRIGGER trg_di_autofill_package_item
+  before insert on public.destruction_items
+  for each row execute function public.di_autofill_package_item();
+
+-- 2. ── Backfill existing rows from the FP's item_id (collision-safe) ─────────
+--  Only stamps a row when the FP names a specific item AND no sibling row for
+--  the same (forfeited_package_id, item_id) already exists.
+update public.tender_sale_items tsi
+   set package_item_id = fp.item_id
+  from public.forfeited_packages fp
+ where tsi.forfeited_package_id = fp.id
+   and tsi.package_item_id is null
+   and fp.item_id is not null
+   and not exists (
+     select 1 from public.tender_sale_items x
+      where x.forfeited_package_id = tsi.forfeited_package_id
+        and x.package_item_id = fp.item_id
+        and x.id <> tsi.id
+   );
+
+update public.destruction_items di
+   set package_item_id = fp.item_id
+  from public.forfeited_packages fp
+ where di.forfeited_package_id = fp.id
+   and di.package_item_id is null
+   and fp.item_id is not null
+   and not exists (
+     select 1 from public.destruction_items x
+      where x.forfeited_package_id = di.forfeited_package_id
+        and x.package_item_id = fp.item_id
+        and x.id <> di.id
+   );
 
 -- Done.
 
@@ -4318,15 +4417,14 @@ begin
         from public.package_items pi where pi.id = v_target_item;
     end if;
 
-    INSERT INTO public.warehouse_entries(
+    insert into public.warehouse_entries(
       package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
       item_count, admitted_by, admitted_at, daily_rate,
       is_returned, returned_at, returned_by, return_notes)
     values (
       v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
       coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-      coalesce(v_rate, 0), true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
 
     update public.package_items set status = 'sold' where id = v_target_item;
 
@@ -4459,15 +4557,14 @@ begin
         from public.package_items pi where pi.id = v_target_item;
     end if;
 
-    INSERT INTO public.warehouse_entries(
+    insert into public.warehouse_entries(
       package_id, yard, package_item_id, warehouse_id, zone, hold_reason,
       item_count, admitted_by, admitted_at, daily_rate,
       is_returned, returned_at, returned_by, return_notes)
     values (
       v_package, v_yard, v_target_item, v_wh, v_zone, coalesce(v_hold, 'Forfeit'),
       coalesce(v_target_qty, 1), v_adm, coalesce(v_admat, now()),
-      coalesce(v_rate, 0), true, now(), auth.uid(), v_note)
-  ON CONFLICT DO NOTHING;
+      coalesce(v_rate, 0), true, now(), auth.uid(), v_note);
 
     update public.package_items set status = 'destroyed' where id = v_target_item;
 
@@ -4933,7 +5030,6 @@ grant execute on function public.executive_position_available(text) to anon, aut
 
 alter table public.packages
   add column if not exists old_sr_number text;
-r
 
 -- ==========================================================================
 --  20260714_retender_keep_original.sql
@@ -5730,7 +5826,7 @@ begin
 
   v_entry := v_pkg.entry_date;
 
-  INSERT INTO public.forfeited_packages (
+  insert into public.forfeited_packages (
     package_id, item_id, entry_qty, sr_number, consignee_name,
     forfeited_at, appeal_deadline, reason, yard, source)
   values (
@@ -5741,8 +5837,7 @@ begin
     coalesce(v_pkg.reason, 'Appeal lodged'),
     v_pkg.yard,
     p_source)
-  returning id into v_id
-  ON CONFLICT DO NOTHING;
+  returning id into v_id;
 
   return v_id;
 end;
@@ -6247,7 +6342,7 @@ create policy warehouse_zones_admin_write on public.warehouse_zones
 --    starts at the parent warehouse's old figure divided evenly among them, so
 --    the totals carry over and an over-full warehouse still reads as over-full
 --    rather than being silently reset.
-INSERT INTO public.warehouse_zones (warehouse_id, name, capacity)
+insert into public.warehouse_zones (warehouse_id, name, capacity)
 select z.warehouse_id,
        z.zone,
        greatest(
@@ -6263,19 +6358,17 @@ select z.warehouse_id,
        and upper(trim(we.zone)) <> 'N/A'
   ) z
   join public.warehouses w on w.id = z.warehouse_id
-on conflict (warehouse_id, name) do nothing
-  ON CONFLICT DO NOTHING;
+on conflict (warehouse_id, name) do nothing;
 
 -- 4. ── A warehouse with no zones in use gets one default zone ───────────────
 --    Otherwise it would show zero capacity and accept nothing.
-INSERT INTO public.warehouse_zones (warehouse_id, name, capacity, description)
+insert into public.warehouse_zones (warehouse_id, name, capacity, description)
 select w.id, 'A', coalesce(w.capacity, 500),
        'Default zone (created when zones were introduced)'
   from public.warehouses w
  where not exists (select 1 from public.warehouse_zones z
                     where z.warehouse_id = w.id)
-on conflict (warehouse_id, name) do nothing
-  ON CONFLICT DO NOTHING;
+on conflict (warehouse_id, name) do nothing;
 
 reset lock_timeout;
 
@@ -6375,7 +6468,7 @@ update public.package_categories c
 -- 2. ── Create any zone a category still names but the warehouse lacks ───────
 --    Capacity starts at 500 — the admin sets the real figure; leaving the
 --    category pointing at nothing would be worse than a placeholder.
-INSERT INTO public.warehouse_zones (warehouse_id, name, code, capacity, description)
+insert into public.warehouse_zones (warehouse_id, name, code, capacity, description)
 select distinct
        c.target_warehouse_id,
        trim(regexp_replace(c.target_zone, '^[Zz]one\s+', '')),
@@ -6394,8 +6487,7 @@ select distinct
       where z.warehouse_id = c.target_warehouse_id
         and z.name = trim(regexp_replace(c.target_zone, '^[Zz]one\s+', ''))
    )
-on conflict (warehouse_id, name) do nothing
-  ON CONFLICT DO NOTHING;
+on conflict (warehouse_id, name) do nothing;
 
 -- 3. ── Now every category can be normalised ─────────────────────────────────
 update public.package_categories c
@@ -6565,7 +6657,8 @@ end;
 $$;
 
 drop trigger if exists destruction_items_receipt_sync on public.destruction_items;
-create trigger destruction_items_receipt_sync
+DROP TRIGGER IF EXISTS destruction_items_receipt_sync ON public.destruction_items;
+CREATE TRIGGER destruction_items_receipt_sync
   before insert or update of notes on public.destruction_items
   for each row execute function public.destruction_items_sync_receipt();
 
@@ -6613,4 +6706,443 @@ select tablename, policyname, cmd
  where schemaname = 'public'
    and tablename in ('warehouses', 'warehouse_zones')
  order by tablename, policyname;
+
+
+-- ==========================================================================
+--  20260839_ict_directorates_and_yards.sql
+-- ==========================================================================
+
+-- ============================================================================
+--  ICT Directorate: the 'ict' role, plus yards & directorate categories as DATA
+--
+--  Three things, all provisioned from the ICT portal at run time:
+--
+--   1. `profiles.role` gains 'ict'. The ICT portal's screens already exist in
+--      the app, but no migration ever widened the CHECK constraint — so every
+--      ICT sign-up failed at the profile INSERT with a check violation that the
+--      UI mis-reported as "Network problem". This is that fix.
+--
+--   2. `public.directorates` — the head-office divisions a yard belongs to
+--      (CED, PSD, RTF, B/A, ACD, EXD, PRD, SSD). More can be added later from
+--      the portal; nothing here hard-codes the list beyond the seed.
+--
+--   3. `public.yards` + `public.yard_directorates` — the yards themselves and
+--      the MANY-TO-MANY link to directorates. Many-to-many is required, not
+--      incidental: NNR belongs to both CED and PSD, and Katunayaka/Rathmalana/
+--      Mattala belong to both B/A and ACD.
+--
+--  The SR number becomes `<DIRECTORATE>/<YARD>/SR/<NN>/<YYYY>`
+--  (e.g. CED/GL1/SR/25/2026). Because a yard can sit under two directorates,
+--  the prefix is decided by the SIGNED-IN USER's directorate, which is why
+--  `profiles` gains a `directorate` column here.
+--
+--  Idempotent — safe to re-run.
+-- ============================================================================
+
+set lock_timeout = '5s';
+
+-- ── 1. The 'ict' role ───────────────────────────────────────────────────────
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles
+  add constraint profiles_role_check
+  check (role in ('admin', 'officer', 'disposal', 'appeal', 'valuation',
+                  'executive', 'ict'));
+
+-- ── 2. Directorates ─────────────────────────────────────────────────────────
+create table if not exists public.directorates (
+  code        text primary key,
+  name        text not null,
+  -- What goes in front of the SR number. Kept separate from `code` because
+  -- "B/A" is the real prefix but a slash is awkward as a key elsewhere.
+  sr_prefix   text not null,
+  sort_order  int  not null default 100,
+  is_active   boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+
+insert into public.directorates (code, name, sr_prefix, sort_order) values
+  ('CED', 'Customs Enforcement Directorate',        'CED', 10),
+  ('PSD', 'Port & Shipping Directorate',            'PSD', 20),
+  ('RTF', 'Revenue Task Force',                     'RTF', 30),
+  ('BA',  'Baggage / Airport',                      'B/A', 40),
+  ('ACD', 'Air Cargo Directorate',                  'ACD', 50),
+  ('EXD', 'Export Directorate',                     'EXD', 60),
+  ('PRD', 'Preventive Directorate',                 'PRD', 70),
+  ('SSD', 'Social Protection & Security Directorate','SSD', 80)
+on conflict (code) do nothing;
+
+-- ── 3. Yards ────────────────────────────────────────────────────────────────
+--  `code` matches the value already stored in `profiles.yard` and every
+--  `*.yard` column, so existing rows keep resolving with no data change.
+create table if not exists public.yards (
+  code        text primary key,
+  name        text not null,
+  -- The yard's own segment of the SR number (the middle part).
+  sr_prefix   text not null,
+  sort_order  int  not null default 100,
+  is_active   boolean not null default true,
+  created_at  timestamptz not null default now()
+);
+
+-- Seeded from lib/core/yards.dart (kYards) so the table starts out matching
+-- the app exactly. Order preserved: GL1 stays first (the historical default).
+insert into public.yards (code, name, sr_prefix, sort_order) values
+  ('GL1',     'Grey Line 1',    'GL1',      10),
+  ('GL2',     'Grey Line 2',    'GL2',      20),
+  ('RCT',     'RCT',            'RCT',      30),
+  ('CVT',     'CVT',            'CVT',      40),
+  ('BQ',      'BQ',             'BQ',       50),
+  ('NNR',     'NNR',            'NNR',      60),
+  ('JCT',     'JCT',            'JCT',      70),
+  ('PREV',    'Preventive',     'PREV',     80),
+  ('BAGG',    'Baggage Office', 'BAGG',     90),
+  ('RTF',     'RTF',            'RTF',     100),
+  ('BIA',     'BIA',            'BIA',     110),
+  ('HMB',     'HMB',            'HMB',     120),
+  ('TRINCO',  'Trinco',         'TRINCO',  130),
+  ('KURU',    'Kurunegala',     'KURU',    140),
+  ('CSL',     'CSL',            'CSL',     150),
+  ('DAMB',    'Dambulla',       'DAMB',    160),
+  ('MIDIGO',  'Midigo',         'MIDIGO',  170),
+  ('KALK',    'Kalkisiri',      'KALK',    180),
+  ('TRANSCO', 'Transco',        'TRANSCO', 190),
+  ('SEREN',   'Serendib',       'SEREN',   200),
+  ('TRIGO',   'Trigo',          'TRIGO',   210)
+on conflict (code) do nothing;
+
+-- Yards named in the directorate mapping that had no kYards entry yet.
+insert into public.yards (code, name, sr_prefix, sort_order) values
+  ('CRT',     'CRT',            'CRT',     220),
+  ('MIDCO',   'Midco',          'MIDCO',   230),
+  ('LAKSIRI', 'Laksiri Seva',   'LAKSIRI', 240),
+  ('BO',      'BO',             'BO',      250),
+  ('MOBILE',  'Mobile',         'MOBILE',  260),
+  ('MAINOFF', 'Main Office',    'MAINOFF', 270),
+  ('KAT',     'Katunayaka',     'KAT',     280),
+  ('MATT',    'Mattala',        'MATT',    290),
+  ('RATH',    'Rathmalana',     'RATH',    300),
+  ('PALALI',  'Palali',         'PALALI',  310),
+  ('TRIO',    'Trio',           'TRIO',    320),
+  ('ACE',     'ACE',            'ACE',     330),
+  ('ASIAN',   'Asian',          'ASIAN',   340)
+on conflict (code) do nothing;
+
+-- ── 4. Which yards sit under which directorate (many-to-many) ───────────────
+create table if not exists public.yard_directorates (
+  yard_code        text not null references public.yards(code) on delete cascade,
+  directorate_code text not null references public.directorates(code) on delete cascade,
+  created_at       timestamptz not null default now(),
+  primary key (yard_code, directorate_code)
+);
+
+create index if not exists yard_directorates_dir_idx
+  on public.yard_directorates (directorate_code);
+
+insert into public.yard_directorates (yard_code, directorate_code) values
+  -- CED
+  ('GL1', 'CED'), ('GL2', 'CED'), ('RCT', 'CED'), ('CRT', 'CED'),
+  ('NNR', 'CED'), ('BQ', 'CED'),  ('JCT', 'CED'),
+  -- PSD  (NNR is deliberately in BOTH CED and PSD)
+  ('TRINCO', 'PSD'), ('MIDCO', 'PSD'), ('TRANSCO', 'PSD'),
+  ('LAKSIRI', 'PSD'), ('NNR', 'PSD'), ('CSL', 'PSD'), ('BO', 'PSD'),
+  -- RTF
+  ('MOBILE', 'RTF'), ('MAINOFF', 'RTF'),
+  -- B/A  (Katunayaka, Mattala, Rathmalana are in BOTH B/A and ACD)
+  ('KAT', 'BA'), ('MATT', 'BA'), ('RATH', 'BA'), ('PALALI', 'BA'),
+  -- ACD
+  ('KAT', 'ACD'), ('RATH', 'ACD'), ('MATT', 'ACD'),
+  -- EXD
+  ('TRIO', 'EXD'), ('ACE', 'EXD'), ('ASIAN', 'EXD')
+on conflict (yard_code, directorate_code) do nothing;
+
+-- ── 5. The signed-in user's directorate ─────────────────────────────────────
+--  A yard can belong to two directorates, so the yard alone cannot decide the
+--  SR prefix. The USER's directorate does — chosen at registration.
+--
+--  Nullable and unconstrained by a FK on purpose: pre-existing accounts have no
+--  directorate, and the app falls back to the yard's sole directorate (or to no
+--  prefix at all) rather than refusing to work.
+alter table public.profiles
+  add column if not exists directorate text;
+
+comment on column public.profiles.directorate is
+  'Head-office directorate (public.directorates.code) this account registers '
+  'under. Decides the SR-number prefix, since one yard may sit under several.';
+
+-- ── 6. Reading the lists ────────────────────────────────────────────────────
+--  Every signed-in user needs the yard/directorate lists: the login pickers,
+--  the SR form, the "All Yards" filters. These are reference data with nothing
+--  yard-private in them, so SELECT is open to any authenticated user.
+alter table public.directorates      enable row level security;
+alter table public.yards             enable row level security;
+alter table public.yard_directorates enable row level security;
+
+drop policy if exists directorates_read on public.directorates;
+create policy directorates_read on public.directorates
+  for select using (true);
+
+drop policy if exists yards_read on public.yards;
+create policy yards_read on public.yards
+  for select using (true);
+
+drop policy if exists yard_directorates_read on public.yard_directorates;
+create policy yard_directorates_read on public.yard_directorates
+  for select using (true);
+
+-- ── 7. Only the ICT Directorate may change them ─────────────────────────────
+create or replace function public.auth_user_is_ict()
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $fn$
+  select exists (
+    select 1 from public.profiles p
+     where p.id = auth.uid()
+       and p.role = 'ict'
+       and p.is_active
+  );
+$fn$;
+
+grant execute on function public.auth_user_is_ict() to authenticated, anon;
+
+drop policy if exists directorates_ict_write on public.directorates;
+create policy directorates_ict_write on public.directorates
+  for all using (public.auth_user_is_ict())
+  with check (public.auth_user_is_ict());
+
+drop policy if exists yards_ict_write on public.yards;
+create policy yards_ict_write on public.yards
+  for all using (public.auth_user_is_ict())
+  with check (public.auth_user_is_ict());
+
+drop policy if exists yard_directorates_ict_write on public.yard_directorates;
+create policy yard_directorates_ict_write on public.yard_directorates
+  for all using (public.auth_user_is_ict())
+  with check (public.auth_user_is_ict());
+
+-- ── 8. ICT reads and writes every profile ───────────────────────────────────
+--  Provisioning yard admins/officers is the portal's whole purpose, and those
+--  accounts live in other yards than the ICT user's own.
+drop policy if exists profiles_ict_read on public.profiles;
+create policy profiles_ict_read on public.profiles
+  for select using (public.auth_user_is_ict());
+
+drop policy if exists profiles_ict_write on public.profiles;
+create policy profiles_ict_write on public.profiles
+  for all using (public.auth_user_is_ict())
+  with check (public.auth_user_is_ict());
+
+reset lock_timeout;
+
+-- ── VERIFY ──────────────────────────────────────────────────────────────────
+select pg_get_constraintdef(oid) as role_check
+  from pg_constraint where conname = 'profiles_role_check';
+
+select d.code, d.sr_prefix, count(yd.yard_code) as yards
+  from public.directorates d
+  left join public.yard_directorates yd on yd.directorate_code = d.code
+ group by d.code, d.sr_prefix, d.sort_order
+ order by d.sort_order;
+
+
+-- ==========================================================================
+--  20260840_sr_number_directorate_prefix.sql
+-- ==========================================================================
+
+-- ============================================================================
+--  Re-write every existing SR number to carry its directorate prefix.
+--
+--      GL1/SR/62/2026   ->   CED/GL1/SR/62/2026
+--
+--  ⚠️ READ THIS BEFORE RUNNING. `sr_number` is a human-facing key, not just a
+--  column. It is printed on the barcode/QR labels physically stuck to goods
+--  sitting in the warehouses, and it appears in already-generated PDFs and in
+--  audit-log detail blobs. Re-writing it means the paper in the yard no longer
+--  matches the database until those labels are reprinted.
+--
+--  The safeguards below exist because of that:
+--    * every old->new pair is kept in `public.sr_number_migration_log`,
+--    * the whole thing runs in ONE transaction (all rows or none),
+--    * a rollback script ships alongside it:
+--        supabase/rollback_sr_number_directorate_prefix.sql
+--    * it is idempotent — rows already carrying a prefix are skipped, so a
+--      second run is a no-op rather than CED/CED/GL1/...
+--
+--  Yards under two directorates (NNR, Katunayaka, Rathmalana, Mattala) have no
+--  single right answer from the yard alone. They are resolved by the LOWEST
+--  sort_order directorate, and every such row is flagged `was_ambiguous` in the
+--  log so ICT can review and correct them from the portal afterwards.
+-- ============================================================================
+
+set lock_timeout = '10s';
+
+-- ── The audit trail / rollback source ───────────────────────────────────────
+create table if not exists public.sr_number_migration_log (
+  id            bigserial primary key,
+  table_name    text not null,
+  row_id        uuid not null,
+  old_sr_number text not null,
+  new_sr_number text not null,
+  was_ambiguous boolean not null default false,
+  migrated_at   timestamptz not null default now()
+);
+
+create index if not exists sr_number_migration_log_row_idx
+  on public.sr_number_migration_log (table_name, row_id);
+
+-- ── The rewrite ─────────────────────────────────────────────────────────────
+do $mig$
+declare
+  v_updated int := 0;
+  v_skipped int := 0;
+  v_unknown int := 0;
+begin
+  -- A row is "already migrated" when its first segment names a directorate.
+  -- Everything else with a recognisable <YARD>/SR/<n>/<yyyy> shape is a target.
+  create temporary table _sr_map on commit drop as
+  select
+      p.id                                   as package_id,
+      p.sr_number                            as old_sr,
+      d.sr_prefix || '/' || p.sr_number      as new_sr,
+      -- More than one directorate for this yard => the choice was a guess.
+      (select count(*) from public.yard_directorates yd2
+        where yd2.yard_code = y.code) > 1    as ambiguous
+    from public.packages p
+    join public.yards y
+      on y.sr_prefix = split_part(p.sr_number, '/', 1)
+    -- Lowest sort_order wins when a yard sits under several directorates.
+    join lateral (
+      select d2.sr_prefix, d2.sort_order
+        from public.yard_directorates yd
+        join public.directorates d2 on d2.code = yd.directorate_code
+       where yd.yard_code = y.code
+       order by d2.sort_order
+       limit 1
+    ) d on true
+   where split_part(p.sr_number, '/', 2) = 'SR'
+     and not exists (
+       select 1 from public.directorates d3
+        where d3.sr_prefix = split_part(p.sr_number, '/', 1)
+     );
+
+  select count(*) into v_updated from _sr_map;
+
+  -- Rows we deliberately leave alone, reported so the run is auditable.
+  select count(*) into v_skipped
+    from public.packages p
+   where exists (select 1 from public.directorates d
+                  where d.sr_prefix = split_part(p.sr_number, '/', 1));
+
+  select count(*) into v_unknown
+    from public.packages p
+   where split_part(p.sr_number, '/', 2) = 'SR'
+     and not exists (select 1 from public.yards y
+                      where y.sr_prefix = split_part(p.sr_number, '/', 1))
+     and not exists (select 1 from public.directorates d
+                      where d.sr_prefix = split_part(p.sr_number, '/', 1));
+
+  insert into public.sr_number_migration_log
+        (table_name, row_id, old_sr_number, new_sr_number, was_ambiguous)
+  select 'packages', package_id, old_sr, new_sr, ambiguous from _sr_map;
+
+  update public.packages p
+     set sr_number = m.new_sr
+    from _sr_map m
+   where p.id = m.package_id;
+
+  -- `forfeited_packages` denormalises the SR number; keep the two in step.
+  insert into public.sr_number_migration_log
+        (table_name, row_id, old_sr_number, new_sr_number, was_ambiguous)
+  select 'forfeited_packages', f.id, m.old_sr, m.new_sr, m.ambiguous
+    from public.forfeited_packages f
+    join _sr_map m on m.package_id = f.package_id
+   where f.sr_number = m.old_sr;
+
+  update public.forfeited_packages f
+     set sr_number = m.new_sr
+    from _sr_map m
+   where f.package_id = m.package_id
+     and f.sr_number = m.old_sr;
+
+  raise notice 'SR migration: % rewritten, % already prefixed, % unknown-prefix (left alone)',
+    v_updated, v_skipped, v_unknown;
+end
+$mig$;
+
+reset lock_timeout;
+
+-- ── VERIFY ──────────────────────────────────────────────────────────────────
+-- Ambiguous rows for ICT to review (a yard under two directorates).
+select old_sr_number, new_sr_number
+  from public.sr_number_migration_log
+ where was_ambiguous
+ order by id;
+
+-- Anything still without a directorate prefix.
+select sr_number
+  from public.packages p
+ where not exists (select 1 from public.directorates d
+                    where d.sr_prefix = split_part(p.sr_number, '/', 1))
+ order by sr_number
+ limit 50;
+
+
+-- ==========================================================================
+--  migrations/002_strict_yard_isolation.sql (folded in)
+-- ==========================================================================
+
+-- ============================================================================
+--  Strict per-yard isolation for SL Customs SR Management System
+--  Run this once in the Supabase SQL editor, AFTER 001_multi_yard.sql.
+--
+--  Every user — administrators included — can only see and modify rows that
+--  belong to the single yard they registered with. There is NO cross-yard
+--  access for anyone. This migration re-asserts the strict policies from 001
+--  (so it is safe to run even if an earlier "admin cross-yard" policy was
+--  applied) and removes the admin-bypass helper if it exists.
+--
+--  Yard codes: GL1, GL2, RCT, BQ, JCT, NNR, CVT
+-- ============================================================================
+
+-- 1. ── Profiles: own row + same-yard profiles only (no admin bypass) ───────
+alter table public.profiles enable row level security;
+
+drop policy if exists yard_profiles_select on public.profiles;
+create policy yard_profiles_select on public.profiles
+  for select using (id = auth.uid() or yard = public.auth_user_yard());
+
+drop policy if exists yard_profiles_update on public.profiles;
+create policy yard_profiles_update on public.profiles
+  for update using (id = auth.uid());
+
+drop policy if exists yard_profiles_insert on public.profiles;
+create policy yard_profiles_insert on public.profiles
+  for insert with check (id = auth.uid());
+
+-- 2. ── Data tables: caller's yard only, for every role ─────────────────────
+do $$
+declare t text;
+begin
+  foreach t in array array[
+    'packages','package_items','warehouse_entries',
+    'forfeited_packages','tenders','tender_disposals','audit_logs'
+  ]
+  loop
+    execute format('alter table public.%I enable row level security;', t);
+    execute format('drop policy if exists yard_all on public.%I;', t);
+    execute format($f$
+      create policy yard_all on public.%I
+        for all
+        using (yard = public.auth_user_yard())
+        with check (yard = public.auth_user_yard());
+    $f$, t);
+  end loop;
+end $$;
+
+-- 3. ── Drop the admin-bypass helper (no longer used) ───────────────────────
+drop function if exists public.auth_user_is_admin();
+
+-- Done.
 
