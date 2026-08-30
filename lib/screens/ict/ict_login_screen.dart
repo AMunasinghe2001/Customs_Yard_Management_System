@@ -140,6 +140,13 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
     if (raw.contains('too many requests') || raw.contains('over_email_send_rate_limit')) {
       return 'Too many attempts. Please wait a moment and try again.';
     }
+    if (raw.contains('profile_not_found')) {
+      // The auth user exists but has no profiles row — the sign-up got half
+      // way. Almost always a database that has not run the ICT migration.
+      return 'This account has no profile record, so it cannot sign in. '
+          'It was created before the ICT migration was applied — ask ICT to '
+          'run supabase/migrations, then register again.';
+    }
     if (raw.contains('account_deactivated')) {
       return 'Your account has been deactivated. Please contact an administrator.';
     }

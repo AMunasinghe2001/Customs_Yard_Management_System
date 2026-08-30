@@ -234,7 +234,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                               Gap(8),
                               Text('Unsold Goods'),
                             ])),
-                    // ── The High Panel's outcomes, one tab each ──
+                    // ── The Top Management Directorate's outcomes, one tab each ──
                     Tab(
                         height: 44,
                         child: Row(
@@ -448,10 +448,10 @@ final _unsoldPageProvider =
 
 /// Packages that exhausted every avenue — the Valuation Tender, Tender 1-3 and
 /// the committee-valued tender all failed. READ-ONLY here: the DG decides the
-/// final outcome on the High Panel portal, this directorate carries it out.
+/// final outcome on the Top Management Directorate portal, this directorate carries it out.
 ///
 /// Uses the shared Unsold table (see `unsold_shared.dart`) so this tab, the
-/// yard's Unsold page and the High Panel's tab show identical details.
+/// yard's Unsold page and the Top Management Directorate's tab show identical details.
 class UnsoldProposalsTab extends ConsumerWidget {
   /// Page title, and the word inside the count pill.
   final String title;
@@ -460,7 +460,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
   /// One of [kUnsoldProposals], or null to list every unsold package.
   ///
   /// Null keeps this the Unsold Goods tab; set to an outcome code it lists
-  /// only the goods the High Panel decided that way, so Government Use /
+  /// only the goods the Top Management Directorate decided that way, so Government Use /
   /// Remand / Convert / Removed each get a tab without a copy of this file.
   final String? proposalFilter;
 
@@ -483,7 +483,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
     final amber = context.colors.warningAmber;
     final blue = context.colors.accentLightBlue;
     // The shared "every avenue exhausted" list, so this tab, the yard page and
-    // the High Panel all show exactly the same packages.
+    // the Top Management Directorate all show exactly the same packages.
     final async = ref.watch(exhaustedUnsoldProvider);
     final q = ref.watch(disposalSearchProvider(tabKey)).toLowerCase();
     final yardFilter = ref.watch(disposalYardFilterProvider(tabKey));
@@ -537,15 +537,26 @@ class UnsoldProposalsTab extends ConsumerWidget {
           // the yard filter pushed to the right.
           Row(
             children: [
-              Text(
-                title,
-                style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
+              // Flexible, not a bare Text + Spacer: the search box and the yard
+              // filter have fixed widths, so on a narrow window the title had
+              // nowhere to give and the Row overflowed (47px at 752px wide).
+              // Now the title ellipsises and the controls stay reachable.
+              // Expanded (not Text + Spacer) absorbs the leftover width AND
+              // gives it back when there isn't enough: the search box is a
+              // fixed 300 and the yard filter a fixed 220, so a bare Text had
+              // nowhere to shrink and the Row overflowed by 47px at 752 wide.
+              Expanded(
+                child: Text(
+                  title,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              const Spacer(),
+              const Gap(12),
               DisposalSearch(
                 tabKey: tabKey,
                 hint: 'Search SR / item / consignee...',
@@ -3972,7 +3983,7 @@ class _CommitteesTab extends ConsumerWidget {
             const Gap(10),
             Expanded(
               child: Text(
-                  'Committees appointed by the High Panel for packages still unsold after Tender 3',
+                  'Committees appointed by the Top Management Directorate for packages still unsold after Tender 3',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style:
@@ -4027,7 +4038,7 @@ class _CommitteesTab extends ConsumerWidget {
                         icon: Icons.groups_rounded,
                         message: 'No committees appointed yet',
                         subtitle:
-                            'The High Panel appoints a committee for packages still unsold after Tender 3.'),
+                            'The Top Management Directorate appoints a committee for packages still unsold after Tender 3.'),
                   );
                 }
                 return ListView.separated(
@@ -4928,7 +4939,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     );
   }
 
-  /// The High Panel committee's figure for this package, if one exists.
+  /// The Top Management Directorate committee's figure for this package, if one exists.
   ///
   /// Past Tender 3 the price is no longer a Valuation Directorate decision — a
   /// committee inspects the goods and the ADG submits their figure. Central
@@ -4951,7 +4962,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
       padding: const EdgeInsets.only(top: 10),
       child: StyledFormSection(
         gap: 0,
-        title: 'High Panel Committee Valuation',
+        title: 'Top Management Directorate Committee Valuation',
         icon: Icons.groups_rounded,
         children: [
           Container(
@@ -5203,7 +5214,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                     ],
                   ],
                 ),
-                // The High Panel committee's figure, once one exists.
+                // The Top Management Directorate committee's figure, once one exists.
                 _committeeValueSection(),
               ],
             ),

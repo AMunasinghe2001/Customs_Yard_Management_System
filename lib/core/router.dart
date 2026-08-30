@@ -216,7 +216,7 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/unsold-packages',
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey, child: const UnsoldPackagesScreen())),
-      // ── The High Panel's outcomes, one page each ──
+      // ── The Top Management Directorate's outcomes, one page each ──
       //  Same screen as Unsold Goods, narrowed to a single decided outcome.
       GoRoute(
           path: '/government-use-packages',

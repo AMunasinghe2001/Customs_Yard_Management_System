@@ -5,10 +5,9 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
-import '../../core/yards.dart';
+import '../../widgets/directorate_yard_picker.dart';
 import '../../services/services.dart';
 import '../../core/providers.dart';
-import '../../widgets/styled_dropdown.dart';
 
 class OfficerSignupScreen extends ConsumerStatefulWidget {
   const OfficerSignupScreen({super.key});
@@ -25,7 +24,8 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   final _otpCtrl = TextEditingController();
-  String _selectedYard = kDefaultYardCode;
+  String? _selectedDirectorate;
+  String? _selectedYard;
   bool _obscurePass = true, _obscureConfirm = true;
   bool _isLoading = false;
   bool _otpSent = false;
@@ -51,6 +51,7 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
           badgeNumber: _salaryCtrl.text.trim(),
           role: 'officer',
           yard: _selectedYard,
+          directorate: _selectedDirectorate,
         );
         setState(() {
           _otpSent = true;
@@ -65,6 +66,7 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
           badgeNumber: _salaryCtrl.text.trim(),
           role: 'officer',
           yard: _selectedYard,
+          directorate: _selectedDirectorate,
         );
         setState(() {
           _success = 'Account verified! Redirecting to Sign In...';
@@ -235,18 +237,19 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 240.ms).fadeIn(),
                 const Gap(14),
 
-                // Yard selection — which yard this account belongs to
-                StyledDropdownFormField<String>(
-                  value: _selectedYard,
-                  label: 'Yard *',
-                  helperText: null,
-                  menuWidth: 384,
-                  prefixIcon: Icon(Icons.warehouse_outlined, color: context.colors.textMuted),
-                  options: [
-                    for (final y in kYards) StyledDropdownOption(y.code, y.name),
-                  ],
-                  onChanged: (v) => setState(() => _selectedYard = v ?? kDefaultYardCode),
-                  validator: (v) => v == null || v.isEmpty ? 'Select a yard' : null,
+                // Which directorate, then which of ITS yards. The pair decides
+                // this account's SR-number prefix for good, so it is asked at
+                // registration rather than inferred later.
+                DirectorateYardPicker(
+                  directorate: _selectedDirectorate,
+                  yard: _selectedYard,
+                  onDirectorateChanged: (v) => setState(() {
+                    _selectedDirectorate = v;
+                    // The old yard may not belong to the new directorate;
+                    // clearing it forces a deliberate re-pick.
+                    _selectedYard = null;
+                  }),
+                  onYardChanged: (v) => setState(() => _selectedYard = v),
                 ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 260.ms).fadeIn(),
                 const Gap(14),
 

@@ -192,6 +192,24 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
 
   String _friendlyError(String raw) {
     final low = raw.toLowerCase();
+
+    // Checked BEFORE the network branch on purpose. A schema/permission failure
+    // carries none of the socket keywords, but it used to fall all the way
+    // through to the generic return and read as a connection problem — which is
+    // exactly how "the ICT portal won't let anyone sign up" looked for so long.
+    // These messages come already-worded from AdminService._profileWriteMessage.
+    if (low.contains('does not accept the') ||
+        low.contains('missing a column') ||
+        low.contains('not permitted to create') ||
+        low.contains('could not save the account profile')) {
+      return raw.replaceAll('Exception: ', '');
+    }
+    if (low.contains('23514') || low.contains('check constraint')) {
+      return 'This database has not been migrated for the ICT portal yet. '
+          'Run supabase/migrations/20260839_ict_directorates_and_yards.sql, '
+          'then try again.';
+    }
+
     if (low.contains('socketexception') ||
         low.contains('retryablefetch') ||
         low.contains('semaphore') ||

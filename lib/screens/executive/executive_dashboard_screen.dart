@@ -95,7 +95,7 @@ class _ExecutiveDashboardScreenState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('High Panel Officers',
+                  Text('Top Management Directorate',
                       style: TextStyle(
                           color: context.colors.textPrimary,
                           fontSize: 17,

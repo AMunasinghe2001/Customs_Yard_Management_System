@@ -57,9 +57,9 @@ class _ExecutiveSignupScreenState extends ConsumerState<ExecutiveSignupScreen> {
   // Position keys are already the short titles (DG / ADG).
   String get _shortTitle => _position ?? '';
   // NOTE: stored in profiles.full_name at signup, so accounts created before
-  // the "High Panel Officers" rename keep their old "Executive Office (DG)"
+  // the "Top Management Directorate" rename keep their old "Executive Office (DG)"
   // label until edited.
-  String get _fullName => 'High Panel Officers ($_shortTitle)';
+  String get _fullName => 'Top Management Directorate ($_shortTitle)';
 
   bool get _resendLocked =>
       _resendLockUntil != null && DateTime.now().isBefore(_resendLockUntil!);

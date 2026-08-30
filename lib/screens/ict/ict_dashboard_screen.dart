@@ -7,11 +7,13 @@ import '../../core/theme.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
+import '../../core/directorates.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/empty_state_card.dart';
+import 'yard_directorate_tab.dart';
 
 /// ICT Directorate Portal: Central user provisioning and management for
 /// DC / SDDC (Yard Admins) and Yard Officers across all customs yards.
@@ -24,6 +26,8 @@ class IctDashboardScreen extends ConsumerStatefulWidget {
 
 class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
   final _searchCtrl = TextEditingController();
+  /// 0 = Staff Accounts, 1 = Yards & Directorates.
+  int _tab = 0;
   String _selectedYard = 'all';
   String _selectedRole = 'all';
   String _selectedStatus = 'all'; // 'all', 'active', 'inactive'
@@ -77,7 +81,10 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
     final otpC = TextEditingController();
 
     String selectedRole = 'officer'; // 'admin' or 'officer'
-    String selectedYard = kDefaultYardCode;
+    // Both start unset: the yard list depends on the directorate, and a
+    // pre-filled pair would quietly assign whichever yard happened to be first.
+    String? selectedDirectorate;
+    String? selectedYard;
     bool otpSent = false;
     bool dialogLoading = false;
     String? dialogInfo;
@@ -102,6 +109,11 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
               setDialogState(() => dialogError = 'Enter a valid email address.');
               return;
             }
+            if (selectedDirectorate == null || selectedYard == null) {
+              setDialogState(() => dialogError =
+                  'Choose the directorate and the yard this account belongs to.');
+              return;
+            }
 
             setDialogState(() {
               dialogLoading = true;
@@ -116,7 +128,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                     mobileNumber: mobileC.text.trim(),
                     badgeNumber: salaryC.text.trim(),
                     role: selectedRole,
-                    yard: selectedYard,
+                    yard: selectedYard!,
                   );
               setDialogState(() {
                 otpSent = true;
@@ -151,7 +163,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                     mobileNumber: mobileC.text.trim(),
                     badgeNumber: salaryC.text.trim(),
                     role: selectedRole,
-                    yard: selectedYard,
+                    yard: selectedYard!,
+                    directorate: selectedDirectorate,
                   );
 
               if (ctx.mounted) Navigator.pop(ctx);
@@ -161,6 +174,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
               final roleLabel =
                   selectedRole == 'admin' ? 'DC / SDDC (Admin)' : 'Yard Officer';
               final yardLabel = yardByCode(selectedYard).name;
+              final dirLabel = directorateName(selectedDirectorate);
 
               if (emailed) {
                 if (mounted) {
@@ -172,6 +186,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                     password: res['password']?.toString() ?? '',
                     role: roleLabel,
                     yard: yardLabel,
+                    directorate: dirLabel,
                     emailed: true,
                   );
                 }
@@ -185,6 +200,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                     password: res['password']?.toString() ?? '',
                     role: roleLabel,
                     yard: yardLabel,
+                    directorate: dirLabel,
                     emailed: false,
                   );
                 }
@@ -258,23 +274,27 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                     ),
                     const Gap(12),
                     Expanded(
-                      child: DropdownButtonFormField<String>(
+                      child: _DirectorateField(
+                        value: selectedDirectorate,
+                        enabled: !otpSent,
+                        onChanged: (v) => setDialogState(() {
+                          selectedDirectorate = v;
+                          // The yard list is about to change; a yard from the
+                          // old directorate must not survive the switch.
+                          selectedYard = null;
+                        }),
+                      ),
+                    ),
+                  ]),
+                  const Gap(12),
+                  Row(children: [
+                    Expanded(
+                      child: _YardField(
+                        directorate: selectedDirectorate,
                         value: selectedYard,
-                        decoration: const InputDecoration(
-                          labelText: 'Assigned Yard *',
-                          prefixIcon: Icon(Icons.warehouse_outlined),
-                        ),
-                        items: kYards
-                            .map((y) => DropdownMenuItem(
-                                  value: y.code,
-                                  child: Text(y.name,
-                                      overflow: TextOverflow.ellipsis),
-                                ))
-                            .toList(),
-                        onChanged: otpSent
-                            ? null
-                            : (v) => setDialogState(
-                                () => selectedYard = v ?? kDefaultYardCode),
+                        enabled: !otpSent,
+                        onChanged: (v) =>
+                            setDialogState(() => selectedYard = v),
                       ),
                     ),
                   ]),
@@ -390,6 +410,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
     required String password,
     required String role,
     required String yard,
+    required String directorate,
     required bool emailed,
   }) {
     showDialog(
@@ -437,6 +458,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
               const Gap(10),
               _credRow('Officer Name', fullName),
               _credRow('Assigned Role', role),
+              _credRow('Directorate', directorate),
               _credRow('Assigned Yard', yard),
               _credRow('Email Address', email),
               const Gap(10),
@@ -515,7 +537,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
     final salaryC = TextEditingController(text: staff.badgeNumber ?? '');
     final mobileC = TextEditingController(text: staff.mobileNumber ?? '');
     String selectedRole = staff.role;
-    String selectedYard = staff.yard ?? kDefaultYardCode;
+    String? selectedDirectorate = staff.directorate;
+    String? selectedYard = staff.yard;
     bool loading = false;
     String? error;
 
@@ -539,8 +562,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                     username: unameC.text.trim(),
                     badgeNumber: salaryC.text.trim(),
                     mobileNumber: mobileC.text.trim(),
-                    yard: selectedYard,
+                    yard: selectedYard ?? staff.yard ?? kDefaultYardCode,
                     role: selectedRole,
+                    directorate: selectedDirectorate,
                   );
               if (ctx.mounted) Navigator.pop(ctx);
               _loadData();
@@ -624,18 +648,22 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                 ),
                 const Gap(12),
                 Expanded(
-                  child: DropdownButtonFormField<String>(
+                  child: _DirectorateField(
+                    value: selectedDirectorate,
+                    onChanged: (v) => setDialogState(() {
+                      selectedDirectorate = v;
+                      selectedYard = null;
+                    }),
+                  ),
+                ),
+              ]),
+              const Gap(12),
+              Row(children: [
+                Expanded(
+                  child: _YardField(
+                    directorate: selectedDirectorate,
                     value: selectedYard,
-                    decoration: const InputDecoration(labelText: 'Yard'),
-                    items: kYards
-                        .map((y) => DropdownMenuItem(
-                              value: y.code,
-                              child: Text(y.name,
-                                  overflow: TextOverflow.ellipsis),
-                            ))
-                        .toList(),
-                    onChanged: (v) => setDialogState(
-                        () => selectedYard = v ?? kDefaultYardCode),
+                    onChanged: (v) => setDialogState(() => selectedYard = v),
                   ),
                 ),
               ]),
@@ -829,7 +857,17 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
             ]),
           ),
 
+          // ── Tab bar ─────────────────────────────────────────────
+          _IctTabBar(
+            index: _tab,
+            accent: accent,
+            onChanged: (i) => setState(() => _tab = i),
+          ),
+
           // ── Body Content ────────────────────────────────────────
+          if (_tab == 1)
+            Expanded(child: YardDirectorateTab(accent: accent))
+          else
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.all(28),
@@ -1331,6 +1369,215 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
           ),
         ),
       ]),
+    );
+  }
+}
+
+// ── Dialog field helpers ────────────────────────────────────────────────────
+//  The Add-Staff and Edit-Staff dialogs ask the same two questions, so the
+//  fields live here rather than being written twice. They are plain
+//  `DropdownButtonFormField`s to match the other controls in those dialogs —
+//  the login/sign-up screens use the styled variant via DirectorateYardPicker.
+
+/// Picks the head-office directorate an account belongs to.
+class _DirectorateField extends ConsumerWidget {
+  const _DirectorateField({
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(directoratesProvider);
+    return async.when(
+      loading: () => const _LoadingField(label: 'Directorate *'),
+      error: (_, __) => const _LoadingField(label: 'Directorate (unavailable)'),
+      data: (list) {
+        final active = list.where((d) => d.isActive).toList();
+        return DropdownButtonFormField<String>(
+          // Guard against a value whose directorate was deactivated: an
+          // unmatched value makes DropdownButton throw rather than render.
+          value: active.any((d) => d.code == value) ? value : null,
+          isExpanded: true,
+          decoration: const InputDecoration(
+            labelText: 'Directorate *',
+            prefixIcon: Icon(Icons.account_balance_outlined),
+          ),
+          items: [
+            for (final d in active)
+              DropdownMenuItem(
+                value: d.code,
+                child: Text('${d.srPrefix} — ${d.name}',
+                    overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: enabled ? onChanged : null,
+        );
+      },
+    );
+  }
+}
+
+/// Picks a yard from those belonging to [directorate].
+class _YardField extends ConsumerWidget {
+  const _YardField({
+    required this.directorate,
+    required this.value,
+    required this.onChanged,
+    this.enabled = true,
+  });
+
+  final String? directorate;
+  final String? value;
+  final ValueChanged<String?> onChanged;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(yardsForDirectorateProvider(directorate));
+    return async.when(
+      loading: () => const _LoadingField(label: 'Assigned Yard *'),
+      error: (_, __) => const _LoadingField(label: 'Yard (unavailable)'),
+      data: (list) {
+        final active = list.where((y) => y.isActive).toList();
+        final ready = directorate != null && directorate!.isNotEmpty;
+        return DropdownButtonFormField<String>(
+          value: active.any((y) => y.code == value) ? value : null,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: 'Assigned Yard *',
+            prefixIcon: const Icon(Icons.warehouse_outlined),
+            // Explains an empty list instead of leaving a dead control.
+            helperText: !ready
+                ? 'Choose a directorate first'
+                : active.isEmpty
+                    ? 'No yards assigned to this directorate yet'
+                    : null,
+          ),
+          items: [
+            for (final y in active)
+              DropdownMenuItem(
+                value: y.code,
+                child: Text(y.name, overflow: TextOverflow.ellipsis),
+              ),
+          ],
+          onChanged: (enabled && ready) ? onChanged : null,
+        );
+      },
+    );
+  }
+}
+
+class _LoadingField extends StatelessWidget {
+  const _LoadingField({required this.label});
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label),
+      child: const SizedBox(
+        height: 20,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+              width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+        ),
+      ),
+    );
+  }
+}
+
+/// The ICT portal's two areas: the staff accounts it provisions, and the
+/// yard/directorate reference data those accounts are assigned against.
+class _IctTabBar extends StatelessWidget {
+  const _IctTabBar({
+    required this.index,
+    required this.accent,
+    required this.onChanged,
+  });
+
+  final int index;
+  final Color accent;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        border: Border(bottom: BorderSide(color: context.colors.borderColor)),
+      ),
+      child: Row(children: [
+        _IctTab(
+          label: 'Staff Accounts',
+          icon: Icons.groups_rounded,
+          selected: index == 0,
+          accent: accent,
+          onTap: () => onChanged(0),
+        ),
+        const Gap(8),
+        _IctTab(
+          label: 'Yards & Directorates',
+          icon: Icons.account_tree_rounded,
+          selected: index == 1,
+          accent: accent,
+          onTap: () => onChanged(1),
+        ),
+      ]),
+    );
+  }
+}
+
+class _IctTab extends StatelessWidget {
+  const _IctTab({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.accent,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? accent.withOpacity(0.12) : Colors.transparent,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: selected ? accent.withOpacity(0.4) : Colors.transparent),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon,
+                size: 17,
+                color: selected ? accent : context.colors.textMuted),
+            const Gap(8),
+            Text(label,
+                style: TextStyle(
+                    color: selected ? accent : context.colors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
+          ]),
+        ),
+      ),
     );
   }
 }

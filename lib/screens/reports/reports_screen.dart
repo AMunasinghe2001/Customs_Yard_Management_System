@@ -48,7 +48,7 @@ const List<String> kReportStatuses = [
 ///   * **Initial Valuation** — the Valuation Directorate's figure on the
 ///     disposal request, which prices the **Valuation Tender**.
 ///   * **Tender 1 / 2 / 3** — bid-driven re-valuations, one per unsold round.
-///   * **High Panel Valuation** — the figure the ADG submitted from the tender
+///   * **Top Management Directorate Valuation** — the figure the ADG submitted from the tender
 ///     committee, pricing the final committee round. It lives on
 ///     `tender_committees.submitted_value`, not in the re-valuations.
 const List<String> kValuationRounds = [
@@ -56,7 +56,7 @@ const List<String> kValuationRounds = [
   'Tender 1',
   'Tender 2',
   'Tender 3',
-  'High Panel Valuation',
+  'Top Management Directorate Valuation',
 ];
 
 class ReportsScreen extends ConsumerStatefulWidget {
@@ -1343,10 +1343,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   // ── Executive Office (DG / ADG) only reports ────────────────────────────
-  // Three fixed-column listings the High Panel Officers sign off on.
+  // Three fixed-column listings the Top Management Directorate sign off on.
   // Column sets are exactly as specified — no extra columns.
 
-  /// Emit one of the High Panel listings: shows it in-app, previews a PDF, or exports
+  /// Emit one of the Top Management Directorate listings: shows it in-app, previews a PDF, or exports
   /// Excel, from a pre-built column/row set.
   Future<void> _emitDgReport({
     required String key,
@@ -1813,17 +1813,17 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-  /// **High Panel Valuation** — SR Number · Goods Name · Goods Description ·
-  /// Final Valuation · High Panel Valuation.
+  /// **Top Management Directorate Valuation** — SR Number · Goods Name · Goods Description ·
+  /// Final Valuation · Top Management Directorate Valuation.
   ///
   /// "Final Valuation" is the LAST price the Valuation Directorate set, i.e.
-  /// the one Tender 3 was offered at. "High Panel Valuation" is the figure the
+  /// the one Tender 3 was offered at. "Top Management Directorate Valuation" is the figure the
   /// appointed committee reached and the ADG submitted for the final tender.
   ///
   /// Only goods that reached the committee stage appear — anything the ADG has
-  /// not submitted a value for has no High Panel valuation to report.
+  /// not submitted a value for has no Top Management Directorate valuation to report.
   Future<void> _generateHighPanelValuationReport(String format) async {
-    const key = 'High Panel Valuation';
+    const key = 'Top Management Directorate Valuation';
     _setLoading('${key}_$format', true);
     try {
       final disposal = ref.read(disposalServiceProvider);
@@ -1871,7 +1871,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           'Goods Name',
           'Goods Description',
           'Final Valuation',
-          'High Panel Valuation',
+          'Top Management Directorate Valuation',
         ],
         rows: rows,
         rowItemIds: itemIds,
@@ -1884,7 +1884,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   /// **Not Sold Packages** — SR Number · Item Name · Goods Description ·
-  /// High Panel Committee Members · Proposed Decision.
+  /// Top Management Directorate Committee Members · Proposed Decision.
   ///
   /// The goods that exhausted EVERY avenue: the Valuation Tender, Tender 1-3
   /// and the committee-priced final tender all failed. For each one it prints
@@ -1955,7 +1955,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           'SR Number',
           'Goods Name',
           'Goods Description',
-          'High Panel Committee Members',
+          'Top Management Directorate Committee Members',
           'Proposed Decision',
         ],
         rows: rows,
@@ -1968,7 +1968,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     }
   }
 
-  /// Financials, SR BY SR — every figure the High Panel's Financials tab
+  /// Financials, SR BY SR — every figure the Top Management Directorate's Financials tab
   /// totals, listed per SR so a headline can be traced to what produced it.
   ///
   /// Reads the same [srFinancialsProvider] the tab does, so the report and
@@ -2139,7 +2139,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   static String _reportMoney(double v) =>
       v == 0 ? '-' : NumberFormat('#,##0.00').format(v);
 
-  /// Goods the High Panel decided a particular way — Unsold, Remand, Auction
+  /// Goods the Top Management Directorate decided a particular way — Unsold, Remand, Auction
   /// or Convert. One generator for all of them: the report differs only by
   /// which `unsold_proposals.proposal` it keeps.
   ///
@@ -2587,7 +2587,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onExcel: () => _generateValuedReport('excel'),
                     ),
                     _buildReportCard(
-                      title: 'High Panel Valuation',
+                      title: 'Top Management Directorate Valuation',
                       description:
                           'Final valuation vs. the committee\'s figure.',
                       icon: Icons.balance_rounded,

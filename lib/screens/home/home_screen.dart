@@ -114,7 +114,7 @@ class HomeScreen extends ConsumerWidget {
                     const Gap(16),
                     Flexible(child: _RoleCard(
                       icon: Icons.shield_moon_rounded,
-                      title: 'High Panel Officers',
+                      title: 'Top Management Directorate',
                       subtitle: 'DG / ADG · reports, valuations\n& tender committees',
                       accentColor: AppTheme.executiveTeal,
                       onLogin: (ctx) => ctx.go('/executive/login'),
