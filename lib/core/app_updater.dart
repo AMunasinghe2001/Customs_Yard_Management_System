@@ -1,17 +1,21 @@
 import 'dart:io';
 import 'package:auto_updater/auto_updater.dart';
-import 'supabase_client.dart';
-
-/// PUBLIC Supabase Storage bucket that holds the Windows installer (.exe) and
-/// the `appcast.xml` feed. Create a public bucket with this name and upload
-/// both files there on every release.
-const String kUpdatesBucket = 'updates';
-
-/// Appcast feed URL, derived from the active Supabase project so it always
-/// points at the same backend the app is already using.
-/// → https://<project>.supabase.co/storage/v1/object/public/updates/appcast.xml
-String get updateFeedUrl =>
-    '$supabaseUrl/storage/v1/object/public/$kUpdatesBucket/appcast.xml';
+/// Where the installer and the `appcast.xml` feed are published.
+///
+/// This used to be derived from the Supabase project URL, because the feed
+/// lived in a public Storage bucket. The office PostgreSQL server serves the
+/// database and nothing else — it has no HTTP endpoint to host a file — so the
+/// feed now needs somewhere of its own: a share on the server PC behind IIS or
+/// nginx, or any internal web server.
+///
+/// Set it at build time:
+///     --dart-define=UPDATE_FEED_URL=http://192.168.1.50/updates/appcast.xml
+///
+/// Left empty, auto-update is simply off: initAutoUpdater() returns without
+/// doing anything, which is the right behaviour for an office that installs
+/// releases by hand.
+const String updateFeedUrl =
+    String.fromEnvironment('UPDATE_FEED_URL', defaultValue: '');
 
 /// How often (seconds) to re-check for updates while the app stays open.
 const int _checkIntervalSeconds = 6 * 60 * 60; // 6 hours
@@ -21,6 +25,8 @@ const int _checkIntervalSeconds = 6 * 60 * 60; // 6 hours
 /// missing feed / offline machine / unsupported platform never blocks startup.
 Future<void> initAutoUpdater() async {
   if (!(Platform.isWindows || Platform.isMacOS)) return;
+  // No feed configured — nothing to check against.
+  if (updateFeedUrl.isEmpty) return;
   try {
     await autoUpdater.setFeedURL(updateFeedUrl);
     await autoUpdater.setScheduledCheckInterval(_checkIntervalSeconds);
@@ -37,6 +43,8 @@ Future<void> initAutoUpdater() async {
 /// updater UI even when already up to date.
 Future<void> checkForUpdatesNow() async {
   if (!(Platform.isWindows || Platform.isMacOS)) return;
+  // No feed configured — nothing to check against.
+  if (updateFeedUrl.isEmpty) return;
   try {
     await autoUpdater.setFeedURL(updateFeedUrl);
     await autoUpdater.checkForUpdates();

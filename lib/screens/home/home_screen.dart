@@ -64,7 +64,7 @@ class HomeScreen extends ConsumerWidget {
 
                 // Role cards side by side
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 40),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: IntrinsicHeight(
                     child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
@@ -81,7 +81,7 @@ class HomeScreen extends ConsumerWidget {
                       showSignup: false,
                       delay: 500,
                     )),
-                    const Gap(24),
+                    const Gap(16),
                     Flexible(child: _RoleCard(
                       icon: Icons.balance_rounded,
                       title: 'Appeal Directorate',
@@ -89,9 +89,9 @@ class HomeScreen extends ConsumerWidget {
                       accentColor: AppTheme.appealPurple,
                       onLogin: (ctx) => ctx.go('/appeal/login'),
                       onSignup: (ctx) => ctx.go('/appeal/signup'),
-                      delay: 950,
+                      delay: 750,
                     )),
-                    const Gap(24),
+                    const Gap(16),
                     Flexible(child: _RoleCard(
                       icon: Icons.calculate_rounded,
                       title: 'Valuation Directorate',
@@ -99,9 +99,9 @@ class HomeScreen extends ConsumerWidget {
                       accentColor: context.colors.primaryGold,
                       onLogin: (ctx) => ctx.go('/valuation/login'),
                       onSignup: (ctx) => ctx.go('/valuation/signup'),
-                      delay: 1100,
+                      delay: 950,
                     )),
-                    const Gap(24),
+                    const Gap(16),
                     Flexible(child: _RoleCard(
                       icon: Icons.gavel_rounded,
                       title: 'Central Disposal Directorate',
@@ -111,7 +111,7 @@ class HomeScreen extends ConsumerWidget {
                       onSignup: (ctx) => ctx.go('/disposal/signup'),
                       delay: 1100,
                     )),
-                    const Gap(24),
+                    const Gap(16),
                     Flexible(child: _RoleCard(
                       icon: Icons.shield_moon_rounded,
                       title: 'High Panel Officers',
@@ -120,6 +120,16 @@ class HomeScreen extends ConsumerWidget {
                       onLogin: (ctx) => ctx.go('/executive/login'),
                       onSignup: (ctx) => ctx.go('/executive/signup'),
                       delay: 1250,
+                    )),
+                    const Gap(16),
+                    Flexible(child: _RoleCard(
+                      icon: Icons.terminal_rounded,
+                      title: 'ICT Directorate',
+                      subtitle: 'DC / SDDC & Officers\nprovisioning & accounts',
+                      accentColor: AppTheme.ictCyan,
+                      onLogin: (ctx) => ctx.go('/ict/login'),
+                      onSignup: (ctx) => ctx.go('/ict/signup'),
+                      delay: 1350,
                     )),
                   ]),
                   ),

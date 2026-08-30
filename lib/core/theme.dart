@@ -174,6 +174,8 @@ class AppTheme {
   // Executive Office (DG / ADG) — a distinct deep teal, not used by any other
   // portal (blue/green/purple/gold), so the top office reads apart.
   static const Color executiveTeal = Color(0xFF0E7C86);
+  // ICT Directorate (ICT Division) — tech cyan / ocean blue
+  static const Color ictCyan = Color(0xFF0097A7);
 
   // Custom Dark Colors
   static const Color _customsBlue = Color(0xFF231f87);

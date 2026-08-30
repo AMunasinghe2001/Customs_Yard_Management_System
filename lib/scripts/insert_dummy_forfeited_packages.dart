@@ -1,10 +1,8 @@
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/supabase_client.dart';
 
 /// Script to insert dummy forfeited packages data
 /// Run this from main.dart or a test environment
 Future<void> insertDummyForfeitedPackages() async {
-  final supabase = Supabase.instance.client;
-
   try {
     // Get admin user
     final adminResponse = await supabase
@@ -100,13 +98,11 @@ Future<void> insertDummyForfeitedPackages() async {
 
 /// Script to delete all dummy forfeited packages (for cleanup)
 Future<void> deleteDummyForfeitedPackages() async {
-  final supabase = Supabase.instance.client;
-
   try {
     final response = await supabase
         .from('forfeited_packages')
         .delete()
-        .in_('sr_number', [
+        .inFilter('sr_number', [
           'SR-2026-00102',
           'SR-2026-00103',
           'SR-2026-00104',

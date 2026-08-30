@@ -2,7 +2,7 @@ import 'dart:async';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'core/supabase_client.dart';
 import 'package:window_manager/window_manager.dart';
 import 'core/supabase_client.dart';
 import 'core/theme.dart';
@@ -11,19 +11,6 @@ import 'core/providers.dart';
 import 'core/app_updater.dart';
 import 'core/holidays.dart';
 import 'services/services.dart';
-
-class _NoPersistLocalStorage extends LocalStorage {
-  @override
-  Future<void> initialize() async {}
-  @override
-  Future<bool> hasAccessToken() async => false;
-  @override
-  Future<String?> accessToken() async => null;
-  @override
-  Future<void> removePersistedSession() async {}
-  @override
-  Future<void> persistSession(String persistSessionString) async {}
-}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,13 +26,12 @@ void main() async {
   });
   await windowManager.setPreventClose(true);
 
-  await Supabase.initialize(
-    url: supabaseUrl,
-    anonKey: supabaseAnonKey,
-    authOptions: FlutterAuthClientOptions(
-      localStorage: _NoPersistLocalStorage(),
-    ),
-  );
+  // Connect to the office PostgreSQL server, cache the foreign keys the query
+  // layer needs, and start listening for change notifications.
+  //
+  // Sessions are not persisted, so this never restores a signed-in user — the
+  // same behaviour the Supabase build had via _NoPersistLocalStorage.
+  await supabase.initialize();
 
   // Background auto-update check (Windows/macOS). Never throws.
   await initAutoUpdater();

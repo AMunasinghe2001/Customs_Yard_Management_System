@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'supabase_client.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'supabase_client.dart';
@@ -20,6 +20,7 @@ final tendersServiceProvider = Provider((ref) => TendersService());
 final disposalServiceProvider = Provider((ref) => DisposalService());
 final appealServiceProvider = Provider((ref) => AppealService());
 final valuationServiceProvider = Provider((ref) => ValuationService());
+final ictServiceProvider = Provider((ref) => IctService());
 
 // ── Shared Auth State ──────────────────────────────────────────
 final currentProfileProvider = StateProvider<ProfileModel?>((ref) => null);

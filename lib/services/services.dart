@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/supabase_client.dart';
 import '../core/supabase_client.dart';
 import '../core/app_session.dart';
 import '../core/yards.dart';
@@ -487,8 +487,8 @@ class PackageService {
     String? year,
     String? yard,
   }) async {
-    // Apply the same filters to any PostgrestFilterBuilder (rows or count).
-    PostgrestFilterBuilder<T> applyFilters<T>(PostgrestFilterBuilder<T> q) {
+    // Apply the same filters to either query (rows or count).
+    PgQuery applyFilters(PgQuery q) {
       if (yard != null) q = q.eq('yard', yard);
       if (search != null && search.trim().isNotEmpty) {
         final s = search.trim();
@@ -518,11 +518,12 @@ class PackageService {
 
     // Count-only query (no rows transferred) for the pager total.
     final total = await AuthService._withNetworkRetry(
-        () => applyFilters(supabase.from('packages').count(CountOption.exact)));
+        () => applyFilters(supabase.from('packages')).count());
 
-    final rows =
-        (rowsData as List).map((e) => PackageModel.fromJson(e)).toList();
-    return (rows: rows, total: total);
+    final rows = (rowsData as List)
+        .map((e) => PackageModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (rows: rows, total: total as int);
   }
 
   Future<PackageModel> createPackage(PackageModel pkg, List<PackageItem> items,
@@ -2153,6 +2154,191 @@ class AdminService {
       'username': username,
       'password': password,
     };
+  }
+}
+
+// ── ICT Service (Information & Communication Technology Division) ──
+
+class IctService {
+  /// Fetch all yard staff (Admins and Officers) across all yards, with optional filters.
+  Future<List<ProfileModel>> getAllYardStaff({
+    String? yard,
+    String? role,
+    String? query,
+    bool? activeOnly,
+  }) async {
+    var req = supabase.from('profiles').select();
+
+    if (role != null && role.isNotEmpty && role != 'all') {
+      req = req.eq('role', role);
+    } else {
+      req = req.inFilter('role', ['admin', 'officer']);
+    }
+
+    if (yard != null && yard.isNotEmpty && yard != 'all') {
+      req = req.eq('yard', yard);
+    }
+
+    if (activeOnly == true) {
+      req = req.eq('is_active', true);
+    }
+
+    final data = await req.order('created_at', ascending: false);
+    var list = (data as List).map((e) => ProfileModel.fromJson(e)).toList();
+
+    if (query != null && query.trim().isNotEmpty) {
+      final q = query.trim().toLowerCase();
+      list = list.where((p) {
+        final name = p.fullName.toLowerCase();
+        final uname = (p.username ?? '').toLowerCase();
+        final badge = (p.badgeNumber ?? '').toLowerCase();
+        final mobile = (p.mobileNumber ?? '').toLowerCase();
+        final yardCode = (p.yard ?? '').toLowerCase();
+        return name.contains(q) ||
+            uname.contains(q) ||
+            badge.contains(q) ||
+            mobile.contains(q) ||
+            yardCode.contains(q);
+      }).toList();
+    }
+
+    return list;
+  }
+
+  /// Request OTP for new account creation
+  Future<void> requestUserOtp({
+    required String email,
+    required String fullName,
+    String? mobileNumber,
+    String? badgeNumber,
+    required String role,
+    required String yard,
+  }) async {
+    await GmailOtpService.instance
+        .sendCode(email.trim(), recipientName: fullName.trim());
+  }
+
+  /// Verify OTP, create account (Admin / DC/SDDC or Officer) with generated credentials,
+  /// assign yard, send credentials email, and restore the ICT admin's session.
+  Future<Map<String, dynamic>> verifyAndCreateUser({
+    required String email,
+    required String otp,
+    required String fullName,
+    String? mobileNumber,
+    String? badgeNumber,
+    required String role, // 'admin' (DC / SDDC) or 'officer'
+    required String yard,
+  }) async {
+    GmailOtpService.instance.verifyCode(email.trim(), otp);
+
+    final ictSession = supabase.auth.currentSession;
+    final ictId = supabase.auth.currentUser?.id;
+
+    final username = await AdminService()._uniqueUsername(fullName);
+    final password = AdminService._randomOfficerPassword();
+
+    final metadata = <String, dynamic>{
+      'full_name': fullName.trim(),
+      'role': role,
+      'badge_number': badgeNumber?.trim(),
+      'mobile_number': mobileNumber?.trim(),
+      'yard': yard,
+      'username': username,
+    };
+
+    final String userId;
+    try {
+      final res = await AuthService._withNetworkRetry(() => supabase.auth
+          .signUp(email: email.trim(), password: password, data: metadata));
+      final u = res.user;
+      if (u == null) throw Exception('Could not create the user account.');
+      userId = u.id;
+    } on AuthException catch (e) {
+      final m = e.message.toLowerCase();
+      if (e.code == 'user_already_exists' ||
+          m.contains('already registered') ||
+          m.contains('already been registered')) {
+        if (ictSession != null) {
+          try {
+            await supabase.auth.setSession(ictSession.refreshToken!);
+          } catch (_) {}
+        }
+        throw Exception('This email is already registered.');
+      }
+      rethrow;
+    }
+
+    try {
+      await supabase.from('profiles').upsert({
+        'id': userId,
+        'full_name': fullName.trim(),
+        'username': username,
+        'badge_number': badgeNumber?.trim(),
+        'mobile_number': mobileNumber?.trim(),
+        'role': role,
+        'is_active': true,
+        'yard': yard,
+      });
+    } catch (_) {}
+
+    // Restore the ICT admin's session
+    if (ictSession != null) {
+      try {
+        await supabase.auth.setSession(ictSession.refreshToken!);
+      } catch (_) {}
+    }
+
+    // E-mail credentials via GmailOtpService
+    bool emailed = true;
+    try {
+      await GmailOtpService.instance
+          .sendCredentials(email.trim(), fullName.trim(), username, password);
+    } catch (_) {
+      emailed = false;
+    }
+
+    if (ictId != null) {
+      await AuditLogService().recordLog(
+        userId: ictId,
+        action: 'ICT created $role account ($username for $yard)',
+        entityType: 'profile',
+        entityId: userId,
+      );
+    }
+
+    return {
+      'ok': true,
+      'emailed': emailed,
+      'username': username,
+      'password': password,
+    };
+  }
+
+  /// Toggle Active / Inactive status of an account
+  Future<void> toggleUserStatus(String profileId, bool active) async {
+    await supabase
+        .from('profiles')
+        .update({'is_active': active}).eq('id', profileId);
+  }
+
+  /// Update user details (name, salary, mobile, yard, role)
+  Future<void> updateUserProfile(
+    String profileId, {
+    required String fullName,
+    String? username,
+    String? badgeNumber,
+    String? mobileNumber,
+    required String yard,
+    required String role,
+  }) async {
+    await supabase.from('profiles').update({
+      'full_name': fullName.trim(),
+      if (username != null && username.isNotEmpty) 'username': username.trim(),
+      'badge_number': badgeNumber?.trim(),
+      'mobile_number': mobileNumber?.trim(),
+      'yard': yard,
+      'role': role,
+    }).eq('id', profileId);
   }
 }
 

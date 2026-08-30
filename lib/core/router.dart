@@ -18,6 +18,9 @@ import '../screens/valuation/valuation_dashboard_screen.dart';
 import '../screens/executive/executive_login_screen.dart';
 import '../screens/executive/executive_signup_screen.dart';
 import '../screens/executive/executive_dashboard_screen.dart';
+import '../screens/ict/ict_login_screen.dart';
+import '../screens/ict/ict_signup_screen.dart';
+import '../screens/ict/ict_dashboard_screen.dart';
 import '../screens/inspection/inspection_screen.dart';
 import '../screens/warehouses/warehouses_screen.dart';
 import '../screens/warehouses/warehouse_capacity_screen.dart';
@@ -64,7 +67,9 @@ final routerProvider = Provider<GoRouter>((ref) {
         '/valuation/login',
         '/valuation/signup',
         '/executive/login',
-        '/executive/signup'
+        '/executive/signup',
+        '/ict/login',
+        '/ict/signup'
       ];
       final isPublicPage = publicRoutes.contains(state.matchedLocation);
 
@@ -84,6 +89,7 @@ final routerProvider = Provider<GoRouter>((ref) {
       if (isLoggedIn &&
           (state.matchedLocation == '/' || state.matchedLocation == '/login')) {
         final profile = ref.read(currentProfileProvider);
+        if (profile?.isIct == true) return '/ict';
         if (profile?.isDisposal == true) return '/disposal';
         if (profile?.isAppeal == true) return '/appeal';
         if (profile?.isValuation == true) return '/valuation';
@@ -102,6 +108,14 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/admin/login', builder: (_, __) => const AdminLoginScreen()),
       GoRoute(
           path: '/admin/signup', builder: (_, __) => const AdminSignupScreen()),
+      GoRoute(
+          path: '/ict/login', builder: (_, __) => const IctLoginScreen()),
+      GoRoute(
+          path: '/ict/signup', builder: (_, __) => const IctSignupScreen()),
+      GoRoute(
+          path: '/ict',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const IctDashboardScreen())),
       GoRoute(
           path: '/disposal/login',
           builder: (_, __) => const DisposalLoginScreen()),

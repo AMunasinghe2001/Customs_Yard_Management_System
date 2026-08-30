@@ -9,11 +9,34 @@ PostgreSQL server on the office PC. These files build that database.
 |---|------|--------------|
 | 1 | `01_supabase_compat.sql` | Recreates the `auth` schema Supabase provided — `auth.uid()`, `auth.role()`, `auth.users` — plus the `anon` / `authenticated` / `service_role` roles and the `supabase_realtime` publication. |
 | 2 | `02_schema.sql` | Every table, function, policy and trigger: the base schema followed by all 76 migrations in date order. |
+| 3 | `03_realtime.sql` | NOTIFY triggers on the 18 tables the app watches, replacing Supabase's realtime channels. |
+| 4 | `04_auth.sql` | `sign_in` / `sign_up` / `change_password` over `auth.users`, using bcrypt. |
 
-Run 1 first. `02_schema.sql` references `auth.uid()` 66 times and alters the
-publication 11 times, so without it the very first migration fails.
+Run them in order. Each depends on the one before: `02_schema.sql` references
+`auth.uid()` 66 times, `03_realtime.sql` needs the tables to exist, and
+`04_auth.sql` calls `public.email_for_login()` which arrives with the schema.
 
-Both files are idempotent — re-running them is safe and changes nothing.
+All four are idempotent — re-running them is safe and changes nothing. Each
+ends with a VERIFY query; `04_auth.sql` raises if bcrypt is not working.
+
+## Creating the first account
+
+`auth.users` starts empty, so nobody can log in yet. Create the first admin in
+the Query Tool, then sign in through the app and use the ICT portal for the
+rest:
+
+```sql
+select * from auth.sign_up(
+  'admin@customs.gov.lk',
+  'choose-a-strong-password',
+  '{"full_name":"System Admin","role":"admin"}'::jsonb
+);
+
+-- profiles.id is a foreign key to auth.users(id), so use the id returned above
+insert into public.profiles (id, full_name, role, is_active)
+values ('<the id from above>', 'System Admin', 'admin', true)
+on conflict (id) do update set role = 'admin', is_active = true;
+```
 
 ## Why the compatibility layer exists
 

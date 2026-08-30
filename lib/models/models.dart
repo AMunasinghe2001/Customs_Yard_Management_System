@@ -811,14 +811,19 @@ class ProfileModel {
   /// cross-yard read-only, never auto-expires.
   bool get isExecutive => role == 'executive';
 
+  /// ICT Directorate (Information & Communication Technology Division) — cross-yard
+  /// user provisioning, administration, and system management. Institutional, never auto-expires.
+  bool get isIct => role == 'ict';
+
   /// True once the account is past its 8-month lifetime. Directorate accounts
-  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC) are institutional and
+  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC, ICT) are institutional and
   /// never auto-expire (officers transfer in/out of the post).
   bool get isExpired =>
       !isDisposal &&
       !isAppeal &&
       !isValuation &&
       !isExecutive &&
+      !isIct &&
       DateTime.now().isAfter(expiresAt);
 
   /// Whether the account may currently sign in: explicitly active AND not
@@ -1885,6 +1890,18 @@ const Map<String, String> kExecutivePositions = {
 
 String executivePositionLabel(String? code) =>
     kExecutivePositions[code] ?? (code ?? "Director General's Office");
+
+// ── ICT Directorate positions ──────────────────────────────────────────────
+const Map<String, String> kIctPositions = {
+  'IDC': 'DC (Director ICT)',
+  'ISDDC': 'SDDC (Senior Deputy Director ICT)',
+  'ICT_ADMIN': 'Chief ICT Officer / System Admin',
+  'ICT_OFFICER': 'ICT Officer',
+};
+
+String ictPositionLabel(String? code) =>
+    kIctPositions[code] ?? (code ?? 'ICT Directorate');
+
 
 /// True when the signed-in High Panel officer holds [code].
 ///

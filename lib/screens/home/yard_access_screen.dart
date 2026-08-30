@@ -135,7 +135,7 @@ class YardAccessScreen extends ConsumerWidget {
                         title: 'Officer',
                         subtitle:
                             'Customs officers — sign in with your credentials',
-                        tag: 'Account created by admin',
+                        tag: 'Yard Staff',
                         accent: context.colors.accentLightBlue,
                         onSignIn: () => context.go('/login'),
                       ).animate().slideY(
@@ -153,10 +153,9 @@ class YardAccessScreen extends ConsumerWidget {
                         title: 'DC / SDDC',
                         subtitle:
                             'Deputy / Senior Deputy Commissioner — full yard control',
-                        tag: 'Full yard control',
+                        tag: 'Yard Administration',
                         accent: context.colors.primaryGold,
                         onSignIn: () => context.go('/admin/login'),
-                        onCreateAccount: () => context.go('/admin/signup'),
                       ).animate().slideY(
                           begin: 0.12,
                           duration: 380.ms,
@@ -175,7 +174,7 @@ class YardAccessScreen extends ConsumerWidget {
                               color: context.colors.textMuted),
                           const Gap(6),
                           Text(
-                              'Officer accounts are issued by an administrator',
+                              'Yard accounts are provisioned by the ICT Directorate',
                               style: TextStyle(
                                   color: context.colors.textMuted,
                                   fontSize: 12)),
