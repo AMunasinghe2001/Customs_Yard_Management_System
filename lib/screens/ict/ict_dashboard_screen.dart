@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
-import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../core/directorates.dart';
 import '../../models/models.dart';
-import '../../services/services.dart';
 import '../../widgets/styled_form_dialog.dart';
-import '../../widgets/status_chip.dart';
 import '../../widgets/empty_state_card.dart';
+import '../../widgets/account_cells.dart';
+import '../../widgets/styled_dropdown.dart';
+import '../../widgets/disposal_profile_dialog.dart';
 import 'yard_directorate_tab.dart';
 
 /// ICT Directorate Portal: Central user provisioning and management for
@@ -24,10 +25,18 @@ class IctDashboardScreen extends ConsumerStatefulWidget {
   ConsumerState<IctDashboardScreen> createState() => _IctDashboardScreenState();
 }
 
-class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
+class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
+    with SingleTickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
   /// 0 = Staff Accounts, 1 = Yards & Directorates.
-  int _tab = 0;
+  ///
+  /// A TabController rather than a plain int so the pages can also be SWIPED,
+  /// the way every other directorate's tabs work. The custom tab strip below
+  /// both drives it and follows it.
+  late final TabController _tabs = TabController(length: 2, vsync: this)
+    ..addListener(() {
+      if (mounted) setState(() {});
+    });
   String _selectedYard = 'all';
   String _selectedRole = 'all';
   String _selectedStatus = 'all'; // 'all', 'active', 'inactive'
@@ -44,6 +53,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
 
   @override
   void dispose() {
+    _tabs.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -92,7 +102,10 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
 
     showDialog(
       context: context,
-      barrierDismissible: false,
+      // Closes on an outside click, like every other portal's forms. It was
+      // `false`, so an ICT officer who opened this by mistake had to hunt for
+      // the Cancel button.
+      barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) {
           Future<void> sendOtp() async {
@@ -234,6 +247,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
           return StyledFormDialog(
             label: 'ICT Account Provisioning',
             title: 'Create Yard Staff Account',
+            // Without this the header gradient falls back to gold — Central
+            // Disposal's colour — on an ICT form.
+            headerAccentColor: AppTheme.ictCyan,
             icon: Icons.person_add_alt_1_rounded,
             width: 520,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -250,21 +266,15 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                 children: [
                   Row(children: [
                     Expanded(
-                      child: DropdownButtonFormField<String>(
+                      child: _IctDialogDropdown(
+                        label: 'Account Role *',
+                        icon: Icons.shield_outlined,
+                        accent: AppTheme.ictCyan,
                         value: selectedRole,
-                        decoration: const InputDecoration(
-                          labelText: 'Account Role *',
-                          prefixIcon: Icon(Icons.shield_outlined),
-                        ),
-                        items: const [
-                          DropdownMenuItem(
-                            value: 'officer',
-                            child: Text('Yard Officer'),
-                          ),
-                          DropdownMenuItem(
-                            value: 'admin',
-                            child: Text('DC / SDDC (Yard Admin)'),
-                          ),
+                        options: const [
+                          StyledDropdownOption('officer', 'Yard Officer'),
+                          StyledDropdownOption(
+                              'admin', 'DC / SDDC (Yard Admin)'),
                         ],
                         onChanged: otpSent
                             ? null
@@ -585,6 +595,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
           return StyledFormDialog(
             label: 'Edit User',
             title: 'Edit Officer Details',
+            headerAccentColor: AppTheme.ictCyan,
             icon: Icons.edit_note_rounded,
             width: 480,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -729,12 +740,14 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
         children: [
           // ── Top Header ──────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(28, 16, 28, 16),
+            // Same padding and wash strength as the other directorate
+            // headers (Central Disposal uses 24/16 and 0.08).
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
                 end: Alignment.centerRight,
-                colors: [accent.withOpacity(0.09), context.colors.cardDark],
+                colors: [accent.withOpacity(0.08), context.colors.cardDark],
               ),
               border:
                   Border(bottom: BorderSide(color: context.colors.borderColor)),
@@ -747,83 +760,95 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: accent.withOpacity(0.3)),
                 ),
-                child: Icon(Icons.terminal_rounded, color: accent, size: 24),
+                // The Customs emblem, matching Appeal / Valuation / Central
+                // Disposal / Top Management. ICT used a terminal glyph, which
+                // made it the one portal that did not look like the others.
+                //
+                // Flat tint (colorFilter, not currentColor) because at 30px the
+                // emblem's inner ship/plane detail renders as a dark blob.
+                child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                    width: 30,
+                    height: 30,
+                    colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
               ),
               const Gap(14),
-              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Row(children: [
+              // Title + one subtitle line, exactly like the other
+              // directorates. The old version added a
+              // "User Management & Provisioning" pill that none of them have,
+              // and the extra Row is what pushed the filter bar wide enough to
+              // overflow.
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
                   Text('ICT Directorate',
                       style: TextStyle(
                           color: context.colors.textPrimary,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 0.3)),
-                  const Gap(8),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: accent.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: accent.withOpacity(0.4)),
-                    ),
-                    child: Text('User Management & Provisioning',
-                        style: TextStyle(
-                            color: accent,
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w700)),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800)),
+                  Text(
+                    'User provisioning · yards & directorates across all offices',
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 12),
                   ),
-                ]),
-                const Gap(2),
-                Text(
-                  'Sri Lanka Customs · Information & Communication Technology Division',
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 11.5),
-                ),
-              ]),
+                ],
+              ),
               const Spacer(),
 
-              // User Info Badge
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-                decoration: BoxDecoration(
-                  color: context.colors.cardDark,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: context.colors.borderColor),
-                ),
-                child: Row(children: [
-                  CircleAvatar(
-                    radius: 12,
-                    backgroundColor: accent.withOpacity(0.2),
-                    child: Text(
-                      (profile?.fullName.isNotEmpty == true)
-                          ? profile!.fullName[0].toUpperCase()
-                          : 'I',
-                      style: TextStyle(
-                          color: accent,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold),
+              // Profile pill — identical to the other directorates: tapping it
+              // opens the SHARED DisposalProfileDialog. ICT's badge used to be
+              // dead, so its officers had no way to reach their own profile or
+              // change their password.
+              if (profile != null)
+                Tooltip(
+                  message: 'View profile',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(999),
+                    onTap: () => showDialog(
+                      context: context,
+                      builder: (_) => DisposalProfileDialog(accent: accent),
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: accent.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(999),
+                        border: Border.all(color: accent.withOpacity(0.35)),
+                      ),
+                      child: Row(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.verified_user_rounded,
+                            color: accent, size: 16),
+                        const Gap(8),
+                        Text(profile.fullName,
+                            style: TextStyle(
+                                color: accent,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13)),
+                        // Amber/red dot while the password is inside its expiry
+                        // window — the same quiet nudge the others show.
+                        if (profile.isPasswordExpiringSoon ||
+                            profile.isPasswordExpired) ...[
+                          const Gap(8),
+                          Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: profile.isPasswordExpired
+                                  ? context.colors.dangerRed
+                                  : context.colors.warningAmber,
+                            ),
+                          ),
+                        ],
+                        const Gap(4),
+                        Icon(Icons.chevron_right_rounded,
+                            color: accent.withOpacity(0.7), size: 16),
+                      ]),
                     ),
                   ),
-                  const Gap(8),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(profile?.fullName ?? 'ICT Officer',
-                          style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold)),
-                      Text('ICT Directorate',
-                          style: TextStyle(
-                              color: context.colors.textMuted, fontSize: 10)),
-                    ],
-                  ),
-                ]),
-              ),
-              const Gap(12),
+                ),
+              const Gap(8),
 
               // Theme Toggle
               IconButton(
@@ -843,13 +868,20 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
               ),
               const Gap(6),
 
-              // Sign Out
-              IconButton(
-                icon: Icon(Icons.logout_rounded,
-                    color: context.colors.dangerRed, size: 20),
-                tooltip: 'Sign Out',
+              // Sign Out — the labelled OutlinedButton every other directorate
+              // uses. ICT had a bare icon, and it called supabase.auth.signOut()
+              // directly instead of AuthService, so it skipped the sign-out
+              // bookkeeping (audit log, presence) the others do.
+              OutlinedButton.icon(
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: context.colors.dangerRed,
+                  side: BorderSide(
+                      color: context.colors.dangerRed.withOpacity(0.5)),
+                ),
+                icon: const Icon(Icons.logout_rounded, size: 16),
+                label: const Text('Sign Out'),
                 onPressed: () async {
-                  await supabase.auth.signOut();
+                  await ref.read(authServiceProvider).signOut();
                   ref.read(currentProfileProvider.notifier).state = null;
                   if (context.mounted) context.go('/');
                 },
@@ -858,19 +890,71 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
           ),
 
           // ── Tab bar ─────────────────────────────────────────────
-          _IctTabBar(
-            index: _tab,
-            accent: accent,
-            onChanged: (i) => setState(() => _tab = i),
+          // A real TabBar, not a hand-rolled strip: its indicator is driven by
+          // the controller's animation, so it SLIDES with a swipe. The custom
+          // version repainted a plain Container and simply snapped.
+          Container(
+            color: context.colors.cardDark,
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            child: Container(
+              decoration: BoxDecoration(
+                color: context.colors.surfaceDark,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: TabBar(
+                controller: _tabs,
+                splashFactory: NoSplash.splashFactory,
+                overlayColor: WidgetStateProperty.all(Colors.transparent),
+                indicatorSize: TabBarIndicatorSize.tab,
+                indicatorPadding: const EdgeInsets.all(4),
+                dividerColor: Colors.transparent,
+                indicator: BoxDecoration(
+                  color: accent.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: accent.withOpacity(0.5)),
+                ),
+                labelColor: accent,
+                unselectedLabelColor: context.colors.textMuted,
+                labelStyle:
+                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                tabs: const [
+                  Tab(
+                      height: 44,
+                      child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.groups_rounded, size: 18),
+                            Gap(8),
+                            Text('Staff Accounts'),
+                          ])),
+                  Tab(
+                      height: 44,
+                      child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.account_tree_rounded, size: 18),
+                            Gap(8),
+                            Text('Yards & Directorates'),
+                          ])),
+                ],
+              ),
+            ),
           ),
 
           // ── Body Content ────────────────────────────────────────
-          if (_tab == 1)
-            Expanded(child: YardDirectorateTab(accent: accent))
-          else
+          // TabBarView so the two pages can be dragged between, not only
+          // tapped. The strip above stays in sync through the controller.
           Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(28),
+            child: TabBarView(
+              controller: _tabs,
+              children: [
+                // 24, matching the Yards & Directorates tab and every other
+                // directorate page.
+                SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -933,27 +1017,50 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                         child: TextField(
                           controller: _searchCtrl,
                           onChanged: (_) => _loadData(),
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600),
+                          // Matches DisposalSearch: 14px radius, accent prefix
+                          // icon, dense 13px text.
                           decoration: InputDecoration(
+                            isDense: true,
                             hintText:
-                                'Search by Name, Salary No, Email, Username...',
-                            prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                            suffixIcon: _searchCtrl.text.isNotEmpty
-                                ? IconButton(
-                                    icon: const Icon(Icons.clear_rounded, size: 18),
+                                'Search by Name, Salary No, Email, Username…',
+                            hintStyle: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 13),
+                            prefixIcon: Icon(Icons.search_rounded,
+                                size: 20, color: accent),
+                            suffixIcon: _searchCtrl.text.isEmpty
+                                ? null
+                                : IconButton(
+                                    splashRadius: 16,
+                                    icon: Icon(Icons.close_rounded,
+                                        size: 16,
+                                        color: context.colors.textSecondary),
                                     onPressed: () {
                                       _searchCtrl.clear();
                                       _loadData();
                                     },
-                                  )
-                                : null,
+                                  ),
                             filled: true,
-                            fillColor: context.colors.scaffoldBg,
+                            fillColor: context.colors.cardDark,
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 10),
+                                horizontal: 14, vertical: 12),
                             border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(14),
                               borderSide: BorderSide(
                                   color: context.colors.borderColor),
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(
+                                  color: context.colors.borderColor),
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(14),
+                              borderSide: BorderSide(color: accent, width: 1.5),
                             ),
                           ),
                         ),
@@ -961,29 +1068,19 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                       const Gap(14),
 
                       // Yard Filter
-                      SizedBox(
-                        width: 200,
-                        child: DropdownButtonFormField<String>(
+                      // Flexible, not a fixed width: three fixed dropdowns
+                      // plus the search box and the Add button overflowed this
+                      // row on a narrower window.
+                      Flexible(
+                        child: _IctFilter(
+                          label: 'Yard Location',
+                          icon: Icons.warehouse_rounded,
+                          accent: accent,
                           value: _selectedYard,
-                          decoration: InputDecoration(
-                            labelText: 'Yard Location',
-                            prefixIcon: const Icon(Icons.warehouse_outlined, size: 18),
-                            filled: true,
-                            fillColor: context.colors.scaffoldBg,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          items: [
-                            const DropdownMenuItem(
-                                value: 'all', child: Text('All Yards')),
-                            ...kYards.map((y) => DropdownMenuItem(
-                                  value: y.code,
-                                  child: Text(y.name,
-                                      overflow: TextOverflow.ellipsis),
-                                )),
+                          options: [
+                            const StyledDropdownOption('all', 'All Yards'),
+                            for (final y in kYards)
+                              StyledDropdownOption(y.code, y.name),
                           ],
                           onChanged: (v) {
                             setState(() => _selectedYard = v ?? 'all');
@@ -994,29 +1091,16 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                       const Gap(14),
 
                       // Role Filter
-                      SizedBox(
-                        width: 190,
-                        child: DropdownButtonFormField<String>(
+                      Flexible(
+                        child: _IctFilter(
+                          label: 'Role Filter',
+                          icon: Icons.badge_rounded,
+                          accent: accent,
                           value: _selectedRole,
-                          decoration: InputDecoration(
-                            labelText: 'Role Filter',
-                            prefixIcon: const Icon(Icons.badge_outlined, size: 18),
-                            filled: true,
-                            fillColor: context.colors.scaffoldBg,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'all', child: Text('All Roles')),
-                            DropdownMenuItem(
-                                value: 'admin',
-                                child: Text('DC / SDDC (Admin)')),
-                            DropdownMenuItem(
-                                value: 'officer', child: Text('Yard Officer')),
+                          options: const [
+                            StyledDropdownOption('all', 'All Roles'),
+                            StyledDropdownOption('admin', 'DC / SDDC'),
+                            StyledDropdownOption('officer', 'Officer'),
                           ],
                           onChanged: (v) {
                             setState(() => _selectedRole = v ?? 'all');
@@ -1027,29 +1111,16 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                       const Gap(14),
 
                       // Status Filter
-                      SizedBox(
-                        width: 150,
-                        child: DropdownButtonFormField<String>(
+                      Flexible(
+                        child: _IctFilter(
+                          label: 'Status',
+                          icon: Icons.filter_alt_rounded,
+                          accent: accent,
                           value: _selectedStatus,
-                          decoration: InputDecoration(
-                            labelText: 'Status',
-                            prefixIcon:
-                                const Icon(Icons.filter_list_rounded, size: 18),
-                            filled: true,
-                            fillColor: context.colors.scaffoldBg,
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          items: const [
-                            DropdownMenuItem(
-                                value: 'all', child: Text('All Status')),
-                            DropdownMenuItem(
-                                value: 'active', child: Text('Active')),
-                            DropdownMenuItem(
-                                value: 'inactive', child: Text('Inactive')),
+                          options: const [
+                            StyledDropdownOption('all', 'All Status'),
+                            StyledDropdownOption('active', 'Active'),
+                            StyledDropdownOption('inactive', 'Inactive'),
                           ],
                           onChanged: (v) {
                             setState(() => _selectedStatus = v ?? 'all');
@@ -1067,13 +1138,12 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                             style: TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold)),
+                        // Central Disposal's action buttons use the theme's
+                        // own padding and radius; ICT's custom 20/16 + r10 made
+                        // it noticeably chunkier than every other portal.
                         style: ElevatedButton.styleFrom(
                           backgroundColor: accent,
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 20, vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
+                          foregroundColor: Colors.white,
                         ),
                         onPressed: _showAddStaffDialog,
                       ),
@@ -1089,7 +1159,12 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(color: context.colors.borderColor),
                     ),
-                    child: _isLoading
+                    // ⚠️ ClipRRect, exactly as Central Disposal's _listCard does
+                    // it. Without it the table's own background paints over
+                    // the container's rounded corners and they read as square.
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(13),
+                      child: _isLoading
                         ? Center(
                             child: CircularProgressIndicator(color: accent))
                         : (_staffList.isEmpty
@@ -1102,8 +1177,12 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                                 ),
                               )
                             : DataTable2(
-                                columnSpacing: 16,
-                                horizontalMargin: 20,
+                                // Same table shell as Central Disposal: 12/16
+                                // spacing, a pinned heading row on the tinted
+                                // surface colour.
+                                columnSpacing: 12,
+                                horizontalMargin: 16,
+                                fixedTopRows: 1,
                                 minWidth: 960,
                                 headingRowHeight: 46,
                                 dataRowHeight: 52,
@@ -1112,28 +1191,35 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                                   fontWeight: FontWeight.bold,
                                   fontSize: 12.5,
                                 ),
-                                headingRowColor: MaterialStateProperty.all(
-                                    accent.withOpacity(0.08)),
+                                headingRowColor: WidgetStateProperty.all(
+                                    context.colors.surfaceDark),
                                 columns: const [
                                   DataColumn2(
-                                      label: Text('OFFICER NAME'), size: ColumnSize.L),
+                                      label: Text('Officer Name'), size: ColumnSize.L),
                                   DataColumn2(
-                                      label: Text('USERNAME / SALARY NO'),
+                                      label: Text('Username / Salary No'),
                                       size: ColumnSize.M),
                                   DataColumn2(
-                                      label: Text('ROLE'), size: ColumnSize.S),
+                                      label: Text('Role'), size: ColumnSize.S),
                                   DataColumn2(
-                                      label: Text('ASSIGNED YARD'),
+                                      label: Text('Assigned Yard'),
                                       size: ColumnSize.M),
                                   DataColumn2(
-                                      label: Text('CONTACT'),
+                                      label: Text('Contact'),
                                       size: ColumnSize.M),
                                   DataColumn2(
-                                      label: Text('STATUS'), size: ColumnSize.S),
-                                  DataColumn2(
-                                      label: Text('ACTIONS'),
+                                      label: Text('Disables In'),
                                       size: ColumnSize.S,
-                                      numeric: true),
+                                      fixedWidth: 110),
+                                  DataColumn2(
+                                      label: Text('Status'), size: ColumnSize.S),
+                                  // NOT numeric: that right-aligns the HEADER,
+                                  // leaving the word far from the buttons under
+                                  // it. The cell aligns its own contents.
+                                  DataColumn2(
+                                      label: Text('Actions'),
+                                      size: ColumnSize.S,
+                                      fixedWidth: 110),
                                 ],
                                 rows: _staffList.map((staff) {
                                   final yardObj = yardByCode(staff.yard);
@@ -1262,57 +1348,45 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen> {
                                           ),
                                         ),
                                       ),
-                                      // Status
-                                      DataCell(
-                                        StatusChip(
-                                          status: staff.isActive
-                                              ? 'Active'
-                                              : 'Inactive',
-                                        ),
-                                      ),
-                                      // Actions
-                                      DataCell(
-                                        Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.end,
-                                          children: [
-                                            // Edit Button
-                                            IconButton(
-                                              icon: const Icon(
-                                                  Icons.edit_outlined,
-                                                  size: 18),
-                                              color: context.colors.textSecondary,
-                                              tooltip: 'Edit Details',
-                                              onPressed: () =>
-                                                  _showEditStaffDialog(staff),
-                                            ),
-                                            // Toggle Status
-                                            IconButton(
-                                              icon: Icon(
-                                                staff.isActive
-                                                    ? Icons.block_rounded
-                                                    : Icons.check_circle_outline_rounded,
-                                                size: 18,
-                                                color: staff.isActive
-                                                    ? context.colors.dangerRed
-                                                    : context.colors.successGreen,
-                                              ),
-                                              tooltip: staff.isActive
-                                                  ? 'Deactivate Account'
-                                                  : 'Activate Account',
-                                              onPressed: () =>
-                                                  _toggleStaffStatus(staff),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
+                                      // Disables In — the 8-month auto-expiry
+                                      // countdown the Admin Panel shows. ICT
+                                      // provisions these accounts, so it needs
+                                      // to see which are about to lapse.
+                                      DataCell(ExpiresInCell(profile: staff)),
+                                      // Status — the same green ACTIVE / red
+                                      // EXPIRED chip as the Admin Panel, with
+                                      // the auto-deactivation date in its
+                                      // tooltip.
+                                      DataCell(AccountStatusChip(profile: staff)),
+                                      // Actions — the shared Edit/Delete pair.
+                                      // "Delete" here deactivates rather than
+                                      // removes: the account's id is stamped on
+                                      // every package it ever registered.
+                                      DataCell(RowActionButtons(
+                                        accent: accent,
+                                        onEdit: () =>
+                                            _showEditStaffDialog(staff),
+                                        onDelete: () =>
+                                            _toggleStaffStatus(staff),
+                                        editTooltip: 'Edit Details',
+                                        deleteTooltip: staff.isActive
+                                            ? 'Deactivate Account'
+                                            : 'Activate Account',
+                                        deleteIcon: staff.isActive
+                                            ? Icons.block_rounded
+                                            : Icons.check_circle_outline_rounded,
+                                      )),
                                     ],
                                   );
                                 }).toList(),
                               )),
+                    ),
                   ),
                 ],
               ),
+            ),
+                YardDirectorateTab(accent: accent),
+              ],
             ),
           ),
         ],
@@ -1399,22 +1473,16 @@ class _DirectorateField extends ConsumerWidget {
       error: (_, __) => const _LoadingField(label: 'Directorate (unavailable)'),
       data: (list) {
         final active = list.where((d) => d.isActive).toList();
-        return DropdownButtonFormField<String>(
+        return _IctDialogDropdown(
+          label: 'Directorate *',
+          icon: Icons.account_balance_outlined,
+          accent: AppTheme.ictCyan,
           // Guard against a value whose directorate was deactivated: an
-          // unmatched value makes DropdownButton throw rather than render.
+          // unmatched value makes the dropdown throw rather than render.
           value: active.any((d) => d.code == value) ? value : null,
-          isExpanded: true,
-          decoration: const InputDecoration(
-            labelText: 'Directorate *',
-            prefixIcon: Icon(Icons.account_balance_outlined),
-          ),
-          items: [
+          options: [
             for (final d in active)
-              DropdownMenuItem(
-                value: d.code,
-                child: Text('${d.srPrefix} — ${d.name}',
-                    overflow: TextOverflow.ellipsis),
-              ),
+              StyledDropdownOption(d.code, '${d.srPrefix} — ${d.name}'),
           ],
           onChanged: enabled ? onChanged : null,
         );
@@ -1446,25 +1514,19 @@ class _YardField extends ConsumerWidget {
       data: (list) {
         final active = list.where((y) => y.isActive).toList();
         final ready = directorate != null && directorate!.isNotEmpty;
-        return DropdownButtonFormField<String>(
+        return _IctDialogDropdown(
+          label: 'Assigned Yard *',
+          icon: Icons.warehouse_outlined,
+          accent: AppTheme.ictCyan,
           value: active.any((y) => y.code == value) ? value : null,
-          isExpanded: true,
-          decoration: InputDecoration(
-            labelText: 'Assigned Yard *',
-            prefixIcon: const Icon(Icons.warehouse_outlined),
-            // Explains an empty list instead of leaving a dead control.
-            helperText: !ready
-                ? 'Choose a directorate first'
-                : active.isEmpty
-                    ? 'No yards assigned to this directorate yet'
-                    : null,
-          ),
-          items: [
-            for (final y in active)
-              DropdownMenuItem(
-                value: y.code,
-                child: Text(y.name, overflow: TextOverflow.ellipsis),
-              ),
+          // Explains an empty list instead of leaving a dead control.
+          helperText: !ready
+              ? 'Choose a directorate first'
+              : active.isEmpty
+                  ? 'No yards assigned to this directorate yet'
+                  : null,
+          options: [
+            for (final y in active) StyledDropdownOption(y.code, y.name),
           ],
           onChanged: (enabled && ready) ? onChanged : null,
         );
@@ -1493,90 +1555,123 @@ class _LoadingField extends StatelessWidget {
   }
 }
 
-/// The ICT portal's two areas: the staff accounts it provisions, and the
-/// yard/directorate reference data those accounts are assigned against.
-class _IctTabBar extends StatelessWidget {
-  const _IctTabBar({
-    required this.index,
-    required this.accent,
-    required this.onChanged,
-  });
 
-  final int index;
-  final Color accent;
-  final ValueChanged<int> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 8),
-      decoration: BoxDecoration(
-        color: context.colors.cardDark,
-        border: Border(bottom: BorderSide(color: context.colors.borderColor)),
-      ),
-      child: Row(children: [
-        _IctTab(
-          label: 'Staff Accounts',
-          icon: Icons.groups_rounded,
-          selected: index == 0,
-          accent: accent,
-          onTap: () => onChanged(0),
-        ),
-        const Gap(8),
-        _IctTab(
-          label: 'Yards & Directorates',
-          icon: Icons.account_tree_rounded,
-          selected: index == 1,
-          accent: accent,
-          onTap: () => onChanged(1),
-        ),
-      ]),
-    );
-  }
-}
-
-class _IctTab extends StatelessWidget {
-  const _IctTab({
+/// One filter dropdown, styled exactly like Central Disposal's `YardAllFilter`:
+/// a [StyledDropdownFormField] (the paged popup) on a tinted fill with a
+/// rounded 14px accent border.
+///
+/// ICT previously used bare `DropdownButtonFormField`s, which is the single
+/// biggest reason its filter row looked like a different application.
+class _IctFilter extends StatelessWidget {
+  const _IctFilter({
     required this.label,
     required this.icon,
-    required this.selected,
     required this.accent,
-    required this.onTap,
+    required this.value,
+    required this.options,
+    required this.onChanged,
   });
 
   final String label;
   final IconData icon;
-  final bool selected;
   final Color accent;
-  final VoidCallback onTap;
+  final String value;
+  final List<StyledDropdownOption<String>> options;
+  final ValueChanged<String?> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          decoration: BoxDecoration(
-            color: selected ? accent.withOpacity(0.12) : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-                color: selected ? accent.withOpacity(0.4) : Colors.transparent),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon,
-                size: 17,
-                color: selected ? accent : context.colors.textMuted),
-            const Gap(8),
-            Text(label,
-                style: TextStyle(
-                    color: selected ? accent : context.colors.textSecondary,
-                    fontSize: 13,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
-          ]),
-        ),
+    return Theme(
+      data: Theme.of(context).copyWith(
+        inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+              filled: true,
+              fillColor: accent.withOpacity(0.06),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: accent, width: 1.5)),
+            ),
+      ),
+      child: StyledDropdownFormField<String>(
+        value: value,
+        label: label,
+        helperText: null,
+        isDense: true,
+        menuWidth: 220,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        prefixIcon: Icon(icon, color: accent, size: 20),
+        options: options,
+        onChanged: onChanged,
+      ),
+    );
+  }
+}
+
+
+/// A dropdown for the ICT dialogs, styled like every other form field in the
+/// app: [StyledDropdownFormField]'s paged popup on a tinted accent fill.
+///
+/// The dialogs previously used bare `DropdownButtonFormField`s, which opened
+/// the plain grey Material menu — the last place in ICT still doing that — and
+/// the Account Role one had no `isExpanded`, so its longest item
+/// ("DC / SDDC (Yard Admin)") overflowed the row by 49px.
+class _IctDialogDropdown extends StatelessWidget {
+  const _IctDialogDropdown({
+    required this.label,
+    required this.icon,
+    required this.accent,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+    this.helperText,
+  });
+
+  final String label;
+  final IconData icon;
+  final Color accent;
+  final String? value;
+  final List<StyledDropdownOption<String>> options;
+  final ValueChanged<String?>? onChanged;
+  final String? helperText;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = onChanged == null;
+    return Theme(
+      data: Theme.of(context).copyWith(
+        inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+              filled: true,
+              fillColor: disabled
+                  ? context.colors.surfaceDark
+                  : accent.withOpacity(0.06),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
+              enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide(color: accent, width: 1.5)),
+            ),
+      ),
+      child: StyledDropdownFormField<String>(
+        value: value,
+        label: label,
+        helperText: helperText,
+        isDense: true,
+        menuWidth: 260,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        prefixIcon: Icon(icon, color: accent, size: 20),
+        options: options,
+        onChanged: onChanged ?? (_) {},
       ),
     );
   }

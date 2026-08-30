@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../widgets/empty_state_card.dart';
+import '../../widgets/account_cells.dart';
 import '../../widgets/styled_form_dialog.dart';
 
 /// ICT Directorate → **Yards & Directorates**.
@@ -33,7 +34,7 @@ class YardDirectorateTab extends ConsumerWidget {
     final links = ref.watch(yardDirectoratesProvider);
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(28),
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -167,6 +168,7 @@ class YardDirectorateTab extends ConsumerWidget {
         return StyledFormDialog(
           label: isNew ? 'NEW DIRECTORATE' : 'EDIT DIRECTORATE',
           title: isNew ? 'Add a Directorate' : 'Edit ${existing.code}',
+          headerAccentColor: accent,
           icon: Icons.account_balance_rounded,
           width: 460,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -299,6 +301,7 @@ class YardDirectorateTab extends ConsumerWidget {
         return StyledFormDialog(
           label: isNew ? 'NEW YARD' : 'EDIT YARD',
           title: isNew ? 'Add a Yard' : 'Edit ${existing.code}',
+          headerAccentColor: accent,
           icon: Icons.warehouse_rounded,
           width: 520,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -439,7 +442,7 @@ class _DirectorateTable extends StatelessWidget {
     }
     const widths = [1, 1, 4, 1, 1];
     return _TableShell(
-      columns: const ['SR Prefix', 'Code', 'Name', 'Status', ''],
+      columns: const ['SR Prefix', 'Code', 'Name', 'Status', 'Actions'],
       widths: widths,
       children: [
         for (final d in rows)
@@ -452,6 +455,7 @@ class _DirectorateTable extends StatelessWidget {
               Text(d.name, overflow: TextOverflow.ellipsis),
               _StatusPill(active: d.isActive),
               _RowActions(
+                accent: accent,
                 onEdit: () => onEdit(d),
                 onToggle: () => onToggle(d),
                 active: d.isActive,
@@ -490,7 +494,7 @@ class _YardTable extends StatelessWidget {
     const widths = [3, 1, 3, 3, 1, 1];
     return _TableShell(
       columns: const [
-        'Yard', 'Code', 'Directorates', 'Example SR', 'Status', ''
+        'Yard', 'Code', 'Directorates', 'Example SR', 'Status', 'Actions'
       ],
       widths: widths,
       children: [
@@ -507,6 +511,7 @@ class _YardTable extends StatelessWidget {
               _ExampleSr(yard: y, directorates: links[y.code] ?? const []),
               _StatusPill(active: y.isActive),
               _RowActions(
+                accent: accent,
                 onEdit: () => onEdit(y),
                 onToggle: () => onToggle(y),
                 active: y.isActive,
@@ -598,27 +603,38 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Icon(icon, color: accent, size: 20),
+      // ⚠️ Nudged down to sit on the TITLE's line. The column beside it is two
+      // lines (title + subtitle), so CrossAxisAlignment.start put the icon
+      // level with the top of the block — visibly above the title it belongs
+      // to. 3px lines its optical centre up with the 22px title.
+      Padding(
+        padding: const EdgeInsets.only(top: 3),
+        child: Icon(icon, color: accent, size: 24),
+      ),
       const Gap(10),
       Expanded(
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 22px w700 — the size every other page's section title uses
+          // ("Tender Sales", "Unsold Goods", "Storage Rates & Charges").
+          // These were 16px, which is why the page read as a different app.
           Text(title,
               style: TextStyle(
                   color: context.colors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800)),
-          const Gap(3),
+                  fontSize: 22,
+                  fontWeight: FontWeight.w700)),
+          const Gap(4),
           Text(subtitle,
               style: TextStyle(
                   color: context.colors.textMuted, fontSize: 12, height: 1.4)),
         ]),
       ),
       const Gap(14),
-      FilledButton.icon(
+      ElevatedButton.icon(
         onPressed: onAction,
         icon: const Icon(Icons.add_rounded, size: 18),
         label: Text(actionLabel),
-        style: FilledButton.styleFrom(backgroundColor: accent),
+        style: ElevatedButton.styleFrom(
+            backgroundColor: accent, foregroundColor: Colors.white),
       ),
     ]);
   }
@@ -643,11 +659,17 @@ class _TableShell extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: context.colors.borderColor),
       ),
-      child: Column(children: [
+      // ⚠️ ClipRRect, as Central Disposal's _listCard does: without it the
+      // rows paint over the container's rounded corners and they read square.
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(13),
+        child: Column(children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           decoration: BoxDecoration(
-            color: context.colors.scaffoldBg,
+            // surfaceDark, matching every other table's heading row
+            // (DataTable2's headingRowColor across the app).
+            color: context.colors.surfaceDark,
             borderRadius:
                 const BorderRadius.vertical(top: Radius.circular(13)),
           ),
@@ -655,17 +677,23 @@ class _TableShell extends StatelessWidget {
             for (var i = 0; i < columns.length; i++)
               Expanded(
                 flex: widths[i],
-                child: Text(columns[i].toUpperCase(),
+                // 12.5px bold, matching DataTable2's headingTextStyle
+                // everywhere else in the app. These were 10.5px and read as
+                // fine print next to every other table.
+                // NOT .toUpperCase(): every other table in the app prints
+                // its headings as written ("SR Number", "Goods Name").
+                child: Text(columns[i],
                     style: TextStyle(
-                        color: context.colors.textMuted,
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.5)),
+                        color: context.colors.textPrimary,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3)),
               ),
           ]),
         ),
         ...children,
       ]),
+      ),
     );
   }
 }
@@ -685,7 +713,10 @@ class _TableRow extends StatelessWidget {
     // A deactivated row stays visible — its code is still stamped on historical
     // data — but reads as switched off.
     final row = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+      // 52px, matching DataTable2's dataRowHeight everywhere else. These rows
+      // were padding-driven and noticeably tighter than every other table.
+      constraints: const BoxConstraints(minHeight: 52),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
         border: Border(top: BorderSide(color: context.colors.borderColor)),
       ),
@@ -743,19 +774,23 @@ class _StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final c = active ? context.colors.successGreen : context.colors.textMuted;
+    // The same bordered chip AccountStatusChip renders in the staff tables —
+    // this was a bare dot + "Active"/"Off" label, so the two tabs disagreed
+    // about what a status looks like.
+    final c = active ? context.colors.successGreen : context.colors.dangerRed;
     return Align(
       alignment: Alignment.centerLeft,
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-            width: 7,
-            height: 7,
-            decoration: BoxDecoration(color: c, shape: BoxShape.circle)),
-        const Gap(6),
-        Text(active ? 'Active' : 'Off',
-            style:
-                TextStyle(color: c, fontSize: 12, fontWeight: FontWeight.w600)),
-      ]),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: c.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: c.withOpacity(0.4)),
+        ),
+        child: Text(active ? 'ACTIVE' : 'INACTIVE',
+            style: TextStyle(
+                color: c, fontSize: 11, fontWeight: FontWeight.w700)),
+      ),
     );
   }
 }
@@ -765,25 +800,26 @@ class _RowActions extends StatelessWidget {
     required this.onEdit,
     required this.onToggle,
     required this.active,
+    required this.accent,
   });
 
   final VoidCallback onEdit, onToggle;
   final bool active;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    return Row(mainAxisAlignment: MainAxisAlignment.end, children: [
-      IconButton(
-        icon: const Icon(Icons.edit_outlined, size: 18),
-        tooltip: 'Edit',
-        onPressed: onEdit,
-      ),
+    return Row(mainAxisAlignment: MainAxisAlignment.start, children: [
+      // The shared Edit button, plus the on/off toggle this table needs —
+      // deactivating, not deleting, because the code is stamped on historical
+      // rows. The toggle stays a switch rather than a bin so that reads clearly.
+      RowActionButtons(accent: accent, onEdit: onEdit),
+      const Gap(4),
       IconButton(
         icon: Icon(active ? Icons.toggle_on_rounded : Icons.toggle_off_rounded,
-            size: 22,
+            size: 34,
             color:
                 active ? context.colors.successGreen : context.colors.textMuted),
-        // Deactivating, not deleting: the code is referenced by historical rows.
         tooltip: active ? 'Deactivate (hides it from pickers)' : 'Activate',
         onPressed: onToggle,
       ),

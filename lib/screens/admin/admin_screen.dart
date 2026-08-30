@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../services/services.dart';
 import '../../models/models.dart';
+import '../../widgets/account_cells.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -308,8 +309,8 @@ class _OfficersTabState extends ConsumerState<_OfficersTab> {
                                         color: context.colors.textMuted,
                                         fontSize: 13))),
                                 DataCell(_RoleChip(role: p.role)),
-                                DataCell(_ExpiresInCell(profile: p)),
-                                DataCell(_AccountStatusChip(profile: p)),
+                                DataCell(ExpiresInCell(profile: p)),
+                                DataCell(AccountStatusChip(profile: p)),
                               ]))
                           .toList(),
                     ),
@@ -394,77 +395,6 @@ class _RoleChip extends StatelessWidget {
                   : context.colors.accentLightBlue,
               fontSize: 11,
               fontWeight: FontWeight.w700)),
-    );
-  }
-}
-
-/// How long until the account auto-deactivates (its 8-month lifetime).
-/// "Never" for directorate accounts, "Expired" once past, and a red countdown
-/// in the last 2 weeks so admins can renew in time.
-class _ExpiresInCell extends StatelessWidget {
-  final ProfileModel profile;
-  const _ExpiresInCell({required this.profile});
-
-  @override
-  Widget build(BuildContext context) {
-    final days = profile.daysUntilExpiry;
-    if (days == null) {
-      return Text('Never',
-          style: TextStyle(color: context.colors.textMuted, fontSize: 12));
-    }
-    if (days < 0) {
-      return Text('Expired',
-          style: TextStyle(
-              color: context.colors.dangerRed,
-              fontWeight: FontWeight.w700,
-              fontSize: 12));
-    }
-    final soon = days <= 14;
-    final label = days == 0 ? 'Today' : '$days day${days == 1 ? '' : 's'}';
-    return Text(label,
-        style: TextStyle(
-            color: soon ? context.colors.dangerRed : context.colors.textPrimary,
-            fontWeight: soon ? FontWeight.w700 : FontWeight.w600,
-            fontSize: 12));
-  }
-}
-
-/// Read-only account status. Admins can no longer toggle this manually; an
-/// account is ACTIVE until 8 months after its creation date, then EXPIRED.
-class _AccountStatusChip extends StatelessWidget {
-  final ProfileModel profile;
-  const _AccountStatusChip({required this.profile});
-
-  @override
-  Widget build(BuildContext context) {
-    final String label;
-    final Color color;
-    if (!profile.isActive) {
-      label = 'INACTIVE';
-      color = context.colors.dangerRed;
-    } else if (profile.isExpired) {
-      label = 'EXPIRED';
-      color = context.colors.dangerRed;
-    } else {
-      label = 'ACTIVE';
-      color = context.colors.successGreen;
-    }
-    final expiresStr = DateFormat('dd MMM yyyy').format(profile.expiresAt);
-    return Tooltip(
-      message: profile.isExpired
-          ? 'Auto-deactivated on $expiresStr (8 months after creation)'
-          : 'Auto-deactivates on $expiresStr (8 months after creation)',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: color.withOpacity(0.4)),
-        ),
-        child: Text(label,
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-      ),
     );
   }
 }

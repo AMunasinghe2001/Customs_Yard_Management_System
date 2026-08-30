@@ -363,11 +363,21 @@ class _RoleCardState extends State<_RoleCard> {
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                 ),
                 onPressed: () => widget.onSignup!(context),
-                child: Text('Create Account',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: widget.accentColor)),
+                // ⚠️ Kept to ONE line. The label wrapped inside the fixed 42px
+                // box, so the second line was clipped and the button read
+                // "Create" with a sliced-off row under it. FittedBox shrinks
+                // the text on a narrow card instead of wrapping it.
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text('Create Account',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.visible,
+                      style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: widget.accentColor)),
+                ),
               ),
             ),
           ],

@@ -174,8 +174,22 @@ class AppTheme {
   // Executive Office (DG / ADG) — a distinct deep teal, not used by any other
   // portal (blue/green/purple/gold), so the top office reads apart.
   static const Color executiveTeal = Color(0xFF0E7C86);
-  // ICT Directorate (ICT Division) — tech cyan / ocean blue
-  static const Color ictCyan = Color(0xFF0097A7);
+  // ICT Directorate (ICT Division) — deep plum.
+  //
+  // Three earlier attempts, and why none of them worked:
+  //   0xFF0097A7 (cyan)         sat beside the Executive Office's teal
+  //                             0xFF0E7C86 — the two portals looked identical.
+  //   0xFF4A3AFF (bright indigo) distinct, but far too vivid as a full-width
+  //                             header wash next to the muted rest.
+  //   0xFF3F51B5 (slate indigo)  still BLUE, and the app already has two blues
+  //                             (customsBlue for the yard, teal for executive).
+  //
+  // The hues already spoken for are 37/42 (golds), 123 (green), 185 (teal),
+  // 242 (blue) and 282 (purple). 334 is the clear gap. Reds were the other
+  // option but every one of them collided with the app's error red 0xFFD32F2F;
+  // this sits 128 away from it in summed RGB, and carries white text at
+  // 7.2:1 contrast.
+  static const Color ictCyan = Color(0xFF8E3A5F);
 
   // Custom Dark Colors
   static const Color _customsBlue = Color(0xFF231f87);
