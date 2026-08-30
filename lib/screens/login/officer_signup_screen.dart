@@ -212,6 +212,9 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                 Row(children: [
                   Expanded(child: TextFormField(
                     controller: _firstNameCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
                     decoration: InputDecoration(
                       labelText: 'First Name *',
                       prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),
@@ -221,6 +224,9 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                   const Gap(12),
                   Expanded(child: TextFormField(
                     controller: _lastNameCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
                     decoration: const InputDecoration(labelText: 'Last Name *'),
                     validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                   )),
@@ -230,6 +236,9 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                 // Salary Number (full width, below names)
                 TextFormField(
                   controller: _salaryCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
                   decoration: InputDecoration(
                     labelText: 'Salary Number',
                     prefixIcon: Icon(Icons.badge_outlined, color: context.colors.textMuted),
@@ -255,6 +264,9 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
 
                 TextFormField(
                   controller: _emailCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
                   decoration: InputDecoration(
                     labelText: 'Email *',
                     prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
@@ -266,6 +278,9 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
 
                 TextFormField(
                   controller: _passwordCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
                   decoration: InputDecoration(
                     labelText: 'Password *',
                     prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
@@ -281,6 +296,9 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
 
                 TextFormField(
                   controller: _confirmCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
                   decoration: InputDecoration(
                     labelText: 'Confirm Password *',
                     prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
@@ -297,6 +315,9 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                 if (_otpSent) ...[
                   TextFormField(
                     controller: _otpCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
                     decoration: InputDecoration(
                       labelText: 'OTP Code *',
                       prefixIcon: Icon(Icons.verified_user_rounded, color: context.colors.textMuted),

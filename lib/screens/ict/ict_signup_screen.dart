@@ -429,6 +429,9 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                         const Gap(14),
                         TextFormField(
                           controller: _emailCtrl,
+                          // Enter submits, so the form can be completed from the
+                          // keyboard without reaching for the mouse.
+                          onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                           keyboardType: TextInputType.emailAddress,
                           decoration: const InputDecoration(
                             labelText: 'Official Email *',
@@ -443,6 +446,9 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                         const Gap(14),
                         TextFormField(
                           controller: _passwordCtrl,
+                          // Enter submits, so the form can be completed from the
+                          // keyboard without reaching for the mouse.
+                          onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                           obscureText: _obscurePass,
                           decoration: InputDecoration(
                             labelText: 'Password *',
@@ -463,6 +469,9 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                         const Gap(14),
                         TextFormField(
                           controller: _confirmCtrl,
+                          // Enter submits, so the form can be completed from the
+                          // keyboard without reaching for the mouse.
+                          onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                           obscureText: _obscureConfirm,
                           decoration: InputDecoration(
                             labelText: 'Confirm Password *',

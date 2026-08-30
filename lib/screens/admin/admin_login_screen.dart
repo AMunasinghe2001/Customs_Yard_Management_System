@@ -240,6 +240,9 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                   ],
                   TextFormField(
                     controller: _emailCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _signIn(),
                     decoration: InputDecoration(
                       labelText: 'Username or Email',
                       prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),

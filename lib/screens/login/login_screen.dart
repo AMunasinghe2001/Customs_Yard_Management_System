@@ -227,6 +227,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ],
                   TextFormField(
                     controller: _emailCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _signIn(),
                     decoration: InputDecoration(
                       labelText: 'Username or Email',
                       prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),

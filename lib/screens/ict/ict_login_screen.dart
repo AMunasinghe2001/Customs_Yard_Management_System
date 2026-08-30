@@ -430,6 +430,9 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
                   if (!_otpStage && !_passwordStage) ...[
                     TextFormField(
                       controller: _idCtrl,
+                      // Enter submits, so the form can be completed from the
+                      // keyboard without reaching for the mouse.
+                      onFieldSubmitted: (_) => _isLoading ? null : _submitLogin(),
                       decoration: InputDecoration(
                         labelText: 'Username or Email',
                         prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),
@@ -577,6 +580,9 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
                   if (_passwordStage) ...[
                     TextFormField(
                       controller: _newPassCtrl,
+                      // Enter submits, so the form can be completed from the
+                      // keyboard without reaching for the mouse.
+                      onFieldSubmitted: (_) => _isLoading ? null : _submitPasswordChange(),
                       obscureText: _obscureNew,
                       decoration: InputDecoration(
                         labelText: 'New Password (min 8 chars)',
@@ -590,6 +596,9 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
                     const Gap(16),
                     TextFormField(
                       controller: _confirmPassCtrl,
+                      // Enter submits, so the form can be completed from the
+                      // keyboard without reaching for the mouse.
+                      onFieldSubmitted: (_) => _isLoading ? null : _submitPasswordChange(),
                       obscureText: _obscureConfirm,
                       decoration: InputDecoration(
                         labelText: 'Confirm New Password',

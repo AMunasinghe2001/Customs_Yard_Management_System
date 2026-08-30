@@ -482,6 +482,9 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                         if (!_otpStage && !_passwordStage) ...[
                           TextFormField(
                             controller: _idCtrl,
+                            // Enter submits, so the form can be completed from the
+                            // keyboard without reaching for the mouse.
+                            onFieldSubmitted: (_) => _isLoading ? null : _continue(),
                             decoration: InputDecoration(
                               labelText: 'Username or Email',
                               prefixIcon: Icon(Icons.person_outline,
@@ -734,6 +737,9 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
       const Gap(20),
       TextFormField(
         controller: _newPassCtrl,
+        // Enter submits, so the form can be completed from the
+        // keyboard without reaching for the mouse.
+        onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),
         obscureText: _obscureNew,
         decoration: InputDecoration(
           labelText: 'New Password',

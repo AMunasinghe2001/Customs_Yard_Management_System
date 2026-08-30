@@ -378,6 +378,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                 Row(children: [
                   Expanded(child: TextFormField(
                     controller: _firstNameCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                     decoration: InputDecoration(
                       labelText: 'First Name *',
                       prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),
@@ -387,6 +390,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                   const Gap(12),
                   Expanded(child: TextFormField(
                     controller: _lastNameCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                     decoration: const InputDecoration(labelText: 'Last Name *'),
                     validator: (v) => v == null || v.isEmpty ? 'Required' : null,
                   )),
@@ -396,6 +402,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                 // Salary Number (full width, below names)
                 TextFormField(
                   controller: _salaryCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                   decoration: InputDecoration(
                     labelText: 'Salary Number',
                     prefixIcon: Icon(Icons.badge_outlined, color: context.colors.textMuted),
@@ -406,6 +415,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                 // Username — admin's login handle (can also log in with email)
                 TextFormField(
                   controller: _usernameCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                   decoration: InputDecoration(
                     labelText: 'Username *',
                     helperText: 'Used to sign in (email also works)',
@@ -438,6 +450,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
 
                 TextFormField(
                   controller: _emailCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                   decoration: InputDecoration(
                     labelText: 'Email *',
                     prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
@@ -449,6 +464,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
 
                 TextFormField(
                   controller: _passwordCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                   decoration: InputDecoration(
                     labelText: 'Password *',
                     prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
@@ -464,6 +482,9 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
 
                 TextFormField(
                   controller: _confirmCtrl,
+                  // Enter submits, so the form can be completed from the
+                  // keyboard without reaching for the mouse.
+                  onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
                   decoration: InputDecoration(
                     labelText: 'Confirm Password *',
                     prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
