@@ -36,7 +36,7 @@ const _officerNav = [
       'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
   NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
       '/reexported-packages'),
-  // The High Panel's outcomes for goods nothing could sell. Grouped after
+  // The Top Management Directorate's outcomes for goods nothing could sell. Grouped after
   // Re-exported so the whole disposal chain reads in order.
   NavItem('Government Use', Icons.account_balance_rounded,
       '/government-use-packages'),
@@ -69,7 +69,7 @@ const _adminNav = [
       'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
   NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
       '/reexported-packages'),
-  // The High Panel's outcomes for goods nothing could sell. Grouped after
+  // The Top Management Directorate's outcomes for goods nothing could sell. Grouped after
   // Re-exported so the whole disposal chain reads in order.
   NavItem('Government Use', Icons.account_balance_rounded,
       '/government-use-packages'),

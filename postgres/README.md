@@ -1,0 +1,86 @@
+# Running this project on the office PostgreSQL server
+
+The app used to talk to Supabase's cloud. It now connects straight to a
+PostgreSQL server on the office PC. These files build that database.
+
+## Run order (pgAdmin 4, against `Customs_SR_DB`)
+
+| # | File | What it does |
+|---|------|--------------|
+| 1 | `01_supabase_compat.sql` | Recreates the `auth` schema Supabase provided — `auth.uid()`, `auth.role()`, `auth.users` — plus the `anon` / `authenticated` / `service_role` roles and the `supabase_realtime` publication. |
+| 2 | `02_schema.sql` | Every table, function, policy and trigger: the base schema followed by all 76 migrations in date order. |
+| 3 | `03_realtime.sql` | NOTIFY triggers on the 18 tables the app watches, replacing Supabase's realtime channels. |
+| 4 | `04_auth.sql` | `sign_in` / `sign_up` / `change_password` over `auth.users`, using bcrypt. |
+
+Run them in order. Each depends on the one before: `02_schema.sql` references
+`auth.uid()` 66 times, `03_realtime.sql` needs the tables to exist, and
+`04_auth.sql` calls `public.email_for_login()` which arrives with the schema.
+
+All four are idempotent — re-running them is safe and changes nothing. Each
+ends with a VERIFY query; `04_auth.sql` raises if bcrypt is not working.
+
+## Creating the first account
+
+`auth.users` starts empty, so nobody can log in yet. Create the first admin in
+the Query Tool, then sign in through the app and use the ICT portal for the
+rest:
+
+```sql
+select * from auth.sign_up(
+  'admin@customs.gov.lk',
+  'choose-a-strong-password',
+  '{"full_name":"System Admin","role":"admin"}'::jsonb
+);
+
+-- profiles.id is a foreign key to auth.users(id), so use the id returned above
+insert into public.profiles (id, full_name, role, is_active)
+values ('<the id from above>', 'System Admin', 'admin', true)
+on conflict (id) do update set role = 'admin', is_active = true;
+```
+
+## Why the compatibility layer exists
+
+All 73 RLS policies were written against `auth.uid()`. Recreating that one
+function means **not a single policy had to be rewritten** — they carry over
+exactly as they were. Rewriting them by hand would have been 73 chances to
+widen access by accident, in a system where data isolation is the point.
+
+`auth.uid()` reads a session variable the app sets right after connecting:
+
+```sql
+select set_config('app.current_user_id', '<uuid>', false);
+select set_config('app.current_role',    'authenticated', false);
+```
+
+See `PgDatabase.setCurrentUser()` in `lib/core/db/pg_connection.dart`. Signed
+out, the variable is empty, `auth.uid()` is NULL, and every user-scoped policy
+denies — a bug that forgets to set it locks the user out rather than showing
+them everything.
+
+## Connection settings
+
+The app reads these at build time, with defaults for a local server:
+
+```
+flutter run \
+  --dart-define=PG_HOST=192.168.1.50 \
+  --dart-define=PG_PORT=5432 \
+  --dart-define=PG_DATABASE=Customs_SR_DB \
+  --dart-define=PG_USER=postgres \
+  --dart-define=PG_PASSWORD=...
+```
+
+For other machines to reach the server, the server PC needs `listen_addresses`
+in `postgresql.conf` and a LAN rule in `pg_hba.conf`.
+
+## Regenerating the schema
+
+`02_schema.sql` is generated — do not edit it by hand. After adding a migration
+under `supabase/migrations/`:
+
+```
+python postgres/build_schema.py
+```
+
+The migrations stay the source of truth; the script only stitches them together
+and adds the guards that make a second run a no-op.

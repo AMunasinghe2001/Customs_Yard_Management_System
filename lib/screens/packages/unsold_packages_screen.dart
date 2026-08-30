@@ -18,7 +18,7 @@ import '../executive/unsold_shared.dart';
 
 /// The yard's own packages that could not be sold by any means.
 ///
-/// READ-ONLY: the High Panel decides the final outcome; this page tells the
+/// READ-ONLY: the Top Management Directorate decides the final outcome; this page tells the
 /// yard what was decided so they can act on goods still sitting in their
 /// warehouses.
 ///
@@ -69,7 +69,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
   DateTimeRange? _dateRange;
   String? _yearFilter;
 
-  /// null = all · false = awaiting the High Panel · true = decided
+  /// null = all · false = awaiting the Top Management Directorate · true = decided
   bool? _decidedFilter;
   int _page = 0;
 

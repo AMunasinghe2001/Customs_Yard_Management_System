@@ -15,7 +15,7 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'package:intl/intl.dart';
 
-/// True when the signed-in High Panel officer is the ADG — the post that
+/// True when the signed-in Top Management Directorate officer is the ADG — the post that
 /// submits a committee's valuation as the tender's final price.
 /// See [executivePostIs] for how the post is resolved.
 bool _isAdg(ProfileModel? p) => executivePostIs(p, 'ADG');
@@ -108,7 +108,7 @@ class _CommitteeValuationCell extends StatelessWidget {
 final _committeeSearchProvider = StateProvider<String>((ref) => '');
 final _committeeYardProvider = StateProvider<String?>((ref) => null); // null=all
 
-/// High Panel tab: packages still unsold after the Valuation Tender plus all
+/// Top Management Directorate tab: packages still unsold after the Valuation Tender plus all
 /// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The DG and the ADG
 /// both appoint committees (usually five officers); the ADG then submits the
 /// committee's valuation as the tender's final price. The DC observes only.

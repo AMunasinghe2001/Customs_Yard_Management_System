@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:io' show exit;
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:window_manager/window_manager.dart';
 import 'core/supabase_client.dart';
+import 'package:window_manager/window_manager.dart';
+import 'core/error_handling.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
 import 'core/providers.dart';
@@ -12,21 +13,19 @@ import 'core/app_updater.dart';
 import 'core/holidays.dart';
 import 'services/services.dart';
 
-class _NoPersistLocalStorage extends LocalStorage {
-  @override
-  Future<void> initialize() async {}
-  @override
-  Future<bool> hasAccessToken() async => false;
-  @override
-  Future<String?> accessToken() async => null;
-  @override
-  Future<void> removePersistedSession() async {}
-  @override
-  Future<void> persistSession(String persistSessionString) async {}
+void main() async {
+  // Everything runs inside one guarded zone so that an uncaught ASYNC error
+  // anywhere in the app is captured rather than silently swallowed. runApp must
+  // be called inside it too, or the widgets end up in a different zone and the
+  // guard never sees their errors.
+  await AppErrorHandler.guard(_start);
 }
 
-void main() async {
+Future<void> _start() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Installed before anything else can fail, so start-up errors are logged too.
+  await AppErrorHandler.install();
 
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
@@ -39,13 +38,26 @@ void main() async {
   });
   await windowManager.setPreventClose(true);
 
-  await Supabase.initialize(
-    url: supabaseUrl,
-    anonKey: supabaseAnonKey,
-    authOptions: FlutterAuthClientOptions(
-      localStorage: _NoPersistLocalStorage(),
-    ),
-  );
+  // Connect to the office PostgreSQL server, cache the foreign keys the query
+  // layer needs, and start listening for change notifications.
+  //
+  // Sessions are not persisted, so this never restores a signed-in user — the
+  // same behaviour the Supabase build had via _NoPersistLocalStorage.
+  //
+  // NOT allowed to abort start-up. This used to be a bare `await`, so a server
+  // that was down (or simply not installed on a fresh machine) threw here and
+  // `runApp` below was never reached: windowManager had already shown the
+  // window, leaving a blank white frame with no Flutter UI in it — nothing to
+  // click, and setPreventClose(true) meant the close button did nothing either.
+  // The app looked frozen when the real problem was one unreachable socket.
+  // Now the failure is captured and rendered as a screen the user can read.
+  Object? startupError;
+  try {
+    await supabase.initialize();
+  } catch (e) {
+    startupError = e;
+    debugPrint('Database unavailable at start-up: $e');
+  }
 
   // Background auto-update check (Windows/macOS). Never throws.
   await initAutoUpdater();
@@ -56,10 +68,187 @@ void main() async {
   unawaited(loadPublicHolidays());
 
   runApp(
-    const ProviderScope(
-      child: CustomsApp(),
+    ProviderScope(
+      child: startupError == null
+          ? const CustomsApp()
+          : DatabaseUnavailableApp(error: startupError),
     ),
   );
+}
+
+/// Shown instead of the app when the database could not be reached at start-up.
+///
+/// The whole app is a thin client over PostgreSQL — with no connection there is
+/// no login, no yard, no packages — so there is nothing useful to render behind
+/// this. What it must do is say WHICH server was tried and let the user out of
+/// the window, which is exactly what the blank frame failed to do.
+class DatabaseUnavailableApp extends StatefulWidget {
+  const DatabaseUnavailableApp({super.key, required this.error});
+
+  final Object error;
+
+  @override
+  State<DatabaseUnavailableApp> createState() => _DatabaseUnavailableAppState();
+}
+
+class _DatabaseUnavailableAppState extends State<DatabaseUnavailableApp> {
+  late Object _error = widget.error;
+  bool _retrying = false;
+
+  Future<void> _retry() async {
+    setState(() => _retrying = true);
+    try {
+      await supabase.initialize();
+      if (!mounted) return;
+      // Connected on the retry — swap in the real app, no restart needed.
+      runApp(const ProviderScope(child: CustomsApp()));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e;
+        _retrying = false;
+      });
+    }
+  }
+
+  /// The most likely cause, in the order they actually happen on site.
+  String get _hint {
+    final s = _error.toString().toLowerCase();
+    if (s.contains('refused') || s.contains('1225')) {
+      return 'Nothing is listening on that port. The PostgreSQL service is '
+          'probably stopped — or not installed on this PC yet.';
+    }
+    if (s.contains('timed out') || s.contains('timeout')) {
+      return 'The server did not answer in time. Check the network link to it, '
+          'and any firewall between this PC and the server.';
+    }
+    if (s.contains('password') || s.contains('authentication')) {
+      return 'The server answered but rejected the credentials. Check the user '
+          'name and password this build was compiled with.';
+    }
+    if (s.contains('does not exist')) {
+      return 'The server is running but has no database with that name. Create '
+          'it, then run the files in supabase/ to build the schema.';
+    }
+    if (s.contains('failed host lookup')) {
+      return 'That host name could not be resolved. Check PG_HOST.';
+    }
+    return 'The database could not be opened.';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData.dark(useMaterial3: true),
+      home: Scaffold(
+        backgroundColor: const Color(0xFF0E0D1A),
+        body: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(40),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 620),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(children: [
+                    Icon(Icons.storage_rounded,
+                        color: Color(0xFFE05C5C), size: 30),
+                    SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Cannot reach the database',
+                        style: TextStyle(
+                            fontSize: 24, fontWeight: FontWeight.w800),
+                      ),
+                    ),
+                  ]),
+                  const SizedBox(height: 18),
+                  Text(_hint,
+                      style: const TextStyle(
+                          fontSize: 15, height: 1.5, color: Color(0xFFC9C7D6))),
+                  const SizedBox(height: 22),
+                  // Naming the exact target is what turns this from "it's
+                  // broken" into something the person at the desk can check.
+                  _TargetRow(label: 'Server', value: databaseDescription),
+                  // Points at the crash log from the one screen a user is
+                  // guaranteed to be looking at when things go wrong.
+                  if (AppErrorHandler.logPath != null) ...[
+                    const SizedBox(height: 8),
+                    _TargetRow(label: 'Log', value: AppErrorHandler.logPath!),
+                  ],
+                  const SizedBox(height: 22),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.04),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white.withOpacity(0.08)),
+                    ),
+                    child: SelectableText(
+                      _error.toString(),
+                      style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11.5,
+                          height: 1.5,
+                          color: Color(0xFF9C99AD)),
+                    ),
+                  ),
+                  const SizedBox(height: 26),
+                  Row(children: [
+                    FilledButton.icon(
+                      onPressed: _retrying ? null : _retry,
+                      icon: _retrying
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child:
+                                  CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.refresh_rounded),
+                      label: Text(_retrying ? 'Connecting…' : 'Try again'),
+                    ),
+                    const SizedBox(width: 12),
+                    // setPreventClose(true) makes the title-bar X a no-op, so
+                    // without this button the window genuinely cannot be shut.
+                    OutlinedButton.icon(
+                      onPressed: () => exit(0),
+                      icon: const Icon(Icons.close_rounded),
+                      label: const Text('Exit'),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TargetRow extends StatelessWidget {
+  const _TargetRow({required this.label, required this.value});
+  final String label, value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      SizedBox(
+        width: 80,
+        child: Text(label,
+            style: const TextStyle(fontSize: 13, color: Color(0xFF7E7B8F))),
+      ),
+      Expanded(
+        child: SelectableText(value,
+            style: const TextStyle(
+                fontFamily: 'monospace',
+                fontSize: 13,
+                fontWeight: FontWeight.w600)),
+      ),
+    ]);
+  }
 }
 
 class CustomsApp extends ConsumerStatefulWidget {

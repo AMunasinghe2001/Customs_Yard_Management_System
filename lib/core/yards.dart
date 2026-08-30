@@ -1,3 +1,5 @@
+import 'directorates.dart';
+
 /// Customs yards (departments) the application serves. Each user belongs to
 /// exactly one yard; data is isolated per yard.
 class Yard {
@@ -39,6 +41,21 @@ const List<Yard> kYards = [
   Yard(code: 'TRANSCO', name: 'Transco', srPrefix: 'TRANSCO'),
   Yard(code: 'SEREN', name: 'Serendib', srPrefix: 'SEREN'),
   Yard(code: 'TRIGO', name: 'Trigo', srPrefix: 'TRIGO'),
+  // Named in the directorate mapping (see directorates.dart) but absent from
+  // the original list.
+  Yard(code: 'CRT', name: 'CRT', srPrefix: 'CRT'),
+  Yard(code: 'MIDCO', name: 'Midco', srPrefix: 'MIDCO'),
+  Yard(code: 'LAKSIRI', name: 'Laksiri Seva', srPrefix: 'LAKSIRI'),
+  Yard(code: 'BO', name: 'BO', srPrefix: 'BO'),
+  Yard(code: 'MOBILE', name: 'Mobile', srPrefix: 'MOBILE'),
+  Yard(code: 'MAINOFF', name: 'Main Office', srPrefix: 'MAINOFF'),
+  Yard(code: 'KAT', name: 'Katunayaka', srPrefix: 'KAT'),
+  Yard(code: 'MATT', name: 'Mattala', srPrefix: 'MATT'),
+  Yard(code: 'RATH', name: 'Rathmalana', srPrefix: 'RATH'),
+  Yard(code: 'PALALI', name: 'Palali', srPrefix: 'PALALI'),
+  Yard(code: 'TRIO', name: 'Trio', srPrefix: 'TRIO'),
+  Yard(code: 'ACE', name: 'ACE', srPrefix: 'ACE'),
+  Yard(code: 'ASIAN', name: 'Asian', srPrefix: 'ASIAN'),
 ];
 
 /// The default yard used for existing data and as a fallback.
@@ -84,16 +101,22 @@ int compareSrNewestFirst(String a, String b) {
   return pb.$2.compareTo(pa.$2);
 }
 
-/// The yard an SR number belongs to, read from its prefix ("GL1/SR/01/2025").
+/// The yard an SR number belongs to, read from its prefix.
 ///
 /// Neither `packages` nor `warehouse_entries` expose a yard on their models,
 /// but every SR number is minted with its yard's prefix (see [yardSrPrefix]),
 /// so the number itself is the reliable source.
 ///
+/// Handles BOTH shapes, because the two are in the database side by side:
+/// the original `GL1/SR/01/2025` and the directorate-prefixed
+/// `CED/GL1/SR/01/2025` (see [stripDirectoratePrefix]).
+///
 /// Returns null when the prefix matches no known yard, so a caller can tell
 /// "unknown" apart from a genuine match rather than silently defaulting.
 String? yardOfSrNumber(String? srNumber) {
-  final prefix = (srNumber ?? '').split('/').first.trim().toUpperCase();
+  if (srNumber == null || srNumber.trim().isEmpty) return null;
+  final bare = stripDirectoratePrefix(srNumber.trim());
+  final prefix = bare.split('/').first.trim().toUpperCase();
   if (prefix.isEmpty) return null;
   for (final y in kYards) {
     if (y.srPrefix.toUpperCase() == prefix) return y.code;

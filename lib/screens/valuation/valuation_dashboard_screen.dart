@@ -1134,7 +1134,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
             const Spacer(),
             // How much work is actually waiting on this directorate.
             Builder(builder: (context) {
-              // Same exclusion as the table: High Panel packages are not this
+              // Same exclusion as the table: Top Management Directorate packages are not this
               // directorate's work, so they must not inflate the count.
               final all = (async.valueOrNull ?? const <ReTenderSaleInfo>[])
                   .where((i) => i.tenderCount <= kMaxBidTenderRounds)
@@ -1158,7 +1158,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
               data: (list) {
-                // Packages past Tender 3 belong to the High Panel: a committee
+                // Packages past Tender 3 belong to the Top Management Directorate: a committee
                 // prices them and the ADG submits it, so the Valuation
                 // Directorate has no work left on them. Drop them entirely
                 // rather than showing rows this officer cannot act on.
@@ -1751,11 +1751,11 @@ class _ValBidsAndRevalDialogState
                 const Gap(10),
                 // After the Valuation Tender plus Tender 1-3 have all gone
                 // unsold, the Valuation Directorate is done: the next price is
-                // set by a High Panel tender committee, not here.
+                // set by a Top Management Directorate tender committee, not here.
                 if (_handedToHighPanel)
                   StyledFormSection(
                     gap: 0,
-                    title: 'Referred to the High Panel',
+                    title: 'Referred to the Top Management Directorate',
                     icon: Icons.groups_rounded,
                     children: [_handoverNotice()],
                   )
@@ -1799,7 +1799,7 @@ class _ValBidsAndRevalDialogState
   }
 
   /// True once the package has exhausted the Valuation Tender + Tender 1-3.
-  /// From that point a High Panel committee decides the price.
+  /// From that point a Top Management Directorate committee decides the price.
   ///
   /// The Unsold table now filters these packages out entirely, so this is a
   /// safety net for a package that crosses the threshold while the dialog is
@@ -1825,7 +1825,7 @@ class _ValBidsAndRevalDialogState
         Expanded(
           child: Text(
             'This package went unsold through the Valuation Tender and '
-            'Tender 1-3. A High Panel tender committee now inspects it and '
+            'Tender 1-3. A Top Management Directorate tender committee now inspects it and '
             'sets the committee valuation, which the ADG then submits as the '
             'final valuation for the next tender.',
             style: TextStyle(

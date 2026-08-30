@@ -1,10 +1,11 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show debugPrint;
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../core/supabase_client.dart';
 import '../core/supabase_client.dart';
 import '../core/app_session.dart';
 import '../core/yards.dart';
+import '../core/directorates.dart';
 import '../models/models.dart';
 import 'otp_service.dart';
 
@@ -76,6 +77,7 @@ class AuthService {
     }
 
     AppSession.setYard(profile.yard);
+    AppSession.setDirectorate(profile.directorate);
   }
 
   /// Retries [action] a few times on transient network failures
@@ -131,6 +133,7 @@ class AuthService {
       }
 
       AppSession.setYard(profile.yard);
+      AppSession.setDirectorate(profile.directorate);
 
       try {
         await supabase.from('profiles').update({
@@ -267,6 +270,7 @@ class AuthService {
       throw Exception('account_expired');
     }
     AppSession.setYard(profile.yard);
+    AppSession.setDirectorate(profile.directorate);
     try {
       await supabase.from('profiles').update({
         'is_online': true,
@@ -316,6 +320,7 @@ class AuthService {
       throw Exception('account_expired');
     }
     AppSession.setYard(profile.yard);
+    AppSession.setDirectorate(profile.directorate);
     try {
       await supabase.from('profiles').update({
         'is_online': true,
@@ -364,6 +369,7 @@ class AuthService {
           await supabase.from('profiles').select().eq('id', user.id).single();
       final profile = ProfileModel.fromJson(data);
       AppSession.setYard(profile.yard);
+      AppSession.setDirectorate(profile.directorate);
       return profile;
     } catch (_) {
       return null;
@@ -402,48 +408,99 @@ class AuthService {
 // ── Package Service ──────────────────────────────────────────
 
 class PackageService {
-  Future<String> getNextSrNumber({String? yard}) async {
+  /// The next free SR number for a yard, in the current year.
+  ///
+  /// Shape is `<DIRECTORATE>/<YARD>/SR/<NN>/<YYYY>` (e.g. `CED/GL1/SR/25/2026`)
+  /// when the signed-in account has a directorate, and the original
+  /// `<YARD>/SR/<NN>/<YYYY>` when it does not — accounts created before
+  /// directorates existed keep working unchanged.
+  ///
+  /// The serial counts PER YARD PER YEAR, not per directorate. A yard under two
+  /// directorates (NNR is CED and PSD) must not hand out
+  /// `CED/NNR/SR/07/2026` and `PSD/NNR/SR/07/2026` to two different packages,
+  /// so the search deliberately matches both shapes and takes the highest.
+  Future<String> getNextSrNumber({String? yard, String? directorate}) async {
     final now = DateTime.now();
     final year = now.year;
     final startOfYear = DateTime(year, 1, 1).toIso8601String();
     final prefix =
         yardSrPrefix(yard ?? AppSession.currentYard); // e.g. GL1, RCT...
+    final dir = directorate ?? AppSession.currentDirectorate;
 
-    // Get the latest SR number for the current yard & year
+    // `%` also covers the unprefixed shape, since ilike anchors nothing before
+    // it — so one query finds both `GL1/SR/…` and `CED/GL1/SR/…`.
     final response = await supabase
         .from('packages')
         .select('sr_number')
         .gte('created_at', startOfYear)
-        .ilike('sr_number', '$prefix/SR/%/$year')
-        .order('created_at', ascending: false)
-        .limit(1);
+        .ilike('sr_number', '%$prefix/SR/%/$year');
 
+    // Ordering by created_at picked the most RECENTLY CREATED row, not the
+    // HIGHEST serial — a back-dated or repaired row could hand out a duplicate.
+    // Take the real maximum instead.
     int nextNum = 1;
-    if (response != null && (response as List).isNotEmpty) {
-      final lastSr = response[0]['sr_number'] as String;
-      // Extract number from <PREFIX>/SR/XX/YYYY
-      final parts = lastSr.split('/');
-      if (parts.length >= 3) {
-        final lastNum = int.tryParse(parts[2]);
-        if (lastNum != null) {
-          nextNum = lastNum + 1;
-        }
-      }
+    for (final row in (response as List? ?? const [])) {
+      final sr = row['sr_number'] as String?;
+      if (sr == null) continue;
+      final parts = stripDirectoratePrefix(sr).split('/');
+      // <YARD>/SR/<serial>/<year> — reject a yard that merely ends in `prefix`.
+      if (parts.length < 4) continue;
+      if (parts[0].toUpperCase() != prefix.toUpperCase()) continue;
+      final n = int.tryParse(parts[2].trim());
+      if (n != null && n >= nextNum) nextNum = n + 1;
     }
 
-    final formattedNum = nextNum.toString().padLeft(2, '0');
-    return '$prefix/SR/$formattedNum/$year';
+    return composeSrNumber(
+      yardPrefix: prefix,
+      serial: nextNum,
+      year: year,
+      directorateCode: dir,
+    );
   }
 
+  /// Looks a package up by SR number, matching BOTH shapes.
+  ///
+  /// `GL1/SR/62/2026` and `CED/GL1/SR/62/2026` name the same package: goods
+  /// registered before directorates existed carry the short form, and an
+  /// officer reading a number off an older label will type it that way. An
+  /// exact match on one shape alone would report "not found" for the other.
   Future<PackageModel?> getPackageBySrNumber(String srNumber) async {
+    const select =
+        '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)';
+    final typed = srNumber.trim();
+
     final data = await supabase
         .from('packages')
-        .select(
-            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)')
-        .eq('sr_number', srNumber)
+        .select(select)
+        .eq('sr_number', typed)
         .maybeSingle();
-    if (data == null) return null;
-    return PackageModel.fromJson(data);
+    if (data != null) return PackageModel.fromJson(data);
+
+    // Fall back to the other shape: strip a prefix the caller typed, or match
+    // any directorate's prefix in front of a bare number.
+    final bare = stripDirectoratePrefix(typed);
+    if (bare != typed) {
+      final alt = await supabase
+          .from('packages')
+          .select(select)
+          .eq('sr_number', bare)
+          .maybeSingle();
+      if (alt != null) return PackageModel.fromJson(alt);
+      return null;
+    }
+
+    // `%` before the bare number matches "<ANY-DIRECTORATE>/<bare>". Underscores
+    // and percent signs are not legal in an SR number, so no escaping needed.
+    final rows = await supabase
+        .from('packages')
+        .select(select)
+        .ilike('sr_number', '%/$bare')
+        .limit(2);
+    final list = (rows as List? ?? const []);
+    // Exactly one match is a confident answer; two would mean two directorates
+    // minted the same serial for one yard, which getNextSrNumber prevents.
+    if (list.length == 1) return PackageModel.fromJson(list.first);
+    return null;
   }
 
   Future<PackageModel?> getPackageById(String id) async {
@@ -487,8 +544,8 @@ class PackageService {
     String? year,
     String? yard,
   }) async {
-    // Apply the same filters to any PostgrestFilterBuilder (rows or count).
-    PostgrestFilterBuilder<T> applyFilters<T>(PostgrestFilterBuilder<T> q) {
+    // Apply the same filters to either query (rows or count).
+    PgQuery applyFilters(PgQuery q) {
       if (yard != null) q = q.eq('yard', yard);
       if (search != null && search.trim().isNotEmpty) {
         final s = search.trim();
@@ -518,11 +575,12 @@ class PackageService {
 
     // Count-only query (no rows transferred) for the pager total.
     final total = await AuthService._withNetworkRetry(
-        () => applyFilters(supabase.from('packages').count(CountOption.exact)));
+        () => applyFilters(supabase.from('packages')).count());
 
-    final rows =
-        (rowsData as List).map((e) => PackageModel.fromJson(e)).toList();
-    return (rows: rows, total: total);
+    final rows = (rowsData as List)
+        .map((e) => PackageModel.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return (rows: rows, total: total as int);
   }
 
   Future<PackageModel> createPackage(PackageModel pkg, List<PackageItem> items,
@@ -1796,6 +1854,45 @@ class AdminService {
     return res == true;
   }
 
+  /// Turns a failed `profiles` write into something the person reading it can
+  /// act on.
+  ///
+  /// The case that motivated this: the ICT portal shipped before any migration
+  /// widened `profiles_role_check`, so every ICT sign-up failed with SQLSTATE
+  /// 23514. The screen's error classifier saw an unfamiliar string and fell
+  /// through to "Network problem — check your internet connection", which sent
+  /// people to look at the Wi-Fi for a schema bug.
+  static String _profileWriteMessage(Object e, String role) {
+    final s = e.toString().toLowerCase();
+
+    // 23514 = check_violation. For `role` it means the database has not been
+    // migrated to know this portal's role yet.
+    if (s.contains('23514') ||
+        s.contains('check constraint') ||
+        s.contains('profiles_role_check')) {
+      return 'This database does not accept the "$role" account type yet. '
+          'The migration that adds it has not been run on this server — ask '
+          'ICT to apply supabase/migrations (20260839_ict_directorates_and_yards.sql).';
+    }
+    // 23505 = unique_violation: username or e-mail already taken.
+    if (s.contains('23505') || s.contains('duplicate') || s.contains('unique')) {
+      return 'An account with that username or e-mail already exists.';
+    }
+    // 42703 = undefined_column: the app is newer than the database.
+    if (s.contains('42703') || s.contains('does not exist')) {
+      return 'This database is missing a column this version of the app needs. '
+          'Ask ICT to run the pending migrations in supabase/migrations.';
+    }
+    if (s.contains('permission denied') ||
+        s.contains('row-level security') ||
+        s.contains('42501')) {
+      return 'This account is not permitted to create that profile. '
+          'Check the portal you signed in through.';
+    }
+    return 'Could not save the account profile: '
+        '${e.toString().replaceAll("Exception: ", "")}';
+  }
+
   Future<void> requestSignupOtp({
     required String email,
     required String fullName,
@@ -1806,6 +1903,7 @@ class AdminService {
     String? jobRole,
     String? department,
     String? yard,
+    String? directorate,
     String? profileImageUrl,
   }) async {
     // E-mail a self-issued code via Gmail (not Supabase). The account itself is
@@ -1826,6 +1924,7 @@ class AdminService {
     String? jobRole,
     String? department,
     String? yard,
+    String? directorate,
     String? profileImageUrl,
   }) async {
     // Verify our self-issued Gmail code (throws on bad/expired code).
@@ -1840,6 +1939,7 @@ class AdminService {
       if (jobRole != null) 'job_role': jobRole,
       if (department != null) 'department': department,
       if (yard != null) 'yard': yard,
+      if (directorate != null) 'directorate': directorate,
       if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
     };
 
@@ -1874,6 +1974,12 @@ class AdminService {
       throw Exception('Sign-up failed. Please try again.');
     }
 
+    // NOT swallowed. The account in auth.users is worthless without its
+    // profile row — the user could "sign up" successfully and then be refused
+    // at every login with a bare "profile_not_found". Surfacing the real error
+    // here is what tells them (and us) what actually went wrong; a role the
+    // profiles_role_check constraint does not allow used to land here and get
+    // mis-reported as a network problem.
     try {
       await supabase.from('profiles').upsert({
         'id': user.id,
@@ -1886,9 +1992,17 @@ class AdminService {
         if (jobRole != null) 'job_role': jobRole,
         if (department != null) 'department': department,
         if (yard != null) 'yard': yard,
+        if (directorate != null) 'directorate': directorate,
         if (profileImageUrl != null) 'profile_image_url': profileImageUrl,
       });
-    } catch (_) {}
+    } catch (e) {
+      // Leave no half-made account behind: without a profile the auth user can
+      // never sign in, and it would block a retry as "already registered".
+      try {
+        await supabase.auth.signOut();
+      } catch (_) {}
+      throw Exception(_profileWriteMessage(e, role));
+    }
 
     await supabase.auth.signOut();
   }
@@ -2153,6 +2267,345 @@ class AdminService {
       'username': username,
       'password': password,
     };
+  }
+}
+
+// ── ICT Service (Information & Communication Technology Division) ──
+
+class IctService {
+  /// Fetch all yard staff (Admins and Officers) across all yards, with optional filters.
+  Future<List<ProfileModel>> getAllYardStaff({
+    String? yard,
+    String? role,
+    String? query,
+    bool? activeOnly,
+  }) async {
+    var req = supabase.from('profiles').select();
+
+    if (role != null && role.isNotEmpty && role != 'all') {
+      req = req.eq('role', role);
+    } else {
+      req = req.inFilter('role', ['admin', 'officer']);
+    }
+
+    if (yard != null && yard.isNotEmpty && yard != 'all') {
+      req = req.eq('yard', yard);
+    }
+
+    if (activeOnly == true) {
+      req = req.eq('is_active', true);
+    }
+
+    final data = await req.order('created_at', ascending: false);
+    var list = (data as List).map((e) => ProfileModel.fromJson(e)).toList();
+
+    if (query != null && query.trim().isNotEmpty) {
+      final q = query.trim().toLowerCase();
+      list = list.where((p) {
+        final name = p.fullName.toLowerCase();
+        final uname = (p.username ?? '').toLowerCase();
+        final badge = (p.badgeNumber ?? '').toLowerCase();
+        final mobile = (p.mobileNumber ?? '').toLowerCase();
+        final yardCode = (p.yard ?? '').toLowerCase();
+        return name.contains(q) ||
+            uname.contains(q) ||
+            badge.contains(q) ||
+            mobile.contains(q) ||
+            yardCode.contains(q);
+      }).toList();
+    }
+
+    return list;
+  }
+
+  /// Request OTP for new account creation
+  Future<void> requestUserOtp({
+    required String email,
+    required String fullName,
+    String? mobileNumber,
+    String? badgeNumber,
+    required String role,
+    required String yard,
+  }) async {
+    await GmailOtpService.instance
+        .sendCode(email.trim(), recipientName: fullName.trim());
+  }
+
+  /// Verify OTP, create account (Admin / DC/SDDC or Officer) with generated credentials,
+  /// assign yard, send credentials email, and restore the ICT admin's session.
+  Future<Map<String, dynamic>> verifyAndCreateUser({
+    required String email,
+    required String otp,
+    required String fullName,
+    String? mobileNumber,
+    String? badgeNumber,
+    required String role, // 'admin' (DC / SDDC) or 'officer'
+    required String yard,
+    String? directorate,
+  }) async {
+    GmailOtpService.instance.verifyCode(email.trim(), otp);
+
+    final ictSession = supabase.auth.currentSession;
+    final ictId = supabase.auth.currentUser?.id;
+
+    final username = await AdminService()._uniqueUsername(fullName);
+    final password = AdminService._randomOfficerPassword();
+
+    final metadata = <String, dynamic>{
+      'full_name': fullName.trim(),
+      'role': role,
+      'badge_number': badgeNumber?.trim(),
+      'mobile_number': mobileNumber?.trim(),
+      'yard': yard,
+      'username': username,
+      if (directorate != null && directorate.isNotEmpty)
+        'directorate': directorate,
+    };
+
+    final String userId;
+    try {
+      final res = await AuthService._withNetworkRetry(() => supabase.auth
+          .signUp(email: email.trim(), password: password, data: metadata));
+      final u = res.user;
+      if (u == null) throw Exception('Could not create the user account.');
+      userId = u.id;
+    } on AuthException catch (e) {
+      final m = e.message.toLowerCase();
+      if (e.code == 'user_already_exists' ||
+          m.contains('already registered') ||
+          m.contains('already been registered')) {
+        if (ictSession != null) {
+          try {
+            await supabase.auth.setSession(ictSession.refreshToken!);
+          } catch (_) {}
+        }
+        throw Exception('This email is already registered.');
+      }
+      rethrow;
+    }
+
+    try {
+      await supabase.from('profiles').upsert({
+        'id': userId,
+        'full_name': fullName.trim(),
+        'username': username,
+        'badge_number': badgeNumber?.trim(),
+        'mobile_number': mobileNumber?.trim(),
+        'role': role,
+        'is_active': true,
+        'yard': yard,
+        if (directorate != null && directorate.isNotEmpty)
+          'directorate': directorate,
+      });
+    } catch (_) {}
+
+    // Restore the ICT admin's session
+    if (ictSession != null) {
+      try {
+        await supabase.auth.setSession(ictSession.refreshToken!);
+      } catch (_) {}
+    }
+
+    // E-mail credentials via GmailOtpService
+    bool emailed = true;
+    try {
+      await GmailOtpService.instance
+          .sendCredentials(email.trim(), fullName.trim(), username, password);
+    } catch (_) {
+      emailed = false;
+    }
+
+    if (ictId != null) {
+      await AuditLogService().recordLog(
+        userId: ictId,
+        action: 'ICT created $role account ($username for $yard)',
+        entityType: 'profile',
+        entityId: userId,
+      );
+    }
+
+    return {
+      'ok': true,
+      'emailed': emailed,
+      'username': username,
+      'password': password,
+    };
+  }
+
+  /// Toggle Active / Inactive status of an account
+  Future<void> toggleUserStatus(String profileId, bool active) async {
+    await supabase
+        .from('profiles')
+        .update({'is_active': active}).eq('id', profileId);
+  }
+
+  /// Update user details (name, salary, mobile, yard, role)
+  Future<void> updateUserProfile(
+    String profileId, {
+    required String fullName,
+    String? username,
+    String? badgeNumber,
+    String? mobileNumber,
+    required String yard,
+    required String role,
+    String? directorate,
+  }) async {
+    await supabase.from('profiles').update({
+      'full_name': fullName.trim(),
+      if (username != null && username.isNotEmpty) 'username': username.trim(),
+      'badge_number': badgeNumber?.trim(),
+      'mobile_number': mobileNumber?.trim(),
+      'yard': yard,
+      'role': role,
+      // Sent even when null: clearing an account's directorate is a legitimate
+      // edit, and `if (… != null)` would silently ignore it.
+      'directorate': (directorate == null || directorate.isEmpty)
+          ? null
+          : directorate,
+    }).eq('id', profileId);
+  }
+}
+
+// ── Directorate & Yard Service (ICT-maintained reference data) ──────────────
+
+/// Reads — and, for the ICT Directorate, edits — the yard/directorate lists.
+///
+/// These used to be `const` lists in the code, which meant adding a yard needed
+/// a rebuild and a redeploy. They now live in `directorates`, `yards` and the
+/// many-to-many `yard_directorates`, so ICT maintains them from the portal.
+///
+/// RLS does the enforcing: everyone may SELECT, only `auth_user_is_ict()` may
+/// write (see 20260839_ict_directorates_and_yards.sql).
+class DirectorateService {
+  Future<List<DirectorateModel>> getDirectorates({bool activeOnly = false}) async {
+    var req = supabase.from('directorates').select();
+    if (activeOnly) req = req.eq('is_active', true);
+    final data = await req.order('sort_order');
+    return (data as List).map((e) => DirectorateModel.fromJson(e)).toList();
+  }
+
+  Future<List<YardModel>> getYards({bool activeOnly = false}) async {
+    var req = supabase.from('yards').select();
+    if (activeOnly) req = req.eq('is_active', true);
+    final data = await req.order('sort_order');
+    return (data as List).map((e) => YardModel.fromJson(e)).toList();
+  }
+
+  /// Every yard→directorate link, as `{yardCode: [directorateCode, ...]}`.
+  ///
+  /// A yard can appear under several directorates (NNR is CED and PSD;
+  /// Katunayaka is B/A and ACD), which is why this is a list per yard.
+  Future<Map<String, List<String>>> getYardDirectorates() async {
+    final data = await supabase.from('yard_directorates').select();
+    final out = <String, List<String>>{};
+    for (final row in (data as List)) {
+      final y = row['yard_code'] as String?;
+      final d = row['directorate_code'] as String?;
+      if (y == null || d == null) continue;
+      (out[y] ??= <String>[]).add(d);
+    }
+    return out;
+  }
+
+  /// The yards under [directorateCode], for the registration yard picker.
+  Future<List<String>> yardsForDirectorate(String directorateCode) async {
+    final data = await supabase
+        .from('yard_directorates')
+        .select('yard_code')
+        .eq('directorate_code', directorateCode);
+    return [
+      for (final row in (data as List))
+        if (row['yard_code'] != null) row['yard_code'] as String
+    ];
+  }
+
+  // ── Writes (ICT only — RLS rejects everyone else) ────────────────────────
+
+  Future<void> upsertDirectorate({
+    required String code,
+    required String name,
+    required String srPrefix,
+    int sortOrder = 100,
+    bool isActive = true,
+  }) async {
+    await supabase.from('directorates').upsert({
+      'code': code.trim().toUpperCase(),
+      'name': name.trim(),
+      'sr_prefix': srPrefix.trim().toUpperCase(),
+      'sort_order': sortOrder,
+      'is_active': isActive,
+    });
+    await _log('Saved directorate ${code.trim().toUpperCase()}', code);
+  }
+
+  Future<void> upsertYard({
+    required String code,
+    required String name,
+    required String srPrefix,
+    int sortOrder = 100,
+    bool isActive = true,
+  }) async {
+    await supabase.from('yards').upsert({
+      'code': code.trim().toUpperCase(),
+      'name': name.trim(),
+      'sr_prefix': srPrefix.trim().toUpperCase(),
+      'sort_order': sortOrder,
+      'is_active': isActive,
+    });
+    await _log('Saved yard ${code.trim().toUpperCase()}', code);
+  }
+
+  /// Replaces the whole directorate set for one yard.
+  ///
+  /// Delete-then-insert rather than a diff: the set is a handful of rows, and
+  /// this way a link the user unticked genuinely disappears.
+  Future<void> setYardDirectorates(
+      String yardCode, List<String> directorateCodes) async {
+    final code = yardCode.trim().toUpperCase();
+    await supabase.from('yard_directorates').delete().eq('yard_code', code);
+    if (directorateCodes.isNotEmpty) {
+      await supabase.from('yard_directorates').insert([
+        for (final d in directorateCodes)
+          {'yard_code': code, 'directorate_code': d.trim().toUpperCase()}
+      ]);
+    }
+    await _log(
+        'Set directorates for yard $code: ${directorateCodes.join(", ")}', code);
+  }
+
+  /// Deactivates rather than deletes.
+  ///
+  /// A yard code is stamped on every package, warehouse entry and audit row it
+  /// ever produced; removing the row would orphan all of it. Deactivating keeps
+  /// the history readable while taking the yard out of the pickers.
+  Future<void> setYardActive(String yardCode, bool active) async {
+    await supabase
+        .from('yards')
+        .update({'is_active': active}).eq('code', yardCode);
+    await _log('${active ? "Activated" : "Deactivated"} yard $yardCode', yardCode);
+  }
+
+  Future<void> setDirectorateActive(String code, bool active) async {
+    await supabase
+        .from('directorates')
+        .update({'is_active': active}).eq('code', code);
+    await _log(
+        '${active ? "Activated" : "Deactivated"} directorate $code', code);
+  }
+
+  Future<void> _log(String action, String entityId) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+    try {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: action,
+        entityType: 'directorate_config',
+        entityId: entityId,
+      );
+    } catch (_) {
+      // Reference data is already saved; a missing audit line must not undo it.
+    }
   }
 }
 
@@ -3842,7 +4295,7 @@ class TendersService {
 // (cross-yard RLS) and manage Tender Sale records.
 
 class DisposalService {
-  // ── Financial expenses (High Panel Financials tab) ───────────────────────
+  // ── Financial expenses (Top Management Directorate Financials tab) ───────────────────────
 
   /// Every recorded outgoing, newest first.
   Future<List<FinancialExpenseModel>> getFinancialExpenses() async {
@@ -4167,7 +4620,7 @@ class DisposalService {
     final unsold = await getUnsoldTenderSales();
     if (unsold.isEmpty) return {};
     // Latest round id per package (newest createdAt), plus how many rounds it
-    // has run — a package past Tender 3 is a High Panel committee case.
+    // has run — a package past Tender 3 is a Top Management Directorate committee case.
     final latestRound = <String, String>{};
     final roundCount = <String, int>{};
     for (final info in unsold) {
@@ -4360,7 +4813,7 @@ class DisposalService {
     //    last stage of the chain was missing from every report.
     //
     //    Appended last so the chain reads in order:
-    //      initial -> Tender 1 -> Tender 2 -> Tender 3 -> High Panel
+    //      initial -> Tender 1 -> Tender 2 -> Tender 3 -> Top Management Directorate
     try {
       final committees = await AuthService._withNetworkRetry(() => supabase
           .from('tender_committees')
@@ -4489,7 +4942,7 @@ class DisposalService {
             }).eq('forfeited_package_id', forfeitedPackageId));
   }
 
-  // ── Unsold proposals (the High Panel's final outcome) ────────────────────
+  // ── Unsold proposals (the Top Management Directorate's final outcome) ────────────────────
 
   /// Every recorded final outcome, keyed by forfeited_package_id.
   Future<Map<String, UnsoldProposalModel>> getUnsoldProposals() async {
@@ -4503,7 +4956,7 @@ class DisposalService {
     return out;
   }
 
-  /// Record (or replace) the High Panel's final outcome for a package.
+  /// Record (or replace) the Top Management Directorate's final outcome for a package.
   Future<void> saveUnsoldProposal({
     required String forfeitedPackageId,
     required String proposal,
@@ -4528,7 +4981,7 @@ class DisposalService {
   /// carry) a final outcome: past Tender 3, a committee valuation submitted by
   /// the ADG, tendered again, and still unsold.
   ///
-  /// Shared by the High Panel (who decide), Central Disposal and the yards
+  /// Shared by the Top Management Directorate (who decide), Central Disposal and the yards
   /// (who see the decision), so all three lists agree by construction.
   Future<List<ReTenderSaleInfo>> getExhaustedUnsoldPackages() async {
     final unsold = await getUnsoldTenderSales();

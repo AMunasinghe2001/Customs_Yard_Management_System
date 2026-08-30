@@ -109,6 +109,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
         ref.read(currentProfileProvider.notifier).state = updatedProfile;
         // Keep the session's active yard in sync so new records are tagged correctly.
         AppSession.setYard(updatedProfile.yard);
+        AppSession.setDirectorate(updatedProfile.directorate);
       }
 
       if (mounted && Navigator.of(dialogContext).canPop()) {

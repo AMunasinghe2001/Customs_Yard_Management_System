@@ -11,6 +11,7 @@ import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../core/yards.dart';
+import '../../core/directorates.dart';
 import '../../core/post_status_activities.dart';
 import '../../core/app_session.dart';
 import '../../services/services.dart';
@@ -770,7 +771,18 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                         style: TextStyle(
                                             color: context.colors.textPrimary),
                                         decoration: _fieldDecoration(
-                                          labelText: 'Yard',
+                                          // Names the directorate too: it is
+                                          // what puts the prefix on the SR
+                                          // number beside this field, and a
+                                          // yard under two directorates would
+                                          // otherwise give no clue which one
+                                          // this account writes under.
+                                          labelText:
+                                              AppSession.currentDirectorate ==
+                                                      null
+                                                  ? 'Yard'
+                                                  : 'Yard · '
+                                                      '${directorateSrPrefix(AppSession.currentDirectorate)}',
                                         ).copyWith(
                                           fillColor:
                                               Theme.of(context).brightness ==

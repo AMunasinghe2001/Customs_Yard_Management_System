@@ -8,7 +8,7 @@ import '../../models/models.dart';
 import '../../widgets/tooltip_text.dart';
 
 /// ONE definition of the Unsold Packages table, shared by all three portals —
-/// the yard's Unsold page, Central Disposal's Unsold tab and the High Panel's
+/// the yard's Unsold page, Central Disposal's Unsold tab and the Top Management Directorate's
 /// Unsold tab. Previously each built its own columns, so the same package
 /// showed different details (and different quantities) depending on where you
 /// looked. Only the "Final Outcome" cell differs now: the DG gets a Decide
@@ -160,7 +160,7 @@ const List<DataColumn2> kUnsoldDecidedColumns = [
       fixedWidth: 66),
 ];
 
-/// The date the High Panel recorded this outcome, for [kUnsoldDecidedColumns].
+/// The date the Top Management Directorate recorded this outcome, for [kUnsoldDecidedColumns].
 ///
 /// The note the DG left is worth surfacing, so it rides in the tooltip rather
 /// than taking a column of its own.
@@ -249,17 +249,17 @@ class UnsoldOutcomeChip extends StatelessWidget {
 
   /// What to show while no outcome has been set. Defaults to naming the High
   /// Panel, which is right for the yard and Central Disposal — but INSIDE the
-  /// High Panel portal that reads as telling them to wait for themselves, so
+  /// Top Management Directorate portal that reads as telling them to wait for themselves, so
   /// the ADG's view passes [kAwaitingDg] to name the officer instead.
   final String pendingLabel;
 
   const UnsoldOutcomeChip({
     super.key,
     required this.proposal,
-    this.pendingLabel = 'Awaiting High Panel',
+    this.pendingLabel = 'Awaiting Top Management Directorate',
   });
 
-  /// Pending label for use inside the High Panel portal itself.
+  /// Pending label for use inside the Top Management Directorate portal itself.
   static const String kAwaitingDg = 'Awaiting DG decision';
 
   @override

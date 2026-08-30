@@ -16,7 +16,7 @@ import '../../widgets/package_details_dialog.dart';
 import 'executive_header.dart';
 import 'unsold_shared.dart';
 
-/// True when the signed-in High Panel officer is the DG — the only post that
+/// True when the signed-in Top Management Directorate officer is the DG — the only post that
 /// rules on an unsold package's final outcome. The ADG and the DC both see the
 /// table read-only. See [executivePostIs] for how the post is resolved.
 bool _isDg(ProfileModel? p) => executivePostIs(p, 'DG');
@@ -27,7 +27,7 @@ final _uYardProvider = StateProvider<String?>((ref) => null); // null = all
 final _uDecidedProvider = StateProvider<bool?>((ref) => null);
 final _uPageProvider = StateProvider<int>((ref) => 0);
 
-/// High Panel tab: packages that have exhausted EVERY avenue — the Valuation
+/// Top Management Directorate tab: packages that have exhausted EVERY avenue — the Valuation
 /// Tender plus Tender 1-3 all failed, a committee re-valued them, the ADG
 /// submitted that figure, they were tendered again, and they STILL did not
 /// sell. The DG decides the final outcome here; Central Disposal and the
@@ -276,7 +276,7 @@ class _DecisionCell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Inside the High Panel's own portal "Awaiting High Panel" would tell the
+    // Inside the Top Management Directorate's own portal "Awaiting Top Management Directorate" would tell the
     // ADG to wait for themselves — name the officer who actually decides.
     if (!canDecide) {
       return UnsoldOutcomeChip(

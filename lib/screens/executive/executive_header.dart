@@ -5,7 +5,7 @@ import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../widgets/styled_dropdown.dart';
 
-/// The header controls every High Panel tab shares, so each page carries the
+/// The header controls every Top Management Directorate tab shares, so each page carries the
 /// same search box, yard dropdown and filter chips in the same order:
 ///
 ///     Title
@@ -24,7 +24,7 @@ import '../../widgets/styled_dropdown.dart';
 const EdgeInsets kExecutiveFilterPadding =
     EdgeInsets.symmetric(horizontal: 12, vertical: 14);
 
-/// The search box every High Panel tab uses.
+/// The search box every Top Management Directorate tab uses.
 ///
 /// Its [kExecutiveFilterPadding] is what gives it the same height as the yard
 /// dropdown beside it — never set an explicit height, or the two controls end

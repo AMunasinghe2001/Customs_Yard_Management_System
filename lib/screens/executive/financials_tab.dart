@@ -31,7 +31,7 @@ final _money = NumberFormat('#,##0.00');
 
 String _lkr(double v) => 'LKR ${_money.format(v)}';
 
-/// High Panel · Financials.
+/// Top Management Directorate · Financials.
 ///
 /// INCOME is derived from records the system already holds — storage charges,
 /// destroying deposits, sale proceeds and the taxes on them.

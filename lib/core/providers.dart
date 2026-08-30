@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'supabase_client.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'supabase_client.dart';
 import 'yards.dart';
+import 'directorates.dart';
 
 // ── Service Providers ──────────────────────────────────────────
 final authServiceProvider = Provider((ref) => AuthService());
@@ -20,6 +21,77 @@ final tendersServiceProvider = Provider((ref) => TendersService());
 final disposalServiceProvider = Provider((ref) => DisposalService());
 final appealServiceProvider = Provider((ref) => AppealService());
 final valuationServiceProvider = Provider((ref) => ValuationService());
+final ictServiceProvider = Provider((ref) => IctService());
+final directorateServiceProvider = Provider((ref) => DirectorateService());
+
+// ── Directorates & yards (ICT-maintained reference data) ───────────────────
+//  The lists used to be `const` in the code; they now come from the database
+//  so ICT can add a yard without a rebuild. Each falls back to the seed list
+//  in yards.dart / directorates.dart when the query fails, so a dropped LAN
+//  link degrades to the built-in list instead of an empty picker.
+
+/// Bumped after any ICT edit so every open picker re-reads the lists.
+final directorateConfigRefreshProvider =
+    StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
+
+final directoratesProvider =
+    FutureProvider<List<DirectorateModel>>((ref) async {
+  ref.watch(directorateConfigRefreshProvider);
+  try {
+    final rows =
+        await ref.read(directorateServiceProvider).getDirectorates();
+    if (rows.isNotEmpty) return rows;
+  } catch (_) {
+    // fall through to the seed
+  }
+  return [
+    for (final d in kDirectorates)
+      DirectorateModel(code: d.code, name: d.name, srPrefix: d.srPrefix)
+  ];
+});
+
+final yardsProvider = FutureProvider<List<YardModel>>((ref) async {
+  ref.watch(directorateConfigRefreshProvider);
+  try {
+    final rows = await ref.read(directorateServiceProvider).getYards();
+    if (rows.isNotEmpty) return rows;
+  } catch (_) {
+    // fall through to the seed
+  }
+  return [
+    for (final y in kYards)
+      YardModel(code: y.code, name: y.name, srPrefix: y.srPrefix)
+  ];
+});
+
+/// `{yardCode: [directorateCode, ...]}` — a yard may sit under several.
+final yardDirectoratesProvider =
+    FutureProvider<Map<String, List<String>>>((ref) async {
+  ref.watch(directorateConfigRefreshProvider);
+  try {
+    final map =
+        await ref.read(directorateServiceProvider).getYardDirectorates();
+    if (map.isNotEmpty) return map;
+  } catch (_) {
+    // fall through to the seed
+  }
+  return kYardDirectorates;
+});
+
+/// The yards under one directorate — the registration yard picker's source.
+/// Returns every yard when [directorateCode] is null, so the picker is usable
+/// before a directorate has been chosen.
+final yardsForDirectorateProvider =
+    FutureProvider.family<List<YardModel>, String?>((ref, directorateCode) async {
+  final yards = await ref.watch(yardsProvider.future);
+  if (directorateCode == null || directorateCode.isEmpty) return yards;
+  final map = await ref.watch(yardDirectoratesProvider.future);
+  final allowed = <String>{
+    for (final e in map.entries)
+      if (e.value.contains(directorateCode)) e.key
+  };
+  return yards.where((y) => allowed.contains(y.code)).toList();
+});
 
 // ── Shared Auth State ──────────────────────────────────────────
 final currentProfileProvider = StateProvider<ProfileModel?>((ref) => null);
@@ -593,9 +665,9 @@ final tenderRevaluationsProvider =
 
 // forfeited_package_ids that may be re-tendered — their latest unsold round has
 // a Valuation re-valuation. Packages awaiting re-valuation are excluded.
-// ── Unsold proposals (High Panel's final outcome) ──────────────────────────
+// ── Unsold proposals (Top Management Directorate's final outcome) ──────────────────────────
 // The packages that exhausted every avenue: past Tender 3, committee valuation
-// submitted by the ADG, tendered again, still unsold. Shared by the High Panel,
+// submitted by the ADG, tendered again, still unsold. Shared by the Top Management Directorate,
 // Central Disposal and the yards so all three lists agree.
 final exhaustedUnsoldProvider =
     FutureProvider<List<ReTenderSaleInfo>>((ref) async {
@@ -1027,7 +1099,7 @@ final dashboardStatsProvider =
   return await ref.read(packageServiceProvider).getDashboardStats();
 });
 
-// ── Financials (High Panel) ──────────────────────────────────────────────────
+// ── Financials (Top Management Directorate) ──────────────────────────────────────────────────
 
 /// Hand-entered outgoings: destruction costs, advertising costs, refunds.
 final financialExpensesProvider =

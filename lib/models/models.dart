@@ -732,6 +732,10 @@ class ProfileModel {
   final String? jobRole;
   final String? department;
   final String? yard; // Yard the user belongs to (data isolation)
+  /// Head-office directorate (`directorates.code`) this account registered
+  /// under. Decides the SR-number prefix, because one yard may sit under
+  /// several — NNR is both CED and PSD. Null on pre-directorate accounts.
+  final String? directorate;
   final String? profileImageUrl;
   final String role;
   final bool isActive;
@@ -749,6 +753,7 @@ class ProfileModel {
     this.jobRole,
     this.department,
     this.yard,
+    this.directorate,
     this.profileImageUrl,
     required this.role,
     required this.isActive,
@@ -768,6 +773,7 @@ class ProfileModel {
       jobRole: json['job_role'] as String?,
       department: json['department'] as String?,
       yard: json['yard'] as String?,
+      directorate: json['directorate'] as String?,
       profileImageUrl: json['profile_image_url'] as String?,
       role: json['role'] as String,
       isActive: json['is_active'] as bool? ?? true,
@@ -811,14 +817,19 @@ class ProfileModel {
   /// cross-yard read-only, never auto-expires.
   bool get isExecutive => role == 'executive';
 
+  /// ICT Directorate (Information & Communication Technology Division) — cross-yard
+  /// user provisioning, administration, and system management. Institutional, never auto-expires.
+  bool get isIct => role == 'ict';
+
   /// True once the account is past its 8-month lifetime. Directorate accounts
-  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC) are institutional and
+  /// (Disposal DC/SDDC, Appeal AD/ADD, Valuation DC/SDDC, ICT) are institutional and
   /// never auto-expire (officers transfer in/out of the post).
   bool get isExpired =>
       !isDisposal &&
       !isAppeal &&
       !isValuation &&
       !isExecutive &&
+      !isIct &&
       DateTime.now().isAfter(expiresAt);
 
   /// Whether the account may currently sign in: explicitly active AND not
@@ -868,6 +879,7 @@ class ProfileModel {
       jobRole: jobRole,
       department: department,
       yard: yard,
+      directorate: directorate,
       profileImageUrl: profileImageUrl,
       role: role,
       isActive: isActive,
@@ -916,7 +928,7 @@ class AuditLogModel {
   }
 }
 
-// ── Financials (High Panel) ──────────────────────────────────
+// ── Financials (Top Management Directorate) ──────────────────────────────────
 
 /// The three hand-entered outgoings. Income is derived from records the
 /// system already holds; these are not, so they are typed in.
@@ -1602,7 +1614,7 @@ class TenderBidModel {
 
 /// How many bid-driven tender rounds a package gets after its first
 /// (valuation-driven) attempt. Once these are exhausted and it is still
-/// unsold, it goes to the High Panel Officers' Tender Committees.
+/// unsold, it goes to the Top Management Directorate's Tender Committees.
 const int kMaxBidTenderRounds = 3;
 
 /// Human label for a tender attempt, 1-based.
@@ -1610,7 +1622,7 @@ const int kMaxBidTenderRounds = 3;
 /// Attempt 1 is the **Valuation Tender** — its price comes from the Valuation
 /// Directorate's Pending Valuation, not from bids, so it is deliberately NOT
 /// called "Tender 1". Attempts 2, 3, 4 are **Tender 1, 2, 3** — each priced
-/// from the previous round's unsold bids. Anything beyond that is a High Panel
+/// from the previous round's unsold bids. Anything beyond that is a Top Management Directorate
 /// committee round.
 String tenderRoundLabel(int attempt) {
   if (attempt <= 1) return 'Valuation Tender';
@@ -1649,7 +1661,7 @@ class TenderRevaluationModel {
       );
 }
 
-/// The FINAL outcome the High Panel decides for a package that could not be
+/// The FINAL outcome the Top Management Directorate decides for a package that could not be
 /// sold by any means — after the Valuation Tender, Tender 1-3, a committee
 /// re-valuation and one more tender all failed.
 class UnsoldProposalModel {
@@ -1684,7 +1696,7 @@ class UnsoldProposalModel {
       );
 }
 
-/// The outcomes, in the order the High Panel sees them.
+/// The outcomes, in the order the Top Management Directorate sees them.
 const List<String> kUnsoldProposals = [
   'destroy',
   'remand',
@@ -1878,7 +1890,7 @@ String valuationPositionLabel(String? code) =>
 const Map<String, String> kExecutivePositions = {
   'DG': 'DG (Director General)',
   'ADG': 'ADG (Additional Director General)',
-  // Sits on the High Panel to observe. VIEW-ONLY: no committee appointment,
+  // Sits on the Top Management Directorate to observe. VIEW-ONLY: no committee appointment,
   // no committee valuation, no final outcome — see [isExecutiveViewOnly].
   'DC': 'DC (Deputy Commissioner)',
 };
@@ -1886,10 +1898,81 @@ const Map<String, String> kExecutivePositions = {
 String executivePositionLabel(String? code) =>
     kExecutivePositions[code] ?? (code ?? "Director General's Office");
 
-/// True when the signed-in High Panel officer holds [code].
+// ── ICT Directorate positions ──────────────────────────────────────────────
+const Map<String, String> kIctPositions = {
+  'IDC': 'DC (Director ICT)',
+  'ISDDC': 'SDDC (Senior Deputy Director ICT)',
+  'ICT_ADMIN': 'Chief ICT Officer / System Admin',
+  'ICT_OFFICER': 'ICT Officer',
+};
+
+String ictPositionLabel(String? code) =>
+    kIctPositions[code] ?? (code ?? 'ICT Directorate');
+
+// ── Directorates & yards (ICT-maintained reference data) ────────────────────
+//  These mirror the `directorates` / `yards` tables. The const lists in
+//  lib/core/directorates.dart and lib/core/yards.dart remain as the seed and
+//  the offline fallback; these models carry the LIVE rows ICT edits.
+
+/// A head-office directorate — CED, PSD, RTF, B/A, ACD, EXD, PRD, SSD, …
+class DirectorateModel {
+  final String code;
+  final String name;
+
+  /// What goes in FRONT of the SR number. Distinct from [code] because "B/A"
+  /// is the real prefix but an awkward key.
+  final String srPrefix;
+  final int sortOrder;
+  final bool isActive;
+
+  const DirectorateModel({
+    required this.code,
+    required this.name,
+    required this.srPrefix,
+    this.sortOrder = 100,
+    this.isActive = true,
+  });
+
+  factory DirectorateModel.fromJson(Map<String, dynamic> json) =>
+      DirectorateModel(
+        code: json['code'] as String,
+        name: json['name'] as String,
+        srPrefix: json['sr_prefix'] as String,
+        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 100,
+        isActive: json['is_active'] as bool? ?? true,
+      );
+}
+
+/// A physical customs yard, as stored rather than hard-coded.
+class YardModel {
+  final String code;
+  final String name;
+  final String srPrefix;
+  final int sortOrder;
+  final bool isActive;
+
+  const YardModel({
+    required this.code,
+    required this.name,
+    required this.srPrefix,
+    this.sortOrder = 100,
+    this.isActive = true,
+  });
+
+  factory YardModel.fromJson(Map<String, dynamic> json) => YardModel(
+        code: json['code'] as String,
+        name: json['name'] as String,
+        srPrefix: json['sr_prefix'] as String,
+        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 100,
+        isActive: json['is_active'] as bool? ?? true,
+      );
+}
+
+
+/// True when the signed-in Top Management Directorate officer holds [code].
 ///
 /// The post lives in `profiles.job_role`, but accounts created before the
-/// "High Panel Officers" rename can carry it only in the username or the full
+/// "Top Management Directorate" rename can carry it only in the username or the full
 /// name, so all three are checked. Longer codes are tested FIRST because
 /// "(ADG)" also contains "DG" — a naive match would read an ADG as a DG.
 bool executivePostIs(ProfileModel? p, String code) {
@@ -1909,7 +1992,7 @@ bool executivePostIs(ProfileModel? p, String code) {
   return matches(code);
 }
 
-/// The DC observes the High Panel but changes nothing.
+/// The DC observes the Top Management Directorate but changes nothing.
 bool isExecutiveViewOnly(ProfileModel? p) => executivePostIs(p, 'DC');
 
 // ── Tender Sale (Central Disposal Directorate) ───────────────────────────

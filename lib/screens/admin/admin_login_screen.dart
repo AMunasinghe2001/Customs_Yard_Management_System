@@ -283,34 +283,17 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
                         : const Text('Sign In', style: TextStyle(fontSize: 16)),
                   )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
                   const Gap(24),
-                  Row(children: [
-                    Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text('OR', style: TextStyle(color: context.colors.textMuted, fontSize: 12)),
-                    ),
-                    Expanded(child: Divider(color: context.colors.borderColor.withOpacity(0.5))),
-                  ]).animate().fadeIn(delay: 450.ms),
-                  const Gap(24),
-                  SizedBox(height: 54, child: OutlinedButton.icon(
-                    onPressed: _isLoading ? null : _signInWithGoogle,
-                    icon: const Icon(Icons.g_mobiledata, size: 30), // Placeholder using a built-in icon
-                    label: const Text('Sign in with Google', style: TextStyle(fontSize: 16)),
-                    style: OutlinedButton.styleFrom(
-                      side: BorderSide(color: context.colors.borderColor),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 500.ms).fadeIn(),
-                  const Gap(24),
                   Divider(color: context.colors.borderColor.withOpacity(0.5)),
-                  Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    Text("Don't have an account?", style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
-                    TextButton(
-                      onPressed: () => context.go('/admin/signup'),
-                      child: Text('Create Account',
-                          style: TextStyle(color: context.colors.primaryGold, fontWeight: FontWeight.w600)),
+                  const Gap(16),
+                  Center(child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    Icon(Icons.info_outline_rounded, size: 15, color: context.colors.textMuted),
+                    const Gap(6),
+                    Flexible(
+                      child: Text('DC / SDDC accounts are provisioned by the ICT Directorate.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
                     ),
-                  ]).animate().fadeIn(delay: 600.ms),
+                  ])).animate().fadeIn(delay: 500.ms),
                 ],
               )),
             ),

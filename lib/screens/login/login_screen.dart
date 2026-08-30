@@ -276,7 +276,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Icon(Icons.info_outline_rounded, size: 15, color: context.colors.textMuted),
                     const Gap(6),
                     Flexible(
-                      child: Text('Officer accounts are created by an administrator.',
+                      child: Text('Officer accounts are provisioned by the ICT Directorate.',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
                     ),
