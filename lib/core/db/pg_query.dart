@@ -443,9 +443,18 @@ class PgQuery implements Future<dynamic> {
           where.add('$col @> @$p');
         default:
           if (f.op.startsWith('not.')) {
-            final inner = _sqlOp(f.op.substring(4));
-            params[p] = f.value;
-            where.add('not ($col $inner @$p)');
+            final innerOp = f.op.substring(4);
+            if (innerOp == 'is') {
+              // `not(col, 'is', null)` -> `col is not null`. The operand is
+              // part of the syntax here, so binding it as a parameter would
+              // produce `col is @p0`, which does not parse.
+              final v = f.value;
+              final lit = v == null ? 'null' : (v == true ? 'true' : 'false');
+              where.add('$col is not $lit');
+            } else {
+              params[p] = f.value;
+              where.add('not ($col ${_sqlOp(innerOp)} @$p)');
+            }
           } else {
             params[p] = f.value;
             where.add('$col ${f.op} @$p');
@@ -467,6 +476,17 @@ class PgQuery implements Future<dynamic> {
     // ── Mutations ───────────────────────────────────────────────────────────
     if (_mutation != null) {
       return _buildMutation(alias, whereSql, params, c);
+    }
+
+    // ── Count ───────────────────────────────────────────────────────────────
+    //  Before the select list, not after: a count must not build the embeds.
+    //  The pager asks for a total over the same filters as the rows query, and
+    //  aggregating package_items and warehouse_entries only to discard them
+    //  would make the cheap half of that pair the expensive one.
+    if (_countOnly) {
+      final sql = 'select count(*)::int as count\n'
+          '  from ${_quoteIdent(table)} $alias$whereSql';
+      return (sql, params);
     }
 
     final cols = _selectList(table, alias, _fields, params, c).join(',\n       ');
@@ -607,6 +627,19 @@ class PgQuery implements Future<dynamic> {
     if (_mutation != null && !_returning) return null;
     return rows;
   }
+
+  /// The SQL this query would run, without running it.
+  ///
+  /// Used by the tests to check the shape of an embed — whether it aggregates
+  /// into a list or builds a single object, and which column it joins on.
+  /// Those are the mistakes that would otherwise surface far away, as a null
+  /// inside a model's fromJson.
+  @visibleForTesting
+  String debugSql() => _build().$1;
+
+  /// The bound parameters this query would send.
+  @visibleForTesting
+  Map<String, Object?> debugParams() => _build().$2;
 
   /// Flip on to print generated SQL while debugging a query.
   static bool _logSql = false;

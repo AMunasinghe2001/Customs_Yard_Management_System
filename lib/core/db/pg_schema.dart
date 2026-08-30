@@ -82,6 +82,13 @@ class PgSchema {
 
   List<PgForeignKey> get all => _fks;
 
+  /// Seeds the cache without a database, for tests that check generated SQL.
+  @visibleForTesting
+  void loadForTest(List<PgForeignKey> fks) {
+    _fks = List.unmodifiable(fks);
+    _loaded = true;
+  }
+
   /// The FK on [table] pointing at [target], if there is exactly one.
   ///
   /// Returns null when there are several — `warehouse_entries` has both
