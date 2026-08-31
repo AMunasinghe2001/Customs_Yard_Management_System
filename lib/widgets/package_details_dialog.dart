@@ -184,15 +184,18 @@ class TenderHistorySection extends ConsumerWidget {
     // Members only exist once the DG/ADG appointed the committee. Held in a
     // local so every branch below reads the same list.
     final committeeMembers = committee?.members ?? const <CommitteeMember>[];
-    final sales =
-        ref.watch(tenderSalesProvider).valueOrNull ?? const <TenderSaleModel>[];
-
     // The rounds THIS package sat in, oldest first — that ordering is what
     // turns a sale id into "Valuation Tender" / "Tender 1" / ...
-    final mine = sales
-        .where((s) => s.items.any((i) => i.forfeitedPackageId == forfeited.id))
-        .toList()
-      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    //
+    // Fetched per package. This used to filter tenderSalesProvider, which pulls
+    // EVERY sale with its items, packages and warehouses; the Tender Sales tab
+    // had already cached that on Central Disposal, but the yard's Sold Goods
+    // page never loads it, so the popup paid a cold ~120ms fetch and this
+    // section appeared visibly later than the rest of the dialog.
+    final mine = ref
+            .watch(tenderRoundsForPackageProvider(forfeited.id))
+            .valueOrNull ??
+        const <({String id, DateTime createdAt})>[];
 
     // Any round that has a valuation or bids but no matching sale row still
     // deserves a line, so collect those ids too.

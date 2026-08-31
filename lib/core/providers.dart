@@ -652,6 +652,17 @@ final committeeEligibleProvider =
 
 // Bids recorded for a single unsold tender package, grouped by tender round
 // (tender_sale_id → amounts). Keyed by forfeited package id.
+// The tender rounds ONE package sat in, oldest first. The Tender History used
+// to derive this from tenderSalesProvider (every sale, with items, packages and
+// warehouses attached) — free on Central Disposal, where the Tender Sales tab
+// has already cached it, but a cold ~120ms fetch on the yard's Sold Goods page,
+// which is why that popup's history appeared late.
+final tenderRoundsForPackageProvider = FutureProvider.family<
+    List<({String id, DateTime createdAt})>, String>((ref, fpId) async {
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getTenderRoundsForPackage(fpId);
+});
+
 final tenderBidsProvider =
     FutureProvider.family<Map<String, List<double>>, String>((ref, fpId) async {
   ref.watch(tenderBidsChangeTriggerProvider);

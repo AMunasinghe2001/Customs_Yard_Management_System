@@ -4523,6 +4523,38 @@ class DisposalService {
   /// Bids recorded for an unsold tender package, grouped by tender round
   /// (tender_sale_id → amounts, oldest first). Bids saved before the round
   /// key existed group under the empty-string key ''.
+  /// The tender rounds ONE package sat in, oldest first — just `(id,
+  /// createdAt)`, which is all the Tender History needs to number a round
+  /// ("Valuation Tender", "Tender 1", ...).
+  ///
+  /// The history used to derive this from `getTenderSales()`, which pulls
+  /// EVERY sale with its items, packages, package_items and warehouse_entries
+  /// attached. On Central Disposal that was free because the Tender Sales tab
+  /// had already cached it, but on the yard's Sold Goods page nothing warms it,
+  /// so opening a popup paid for the whole nested fetch and the section
+  /// appeared noticeably late.
+  Future<List<({String id, DateTime createdAt})>> getTenderRoundsForPackage(
+      String forfeitedPackageId) async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_items')
+        .select('tender_sale_id, tender_sales(id, created_at)')
+        .eq('forfeited_package_id', forfeitedPackageId));
+    final out = <String, DateTime>{};
+    for (final e in (rows as List)) {
+      final sale = e['tender_sales'];
+      if (sale is! Map) continue;
+      final id = sale['id'] as String?;
+      if (id == null || id.isEmpty) continue;
+      // Same package can appear as several TSI rows in one round; keep one.
+      out[id] = parseDbDateRequired(sale['created_at']);
+    }
+    final list = out.entries
+        .map((e) => (id: e.key, createdAt: e.value))
+        .toList()
+      ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    return list;
+  }
+
   Future<Map<String, List<double>>> getTenderBidsByRound(
       String forfeitedPackageId) async {
     final rows = await AuthService._withNetworkRetry(() => supabase

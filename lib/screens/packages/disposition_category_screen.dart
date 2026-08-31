@@ -725,6 +725,14 @@ class _SaleValuationCell extends ConsumerWidget {
         final revals =
             ref.watch(tenderRevaluationsProvider(fp.id)).asData?.value ??
                 const <String, TenderRevaluationModel>{};
+        // Warm the rest of the details popup's Tender History while the table
+        // is on screen. This cell already resolves the forfeited package for
+        // every visible row, so the two remaining reads cost nothing here and
+        // the section is ready the moment the popup opens instead of fetching
+        // on click. (Central Disposal never needed this — its Tender Sales tab
+        // had already cached the data.)
+        ref.watch(tenderRoundsForPackageProvider(fp.id));
+        ref.watch(tenderBidsProvider(fp.id));
         TenderRevaluationModel? latest;
         for (final r in revals.values) {
           if (latest == null || r.createdAt.isAfter(latest.createdAt)) {
