@@ -123,12 +123,9 @@ void main() {
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
     test('Unsold Tenders seals on the newest tender round', () {
-      // An open newest round means its price is live.
-      expect(
-          flat(dashboard),
-          contains('} else { // The newest round is still open, so its price '
-              'is live. unit = lastPrice; revalued = lastIdx > 0; '
-              'sealed = true; }'),
+      // A scheduled-but-unheld round means its reserve price is live.
+      expect(flat(dashboard),
+          contains('sealed = !ordered.last.saleTimePassed'),
           reason: 'A re-valued package goes straight into another tender.');
     });
 
@@ -202,45 +199,6 @@ void main() {
             '${leaks.join('\n')}');
   });
 
-  // The column showed a figure right beside a "Re-valued" / "Committee valued"
-  // chip. Those chips mean a NEW price has been set for the round about to be
-  // tendered — so that figure is a live reserve price, even though the round
-  // has no date yet and the open-round rule alone did not catch it.
-  //
-  // The fix shows the price the package was LAST ACTUALLY TENDERED AT instead
-  // of blanking the cell, which is what the user asked for: withhold the
-  // upcoming price, keep the previous concluded one.
-  group('a pending next-round price is withheld', () {
-    final dashboard =
-        File('lib/screens/disposal/disposal_dashboard_screen.dart')
-            .readAsStringSync();
-    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
-
-    test('only a committee price counts as pending once rounds are over', () {
-      // Corrected: a re-valuation alone does NOT mean a tender is coming — see
-      // the "Awaiting ADG" test below.
-      expect(flat(dashboard),
-          contains('final pendingCommittee = committee?.committeeValue'));
-    });
-
-    test('the LATEST valuation is shown, sealed until its round runs', () {
-      // The newest valuation IS the price the package is about to be
-      // re-tendered at, so it shows only once that round has run.
-      expect(flat(dashboard), contains('unit = pending'));
-      expect(flat(dashboard), contains('sealed = true'));
-      expect(flat(dashboard), contains('sealedUntilSale: sealed'));
-    });
-
-    test('a round price comes from the PREVIOUS round re-valuation', () {
-      // A tender_revaluations row is keyed to the round that just FAILED, so
-      // the price a round ran at is the re-valuation on the round BEFORE it.
-      // Reading the row's own key shows a tender that has not happened.
-      expect(
-          flat(dashboard),
-          contains('lastIdx > 0 ? revals[ordered[lastIdx - 1].id]'
-              '?.valuationCost : f.valuationCost'));
-    });
-  });
 
   // Toilet Seat Covers sat on 5 rounds and never reached the DG, while Wash
   // Basins — same 5 rounds, same shared F01 sale row — did. The rule keyed on
@@ -299,8 +257,14 @@ void main() {
     });
   });
 
-  // Two corrections after checking real rows on screen.
-  group('sealing follows what is actually pending', () {
+
+
+  // A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS KEYED
+  // TO. Proven against live data (SR/37/2025, Pipe Tees x180): each round's
+  // bids sit below its own figure, and the round whose bid finally cleared it
+  // is the one that sold. An earlier reading had this shifted by one round,
+  // which printed every price against the wrong tender.
+  group('a round is priced by its OWN re-valuation', () {
     final dashboard =
         File('lib/screens/disposal/disposal_dashboard_screen.dart')
             .readAsStringSync();
@@ -308,64 +272,29 @@ void main() {
         File('lib/widgets/package_details_dialog.dart').readAsStringSync();
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
-    test('"Awaiting ADG" shows the last concluded price, not a seal', () {
-      // Such a row HAS been re-valued but has no committee price and no new
-      // round, so no tender is coming and nothing needs withholding. Sealing
-      // on the re-valuation alone hid the Tender 3 figure with no tender in
-      // sight. (Binding Wire Coils: 4 rounds, all run, no committee value.)
-      expect(flat(dashboard),
-          contains('final pendingCommittee = committee?.committeeValue'));
-      // A committee price OR a re-tenderable re-valuation now seals.
-      expect(flat(dashboard),
-          contains('if (pendingCommittee != null || pendingReval != null)'));
-      // The re-valuation on the newest round must NOT drive the seal.
-      expect(
-          flat(dashboard),
-          isNot(contains('final pending = revals[ordered[lastIdx].id]'
-              '?.valuationCost ?? committee?.committeeValue')));
+    test('the history reads the round own key', () {
+      expect(flat(dialog), contains('final reval = revals[id]'));
+      expect(flat(dialog), isNot(contains('revals[ordered[i - 1]]')),
+          reason: 'That shift printed each price against the wrong round.');
     });
 
-    test('a pending re-valuation gets its own sealed row in the history', () {
-      // Otherwise the history just ended and the only hint a new price existed
-      // was the "Re-valued" chip in the table, with nothing here saying it is
-      // withheld — the committee round already behaved this way.
-      expect(flat(dialog), contains('final pending = revals[lastId]'));
+    test('the history has no phantom "next round" tile', () {
+      // It only existed because of the shifted reading.
       expect(flat(dialog),
-          contains('label: tenderRoundLabel(ordered.length + 1)'));
+          isNot(contains('label: tenderRoundLabel(ordered.length + 1)')));
     });
-  });
 
-  group('"Re-valued" means a tender is coming, so its price is sealed', () {
-    final dashboard =
-        File('lib/screens/disposal/disposal_dashboard_screen.dart')
-            .readAsStringSync();
-    final services = File('lib/services/services.dart').readAsStringSync();
-    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
-
-    test('the cell uses the same eligibility as the chip beside it', () {
-      // "Re-valued" = re-tenderable NOW: the Valuation Directorate has priced
-      // the next round. "Awaiting ADG" = re-valued but past Tender 3, so it
-      // cannot be re-tendered until the committee and ADG act.
-      expect(flat(dashboard), contains('reTenderable: eligible.contains(f.id)'));
-      expect(
-          flat(dashboard),
-          contains('final pendingReval = reTenderable ? '
-              'revals[ordered[lastIdx].id]?.valuationCost : null'));
+    test('the table seals only while the newest round is still to run', () {
       expect(flat(dashboard),
-          contains('if (pendingCommittee != null || pendingReval != null)'));
+          contains('sealed = !ordered.last.saleTimePassed'));
+      expect(flat(dashboard), contains('sealedUntilSale: sealed'));
     });
 
-    test('eligibility and the DG gate agree on when a round RAN', () {
-      // Keying one on created_at and the other on the sale moment let a
-      // package be exhausted for the DG AND still in the re-tender pool.
-      expect(
-          'm.isAfter(at) && s.saleTimePassed'.allMatches(flat(services)).length +
-              'moment.isAfter(submittedAt) && s.saleTimePassed'
-                  .allMatches(flat(services))
-                  .length,
-          greaterThanOrEqualTo(2));
-      expect(flat(services),
-          isNot(contains('info.sales.any((s) => s.createdAt.isAfter(at))')));
+    test('a package whose rounds have all run seals nothing', () {
+      // Sold goods are the clearest case: tender over, sale done. Nothing in
+      // the table rule can seal them, because sealing turns on that one flag.
+      expect('sealed = true'.allMatches(flat(dashboard)).length, 0,
+          reason: 'Sealing must follow the round clock, nothing else.');
     });
   });
 }

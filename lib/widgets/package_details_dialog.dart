@@ -237,21 +237,23 @@ class TenderHistorySection extends ConsumerWidget {
       final isLastRound = i == ordered.length - 1;
       final isCommitteeRound = (i + 1) > kMaxBidTenderRounds + 1 ||
           (isLastRound && committee?.submittedValue != null && i > 0);
-      // ⚠️ A `tender_revaluations` row is keyed to the round that just FAILED
-      // — it is the price for the NEXT round, not for the round it hangs off.
-      // (Verified: Power tools' 3,087.12 hangs off R011, and R011 itself ran
-      // at 3,574.56, the re-valuation from R046 before it.) So the price a
-      // round RAN AT is the re-valuation on the PREVIOUS round; reading this
-      // round's own key printed the price of a tender that had not happened.
+      // A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS
+      // KEYED TO. Proven against live data (SR/37/2025, Pipe Tees x180):
+      //   round 1  820 x180 = 147,600  vs best bid 110,700  -> unsold
+      //   round 2  738 x180 = 132,840  vs best bid 103,320  -> unsold
+      //   round 3  656 x180 = 118,080  vs best bid  95,940  -> unsold
+      //   round 4  574 x180 = 103,320  vs best bid 174,168  -> SOLD
+      // Every round's bids sit below its own figure, and the round whose bid
+      // finally cleared it is the one that sold.
       //
-      // Round 1 has no earlier round, so it ran at the Valuation Directorate's
-      // original figure. The committee round runs at the ADG's submitted
-      // value.
-      final prevReval = i > 0 ? revals[ordered[i - 1]] : null;
-      final unit = i == 0
-          ? forfeited.valuationCost
-          : (prevReval?.valuationCost ??
-              (isCommitteeRound ? committee?.submittedValue : null));
+      // Round 1 has no re-valuation of its own — it ran at the Valuation
+      // Directorate's original figure. The committee round runs at the ADG's
+      // submitted value.
+      final reval = revals[id];
+      final unit = reval?.valuationCost ??
+          (i == 0
+              ? forfeited.valuationCost
+              : (isCommitteeRound ? committee?.submittedValue : null));
       // A committee round is ALWAYS worth showing: it is the last attempt, and
       // hiding it would end the history at Tender 3.
       // Sealed until THIS round has run. The committee round is the clearest
@@ -277,36 +279,12 @@ class TenderHistorySection extends ConsumerWidget {
             ? null
             : 'LKR ${money.format(unit * effQty)}'
                 '  (@ ${money.format(unit)} \u00d7 $effQty)',
-        revalued: prevReval != null && !isCommitteeRound,
+        revalued: reval != null && !isCommitteeRound,
         bids: isCommitteeRound
             ? const []
             : [for (final b in roundBids) 'LKR ${money.format(b)}'],
       ));
     }
-    // The NEXT round: the Valuation Directorate has re-valued after the last
-    // round failed, but that tender has not been placed yet. Without this the
-    // history simply ended, and the only sign a new price existed was the
-    // "Re-valued" chip in the table — with no matching row here saying it is
-    // withheld. The committee round already got this treatment; a Valuation
-    // Directorate re-valuation deserves the same.
-    if (ordered.isNotEmpty) {
-      final lastId = ordered.last;
-      final pending = revals[lastId];
-      final lastRan = ranById[lastId] ?? false;
-      if (pending != null && lastRan) {
-        rows.add(_TenderRoundTile(
-          sealed: true,
-          label: tenderRoundLabel(ordered.length + 1),
-          isCommitteeRound: false,
-          committeeMembers: const [],
-          committeeLoading: false,
-          priceLabel: null,
-          revalued: true,
-          bids: const [],
-        ));
-      }
-    }
-
     if (rows.isEmpty) return const SizedBox.shrink();
 
     return _DetailSection(

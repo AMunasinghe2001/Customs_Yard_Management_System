@@ -2513,10 +2513,6 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                 fontSize: 12))),
                         DataCell(_UnsoldValuationCell(
                             info: info,
-                            // The same signal the Re-valuation chip uses: a
-                            // re-tenderable package HAS a new price and a
-                            // tender coming, so that price stays sealed.
-                            reTenderable: eligible.contains(f.id),
                             qty: f.entryQty ?? item?.quantity)),
                         DataCell(Center(
                           child: _AttemptsBadge(
@@ -4408,30 +4404,17 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
 class _UnsoldValuationCell extends ConsumerWidget {
   final ReTenderSaleInfo info;
   final int? qty;
-  /// True when the package can be re-tendered RIGHT NOW — the Valuation
-  /// Directorate has set the next round's price ("Re-valued"). That price is
-  /// the reserve for a tender about to open, so it stays sealed.
-  final bool reTenderable;
-  const _UnsoldValuationCell(
-      {required this.info, this.reTenderable = false, this.qty});
+  const _UnsoldValuationCell({required this.info, this.qty});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final f = info.forfeited;
     final revals =
         ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
-    final committee =
-        ref.watch(tenderCommitteesProvider).valueOrNull?[f.id];
-
-    // ⚠️ A `tender_revaluations` row is keyed to the round that just FAILED —
-    // it is the price for the NEXT round, not for the round it hangs off.
-    // (Verified: Power tools' 3,087.12 hangs off R011, and R011 itself ran at
-    // 3,574.56, the re-valuation from R046 before it.) So the price a round
-    // RAN AT is the re-valuation on the PREVIOUS round.
-    //
-    // The LATEST valuation is therefore the one attached to the newest round,
-    // and it is precisely the price the package is about to be re-tendered at
-    // — a live reserve price. It shows only once the round it priced has run.
+    // A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS
+    // KEYED TO — proven against live data, see TenderHistorySection. So the
+    // LATEST valuation is simply the newest round's own figure, and the only
+    // question is whether that round has been tendered yet.
     final ordered = [...info.sales]
       ..sort((a, b) {
         final am = a.saleMoment, bm = b.saleMoment;
@@ -4439,51 +4422,25 @@ class _UnsoldValuationCell extends ConsumerWidget {
         return am.compareTo(bm);
       });
 
-    double? unit;       // what to display
+    double? unit;
     bool revalued = false;
     bool sealed = false;
 
     if (ordered.isEmpty) {
       unit = f.valuationCost;
     } else {
-      // The newest round and the price it runs/ran at.
-      final lastIdx = ordered.length - 1;
-      final lastPrice = lastIdx > 0
-          ? revals[ordered[lastIdx - 1].id]?.valuationCost
-          : f.valuationCost;
-
-      if (ordered[lastIdx].saleTimePassed) {
-        // Every round has run. A price only needs sealing if a tender is
-        // actually COMING — and the one thing that guarantees that is the
-        // committee's figure, which exists precisely so the package can be
-        // re-tendered at it.
-        //
-        // Two ways a tender is coming, matching the chip beside this cell:
-        //   * "Re-valued"       — re-tenderable now, the Valuation
-        //                         Directorate has priced the next round; or
-        //   * "Committee valued" — the committee has priced it.
-        //
-        // NOT "Awaiting ADG": such a row has been re-valued but is past
-        // Tender 3, so it cannot be re-tendered until the committee and ADG
-        // act. Nothing is pending and the last concluded price is safe to
-        // show — sealing on the bare re-valuation hid the Tender 3 figure
-        // with no tender in sight.
-        final pendingCommittee = committee?.committeeValue;
-        final pendingReval =
-            reTenderable ? revals[ordered[lastIdx].id]?.valuationCost : null;
-        if (pendingCommittee != null || pendingReval != null) {
-          unit = pendingCommittee ?? pendingReval;
-          revalued = pendingCommittee == null;
-          sealed = true;
-        } else {
-          unit = lastPrice;
-          revalued = lastIdx > 0;
+      // Sealed while the newest round is still to run: its reserve price is
+      // live. Once it has run the figure is history and may be shown.
+      sealed = !ordered.last.saleTimePassed;
+      for (var i = ordered.length - 1; i >= 0; i--) {
+        final own = revals[ordered[i].id]?.valuationCost;
+        if (own != null) {
+          unit = own;
+          revalued = true;
+          break;
         }
-      } else {
-        // The newest round is still open, so its price is live.
-        unit = lastPrice;
-        revalued = lastIdx > 0;
-        sealed = true;
+        // Round 1 carries no re-valuation — it ran at the original figure.
+        if (i == 0) unit = f.valuationCost;
       }
     }
 
