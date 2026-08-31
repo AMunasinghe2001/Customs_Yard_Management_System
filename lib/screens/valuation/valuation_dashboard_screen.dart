@@ -1569,7 +1569,7 @@ class _ValBidsAndRevalDialogState
         ]),
         const Gap(4),
         Text(
-            'Decide this round’s value (${tenderRoundLabel(_rounds.length)}) from the bids above. '
+            'Decide the value for $_valuedRoundLabel from the bids above. '
             'Central Disposal can re-tender the package once it is set.',
             style: TextStyle(color: context.colors.textMuted, fontSize: 11)),
         const Gap(10),
@@ -1773,12 +1773,11 @@ class _ValBidsAndRevalDialogState
                   // bids above. Editable; shows Pending until entered.
                   StyledFormSection(
                     gap: 0,
-                    // This prices the CURRENT round — the one whose bids are
-                    // listed above. Labelling it "Next Tender N+1" made the
-                    // same round read as "Tender 2" here and "Tender 1" on
-                    // Central Disposal.
-                    title:
-                        '${tenderRoundLabel(rounds.length)} · New Valuation',
+                    // The round this figure PRICES — the one after the round
+                    // whose bids are listed above, since those bids are what
+                    // decide it. Labelling it with the current round made a
+                    // valuation for Tender 3 read as "Tender 2".
+                    title: '$_valuedRoundLabel · New Valuation',
                     icon: Icons.price_change_rounded,
                     children: [_newValuationEditor(gold)],
                   ),
@@ -1826,6 +1825,19 @@ class _ValBidsAndRevalDialogState
       _revals[''] ?? _revals[_current.id];
 
   bool get _alreadyValued => _issued != null;
+
+  /// Which round the figure being entered actually PRICES.
+  ///
+  /// The chain runs: a round is held at its own valuation, its bids come in
+  /// against that, and those bids decide the price of the **NEXT** round. So
+  /// once the current round has been held, the figure decided from its bids
+  /// belongs to the round after it — not to the round whose bids are listed.
+  /// Only when Central Disposal has already scheduled the next round (created
+  /// but not yet held) does the figure price that round directly.
+  int get _valuedRoundIndex =>
+      _current.saleTimePassed ? _rounds.length + 1 : _rounds.length;
+
+  String get _valuedRoundLabel => tenderRoundLabel(_valuedRoundIndex);
 
   /// Read-only explanation shown in place of the editor after Tender 3.
   Widget _handoverNotice() {

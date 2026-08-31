@@ -169,6 +169,11 @@ unner\Debug\cus_yard_management.exe`, Windows locks a running exe, and Flutter f
   - New `getTenderRoundsForPackage(fpId)` + `tenderRoundsForPackageProvider` fetch ONE package's rounds — just `(id, createdAt)`, which is all the round numbering ("Valuation Tender" / "Tender 1" / …) needs. Measured **~11ms**.
   - `_SaleValuationCell` **warms** `tenderRoundsForPackageProvider` + `tenderBidsProvider` while the table is on screen. It already resolves the forfeited package per row, so the reads are free there and the history is ready on click rather than starting to load then.
   - ⚠️ General lesson: a whole-table provider feels instant on whichever screen happens to have cached it already. [tender_history_load_test.dart](test/tender_history_load_test.dart) pins the per-package query and the warming (verified by restoring the old path: the suite goes red).
+- ⚠️ **THE VALUATION CHAIN** (2026-08-31, stated by the user) — the rule the whole tender flow hangs on:
+  > A round is **held at its own valuation**. Its bids come in against that figure. Those bids then decide the price of the **NEXT** round.
+
+  So round 1 runs at the **original** valuation (`disposal_request_items.valuation_cost`) and has **no** `tender_revaluations` row; round 2's figure is decided from round 1's bids; round 3's from round 2's; and so on. **Invariant: any round with bids must have a valuation, except round 1.**
+  - The Valuation Directorate's "New Valuation" panel was titled with the round whose bids were listed, so a figure for **Tender 3** read as "Tender 2 · New Valuation". It now names the round it **prices**: `_valuedRoundIndex = _current.saleTimePassed ? _rounds.length + 1 : _rounds.length` — the next round once the current one has been held, or that round directly if Central Disposal has already scheduled it. Same condition as the pending-vs-round storage, so the label and the write can never disagree.
 - ⚠️ **A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS KEYED TO** (2026-08-31) — settled with live data after I briefly got this backwards. SR/37/2025, Pipe Tees, qty 180:
 
   | round | reserve | best bid | outcome |

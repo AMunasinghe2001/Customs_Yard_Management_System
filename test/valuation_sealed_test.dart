@@ -474,4 +474,38 @@ void main() {
               "_revals[_current.id] != null"));
     });
   });
+
+  // The chain: a round is HELD at its own valuation, its bids come in against
+  // that figure, and those bids decide the price of the NEXT round. So the
+  // figure being entered prices the round AFTER the one whose bids are shown.
+  // It was labelled with the current round, so a valuation for Tender 3 read
+  // as "Tender 2 · New Valuation".
+  group('the new-valuation panel names the round it prices', () {
+    final valuation = File(
+            'lib/screens/valuation/valuation_dashboard_screen.dart')
+        .readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('it is the NEXT round once the current one has been held', () {
+      expect(
+          flat(valuation),
+          contains('int get _valuedRoundIndex => _current.saleTimePassed ? '
+              '_rounds.length + 1 : _rounds.length'),
+          reason: 'Bids decide the price of the round after them.');
+    });
+
+    test('the title and the blurb both use it', () {
+      expect(flat(valuation), contains("title: '\$_valuedRoundLabel · New Valuation'"));
+      expect(flat(valuation),
+          contains("'Decide the value for \$_valuedRoundLabel from the bids above. '"));
+      // The old wording named the round whose bids are listed.
+      expect(flat(valuation), isNot(contains("Decide this round’s value")));
+    });
+
+    test('it lines up with where the figure is stored', () {
+      // Same condition: pricing the next round means no round id yet.
+      expect(flat(valuation),
+          contains('_current.saleTimePassed ? null : _current.id'));
+    });
+  });
 }
