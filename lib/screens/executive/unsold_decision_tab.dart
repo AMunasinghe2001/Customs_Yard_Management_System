@@ -247,7 +247,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
                                               // is still open.
                                               valuationSealedUntilSale: info
                                                       .latestSale
-                                                      ?.saleTimePassed ==
+                                                      ?.saleEnded ==
                                                   false,
                                             ),
                                           ),

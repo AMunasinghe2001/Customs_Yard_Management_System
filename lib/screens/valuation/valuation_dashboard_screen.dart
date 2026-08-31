@@ -1447,7 +1447,7 @@ class _ValBidsAndRevalDialogState
             // at — writing over it would destroy that record. The new figure
             // is the price for the NEXT tender, so it is stored pending and
             // attached to the round when the package is re-tendered.
-            _current.saleTimePassed ? null : _current.id,
+            _current.saleEnded ? null : _current.id,
             cost,
             note: _noteCtrl.text,
             yard: widget.info.forfeited.yard,
@@ -1821,7 +1821,7 @@ class _ValBidsAndRevalDialogState
   /// cannot overwrite the price a finished round went to tender at. Reading
   /// only `_revals[_current.id]` misses it, which made a just-saved valuation
   /// vanish from this table and left the Save button live for a second edit.
-  TenderRevaluationModel? get _issued => _current.saleTimePassed
+  TenderRevaluationModel? get _issued => _current.saleEnded
       // Pricing the NEXT round, which has no id yet — only a PENDING row can
       // already hold that figure. Falling back to `_revals[_current.id]` read
       // the CURRENT round's own reserve as if it were the next round's, so a
@@ -1843,7 +1843,7 @@ class _ValBidsAndRevalDialogState
   /// Only when Central Disposal has already scheduled the next round (created
   /// but not yet held) does the figure price that round directly.
   int get _valuedRoundIndex =>
-      _current.saleTimePassed ? _rounds.length + 1 : _rounds.length;
+      _current.saleEnded ? _rounds.length + 1 : _rounds.length;
 
   String get _valuedRoundLabel => tenderRoundLabel(_valuedRoundIndex);
 

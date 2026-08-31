@@ -318,7 +318,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                               f: f,
                               qty: qty,
                               sealedUntilSale:
-                                  info.latestSale?.saleTimePassed == false)),
+                                  info.latestSale?.saleEnded == false)),
                           DataCell(Center(
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -402,7 +402,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                                           highlightItemId: f.itemId,
                                           yardLabel: yardName(f.yard),
                                           valuationSealedUntilSale:
-                                              info.latestSale?.saleTimePassed ==
+                                              info.latestSale?.saleEnded ==
                                                   false,
                                           valuationUnitCost: f.valuationCost,
                                           valuationTotalCost: f.valuationCost !=
@@ -1134,7 +1134,7 @@ class _CommitteeValuationDialogState
             // finished round overwrote that round's own reserve AND left no
             // "next round is priced" signal, so the package sat on "Committee
             // valued" forever and dropped out of the Committees table.
-            tenderSaleId: round.saleTimePassed ? null : round.id,
+            tenderSaleId: round.saleEnded ? null : round.id,
             value: cost,
             note: _noteCtrl.text,
             yard: widget.info.forfeited.yard,

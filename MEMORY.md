@@ -180,6 +180,11 @@ unner\Debug\cus_yard_management.exe`, Windows locks a running exe, and Flutter f
   - `getValuedCurrentRoundIds` — marked every package valued, hiding **Set Value** everywhere.
   - The Re-valuation **chip** — read "Re-valued" for packages nobody had re-valued.
   - `_currentRoundLocked` in Record Bids — a round's own reserve exists **before** any bid is recorded against it, so locking on it stopped Central Disposal entering that round's bids at all. Bids close only once the VD has priced the next round **from** them.
+- ⚠️ **The seal lifts at the sale's END, not its start** (2026-08-31). Sealing on `saleTimePassed` (the START) unsealed the reserve price at exactly the wrong moment — the instant bidding opened. New column **`sale_end_time`** on `tender_sales` and `destructions` ([20260841_sale_end_time.sql](supabase/migrations/20260841_sale_end_time.sql)), plus `saleEndMoment` / **`saleEnded`** on both models.
+  - **`saleEndMoment` falls back to `saleMoment`** when no end time was recorded, so rows created before the column behave exactly as they did.
+  - All **23** sealing / "has this round run" checks moved to `saleEnded`; **Mark Sold and Mark Destroyed deliberately stay on `saleTimePassed`** — you may sell once the sale has opened.
+  - Both dialogs (which serve New **and** Re-tender / Re-destruction — 4 forms) now take a **Sale End Time**, required and validated to be after the start; an end at or before the start would unseal the figure immediately.
+  - The Tender Sales and Destruction Sales cards' column is now **"Latest Valuation"** (145px) and seals like the Unsold table. The yard's read-only view still says **"Value"** — that is the SR item's own declared figure, a different number.
 - ⚠️ **THE VALUATION CHAIN** (2026-08-31, stated by the user) — the rule the whole tender flow hangs on:
   > A round is **held at its own valuation**. Its bids come in against that figure. Those bids then decide the price of the **NEXT** round.
 

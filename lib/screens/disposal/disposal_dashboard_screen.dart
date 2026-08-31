@@ -665,8 +665,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                               // Sealed while the newest round
                                               // is still open.
                                               valuationSealedUntilSale:
-                                                  info.latestSale
-                                                          ?.saleTimePassed ==
+                                                  info.latestSale?.saleEnded ==
                                                       false,
                                             ),
                                           ),
@@ -2557,7 +2556,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                           : null,
                                       valuationQty: f.entryQty,
                                       // Sealed while the newest round is open.
-                                      valuationSealedUntilSale: info.latestSale?.saleTimePassed == false,
+                                      valuationSealedUntilSale:
+                                          info.latestSale?.saleEnded == false,
                                     ),
                                   ),
                                 )
@@ -2781,7 +2781,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
   @override
   void initState() {
     super.initState();
-    // The Mark-Sold button unlocks purely on the clock (widget.sale.saleTimePassed),
+    // The Mark-Sold button unlocks purely on the clock (widget.sale.saleEnded),
     // so with no trigger the card never re-evaluates it. Rebuild every 20s so
     // the button enables shortly after the scheduled sale time passes without a
     // manual page refresh.
@@ -3018,10 +3018,13 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     // Fixed + centered so it sits snug next to Status (no gap).
                     DataColumn2(
                         label: Center(
-                            child:
-                                Text(widget.readOnly ? 'Value' : 'Valuation')),
+                            child: Text(widget.readOnly
+                                ? 'Value'
+                                : 'Latest Valuation')),
                         size: ColumnSize.S,
-                        fixedWidth: 120),
+                        // Wider than the old "Valuation": the header is longer
+                        // and the sealed cell carries a second line.
+                        fixedWidth: 145),
                     DataColumn2(
                         label: Center(child: Text('Status')),
                         size: ColumnSize.S,
@@ -3078,7 +3081,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                               f: f,
                               useItemValue: widget.readOnly,
                               // Same clock that gates Mark Sold below.
-                              sealedUntilSale: !widget.sale.saleTimePassed,
+                              sealedUntilSale: !widget.sale.saleEnded,
                               qty: f?.entryQty ?? r.item?.quantity))),
                       DataCell(Center(
                         child: r.saleItem.sold
@@ -3177,7 +3180,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     // same reserve price.
                                     valuationSealedUntilSale:
                                         !widget.readOnly &&
-                                            !widget.sale.saleTimePassed,
+                                            !widget.sale.saleEnded,
                                   ),
                                 ),
                               )
@@ -3437,6 +3440,9 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   final _yearC = TextEditingController(text: DateTime.now().year.toString());
   DateTime? _saleDate;
   TimeOfDay? _saleTime;
+
+  /// When bidding CLOSES. The valuation unseals only after this.
+  TimeOfDay? _saleEndTime;
   String? _tenderType;
   bool _loading = false;
   String? _error;
@@ -3449,6 +3455,12 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   String? _validate() {
     if (_saleDate == null) return 'Tender Sale Date is required.';
     if (_saleTime == null) return 'Sale Start Time is required.';
+    // The end time is what unseals the valuation, so it has to be real: an
+    // end at or before the start would unseal the reserve price immediately.
+    if (_saleEndTime == null) return 'Sale End Time is required.';
+    final startM = _saleTime!.hour * 60 + _saleTime!.minute;
+    final endM = _saleEndTime!.hour * 60 + _saleEndTime!.minute;
+    if (endM <= startM) return 'Sale End Time must be after the start time.';
     if (_tenderType == null || _tenderType!.isEmpty)
       return 'Tender Sale Type is required.';
     if (_selected.isEmpty) return 'Select at least one package.';
@@ -3615,6 +3627,34 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     onChanged: (t) => setState(() => _saleTime = t),
                   ),
                 ),
+              ]),
+              Row(children: [
+                Expanded(
+                  child: _OneTapTimeField(
+                    // Bidding CLOSES here. The valuation is the reserve price,
+                    // so it stays sealed until this passes — not merely until
+                    // the sale opens.
+                    label: 'Sale End Time',
+                    value: _saleEndTime,
+                    onChanged: (t) => setState(() => _saleEndTime = t),
+                  ),
+                ),
+                const Gap(12),
+                const Expanded(child: SizedBox()),
+              ]),
+              Row(children: [
+                Expanded(
+                  child: _OneTapTimeField(
+                    // Bidding CLOSES here. The valuation is the reserve price,
+                    // so it stays sealed until this passes — not merely until
+                    // the sale opens.
+                    label: 'Sale End Time',
+                    value: _saleEndTime,
+                    onChanged: (t) => setState(() => _saleEndTime = t),
+                  ),
+                ),
+                const Gap(12),
+                const Expanded(child: SizedBox()),
               ]),
               Row(children: [
                 Expanded(
@@ -3922,6 +3962,9 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     saleDate: _saleDate,
                     saleTime:
                         _saleTime == null ? null : _timeOfDayToHHmm(_saleTime!),
+                    saleEndTime: _saleEndTime == null
+                        ? null
+                        : _timeOfDayToHHmm(_saleEndTime!),
                     serial: _serialC.text.trim().isEmpty
                         ? null
                         : _serialC.text.trim(),
@@ -4194,7 +4237,7 @@ class _CommitteeCard extends StatelessWidget {
                               // package can still be re-tendered, so the
                               // reserve price is sealed here too.
                               valuationSealedUntilSale:
-                                  info.latestSale?.saleTimePassed == false,
+                                  info.latestSale?.saleEnded == false,
                               valuationUnitCost: f.valuationCost,
                               valuationTotalCost: f.valuationCost != null
                                   ? f.valuationCost! * (qty ?? 1)
@@ -4409,6 +4452,7 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
 class _UnsoldValuationCell extends ConsumerWidget {
   final ReTenderSaleInfo info;
   final int? qty;
+
   /// True when the package can be re-tendered NOW — the "Re-valued" chip.
   /// The Valuation Directorate has priced the next tender, so that price is a
   /// live reserve and stays sealed.
@@ -4421,15 +4465,13 @@ class _UnsoldValuationCell extends ConsumerWidget {
     final f = info.forfeited;
     final revals =
         ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
-    final committee =
-        ref.watch(tenderCommitteesProvider).valueOrNull?[f.id];
+    final committee = ref.watch(tenderCommitteesProvider).valueOrNull?[f.id];
 
     // A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS
     // KEYED TO — proven against live data, see TenderHistorySection. So the
     // LATEST valuation is simply the newest round's own figure, and the only
     // question is whether that round has been tendered yet.
-    final ordered = [...info.sales]
-      ..sort((a, b) {
+    final ordered = [...info.sales]..sort((a, b) {
         final am = a.saleMoment, bm = b.saleMoment;
         if (am == null || bm == null) return 0;
         return am.compareTo(bm);
@@ -4453,7 +4495,7 @@ class _UnsoldValuationCell extends ConsumerWidget {
       // NOT "Awaiting ADG": re-valued but past Tender 3, so it cannot be
       // re-tendered until the committee and the ADG act. Nothing is pending
       // and the last concluded price is safe to show.
-      sealed = !ordered.last.saleTimePassed ||
+      sealed = !ordered.last.saleEnded ||
           reTenderable ||
           committee?.committeeValue != null;
       for (var i = ordered.length - 1; i >= 0; i--) {
@@ -5106,7 +5148,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     final priced = submittedAt != null &&
         widget.info.sales.any((x) {
           final m = x.saleMoment;
-          return m != null && m.isAfter(submittedAt) && x.saleTimePassed;
+          return m != null && m.isAfter(submittedAt) && x.saleEnded;
         });
     if (!priced) {
       return Padding(
@@ -5118,8 +5160,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
           children: [
             Container(
               width: double.infinity,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
                 color: context.colors.surfaceDark,
                 borderRadius: BorderRadius.circular(8),
@@ -5772,9 +5813,10 @@ class DestructionCard extends ConsumerWidget {
                     // mirrors the Tender Sale table for a consistent layout.
                     DataColumn2(
                         label: Center(
-                            child: Text(readOnly ? 'Value' : 'Valuation')),
+                            child:
+                                Text(readOnly ? 'Value' : 'Latest Valuation')),
                         size: ColumnSize.S,
-                        fixedWidth: 120),
+                        fixedWidth: 145),
                     DataColumn2(
                         label: Center(child: Text('Status')),
                         size: ColumnSize.S,
@@ -5821,7 +5863,7 @@ class DestructionCard extends ConsumerWidget {
                         useItemValue: readOnly,
                         // Hidden until the destruction sale has actually run —
                         // same rule as the tender sale card.
-                        sealedUntilSale: !sale.saleTimePassed,
+                        sealedUntilSale: !sale.saleEnded,
                         qty: f?.entryQty ?? r.item?.quantity,
                       ))),
                       DataCell(Center(
@@ -5934,7 +5976,7 @@ class DestructionCard extends ConsumerWidget {
                                         : (f?.entryQty ?? r.item?.quantity),
                                     // Sealed until the destruction sale runs.
                                     valuationSealedUntilSale:
-                                        !readOnly && !sale.saleTimePassed,
+                                        !readOnly && !sale.saleEnded,
                                   ),
                                 ),
                               )
@@ -6123,6 +6165,9 @@ class _DestructionFormDialogState
   final _yearC = TextEditingController(text: DateTime.now().year.toString());
   DateTime? _saleDate;
   TimeOfDay? _saleTime;
+
+  /// When bidding CLOSES. The valuation unseals only after this.
+  TimeOfDay? _saleEndTime;
   String? _destructionType;
   bool _loading = false;
   String? _error;
@@ -6135,6 +6180,12 @@ class _DestructionFormDialogState
   String? _validate() {
     if (_saleDate == null) return 'Destruction Sale Date is required.';
     if (_saleTime == null) return 'Sale Start Time is required.';
+    // The end time is what unseals the valuation, so it has to be real: an
+    // end at or before the start would unseal the reserve price immediately.
+    if (_saleEndTime == null) return 'Sale End Time is required.';
+    final startM = _saleTime!.hour * 60 + _saleTime!.minute;
+    final endM = _saleEndTime!.hour * 60 + _saleEndTime!.minute;
+    if (endM <= startM) return 'Sale End Time must be after the start time.';
     if (_destructionType == null || _destructionType!.isEmpty)
       return 'Destruction Sale Type is required.';
     if (_selected.isEmpty) return 'Select at least one package.';
@@ -6606,6 +6657,9 @@ class _DestructionFormDialogState
                     saleDate: _saleDate,
                     saleTime:
                         _saleTime == null ? null : _timeOfDayToHHmm(_saleTime!),
+                    saleEndTime: _saleEndTime == null
+                        ? null
+                        : _timeOfDayToHHmm(_saleEndTime!),
                     serial: _serialC.text.trim().isEmpty
                         ? null
                         : _serialC.text.trim(),
@@ -6931,8 +6985,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                             // Sealed while the newest destruction round is
                             // still pending.
                             sealedUntilSale:
-                                info.latestDestruction?.saleTimePassed ==
-                                    false)),
+                                info.latestDestruction?.saleEnded == false)),
                         DataCell(Center(
                           child: _AttemptsBadge(
                             count: info.timesAttempted,
@@ -6966,7 +7019,9 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                                           : null,
                                       valuationQty: f.entryQty,
                                       // Sealed while the newest round is open.
-                                      valuationSealedUntilSale: info.latestDestruction?.saleTimePassed == false,
+                                      valuationSealedUntilSale:
+                                          info.latestDestruction?.saleEnded ==
+                                              false,
                                     ),
                                   ),
                                 )

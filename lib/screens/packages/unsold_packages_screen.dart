@@ -460,7 +460,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                                   // round is still open.
                                                   valuationSealedUntilSale: info
                                                           .latestSale
-                                                          ?.saleTimePassed ==
+                                                          ?.saleEnded ==
                                                       false,
                                                 ),
                                               ),

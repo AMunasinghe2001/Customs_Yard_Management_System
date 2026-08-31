@@ -7,13 +7,14 @@ import '../core/theme.dart';
 /// anywhere — table, popup or report — until the tender or destruction sale
 /// that the goods are in has actually run.
 ///
-/// [saleTimePassed] is the same clock gate that already unlocks Mark Sold, so
-/// "the sale is over" means exactly one thing across the app.
+/// [saleEnded] is the sale's CLOSE moment (`sale_date` + `sale_end_time`), not
+/// its start. A reserve price must stay hidden for as long as bidding is open,
+/// so the start time is exactly the wrong gate — it is when the figure becomes
+/// most dangerous, not safe. Mark Sold still unlocks on the start.
 ///
-/// Call [sealed] with the sale's own `saleTimePassed`; pass `true` where no
-/// sale is in progress (unsold pools, re-valuation, committee work, reports on
-/// concluded sales), because there is nothing left to protect there.
-bool valuationSealed({required bool saleTimePassed}) => !saleTimePassed;
+/// Pass `true` where no sale is in progress (unsold pools, re-valuation,
+/// committee work, reports on concluded sales): nothing is left to protect.
+bool valuationSealed({required bool saleEnded}) => !saleEnded;
 
 /// The placeholder shown in place of a valuation that is still sealed.
 ///

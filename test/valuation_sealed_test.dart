@@ -11,11 +11,11 @@ void main() {
   // the collusion risk management asked us to close.
   group('valuationSealed', () {
     test('sealed while the sale has not yet run', () {
-      expect(valuationSealed(saleTimePassed: false), isTrue);
+      expect(valuationSealed(saleEnded: false), isTrue);
     });
 
     test('open once the sale has run', () {
-      expect(valuationSealed(saleTimePassed: true), isFalse);
+      expect(valuationSealed(saleEnded: true), isFalse);
     });
   });
 
@@ -73,13 +73,13 @@ void main() {
             .readAsStringSync();
 
     test('the tender sale card seals its valuation cell', () {
-      expect(dashboard, contains('sealedUntilSale: !widget.sale.saleTimePassed'),
+      expect(dashboard, contains('sealedUntilSale: !widget.sale.saleEnded'),
           reason: 'The Tender Sales card must hide the reserve price until '
               'the sale has run.');
     });
 
     test('the destruction sale card seals its valuation cell', () {
-      expect(dashboard, contains('sealedUntilSale: !sale.saleTimePassed'),
+      expect(dashboard, contains('sealedUntilSale: !sale.saleEnded'),
           reason: 'The Destructions card must hide the reserve price until '
               'the destruction sale has run.');
     });
@@ -125,13 +125,13 @@ void main() {
     test('Unsold Tenders seals on the newest tender round', () {
       // A scheduled-but-unheld round means its reserve price is live.
       expect(flat(dashboard),
-          contains('sealed = !ordered.last.saleTimePassed'),
+          contains('sealed = !ordered.last.saleEnded'),
           reason: 'A re-valued package goes straight into another tender.');
     });
 
     test('Undestroyed seals on the newest destruction round', () {
       expect(flat(dashboard),
-          contains('info.latestDestruction?.saleTimePassed == false'),
+          contains('info.latestDestruction?.saleEnded == false'),
           reason: 'Re-destruction rounds carry the same reserve price.');
     });
 
@@ -139,7 +139,7 @@ void main() {
       // Derived from `info` inside unsoldCells rather than passed by each of
       // the three portals, so a caller cannot forget it.
       expect(flat(shared),
-          contains('final sealed = currentSale != null && !currentSale.saleTimePassed'));
+          contains('final sealed = currentSale != null && !currentSale.saleEnded'));
       expect(flat(shared), contains('if (sealed) const DataCell(SealedValuation(compact: true))'),
           reason: 'All three portals share this one cell.');
     });
@@ -174,7 +174,7 @@ void main() {
       // of them. Judged by when the round RAN — see the dedicated test below
       // for why createdAt was wrong.
       expect(flat(services),
-          contains('moment.isAfter(submittedAt) && s.saleTimePassed'));
+          contains('moment.isAfter(submittedAt) && s.saleEnded'));
     });
   });
 
@@ -215,7 +215,7 @@ void main() {
   test('the DG gate keys on when a round RAN, not when its row was made', () {
     final services = File('lib/services/services.dart').readAsStringSync();
     final flat = services.replaceAll(RegExp(r'\s+'), ' ');
-    expect(flat, contains('moment.isAfter(submittedAt) && s.saleTimePassed'));
+    expect(flat, contains('moment.isAfter(submittedAt) && s.saleEnded'));
     expect(flat, isNot(contains('i.sales.any((s) => s.createdAt.isAfter(submittedAt))')),
         reason: 'createdAt is when the row was inserted, not when the tender ran.');
   });
@@ -257,7 +257,7 @@ void main() {
         () {
       expect(
           flat(dashboard),
-          contains('m.isAfter(submittedAt) && x.saleTimePassed'),
+          contains('m.isAfter(submittedAt) && x.saleEnded'),
           reason: 'Recording or submitting a figure is not the same as having '
               'tendered at it.');
       expect(flat(dashboard), contains('if (!priced) {'));
@@ -296,7 +296,7 @@ void main() {
 
     test('the table seals only while the newest round is still to run', () {
       expect(flat(dashboard),
-          contains('sealed = !ordered.last.saleTimePassed'));
+          contains('sealed = !ordered.last.saleEnded'));
       expect(flat(dashboard), contains('sealedUntilSale: sealed'));
     });
 
@@ -339,7 +339,7 @@ void main() {
           flat(File('lib/screens/executive/unsold_shared.dart').readAsStringSync());
       expect(shared, contains('final am = a.saleMoment, bm = b.saleMoment'));
       expect(shared,
-          contains('final sealed = currentSale != null && !currentSale.saleTimePassed'));
+          contains('final sealed = currentSale != null && !currentSale.saleEnded'));
     });
   });
 
@@ -358,7 +358,7 @@ void main() {
 
     test('the dialog stores it pending once the round has run', () {
       expect(flat(valuation),
-          contains('_current.saleTimePassed ? null : _current.id'));
+          contains('_current.saleEnded ? null : _current.id'));
     });
 
     test('the service accepts a null round and deletes the pending row', () {
@@ -394,7 +394,7 @@ void main() {
     test('the table seals Re-valued and Committee valued', () {
       expect(
           flat(dashboard),
-          contains('sealed = !ordered.last.saleTimePassed || reTenderable || '
+          contains('sealed = !ordered.last.saleEnded || reTenderable || '
               'committee?.committeeValue != null'));
       expect(flat(dashboard), contains('reTenderable: eligible.contains(f.id)'));
     });
@@ -432,7 +432,7 @@ void main() {
       // Matched in parts: explanatory comments sit inside the ternary, so the
       // whole expression does not survive whitespace-flattening as one string.
       expect(flat(valuation),
-          contains('TenderRevaluationModel? get _issued => _current.saleTimePassed'));
+          contains('TenderRevaluationModel? get _issued => _current.saleEnded'));
       expect(flat(valuation), contains("? _revals[''] "),
           reason: 'Pricing the next round: only a pending row can hold it.');
       expect(flat(valuation), contains(': _revals[_current.id];'),
@@ -505,7 +505,7 @@ void main() {
     test('it is the NEXT round once the current one has been held', () {
       expect(
           flat(valuation),
-          contains('int get _valuedRoundIndex => _current.saleTimePassed ? '
+          contains('int get _valuedRoundIndex => _current.saleEnded ? '
               '_rounds.length + 1 : _rounds.length'),
           reason: 'Bids decide the price of the round after them.');
     });
@@ -521,7 +521,7 @@ void main() {
     test('it lines up with where the figure is stored', () {
       // Same condition: pricing the next round means no round id yet.
       expect(flat(valuation),
-          contains('_current.saleTimePassed ? null : _current.id'));
+          contains('_current.saleEnded ? null : _current.id'));
     });
   });
 
@@ -536,7 +536,7 @@ void main() {
         .readAsStringSync());
 
     test('it stores pending once the round has been held', () {
-      expect(tab, contains('tenderSaleId: round.saleTimePassed ? null : round.id'));
+      expect(tab, contains('tenderSaleId: round.saleEnded ? null : round.id'));
     });
 
     test('it refreshes what the two tables read', () {
@@ -569,6 +569,53 @@ void main() {
       // Green, a verified icon and a "Final" label — it simply never rendered.
       expect(flat(tab), contains("submitted ? 'Final'"));
       expect(flat(tab), contains('final submitted = c.submittedValue != null;'));
+    });
+  });
+
+  // A reserve price must stay hidden for as long as bidding is OPEN. Sealing
+  // on the sale's START time unsealed it at exactly the wrong moment — the
+  // instant the tender opened. It now unseals only when the sale has ENDED.
+  group('the seal lifts at the sale END, not its start', () {
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+    final models = flat(File('lib/models/models.dart').readAsStringSync());
+    final dash = flat(File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync());
+
+    test('both sale models expose an end moment', () {
+      expect(models, contains('DateTime? get saleEndMoment => '
+          'combineSaleMoment(saleDate, saleEndTime) ?? saleMoment;'));
+      // Two models: tender sales and destructions.
+      expect('bool get saleEnded {'.allMatches(models).length, 2);
+    });
+
+    test('a missing end time falls back to the start', () {
+      // Rows created before the column existed must behave exactly as before.
+      expect(models, contains('combineSaleMoment(saleDate, saleEndTime) ?? saleMoment'));
+    });
+
+    test('Mark Sold and Mark Destroyed still unlock on the START', () {
+      expect(dash, contains('final canSell = widget.sale.saleTimePassed;'));
+      expect(dash, contains('final canDestroy = sale.saleTimePassed;'));
+    });
+
+    test('the sale cards seal on the end', () {
+      expect(dash, contains('sealedUntilSale: !widget.sale.saleEnded'));
+      expect(dash, contains('sealedUntilSale: !sale.saleEnded'));
+    });
+
+    test('both forms collect an end time and validate it', () {
+      expect("label: 'Sale End Time',".allMatches(dash).length, 2);
+      expect(
+          "if (_saleEndTime == null) return 'Sale End Time is required.';"
+              .allMatches(dash)
+              .length,
+          2);
+      expect(dash,
+          contains("if (endM <= startM) return 'Sale End Time must be after the start time.';"));
+    });
+
+    test('the sale pages call the column Latest Valuation', () {
+      expect("'Value' : 'Latest Valuation'".allMatches(dash).length, 2);
     });
   });
 }

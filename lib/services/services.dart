@@ -4156,6 +4156,8 @@ class TendersService {
     required List<String> forfeitedPackageIds,
     DateTime? saleDate,
     String? saleTime,
+    /// Sale CLOSE time. The valuation stays sealed until it passes.
+    String? saleEndTime,
   }) async {
     // Create tender record
     final data = await supabase
@@ -4166,6 +4168,7 @@ class TendersService {
           'tender_date': tenderDate.toIso8601String(),
           'sale_date': saleDate?.toIso8601String().substring(0, 10),
           'sale_time': saleTime,
+          'sale_end_time': saleEndTime,
           'forfeited_package_ids': forfeitedPackageIds,
           'created_by': supabase.auth.currentUser?.id,
         })
@@ -4537,8 +4540,8 @@ class DisposalService {
       getTenderRoundsForPackage(String forfeitedPackageId) async {
     final rows = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')
-        .select(
-            'tender_sale_id, tender_sales(id, created_at, sale_date, sale_time)')
+        .select('tender_sale_id, '
+            'tender_sales(id, created_at, sale_date, sale_time, sale_end_time)')
         .eq('forfeited_package_id', forfeitedPackageId));
     final out = <String, ({DateTime createdAt, bool hasRun})>{};
     for (final e in (rows as List)) {
@@ -4550,24 +4553,13 @@ class DisposalService {
       // has not been tendered yet must not show its price. Judged by the sale
       // MOMENT (date + time), the same clock Mark Sold uses — never by
       // created_at, which is only when the row was inserted.
+      // The round has "run" once the sale has ENDED — the valuation is the
+      // reserve price, so it may only be shown after bidding has closed.
+      // Falls back to the start time for rows created before sale_end_time
+      // existed, so their behaviour is unchanged.
       final date = parseDbDate(sale['sale_date']);
-      DateTime? moment;
-      if (date != null) {
-        final t = (sale['sale_time'] as String?)?.trim();
-        if (t == null || t.isEmpty) {
-          moment = date;
-        } else {
-          final parts = t.split(':');
-          moment = DateTime(
-            date.year,
-            date.month,
-            date.day,
-            int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0,
-            int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0,
-            int.tryParse(parts.length > 2 ? parts[2] : '') ?? 0,
-          );
-        }
-      }
+      final moment = combineSaleMoment(date, sale['sale_end_time'] as String?) ??
+          combineSaleMoment(date, sale['sale_time'] as String?);
       // Same package can appear as several TSI rows in one round; keep one.
       out[id] = (
         createdAt: parseDbDateRequired(sale['created_at']),
@@ -4772,7 +4764,7 @@ class DisposalService {
       // eligible for re-tender — it would have shown in both places at once.
       if (info.sales.any((s) {
         final m = s.saleMoment;
-        return m != null && m.isAfter(at) && s.saleTimePassed;
+        return m != null && m.isAfter(at) && s.saleEnded;
       })) {
         exhaustedIds.add(info.forfeited.id);
       }
@@ -5143,7 +5135,7 @@ class DisposalService {
         final moment = s.saleMoment;
         return moment != null &&
             moment.isAfter(submittedAt) &&
-            s.saleTimePassed;
+            s.saleEnded;
       });
     }).toList();
   }
@@ -5331,6 +5323,8 @@ class DisposalService {
     String? saleNumber,
     DateTime? saleDate,
     String? saleTime,
+    /// Sale CLOSE time. The valuation stays sealed until it passes.
+    String? saleEndTime,
     String? serial,
     int? year,
     String? tenderType,
@@ -5347,6 +5341,7 @@ class DisposalService {
               ? null
               : saleDate.toIso8601String().substring(0, 10),
           'sale_time': saleTime,
+          'sale_end_time': saleEndTime,
           'serial': serial,
           'year': year,
           'tender_type': tenderType,
@@ -5644,6 +5639,8 @@ class DisposalService {
     String? saleNumber,
     DateTime? saleDate,
     String? saleTime,
+    /// Sale CLOSE time. The valuation stays sealed until it passes.
+    String? saleEndTime,
     String? serial,
     int? year,
     String? tenderType,
@@ -5660,6 +5657,7 @@ class DisposalService {
               ? null
               : saleDate.toIso8601String().substring(0, 10),
           'sale_time': saleTime,
+          'sale_end_time': saleEndTime,
           'serial': serial,
           'year': year,
           'tender_type': tenderType,

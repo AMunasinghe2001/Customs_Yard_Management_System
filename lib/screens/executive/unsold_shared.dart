@@ -245,7 +245,7 @@ List<DataCell> unsoldCells(
               return am.compareTo(bm);
             }))
           .last;
-  final sealed = currentSale != null && !currentSale.saleTimePassed;
+  final sealed = currentSale != null && !currentSale.saleEnded;
   // The yard belongs in the row's tooltip, not its own column: the yard page
   // shows one yard only, and the other two portals have a Yard dropdown.
   final srTip = '${f.srNumber} · ${yardName(f.yard)}'

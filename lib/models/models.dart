@@ -1660,6 +1660,23 @@ class TenderBidModel {
 /// How many bid-driven tender rounds a package gets after its first
 /// (valuation-driven) attempt. Once these are exhausted and it is still
 /// unsold, it goes to the Top Management Directorate's Tender Committees.
+/// Combine a sale DATE with an "HH:mm" / "HH:mm:ss" time. Null time ⇒ the
+/// date's midnight; null date ⇒ null.
+DateTime? combineSaleMoment(DateTime? date, String? time) {
+  if (date == null) return null;
+  final t = time?.trim();
+  if (t == null || t.isEmpty) return date;
+  final parts = t.split(':');
+  return DateTime(
+    date.year,
+    date.month,
+    date.day,
+    int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0,
+    int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0,
+    int.tryParse(parts.length > 2 ? parts[2] : '') ?? 0,
+  );
+}
+
 const int kMaxBidTenderRounds = 3;
 
 /// Human label for a tender attempt, 1-based.
@@ -2120,6 +2137,7 @@ class TenderSaleModel {
   final String? tenderType; // special | general_cargo | motor_vehicle
   final String? yard;
   final String? saleTime;
+  final String? saleEndTime;
   final DateTime createdAt;
   final String? createdByName;
   final List<TenderSaleItemModel> items;
@@ -2133,6 +2151,7 @@ class TenderSaleModel {
     this.tenderType,
     this.yard,
     this.saleTime,
+    this.saleEndTime,
     required this.createdAt,
     this.createdByName,
     this.items = const [],
@@ -2159,6 +2178,21 @@ class TenderSaleModel {
   /// may items be marked Sold. A sale with no date is treated as not-yet-due.
   bool get saleTimePassed {
     final moment = saleMoment;
+    if (moment == null) return false;
+    return DateTime.now().isAfter(moment);
+  }
+
+  /// The moment the sale CLOSES — [saleDate] with [saleEndTime]. Falls back to
+  /// [saleMoment] when no end time was recorded, so rows created before the
+  /// column existed behave exactly as they did.
+  DateTime? get saleEndMoment =>
+      combineSaleMoment(saleDate, saleEndTime) ?? saleMoment;
+
+  /// True once the sale has ENDED. This — not [saleTimePassed] — is what
+  /// unseals the valuation: the figure is the reserve price, so it may only be
+  /// shown after bidding has closed, never while it is open.
+  bool get saleEnded {
+    final moment = saleEndMoment;
     if (moment == null) return false;
     return DateTime.now().isAfter(moment);
   }
@@ -2210,6 +2244,7 @@ class TenderSaleModel {
       tenderType: json['tender_type'] as String?,
       yard: json['yard'] as String?,
       saleTime: json['sale_time'] as String?,
+      saleEndTime: json['sale_end_time'] as String?,
       createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
@@ -2310,6 +2345,7 @@ class DestructionModel {
   final String? tenderType;
   final String? yard;
   final String? saleTime;
+  final String? saleEndTime;
   final DateTime createdAt;
   final String? createdByName;
   final List<DestructionItemModel> items;
@@ -2323,6 +2359,7 @@ class DestructionModel {
     this.tenderType,
     this.yard,
     this.saleTime,
+    this.saleEndTime,
     required this.createdAt,
     this.createdByName,
     this.items = const [],
@@ -2354,6 +2391,21 @@ class DestructionModel {
     return DateTime.now().isAfter(moment);
   }
 
+  /// The moment the sale CLOSES — [saleDate] with [saleEndTime]. Falls back to
+  /// [saleMoment] when no end time was recorded, so rows created before the
+  /// column existed behave exactly as they did.
+  DateTime? get saleEndMoment =>
+      combineSaleMoment(saleDate, saleEndTime) ?? saleMoment;
+
+  /// True once the sale has ENDED. This — not [saleTimePassed] — is what
+  /// unseals the valuation: the figure is the reserve price, so it may only be
+  /// shown after bidding has closed, never while it is open.
+  bool get saleEnded {
+    final moment = saleEndMoment;
+    if (moment == null) return false;
+    return DateTime.now().isAfter(moment);
+  }
+
   /// The moment the package leaves this destruction as UNDESTROYED: the END of
   /// the next WORKING day after the destruction date (weekends & public holidays
   /// skipped). After this, an item not yet marked destroyed drops to the
@@ -2377,6 +2429,7 @@ class DestructionModel {
       tenderType: json['tender_type'] as String?,
       yard: json['yard'] as String?,
       saleTime: json['sale_time'] as String?,
+      saleEndTime: json['sale_end_time'] as String?,
       createdAt: parseDbDateRequired(json['created_at']),
       createdByName:
           (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,

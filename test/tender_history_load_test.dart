@@ -37,8 +37,12 @@ void main() {
       // Only the columns the history needs: id + created_at to number the
       // rounds, and sale_date/sale_time to know whether each has RUN (which
       // gates its price). Still nowhere near the old nested join.
-      expect(body,
-          contains('tender_sales(id, created_at, sale_date, sale_time)'));
+      // sale_end_time joined the list: a round has "run" once the sale has
+      // ENDED, which is what unseals its valuation.
+      expect(
+          body.replaceAll(RegExp(r'\s+'), ' '),
+          contains('tender_sales(id, created_at, sale_date, sale_time, '
+              'sale_end_time)'));
       expect(body, isNot(contains('warehouse_entries')));
     });
   });
