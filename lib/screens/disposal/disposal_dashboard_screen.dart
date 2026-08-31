@@ -3640,23 +3640,6 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                   ),
                 ),
                 const Gap(12),
-                const Expanded(child: SizedBox()),
-              ]),
-              Row(children: [
-                Expanded(
-                  child: _OneTapTimeField(
-                    // Bidding CLOSES here. The valuation is the reserve price,
-                    // so it stays sealed until this passes — not merely until
-                    // the sale opens.
-                    label: 'Sale End Time',
-                    value: _saleEndTime,
-                    onChanged: (t) => setState(() => _saleEndTime = t),
-                  ),
-                ),
-                const Gap(12),
-                const Expanded(child: SizedBox()),
-              ]),
-              Row(children: [
                 Expanded(
                   child: TextField(
                     controller: _serialC,
@@ -3664,15 +3647,12 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     decoration: const InputDecoration(labelText: 'Serial'),
                   ),
                 ),
-                const Gap(12),
-                Expanded(
-                  child: TextField(
-                    controller: _yearC,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Year'),
-                  ),
-                ),
               ]),
+              TextField(
+                controller: _yearC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Year'),
+              ),
               StyledDropdownFormField<String>(
                 value: _tenderType,
                 label: 'Tender Sale Type',
@@ -6355,21 +6335,29 @@ class _DestructionFormDialogState
               ]),
               Row(children: [
                 Expanded(
+                  child: _OneTapTimeField(
+                    // Bidding CLOSES here. The valuation is the reserve price,
+                    // so it stays sealed until this passes — not merely until
+                    // the sale opens.
+                    label: 'Sale End Time',
+                    value: _saleEndTime,
+                    onChanged: (t) => setState(() => _saleEndTime = t),
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
                   child: TextField(
                     controller: _serialC,
                     readOnly: true,
                     decoration: const InputDecoration(labelText: 'Serial'),
                   ),
                 ),
-                const Gap(12),
-                Expanded(
-                  child: TextField(
-                    controller: _yearC,
-                    keyboardType: TextInputType.number,
-                    decoration: const InputDecoration(labelText: 'Year'),
-                  ),
-                ),
               ]),
+              TextField(
+                controller: _yearC,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(labelText: 'Year'),
+              ),
               StyledDropdownFormField<String>(
                 value: _destructionType,
                 label: 'Destruction Sale Type',

@@ -604,6 +604,9 @@ void main() {
     });
 
     test('both forms collect an end time and validate it', () {
+      // Exactly ONE field per form (2 total): a leftover partial edit once
+      // duplicated it in the Tender Sale form while leaving the Destruction
+      // Sale form without one at all.
       expect("label: 'Sale End Time',".allMatches(dash).length, 2);
       expect(
           "if (_saleEndTime == null) return 'Sale End Time is required.';"
