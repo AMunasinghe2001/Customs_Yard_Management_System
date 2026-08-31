@@ -5065,11 +5065,26 @@ class DisposalService {
       //    even been placed — so the DG was deciding the final outcome of a
       //    package that still had a live chance of selling.
       //
+      //    The test is whether a round RAN after the submission, judged by
+      //    its scheduled sale moment — not by `createdAt`, which is merely
+      //    when the row was inserted. Central Disposal routinely schedules a
+      //    round before the ADG gets round to submitting, and two packages can
+      //    share one sale row; keying on `createdAt` then stranded a package
+      //    whose committee value was entered after the row existed, even
+      //    though the tender itself ran days later and failed. (Seen live:
+      //    Toilet Seat Covers and Wash Basins shared round F01 — same row,
+      //    created 04:25, scheduled 08-19 — and only Wash Basins, submitted at
+      //    03:25, moved on. Toilet Seat Covers, submitted 18:31, stayed stuck
+      //    on 5 rounds.)
+      //
       //    `getUnsoldTenderSales` already guarantees "not sold" and "the
-      //    latest round's deadline has passed", so a round created after the
-      //    submission means exactly: the committee-priced tender ran and
-      //    failed.
-      return i.sales.any((s) => s.createdAt.isAfter(submittedAt));
+      //    latest round's deadline has passed".
+      return i.sales.any((s) {
+        final moment = s.saleMoment;
+        return moment != null &&
+            moment.isAfter(submittedAt) &&
+            s.saleTimePassed;
+      });
     }).toList();
   }
 

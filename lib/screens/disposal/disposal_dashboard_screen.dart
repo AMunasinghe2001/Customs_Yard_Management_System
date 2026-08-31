@@ -4418,16 +4418,67 @@ class _UnsoldValuationCell extends ConsumerWidget {
       }
     }
     final reval = latestId != null ? revals[latestId] : null;
-    // A package here has usually been re-valued and put straight into ANOTHER
-    // tender round. While that newest round is still open its valuation is a
-    // live reserve price, so it stays sealed exactly as on the sale card.
+    final committee =
+        ref.watch(tenderCommitteesProvider).valueOrNull?[f.id];
+
+    // Two ways this figure can be a LIVE reserve price:
+    //
+    //  1. the newest round has not run yet — the sale-card case; or
+    //  2. that round HAS run and failed, but a NEW valuation has since been
+    //     set for the next one ("Re-valued" / "Committee valued" in the
+    //     column beside this). The next round has no date yet, so rule 1
+    //     alone let the new price show — which is the leak: the figure the
+    //     package is about to be re-tendered at was on screen before bidding
+    //     even opened.
+    //
+    // Only a valuation whose OWN round has already run may be shown, so what
+    // is visible here is the last CONCLUDED price, never the upcoming one.
     final current = info.latestSale;
+    final roundOpen = current != null && !current.saleTimePassed;
+    final pendingNewPrice = !roundOpen &&
+        (reval != null || committee?.committeeValue != null);
+
+    // When the upcoming price is withheld, fall back to the price the package
+    // was LAST ACTUALLY TENDERED AT, so the column still carries a real figure
+    // instead of going blank.
+    //
+    // ⚠️ A `tender_revaluations` row is keyed to the round that just FAILED —
+    // it is the price for the NEXT tender, not for the round it hangs off.
+    // (Verified: Toilet Seat Covers' 1,645 hangs off R016 and was the price
+    // F01 then ran at.) So the price a round RAN at is the re-valuation
+    // attached to the round BEFORE it, and the newest such value is by
+    // definition the pending one.
+    double? lastConcluded;
+    if (pendingNewPrice) {
+      // Rounds oldest first, so index i-1 is the round before i.
+      final ordered = [...info.sales]
+        ..sort((a, b) {
+          final am = a.saleMoment, bm = b.saleMoment;
+          if (am == null || bm == null) return 0;
+          return am.compareTo(bm);
+        });
+      for (var i = ordered.length - 1; i >= 0; i--) {
+        if (!ordered[i].saleTimePassed) continue;
+        // The price THIS round ran at.
+        final priced =
+            i > 0 ? revals[ordered[i - 1].id]?.valuationCost : f.valuationCost;
+        if (priced != null) {
+          lastConcluded = priced;
+          break;
+        }
+      }
+      // Only ever tendered at the original valuation.
+      lastConcluded ??= f.valuationCost;
+    }
+
     return _ValuationCell(
       f: f,
       qty: qty,
-      overrideUnitCost: reval?.valuationCost,
-      isRevalued: reval != null,
-      sealedUntilSale: current != null && !current.saleTimePassed,
+      overrideUnitCost: pendingNewPrice ? lastConcluded : reval?.valuationCost,
+      isRevalued: pendingNewPrice ? false : reval != null,
+      // Only the OPEN-round case blanks the cell. A pending next-round price
+      // shows the previous concluded figure instead.
+      sealedUntilSale: roundOpen,
     );
   }
 }

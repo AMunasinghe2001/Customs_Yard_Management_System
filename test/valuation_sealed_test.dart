@@ -104,9 +104,14 @@ void main() {
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
     test('Unsold Tenders seals on the newest tender round', () {
-      expect(flat(dashboard),
-          contains('sealedUntilSale: current != null && !current.saleTimePassed'),
+      // Now expressed as `roundOpen`, which the pending-price rule below also
+      // builds on.
+      expect(
+          flat(dashboard),
+          contains(
+              'final roundOpen = current != null && !current.saleTimePassed'),
           reason: 'A re-valued package goes straight into another tender.');
+      expect(flat(dashboard), contains('sealedUntilSale: roundOpen'));
     });
 
     test('Undestroyed seals on the newest destruction round', () {
@@ -144,9 +149,10 @@ void main() {
         () {
       // Reaching the DG the moment the ADG submitted would have put the final
       // outcome of a package that still had a live chance of selling in front
-      // of them.
+      // of them. Judged by when the round RAN — see the dedicated test below
+      // for why createdAt was wrong.
       expect(flat(services),
-          contains('i.sales.any((s) => s.createdAt.isAfter(submittedAt))'));
+          contains('moment.isAfter(submittedAt) && s.saleTimePassed'));
     });
   });
 
@@ -176,5 +182,59 @@ void main() {
     expect(leaks, isEmpty,
         reason: 'These popups show a valuation with no seal:\n'
             '${leaks.join('\n')}');
+  });
+
+  // The column showed a figure right beside a "Re-valued" / "Committee valued"
+  // chip. Those chips mean a NEW price has been set for the round about to be
+  // tendered — so that figure is a live reserve price, even though the round
+  // has no date yet and the open-round rule alone did not catch it.
+  //
+  // The fix shows the price the package was LAST ACTUALLY TENDERED AT instead
+  // of blanking the cell, which is what the user asked for: withhold the
+  // upcoming price, keep the previous concluded one.
+  group('a pending next-round price is withheld', () {
+    final dashboard =
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('a new valuation with no scheduled round counts as pending', () {
+      expect(
+          flat(dashboard),
+          contains('final pendingNewPrice = !roundOpen && '
+              '(reval != null || committee?.committeeValue != null)'));
+    });
+
+    test('the pending figure is never the one displayed', () {
+      expect(flat(dashboard),
+          contains('overrideUnitCost: pendingNewPrice ? lastConcluded : reval?.valuationCost'));
+      // ...and it must not be flagged "re-valued" either, since the re-valued
+      // price is exactly what is being withheld.
+      expect(flat(dashboard),
+          contains('isRevalued: pendingNewPrice ? false : reval != null'));
+    });
+
+    test('the fallback is the price a round actually RAN at', () {
+      // A tender_revaluations row is keyed to the round that just FAILED, so
+      // the price a round ran at is the re-valuation on the round BEFORE it.
+      // Reading the row's own key would show the pending price again.
+      expect(
+          flat(dashboard),
+          contains('i > 0 ? revals[ordered[i - 1].id]?.valuationCost '
+              ': f.valuationCost'));
+    });
+  });
+
+  // Toilet Seat Covers sat on 5 rounds and never reached the DG, while Wash
+  // Basins — same 5 rounds, same shared F01 sale row — did. The rule keyed on
+  // tender_sales.created_at (when the ROW was inserted, 04:25 for both), so a
+  // package whose committee value was submitted after that (18:31) failed the
+  // test even though F01 ran on 08-19 and failed.
+  test('the DG gate keys on when a round RAN, not when its row was made', () {
+    final services = File('lib/services/services.dart').readAsStringSync();
+    final flat = services.replaceAll(RegExp(r'\s+'), ' ');
+    expect(flat, contains('moment.isAfter(submittedAt) && s.saleTimePassed'));
+    expect(flat, isNot(contains('i.sales.any((s) => s.createdAt.isAfter(submittedAt))')),
+        reason: 'createdAt is when the row was inserted, not when the tender ran.');
   });
 }
