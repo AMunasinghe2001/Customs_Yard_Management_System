@@ -4795,15 +4795,12 @@ class DisposalService {
     for (final e in (revals as List)) {
       final fpId = e['forfeited_package_id'] as String;
       final saleId = e['tender_sale_id'] as String?;
-      // A PENDING row (null round) is a price set for the next tender — the
-      // package is ready to be re-tendered at it. A row keyed to the latest
-      // round is the older shape, kept working for existing data.
-      final pending = saleId == null;
-      if (!pending && latestRound[fpId] != saleId) continue;
-      // The bids that informed the decision belong to the latest round either
-      // way, so check that round in both cases.
-      final bidRound = pending ? latestRound[fpId] : saleId;
-      if (!bidRounds.contains('$fpId|$bidRound')) continue;
+      // Re-tenderable means the NEXT round has a price, which is the PENDING
+      // row. A figure on the latest round is that round's own reserve and says
+      // nothing about the next one.
+      if (saleId != null) continue;
+      // The bids that decided it belong to the latest round.
+      if (!bidRounds.contains('$fpId|${latestRound[fpId]}')) continue;
       if (decidedIds.contains(fpId)) continue;
       if (exhaustedIds.contains(fpId)) continue;
       // Committee stage: needs the ADG's submission, not just any valuation.
@@ -4839,10 +4836,12 @@ class DisposalService {
     for (final e in (rows as List)) {
       final fpId = e['forfeited_package_id'] as String;
       final saleId = e['tender_sale_id'] as String?;
-      // A PENDING row (null round) is a figure set for the NEXT tender — the
-      // package IS valued. Requiring a round here made a just-saved valuation
-      // read as "Set Value" again on this table.
-      if (saleId == null || latestRound[fpId] == saleId) valued.add(fpId);
+      // "Valued" means the NEXT round has been priced, which is the PENDING
+      // row. A figure keyed to the latest round is that round's OWN reserve —
+      // every held round has one, so counting it marked every package valued
+      // and hid the Set Value button. Packages reach this list only after
+      // their latest round has been held, so pending is the whole test.
+      if (saleId == null) valued.add(fpId);
     }
     return valued;
   }

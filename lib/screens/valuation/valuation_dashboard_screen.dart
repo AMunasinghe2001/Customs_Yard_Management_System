@@ -1821,8 +1821,16 @@ class _ValBidsAndRevalDialogState
   /// cannot overwrite the price a finished round went to tender at. Reading
   /// only `_revals[_current.id]` misses it, which made a just-saved valuation
   /// vanish from this table and left the Save button live for a second edit.
-  TenderRevaluationModel? get _issued =>
-      _revals[''] ?? _revals[_current.id];
+  TenderRevaluationModel? get _issued => _current.saleTimePassed
+      // Pricing the NEXT round, which has no id yet — only a PENDING row can
+      // already hold that figure. Falling back to `_revals[_current.id]` read
+      // the CURRENT round's own reserve as if it were the next round's, so a
+      // package whose last round was priced looked "Valuation set" and the
+      // Save button vanished before the next figure had been entered at all.
+      ? _revals['']
+      // Central Disposal has scheduled the next round but not held it, so the
+      // figure attaches to that round directly.
+      : _revals[_current.id];
 
   bool get _alreadyValued => _issued != null;
 
@@ -2134,9 +2142,12 @@ class _ValRevalCell extends ConsumerWidget {
     final revals =
         ref.watch(tenderRevaluationsProvider(info.forfeited.id)).valueOrNull ??
             const <String, TenderRevaluationModel>{};
-    // The pending row first: a newly-set figure has no round yet.
-    final unit = (revals[''] ?? (current != null ? revals[current] : null))
-        ?.valuationCost;
+    // The figure THIS portal still owes is the NEXT round's, and that is the
+    // PENDING row. `revals[current]` is the current round's own reserve — it
+    // exists because that round was priced, which says nothing about whether
+    // the next one has been. Reading it made Power tools show a green amount
+    // while the Valuation Directorate had yet to price Tender 3.
+    final unit = revals['']?.valuationCost;
     final qty = _valQtyOf(info.forfeited);
     final fmt = NumberFormat('#,##0');
 

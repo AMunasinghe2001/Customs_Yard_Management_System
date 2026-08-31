@@ -169,6 +169,12 @@ unner\Debug\cus_yard_management.exe`, Windows locks a running exe, and Flutter f
   - New `getTenderRoundsForPackage(fpId)` + `tenderRoundsForPackageProvider` fetch ONE package's rounds — just `(id, createdAt)`, which is all the round numbering ("Valuation Tender" / "Tender 1" / …) needs. Measured **~11ms**.
   - `_SaleValuationCell` **warms** `tenderRoundsForPackageProvider` + `tenderBidsProvider` while the table is on screen. It already resolves the forfeited package per row, so the reads are free there and the history is ready on click rather than starting to load then.
   - ⚠️ General lesson: a whole-table provider feels instant on whichever screen happens to have cached it already. [tender_history_load_test.dart](test/tender_history_load_test.dart) pins the per-package query and the warming (verified by restoring the old path: the suite goes red).
+- ⚠️ **"This round has a valuation" ≠ "the next round is priced"** (2026-08-31) — the distinction five separate checks got wrong. Under [[the valuation chain]] **every held round has its own reserve**, so `revals[currentRound] != null` is always true for a package in the unsold pool and says nothing about whether the Valuation Directorate has done its next job. Only the **PENDING** row (`revals['']`) means "the next round is priced". Fixed in all five:
+  - `_issued` in the valuation dialog — was falling back to the current round's reserve, so the dialog read **"Valuation set"** and hid Save before anything had been entered for Tender 3.
+  - The Valuation Directorate's table cell — showed a green amount for packages it still owed a figure for.
+  - `getValuedCurrentRoundIds` — marked every package valued, hiding **Set Value** everywhere.
+  - The Re-valuation **chip** — read "Re-valued" for packages nobody had re-valued.
+  - `_currentRoundLocked` in Record Bids — a round's own reserve exists **before** any bid is recorded against it, so locking on it stopped Central Disposal entering that round's bids at all. Bids close only once the VD has priced the next round **from** them.
 - ⚠️ **THE VALUATION CHAIN** (2026-08-31, stated by the user) — the rule the whole tender flow hangs on:
   > A round is **held at its own valuation**. Its bids come in against that figure. Those bids then decide the price of the **NEXT** round.
 

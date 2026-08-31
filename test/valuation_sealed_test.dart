@@ -369,8 +369,10 @@ void main() {
       expect(flat(services), contains(".isNull('tender_sale_id')"));
     });
 
-    test('eligibility recognises a pending valuation', () {
-      expect(flat(services), contains('final pending = saleId == null'));
+    test('eligibility requires a PENDING valuation', () {
+      // A figure on the latest round is that round's own reserve and says
+      // nothing about whether the next one has been priced.
+      expect(flat(services), contains('if (saleId != null) continue;'));
     });
   });
 
@@ -390,9 +392,8 @@ void main() {
       expect(flat(dashboard), contains('reTenderable: eligible.contains(f.id)'));
     });
 
-    test('the chip counts a pending valuation too', () {
-      expect(flat(dashboard),
-          contains("revals[''] != null || (current != null && revals[current] != null)"));
+    test('"Re-valued" means the NEXT round is priced', () {
+      expect(flat(dashboard), contains("final hasReval = revals[''] != null;"));
     });
 
     test('the history detects the pending row itself', () {
@@ -417,23 +418,30 @@ void main() {
     final services = File('lib/services/services.dart').readAsStringSync();
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
-    test('one helper resolves the issued figure', () {
-      // So no reader can key on the round alone and miss the pending row.
+    test('the issued figure follows the round being priced', () {
+      // Pricing the NEXT round: only a PENDING row can already hold it.
+      // Falling back to the current round's own reserve made the dialog read
+      // "Valuation set" and hide Save before anything had been entered.
+      // Matched in parts: explanatory comments sit inside the ternary, so the
+      // whole expression does not survive whitespace-flattening as one string.
       expect(flat(valuation),
-          contains("TenderRevaluationModel? get _issued => _revals[''] ?? _revals[_current.id]"));
+          contains('TenderRevaluationModel? get _issued => _current.saleTimePassed'));
+      expect(flat(valuation), contains("? _revals[''] "),
+          reason: 'Pricing the next round: only a pending row can hold it.');
+      expect(flat(valuation), contains(': _revals[_current.id];'),
+          reason: 'A scheduled-but-unheld round is priced directly.');
       expect(flat(valuation), contains('bool get _alreadyValued => _issued != null'),
           reason: 'A saved valuation must lock, like every other round.');
-      expect(flat(valuation), isNot(contains('_revals[_current.id] != null')));
     });
 
-    test('the table cell prefers the pending row', () {
-      expect(flat(valuation),
-          contains("revals[''] ?? (current != null ? revals[current] : null)"));
+    test('the table cell shows only the figure this portal still owes', () {
+      expect(flat(valuation), contains("final unit = revals['']?.valuationCost;"));
     });
 
-    test('a pending row counts as valued', () {
-      expect(flat(services),
-          contains('if (saleId == null || latestRound[fpId] == saleId) valued.add(fpId)'));
+    test('only a pending row counts as valued', () {
+      // Every held round has its own reserve, so counting those marked every
+      // package valued and hid the Set Value button.
+      expect(flat(services), contains('if (saleId == null) valued.add(fpId);'));
     });
   });
 
@@ -468,10 +476,11 @@ void main() {
       final dashboard = flat(
           File('lib/screens/disposal/disposal_dashboard_screen.dart')
               .readAsStringSync());
-      expect(
-          dashboard,
-          contains("bool get _currentRoundLocked => _revals[''] != null || "
-              "_revals[_current.id] != null"));
+      // Locked once the Valuation Directorate has priced the NEXT round FROM
+      // these bids. NOT on the round's own reserve: that exists before any bid
+      // is recorded, so it stopped bids being entered at all.
+      expect(dashboard,
+          contains("bool get _currentRoundLocked => _revals[''] != null;"));
     });
   });
 

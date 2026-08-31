@@ -4569,10 +4569,11 @@ class _ReTenderStatusCell extends ConsumerWidget {
     final committees =
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
 
-    // A PENDING valuation (no round yet, key '') is a price set for the NEXT
-    // tender; the older shape keys it to the current round. Either counts.
-    final hasReval =
-        revals[''] != null || (current != null && revals[current] != null);
+    // "Re-valued" means the NEXT round is priced — the PENDING row. A figure
+    // on the current round is that round's own reserve, which every held round
+    // has, so counting it showed "Re-valued" for packages the Valuation
+    // Directorate had not yet acted on.
+    final hasReval = revals[''] != null;
     // A committee value counts as "valued" even before the ADG submits it —
     // that is exactly the "Committee valued" state.
     final hasCommitteeValue = committees[fpId]?.committeeValue != null;
@@ -5217,14 +5218,14 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// are evidence for a decision already taken — editing them would leave the
   /// valuation resting on numbers that no longer exist. The round becomes
   /// read-only; the next round's bids go on the next round.
-  /// Bids close once the Valuation Directorate has issued a figure.
+  /// Bids close once the Valuation Directorate has priced the NEXT round FROM
+  /// them — that is the PENDING row (no round yet, key '').
   ///
-  /// ⚠️ A newly-set figure is stored PENDING (no round yet, key '') so it
-  /// cannot overwrite a finished round's price — reading only
-  /// `_revals[_current.id]` misses it, and the dialog then went on offering
-  /// "Add bid" and "Save Bids" for a round that was already priced.
-  bool get _currentRoundLocked =>
-      _revals[''] != null || _revals[_current.id] != null;
+  /// ⚠️ NOT `_revals[_current.id]`: that is this round's OWN reserve price,
+  /// which exists from the moment the round is priced — i.e. BEFORE any bid is
+  /// recorded against it. Locking on it stopped Central Disposal recording the
+  /// round's bids at all.
+  bool get _currentRoundLocked => _revals[''] != null;
 
   /// The saved bids of a locked round, shown as read-only chips (highest first)
   /// — the same presentation a past round gets.
