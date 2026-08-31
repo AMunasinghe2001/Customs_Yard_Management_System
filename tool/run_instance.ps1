@@ -23,6 +23,12 @@
   there, and runs. Each terminal then builds and links its own exe, so no run
   ever has to evict another. Nothing outside this shell is affected.
 
+.NOTES
+  A slot's first run is a full native build (~60-90s) and its build output is
+  about 450 MB, so keep a handful of named slots rather than one per session.
+  Later runs in the same slot are as fast as a normal incremental build.
+  `-Clean` deletes every slot's output.
+
 .EXAMPLE
   .\tool\run_instance.ps1            # auto-named slot (a, b, c ...)
   .\tool\run_instance.ps1 login      # a named slot, reusable across sessions
