@@ -4443,14 +4443,20 @@ class _UnsoldValuationCell extends ConsumerWidget {
           : f.valuationCost;
 
       if (ordered[lastIdx].saleTimePassed) {
-        // That round is over. Is a NEWER valuation already set for the next
-        // one? If so it is the latest — and still sealed, since that round has
-        // not been tendered.
-        final pending = revals[ordered[lastIdx].id]?.valuationCost ??
-            committee?.committeeValue;
-        if (pending != null) {
-          unit = pending;
-          revalued = revals[ordered[lastIdx].id] != null;
+        // Every round has run. A price only needs sealing if a tender is
+        // actually COMING — and the one thing that guarantees that is the
+        // committee's figure, which exists precisely so the package can be
+        // re-tendered at it.
+        //
+        // The re-valuation sitting on the newest round is NOT enough: a row
+        // reading "Awaiting ADG" has been re-valued but has no committee
+        // price and no new round, so nothing is pending and the last
+        // concluded price is safe to show. Sealing on that alone hid the
+        // Tender 3 figure behind "Sealed" with no tender in sight.
+        final pendingCommittee = committee?.committeeValue;
+        if (pendingCommittee != null) {
+          unit = pendingCommittee;
+          revalued = false;
           sealed = true;
         } else {
           unit = lastPrice;

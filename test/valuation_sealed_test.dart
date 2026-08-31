@@ -216,11 +216,11 @@ void main() {
             .readAsStringSync();
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
-    test('a newer valuation than the last run round counts as pending', () {
-      expect(
-          flat(dashboard),
-          contains('final pending = revals[ordered[lastIdx].id]?.valuationCost '
-              '?? committee?.committeeValue'));
+    test('only a committee price counts as pending once rounds are over', () {
+      // Corrected: a re-valuation alone does NOT mean a tender is coming — see
+      // the "Awaiting ADG" test below.
+      expect(flat(dashboard),
+          contains('final pendingCommittee = committee?.committeeValue'));
     });
 
     test('the LATEST valuation is shown, sealed until its round runs', () {
@@ -296,6 +296,40 @@ void main() {
           reason: 'Recording or submitting a figure is not the same as having '
               'tendered at it.');
       expect(flat(dashboard), contains('if (!priced) {'));
+    });
+  });
+
+  // Two corrections after checking real rows on screen.
+  group('sealing follows what is actually pending', () {
+    final dashboard =
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync();
+    final dialog =
+        File('lib/widgets/package_details_dialog.dart').readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('"Awaiting ADG" shows the last concluded price, not a seal', () {
+      // Such a row HAS been re-valued but has no committee price and no new
+      // round, so no tender is coming and nothing needs withholding. Sealing
+      // on the re-valuation alone hid the Tender 3 figure with no tender in
+      // sight. (Binding Wire Coils: 4 rounds, all run, no committee value.)
+      expect(flat(dashboard),
+          contains('final pendingCommittee = committee?.committeeValue'));
+      expect(flat(dashboard), contains('if (pendingCommittee != null)'));
+      // The re-valuation on the newest round must NOT drive the seal.
+      expect(
+          flat(dashboard),
+          isNot(contains('final pending = revals[ordered[lastIdx].id]'
+              '?.valuationCost ?? committee?.committeeValue')));
+    });
+
+    test('a pending re-valuation gets its own sealed row in the history', () {
+      // Otherwise the history just ended and the only hint a new price existed
+      // was the "Re-valued" chip in the table, with nothing here saying it is
+      // withheld — the committee round already behaved this way.
+      expect(flat(dialog), contains('final pending = revals[lastId]'));
+      expect(flat(dialog),
+          contains('label: tenderRoundLabel(ordered.length + 1)'));
     });
   });
 }

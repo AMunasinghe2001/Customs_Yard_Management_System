@@ -283,6 +283,30 @@ class TenderHistorySection extends ConsumerWidget {
             : [for (final b in roundBids) 'LKR ${money.format(b)}'],
       ));
     }
+    // The NEXT round: the Valuation Directorate has re-valued after the last
+    // round failed, but that tender has not been placed yet. Without this the
+    // history simply ended, and the only sign a new price existed was the
+    // "Re-valued" chip in the table — with no matching row here saying it is
+    // withheld. The committee round already got this treatment; a Valuation
+    // Directorate re-valuation deserves the same.
+    if (ordered.isNotEmpty) {
+      final lastId = ordered.last;
+      final pending = revals[lastId];
+      final lastRan = ranById[lastId] ?? false;
+      if (pending != null && lastRan) {
+        rows.add(_TenderRoundTile(
+          sealed: true,
+          label: tenderRoundLabel(ordered.length + 1),
+          isCommitteeRound: false,
+          committeeMembers: const [],
+          committeeLoading: false,
+          priceLabel: null,
+          revalued: true,
+          bids: const [],
+        ));
+      }
+    }
+
     if (rows.isEmpty) return const SizedBox.shrink();
 
     return _DetailSection(
