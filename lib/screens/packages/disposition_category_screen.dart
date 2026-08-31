@@ -615,7 +615,17 @@ class _DispositionCategoryScreenState
                                             useLegacySummary: true,
                                             tenderHistoryFor:
                                                 saleItem?.forfeited,
-                                            valuationQty: row.item?.quantity,
+                                            // The SAME quantity the row's
+                                            // Valuation cell uses. These rows
+                                            // are built from warehouse
+                                            // entries, where `item` is null —
+                                            // so passing only item.quantity
+                                            // sent null, and the history fell
+                                            // back to a qty of 1 and printed
+                                            // "@ 950 × 1" beside a table
+                                            // reading "@ 665 × 150".
+                                            valuationQty: row.entry?.itemCount ??
+                                                row.item?.quantity,
                                           ),
                                         );
                                       },

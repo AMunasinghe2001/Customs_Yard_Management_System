@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -116,5 +118,24 @@ void main() {
     expect(find.textContaining('@ 574'), findsNothing);
     // The rounds that DID run are unaffected.
     expect(find.textContaining('147,600'), findsOneWidget);
+  });
+
+  testWidgets('the quantity multiplies the unit price', (tester) async {
+    // The popup printed "@ 950 x 1" beside a table reading "@ 665 x 150": the
+    // Sold rows are built from warehouse entries, where `item` is null, so the
+    // caller passed a null qty and the history quietly fell back to 1.
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+    expect(find.textContaining('x 1)'), findsNothing,
+        reason: 'A qty of 1 here means the real quantity never arrived.');
+    expect(find.textContaining('180)'), findsWidgets);
+  });
+
+  test('the Sold popup passes the same qty its table cell uses', () {
+    final src = File('lib/screens/packages/disposition_category_screen.dart')
+        .readAsStringSync()
+        .replaceAll(RegExp(r'\s+'), ' ');
+    expect(src, contains('valuationQty: row.entry?.itemCount ?? row.item?.quantity'),
+        reason: 'These rows come from warehouse entries, so item is null.');
   });
 }
