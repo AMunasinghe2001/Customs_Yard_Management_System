@@ -517,4 +517,29 @@ void main() {
           contains('_current.saleTimePassed ? null : _current.id'));
     });
   });
+
+  // The ADG's committee figure prices the round the package is about to be
+  // re-tendered in, exactly like a Valuation Directorate re-valuation. Writing
+  // it to the round just held overwrote that round's own reserve AND left no
+  // "next round is priced" signal, so the package showed "Committee valued"
+  // forever while vanishing from the Committees table.
+  group('the committee submission follows the same rule', () {
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+    final tab = flat(File('lib/screens/executive/tender_committee_tab.dart')
+        .readAsStringSync());
+
+    test('it stores pending once the round has been held', () {
+      expect(tab, contains('tenderSaleId: round.saleTimePassed ? null : round.id'));
+    });
+
+    test('it refreshes what the two tables read', () {
+      expect(tab, contains('ref.invalidate(reTenderEligibleProvider)'));
+      expect(tab, contains('ref.invalidate(valuedCurrentRoundProvider)'));
+    });
+
+    test('the service accepts a null round', () {
+      expect(flat(File('lib/services/services.dart').readAsStringSync()),
+          contains('required String? tenderSaleId,'));
+    });
+  });
 }

@@ -1126,13 +1126,21 @@ class _CommitteeValuationDialogState
     try {
       await ref.read(disposalServiceProvider).submitCommitteeValuation(
             forfeitedPackageId: widget.info.forfeited.id,
-            tenderSaleId: round.id,
+            // The committee's figure prices the round the package is about to
+            // be re-tendered in — not the one just held. Writing it to a
+            // finished round overwrote that round's own reserve AND left no
+            // "next round is priced" signal, so the package sat on "Committee
+            // valued" forever and dropped out of the Committees table.
+            tenderSaleId: round.saleTimePassed ? null : round.id,
             value: cost,
             note: _noteCtrl.text,
             yard: widget.info.forfeited.yard,
           );
       ref.invalidate(tenderCommitteesProvider);
       ref.invalidate(tenderRevaluationsProvider(widget.info.forfeited.id));
+      // Submitting makes the package re-tenderable, which these two decide.
+      ref.invalidate(reTenderEligibleProvider);
+      ref.invalidate(valuedCurrentRoundProvider);
       if (!mounted) return;
       Navigator.pop(context);
       _ok('Submitted as the final valuation: Rs. ${_money.format(cost)}');

@@ -5037,7 +5037,9 @@ class DisposalService {
   /// and the valuation chain all pick it up with no extra wiring.
   Future<void> submitCommitteeValuation({
     required String forfeitedPackageId,
-    required String tenderSaleId,
+    /// Null once the current round has been held — the figure prices the NEXT
+    /// round, so it is stored pending. See [saveTenderRevaluation].
+    required String? tenderSaleId,
     required double value,
     String? note,
     String? yard,
