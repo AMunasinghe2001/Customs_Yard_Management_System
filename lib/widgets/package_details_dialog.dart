@@ -2018,9 +2018,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                 ),
                                                 _DetailItem(
                                                   icon: Icons.payments_rounded,
-                                                  label: 'Value',
-                                                  value:
-                                                      'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                  // The TOTAL, with the unit price beneath it — the same shape
+                                                  // the Valuation column uses. This showed the bare unitValue
+                                                  // under a label reading just "Value", while every table showed
+                                                  // unitValue x quantity under that same word.
+                                                  label: 'Value (total)',
+                                                  value: 'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue * highlightedItem.quantity)}'
+                                                      '  ·  @ ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)} × ${highlightedItem.quantity}',
                                                 ),
                                                 if (highlightedItem
                                                         .goodsDescription
@@ -2155,9 +2159,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       child: _DetailItem(
                                                         icon: Icons
                                                             .payments_rounded,
-                                                        label: 'Value',
+                                                        // Total, with the unit
+                                                        // price beneath —
+                                                        // matching the tables.
+                                                        label: 'Value (total)',
                                                         value:
-                                                            'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)}',
+                                                            'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue * highlightedItem.quantity)}'
+                                                                '  ·  @ ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)} × ${highlightedItem.quantity}',
                                                       ),
                                                     ),
                                                   ],
@@ -2742,9 +2750,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               Expanded(
                                                 child: _DetailItem(
                                                   icon: Icons.payments_rounded,
-                                                  label: 'Value',
-                                                  value:
-                                                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                                                  // The TOTAL, with the unit price beneath it — the same shape
+                                                  // the Valuation column uses. This showed the bare unitValue
+                                                  // under a label reading just "Value", while every table showed
+                                                  // unitValue x quantity under that same word.
+                                                  label: 'Value (total)',
+                                                  value: 'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
+                                                      '  ·  @ ${NumberFormat('#,##0.00').format(item.unitValue)} × ${item.quantity}',
                                                 ),
                                               ),
                                             ],
@@ -3893,7 +3905,9 @@ class _CargoItemTile extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 2),
                     child: Text(
-                      'HS: ${(item.hsCode?.isNotEmpty == true) ? item.hsCode! : '—'}  ·  Value: LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                      // "Value/unit", not "Value": the tables under the same
+                      // word show unitValue × quantity.
+                      'HS: ${(item.hsCode?.isNotEmpty == true) ? item.hsCode! : '—'}  ·  Value/unit: LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
                       style: material.TextStyle(
                           color: context.colors.textMuted, fontSize: 11),
                     ),
@@ -4751,9 +4765,13 @@ class _NoEntryItemCard extends StatelessWidget {
               Expanded(
                 child: _DetailItem(
                   icon: Icons.payments_rounded,
-                  label: 'Value',
-                  value:
-                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue)}',
+                  // The TOTAL, with the unit price beneath it — the same shape
+                  // the Valuation column uses. This showed the bare unitValue
+                  // under a label reading just "Value", while every table showed
+                  // unitValue x quantity under that same word.
+                  label: 'Value (total)',
+                  value: 'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
+                      '  ·  @ ${NumberFormat('#,##0.00').format(item.unitValue)} × ${item.quantity}',
                 ),
               ),
             ],

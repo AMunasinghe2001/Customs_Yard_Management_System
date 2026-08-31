@@ -128,7 +128,12 @@ const List<DataColumn2> kUnsoldColumns = [
   DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
-  DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 120),
+  // "Latest Valuation": these rows carry the committee's figure when one
+  // exists, not the original — see unsoldCells.
+  DataColumn2(
+      label: Text('Latest Valuation'),
+      size: ColumnSize.S,
+      fixedWidth: 130),
   DataColumn2(
       label: Center(child: Text('Final Outcome')),
       size: ColumnSize.M,
@@ -149,7 +154,12 @@ const List<DataColumn2> kUnsoldDecidedColumns = [
   DataColumn2(label: Text('Qty'), size: ColumnSize.S, fixedWidth: 60),
   DataColumn2(label: Text('Consignee'), size: ColumnSize.M),
   DataColumn2(label: Text('Location'), size: ColumnSize.M),
-  DataColumn2(label: Text('Valuation'), size: ColumnSize.S, fixedWidth: 120),
+  // "Latest Valuation": these rows carry the committee's figure when one
+  // exists, not the original — see unsoldCells.
+  DataColumn2(
+      label: Text('Latest Valuation'),
+      size: ColumnSize.S,
+      fixedWidth: 130),
   DataColumn2(
       label: Center(child: Text('Decided On')),
       size: ColumnSize.M,
@@ -198,6 +208,13 @@ List<DataCell> unsoldCells(
   required Widget outcome,
   required VoidCallback? onDetails,
 
+  /// The Top Management tender committee's valuation for this package, when
+  /// one has been set. It supersedes the original: by the time a package is
+  /// unsold it has been through the Valuation tender, up to three re-valued
+  /// rounds and then the committee, and the committee's figure is what the
+  /// final outcome is decided on.
+  double? committeeUnitValue,
+
   /// Colour of the Valuation figure. The directorate tables highlight it in
   /// green because the money is what they act on; the yard is only being told
   /// what happened, so it reads as ordinary body text there.
@@ -206,7 +223,10 @@ List<DataCell> unsoldCells(
   final f = info.forfeited;
   final pkg = f.packageDetails;
   final qty = unsoldQty(f);
-  final value = f.valuationCost != null ? f.valuationCost! * qty : null;
+  // Committee figure first, then the original. Both are PER UNIT.
+  final unit = committeeUnitValue ?? f.valuationCost;
+  final value = unit != null ? unit * qty : null;
+  final isCommittee = committeeUnitValue != null;
   // The yard belongs in the row's tooltip, not its own column: the yard page
   // shows one yard only, and the other two portals have a Yard dropdown.
   final srTip = '${f.srNumber} · ${yardName(f.yard)}'
@@ -226,11 +246,28 @@ List<DataCell> unsoldCells(
     DataCell(TooltipText(unsoldLocation(pkg, f.itemId),
         overflow: TextOverflow.ellipsis,
         style: TextStyle(color: context.colors.textSecondary, fontSize: 12))),
-    DataCell(TooltipText(
-        value == null ? '—' : 'LKR ${NumberFormat('#,##0').format(value)}',
-        style: TextStyle(
-            color: valuationColor ?? context.colors.successGreen,
-            fontWeight: FontWeight.w700))),
+    DataCell(Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        TooltipText(
+            value == null ? '—' : 'LKR ${NumberFormat('#,##0').format(value)}',
+            style: TextStyle(
+                color: valuationColor ?? context.colors.successGreen,
+                fontWeight: FontWeight.w700)),
+        // Says WHOSE figure this is, so a committee price cannot be mistaken
+        // for the original valuation.
+        if (value != null)
+          Text(
+              isCommittee
+                  ? 'committee · @ ${NumberFormat('#,##0').format(unit)} × $qty'
+                  : '@ ${NumberFormat('#,##0').format(unit)} × $qty',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 10, color: context.colors.textMuted)),
+      ],
+    )),
     DataCell(outcome),
     DataCell(Center(
       child: IconButton(

@@ -134,6 +134,10 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final myYard = ref.watch(currentProfileProvider)?.yard;
+    // The Top Management tender committees, keyed by forfeited_package_id.
+    // Their valuation supersedes the original for an unsold package.
+    final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
+        const <String, TenderCommitteeModel>{};
 
     return AppShell(
       currentRoute: widget.route,
@@ -406,6 +410,12 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                       context,
                                       info: info,
                                       srColor: gold,
+                                      // The Top Management committee's figure,
+                                      // when one exists — it supersedes the
+                                      // original valuation for these packages.
+                                      committeeUnitValue: committees[
+                                              info.forfeited.id]
+                                          ?.committeeValue,
                                       // Plain text on the yard table — the
                                       // green highlight is for the portals
                                       // that act on the money.

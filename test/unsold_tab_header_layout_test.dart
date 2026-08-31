@@ -22,6 +22,11 @@ void main() {
               (ref) => Future.value(const <String, UnsoldProposalModel>{})),
           storageRateProvider.overrideWith(
               (ref) => Future.value(const <DateTime, double>{})),
+          // Stubbed for the same reason as the others: the Valuation column now
+          // reads the Top Management committee's figure, and without this the
+          // widget opens a real socket to PostgreSQL.
+          tenderCommitteesProvider.overrideWith(
+              (ref) => Future.value(const <String, TenderCommitteeModel>{})),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,

@@ -591,6 +591,19 @@ class _DispositionCategoryScreenState
                                               context.colors.accentLightBlue,
                                           size: 18),
                                       onPressed: () {
+                                        // The forfeited row behind this sale,
+                                        // so the popup can show the same
+                                        // per-round Tender History the Unsold
+                                        // page shows. A sold package may have
+                                        // been re-valued several times before
+                                        // it sold, and that chain was
+                                        // invisible here.
+                                        final saleItem = ref
+                                            .read(saleItemForPackageItemProvider(
+                                                '${row.package.id}|'
+                                                '${row.entry?.packageItemId ?? row.item?.id ?? ''}'))
+                                            .asData
+                                            ?.value;
                                         showDialog(
                                           context: context,
                                           builder: (_) =>
@@ -600,6 +613,9 @@ class _DispositionCategoryScreenState
                                             highlightEntry: row.entry,
                                             highlightItemId: row.entry?.packageItemId ?? row.item?.id,
                                             useLegacySummary: true,
+                                            tenderHistoryFor:
+                                                saleItem?.forfeited,
+                                            valuationQty: row.item?.quantity,
                                           ),
                                         );
                                       },
@@ -699,8 +715,25 @@ class _SaleValuationCell extends ConsumerWidget {
       error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
       data: (item) {
         final fp = item?.forfeited;
-        final unitCost = fp?.valuationCost;
-        if (unitCost == null || fp == null) {
+        if (fp == null) {
+          return Text('—', style: TextStyle(color: context.colors.textMuted));
+        }
+        // Prefer the LATEST tender re-valuation, exactly as Central Disposal
+        // does. Without this the yard showed the ORIGINAL valuation for a
+        // package that had since been re-valued, so the two screens disagreed
+        // about the same goods.
+        final revals =
+            ref.watch(tenderRevaluationsProvider(fp.id)).asData?.value ??
+                const <String, TenderRevaluationModel>{};
+        TenderRevaluationModel? latest;
+        for (final r in revals.values) {
+          if (latest == null || r.createdAt.isAfter(latest.createdAt)) {
+            latest = r;
+          }
+        }
+        final isRevalued = latest != null;
+        final unitCost = latest?.valuationCost ?? fp.valuationCost;
+        if (unitCost == null) {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
         final int effQty;
@@ -721,19 +754,35 @@ class _SaleValuationCell extends ConsumerWidget {
         }
         final total = unitCost * effQty;
         final fmt = NumberFormat('#,##0');
+        // Blue + a price-change icon when the figure is a re-valuation, the
+        // same signal Central Disposal uses.
+        final priceColor = isRevalued
+            ? context.colors.accentLightBlue
+            : context.colors.primaryGold;
         return Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('Rs ${fmt.format(total)}',
-                style: TextStyle(
-                    color: context.colors.primaryGold,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 12)),
-            Text('@ ${fmt.format(unitCost)} × $effQty',
-                style: TextStyle(
-                    fontSize: 10, color: context.colors.textMuted)),
+            Row(mainAxisSize: MainAxisSize.min, children: [
+              Text('Rs ${fmt.format(total)}',
+                  style: TextStyle(
+                      color: priceColor,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12)),
+              if (isRevalued) ...[
+                const SizedBox(width: 4),
+                Icon(Icons.price_change_rounded,
+                    size: 11, color: context.colors.accentLightBlue),
+              ],
+            ]),
+            Text(
+                '@ ${fmt.format(unitCost)} × $effQty'
+                '${isRevalued ? ' · re-valued' : ''}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(fontSize: 10, color: context.colors.textMuted)),
           ],
         );
       },

@@ -485,6 +485,10 @@ class UnsoldProposalsTab extends ConsumerWidget {
     // The shared "every avenue exhausted" list, so this tab, the yard page and
     // the Top Management Directorate all show exactly the same packages.
     final async = ref.watch(exhaustedUnsoldProvider);
+    // Top Management tender committees, keyed by forfeited_package_id — their
+    // valuation supersedes the original for an unsold package.
+    final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
+        const <String, TenderCommitteeModel>{};
     final q = ref.watch(disposalSearchProvider(tabKey)).toLowerCase();
     final yardFilter = ref.watch(disposalYardFilterProvider(tabKey));
     final proposals =
@@ -619,6 +623,8 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                   context,
                                   info: info,
                                   srColor: blue,
+                                  committeeUnitValue:
+                                      committees[f.id]?.committeeValue,
                                   // READ-ONLY: the DG decides the outcome,
                                   // this directorate carries it out.
                                   outcome: proposalFilter == null

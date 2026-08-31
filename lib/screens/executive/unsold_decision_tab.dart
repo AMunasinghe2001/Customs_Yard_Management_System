@@ -44,6 +44,10 @@ class UnsoldDecisionTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTheme.executiveTeal;
     final async = ref.watch(exhaustedUnsoldProvider);
+    // Top Management tender committees, keyed by forfeited_package_id — their
+    // valuation supersedes the original for an unsold package.
+    final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
+        const <String, TenderCommitteeModel>{};
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
     final q = ref.watch(_uSearchProvider).trim().toLowerCase();
@@ -207,6 +211,9 @@ class UnsoldDecisionTab extends ConsumerWidget {
                                 cells: unsoldCells(
                                   context,
                                   info: info,
+                                  committeeUnitValue:
+                                      committees[info.forfeited.id]
+                                          ?.committeeValue,
                                   srColor: accent,
                                   outcome: Center(
                                     child: _DecisionCell(
