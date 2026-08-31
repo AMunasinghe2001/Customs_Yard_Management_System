@@ -4182,6 +4182,11 @@ class _CommitteeCard extends StatelessWidget {
                               useLegacySummary: true,
                               highlightItemId: f.itemId,
                               yardLabel: yardName(f.yard),
+                              // Central Disposal's Committees tab: the
+                              // package can still be re-tendered, so the
+                              // reserve price is sealed here too.
+                              valuationSealedUntilSale:
+                                  info.latestSale?.saleTimePassed == false,
                               valuationUnitCost: f.valuationCost,
                               valuationTotalCost: f.valuationCost != null
                                   ? f.valuationCost! * (qty ?? 1)

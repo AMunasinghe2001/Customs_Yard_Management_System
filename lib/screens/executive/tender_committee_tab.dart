@@ -1,3 +1,4 @@
+import '../../widgets/sealed_valuation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -69,8 +70,8 @@ class _CommitteeSourceChip extends StatelessWidget {
         border: Border.all(color: c.withOpacity(0.3)),
       ),
       child: Text(label,
-          style: TextStyle(
-              color: c, fontSize: 11, fontWeight: FontWeight.w700)),
+          style:
+              TextStyle(color: c, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 }
@@ -79,9 +80,17 @@ class _CommitteeSourceChip extends StatelessWidget {
 class _CommitteeValuationCell extends StatelessWidget {
   final ForfeitedPackageModel f;
   final int? qty;
-  const _CommitteeValuationCell({required this.f, this.qty});
+
+  /// True while the package's newest tender round has not yet run. The
+  /// valuation is the reserve price for that round, so it stays sealed here
+  /// too — the committee is appointed while the package can still be
+  /// re-tendered. See [valuationSealed].
+  final bool sealedUntilSale;
+  const _CommitteeValuationCell(
+      {required this.f, this.qty, this.sealedUntilSale = false});
   @override
   Widget build(BuildContext context) {
+    if (sealedUntilSale) return const SealedValuation(compact: true);
     final unit = f.valuationCost;
     if (unit == null) {
       return Text('—', style: TextStyle(color: context.colors.textMuted));
@@ -106,7 +115,8 @@ class _CommitteeValuationCell extends StatelessWidget {
 }
 
 final _committeeSearchProvider = StateProvider<String>((ref) => '');
-final _committeeYardProvider = StateProvider<String?>((ref) => null); // null=all
+final _committeeYardProvider =
+    StateProvider<String?>((ref) => null); // null=all
 
 /// Top Management Directorate tab: packages still unsold after the Valuation Tender plus all
 /// three bid-driven rounds (Tender 1-3), i.e. ≥4 attempts. The DG and the ADG
@@ -234,14 +244,15 @@ class TenderCommitteeTab extends ConsumerWidget {
                       fixedTopRows: 1,
                       minWidth: 1080,
                       empty: const EmptyTableState(
-                          message:
-                              'No packages unsold after Tender 3 yet'),
+                          message: 'No packages unsold after Tender 3 yet'),
                       headingRowColor:
                           WidgetStateProperty.all(context.colors.surfaceDark),
                       columns: const [
-                        DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('SR Number'), size: ColumnSize.M),
                         DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                        DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Goods Name'), size: ColumnSize.M),
                         DataColumn2(
                             label: Center(child: Text('Source')),
                             size: ColumnSize.S),
@@ -249,7 +260,8 @@ class TenderCommitteeTab extends ConsumerWidget {
                             label: Text('Qty'),
                             size: ColumnSize.S,
                             fixedWidth: 56),
-                        DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                        DataColumn2(
+                            label: Text('Location'), size: ColumnSize.M),
                         DataColumn2(
                             label: Text('Valuation'),
                             size: ColumnSize.S,
@@ -285,20 +297,25 @@ class TenderCommitteeTab extends ConsumerWidget {
                         return DataRow(cells: [
                           DataCell(TooltipText(f.srNumber,
                               style: TextStyle(
-                                  color: accent,
-                                  fontWeight: FontWeight.w600))),
+                                  color: accent, fontWeight: FontWeight.w600))),
                           DataCell(TooltipText(pkg?.caseNumber ?? '—',
                               overflow: TextOverflow.ellipsis)),
                           DataCell(TooltipText(_cItemName(f),
                               overflow: TextOverflow.ellipsis)),
-                          DataCell(Center(child: _CommitteeSourceChip(source: f.source))),
+                          DataCell(Center(
+                              child: _CommitteeSourceChip(source: f.source))),
                           DataCell(TooltipText('${qty ?? '—'}')),
-                          DataCell(TooltipText(_committeeLocation(pkg, f.itemId),
+                          DataCell(TooltipText(
+                              _committeeLocation(pkg, f.itemId),
                               overflow: TextOverflow.ellipsis,
                               style: TextStyle(
                                   color: context.colors.textSecondary,
                                   fontSize: 12))),
-                          DataCell(_CommitteeValuationCell(f: f, qty: qty)),
+                          DataCell(_CommitteeValuationCell(
+                              f: f,
+                              qty: qty,
+                              sealedUntilSale:
+                                  info.latestSale?.saleTimePassed == false)),
                           DataCell(Center(
                             child: Container(
                               padding: const EdgeInsets.symmetric(
@@ -363,9 +380,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                           // final valuation. Nothing until a committee exists.
                           DataCell(Center(
                             child: _CommitteeRoundValueCell(
-                                info: info,
-                                qty: qty,
-                                committee: committee),
+                                info: info, qty: qty, committee: committee),
                           )),
                           DataCell(Center(
                             child: IconButton(
@@ -383,11 +398,14 @@ class TenderCommitteeTab extends ConsumerWidget {
                                           useLegacySummary: true,
                                           highlightItemId: f.itemId,
                                           yardLabel: yardName(f.yard),
+                                          valuationSealedUntilSale:
+                                              info.latestSale?.saleTimePassed ==
+                                                  false,
                                           valuationUnitCost: f.valuationCost,
-                                          valuationTotalCost:
-                                              f.valuationCost != null
-                                                  ? f.valuationCost! * (qty ?? 1)
-                                                  : null,
+                                          valuationTotalCost: f.valuationCost !=
+                                                  null
+                                              ? f.valuationCost! * (qty ?? 1)
+                                              : null,
                                           valuationQty: qty,
                                         ),
                                       ),
@@ -422,14 +440,13 @@ class _CommitteeYardFilter extends StatelessWidget {
       width: 220,
       child: Theme(
         data: Theme.of(context).copyWith(
-          inputDecorationTheme:
-              Theme.of(context).inputDecorationTheme.copyWith(
-                    filled: true,
-                    fillColor: accent.withOpacity(0.06),
-                    border: border(accent.withOpacity(0.4)),
-                    enabledBorder: border(accent.withOpacity(0.4)),
-                    focusedBorder: border(accent, 1.5),
-                  ),
+          inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
+                filled: true,
+                fillColor: accent.withOpacity(0.06),
+                border: border(accent.withOpacity(0.4)),
+                enabledBorder: border(accent.withOpacity(0.4)),
+                focusedBorder: border(accent, 1.5),
+              ),
         ),
         child: StyledDropdownFormField<String>(
           value: value ?? '_all',
@@ -439,8 +456,7 @@ class _CommitteeYardFilter extends StatelessWidget {
           menuWidth: 220,
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          prefixIcon:
-              Icon(Icons.warehouse_rounded, color: accent, size: 20),
+          prefixIcon: Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
             for (final y in kYards) StyledDropdownOption(y.code, y.name),
@@ -702,8 +718,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
           // or more — up to 10.
           Row(children: [
             TextButton.icon(
-              onPressed:
-                  (_saving || _count >= _maxCount) ? null : _addMember,
+              onPressed: (_saving || _count >= _maxCount) ? null : _addMember,
               icon: const Icon(Icons.person_add_alt_1_rounded, size: 17),
               style: TextButton.styleFrom(foregroundColor: accent),
               label: const Text('Add member',
@@ -721,8 +736,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
             maxLines: 4,
             keyboardType: TextInputType.multiline,
             textCapitalization: TextCapitalization.sentences,
-            style: TextStyle(
-                color: context.colors.textPrimary, fontSize: 13),
+            style: TextStyle(color: context.colors.textPrimary, fontSize: 13),
             decoration: InputDecoration(
               isDense: true,
               labelText: 'Note (optional)',
@@ -819,15 +833,16 @@ Widget _memberTile(int no, CommitteeMember m, Color accent) {
   return Builder(builder: (context) {
     final sub = [
       if (m.designation?.trim().isNotEmpty == true) m.designation!.trim(),
-      if (m.salaryNo?.trim().isNotEmpty == true) 'Salary No: ${m.salaryNo!.trim()}',
+      if (m.salaryNo?.trim().isNotEmpty == true)
+        'Salary No: ${m.salaryNo!.trim()}',
     ].join('  ·  ');
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       Container(
         width: 30,
         height: 30,
         alignment: Alignment.center,
-        decoration:
-            BoxDecoration(color: accent.withOpacity(0.12), shape: BoxShape.circle),
+        decoration: BoxDecoration(
+            color: accent.withOpacity(0.12), shape: BoxShape.circle),
         child: Text('$no',
             style: TextStyle(
                 color: accent, fontSize: 13, fontWeight: FontWeight.w800)),
@@ -912,8 +927,7 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
 
     // 1 ── Nobody appointed yet, so there is nothing to value.
     if (c == null || c.members.isEmpty) {
-      return _waitingChip(
-          context, 'Appoint first', Icons.group_add_rounded,
+      return _waitingChip(context, 'Appoint first', Icons.group_add_rounded,
           context.colors.textSecondary);
     }
 
@@ -938,8 +952,8 @@ class _CommitteeRoundValueCell extends ConsumerWidget {
         label: const Text('Enter Value', style: TextStyle(fontSize: 12)),
         onPressed: () => showDialog(
           context: context,
-          builder: (_) => _CommitteeValuationDialog(
-              info: info, qty: effQty, committee: c),
+          builder: (_) =>
+              _CommitteeValuationDialog(info: info, qty: effQty, committee: c),
         ),
       );
     }
@@ -1129,8 +1143,8 @@ class _CommitteeValuationDialogState
     }
   }
 
-  void _ok(String m) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(m), backgroundColor: context.colors.successGreen));
+  void _ok(String m) => ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(m), backgroundColor: context.colors.successGreen));
   void _err(String m) => ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(m), backgroundColor: context.colors.dangerRed));
 
@@ -1244,8 +1258,8 @@ class _CommitteeValuationDialogState
               TextField(
                 controller: _noteCtrl,
                 enabled: isAdg,
-                style: TextStyle(
-                    color: context.colors.textPrimary, fontSize: 13),
+                style:
+                    TextStyle(color: context.colors.textPrimary, fontSize: 13),
                 minLines: 2,
                 maxLines: 4,
                 keyboardType: TextInputType.multiline,
@@ -1320,8 +1334,7 @@ class _CommitteeValuationDialogState
           FilledButton(
             onPressed: (_saving || _typed == null) ? null : _submitAsFinal,
             style: FilledButton.styleFrom(
-                backgroundColor: accent,
-                visualDensity: VisualDensity.compact),
+                backgroundColor: accent, visualDensity: VisualDensity.compact),
             child: _saving
                 ? const SizedBox(
                     width: 16,

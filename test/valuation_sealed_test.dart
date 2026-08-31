@@ -124,4 +124,57 @@ void main() {
           reason: 'All three portals share this one cell.');
     });
   });
+
+  // The user walked through the whole disposal workflow to check it: Valuation
+  // Tender + Tenders 1-3 (Valuation Directorate prices each), then a Top
+  // Management committee, then ONE more tender at the committee's price, and
+  // only if THAT fails does the package reach the DG's Unsold Goods table.
+  // These pin the two rules that ordering depends on.
+  group('the disposal workflow gates', () {
+    final services = File('lib/services/services.dart').readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('a committee is appointed only after 4 failed rounds', () {
+      // Valuation Tender + Tender 1 + 2 + 3.
+      expect(flat(services),
+          contains('all.where((i) => i.tenderCount >= 4).toList()'));
+    });
+
+    test('the DG sees a package only after the committee-priced tender fails',
+        () {
+      // Reaching the DG the moment the ADG submitted would have put the final
+      // outcome of a package that still had a live chance of selling in front
+      // of them.
+      expect(flat(services),
+          contains('i.sales.any((s) => s.createdAt.isAfter(submittedAt))'));
+    });
+  });
+
+  // "කොහේවත්" — nowhere. Any popup that is handed a valuation must also be
+  // handed the gate, or the reserve price leaks through the details dialog.
+  test('every valuation-bearing popup passes the seal', () {
+    final leaks = <String>[];
+    for (final path in [
+      'lib/screens/disposal/disposal_dashboard_screen.dart',
+      'lib/screens/executive/tender_committee_tab.dart',
+      'lib/screens/executive/unsold_decision_tab.dart',
+      'lib/screens/packages/unsold_packages_screen.dart',
+    ]) {
+      final lines = File(path).readAsLinesSync();
+      for (var i = 0; i < lines.length; i++) {
+        if (!lines[i].contains('valuationUnitCost:')) continue;
+        final lo = i - 30 < 0 ? 0 : i - 30;
+        final hi = i + 30 > lines.length ? lines.length : i + 30;
+        final block = lines.sublist(lo, hi).join('\n');
+        if (block.contains('valuationSealedUntilSale')) continue;
+        // Disposal Requests is the one legitimate exception: it is the stage
+        // BEFORE any tender exists, so there is no round to seal against.
+        if (block.contains('valuationUnitCost: it.unitCost')) continue;
+        leaks.add('$path:${i + 1}');
+      }
+    }
+    expect(leaks, isEmpty,
+        reason: 'These popups show a valuation with no seal:\n'
+            '${leaks.join('\n')}');
+  });
 }
