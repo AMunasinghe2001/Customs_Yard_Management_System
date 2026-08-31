@@ -278,12 +278,12 @@ void main() {
           reason: 'That shift printed each price against the wrong round.');
     });
 
-    test('a next-round tile appears only on an explicit flag', () {
+    test('a next-round tile appears only for a PENDING row', () {
       // The old one was INFERRED from a re-valuation on the last round, which
       // was the shifted reading. The caller now states it outright, and the
       // figure itself never reaches the widget — only the fact that one is
       // set — so a sealed row can say so without carrying the reserve price.
-      expect(flat(dialog), contains('if (nextTenderValued) {'));
+      expect(flat(dialog), contains("if (revals[''] != null) {"));
       expect(flat(dialog), isNot(contains('final pending = revals[lastId]')));
     });
 
@@ -395,8 +395,15 @@ void main() {
           contains("revals[''] != null || (current != null && revals[current] != null)"));
     });
 
-    test('the popup gets a sealed row for the next tender', () {
-      expect(flat(dashboard), contains('nextTenderValued: eligible.contains(f.id)'));
+    test('the history detects the pending row itself', () {
+      // Derived inside TenderHistorySection, not passed by each caller, so
+      // EVERY popup that shows tender history gets the sealed row.
+      final dialog = File('lib/widgets/package_details_dialog.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(dialog, contains("if (revals[''] != null) {"));
+      expect(dialog, isNot(contains('nextTenderValued')),
+          reason: 'Two sources of truth would drift.');
     });
   });
 
@@ -440,5 +447,31 @@ void main() {
     expect(dashboard, contains('_nextTenderValuationSection(),'));
     expect(dashboard, contains("if (revals[''] == null) return const SizedBox.shrink()"),
         reason: 'A round-keyed figure belongs to that round, shown above.');
+  });
+
+  // Saving a valuation left the Valuation Directorate's own row reading
+  // "Set Value", and Central Disposal's Record Bids dialog went on offering
+  // "Add bid" for a round that was already priced.
+  group('a pending valuation takes effect everywhere at once', () {
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('saving refreshes the providers the tables actually read', () {
+      final valuation = flat(
+          File('lib/screens/valuation/valuation_dashboard_screen.dart')
+              .readAsStringSync());
+      expect(valuation, contains('ref.invalidate(valuedCurrentRoundProvider)'));
+      expect(valuation, contains('ref.invalidate(reTenderEligibleProvider)'),
+          reason: 'Central Disposal reads a third provider again.');
+    });
+
+    test('bids close once a figure is issued, pending or not', () {
+      final dashboard = flat(
+          File('lib/screens/disposal/disposal_dashboard_screen.dart')
+              .readAsStringSync());
+      expect(
+          dashboard,
+          contains("bool get _currentRoundLocked => _revals[''] != null || "
+              "_revals[_current.id] != null"));
+    });
   });
 }

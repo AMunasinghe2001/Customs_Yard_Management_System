@@ -1453,6 +1453,11 @@ class _ValBidsAndRevalDialogState
             yard: widget.info.forfeited.yard,
           );
       ref.invalidate(tenderRevaluationsProvider(widget.info.forfeited.id));
+      // The table's Set Value / amount chip reads a DIFFERENT provider, and
+      // Central Disposal's re-tender eligibility a third. Without these the
+      // row still read "Set Value" straight after saving.
+      ref.invalidate(valuedCurrentRoundProvider);
+      ref.invalidate(reTenderEligibleProvider);
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(

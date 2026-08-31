@@ -2558,10 +2558,6 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                       valuationQty: f.entryQty,
                                       // Sealed while the newest round is open.
                                       valuationSealedUntilSale: info.latestSale?.saleTimePassed == false,
-                                      // "Re-valued": the next tender is
-                                      // already priced, so the history says a
-                                      // withheld figure exists.
-                                      nextTenderValued: eligible.contains(f.id),
                                     ),
                                   ),
                                 )
@@ -5221,7 +5217,14 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// are evidence for a decision already taken — editing them would leave the
   /// valuation resting on numbers that no longer exist. The round becomes
   /// read-only; the next round's bids go on the next round.
-  bool get _currentRoundLocked => _revals[_current.id] != null;
+  /// Bids close once the Valuation Directorate has issued a figure.
+  ///
+  /// ⚠️ A newly-set figure is stored PENDING (no round yet, key '') so it
+  /// cannot overwrite a finished round's price — reading only
+  /// `_revals[_current.id]` misses it, and the dialog then went on offering
+  /// "Add bid" and "Save Bids" for a round that was already priced.
+  bool get _currentRoundLocked =>
+      _revals[''] != null || _revals[_current.id] != null;
 
   /// The saved bids of a locked round, shown as read-only chips (highest first)
   /// — the same presentation a past round gets.
