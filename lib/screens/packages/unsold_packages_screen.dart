@@ -413,9 +413,11 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                       // The Top Management committee's figure,
                                       // when one exists — it supersedes the
                                       // original valuation for these packages.
+                                      // The SUBMITTED figure: what the
+                                      // package was actually tendered at.
                                       committeeUnitValue:
                                           committees[info.forfeited.id]
-                                              ?.committeeValue,
+                                              ?.submittedValue,
                                       // Plain text on the yard table — the
                                       // green highlight is for the portals
                                       // that act on the money.

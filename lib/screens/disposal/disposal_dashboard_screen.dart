@@ -624,8 +624,10 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                   context,
                                   info: info,
                                   srColor: blue,
+                                  // The SUBMITTED figure: what the package
+                                  // was actually tendered at.
                                   committeeUnitValue:
-                                      committees[f.id]?.committeeValue,
+                                      committees[f.id]?.submittedValue,
                                   // READ-ONLY: the DG decides the outcome,
                                   // this directorate carries it out.
                                   outcome: proposalFilter == null

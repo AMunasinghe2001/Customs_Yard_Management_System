@@ -205,11 +205,19 @@ List<DataCell> unsoldCells(
   required Widget outcome,
   required VoidCallback? onDetails,
 
-  /// The Top Management tender committee's valuation for this package, when
-  /// one has been set. It supersedes the original: by the time a package is
-  /// unsold it has been through the Valuation tender, up to three re-valued
-  /// rounds and then the committee, and the committee's figure is what the
-  /// final outcome is decided on.
+  /// The price this package was LAST TENDERED AT by the committee round —
+  /// the ADG's **submitted** value, not the committee's bare recommendation.
+  ///
+  /// ⚠️ Pass `submittedValue`, never `committeeValue` on its own. A recorded
+  /// committee figure with no submission is a reserve price that has not been
+  /// tendered yet, and printing it here would leak it. Every row in this table
+  /// comes from `exhaustedUnsoldProvider`, which already requires the ADG's
+  /// submission, so the submitted value is always the one to show.
+  ///
+  /// It supersedes the original: by the time a package is unsold it has been
+  /// through the Valuation tender, up to three re-valued rounds and then the
+  /// committee round, and the committee's figure is the last price it was
+  /// actually offered at.
   double? committeeUnitValue,
 
   /// Colour of the Valuation figure. The directorate tables highlight it in
@@ -224,11 +232,19 @@ List<DataCell> unsoldCells(
   final unit = committeeUnitValue ?? f.valuationCost;
   final value = unit != null ? unit * qty : null;
   final isCommittee = committeeUnitValue != null;
-  // A package listed here has usually been re-valued and entered into ANOTHER
-  // tender round. While that newest round is still open the figure is a live
-  // reserve price, so it stays sealed. Derived from `info` rather than passed
-  // in, so no caller can forget it.
-  final currentSale = info.latestSale;
+  // Sealed while the newest round is still to be held: its reserve price is
+  // live until bidding closes. Derived from `info` rather than passed in, so
+  // no caller can forget it. Ordered by the sale MOMENT — `latestSale` is
+  // newest-by-created_at, and those two can disagree.
+  final currentSale = info.sales.isEmpty
+      ? null
+      : (info.sales.toList()
+            ..sort((a, b) {
+              final am = a.saleMoment, bm = b.saleMoment;
+              if (am == null || bm == null) return 0;
+              return am.compareTo(bm);
+            }))
+          .last;
   final sealed = currentSale != null && !currentSale.saleTimePassed;
   // The yard belongs in the row's tooltip, not its own column: the yard page
   // shows one yard only, and the other two portals have a Yard dropdown.

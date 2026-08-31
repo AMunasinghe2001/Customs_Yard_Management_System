@@ -297,4 +297,39 @@ void main() {
           reason: 'Sealing must follow the round clock, nothing else.');
     });
   });
+
+  // The Unsold table (yard, Central Disposal and Top Management all share
+  // unsoldCells) showed `committeeValue` — the committee's bare recommendation.
+  // A recorded committee figure with no ADG submission is a reserve price that
+  // has NOT been tendered, so printing it would leak it.
+  group('the Unsold table shows the price actually tendered', () {
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('all three portals pass the SUBMITTED value', () {
+      for (final path in [
+        'lib/screens/disposal/disposal_dashboard_screen.dart',
+        'lib/screens/executive/unsold_decision_tab.dart',
+        'lib/screens/packages/unsold_packages_screen.dart',
+      ]) {
+        final src = File(path).readAsStringSync();
+        final i = src.indexOf('committeeUnitValue:');
+        expect(i, greaterThan(-1), reason: path);
+        // Read the argument itself rather than matching a formatted string:
+        // the line wrapping puts a space before "?." and defeats that.
+        final arg = src.substring(i, i + 400).replaceAll(RegExp(r'\s+'), '');
+        expect(arg, contains('?.submittedValue'), reason: path);
+        expect(arg, isNot(contains('?.committeeValue')),
+            reason: '\$path shows a committee price that was never tendered.');
+      }
+    });
+
+    test('sealing there orders rounds by the sale moment', () {
+      // latestSale is newest-by-created_at, and the two can disagree.
+      final shared =
+          flat(File('lib/screens/executive/unsold_shared.dart').readAsStringSync());
+      expect(shared, contains('final am = a.saleMoment, bm = b.saleMoment'));
+      expect(shared,
+          contains('final sealed = currentSale != null && !currentSale.saleTimePassed'));
+    });
+  });
 }

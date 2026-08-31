@@ -211,9 +211,11 @@ class UnsoldDecisionTab extends ConsumerWidget {
                                 cells: unsoldCells(
                                   context,
                                   info: info,
+                                  // The SUBMITTED figure: what the package
+                                  // was actually tendered at.
                                   committeeUnitValue:
                                       committees[info.forfeited.id]
-                                          ?.committeeValue,
+                                          ?.submittedValue,
                                   srColor: accent,
                                   outcome: Center(
                                     child: _DecisionCell(
