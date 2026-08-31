@@ -278,10 +278,13 @@ void main() {
           reason: 'That shift printed each price against the wrong round.');
     });
 
-    test('the history has no phantom "next round" tile', () {
-      // It only existed because of the shifted reading.
-      expect(flat(dialog),
-          isNot(contains('label: tenderRoundLabel(ordered.length + 1)')));
+    test('a next-round tile appears only on an explicit flag', () {
+      // The old one was INFERRED from a re-valuation on the last round, which
+      // was the shifted reading. The caller now states it outright, and the
+      // figure itself never reaches the widget — only the fact that one is
+      // set — so a sealed row can say so without carrying the reserve price.
+      expect(flat(dialog), contains('if (nextTenderValued) {'));
+      expect(flat(dialog), isNot(contains('final pending = revals[lastId]')));
     });
 
     test('the table seals only while the newest round is still to run', () {
@@ -330,6 +333,70 @@ void main() {
       expect(shared, contains('final am = a.saleMoment, bm = b.saleMoment'));
       expect(shared,
           contains('final sealed = currentSale != null && !currentSale.saleTimePassed'));
+    });
+  });
+
+  // Setting a new valuation used to OVERWRITE the round it was decided from,
+  // destroying the price that round actually went to tender at. Live damage:
+  // CED/GL1/SR/20/2026 round R018 ran at 5,400 and 6,800 per unit, a new
+  // valuation of 5,000 was saved against it, and the history then read 5,000
+  // for both. A new figure is now stored PENDING (tender_sale_id NULL) and is
+  // claimed by the next round when the package is re-tendered.
+  group('a new valuation never rewrites a finished round', () {
+    final services = File('lib/services/services.dart').readAsStringSync();
+    final valuation =
+        File('lib/screens/valuation/valuation_dashboard_screen.dart')
+            .readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('the dialog stores it pending once the round has run', () {
+      expect(flat(valuation),
+          contains('_current.saleTimePassed ? null : _current.id'));
+    });
+
+    test('the service accepts a null round and deletes the pending row', () {
+      expect(flat(services),
+          contains('String forfeitedPackageId, String? tenderSaleId'));
+      expect(flat(services),
+          contains("del.isNull('tender_sale_id') : del.eq('tender_sale_id'"));
+    });
+
+    test('re-tendering claims the pending valuation for the new round', () {
+      // Otherwise the new round would carry no reserve and the pending row
+      // would linger against every future tender.
+      expect(flat(services),
+          contains("update({'tender_sale_id': saleId})"));
+      expect(flat(services), contains(".isNull('tender_sale_id')"));
+    });
+
+    test('eligibility recognises a pending valuation', () {
+      expect(flat(services), contains('final pending = saleId == null'));
+    });
+  });
+
+  // "Re-valued" and "Committee valued" both mean a price is set for a tender
+  // that has NOT been held, so the figure is a live reserve.
+  group('a price for an unheld tender is sealed', () {
+    final dashboard =
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('the table seals Re-valued and Committee valued', () {
+      expect(
+          flat(dashboard),
+          contains('sealed = !ordered.last.saleTimePassed || reTenderable || '
+              'committee?.committeeValue != null'));
+      expect(flat(dashboard), contains('reTenderable: eligible.contains(f.id)'));
+    });
+
+    test('the chip counts a pending valuation too', () {
+      expect(flat(dashboard),
+          contains("revals[''] != null || (current != null && revals[current] != null)"));
+    });
+
+    test('the popup gets a sealed row for the next tender', () {
+      expect(flat(dashboard), contains('nextTenderValued: eligible.contains(f.id)'));
     });
   });
 }

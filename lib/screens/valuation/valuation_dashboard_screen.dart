@@ -1443,7 +1443,11 @@ class _ValBidsAndRevalDialogState
     try {
       await ref.read(disposalServiceProvider).saveTenderRevaluation(
             widget.info.forfeited.id,
-            _current.id,
+            // A round that has already RUN keeps the price it went to tender
+            // at — writing over it would destroy that record. The new figure
+            // is the price for the NEXT tender, so it is stored pending and
+            // attached to the round when the package is re-tendered.
+            _current.saleTimePassed ? null : _current.id,
             cost,
             note: _noteCtrl.text,
             yard: widget.info.forfeited.yard,

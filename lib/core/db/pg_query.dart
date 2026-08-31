@@ -134,6 +134,11 @@ class PgQuery implements Future<dynamic> {
   PgQuery is_(String column, Object? value) =>
       _add(_Filter(column, 'is', value));
 
+  /// `column IS NULL`. `eq(column, null)` cannot express this — it compiles to
+  /// `= NULL`, which is never true — so this goes through the raw escape hatch.
+  PgQuery isNull(String column) =>
+      _add(_Filter(column, 'raw', null, raw: '"$column" is null'));
+
   PgQuery inFilter(String column, List<Object?> values) =>
       _add(_Filter(column, 'in', values));
 

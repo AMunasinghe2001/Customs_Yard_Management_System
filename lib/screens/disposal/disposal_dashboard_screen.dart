@@ -2515,6 +2515,9 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                 fontSize: 12))),
                         DataCell(_UnsoldValuationCell(
                             info: info,
+                            // The same signal the Re-valuation chip uses, so
+                            // the two columns can never disagree.
+                            reTenderable: eligible.contains(f.id),
                             qty: f.entryQty ?? item?.quantity)),
                         DataCell(Center(
                           child: _AttemptsBadge(
@@ -2555,6 +2558,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                       valuationQty: f.entryQty,
                                       // Sealed while the newest round is open.
                                       valuationSealedUntilSale: info.latestSale?.saleTimePassed == false,
+                                      // "Re-valued": the next tender is
+                                      // already priced, so the history says a
+                                      // withheld figure exists.
+                                      nextTenderValued: eligible.contains(f.id),
                                     ),
                                   ),
                                 )
@@ -4406,13 +4413,21 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
 class _UnsoldValuationCell extends ConsumerWidget {
   final ReTenderSaleInfo info;
   final int? qty;
-  const _UnsoldValuationCell({required this.info, this.qty});
+  /// True when the package can be re-tendered NOW — the "Re-valued" chip.
+  /// The Valuation Directorate has priced the next tender, so that price is a
+  /// live reserve and stays sealed.
+  final bool reTenderable;
+  const _UnsoldValuationCell(
+      {required this.info, this.reTenderable = false, this.qty});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final f = info.forfeited;
     final revals =
         ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
+    final committee =
+        ref.watch(tenderCommitteesProvider).valueOrNull?[f.id];
+
     // A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS
     // KEYED TO — proven against live data, see TenderHistorySection. So the
     // LATEST valuation is simply the newest round's own figure, and the only
@@ -4431,9 +4446,20 @@ class _UnsoldValuationCell extends ConsumerWidget {
     if (ordered.isEmpty) {
       unit = f.valuationCost;
     } else {
-      // Sealed while the newest round is still to run: its reserve price is
-      // live. Once it has run the figure is history and may be shown.
-      sealed = !ordered.last.saleTimePassed;
+      // Sealed whenever a price exists for a tender that has NOT been held:
+      //   * the newest round is still to run — its reserve is live; or
+      //   * the package is re-tenderable ("Re-valued"): the Valuation
+      //     Directorate has priced the next tender; or
+      //   * a committee figure is set ("Committee valued") — a package leaves
+      //     this table once its committee-priced tender has run, so while it
+      //     is here that price is still to come.
+      //
+      // NOT "Awaiting ADG": re-valued but past Tender 3, so it cannot be
+      // re-tendered until the committee and the ADG act. Nothing is pending
+      // and the last concluded price is safe to show.
+      sealed = !ordered.last.saleTimePassed ||
+          reTenderable ||
+          committee?.committeeValue != null;
       for (var i = ordered.length - 1; i >= 0; i--) {
         final own = revals[ordered[i].id]?.valuationCost;
         if (own != null) {
@@ -4547,7 +4573,10 @@ class _ReTenderStatusCell extends ConsumerWidget {
     final committees =
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
 
-    final hasReval = current != null && revals[current] != null;
+    // A PENDING valuation (no round yet, key '') is a price set for the NEXT
+    // tender; the older shape keys it to the current round. Either counts.
+    final hasReval =
+        revals[''] != null || (current != null && revals[current] != null);
     // A committee value counts as "valued" even before the ADG submits it —
     // that is exactly the "Committee valued" state.
     final hasCommitteeValue = committees[fpId]?.committeeValue != null;

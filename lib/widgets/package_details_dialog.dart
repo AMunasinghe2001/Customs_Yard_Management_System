@@ -166,7 +166,17 @@ class TenderHistorySection extends ConsumerWidget {
   /// Quantity this row covers, so a per-item unit price can be totalled.
   final int? qty;
 
-  const TenderHistorySection({super.key, required this.forfeited, this.qty});
+  /// True when the Valuation Directorate has priced the NEXT tender and that
+  /// tender has not been held ("Re-valued"). The figure itself is never passed
+  /// in — only the fact that one exists — so a sealed block can say so without
+  /// the reserve price passing through the widget at all.
+  final bool nextTenderValued;
+
+  const TenderHistorySection(
+      {super.key,
+      required this.forfeited,
+      this.qty,
+      this.nextTenderValued = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -285,6 +295,21 @@ class TenderHistorySection extends ConsumerWidget {
             : [for (final b in roundBids) 'LKR ${money.format(b)}'],
       ));
     }
+    // The NEXT tender's price, when one is already set. Mirrors the committee
+    // block: it says a figure exists and is withheld, without carrying it.
+    if (nextTenderValued) {
+      rows.add(_TenderRoundTile(
+        sealed: true,
+        label: tenderRoundLabel(ordered.length + 1),
+        isCommitteeRound: false,
+        committeeMembers: const [],
+        committeeLoading: false,
+        priceLabel: null,
+        revalued: true,
+        bids: const [],
+      ));
+    }
+
     if (rows.isEmpty) return const SizedBox.shrink();
 
     return _DetailSection(
@@ -555,6 +580,10 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   /// notice — see [valuationSealed].
   final bool valuationSealedUntilSale;
 
+  /// The Valuation Directorate has priced the NEXT tender and it has not been
+  /// held. Adds a sealed row to the Tender History saying so.
+  final bool nextTenderValued;
+
   // Optional generic footer action (e.g. the Appeal Directorate's "Hold Appeal"
   // / "Release"). When [footerActionLabel] is set, a button is shown in the
   // dialog footer — styled like the Final Disposition footer — that calls
@@ -620,6 +649,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.valuationTotalCost,
     this.valuationQty,
     this.valuationSealedUntilSale = false,
+    this.nextTenderValued = false,
     this.footerActionLabel,
     this.footerActionIcon,
     this.footerActionColor,
@@ -2323,6 +2353,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           TenderHistorySection(
                             forfeited: widget.tenderHistoryFor!,
                             qty: widget.valuationQty,
+                            nextTenderValued: widget.nextTenderValued,
                           ),
                         if (!widget.useWarehouseSummary)
                           _DetailSection(

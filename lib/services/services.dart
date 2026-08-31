@@ -4795,8 +4795,15 @@ class DisposalService {
     for (final e in (revals as List)) {
       final fpId = e['forfeited_package_id'] as String;
       final saleId = e['tender_sale_id'] as String?;
-      if (saleId == null || latestRound[fpId] != saleId) continue;
-      if (!bidRounds.contains('$fpId|$saleId')) continue;
+      // A PENDING row (null round) is a price set for the next tender — the
+      // package is ready to be re-tendered at it. A row keyed to the latest
+      // round is the older shape, kept working for existing data.
+      final pending = saleId == null;
+      if (!pending && latestRound[fpId] != saleId) continue;
+      // The bids that informed the decision belong to the latest round either
+      // way, so check that round in both cases.
+      final bidRound = pending ? latestRound[fpId] : saleId;
+      if (!bidRounds.contains('$fpId|$bidRound')) continue;
       if (decidedIds.contains(fpId)) continue;
       if (exhaustedIds.contains(fpId)) continue;
       // Committee stage: needs the ADG's submission, not just any valuation.
@@ -4930,15 +4937,30 @@ class DisposalService {
     return chains;
   }
 
-  /// Set / replace the Valuation Directorate's re-valuation for ONE tender round.
+  /// Set / replace the Valuation Directorate's re-valuation.
+  ///
+  /// ⚠️ [tenderSaleId] must be **null** when the round it was decided from has
+  /// already RUN. A `tender_revaluations` row is the reserve price OF THE ROUND
+  /// IT IS KEYED TO, so writing a new figure against a finished round rewrites
+  /// what that round actually went to tender at. That is exactly what happened
+  /// to CED/GL1/SR/20/2026: round R018 ran at 5,400 and 6,800 per unit, a new
+  /// valuation of 5,000 was saved against it, and the history then read 5,000
+  /// for both — the real prices were gone.
+  ///
+  /// A null round means "the price for the NEXT tender, not yet placed". It is
+  /// attached to the new round by [createTenderSale] when the package is
+  /// re-tendered, which is the moment it stops being pending and starts being
+  /// that round's reserve.
   Future<void> saveTenderRevaluation(
-      String forfeitedPackageId, String tenderSaleId, double valuationCost,
+      String forfeitedPackageId, String? tenderSaleId, double valuationCost,
       {String? note, String? yard}) async {
-    await AuthService._withNetworkRetry(() => supabase
+    final del = supabase
         .from('tender_revaluations')
         .delete()
-        .eq('forfeited_package_id', forfeitedPackageId)
-        .eq('tender_sale_id', tenderSaleId));
+        .eq('forfeited_package_id', forfeitedPackageId);
+    await AuthService._withNetworkRetry(() => tenderSaleId == null
+        ? del.isNull('tender_sale_id')
+        : del.eq('tender_sale_id', tenderSaleId));
     final uid = supabase.auth.currentUser?.id;
     await AuthService._withNetworkRetry(
         () => supabase.from('tender_revaluations').insert({
@@ -5345,6 +5367,19 @@ class DisposalService {
           .upsert(rows,
               onConflict:
                   'tender_sale_id,forfeited_package_id,package_item_id'));
+
+      // A pending re-valuation (tender_sale_id NULL) is the price the
+      // Valuation Directorate set for the NEXT tender — this one. Claim it for
+      // this round, so it becomes that round's reserve and stops being
+      // pending. Without this the new round would carry no reserve at all and
+      // the pending row would linger against every future tender.
+      for (final fpId in packageYards.keys) {
+        await AuthService._withNetworkRetry(() => supabase
+            .from('tender_revaluations')
+            .update({'tender_sale_id': saleId})
+            .eq('forfeited_package_id', fpId)
+            .isNull('tender_sale_id'));
+      }
     }
 
     if (user != null) {
