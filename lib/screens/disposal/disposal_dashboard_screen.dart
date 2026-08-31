@@ -7215,12 +7215,25 @@ class _ValuationCell extends StatelessWidget {
           : fp.packageDetails?.items.firstOrNull;
       final unitValue = item?.unitValue ?? 0;
       final total = unitValue * effQty;
-      return Text(
-        'LKR ${fmt.format(total)}',
-        style: TextStyle(
-            color: context.colors.textPrimary,
-            fontWeight: FontWeight.w700,
-            fontSize: 12),
+      // Same "@ unit × qty" breakdown Central Disposal's own column uses, so
+      // a bare total here doesn't read as a different, less detailed figure.
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            'LKR ${fmt.format(total)}',
+            style: TextStyle(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 12),
+          ),
+          Text(
+            '@ ${fmt.format(unitValue)} × $effQty',
+            style: TextStyle(color: context.colors.textMuted, fontSize: 10),
+          ),
+        ],
       );
     }
 

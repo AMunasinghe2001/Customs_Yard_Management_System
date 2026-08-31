@@ -633,4 +633,19 @@ void main() {
       expect(dash, isNot(contains('if (sealedUntilSale && !useItemValue)')));
     });
   });
+
+  test('the yard declared-value column shows the unit x qty breakdown', () {
+    // Central Disposal's own column already reads "LKR total" over
+    // "@ unit x qty"; the yard's view showed only the bare total, which read
+    // as a less detailed, different kind of figure rather than the same
+    // shape of number.
+    final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync()
+        .replaceAll(RegExp(r'\s+'), ' ');
+    expect(
+        dash,
+        contains(r"'@ ${fmt.format(unitValue)} × $effQty',"),
+        reason: 'The item-value branch must show the same breakdown as the '
+            'directorate branch below it.');
+  });
 }
