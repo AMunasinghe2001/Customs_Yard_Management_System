@@ -12,6 +12,7 @@ import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
+import '../../widgets/sealed_valuation.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import 'disposal_shared.dart';
@@ -3060,6 +3061,8 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                           child: _ValuationCell(
                               f: f,
                               useItemValue: widget.readOnly,
+                              // Same clock that gates Mark Sold below.
+                              sealedUntilSale: !widget.sale.saleTimePassed,
                               qty: f?.entryQty ?? r.item?.quantity))),
                       DataCell(Center(
                         child: r.saleItem.sold
@@ -3153,6 +3156,12 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     valuationQty: widget.readOnly
                                         ? null
                                         : (f?.entryQty ?? r.item?.quantity),
+                                    // Sealed until the sale has run — the
+                                    // popup is just another way to read the
+                                    // same reserve price.
+                                    valuationSealedUntilSale:
+                                        !widget.readOnly &&
+                                            !widget.sale.saleTimePassed,
                                   ),
                                 ),
                               )
@@ -5625,6 +5634,9 @@ class DestructionCard extends ConsumerWidget {
                           child: _ValuationCell(
                         f: f,
                         useItemValue: readOnly,
+                        // Hidden until the destruction sale has actually run —
+                        // same rule as the tender sale card.
+                        sealedUntilSale: !sale.saleTimePassed,
                         qty: f?.entryQty ?? r.item?.quantity,
                       ))),
                       DataCell(Center(
@@ -5735,6 +5747,9 @@ class DestructionCard extends ConsumerWidget {
                                     valuationQty: readOnly
                                         ? null
                                         : (f?.entryQty ?? r.item?.quantity),
+                                    // Sealed until the destruction sale runs.
+                                    valuationSealedUntilSale:
+                                        !readOnly && !sale.saleTimePassed,
                                   ),
                                 ),
                               )
@@ -6918,15 +6933,28 @@ class _ValuationCell extends StatelessWidget {
   /// re-valuation on the Unsold Tenders page.
   final double? overrideUnitCost;
   final bool isRevalued;
+
+  /// True while the goods are in a tender/destruction sale that has NOT yet
+  /// run. The valuation is the reserve price, so it stays hidden until then —
+  /// see [valuationSealed]. Defaults to false: the many places that show a
+  /// valuation with no live sale (unsold pools, re-valuation, committee work)
+  /// have nothing to protect.
+  final bool sealedUntilSale;
   const _ValuationCell(
       {required this.f,
       this.useItemValue = false,
       this.qty,
       this.overrideUnitCost,
-      this.isRevalued = false});
+      this.isRevalued = false,
+      this.sealedUntilSale = false});
 
   @override
   Widget build(BuildContext context) {
+    // Sealed while the sale is still open. Checked first so the figure is
+    // never even computed, let alone rendered.
+    if (sealedUntilSale && !useItemValue) {
+      return const SealedValuation(compact: true);
+    }
     final fp = f;
     if (fp == null) {
       return Text('—', style: TextStyle(color: context.colors.textMuted));

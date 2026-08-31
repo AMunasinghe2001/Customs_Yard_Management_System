@@ -1,3 +1,4 @@
+import 'sealed_valuation.dart';
 import 'package:flutter/material.dart' as material;
 import 'package:flutter/material.dart'
     show
@@ -504,6 +505,12 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   final double? valuationTotalCost;
   final int? valuationQty;
 
+  /// True while the goods are still in a tender/destruction sale that has not
+  /// yet run. The valuation is the reserve price, so the whole Valuation
+  /// section AND the per-round tender history are replaced by a "sealed"
+  /// notice — see [valuationSealed].
+  final bool valuationSealedUntilSale;
+
   // Optional generic footer action (e.g. the Appeal Directorate's "Hold Appeal"
   // / "Release"). When [footerActionLabel] is set, a button is shown in the
   // dialog footer — styled like the Final Disposition footer — that calls
@@ -568,6 +575,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.valuationUnitCost,
     this.valuationTotalCost,
     this.valuationQty,
+    this.valuationSealedUntilSale = false,
     this.footerActionLabel,
     this.footerActionIcon,
     this.footerActionColor,
@@ -2199,7 +2207,36 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         // Valuation Directorate cost (Central Disposal /
                         // Valuation request popups) — shown next to the package's
                         // own declared value.
-                        if (widget.valuationUnitCost != null)
+                        // Sealed while the sale is still open: show that the
+                        // figure is deliberately withheld, not simply missing.
+                        if (widget.valuationSealedUntilSale)
+                          _DetailSection(
+                            title: 'Valuation',
+                            icon: Icons.lock_outline_rounded,
+                            delay: 320,
+                            child: material.Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: context.colors.surfaceDark,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                    color: context.colors.borderColor),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SealedValuation(),
+                                  const Gap(6),
+                                  Text(SealedValuation.tooltip,
+                                      style: TextStyle(
+                                          fontSize: 11,
+                                          color: context.colors.textMuted)),
+                                ],
+                              ),
+                            ),
+                          )
+                        else if (widget.valuationUnitCost != null)
                           _DetailSection(
                             title: 'Valuation',
                             icon: Icons.calculate_rounded,
@@ -2238,7 +2275,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             ),
                           ),
                         // Per-round valuation + bids, for unsold packages.
-                        if (widget.tenderHistoryFor != null)
+                        // Also sealed: each round carries its own valuation.
+                        if (widget.tenderHistoryFor != null &&
+                            !widget.valuationSealedUntilSale)
                           TenderHistorySection(
                             forfeited: widget.tenderHistoryFor!,
                             qty: widget.valuationQty,
