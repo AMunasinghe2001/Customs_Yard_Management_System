@@ -27,7 +27,9 @@ void main() {
       theme: AppTheme.lightTheme,
       home: const Scaffold(body: Center(child: SealedValuation())),
     ));
-    expect(find.text('Sealed until sale'), findsOneWidget);
+    expect(find.text('Sealed'), findsOneWidget);
+    // The reason has to be on screen, not only in the tooltip.
+    expect(find.text('shown once the tender is over'), findsOneWidget);
     expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
     expect(SealedValuation.tooltip, contains('reserve price'));
   });
@@ -44,6 +46,23 @@ void main() {
     // A 120px column is what the tender-sale table gives this cell.
     expect(tester.takeException(), isNull);
     expect(find.text('Sealed'), findsOneWidget);
+  });
+
+  testWidgets('the two-line form fits the 145px Latest Valuation column',
+      (tester) async {
+    // The explanation is only useful if it actually fits: an overflow would
+    // paint the yellow stripes over the table instead.
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.lightTheme,
+      home: const Scaffold(
+        body: Center(
+          child: SizedBox(
+              width: 145, height: 52, child: SealedValuation(compact: true)),
+        ),
+      ),
+    ));
+    expect(tester.takeException(), isNull);
+    expect(find.text('shown once the tender is over'), findsOneWidget);
   });
   // The widget above is only half the protection: the real risk is a future
   // edit that renders a valuation on a LIVE sale card without passing the gate.
@@ -104,14 +123,13 @@ void main() {
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
     test('Unsold Tenders seals on the newest tender round', () {
-      // Now expressed as `roundOpen`, which the pending-price rule below also
-      // builds on.
+      // An open newest round means its price is live.
       expect(
           flat(dashboard),
-          contains(
-              'final roundOpen = current != null && !current.saleTimePassed'),
+          contains('} else { // The newest round is still open, so its price '
+              'is live. unit = lastPrice; revalued = lastIdx > 0; '
+              'sealed = true; }'),
           reason: 'A re-valued package goes straight into another tender.');
-      expect(flat(dashboard), contains('sealedUntilSale: roundOpen'));
     });
 
     test('Undestroyed seals on the newest destruction round', () {
@@ -198,30 +216,29 @@ void main() {
             .readAsStringSync();
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
-    test('a new valuation with no scheduled round counts as pending', () {
+    test('a newer valuation than the last run round counts as pending', () {
       expect(
           flat(dashboard),
-          contains('final pendingNewPrice = !roundOpen && '
-              '(reval != null || committee?.committeeValue != null)'));
+          contains('final pending = revals[ordered[lastIdx].id]?.valuationCost '
+              '?? committee?.committeeValue'));
     });
 
-    test('the pending figure is never the one displayed', () {
-      expect(flat(dashboard),
-          contains('overrideUnitCost: pendingNewPrice ? lastConcluded : reval?.valuationCost'));
-      // ...and it must not be flagged "re-valued" either, since the re-valued
-      // price is exactly what is being withheld.
-      expect(flat(dashboard),
-          contains('isRevalued: pendingNewPrice ? false : reval != null'));
+    test('the LATEST valuation is shown, sealed until its round runs', () {
+      // The newest valuation IS the price the package is about to be
+      // re-tendered at, so it shows only once that round has run.
+      expect(flat(dashboard), contains('unit = pending'));
+      expect(flat(dashboard), contains('sealed = true'));
+      expect(flat(dashboard), contains('sealedUntilSale: sealed'));
     });
 
-    test('the fallback is the price a round actually RAN at', () {
+    test('a round price comes from the PREVIOUS round re-valuation', () {
       // A tender_revaluations row is keyed to the round that just FAILED, so
       // the price a round ran at is the re-valuation on the round BEFORE it.
-      // Reading the row's own key would show the pending price again.
+      // Reading the row's own key shows a tender that has not happened.
       expect(
           flat(dashboard),
-          contains('i > 0 ? revals[ordered[i - 1].id]?.valuationCost '
-              ': f.valuationCost'));
+          contains('lastIdx > 0 ? revals[ordered[lastIdx - 1].id]'
+              '?.valuationCost : f.valuationCost'));
     });
   });
 

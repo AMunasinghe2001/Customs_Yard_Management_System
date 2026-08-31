@@ -2456,9 +2456,11 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                       DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
                       DataColumn2(
-                          label: Text('Valuation'),
+                          // "Latest": the cell shows the newest valuation —
+                          // sealed while the round it prices is still open.
+                          label: Text('Latest Valuation'),
                           size: ColumnSize.S,
-                          fixedWidth: 132),
+                          fixedWidth: 145),
                       DataColumn2(
                           label: Center(child: Text('Tenders')),
                           size: ColumnSize.S,
@@ -4408,77 +4410,66 @@ class _UnsoldValuationCell extends ConsumerWidget {
     final f = info.forfeited;
     final revals =
         ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
-    // Latest round id (newest createdAt).
-    String? latestId;
-    DateTime? latest;
-    for (final s in info.sales) {
-      if (latest == null || s.createdAt.isAfter(latest)) {
-        latest = s.createdAt;
-        latestId = s.id;
-      }
-    }
-    final reval = latestId != null ? revals[latestId] : null;
     final committee =
         ref.watch(tenderCommitteesProvider).valueOrNull?[f.id];
 
-    // Two ways this figure can be a LIVE reserve price:
-    //
-    //  1. the newest round has not run yet — the sale-card case; or
-    //  2. that round HAS run and failed, but a NEW valuation has since been
-    //     set for the next one ("Re-valued" / "Committee valued" in the
-    //     column beside this). The next round has no date yet, so rule 1
-    //     alone let the new price show — which is the leak: the figure the
-    //     package is about to be re-tendered at was on screen before bidding
-    //     even opened.
-    //
-    // Only a valuation whose OWN round has already run may be shown, so what
-    // is visible here is the last CONCLUDED price, never the upcoming one.
-    final current = info.latestSale;
-    final roundOpen = current != null && !current.saleTimePassed;
-    final pendingNewPrice = !roundOpen &&
-        (reval != null || committee?.committeeValue != null);
-
-    // When the upcoming price is withheld, fall back to the price the package
-    // was LAST ACTUALLY TENDERED AT, so the column still carries a real figure
-    // instead of going blank.
-    //
     // ⚠️ A `tender_revaluations` row is keyed to the round that just FAILED —
-    // it is the price for the NEXT tender, not for the round it hangs off.
-    // (Verified: Toilet Seat Covers' 1,645 hangs off R016 and was the price
-    // F01 then ran at.) So the price a round RAN at is the re-valuation
-    // attached to the round BEFORE it, and the newest such value is by
-    // definition the pending one.
-    double? lastConcluded;
-    if (pendingNewPrice) {
-      // Rounds oldest first, so index i-1 is the round before i.
-      final ordered = [...info.sales]
-        ..sort((a, b) {
-          final am = a.saleMoment, bm = b.saleMoment;
-          if (am == null || bm == null) return 0;
-          return am.compareTo(bm);
-        });
-      for (var i = ordered.length - 1; i >= 0; i--) {
-        if (!ordered[i].saleTimePassed) continue;
-        // The price THIS round ran at.
-        final priced =
-            i > 0 ? revals[ordered[i - 1].id]?.valuationCost : f.valuationCost;
-        if (priced != null) {
-          lastConcluded = priced;
-          break;
+    // it is the price for the NEXT round, not for the round it hangs off.
+    // (Verified: Power tools' 3,087.12 hangs off R011, and R011 itself ran at
+    // 3,574.56, the re-valuation from R046 before it.) So the price a round
+    // RAN AT is the re-valuation on the PREVIOUS round.
+    //
+    // The LATEST valuation is therefore the one attached to the newest round,
+    // and it is precisely the price the package is about to be re-tendered at
+    // — a live reserve price. It shows only once the round it priced has run.
+    final ordered = [...info.sales]
+      ..sort((a, b) {
+        final am = a.saleMoment, bm = b.saleMoment;
+        if (am == null || bm == null) return 0;
+        return am.compareTo(bm);
+      });
+
+    double? unit;       // what to display
+    bool revalued = false;
+    bool sealed = false;
+
+    if (ordered.isEmpty) {
+      unit = f.valuationCost;
+    } else {
+      // The newest round and the price it runs/ran at.
+      final lastIdx = ordered.length - 1;
+      final lastPrice = lastIdx > 0
+          ? revals[ordered[lastIdx - 1].id]?.valuationCost
+          : f.valuationCost;
+
+      if (ordered[lastIdx].saleTimePassed) {
+        // That round is over. Is a NEWER valuation already set for the next
+        // one? If so it is the latest — and still sealed, since that round has
+        // not been tendered.
+        final pending = revals[ordered[lastIdx].id]?.valuationCost ??
+            committee?.committeeValue;
+        if (pending != null) {
+          unit = pending;
+          revalued = revals[ordered[lastIdx].id] != null;
+          sealed = true;
+        } else {
+          unit = lastPrice;
+          revalued = lastIdx > 0;
         }
+      } else {
+        // The newest round is still open, so its price is live.
+        unit = lastPrice;
+        revalued = lastIdx > 0;
+        sealed = true;
       }
-      // Only ever tendered at the original valuation.
-      lastConcluded ??= f.valuationCost;
     }
 
     return _ValuationCell(
       f: f,
       qty: qty,
-      overrideUnitCost: pendingNewPrice ? lastConcluded : reval?.valuationCost,
-      isRevalued: pendingNewPrice ? false : reval != null,
-      // Only the OPEN-round case blanks the cell. A pending next-round price
-      // shows the previous concluded figure instead.
-      sealedUntilSale: roundOpen,
+      overrideUnitCost: unit,
+      isRevalued: revalued,
+      sealedUntilSale: sealed,
     );
   }
 }
@@ -6819,9 +6810,11 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                       DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                       DataColumn2(label: Text('Location'), size: ColumnSize.M),
                       DataColumn2(
-                          label: Text('Valuation'),
+                          // "Latest": the cell shows the newest valuation —
+                          // sealed while the round it prices is still open.
+                          label: Text('Latest Valuation'),
                           size: ColumnSize.S,
-                          fixedWidth: 132),
+                          fixedWidth: 145),
                       DataColumn2(
                           label: Center(child: Text('Destructions')),
                           size: ColumnSize.S,

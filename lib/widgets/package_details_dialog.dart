@@ -225,7 +225,6 @@ class TenderHistorySection extends ConsumerWidget {
     final rows = <Widget>[];
     for (var i = 0; i < ordered.length; i++) {
       final id = ordered[i];
-      final reval = revals[id];
       final roundBids = bids[id] ?? const <double>[];
       // Bids only exist to PRICE the next round, and the committee round is
       // the last one — its price comes from the committee, not from bidding,
@@ -238,13 +237,21 @@ class TenderHistorySection extends ConsumerWidget {
       final isLastRound = i == ordered.length - 1;
       final isCommitteeRound = (i + 1) > kMaxBidTenderRounds + 1 ||
           (isLastRound && committee?.submittedValue != null && i > 0);
-      // Round 1 has no re-valuation of its own — it ran at the Valuation
-      // Directorate's original figure. The committee round falls back to the
-      // ADG's submitted value.
-      final unit = reval?.valuationCost ??
-          (i == 0
-              ? forfeited.valuationCost
-              : (isCommitteeRound ? committee?.submittedValue : null));
+      // ⚠️ A `tender_revaluations` row is keyed to the round that just FAILED
+      // — it is the price for the NEXT round, not for the round it hangs off.
+      // (Verified: Power tools' 3,087.12 hangs off R011, and R011 itself ran
+      // at 3,574.56, the re-valuation from R046 before it.) So the price a
+      // round RAN AT is the re-valuation on the PREVIOUS round; reading this
+      // round's own key printed the price of a tender that had not happened.
+      //
+      // Round 1 has no earlier round, so it ran at the Valuation Directorate's
+      // original figure. The committee round runs at the ADG's submitted
+      // value.
+      final prevReval = i > 0 ? revals[ordered[i - 1]] : null;
+      final unit = i == 0
+          ? forfeited.valuationCost
+          : (prevReval?.valuationCost ??
+              (isCommitteeRound ? committee?.submittedValue : null));
       // A committee round is ALWAYS worth showing: it is the last attempt, and
       // hiding it would end the history at Tender 3.
       // Sealed until THIS round has run. The committee round is the clearest
@@ -270,7 +277,7 @@ class TenderHistorySection extends ConsumerWidget {
             ? null
             : 'LKR ${money.format(unit * effQty)}'
                 '  (@ ${money.format(unit)} \u00d7 $effQty)',
-        revalued: reval != null && !isCommitteeRound,
+        revalued: prevReval != null && !isCommitteeRound,
         bids: isCommitteeRound
             ? const []
             : [for (final b in roundBids) 'LKR ${money.format(b)}'],
@@ -441,6 +448,17 @@ class _TenderRoundTile extends StatelessWidget {
               ),
           ]),
           const Gap(8),
+          // Say WHY the price is missing, the same way the committee block
+          // does. A bare "Sealed" chip reads as a glitch; this says the figure
+          // is deliberately withheld and when it will appear.
+          if (sealed) ...[
+            Text(
+                'This round has not been tendered yet. Its valuation is the '
+                'reserve price, so it is shown once the tender is over.',
+                style:
+                    TextStyle(fontSize: 11, color: context.colors.textMuted)),
+            const Gap(8),
+          ],
           if (isCommitteeRound) ...[
             Text(
                 committeeLoading

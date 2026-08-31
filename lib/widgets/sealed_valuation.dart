@@ -33,19 +33,34 @@ class SealedValuation extends StatelessWidget {
     final muted = context.colors.textMuted;
     return Tooltip(
       message: tooltip,
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.lock_outline_rounded,
-              size: compact ? 12 : 14, color: muted),
-          const SizedBox(width: 4),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.lock_outline_rounded,
+                  size: compact ? 12 : 14, color: muted),
+              const SizedBox(width: 4),
+              Text(
+                'Sealed',
+                style: TextStyle(
+                    color: muted,
+                    fontSize: compact ? 11 : 12,
+                    fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+          // The reason, not just the state. A lone "Sealed" reads as a glitch
+          // or as "not valued yet", which sends people looking for the figure
+          // somewhere else — exactly the leak this is meant to close.
           Text(
-            compact ? 'Sealed' : 'Sealed until sale',
-            style: TextStyle(
-                color: muted,
-                fontSize: compact ? 11 : 12,
-                fontWeight: FontWeight.w600),
+            'shown once the tender is over',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: muted, fontSize: compact ? 9.5 : 11),
           ),
         ],
       ),
