@@ -4766,7 +4766,14 @@ class DisposalService {
     for (final info in unsold) {
       final at = submittedAt[info.forfeited.id];
       if (at == null) continue;
-      if (info.sales.any((s) => s.createdAt.isAfter(at))) {
+      // Judged by when the round RAN, exactly as getExhaustedUnsoldPackages
+      // does. Keying on created_at here while that method keys on the sale
+      // moment let a package count as exhausted for the DG's tab AND still
+      // eligible for re-tender — it would have shown in both places at once.
+      if (info.sales.any((s) {
+        final m = s.saleMoment;
+        return m != null && m.isAfter(at) && s.saleTimePassed;
+      })) {
         exhaustedIds.add(info.forfeited.id);
       }
     }

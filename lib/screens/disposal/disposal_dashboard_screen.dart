@@ -2512,7 +2512,12 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
                         DataCell(_UnsoldValuationCell(
-                            info: info, qty: f.entryQty ?? item?.quantity)),
+                            info: info,
+                            // The same signal the Re-valuation chip uses: a
+                            // re-tenderable package HAS a new price and a
+                            // tender coming, so that price stays sealed.
+                            reTenderable: eligible.contains(f.id),
+                            qty: f.entryQty ?? item?.quantity)),
                         DataCell(Center(
                           child: _AttemptsBadge(
                             count: info.tenderCount,
@@ -4403,7 +4408,12 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
 class _UnsoldValuationCell extends ConsumerWidget {
   final ReTenderSaleInfo info;
   final int? qty;
-  const _UnsoldValuationCell({required this.info, this.qty});
+  /// True when the package can be re-tendered RIGHT NOW — the Valuation
+  /// Directorate has set the next round's price ("Re-valued"). That price is
+  /// the reserve for a tender about to open, so it stays sealed.
+  final bool reTenderable;
+  const _UnsoldValuationCell(
+      {required this.info, this.reTenderable = false, this.qty});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -4448,15 +4458,22 @@ class _UnsoldValuationCell extends ConsumerWidget {
         // committee's figure, which exists precisely so the package can be
         // re-tendered at it.
         //
-        // The re-valuation sitting on the newest round is NOT enough: a row
-        // reading "Awaiting ADG" has been re-valued but has no committee
-        // price and no new round, so nothing is pending and the last
-        // concluded price is safe to show. Sealing on that alone hid the
-        // Tender 3 figure behind "Sealed" with no tender in sight.
+        // Two ways a tender is coming, matching the chip beside this cell:
+        //   * "Re-valued"       — re-tenderable now, the Valuation
+        //                         Directorate has priced the next round; or
+        //   * "Committee valued" — the committee has priced it.
+        //
+        // NOT "Awaiting ADG": such a row has been re-valued but is past
+        // Tender 3, so it cannot be re-tendered until the committee and ADG
+        // act. Nothing is pending and the last concluded price is safe to
+        // show — sealing on the bare re-valuation hid the Tender 3 figure
+        // with no tender in sight.
         final pendingCommittee = committee?.committeeValue;
-        if (pendingCommittee != null) {
-          unit = pendingCommittee;
-          revalued = false;
+        final pendingReval =
+            reTenderable ? revals[ordered[lastIdx].id]?.valuationCost : null;
+        if (pendingCommittee != null || pendingReval != null) {
+          unit = pendingCommittee ?? pendingReval;
+          revalued = pendingCommittee == null;
           sealed = true;
         } else {
           unit = lastPrice;

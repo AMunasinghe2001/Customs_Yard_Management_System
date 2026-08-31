@@ -315,7 +315,9 @@ void main() {
       // sight. (Binding Wire Coils: 4 rounds, all run, no committee value.)
       expect(flat(dashboard),
           contains('final pendingCommittee = committee?.committeeValue'));
-      expect(flat(dashboard), contains('if (pendingCommittee != null)'));
+      // A committee price OR a re-tenderable re-valuation now seals.
+      expect(flat(dashboard),
+          contains('if (pendingCommittee != null || pendingReval != null)'));
       // The re-valuation on the newest round must NOT drive the seal.
       expect(
           flat(dashboard),
@@ -330,6 +332,40 @@ void main() {
       expect(flat(dialog), contains('final pending = revals[lastId]'));
       expect(flat(dialog),
           contains('label: tenderRoundLabel(ordered.length + 1)'));
+    });
+  });
+
+  group('"Re-valued" means a tender is coming, so its price is sealed', () {
+    final dashboard =
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync();
+    final services = File('lib/services/services.dart').readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('the cell uses the same eligibility as the chip beside it', () {
+      // "Re-valued" = re-tenderable NOW: the Valuation Directorate has priced
+      // the next round. "Awaiting ADG" = re-valued but past Tender 3, so it
+      // cannot be re-tendered until the committee and ADG act.
+      expect(flat(dashboard), contains('reTenderable: eligible.contains(f.id)'));
+      expect(
+          flat(dashboard),
+          contains('final pendingReval = reTenderable ? '
+              'revals[ordered[lastIdx].id]?.valuationCost : null'));
+      expect(flat(dashboard),
+          contains('if (pendingCommittee != null || pendingReval != null)'));
+    });
+
+    test('eligibility and the DG gate agree on when a round RAN', () {
+      // Keying one on created_at and the other on the sale moment let a
+      // package be exhausted for the DG AND still in the re-tender pool.
+      expect(
+          'm.isAfter(at) && s.saleTimePassed'.allMatches(flat(services)).length +
+              'moment.isAfter(submittedAt) && s.saleTimePassed'
+                  .allMatches(flat(services))
+                  .length,
+          greaterThanOrEqualTo(2));
+      expect(flat(services),
+          isNot(contains('info.sales.any((s) => s.createdAt.isAfter(at))')));
     });
   });
 }
