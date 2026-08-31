@@ -154,10 +154,17 @@ void main() {
     final services = File('lib/services/services.dart').readAsStringSync();
     String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
 
-    test('a committee is appointed only after 4 failed rounds', () {
-      // Valuation Tender + Tender 1 + 2 + 3.
-      expect(flat(services),
-          contains('all.where((i) => i.tenderCount >= 4).toList()'));
+    test('the committee pool is EXACTLY the committee stage', () {
+      // Valuation Tender + Tenders 1-3 have failed (4 rounds) and Central
+      // Disposal has not re-tendered yet. Re-tendering makes 5, and the
+      // package leaves for good — to Sold, or to the DG's Unsold Goods when
+      // that round fails too. `>= 4` listed re-tendered packages on BOTH the
+      // Tender Committees tab and the DG's tab at once.
+      expect(
+          flat(services),
+          contains('all .where((i) => i.tenderCount == kMaxBidTenderRounds + 1) '
+              '.toList()'));
+      expect(flat(services), isNot(contains('i.tenderCount >= 4')));
     });
 
     test('the DG sees a package only after the committee-priced tender fails',

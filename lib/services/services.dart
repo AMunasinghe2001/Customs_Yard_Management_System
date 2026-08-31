@@ -5148,11 +5148,20 @@ class DisposalService {
     }).toList();
   }
 
-  /// Unsold tender packages that have gone unsold MORE THAN 3 times
-  /// (≥4 tender attempts) — the pool for DG committee appointment.
+  /// Packages sitting in the COMMITTEE STAGE: the Valuation Tender plus
+  /// Tenders 1-3 have all failed, and Central Disposal has not yet re-tendered
+  /// them at the committee's price.
+  ///
+  /// ⚠️ EXACTLY 4 rounds, not `>= 4`. Re-tendering creates a 5th round, and at
+  /// that moment the package leaves this pool for good — it then ends up in
+  /// Sold, or in the DG's Unsold Goods once that round also fails. `>= 4` kept
+  /// re-tendered packages here, listing the same goods on both the Tender
+  /// Committees tab and the DG's Unsold Goods tab.
   Future<List<ReTenderSaleInfo>> getCommitteeEligiblePackages() async {
     final all = await getUnsoldTenderSales();
-    return all.where((i) => i.tenderCount >= 4).toList();
+    return all
+        .where((i) => i.tenderCount == kMaxBidTenderRounds + 1)
+        .toList();
   }
 
   /// "Sale"-tagged disposal-request items that are not yet in a tender sale —
