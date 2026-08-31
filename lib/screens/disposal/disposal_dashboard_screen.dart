@@ -660,6 +660,12 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                                       : null,
                                               valuationQty: qty,
                                               tenderHistoryFor: f,
+                                              // Sealed while the newest round
+                                              // is still open.
+                                              valuationSealedUntilSale:
+                                                  info.latestSale
+                                                          ?.saleTimePassed ==
+                                                      false,
                                             ),
                                           ),
                                 ),
@@ -2542,6 +2548,8 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                                           ? f.valuationCost! * (f.entryQty ?? 1)
                                           : null,
                                       valuationQty: f.entryQty,
+                                      // Sealed while the newest round is open.
+                                      valuationSealedUntilSale: info.latestSale?.saleTimePassed == false,
                                     ),
                                   ),
                                 )
@@ -4405,11 +4413,16 @@ class _UnsoldValuationCell extends ConsumerWidget {
       }
     }
     final reval = latestId != null ? revals[latestId] : null;
+    // A package here has usually been re-valued and put straight into ANOTHER
+    // tender round. While that newest round is still open its valuation is a
+    // live reserve price, so it stays sealed exactly as on the sale card.
+    final current = info.latestSale;
     return _ValuationCell(
       f: f,
       qty: qty,
       overrideUnitCost: reval?.valuationCost,
       isRevalued: reval != null,
+      sealedUntilSale: current != null && !current.saleTimePassed,
     );
   }
 }
@@ -4430,7 +4443,12 @@ TenderRevaluationModel? _latestReval(Map<String, TenderRevaluationModel> m) {
 class _LatestValuationCell extends ConsumerWidget {
   final ForfeitedPackageModel f;
   final int? qty;
-  const _LatestValuationCell({required this.f, this.qty});
+
+  /// True while the goods sit in a sale round that has not yet run — the
+  /// valuation is then a live reserve price. See [valuationSealed].
+  final bool sealedUntilSale;
+  const _LatestValuationCell(
+      {required this.f, this.qty, this.sealedUntilSale = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -4440,6 +4458,7 @@ class _LatestValuationCell extends ConsumerWidget {
     return _ValuationCell(
       f: f,
       qty: qty,
+      sealedUntilSale: sealedUntilSale,
       overrideUnitCost: reval?.valuationCost,
       isRevalued: reval != null,
     );
@@ -6739,7 +6758,13 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                                 color: context.colors.textSecondary,
                                 fontSize: 12))),
                         DataCell(_LatestValuationCell(
-                            f: f, qty: f.entryQty ?? item?.quantity)),
+                            f: f,
+                            qty: f.entryQty ?? item?.quantity,
+                            // Sealed while the newest destruction round is
+                            // still pending.
+                            sealedUntilSale:
+                                info.latestDestruction?.saleTimePassed ==
+                                    false)),
                         DataCell(Center(
                           child: _AttemptsBadge(
                             count: info.timesAttempted,
@@ -6772,6 +6797,8 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                                           ? f.valuationCost! * (f.entryQty ?? 1)
                                           : null,
                                       valuationQty: f.entryQty,
+                                      // Sealed while the newest round is open.
+                                      valuationSealedUntilSale: info.latestDestruction?.saleTimePassed == false,
                                     ),
                                   ),
                                 )

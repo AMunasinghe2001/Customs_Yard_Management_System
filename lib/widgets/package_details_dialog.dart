@@ -1700,151 +1700,148 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         delay: 100,
                         child: Column(
                           children: [
-                              if (isOld) ...[
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.numbers_rounded,
-                                        label: 'New SR Number',
-                                        value: p.srNumber,
-                                        valueColor:
-                                            context.colors.accentLightBlue,
-                                      ),
+                            if (isOld) ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.numbers_rounded,
+                                      label: 'New SR Number',
+                                      value: p.srNumber,
+                                      valueColor:
+                                          context.colors.accentLightBlue,
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.history_edu_rounded,
-                                        label: 'Old SR Number (Migrated)',
-                                        value: p.oldSrNumber!,
-                                        valueColor:
-                                            context.colors.primaryGold,
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.history_edu_rounded,
+                                      label: 'Old SR Number (Migrated)',
+                                      value: p.oldSrNumber!,
+                                      valueColor: context.colors.primaryGold,
                                     ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.history_rounded,
-                                        label: 'Entry Type',
-                                        value: 'Old Entry (Migrated)',
-                                        valueColor:
-                                            context.colors.primaryGold,
-                                      ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.history_rounded,
+                                      label: 'Entry Type',
+                                      value: 'Old Entry (Migrated)',
+                                      valueColor: context.colors.primaryGold,
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.calendar_today_rounded,
-                                        label: 'Entry Date',
-                                        value: p.entryDate != null
-                                            ? DateFormat('yyyy-MM-dd')
-                                                .format(p.entryDate!)
-                                            : 'N/A',
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.calendar_today_rounded,
+                                      label: 'Entry Date',
+                                      value: p.entryDate != null
+                                          ? DateFormat('yyyy-MM-dd')
+                                              .format(p.entryDate!)
+                                          : 'N/A',
                                     ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.receipt_long_rounded,
-                                        label: 'Cusdec No',
-                                        value: p.cusdecNo ?? 'N/A',
-                                      ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.receipt_long_rounded,
+                                      label: 'Cusdec No',
+                                      value: p.cusdecNo ?? 'N/A',
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.calendar_month_rounded,
-                                        label: 'Cusdec Date',
-                                        value: p.cusdecDate ?? 'N/A',
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.calendar_month_rounded,
+                                      label: 'Cusdec Date',
+                                      value: p.cusdecDate ?? 'N/A',
                                     ),
-                                  ],
-                                ),
-                              ] else ...[
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.numbers_rounded,
-                                        label: 'SR Number',
-                                        value: p.srNumber,
-                                      ),
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.numbers_rounded,
+                                      label: 'SR Number',
+                                      value: p.srNumber,
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.fiber_new_rounded,
-                                        label: 'Entry Type',
-                                        value: 'New Entry (Standard)',
-                                        valueColor:
-                                            context.colors.accentLightBlue,
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.fiber_new_rounded,
+                                      label: 'Entry Type',
+                                      value: 'New Entry (Standard)',
+                                      valueColor:
+                                          context.colors.accentLightBlue,
                                     ),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.calendar_today_rounded,
-                                        label: 'Entry Date',
-                                        value: p.entryDate != null
-                                            ? DateFormat('yyyy-MM-dd')
-                                                .format(p.entryDate!)
-                                            : 'N/A',
-                                      ),
+                                  ),
+                                ],
+                              ),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.calendar_today_rounded,
+                                      label: 'Entry Date',
+                                      value: p.entryDate != null
+                                          ? DateFormat('yyyy-MM-dd')
+                                              .format(p.entryDate!)
+                                          : 'N/A',
                                     ),
-                                    const Gap(12),
-                                    Expanded(
-                                      child: _DetailItem(
-                                        icon: Icons.receipt_long_rounded,
-                                        label: 'Cusdec No',
-                                        value: p.cusdecNo ?? 'N/A',
-                                      ),
+                                  ),
+                                  const Gap(12),
+                                  Expanded(
+                                    child: _DetailItem(
+                                      icon: Icons.receipt_long_rounded,
+                                      label: 'Cusdec No',
+                                      value: p.cusdecNo ?? 'N/A',
                                     ),
-                                  ],
-                                ),
-                                _DetailItem(
-                                  icon: Icons.calendar_month_rounded,
-                                  label: 'Cusdec Date',
-                                  value: p.cusdecDate ?? 'N/A',
-                                ),
-                              ],
-                              _DetailItem(
-                                icon: Icons.gavel_rounded,
-                                label: 'Case Number',
-                                value: p.caseNumber ?? 'N/A',
+                                  ),
+                                ],
                               ),
                               _DetailItem(
-                                icon: Icons.local_shipping_rounded,
-                                label: 'Container Number',
-                                value: p.containerNumber ?? 'N/A',
-                              ),
-                              // Package-level: one deposit per SR, taken at
-                              // registration against the cost of destruction.
-                              _DetailItem(
-                                icon: Icons.savings_rounded,
-                                label: 'Destroying Deposit',
-                                value: p.destroyingDeposit == null
-                                    ? 'N/A'
-                                    : 'LKR ${NumberFormat('#,##0.##').format(p.destroyingDeposit)}',
-                              ),
-                              _DetailItem(
-                                icon: Icons.description_rounded,
-                                label: 'Package Description',
-                                value:
-                                    p.description ?? 'No description provided',
+                                icon: Icons.calendar_month_rounded,
+                                label: 'Cusdec Date',
+                                value: p.cusdecDate ?? 'N/A',
                               ),
                             ],
-                          ),
+                            _DetailItem(
+                              icon: Icons.gavel_rounded,
+                              label: 'Case Number',
+                              value: p.caseNumber ?? 'N/A',
+                            ),
+                            _DetailItem(
+                              icon: Icons.local_shipping_rounded,
+                              label: 'Container Number',
+                              value: p.containerNumber ?? 'N/A',
+                            ),
+                            // Package-level: one deposit per SR, taken at
+                            // registration against the cost of destruction.
+                            _DetailItem(
+                              icon: Icons.savings_rounded,
+                              label: 'Destroying Deposit',
+                              value: p.destroyingDeposit == null
+                                  ? 'N/A'
+                                  : 'LKR ${NumberFormat('#,##0.##').format(p.destroyingDeposit)}',
+                            ),
+                            _DetailItem(
+                              icon: Icons.description_rounded,
+                              label: 'Package Description',
+                              value: p.description ?? 'No description provided',
+                            ),
+                          ],
                         ),
+                      ),
 
                       // Consignee Information Section
                       _DetailSection(
@@ -2031,7 +2028,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                   // under a label reading just "Value", while every table showed
                                                   // unitValue x quantity under that same word.
                                                   label: 'Value (total)',
-                                                  value: 'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue * highlightedItem.quantity)}'
+                                                  value:
+                                                      'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue * highlightedItem.quantity)}'
                                                       '  ·  @ ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)} × ${highlightedItem.quantity}',
                                                 ),
                                                 if (highlightedItem
@@ -2173,7 +2171,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                         label: 'Value (total)',
                                                         value:
                                                             'LKR ${NumberFormat('#,##0.00').format(highlightedItem.unitValue * highlightedItem.quantity)}'
-                                                                '  ·  @ ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)} × ${highlightedItem.quantity}',
+                                                            '  ·  @ ${NumberFormat('#,##0.00').format(highlightedItem.unitValue)} × ${highlightedItem.quantity}',
                                                       ),
                                                     ),
                                                   ],
@@ -2330,7 +2328,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           icon: Icons.warehouse_rounded,
                                           label: 'Warehouse',
                                           value: legacyEntries
-                                              .map((e) => e.warehouseName.trim())
+                                              .map(
+                                                  (e) => e.warehouseName.trim())
                                               .where((w) => w.isNotEmpty)
                                               .toSet()
                                               .join(', '),
@@ -2344,11 +2343,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                   final zn = e.zone?.trim();
                                                   if (zn != null &&
                                                       zn.isNotEmpty) {
-                                                    return zn.toLowerCase().startsWith('zone')
+                                                    return zn
+                                                            .toLowerCase()
+                                                            .startsWith('zone')
                                                         ? zn
                                                         : 'Zone $zn';
                                                   }
-                                                  return e.warehouseCode.trim().isNotEmpty
+                                                  return e.warehouseCode
+                                                          .trim()
+                                                          .isNotEmpty
                                                       ? e.warehouseCode.trim()
                                                       : null;
                                                 })
@@ -2794,7 +2797,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                   // under a label reading just "Value", while every table showed
                                                   // unitValue x quantity under that same word.
                                                   label: 'Value (total)',
-                                                  value: 'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
+                                                  value:
+                                                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
                                                       '  ·  @ ${NumberFormat('#,##0.00').format(item.unitValue)} × ${item.quantity}',
                                                 ),
                                               ),
@@ -4809,7 +4813,8 @@ class _NoEntryItemCard extends StatelessWidget {
                   // under a label reading just "Value", while every table showed
                   // unitValue x quantity under that same word.
                   label: 'Value (total)',
-                  value: 'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
+                  value:
+                      'LKR ${NumberFormat('#,##0.00').format(item.unitValue * item.quantity)}'
                       '  ·  @ ${NumberFormat('#,##0.00').format(item.unitValue)} × ${item.quantity}',
                 ),
               ),

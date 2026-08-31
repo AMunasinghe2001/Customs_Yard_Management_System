@@ -241,6 +241,12 @@ class UnsoldDecisionTab extends ConsumerWidget {
                                                       : null,
                                               valuationQty: qty,
                                               tenderHistoryFor: f,
+                                              // Sealed while the newest round
+                                              // is still open.
+                                              valuationSealedUntilSale: info
+                                                      .latestSale
+                                                      ?.saleTimePassed ==
+                                                  false,
                                             ),
                                           ),
                                 ),

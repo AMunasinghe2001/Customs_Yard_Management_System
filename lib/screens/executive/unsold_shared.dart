@@ -1,3 +1,4 @@
+import '../../widgets/sealed_valuation.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
@@ -131,9 +132,7 @@ const List<DataColumn2> kUnsoldColumns = [
   // "Latest Valuation": these rows carry the committee's figure when one
   // exists, not the original — see unsoldCells.
   DataColumn2(
-      label: Text('Latest Valuation'),
-      size: ColumnSize.S,
-      fixedWidth: 130),
+      label: Text('Latest Valuation'), size: ColumnSize.S, fixedWidth: 130),
   DataColumn2(
       label: Center(child: Text('Final Outcome')),
       size: ColumnSize.M,
@@ -157,9 +156,7 @@ const List<DataColumn2> kUnsoldDecidedColumns = [
   // "Latest Valuation": these rows carry the committee's figure when one
   // exists, not the original — see unsoldCells.
   DataColumn2(
-      label: Text('Latest Valuation'),
-      size: ColumnSize.S,
-      fixedWidth: 130),
+      label: Text('Latest Valuation'), size: ColumnSize.S, fixedWidth: 130),
   DataColumn2(
       label: Center(child: Text('Decided On')),
       size: ColumnSize.M,
@@ -227,6 +224,12 @@ List<DataCell> unsoldCells(
   final unit = committeeUnitValue ?? f.valuationCost;
   final value = unit != null ? unit * qty : null;
   final isCommittee = committeeUnitValue != null;
+  // A package listed here has usually been re-valued and entered into ANOTHER
+  // tender round. While that newest round is still open the figure is a live
+  // reserve price, so it stays sealed. Derived from `info` rather than passed
+  // in, so no caller can forget it.
+  final currentSale = info.latestSale;
+  final sealed = currentSale != null && !currentSale.saleTimePassed;
   // The yard belongs in the row's tooltip, not its own column: the yard page
   // shows one yard only, and the other two portals have a Yard dropdown.
   final srTip = '${f.srNumber} · ${yardName(f.yard)}'
@@ -246,28 +249,34 @@ List<DataCell> unsoldCells(
     DataCell(TooltipText(unsoldLocation(pkg, f.itemId),
         overflow: TextOverflow.ellipsis,
         style: TextStyle(color: context.colors.textSecondary, fontSize: 12))),
-    DataCell(Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        TooltipText(
-            value == null ? '—' : 'LKR ${NumberFormat('#,##0').format(value)}',
-            style: TextStyle(
-                color: valuationColor ?? context.colors.successGreen,
-                fontWeight: FontWeight.w700)),
-        // Says WHOSE figure this is, so a committee price cannot be mistaken
-        // for the original valuation.
-        if (value != null)
-          Text(
-              isCommittee
-                  ? 'committee · @ ${NumberFormat('#,##0').format(unit)} × $qty'
-                  : '@ ${NumberFormat('#,##0').format(unit)} × $qty',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 10, color: context.colors.textMuted)),
-      ],
-    )),
+    if (sealed)
+      const DataCell(SealedValuation(compact: true))
+    else
+      DataCell(Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          TooltipText(
+              value == null
+                  ? '—'
+                  : 'LKR ${NumberFormat('#,##0').format(value)}',
+              style: TextStyle(
+                  color: valuationColor ?? context.colors.successGreen,
+                  fontWeight: FontWeight.w700)),
+          // Says WHOSE figure this is, so a committee price cannot be mistaken
+          // for the original valuation.
+          if (value != null)
+            Text(
+                isCommittee
+                    ? 'committee · @ ${NumberFormat('#,##0').format(unit)} × $qty'
+                    : '@ ${NumberFormat('#,##0').format(unit)} × $qty',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    TextStyle(fontSize: 10, color: context.colors.textMuted)),
+        ],
+      )),
     DataCell(outcome),
     DataCell(Center(
       child: IconButton(

@@ -86,4 +86,42 @@ void main() {
           reason: 'Tender history exposes every round\'s valuation.');
     });
   });
+
+  // The first version of this feature sealed only the live sale CARDS, which
+  // was too narrow. A package that fails a round is re-valued and entered into
+  // ANOTHER tender straight away, so the Unsold/Undestroyed tables were showing
+  // the new reserve price while that new round was still open. Confirmed
+  // against the real database: CED/GL1/SR/27/2026 sat in an open round
+  // (CDU/TS/2026/6(Special)) with its re-valuation of 3,695.12 x 79 = 291,914
+  // on screen. The gate now follows the goods, not the screen.
+  group('the seal follows the goods into the next round', () {
+    final dashboard =
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync();
+    final shared =
+        File('lib/screens/executive/unsold_shared.dart').readAsStringSync();
+
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('Unsold Tenders seals on the newest tender round', () {
+      expect(flat(dashboard),
+          contains('sealedUntilSale: current != null && !current.saleTimePassed'),
+          reason: 'A re-valued package goes straight into another tender.');
+    });
+
+    test('Undestroyed seals on the newest destruction round', () {
+      expect(flat(dashboard),
+          contains('info.latestDestruction?.saleTimePassed == false'),
+          reason: 'Re-destruction rounds carry the same reserve price.');
+    });
+
+    test('the shared Unsold table derives the gate itself', () {
+      // Derived from `info` inside unsoldCells rather than passed by each of
+      // the three portals, so a caller cannot forget it.
+      expect(flat(shared),
+          contains('final sealed = currentSale != null && !currentSale.saleTimePassed'));
+      expect(flat(shared), contains('if (sealed) const DataCell(SealedValuation(compact: true))'),
+          reason: 'All three portals share this one cell.');
+    });
+  });
 }

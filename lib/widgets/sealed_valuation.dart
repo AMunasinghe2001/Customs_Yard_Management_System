@@ -37,7 +37,8 @@ class SealedValuation extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.lock_outline_rounded, size: compact ? 12 : 14, color: muted),
+          Icon(Icons.lock_outline_rounded,
+              size: compact ? 12 : 14, color: muted),
           const SizedBox(width: 4),
           Text(
             compact ? 'Sealed' : 'Sealed until sale',

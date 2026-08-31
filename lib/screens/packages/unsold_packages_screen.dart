@@ -413,9 +413,9 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                       // The Top Management committee's figure,
                                       // when one exists — it supersedes the
                                       // original valuation for these packages.
-                                      committeeUnitValue: committees[
-                                              info.forfeited.id]
-                                          ?.committeeValue,
+                                      committeeUnitValue:
+                                          committees[info.forfeited.id]
+                                              ?.committeeValue,
                                       // Plain text on the yard table — the
                                       // green highlight is for the portals
                                       // that act on the money.
@@ -454,6 +454,12 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                                           : null,
                                                   valuationQty: qty,
                                                   tenderHistoryFor: f,
+                                                  // Sealed while the newest
+                                                  // round is still open.
+                                                  valuationSealedUntilSale: info
+                                                          .latestSale
+                                                          ?.saleTimePassed ==
+                                                      false,
                                                 ),
                                               ),
                                     ),
