@@ -195,9 +195,10 @@ void main() {
         final hi = i + 30 > lines.length ? lines.length : i + 30;
         final block = lines.sublist(lo, hi).join('\n');
         if (block.contains('valuationSealedUntilSale')) continue;
-        // Disposal Requests is the one legitimate exception: it is the stage
-        // BEFORE any tender exists, so there is no round to seal against.
-        if (block.contains('valuationUnitCost: it.unitCost')) continue;
+        // Disposal Requests used to be exempt here: it is the stage BEFORE
+        // any tender exists. But the figure is still a reserve price for
+        // whatever tender it eventually joins, so it is sealed unconditionally
+        // now — no exemption survives.
         leaks.add('$path:${i + 1}');
       }
     }
@@ -618,7 +619,18 @@ void main() {
     });
 
     test('the sale pages call the column Latest Valuation', () {
-      expect("'Value' : 'Latest Valuation'".allMatches(dash).length, 2);
+      // Both the directorate card AND the yard's read-only view now share the
+      // one name and the one seal — the yard's figure is a different number
+      // (the SR item's declared value) but it is still commercially sensitive
+      // to a bidder, so it is sealed on the same clock.
+      expect("Center(child: const Text('Latest Valuation'))".allMatches(dash).length, 2);
+    });
+
+    test('the yard read-only column seals too, not just the directorate one',
+        () {
+      final flatDash = dash.replaceAll(RegExp(r'\s+'), ' ');
+      expect(flatDash, contains('if (sealedUntilSale) { return const SealedValuation(compact: true); }'));
+      expect(dash, isNot(contains('if (sealedUntilSale && !useItemValue)')));
     });
   });
 }

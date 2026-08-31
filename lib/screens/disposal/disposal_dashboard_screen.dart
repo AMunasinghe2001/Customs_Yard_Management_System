@@ -2158,25 +2158,14 @@ class _RequestCard extends ConsumerWidget {
                       DataCell(Center(
                           child:
                               _DispositionChip(disposition: it.disposition))),
+                      // This screen NEVER shows a package that has already been
+                      // placed in a tender_sale_items row (getDisposalRequests
+                      // excludes it), so the figure is always the reserve
+                      // price for whichever tender it eventually joins — there
+                      // is no "the sale hasn't run yet" gate to check, because
+                      // no sale exists at all yet. Always sealed.
                       DataCell(it.valuationCost != null
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Text(
-                                    'LKR ${NumberFormat('#,##0').format((it.unitCost ?? 0) * displayQty)}',
-                                    style: TextStyle(
-                                        color: context.colors.primaryGold,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 12)),
-                                Text(
-                                    '@ ${NumberFormat('#,##0').format(it.unitCost)} × $displayQty',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 10)),
-                              ],
-                            )
+                          ? const SealedValuation(compact: true)
                           : Text('—',
                               style:
                                   TextStyle(color: context.colors.textMuted))),
@@ -2197,6 +2186,9 @@ class _RequestCard extends ConsumerWidget {
                                       highlightItemId: highlightId,
                                       yardLabel:
                                           yardName(f.yard ?? request.yard),
+                                      // Always sealed here too — see the
+                                      // table cell above.
+                                      valuationSealedUntilSale: true,
                                       valuationUnitCost: it.unitCost,
                                       valuationTotalCost: it.totalCost,
                                       valuationQty: displayQty,
@@ -3014,13 +3006,12 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
                         label: Text('Goods Description'), size: ColumnSize.M),
-                    // Yard shows the SR item Value; Central shows the valuation.
+                    // Both the yard's own view (SR item declared value) and
+                    // Central's (the reserve price) are commercially sensitive
+                    // to a bidder, so both are named and sealed the same way.
                     // Fixed + centered so it sits snug next to Status (no gap).
                     DataColumn2(
-                        label: Center(
-                            child: Text(widget.readOnly
-                                ? 'Value'
-                                : 'Latest Valuation')),
+                        label: Center(child: const Text('Latest Valuation')),
                         size: ColumnSize.S,
                         // Wider than the old "Valuation": the header is longer
                         // and the sealed cell carries a second line.
@@ -5792,9 +5783,7 @@ class DestructionCard extends ConsumerWidget {
                     // Fixed + centered so it sits snug next to Status (no gap) —
                     // mirrors the Tender Sale table for a consistent layout.
                     DataColumn2(
-                        label: Center(
-                            child:
-                                Text(readOnly ? 'Value' : 'Latest Valuation')),
+                        label: Center(child: const Text('Latest Valuation')),
                         size: ColumnSize.S,
                         fixedWidth: 145),
                     DataColumn2(
@@ -7188,9 +7177,12 @@ class _ValuationCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Sealed while the sale is still open. Checked first so the figure is
-    // never even computed, let alone rendered.
-    if (sealedUntilSale && !useItemValue) {
+    // Sealed while the sale is still open — for BOTH the directorate's
+    // valuation and the yard's own declared-value view. Whichever figure is
+    // shown here still tells a bidder what the reserve is worth, so it stays
+    // hidden until the sale has ended, exactly like every other Valuation
+    // column. Checked first so the figure is never even computed.
+    if (sealedUntilSale) {
       return const SealedValuation(compact: true);
     }
     final fp = f;
