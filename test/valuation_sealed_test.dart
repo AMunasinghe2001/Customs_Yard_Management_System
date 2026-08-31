@@ -648,4 +648,20 @@ void main() {
         reason: 'The item-value branch must show the same breakdown as the '
             'directorate branch below it.');
   });
+
+  test('the Tender Sale card popup shows the tender history, sealed', () {
+    // The card only showed the round history on Unsold Tenders; the live
+    // Tender Sale popup had no way to see the chain that led to the current
+    // price. It is now passed in both views (yard and directorate), since the
+    // yard's own column already carries this figure via useItemValue -- hiding
+    // it from the popup only meant it was reachable one way but not the other.
+    final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync()
+        .replaceAll(RegExp(r'\s+'), ' ');
+    expect(dash, contains('valuationSealedUntilSale: !widget.sale.saleEnded,'));
+    expect(dash, contains('tenderHistoryFor: f, ),'));
+    // No longer gated on !widget.readOnly: the yard sees the same number its
+    // own column shows, sealed the same way.
+    expect(dash, isNot(contains('valuationUnitCost: widget.readOnly')));
+  });
 }

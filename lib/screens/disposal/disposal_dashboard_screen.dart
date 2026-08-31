@@ -3149,29 +3149,35 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),
-                                    // Valuation price is a Central-Disposal-only
-                                    // figure — never shown in the yard (widget.readOnly)
-                                    // view. Passing null hides the popup's
-                                    // Valuation section for yards.
-                                    valuationUnitCost: widget.readOnly
-                                        ? null
-                                        : f?.valuationCost,
-                                    valuationTotalCost: (!widget.readOnly &&
-                                            f?.valuationCost != null)
-                                        ? f!.valuationCost! *
-                                            (f.entryQty ??
-                                                r.item?.quantity ??
-                                                1)
-                                        : null,
-                                    valuationQty: widget.readOnly
-                                        ? null
-                                        : (f?.entryQty ?? r.item?.quantity),
-                                    // Sealed until the sale has run — the
+                                    // Shown in BOTH views now: the yard's own
+                                    // column already carries this figure (see
+                                    // _ValuationCell's useItemValue branch),
+                                    // so hiding it here just meant the same
+                                    // number was reachable one way but not the
+                                    // other. Sealing — not hiding — is what
+                                    // actually protects a reserve price.
+                                    valuationUnitCost: f?.valuationCost,
+                                    valuationTotalCost:
+                                        f?.valuationCost != null
+                                            ? f!.valuationCost! *
+                                                (f.entryQty ??
+                                                    r.item?.quantity ??
+                                                    1)
+                                            : null,
+                                    valuationQty:
+                                        f?.entryQty ?? r.item?.quantity,
+                                    // Sealed until the sale has ended — the
                                     // popup is just another way to read the
                                     // same reserve price.
                                     valuationSealedUntilSale:
-                                        !widget.readOnly &&
-                                            !widget.sale.saleEnded,
+                                        !widget.sale.saleEnded,
+                                    // The per-round chain this package went
+                                    // through to reach the current price —
+                                    // Valuation Tender, any re-valued rounds,
+                                    // and now this one. Each round's OWN price
+                                    // is sealed until that round has ended, the
+                                    // same rule Unsold Tenders already uses.
+                                    tenderHistoryFor: f,
                                   ),
                                 ),
                               )
