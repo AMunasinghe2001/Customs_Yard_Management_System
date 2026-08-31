@@ -195,11 +195,14 @@ class TenderHistorySection extends ConsumerWidget {
     final mine = ref
             .watch(tenderRoundsForPackageProvider(forfeited.id))
             .valueOrNull ??
-        const <({String id, DateTime createdAt})>[];
+        const <({String id, DateTime createdAt, bool hasRun})>[];
 
     // Any round that has a valuation or bids but no matching sale row still
     // deserves a line, so collect those ids too.
     final ordered = <String>[for (final s in mine) s.id];
+    // Whether each round has actually RUN. A round still to be tendered must
+    // not show its price: that is the reserve price for live bidding.
+    final ranById = <String, bool>{for (final s in mine) s.id: s.hasRun};
     for (final id in {...revals.keys, ...bids.keys}) {
       if (id.isNotEmpty && !ordered.contains(id)) ordered.add(id);
     }
@@ -244,8 +247,18 @@ class TenderHistorySection extends ConsumerWidget {
               : (isCommitteeRound ? committee?.submittedValue : null));
       // A committee round is ALWAYS worth showing: it is the last attempt, and
       // hiding it would end the history at Tender 3.
-      if (unit == null && roundBids.isEmpty && !isCommitteeRound) continue;
+      // Sealed until THIS round has run. The committee round is the clearest
+      // case: the ADG submits a price and the package is only tendered at it
+      // afterwards, so showing it here leaked the reserve price of a tender
+      // that had not opened yet.
+      final sealed = !(ranById[id] ?? false);
+      // A sealed round still renders — it is the one that says "not yet".
+      if (unit == null &&
+          roundBids.isEmpty &&
+          !isCommitteeRound &&
+          !sealed) continue;
       rows.add(_TenderRoundTile(
+        sealed: sealed,
         label: tenderRoundLabel(i + 1),
         isCommitteeRound: isCommitteeRound,
         // Who set this price. Only the committee round names its officers.
@@ -253,7 +266,7 @@ class TenderHistorySection extends ConsumerWidget {
         // Separates "still loading" from "nobody was appointed", so the tile
         // can say which instead of silently listing none.
         committeeLoading: isCommitteeRound && committeeAsync.isLoading,
-        priceLabel: unit == null
+        priceLabel: (unit == null || sealed)
             ? null
             : 'LKR ${money.format(unit * effQty)}'
                 '  (@ ${money.format(unit)} \u00d7 $effQty)',
@@ -341,6 +354,10 @@ class _CommitteeMemberChip extends StatelessWidget {
 class _TenderRoundTile extends StatelessWidget {
   final String label;
   final String? priceLabel;
+
+  /// This round has not been tendered yet, so its price is withheld and the
+  /// tile says so instead of showing a figure.
+  final bool sealed;
   final bool revalued;
   final List<String> bids;
 
@@ -359,6 +376,7 @@ class _TenderRoundTile extends StatelessWidget {
   const _TenderRoundTile({
     required this.label,
     required this.priceLabel,
+    this.sealed = false,
     required this.revalued,
     required this.bids,
     this.isCommitteeRound = false,
@@ -407,7 +425,10 @@ class _TenderRoundTile extends StatelessWidget {
                       fontWeight: FontWeight.w600)),
             ],
             const Spacer(),
-            if (priceLabel != null)
+            // A sealed round says WHY the figure is missing, in place of it.
+            if (sealed)
+              const Flexible(child: SealedValuation(compact: true))
+            else if (priceLabel != null)
               Flexible(
                 child: Text(priceLabel!,
                     textAlign: TextAlign.right,

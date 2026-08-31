@@ -34,8 +34,11 @@ void main() {
       final body = services.substring(i, i + 900);
       expect(body, contains("eq('forfeited_package_id'"),
           reason: 'Without the filter this is the slow query again.');
-      // Only the two columns the round numbering needs.
-      expect(body, contains('tender_sales(id, created_at)'));
+      // Only the columns the history needs: id + created_at to number the
+      // rounds, and sale_date/sale_time to know whether each has RUN (which
+      // gates its price). Still nowhere near the old nested join.
+      expect(body,
+          contains('tender_sales(id, created_at, sale_date, sale_time)'));
       expect(body, isNot(contains('warehouse_entries')));
     });
   });

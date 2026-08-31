@@ -237,4 +237,48 @@ void main() {
     expect(flat, isNot(contains('i.sales.any((s) => s.createdAt.isAfter(submittedAt))')),
         reason: 'createdAt is when the row was inserted, not when the tender ran.');
   });
+
+  // The details popup leaked in two more places, both showing a price for a
+  // tender that had not opened yet:
+  //   * Tender History rendered EVERY round's valuation, including the
+  //     committee round the ADG had only just priced; and
+  //   * Central Disposal's "Top Management Directorate Committee Valuation"
+  //     block showed the committee figure the moment it was recorded.
+  group('the popup seals a round that has not run', () {
+    final dialog =
+        File('lib/widgets/package_details_dialog.dart').readAsStringSync();
+    final dashboard =
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('each history round is gated on its OWN sale moment', () {
+      expect(flat(dialog),
+          contains('final sealed = !(ranById[id] ?? false)'));
+      expect(flat(dialog), contains('priceLabel: (unit == null || sealed)'),
+          reason: 'A round still to be tendered must not print its price.');
+    });
+
+    test('a sealed round still renders, saying why', () {
+      // Dropping it would end the history early and hide that a round exists.
+      expect(flat(dialog),
+          contains('if (sealed) const Flexible(child: SealedValuation(compact: true))'));
+    });
+
+    test('hasRun comes from the sale moment, not created_at', () {
+      final services = File('lib/services/services.dart').readAsStringSync();
+      expect(flat(services),
+          contains('hasRun: moment != null && DateTime.now().isAfter(moment)'));
+    });
+
+    test('the committee block waits for the committee-priced tender to run',
+        () {
+      expect(
+          flat(dashboard),
+          contains('m.isAfter(submittedAt) && x.saleTimePassed'),
+          reason: 'Recording or submitting a figure is not the same as having '
+              'tendered at it.');
+      expect(flat(dashboard), contains('if (!priced) {'));
+    });
+  });
 }

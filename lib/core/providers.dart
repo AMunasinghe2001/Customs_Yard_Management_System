@@ -658,7 +658,7 @@ final committeeEligibleProvider =
 // has already cached it, but a cold ~120ms fetch on the yard's Sold Goods page,
 // which is why that popup's history appeared late.
 final tenderRoundsForPackageProvider = FutureProvider.family<
-    List<({String id, DateTime createdAt})>, String>((ref, fpId) async {
+    List<({String id, DateTime createdAt, bool hasRun})>, String>((ref, fpId) async {
   ref.watch(tenderSaleItemsChangeTriggerProvider);
   return ref.read(disposalServiceProvider).getTenderRoundsForPackage(fpId);
 });

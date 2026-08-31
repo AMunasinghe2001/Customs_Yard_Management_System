@@ -5048,6 +5048,57 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     final unit = c.submittedValue ?? c.committeeValue!;
     final total = unit * _qty;
 
+    // The committee's figure is the price the package will be RE-TENDERED at,
+    // so it is a reserve price like any other and stays sealed until that
+    // round has actually run. Sealed both while the ADG has yet to submit it
+    // and after submission but before the tender takes place — in either case
+    // bidding at that price has not happened yet.
+    final submittedAt = c.submittedAt;
+    final priced = submittedAt != null &&
+        widget.info.sales.any((x) {
+          final m = x.saleMoment;
+          return m != null && m.isAfter(submittedAt) && x.saleTimePassed;
+        });
+    if (!priced) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: StyledFormSection(
+          gap: 0,
+          title: 'Top Management Directorate Committee Valuation',
+          icon: Icons.groups_rounded,
+          children: [
+            Container(
+              width: double.infinity,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: context.colors.surfaceDark,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SealedValuation(),
+                  const Gap(6),
+                  Text(
+                      submitted
+                          ? 'The ADG has submitted the committee figure. It '
+                              'is shown once the package has been re-tendered '
+                              'at that price.'
+                          : 'The committee has recorded a value. It is shown '
+                              'once the ADG submits it and the package has '
+                              'been re-tendered at that price.',
+                      style: TextStyle(
+                          fontSize: 11, color: context.colors.textMuted)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: StyledFormSection(

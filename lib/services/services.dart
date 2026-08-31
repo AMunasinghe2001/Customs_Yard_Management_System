@@ -4533,23 +4533,50 @@ class DisposalService {
   /// had already cached it, but on the yard's Sold Goods page nothing warms it,
   /// so opening a popup paid for the whole nested fetch and the section
   /// appeared noticeably late.
-  Future<List<({String id, DateTime createdAt})>> getTenderRoundsForPackage(
-      String forfeitedPackageId) async {
+  Future<List<({String id, DateTime createdAt, bool hasRun})>>
+      getTenderRoundsForPackage(String forfeitedPackageId) async {
     final rows = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')
-        .select('tender_sale_id, tender_sales(id, created_at)')
+        .select(
+            'tender_sale_id, tender_sales(id, created_at, sale_date, sale_time)')
         .eq('forfeited_package_id', forfeitedPackageId));
-    final out = <String, DateTime>{};
+    final out = <String, ({DateTime createdAt, bool hasRun})>{};
     for (final e in (rows as List)) {
       final sale = e['tender_sales'];
       if (sale is! Map) continue;
       final id = sale['id'] as String?;
       if (id == null || id.isEmpty) continue;
+      // `hasRun` drives the per-round seal in the Tender History: a round that
+      // has not been tendered yet must not show its price. Judged by the sale
+      // MOMENT (date + time), the same clock Mark Sold uses — never by
+      // created_at, which is only when the row was inserted.
+      final date = parseDbDate(sale['sale_date']);
+      DateTime? moment;
+      if (date != null) {
+        final t = (sale['sale_time'] as String?)?.trim();
+        if (t == null || t.isEmpty) {
+          moment = date;
+        } else {
+          final parts = t.split(':');
+          moment = DateTime(
+            date.year,
+            date.month,
+            date.day,
+            int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 0,
+            int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0,
+            int.tryParse(parts.length > 2 ? parts[2] : '') ?? 0,
+          );
+        }
+      }
       // Same package can appear as several TSI rows in one round; keep one.
-      out[id] = parseDbDateRequired(sale['created_at']);
+      out[id] = (
+        createdAt: parseDbDateRequired(sale['created_at']),
+        hasRun: moment != null && DateTime.now().isAfter(moment),
+      );
     }
     final list = out.entries
-        .map((e) => (id: e.key, createdAt: e.value))
+        .map((e) =>
+            (id: e.key, createdAt: e.value.createdAt, hasRun: e.value.hasRun))
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return list;
