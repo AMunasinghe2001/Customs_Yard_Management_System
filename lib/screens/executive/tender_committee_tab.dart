@@ -208,14 +208,17 @@ class TenderCommitteeTab extends ConsumerWidget {
                   error: e,
                   onRetry: () => ref.refresh(committeeEligibleProvider)),
               data: (list) {
-                // A package STAYS on this tab after the committee is appointed:
-                // the committee still has to record its valuation and the ADG
-                // still has to submit it as the tender's final valuation. It
-                // only leaves once the ADG has submitted.
-                var rows = list.where((info) {
-                  final c = committees[info.forfeited.id];
-                  return c == null || !c.isSubmitted;
-                }).toList();
+                // A package STAYS on this tab for the whole committee stage —
+                // appointment, the committee's valuation, AND after the ADG
+                // has submitted it. Dropping it at submission hid the finished
+                // work: the row vanished from here while Central Disposal
+                // still showed the package, so the two tables disagreed about
+                // how many committee cases there were.
+                //
+                // It leaves on its own once the committee-priced tender has
+                // been held and failed — the package is then exhausted and
+                // moves to the DG's Unsold Goods tab.
+                var rows = list.toList();
                 if (yardFilter != null) {
                   rows = rows
                       .where((info) => info.forfeited.yard == yardFilter)

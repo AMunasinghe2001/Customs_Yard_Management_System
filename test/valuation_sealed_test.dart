@@ -542,4 +542,26 @@ void main() {
           contains('required String? tenderSaleId,'));
     });
   });
+
+  // A package used to vanish from Tender Committees the moment the ADG
+  // submitted, so the finished committee work disappeared and the two tables
+  // disagreed about how many committee cases existed.
+  group('the Committees tab keeps a submitted package', () {
+    final tab = File('lib/screens/executive/tender_committee_tab.dart')
+        .readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('no row is dropped for having been submitted', () {
+      expect(flat(tab),
+          isNot(contains('return c == null || !c.isSubmitted;')),
+          reason: 'It leaves on its own once its tender has been held.');
+      expect(flat(tab), contains('var rows = list.toList();'));
+    });
+
+    test('the cell already has a submitted state to show', () {
+      // Green, a verified icon and a "Final" label — it simply never rendered.
+      expect(flat(tab), contains("submitted ? 'Final'"));
+      expect(flat(tab), contains('final submitted = c.submittedValue != null;'));
+    });
+  });
 }
