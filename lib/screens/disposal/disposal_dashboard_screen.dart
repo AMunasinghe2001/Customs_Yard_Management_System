@@ -5037,6 +5037,56 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// committee inspects the goods and the ADG submits their figure. Central
   /// Disposal needs to see both the number and whether it is final, because
   /// the package only becomes re-tenderable once the ADG has submitted.
+  /// The Valuation Directorate's price for the NEXT tender, once it has been
+  /// set but before that tender is held.
+  ///
+  /// Central Disposal needs to know the package is priced and ready to
+  /// re-tender, but the figure itself is a live reserve price — so this says a
+  /// valuation exists and withholds it, exactly as [_committeeValueSection]
+  /// does for the committee's.
+  Widget _nextTenderValuationSection() {
+    final revals = ref
+            .watch(tenderRevaluationsProvider(widget.info.forfeited.id))
+            .valueOrNull ??
+        const <String, TenderRevaluationModel>{};
+    // A PENDING row (no round yet, key '') is a price for a tender that has
+    // not been placed. A figure keyed to a round belongs to that round and is
+    // already shown in the history above.
+    if (revals[''] == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: StyledFormSection(
+        gap: 0,
+        title: 'Valuation Directorate · Next Tender',
+        icon: Icons.price_change_rounded,
+        children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: context.colors.surfaceDark,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: context.colors.borderColor),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SealedValuation(),
+                const Gap(6),
+                Text(
+                    'The Valuation Directorate has set the valuation for the '
+                    'next tender. It is shown once that tender has been held.',
+                    style: TextStyle(
+                        fontSize: 11, color: context.colors.textMuted)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _committeeValueSection() {
     final c = ref
         .watch(tenderCommitteesProvider)
@@ -5357,6 +5407,9 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
                     ],
                   ],
                 ),
+                // The Valuation Directorate's figure for the NEXT tender,
+                // once one exists — sealed, like the committee block below.
+                _nextTenderValuationSection(),
                 // The Top Management Directorate committee's figure, once one exists.
                 _committeeValueSection(),
               ],

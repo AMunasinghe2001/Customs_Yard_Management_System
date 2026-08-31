@@ -399,4 +399,46 @@ void main() {
       expect(flat(dashboard), contains('nextTenderValued: eligible.contains(f.id)'));
     });
   });
+
+  // Storing a new figure PENDING made it invisible to every reader that keyed
+  // on the round: the Valuation Directorate's own table read "Set Value" again
+  // after saving, and the Save button stayed live for a second edit.
+  group('the pending valuation is visible to its own portal', () {
+    final valuation =
+        File('lib/screens/valuation/valuation_dashboard_screen.dart')
+            .readAsStringSync();
+    final services = File('lib/services/services.dart').readAsStringSync();
+    String flat(String x) => x.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('one helper resolves the issued figure', () {
+      // So no reader can key on the round alone and miss the pending row.
+      expect(flat(valuation),
+          contains("TenderRevaluationModel? get _issued => _revals[''] ?? _revals[_current.id]"));
+      expect(flat(valuation), contains('bool get _alreadyValued => _issued != null'),
+          reason: 'A saved valuation must lock, like every other round.');
+      expect(flat(valuation), isNot(contains('_revals[_current.id] != null')));
+    });
+
+    test('the table cell prefers the pending row', () {
+      expect(flat(valuation),
+          contains("revals[''] ?? (current != null ? revals[current] : null)"));
+    });
+
+    test('a pending row counts as valued', () {
+      expect(flat(services),
+          contains('if (saleId == null || latestRound[fpId] == saleId) valued.add(fpId)'));
+    });
+  });
+
+  test('Record Bids shows a sealed block for the next tender', () {
+    // Mirrors the committee block: says a valuation exists, withholds it.
+    final dashboard =
+        File('lib/screens/disposal/disposal_dashboard_screen.dart')
+            .readAsStringSync()
+            .replaceAll(RegExp(r'\s+'), ' ');
+    expect(dashboard, contains('Widget _nextTenderValuationSection() {'));
+    expect(dashboard, contains('_nextTenderValuationSection(),'));
+    expect(dashboard, contains("if (revals[''] == null) return const SizedBox.shrink()"),
+        reason: 'A round-keyed figure belongs to that round, shown above.');
+  });
 }

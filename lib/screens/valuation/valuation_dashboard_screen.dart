@@ -1399,7 +1399,7 @@ class _ValBidsAndRevalDialogState
       _bids = results[0] as Map<String, List<double>>;
       _revals = results[1] as Map<String, TenderRevaluationModel>;
     } catch (_) {}
-    final existing = _revals[_current.id];
+    final existing = _issued;
     if (existing != null) {
       _costCtrl.text = existing.valuationCost == existing.valuationCost.roundToDouble()
           ? existing.valuationCost.toInt().toString()
@@ -1521,7 +1521,7 @@ class _ValBidsAndRevalDialogState
   Widget _newValuationEditor(Color gold) {
     // "Set" once a value exists (either already saved for the next tender, or
     // typed now); otherwise a Pending status prompts the officer to enter it.
-    final saved = _revals[_current.id] != null;
+    final saved = _issued != null;
     final typed = (double.tryParse(_costCtrl.text.trim()) ?? 0) > 0;
     final isSet = saved || typed;
     final amber = context.colors.warningAmber;
@@ -1811,7 +1811,16 @@ class _ValBidsAndRevalDialogState
   bool get _handedToHighPanel => _rounds.length > kMaxBidTenderRounds;
 
   /// True once this round's valuation has been issued.
-  bool get _alreadyValued => _revals[_current.id] != null;
+  /// The valuation in force for the NEXT tender.
+  ///
+  /// ⚠️ A newly-set figure is stored PENDING (no round yet, key '') so it
+  /// cannot overwrite the price a finished round went to tender at. Reading
+  /// only `_revals[_current.id]` misses it, which made a just-saved valuation
+  /// vanish from this table and left the Save button live for a second edit.
+  TenderRevaluationModel? get _issued =>
+      _revals[''] ?? _revals[_current.id];
+
+  bool get _alreadyValued => _issued != null;
 
   /// Read-only explanation shown in place of the editor after Tender 3.
   Widget _handoverNotice() {
@@ -2108,7 +2117,9 @@ class _ValRevalCell extends ConsumerWidget {
     final revals =
         ref.watch(tenderRevaluationsProvider(info.forfeited.id)).valueOrNull ??
             const <String, TenderRevaluationModel>{};
-    final unit = current != null ? revals[current]?.valuationCost : null;
+    // The pending row first: a newly-set figure has no round yet.
+    final unit = (revals[''] ?? (current != null ? revals[current] : null))
+        ?.valuationCost;
     final qty = _valQtyOf(info.forfeited);
     final fmt = NumberFormat('#,##0');
 

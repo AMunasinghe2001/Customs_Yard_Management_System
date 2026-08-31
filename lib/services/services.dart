@@ -4839,7 +4839,10 @@ class DisposalService {
     for (final e in (rows as List)) {
       final fpId = e['forfeited_package_id'] as String;
       final saleId = e['tender_sale_id'] as String?;
-      if (saleId != null && latestRound[fpId] == saleId) valued.add(fpId);
+      // A PENDING row (null round) is a figure set for the NEXT tender — the
+      // package IS valued. Requiring a round here made a just-saved valuation
+      // read as "Set Value" again on this table.
+      if (saleId == null || latestRound[fpId] == saleId) valued.add(fpId);
     }
     return valued;
   }
