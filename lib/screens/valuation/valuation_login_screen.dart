@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -58,25 +58,21 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
+    final creds = await SecureCredentialStore.load('valuation_saved');
     setState(() {
-      _idCtrl.text = prefs.getString('valuation_saved_id') ?? '';
-      _passwordCtrl.text = prefs.getString('valuation_saved_password') ?? '';
-      _rememberMe = prefs.getBool('valuation_remember_me') ?? false;
+      _idCtrl.text = creds['email'] as String? ?? '';
+      _passwordCtrl.text = creds['password'] as String? ?? '';
+      _rememberMe = creds['remember_me'] as bool? ?? false;
     });
   }
 
   Future<void> _saveCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setString('valuation_saved_id', _idCtrl.text.trim());
-      await prefs.setString('valuation_saved_password', _passwordCtrl.text);
-      await prefs.setBool('valuation_remember_me', true);
-    } else {
-      await prefs.remove('valuation_saved_id');
-      await prefs.remove('valuation_saved_password');
-      await prefs.setBool('valuation_remember_me', false);
-    }
+    await SecureCredentialStore.save(
+      'valuation_saved',
+      emailOrId: _idCtrl.text.trim(),
+      password: _passwordCtrl.text,
+      rememberMe: _rememberMe,
+    );
   }
 
   @override

@@ -43,10 +43,16 @@ create table if not exists auth.users (
   encrypted_password  text,
   email_confirmed_at  timestamptz,
   last_sign_in_at     timestamptz,
+  failed_login_attempts integer not null default 0,
+  locked_until        timestamptz,
   raw_user_meta_data  jsonb not null default '{}'::jsonb,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );
+
+alter table auth.users
+  add column if not exists failed_login_attempts integer not null default 0,
+  add column if not exists locked_until timestamptz;
 
 create index if not exists auth_users_email_idx on auth.users(lower(email));
 

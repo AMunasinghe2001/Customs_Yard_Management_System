@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -60,25 +60,21 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
+    final creds = await SecureCredentialStore.load('disposal_saved');
     setState(() {
-      _idCtrl.text = prefs.getString('disposal_saved_id') ?? '';
-      _passwordCtrl.text = prefs.getString('disposal_saved_password') ?? '';
-      _rememberMe = prefs.getBool('disposal_remember_me') ?? false;
+      _idCtrl.text = creds['email'] as String? ?? '';
+      _passwordCtrl.text = creds['password'] as String? ?? '';
+      _rememberMe = creds['remember_me'] as bool? ?? false;
     });
   }
 
   Future<void> _saveCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setString('disposal_saved_id', _idCtrl.text.trim());
-      await prefs.setString('disposal_saved_password', _passwordCtrl.text);
-      await prefs.setBool('disposal_remember_me', true);
-    } else {
-      await prefs.remove('disposal_saved_id');
-      await prefs.remove('disposal_saved_password');
-      await prefs.setBool('disposal_remember_me', false);
-    }
+    await SecureCredentialStore.save(
+      'disposal_saved',
+      emailOrId: _idCtrl.text.trim(),
+      password: _passwordCtrl.text,
+      rememberMe: _rememberMe,
+    );
   }
 
   @override

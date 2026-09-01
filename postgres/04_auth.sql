@@ -33,6 +33,8 @@ set client_min_messages = warning;
 drop function if exists auth.sign_in(text, text);
 drop function if exists auth.sign_up(text, text, jsonb);
 drop function if exists auth.user_by_id(uuid);
+drop function if exists auth.record_failed_login(text);
+drop function if exists auth.clear_failed_login(text);
 
 -- ── Sign in ─────────────────────────────────────────────────────────────────
 --  `p_identifier` may be an email OR a username: officers are issued
@@ -49,13 +51,6 @@ returns table (
   id                 uuid,
   email              text,
   meta               jsonb,
-  -- ⚠️ Returned because the app GATES ON IT. AuthService.verifyUserSession
-  -- signs the user out and throws 'email_not_confirmed' when
-  -- user.emailConfirmedAt is null, and the router turns that into a redirect
-  -- back to '/'. Leaving this column out of the result made every single
-  -- sign-in look successful and then bounce straight back to the portal
-  -- picker — the password was right, the profile was fine, and the only
-  -- thing wrong was that this function never reported the column.
   email_confirmed_at timestamptz
 )
 language plpgsql
@@ -64,6 +59,7 @@ set search_path = auth, public
 as $fn$
 declare
   v_email text;
+  v_user auth.users%rowtype;
 begin
   if p_identifier is null or p_password is null then
     return;
@@ -74,14 +70,84 @@ begin
     return;
   end if;
 
-  return query
+  select *
+    into v_user
+    from auth.users u
+   where lower(u.email) = lower(trim(v_email));
+
+  if v_user.id is null then
+    return;
+  end if;
+
+  if v_user.locked_until is not null and v_user.locked_until > now() then
+    return;
+  end if;
+
+  if v_user.encrypted_password is null then
+    return;
+  end if;
+
+  if v_user.encrypted_password = crypt(p_password, v_user.encrypted_password) then
+    return query
+    update auth.users u
+       set last_sign_in_at = now(),
+           failed_login_attempts = 0,
+           locked_until = null,
+           updated_at = now()
+     where u.id = v_user.id
+    returning u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at;
+    return;
+  end if;
+
   update auth.users u
-     set last_sign_in_at = now()
-   where lower(u.email) = lower(trim(v_email))
-     and u.encrypted_password is not null
-     -- bcrypt: re-hash the attempt with the stored salt, then compare.
-     and u.encrypted_password = crypt(p_password, u.encrypted_password)
-  returning u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at;
+     set failed_login_attempts = coalesce(u.failed_login_attempts, 0) + 1,
+         locked_until = case
+           when coalesce(u.failed_login_attempts, 0) + 1 >= 5 then now() + interval '15 minutes'
+           else null
+         end,
+         updated_at = now()
+   where u.id = v_user.id;
+end;
+$fn$;
+
+create or replace function auth.record_failed_login(p_email text)
+returns void
+language plpgsql
+security definer
+set search_path = auth, public
+as $fn$
+begin
+  if p_email is null then
+    return;
+  end if;
+
+  update auth.users u
+     set failed_login_attempts = coalesce(u.failed_login_attempts, 0) + 1,
+         locked_until = case
+           when coalesce(u.failed_login_attempts, 0) + 1 >= 5 then now() + interval '15 minutes'
+           else null
+         end,
+         updated_at = now()
+   where lower(u.email) = lower(trim(p_email));
+end;
+$fn$;
+
+create or replace function auth.clear_failed_login(p_email text)
+returns void
+language plpgsql
+security definer
+set search_path = auth, public
+as $fn$
+begin
+  if p_email is null then
+    return;
+  end if;
+
+  update auth.users u
+     set failed_login_attempts = 0,
+         locked_until = null,
+         updated_at = now()
+   where lower(u.email) = lower(trim(p_email));
 end;
 $fn$;
 
@@ -225,7 +291,9 @@ set search_path = auth, public
 as $fn$
   select u.id, u.email, u.raw_user_meta_data, u.email_confirmed_at
     from auth.users u
-   where u.id = p_user_id;
+   where u.id = p_user_id
+     and u.email_confirmed_at is not null
+     and (u.locked_until is null or u.locked_until <= now());
 $fn$;
 
 -- ── No backfill needed ──────────────────────────────────────────────────────

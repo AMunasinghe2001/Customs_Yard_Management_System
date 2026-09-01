@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -30,25 +30,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
+    final creds = await SecureCredentialStore.load('saved');
     setState(() {
-      _emailCtrl.text = prefs.getString('saved_email') ?? '';
-      _passwordCtrl.text = prefs.getString('saved_password') ?? '';
-      _rememberMe = prefs.getBool('remember_me') ?? false;
+      _emailCtrl.text = creds['email'] as String? ?? '';
+      _passwordCtrl.text = creds['password'] as String? ?? '';
+      _rememberMe = creds['remember_me'] as bool? ?? false;
     });
   }
 
   Future<void> _saveCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setString('saved_email', _emailCtrl.text.trim());
-      await prefs.setString('saved_password', _passwordCtrl.text);
-      await prefs.setBool('remember_me', true);
-    } else {
-      await prefs.remove('saved_email');
-      await prefs.remove('saved_password');
-      await prefs.setBool('remember_me', false);
-    }
+    await SecureCredentialStore.save(
+      'saved',
+      emailOrId: _emailCtrl.text.trim(),
+      password: _passwordCtrl.text,
+      rememberMe: _rememberMe,
+    );
   }
 
   @override
@@ -98,6 +94,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (raw.contains('email_not_confirmed')) {
       return 'Email not confirmed. Please check your inbox and confirm your email address first.';
     }
+    if (raw.contains('login_locked')) {
+      return 'This account is temporarily locked after repeated failed logins. Please try again later.';
+    }
     if (raw.contains('Invalid login credentials') || raw.contains('invalid_credentials')) {
       return 'Incorrect username/email or password. Please try again.';
     }
@@ -109,6 +108,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     }
     if (raw.contains('account_expired')) {
       return 'Your account has expired (accounts auto-deactivate 8 months after creation). Please contact an administrator.';
+    }
+    if (raw.contains('session_expired')) {
+      return 'Your session has timed out due to inactivity. Please sign in again.';
     }
     return 'Sign in failed. Please check your credentials.';
   }

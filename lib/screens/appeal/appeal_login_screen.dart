@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -56,25 +56,21 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
+    final creds = await SecureCredentialStore.load('appeal_saved');
     setState(() {
-      _idCtrl.text = prefs.getString('appeal_saved_id') ?? '';
-      _passwordCtrl.text = prefs.getString('appeal_saved_password') ?? '';
-      _rememberMe = prefs.getBool('appeal_remember_me') ?? false;
+      _idCtrl.text = creds['email'] as String? ?? '';
+      _passwordCtrl.text = creds['password'] as String? ?? '';
+      _rememberMe = creds['remember_me'] as bool? ?? false;
     });
   }
 
   Future<void> _saveCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setString('appeal_saved_id', _idCtrl.text.trim());
-      await prefs.setString('appeal_saved_password', _passwordCtrl.text);
-      await prefs.setBool('appeal_remember_me', true);
-    } else {
-      await prefs.remove('appeal_saved_id');
-      await prefs.remove('appeal_saved_password');
-      await prefs.setBool('appeal_remember_me', false);
-    }
+    await SecureCredentialStore.save(
+      'appeal_saved',
+      emailOrId: _idCtrl.text.trim(),
+      password: _passwordCtrl.text,
+      rememberMe: _rememberMe,
+    );
   }
 
   @override

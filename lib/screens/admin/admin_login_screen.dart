@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
@@ -32,28 +32,21 @@ class _AdminLoginScreenState extends ConsumerState<AdminLoginScreen> {
   }
 
   Future<void> _loadSavedCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    final savedEmail = prefs.getString('admin_saved_email') ?? '';
-    final savedPass = prefs.getString('admin_saved_password') ?? '';
-    print('DEBUG: AdminLoginScreen loaded credentials. Email length: ${savedEmail.length}');
+    final creds = await SecureCredentialStore.load('admin_saved');
     setState(() {
-      _emailCtrl.text = savedEmail;
-      _passwordCtrl.text = savedPass;
-      _rememberMe = prefs.getBool('admin_remember_me') ?? false;
+      _emailCtrl.text = creds['email'] as String? ?? '';
+      _passwordCtrl.text = creds['password'] as String? ?? '';
+      _rememberMe = creds['remember_me'] as bool? ?? false;
     });
   }
 
   Future<void> _saveCredentials() async {
-    final prefs = await SharedPreferences.getInstance();
-    if (_rememberMe) {
-      await prefs.setString('admin_saved_email', _emailCtrl.text.trim());
-      await prefs.setString('admin_saved_password', _passwordCtrl.text);
-      await prefs.setBool('admin_remember_me', true);
-    } else {
-      await prefs.remove('admin_saved_email');
-      await prefs.remove('admin_saved_password');
-      await prefs.setBool('admin_remember_me', false);
-    }
+    await SecureCredentialStore.save(
+      'admin_saved',
+      emailOrId: _emailCtrl.text.trim(),
+      password: _passwordCtrl.text,
+      rememberMe: _rememberMe,
+    );
   }
 
   @override

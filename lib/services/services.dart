@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show debugPrint;
 import '../core/supabase_client.dart';
-import '../core/supabase_client.dart';
 import '../core/app_session.dart';
+import '../core/security_policy.dart';
 import '../core/yards.dart';
 import '../core/directorates.dart';
 import '../models/models.dart';
@@ -58,8 +58,6 @@ class AuthService {
     );
 
     if (profileData == null) {
-      // If profile doesn't exist yet (first time login), it might need creation via trigger
-      // But for security, we sign out if not found in our roles table
       await signOut();
       throw Exception('profile_not_found');
     }
@@ -74,6 +72,14 @@ class AuthService {
     if (profile.isExpired) {
       await signOut();
       throw Exception('account_expired');
+    }
+
+    if (SessionSecurityPolicy.isExpired(
+      lastActivityAt: profile.lastSeenAt,
+      now: DateTime.now(),
+    )) {
+      await signOut();
+      throw Exception('session_expired');
     }
 
     AppSession.setYard(profile.yard);
@@ -105,12 +111,59 @@ class AuthService {
     }
   }
 
+  Future<void> _checkLoginLockout(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return;
+
+    final rows = await supabase
+        .from('auth.users')
+        .select()
+        .eq('email', trimmed)
+        .limit(1);
+    final row = rows.isEmpty ? null : (rows.first as Map<String, dynamic>);
+    final lockedUntil = row == null || row['locked_until'] == null
+        ? null
+        : DateTime.tryParse(row['locked_until'].toString());
+
+    if (LoginSecurityPolicy.isLockedOut(
+      lockedUntil: lockedUntil,
+      now: DateTime.now(),
+    )) {
+      throw Exception('login_locked');
+    }
+  }
+
+  Future<void> _recordFailedLogin(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return;
+
+    try {
+      await supabase.rpc('auth.record_failed_login', params: {'p_email': trimmed});
+    } catch (_) {
+      // Best-effort only: the login still fails, and the DB is the source of truth.
+    }
+  }
+
+  Future<void> _clearFailedLogin(String email) async {
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) return;
+
+    try {
+      await supabase.rpc('auth.clear_failed_login', params: {'p_email': trimmed});
+    } catch (_) {
+      // A failed reset should never block a valid login.
+    }
+  }
+
   Future<ProfileModel?> signIn(String email, String password) async {
     try {
-      print('DEBUG: AuthService.signIn attempting for: "$email"');
+      final resolvedEmail = email.trim();
+      print('DEBUG: AuthService.signIn attempting for: "$resolvedEmail"');
+      await _checkLoginLockout(resolvedEmail);
+
       final response = await _withNetworkRetry(
         () => supabase.auth.signInWithPassword(
-          email: email.trim(),
+          email: resolvedEmail,
           password: password,
         ),
       );
@@ -144,6 +197,7 @@ class AuthService {
         print('DEBUG: AuthService.signIn - Status update failed: $e');
       }
 
+      await _clearFailedLogin(resolvedEmail);
       await AuditLogService().recordLog(
         userId: profile.id,
         action: 'Signed In',
@@ -161,11 +215,21 @@ class AuthService {
       }
       if (e.code == 'invalid_credentials' ||
           msg.contains('invalid login credentials')) {
+        await _recordFailedLogin(email);
         throw Exception('invalid_credentials');
       }
       rethrow;
     } catch (e) {
       print('DEBUG: signIn unexpected error: $e');
+      if (e.toString().contains('login_locked')) {
+        await AuditLogService().recordLog(
+          userId: null,
+          action: 'Blocked login after lockout',
+          entityType: 'auth',
+          entityId: 'login_lockout',
+          details: {'email': email.trim()},
+        );
+      }
       rethrow;
     }
   }
@@ -2658,7 +2722,7 @@ class AuditLogService {
   }
 
   Future<void> recordLog({
-    required String userId,
+    required String? userId,
     required String action,
     required String entityType,
     required String entityId,

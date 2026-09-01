@@ -344,7 +344,12 @@ class PgQuery implements Future<dynamic> {
 
   // ── SQL generation ────────────────────────────────────────────────────────
 
-  static String _quoteIdent(String name) => '"${name.replaceAll('"', '""')}"';
+  static String _quoteIdent(String name) {
+    // Handle schema-qualified names (e.g., 'auth.users' -> "auth"."users")
+    // by splitting on dots and quoting each part separately.
+    final parts = name.split('.');
+    return parts.map((part) => '"${part.replaceAll('"', '""')}"').join('.');
+  }
 
   /// Builds the SELECT list for [fields] on [tableAlias], recursing into
   /// embeds. Returns the fragments; the caller joins them.
