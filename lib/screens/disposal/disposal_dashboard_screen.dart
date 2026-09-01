@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -5097,6 +5097,11 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// valuation exists and withholds it, exactly as [_committeeValueSection]
   /// does for the committee's.
   Widget _nextTenderValuationSection() {
+    // For committee rounds (Tender 4+), the Valuation Directorate no longer
+    // sets the price — the Top Management Committee does. Showing both sealed
+    // messages is confusing, so hide this section for committee packages.
+    if (_rounds.length > kMaxBidTenderRounds) return const SizedBox.shrink();
+
     final revals = ref
             .watch(tenderRevaluationsProvider(widget.info.forfeited.id))
             .valueOrNull ??
@@ -5266,7 +5271,8 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     );
   }
 
-  /// True once the Valuation Directorate has set this round's re-valuation.
+  /// True once the Valuation Directorate has set this round's re-valuation,
+  /// OR once the Top Management Directorate committee has valued the package.
   ///
   /// The valuation is decided BY reading these bids, so once it exists the bids
   /// are evidence for a decision already taken — editing them would leave the
@@ -5279,7 +5285,16 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// which exists from the moment the round is priced — i.e. BEFORE any bid is
   /// recorded against it. Locking on it stopped Central Disposal recording the
   /// round's bids at all.
-  bool get _currentRoundLocked => _revals[''] != null;
+  ///
+  /// Committee valued also locks: once the committee has priced the goods the
+  /// bids are evidence for a decision already taken and must not change.
+  bool get _currentRoundLocked {
+    if (_revals[''] != null) return true;
+    final c = ref
+        .read(tenderCommitteesProvider)
+        .valueOrNull?[widget.info.forfeited.id];
+    return c?.committeeValue != null;
+  }
 
   /// The saved bids of a locked round, shown as read-only chips (highest first)
   /// — the same presentation a past round gets.
@@ -5320,6 +5335,18 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// Explains why the bids can no longer be edited.
   Widget _lockedNotice() {
     final blue = context.colors.accentLightBlue;
+    // Pick the right explanation: committee-valued vs Valuation Directorate.
+    final c = ref
+        .read(tenderCommitteesProvider)
+        .valueOrNull?[widget.info.forfeited.id];
+    final isCommitteeLock =
+        _revals[''] == null && c?.committeeValue != null;
+    final message = isCommitteeLock
+        ? 'The Top Management Directorate committee has valued this package, '
+          'so the bids can no longer be changed.'
+        : 'The Valuation Directorate has set this round’s valuation from '
+          'these bids, so they can no longer be changed. Record the next '
+          'round’s bids after the package is re-tendered.';
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -5332,9 +5359,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
         const Gap(8),
         Expanded(
           child: Text(
-            'The Valuation Directorate has set this round’s valuation from '
-            'these bids, so they can no longer be changed. Record the next '
-            'round’s bids after the package is re-tendered.',
+            message,
             style: TextStyle(
                 color: context.colors.textSecondary,
                 fontSize: 11,

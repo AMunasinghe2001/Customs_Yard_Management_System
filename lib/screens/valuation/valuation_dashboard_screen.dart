@@ -555,7 +555,8 @@ class _ValuationRequestCard extends ConsumerWidget {
                       DataCell(Center(child: Builder(builder: (_) {
                         // SR-form declared value (unit value × qty) — reference
                         // figure, distinct from the valuation cost set below.
-                        final srUnit = pkgItem?.unitValue ?? 0;
+                        final actualPkgItem = pkgItem ?? it.coveredItems.firstOrNull;
+                        final srUnit = actualPkgItem?.unitValue ?? 0;
                         final srTotal = srUnit * displayQty;
                         return Text(
                             'LKR ${NumberFormat('#,##0').format(srTotal)}',
@@ -792,7 +793,8 @@ class _ItemValuationDialogState extends ConsumerState<_ItemValuationDialog> {
   @override
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
-    final srUnit = widget.pkgItem?.unitValue ?? 0;
+    final actualPkgItem = widget.pkgItem ?? widget.item.coveredItems.firstOrNull;
+    final srUnit = actualPkgItem?.unitValue ?? 0;
     final srTotal = srUnit * widget.qty;
     return StyledFormDialog(
       label: 'Set Valuation',
@@ -821,7 +823,9 @@ class _ItemValuationDialogState extends ConsumerState<_ItemValuationDialog> {
             Icon(Icons.sell_rounded,
                 size: 13, color: context.colors.textMuted),
             const Gap(4),
-            Text('SR value LKR ${NumberFormat('#,##0').format(srTotal)}',
+            Text(
+                'SR value LKR ${NumberFormat('#,##0').format(srTotal)}'
+                '  ·  @ ${NumberFormat('#,##0').format(srUnit)}',
                 style: TextStyle(
                     color: context.colors.textSecondary,
                     fontWeight: FontWeight.w600,
