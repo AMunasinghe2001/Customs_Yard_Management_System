@@ -307,6 +307,22 @@ void main() {
       expect(sql, contains('"foo.bar"'));
     });
 
+    // A schema-qualified TABLE must split; a dotted COLUMN must not. One
+    // shared quoting helper cannot do both -- making it split fixed
+    // `auth.users` (42P01: relation does not exist) and simultaneously broke
+    // the column case above, which had no relation-side test to catch it.
+    test('a schema-qualified table splits into "schema"."table"', () {
+      final sql = PgQuery('auth.users').select('*').debugSql();
+      expect(sql, contains('"auth"."users"'));
+      expect(sql, isNot(contains('"auth.users"')),
+          reason: 'Postgres reads that as ONE table with a dot in its name.');
+    });
+
+    test('an unqualified table is still quoted as one name', () {
+      expect(PgQuery('audit_logs').select('*').debugSql(),
+          contains('"audit_logs"'));
+    });
+
     test('every filter operator gets wrapped, not just `in`', () {
       final eq = PgQuery('audit_logs')
           .select('*, profiles(role)')

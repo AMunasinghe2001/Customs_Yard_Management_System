@@ -339,6 +339,16 @@ class _DisposalLoginScreenState extends ConsumerState<DisposalLoginScreen> {
     if (raw.contains('account_expired')) {
       return 'Your account has expired. Please contact an administrator.';
     }
+    // The code is CONSUMED the moment it verifies, so a second tap of
+    // "Verify & Sign In" finds nothing left. Without this the user saw the
+    // generic "Sign in failed", which told them to retry something that can
+    // never succeed and hid the real reason the FIRST attempt was rejected.
+    if (low.contains('no verification code')) {
+      return 'That code has already been used. Tap "Resend code" for a new one.';
+    }
+    if (low.contains('too many attempts')) {
+      return 'Too many incorrect attempts. Tap "Resend code" for a new one.';
+    }
     if (raw.contains('account_deactivated')) {
       return 'Your account has been deactivated. Please contact an administrator.';
     }

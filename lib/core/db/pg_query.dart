@@ -344,12 +344,20 @@ class PgQuery implements Future<dynamic> {
 
   // ── SQL generation ────────────────────────────────────────────────────────
 
-  static String _quoteIdent(String name) {
-    // Handle schema-qualified names (e.g., 'auth.users' -> "auth"."users")
-    // by splitting on dots and quoting each part separately.
-    final parts = name.split('.');
-    return parts.map((part) => '"${part.replaceAll('"', '""')}"').join('.');
-  }
+  /// Quotes ONE identifier. A dot is part of the NAME, not a separator:
+  /// `foo.bar` becomes `"foo.bar"`.
+  ///
+  /// WARNING: use [_quoteRel] for anything that may be schema-qualified.
+  /// Quoting a COLUMN with the splitting version turned a column literally
+  /// named `foo.bar` into `"foo"."bar"` -- a reference to a table that does
+  /// not exist.
+  static String _quoteIdent(String name) => '"${name.replaceAll('"', '""')}"';
+
+  /// Quotes a RELATION, splitting an optional schema: `auth.users` becomes
+  /// `"auth"."users"`, not `"auth.users"` -- Postgres reads the latter as a
+  /// single table whose name contains a dot, and rejects it with 42P01.
+  static String _quoteRel(String name) =>
+      name.split('.').map(_quoteIdent).join('.');
 
   /// Builds the SELECT list for [fields] on [tableAlias], recursing into
   /// embeds. Returns the fragments; the caller joins them.
@@ -447,7 +455,7 @@ class PgQuery implements Future<dynamic> {
       // to_jsonb of the whole row when the embed is `*`, otherwise a built
       // object of just the named columns. row_to_json keeps column names.
       final body = _objectExpr(childAlias, f.children, inner);
-      return '(select $body from ${_quoteIdent(childTable)} $childAlias '
+      return '(select $body from ${_quoteRel(childTable)} $childAlias '
           'where $joinOn limit 1) as $key';
     }
 
@@ -456,7 +464,7 @@ class PgQuery implements Future<dynamic> {
     // `(json['package_items'] as List?)` and treat null as absent, but an
     // empty list is the honest answer and keeps `.length` working.
     return "(select coalesce(json_agg($body), '[]'::json) "
-        'from ${_quoteIdent(childTable)} $childAlias '
+        'from ${_quoteRel(childTable)} $childAlias '
         'where $joinOn) as $key';
   }
 
@@ -527,7 +535,7 @@ class PgQuery implements Future<dynamic> {
           final (fk, toOne) = _resolveJoin(table, childTable, field.hint);
           final on = _joinOn(fk, toOne, alias, childAlias);
           col = '$childAlias.${_quoteIdent(embedCol)}';
-          wrap = (sql) => 'exists (select 1 from ${_quoteIdent(childTable)} '
+          wrap = (sql) => 'exists (select 1 from ${_quoteRel(childTable)} '
               '$childAlias where $on and $sql)';
         } else {
           col = '$alias.${_quoteIdent(f.column)}';
@@ -598,13 +606,13 @@ class PgQuery implements Future<dynamic> {
     //  would make the cheap half of that pair the expensive one.
     if (_countOnly) {
       final sql = 'select count(*)::int as count\n'
-          '  from ${_quoteIdent(table)} $alias$whereSql';
+          '  from ${_quoteRel(table)} $alias$whereSql';
       return (sql, params);
     }
 
     final cols = _selectList(table, alias, _fields, params, c).join(',\n       ');
     final sql = 'select $cols\n'
-        '  from ${_quoteIdent(table)} $alias'
+        '  from ${_quoteRel(table)} $alias'
         '$whereSql$orderSql$limitSql$offsetSql';
     return (sql, params);
   }
@@ -654,7 +662,7 @@ class PgQuery implements Future<dynamic> {
                         'excluded.${_quoteIdent(k)}')
                     .join(', ')}'
             : '';
-        final sql = 'insert into ${_quoteIdent(table)} '
+        final sql = 'insert into ${_quoteRel(table)} '
             '(${colList.map(_quoteIdent).join(', ')}) '
             'values ${tuples.join(', ')}$conflict$returning';
         return (sql, params);
@@ -670,7 +678,7 @@ class PgQuery implements Future<dynamic> {
         // The alias has to go: UPDATE ... SET uses bare column names, and the
         // WHERE was rendered against `t`.
         final w = whereSql.replaceAll('"t".', '').replaceAll('t.', '');
-        final sql = 'update ${_quoteIdent(table)} set ${sets.join(', ')}'
+        final sql = 'update ${_quoteRel(table)} set ${sets.join(', ')}'
             '$w$returning';
         return (sql, params);
 
@@ -681,7 +689,7 @@ class PgQuery implements Future<dynamic> {
           // one; if a refactor drops it, fail loudly instead of obeying.
           throw PgQueryException('refusing to delete every row of $table');
         }
-        final sql = 'delete from ${_quoteIdent(table)}$w$returning';
+        final sql = 'delete from ${_quoteRel(table)}$w$returning';
         return (sql, params);
 
       default:
