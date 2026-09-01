@@ -1106,3 +1106,12 @@ Applies everywhere at once, since it is set on the app rather than per screen.
 ### The report logo, again (2026-08-29)
 
 `_loadLogo()` swallowed both asset-load failures silently, so a missing emblem looked like a design choice. Both `catch` blocks now `debugPrint` before falling back to the "SLC" monogram. The load path itself is correct (tinted SVG with `currentColor` replaced, then the plain one) and `_ensureFontsLoaded()` awaits it before every builder — if the monogram still appears, the terminal now says why.
+
+### Destroy enabled from Final Disposition; Destruction Sale removed (2026-09-02)
+
+- **Destroy is now a direct final disposition**, same as Release / Forfeit / Abandoned / Re-export / Other — writes `[FINAL:DESTROYED]` immediately, never a Central Disposal disposal-request. Confirmed with the user: unlike Sale, Destroy never opens a request; it ends the item's disposition on the spot.
+- **The bug**: the "Actions" dialog (`_PackageActionsDialog`, opened from Abandoned/Detained/Forfeited/Other status pages) had its **own** unconditional `_disabledForAll = {'Destroy'}` that grey-faded the tile no matter the role or an Appeal Directorate decision — a *second*, duplicate copy of the Release/Forfeit/Abandoned/Re-export/Destroy/Other action list, independent of the Final Disposition sheet's (already-correct) gate. Fixed by clearing that set.
+- **Destroyed Goods pages** (yard `disposition_category_screen.dart` and Central Disposal `disposal_dashboard_screen.dart`) show a **Destroyed status column**, not a delivery concept — destruction has no delivery step. Their details popup shows the SR's real destruction financials (deposit → per-category expenses → refund/shortfall), not Valuation/Delivery Status/Destruction Price/Receipt No (those belong to a sale).
+- ⚠️ **`srFinancialsProvider` had a fake-data generator**: whenever a real recorded expense/proceeds/deposit was `0`, it invented a plausible-looking figure from the item id's hash. This fed the Financials tab, the Expenses tab, *and* the Destroyed Goods popup once wired up — money nobody recorded, with no way to tell a real zero from an invented one. **Removed.** Zero is now a real, meaningful answer.
+- The dead `_DestructionDeliverySection` (never instantiated, but shaped exactly like the wrong UI — Mark Delivered + Valuation/Receipt/Price fields) is deleted so nobody wires it up later.
+- The now-redundant "Destruction Sale" nav item / route / disposal-request-dialog option is removed from Central Disposal, since Destroy no longer routes through a request.
