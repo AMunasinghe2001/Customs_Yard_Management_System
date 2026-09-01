@@ -2077,6 +2077,8 @@ class TenderSaleItemModel {
   final String yard;
   final bool sold;
   final DateTime? soldAt;
+  final bool unsold;
+  final DateTime? unsoldAt;
   final String? receiptNumber;
   final ForfeitedPackageModel? forfeited;
   final double soldPrice;
@@ -2091,6 +2093,8 @@ class TenderSaleItemModel {
     required this.yard,
     this.sold = false,
     this.soldAt,
+    this.unsold = false,
+    this.unsoldAt,
     this.receiptNumber,
     this.forfeited,
     this.soldPrice = 0.0,
@@ -2108,6 +2112,10 @@ class TenderSaleItemModel {
       sold: json['sold'] as bool? ?? false,
       soldAt: json['sold_at'] != null
           ? DateTime.tryParse(json['sold_at'].toString())
+          : null,
+      unsold: json['unsold'] as bool? ?? false,
+      unsoldAt: json['unsold_at'] != null
+          ? DateTime.tryParse(json['unsold_at'].toString())
           : null,
       receiptNumber: json['receipt_number'] as String?,
       forfeited: json['forfeited_packages'] != null
@@ -2273,6 +2281,8 @@ class DestructionItemModel {
   final String yard;
   final bool destroyed;
   final DateTime? destroyedAt;
+  final bool undestroyed;
+  final DateTime? undestroyedAt;
   final bool delivered;
   final DateTime? deliveredAt;
   final String? notes;
@@ -2295,6 +2305,8 @@ class DestructionItemModel {
     required this.yard,
     this.destroyed = false,
     this.destroyedAt,
+    this.undestroyed = false,
+    this.undestroyedAt,
     this.delivered = false,
     this.deliveredAt,
     this.notes,
@@ -2314,13 +2326,17 @@ class DestructionItemModel {
       destroyedAt: json['destroyed_at'] != null
           ? DateTime.tryParse(json['destroyed_at'].toString())
           : null,
+      undestroyed: json['undestroyed'] as bool? ?? false,
+      undestroyedAt: json['undestroyed_at'] != null
+          ? DateTime.tryParse(json['undestroyed_at'].toString())
+          : null,
       delivered: json['delivered'] as bool? ?? false,
       deliveredAt: json['delivered_at'] != null
           ? DateTime.tryParse(json['delivered_at'].toString())
           : null,
       notes: json['notes'] as String?,
       destroyedPrice: parseDbNum(json['destroyed_price']) ?? 0,
-      appliedTaxes: (json['applied_taxes'] as List?) ?? const [],
+      appliedTaxes: json['applied_taxes'] as List<dynamic>? ?? const [],
       receiptNumber: json['receipt_number'] as String?,
       forfeited: json['forfeited_packages'] != null
           ? ForfeitedPackageModel.fromJson(

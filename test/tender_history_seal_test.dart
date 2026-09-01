@@ -104,7 +104,7 @@ void main() {
     await tester.pumpWidget(harness());
     await tester.pumpAndSettle();
     expect(find.text('Sealed'), findsNothing);
-    expect(find.textContaining('shown once the tender is over'), findsNothing);
+    expect(find.textContaining('shown once the tender closes'), findsNothing);
   });
 
   testWidgets('a round still to be held keeps its reserve sealed',

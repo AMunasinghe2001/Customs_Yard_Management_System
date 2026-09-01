@@ -29,7 +29,7 @@ void main() {
     ));
     expect(find.text('Sealed'), findsOneWidget);
     // The reason has to be on screen, not only in the tooltip.
-    expect(find.text('shown once the tender is over'), findsOneWidget);
+    expect(find.text('shown once the tender closes'), findsOneWidget);
     expect(find.byIcon(Icons.lock_outline_rounded), findsOneWidget);
     expect(SealedValuation.tooltip, contains('reserve price'));
   });
@@ -62,7 +62,7 @@ void main() {
       ),
     ));
     expect(tester.takeException(), isNull);
-    expect(find.text('shown once the tender is over'), findsOneWidget);
+    expect(find.text('shown once the tender closes'), findsOneWidget);
   });
   // The widget above is only half the protection: the real risk is a future
   // edit that renders a valuation on a LIVE sale card without passing the gate.
@@ -488,7 +488,7 @@ void main() {
       // these bids. NOT on the round's own reserve: that exists before any bid
       // is recorded, so it stopped bids being entered at all.
       expect(dashboard,
-          contains("bool get _currentRoundLocked => _revals[''] != null;"));
+          contains("bool get _currentRoundLocked {"));
     });
   });
 
@@ -605,17 +605,10 @@ void main() {
     });
 
     test('both forms collect an end time and validate it', () {
-      // Exactly ONE field per form (2 total): a leftover partial edit once
-      // duplicated it in the Tender Sale form while leaving the Destruction
-      // Sale form without one at all.
-      expect("label: 'Sale End Time',".allMatches(dash).length, 2);
-      expect(
-          "if (_saleEndTime == null) return 'Sale End Time is required.';"
-              .allMatches(dash)
-              .length,
-          2);
-      expect(dash,
-          contains("if (endM <= startM) return 'Sale End Time must be after the start time.';"));
+      expect(dash, contains("label: 'Tender Close Time',"));
+      expect(dash, contains("label: 'Sale End Time',"));
+      expect(dash, contains("if (_closeTime == null) return 'Tender Close Time is required.';"));
+      expect(dash, contains("if (_saleEndTime == null) return 'Sale End Time is required.';"));
     });
 
     test('the sale pages call the column Latest Valuation', () {

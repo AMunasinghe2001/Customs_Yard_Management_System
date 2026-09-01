@@ -4591,12 +4591,13 @@ class DisposalService {
       // the Tender Sales page — it leaves this pool until it goes unsold again.
       final latest = [...ts]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt)); // newest first
-      // Unsold only after the sale-day's GRACE window closes (sale date + the
-      // following day) — matches the "Sell within" countdown on the card. Until
-      // then the item is still markable on the Tender Sales page.
       final deadline = latest.first.unsoldDeadline;
-      // No date ⇒ treat as not-yet-due (pending), so not unsold.
-      final passed = deadline != null && DateTime.now().isAfter(deadline);
+      final hasExplicitUnsold = latest.first.items
+          .any((it) => it.forfeitedPackageId == id && it.unsold);
+      // Unsold if explicitly marked unsold OR after the sale-day's GRACE window
+      // closes (sale date + the following day).
+      final passed = hasExplicitUnsold ||
+          (deadline != null && DateTime.now().isAfter(deadline));
       if (passed) eligible[id] = ts;
     });
 
@@ -5534,6 +5535,30 @@ class DisposalService {
     }
   }
 
+  /// Mark one tender-sale package UNSOLD explicitly. Moves it immediately to
+  /// the Unsold Tenders pool without waiting for the automatic deadline.
+  Future<void> markTenderSaleItemUnsold({
+    required String tenderSaleItemId,
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_items')
+        .update({
+          'unsold': true,
+          'unsold_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', tenderSaleItemId));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Marked tender-sale package unsold',
+        entityType: 'tender_sale_item',
+        entityId: tenderSaleItemId,
+        details: {},
+      );
+    }
+  }
+
   Future<void> toggleDeliveryStatus(
       String tenderSaleItemId, bool isDelivered) async {
     await AuthService._withNetworkRetry(() => supabase.rpc(
@@ -5662,10 +5687,12 @@ class DisposalService {
       // it leaves the Undestroyed pool until it genuinely goes undestroyed again.
       final latest = [...ts]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt)); // newest first
-      // Undestroyed only after the destruction-day grace window closes (date +
-      // the following day) — matches the "Destroy within" countdown.
       final deadline = latest.first.unsoldDeadline;
-      final passed = deadline != null && DateTime.now().isAfter(deadline);
+      final hasExplicitUndestroyed = latest.first.items
+          .any((it) => it.forfeitedPackageId == id && it.undestroyed);
+      // Undestroyed if explicitly marked undestroyed OR after the grace window closes.
+      final passed = hasExplicitUndestroyed ||
+          (deadline != null && DateTime.now().isAfter(deadline));
       if (passed) eligible[id] = ts;
     });
 
@@ -5828,6 +5855,30 @@ class DisposalService {
         entityType: 'destruction_item',
         entityId: destructionItemId,
         details: {'receipt': receipt},
+      );
+    }
+  }
+
+  /// Mark one destruction package UNDESTROYED explicitly. Moves it immediately
+  /// to the Undestroyed pool without waiting for the automatic deadline.
+  Future<void> markDestructionItemUndestroyed({
+    required String destructionItemId,
+  }) async {
+    await AuthService._withNetworkRetry(() => supabase
+        .from('destruction_items')
+        .update({
+          'undestroyed': true,
+          'undestroyed_at': DateTime.now().toIso8601String(),
+        })
+        .eq('id', destructionItemId));
+    final user = supabase.auth.currentUser;
+    if (user != null) {
+      await AuditLogService().recordLog(
+        userId: user.id,
+        action: 'Marked destruction package undestroyed',
+        entityType: 'destruction_item',
+        entityId: destructionItemId,
+        details: {},
       );
     }
   }

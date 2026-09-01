@@ -7141,8 +7141,15 @@ begin
   end loop;
 end $$;
 
--- 3. ── Drop the admin-bypass helper (no longer used) ───────────────────────
-drop function if exists public.auth_user_is_admin();
+-- 4. ── Unsold and Undestroyed status columns ───────────────────────────────
+alter table if exists public.tender_sale_items
+  add column if not exists unsold boolean not null default false,
+  add column if not exists unsold_at timestamptz;
+
+alter table if exists public.destruction_items
+  add column if not exists undestroyed boolean not null default false,
+  add column if not exists undestroyed_at timestamptz;
 
 -- Done.
+
 

@@ -58,7 +58,7 @@ class SealedValuation extends StatelessWidget {
           // or as "not valued yet", which sends people looking for the figure
           // somewhere else — exactly the leak this is meant to close.
           Text(
-            'shown once the tender is over',
+            'shown once the tender closes',
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(color: muted, fontSize: compact ? 9.5 : 11),

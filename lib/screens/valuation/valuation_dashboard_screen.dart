@@ -2006,11 +2006,14 @@ class _ValTenderHistoryDialog extends StatelessWidget {
           _kv(context, 'Sale Number', t.saleNumber ?? '—'),
           _kv(
               context,
-              'Sale Date',
+              'Tender Close Date',
               t.saleDate != null
                   ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
                   : '—'),
-          _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
+          if (t.saleEndTime != null)
+            _kv(context, 'Tender Close Time', t.saleEndTime!),
+          if (t.saleTime != null)
+            _kv(context, 'Tender Start Time', t.saleTime!),
           if (t.createdByName?.trim().isNotEmpty == true)
             _kv(context, 'Created By', t.createdByName!.trim()),
         ],

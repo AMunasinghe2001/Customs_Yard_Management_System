@@ -476,7 +476,7 @@ class _TenderRoundTile extends StatelessWidget {
           if (sealed) ...[
             Text(
                 'This round has not been tendered yet. Its valuation is the '
-                'reserve price, so it is shown once the tender is over.',
+                'reserve price, so it is shown once the tender closes.',
                 style:
                     TextStyle(fontSize: 11, color: context.colors.textMuted)),
             const Gap(8),

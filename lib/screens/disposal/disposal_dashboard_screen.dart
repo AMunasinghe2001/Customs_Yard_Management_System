@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -3007,7 +3007,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Container(
-              height: (rows.length * 46.0 + 56).clamp(110, 360),
+              height: (rows.length * 48.0 + 56).clamp(115, 380),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
@@ -3018,41 +3018,41 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                   columnSpacing: 10,
                   horizontalMargin: 12,
                   fixedTopRows: 1,
-                  minWidth: 1080,
+                  minWidth: 1280,
                   headingRowColor: _headingColor(context),
                   empty: const EmptyTableState(
                       message: 'No packages in this sale'),
                   columns: [
-                    DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
+                    DataColumn2(label: Text('SR Number'), size: ColumnSize.S, fixedWidth: 135),
+                    DataColumn2(label: Text('Case No'), size: ColumnSize.S, fixedWidth: 130),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
                     DataColumn2(
                         label: Center(child: Text('Source')),
-                        size: ColumnSize.S),
+                        size: ColumnSize.S,
+                        fixedWidth: 65),
                     DataColumn2(
-                        label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
+                        label: Center(child: Text('Qty')),
+                        size: ColumnSize.S,
+                        fixedWidth: 50),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     DataColumn2(
-                        label: Text('Goods Description'), size: ColumnSize.M),
+                        label: Text('Goods Description'), size: ColumnSize.L),
                     // Both the yard's own view (SR item declared value) and
                     // Central's (the reserve price) are commercially sensitive
                     // to a bidder, so both are named and sealed the same way.
-                    // Fixed + centered so it sits snug next to Status (no gap).
                     DataColumn2(
                         label: Center(child: const Text('Latest Valuation')),
                         size: ColumnSize.S,
-                        // Wider than the old "Valuation": the header is longer
-                        // and the sealed cell carries a second line.
-                        fixedWidth: 145),
+                        fixedWidth: 140),
                     DataColumn2(
                         label: Center(child: Text('Status')),
-                        size: ColumnSize.S,
-                        fixedWidth: 120),
+                        size: ColumnSize.M,
+                        fixedWidth: 235),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
-                        fixedWidth: 64),
+                        fixedWidth: 55),
                   ],
                   rows: rows.map((r) {
                     final f = r.saleItem.forfeited;
@@ -3107,58 +3107,98 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                         child: r.saleItem.sold
                             ? _statusChip(context, 'Sold',
                                 Icons.check_circle_rounded, green)
-                            : widget.readOnly
-                                ? (() {
-                                    // Unsold only once the SAME window Central
-                                    // Disposal uses has closed (sale date + the
-                                    // following day's end). Until then it's still
-                                    // markable centrally, so show "Pending".
-                                    final deadline = widget.sale.unsoldDeadline;
-                                    final isUnsold = deadline != null &&
-                                        DateTime.now().isAfter(deadline);
-                                    return isUnsold
-                                        ? _statusChip(
-                                            context,
-                                            'Unsold',
-                                            Icons.cancel_outlined,
-                                            context.colors.dangerRed)
-                                        : _statusChip(
-                                            context,
-                                            'Pending',
-                                            Icons.schedule_rounded,
-                                            context.colors.warningAmber);
-                                  }())
-                                : (() {
-                                    // Mark Sold only unlocks once the scheduled
-                                    // sale moment (date + time) has passed.
-                                    final canSell = widget.sale.saleTimePassed;
-                                    final btn = OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: green,
-                                        side: BorderSide(
-                                            color: green.withOpacity(0.5)),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 6),
-                                        minimumSize: const Size(0, 32),
+                            : (() {
+                                final deadline = widget.sale.unsoldDeadline;
+                                final isUnsold = r.saleItem.unsold ||
+                                    (deadline != null &&
+                                        DateTime.now().isAfter(deadline));
+                                if (isUnsold) {
+                                  return _statusChip(
+                                      context,
+                                      'Unsold',
+                                      Icons.cancel_outlined,
+                                      context.colors.dangerRed);
+                                }
+                                if (widget.readOnly) {
+                                  return _statusChip(
+                                      context,
+                                      'Pending',
+                                      Icons.schedule_rounded,
+                                      context.colors.warningAmber);
+                                }
+                                final canSell = widget.sale.saleTimePassed;
+                                final btnRow = FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: green,
+                                          backgroundColor:
+                                              green.withOpacity(0.08),
+                                          side: BorderSide(
+                                              color: green.withOpacity(0.5)),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 9, vertical: 5),
+                                          minimumSize: const Size(0, 31),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(7.5),
+                                          ),
+                                        ),
+                                        icon: const Icon(Icons.sell_rounded,
+                                            size: 13),
+                                        label: const Text('Mark Sold',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700)),
+                                        onPressed: canSell
+                                            ? () => _markSold(
+                                                context, ref, r.saleItem)
+                                            : null,
                                       ),
-                                      icon: const Icon(Icons.sell_rounded,
-                                          size: 14),
-                                      label: const Text('Mark Sold',
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700)),
-                                      onPressed: canSell
-                                          ? () => _markSold(
-                                              context, ref, r.saleItem)
-                                          : null,
-                                    );
-                                    return canSell
-                                        ? btn
-                                        : Tooltip(
-                                            message:
-                                                _saleLockMessage(widget.sale),
-                                            child: btn);
-                                  }()),
+                                      const Gap(6),
+                                      OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor:
+                                              context.colors.dangerRed,
+                                          backgroundColor: context
+                                              .colors.dangerRed
+                                              .withOpacity(0.08),
+                                          side: BorderSide(
+                                              color: context.colors.dangerRed
+                                                  .withOpacity(0.5)),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 9, vertical: 5),
+                                          minimumSize: const Size(0, 31),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(7.5),
+                                          ),
+                                        ),
+                                        icon: const Icon(
+                                            Icons.cancel_outlined,
+                                            size: 13),
+                                        label: const Text('Mark Unsold',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700)),
+                                        onPressed: canSell
+                                            ? () => _markUnsold(context, ref,
+                                                r.saleItem, f?.srNumber)
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                return canSell
+                                    ? btnRow
+                                    : Tooltip(
+                                        message:
+                                            _saleLockMessage(widget.sale),
+                                        child: btnRow);
+                              }()),
                       )),
                       DataCell(Center(
                         child: pkg != null
@@ -3226,18 +3266,18 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
   Widget _statusChip(
       BuildContext context, String label, IconData icon, Color color) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withOpacity(0.4)),
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(icon, size: 13, color: color),
+        Icon(icon, size: 13.5, color: color),
         const Gap(5),
         Text(label,
             style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+                color: color, fontSize: 11.5, fontWeight: FontWeight.w700)),
       ]),
     );
   }
@@ -3264,6 +3304,72 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
       builder: (ctx) =>
           _MarkSoldDialog(item: item, ref: ref, activeTaxes: activeTaxes),
     );
+  }
+
+  Future<void> _markUnsold(BuildContext context, WidgetRef ref,
+      TenderSaleItemModel item, String? srNumber) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.cardDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: context.colors.borderColor),
+        ),
+        title: Row(children: [
+          Icon(Icons.cancel_outlined,
+              color: context.colors.dangerRed, size: 20),
+          const Gap(10),
+          Text('Mark as Unsold',
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
+        ]),
+        content: Text(
+          'Mark ${srNumber ?? 'this package'} as Unsold? It will be moved to the Unsold Tenders page for re-valuation.',
+          style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: TextStyle(color: context.colors.textMuted)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: context.colors.dangerRed,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm Unsold'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref
+          .read(disposalServiceProvider)
+          .markTenderSaleItemUnsold(tenderSaleItemId: item.id);
+      ref.read(tenderSaleItemsRefreshProvider.notifier).trigger();
+      ref.invalidate(unsoldTenderSalesProvider);
+      ref.invalidate(reTenderEligibleProvider);
+      if (context.mounted) {
+        DefaultTabController.of(context).animateTo(10);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${srNumber ?? 'Package'} marked as Unsold — moved to Unsold Tenders'),
+          backgroundColor: context.colors.dangerRed,
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: context.colors.dangerRed,
+        ));
+      }
+    }
   }
 }
 
@@ -3464,11 +3570,10 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   final _numberC = TextEditingController();
   final _serialC = TextEditingController();
   final _yearC = TextEditingController(text: DateTime.now().year.toString());
-  DateTime? _saleDate;
-  TimeOfDay? _saleTime;
-
-  /// When bidding CLOSES. The valuation unseals only after this.
-  TimeOfDay? _saleEndTime;
+  DateTime? _openDate;
+  DateTime? _closeDate;
+  TimeOfDay? _closeTime;
+  TimeOfDay? _startTime;
   String? _tenderType;
   bool _loading = false;
   String? _error;
@@ -3479,14 +3584,18 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
   late String _formYard;
 
   String? _validate() {
-    if (_saleDate == null) return 'Tender Sale Date is required.';
-    if (_saleTime == null) return 'Sale Start Time is required.';
-    // The end time is what unseals the valuation, so it has to be real: an
-    // end at or before the start would unseal the reserve price immediately.
-    if (_saleEndTime == null) return 'Sale End Time is required.';
-    final startM = _saleTime!.hour * 60 + _saleTime!.minute;
-    final endM = _saleEndTime!.hour * 60 + _saleEndTime!.minute;
-    if (endM <= startM) return 'Sale End Time must be after the start time.';
+    if (_openDate == null) return 'Tender Open Date is required.';
+    if (_closeDate == null) return 'Tender Close Date is required.';
+    if (_closeDate!.isBefore(DateTime(_openDate!.year, _openDate!.month, _openDate!.day))) {
+      return 'Tender Close Date cannot be before Tender Open Date.';
+    }
+    if (_closeTime == null) return 'Tender Close Time is required.';
+    if (_startTime == null) return 'Tender Start Time is required.';
+    final closeM = _closeTime!.hour * 60 + _closeTime!.minute;
+    final startM = _startTime!.hour * 60 + _startTime!.minute;
+    if (startM <= closeM) {
+      return 'Tender Start Time must be after the Close Time.';
+    }
     if (_tenderType == null || _tenderType!.isEmpty)
       return 'Tender Sale Type is required.';
     if (_selected.isEmpty) return 'Select at least one package.';
@@ -3644,32 +3753,49 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               Row(children: [
                 Expanded(
                   child: _OneTapDateField(
-                    label: 'Tender Sale Date',
-                    value: _saleDate,
-                    onChanged: (d) => setState(() => _saleDate = d),
+                    label: 'Tender Open Date',
+                    value: _openDate,
+                    onChanged: (d) => setState(() {
+                      _openDate = d;
+                      if (d != null) {
+                        _closeDate = d.add(const Duration(days: 14));
+                      }
+                    }),
                   ),
                 ),
                 const Gap(12),
                 Expanded(
-                  child: _OneTapTimeField(
-                    label: 'Sale Start Time',
-                    value: _saleTime,
-                    onChanged: (t) => setState(() => _saleTime = t),
+                  child: _OneTapDateField(
+                    label: 'Tender Close Date',
+                    value: _closeDate,
+                    onChanged: (d) => setState(() => _closeDate = d),
                   ),
                 ),
               ]),
               Row(children: [
                 Expanded(
                   child: _OneTapTimeField(
-                    // Bidding CLOSES here. The valuation is the reserve price,
-                    // so it stays sealed until this passes — not merely until
-                    // the sale opens.
-                    label: 'Sale End Time',
-                    value: _saleEndTime,
-                    onChanged: (t) => setState(() => _saleEndTime = t),
+                    label: 'Tender Close Time',
+                    value: _closeTime,
+                    onChanged: (t) => setState(() {
+                      _closeTime = t;
+                      if (t != null) {
+                        _startTime =
+                            TimeOfDay(hour: (t.hour + 1) % 24, minute: t.minute);
+                      }
+                    }),
                   ),
                 ),
                 const Gap(12),
+                Expanded(
+                  child: _OneTapTimeField(
+                    label: 'Tender Start Time',
+                    value: _startTime,
+                    onChanged: (t) => setState(() => _startTime = t),
+                  ),
+                ),
+              ]),
+              Row(children: [
                 Expanded(
                   child: TextField(
                     controller: _serialC,
@@ -3677,12 +3803,15 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     decoration: const InputDecoration(labelText: 'Serial'),
                   ),
                 ),
+                const Gap(12),
+                Expanded(
+                  child: TextField(
+                    controller: _yearC,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: 'Year'),
+                  ),
+                ),
               ]),
-              TextField(
-                controller: _yearC,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(labelText: 'Year'),
-              ),
               StyledDropdownFormField<String>(
                 value: _tenderType,
                 label: 'Tender Sale Type',
@@ -3969,12 +4098,13 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                     saleNumber: _numberC.text.trim().isEmpty
                         ? null
                         : _numberC.text.trim(),
-                    saleDate: _saleDate,
-                    saleTime:
-                        _saleTime == null ? null : _timeOfDayToHHmm(_saleTime!),
-                    saleEndTime: _saleEndTime == null
+                    saleDate: _closeDate,
+                    saleTime: _startTime == null
                         ? null
-                        : _timeOfDayToHHmm(_saleEndTime!),
+                        : _timeOfDayToHHmm(_startTime!),
+                    saleEndTime: _closeTime == null
+                        ? null
+                        : _timeOfDayToHHmm(_closeTime!),
                     serial: _serialC.text.trim().isEmpty
                         ? null
                         : _serialC.text.trim(),
@@ -4424,11 +4554,14 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
           const Gap(8),
           _kv(
               context,
-              'Sale Date',
+              'Tender Close Date',
               t.saleDate != null
                   ? DateFormat('yyyy-MM-dd').format(t.saleDate!)
                   : '—'),
-          _kv(context, 'Sale Start Time', t.saleTime ?? '—'),
+          if (t.saleEndTime != null)
+            _kv(context, 'Tender Close Time', t.saleEndTime!),
+          if (t.saleTime != null)
+            _kv(context, 'Tender Start Time', t.saleTime!),
           if (t.createdByName != null)
             _kv(context, 'Created By', t.createdByName!),
         ],
@@ -5826,7 +5959,7 @@ class DestructionCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Container(
-              height: (rows.length * 46.0 + 56).clamp(110, 360),
+              height: (rows.length * 48.0 + 56).clamp(115, 380),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
@@ -5837,36 +5970,37 @@ class DestructionCard extends ConsumerWidget {
                   columnSpacing: 10,
                   horizontalMargin: 12,
                   fixedTopRows: 1,
-                  minWidth: 1080,
+                  minWidth: 1280,
                   headingRowColor: _headingColor(context),
                   empty: const EmptyTableState(
                       message: 'No packages in this sale'),
                   columns: [
-                    DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                    DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.M),
+                    DataColumn2(label: Text('SR Number'), size: ColumnSize.S, fixedWidth: 135),
+                    DataColumn2(label: Text('Case No'), size: ColumnSize.S, fixedWidth: 130),
+                    DataColumn2(label: Text('Goods Name'), size: ColumnSize.L),
                     DataColumn2(
                         label: Center(child: Text('Source')),
-                        size: ColumnSize.S),
+                        size: ColumnSize.S,
+                        fixedWidth: 65),
                     DataColumn2(
-                        label: Text('Qty'), size: ColumnSize.S, fixedWidth: 56),
+                        label: Center(child: Text('Qty')),
+                        size: ColumnSize.S,
+                        fixedWidth: 50),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
                     // Yard shows the SR item Value; Central shows the valuation.
-                    // Fixed + centered so it sits snug next to Status (no gap) —
-                    // mirrors the Tender Sale table for a consistent layout.
                     DataColumn2(
                         label: Center(child: const Text('Latest Valuation')),
                         size: ColumnSize.S,
-                        fixedWidth: 145),
+                        fixedWidth: 140),
                     DataColumn2(
                         label: Center(child: Text('Status')),
-                        size: ColumnSize.S,
-                        fixedWidth: 120),
+                        size: ColumnSize.M,
+                        fixedWidth: 235),
                     DataColumn2(
                         label: Center(child: Text('Details')),
                         size: ColumnSize.S,
-                        fixedWidth: 64),
+                        fixedWidth: 55),
                   ],
                   rows: rows.map((r) {
                     final f = r.saleItem.forfeited;
@@ -5910,78 +6044,99 @@ class DestructionCard extends ConsumerWidget {
                       ))),
                       DataCell(Center(
                         child: r.saleItem.destroyed
-                            ? Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: green.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(6),
-                                  border:
-                                      Border.all(color: green.withOpacity(0.4)),
-                                ),
-                                child: Row(
+                            ? _statusChipWidget(context, 'Destroyed',
+                                Icons.check_circle_rounded, green)
+                            : (() {
+                                final deadline = sale.unsoldDeadline;
+                                final isUndestroyed = r.saleItem.undestroyed ||
+                                    (deadline != null &&
+                                        DateTime.now().isAfter(deadline));
+                                if (isUndestroyed) {
+                                  return _statusChipWidget(
+                                      context,
+                                      'Undestroyed',
+                                      Icons.cancel_outlined,
+                                      context.colors.dangerRed);
+                                }
+                                if (readOnly) {
+                                  return _statusChipWidget(
+                                      context,
+                                      'Pending',
+                                      Icons.schedule_rounded,
+                                      context.colors.warningAmber);
+                                }
+                                final canDestroy = sale.saleTimePassed;
+                                final btnRow = FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                                      Icon(Icons.check_circle_rounded,
-                                          size: 13, color: green),
-                                      const Gap(5),
-                                      Text('Destroyed',
-                                          style: TextStyle(
-                                              color: green,
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700)),
-                                    ]),
-                              )
-                            : readOnly
-                                ? (() {
-                                    // Undestroyed only once the SAME window
-                                    // Central Disposal uses has closed; until
-                                    // then it is still markable → "Pending".
-                                    final deadline = sale.unsoldDeadline;
-                                    final isUndestroyed = deadline != null &&
-                                        DateTime.now().isAfter(deadline);
-                                    return isUndestroyed
-                                        ? _statusChipWidget(
-                                            context,
-                                            'Undestroyed',
-                                            Icons.cancel_outlined,
-                                            context.colors.dangerRed)
-                                        : _statusChipWidget(
-                                            context,
-                                            'Pending',
-                                            Icons.schedule_rounded,
-                                            context.colors.warningAmber);
-                                  }())
-                                : (() {
-                                    // Mark Destroyed only unlocks once the scheduled
-                                    // destruction moment (date + time) has passed.
-                                    final canDestroy = sale.saleTimePassed;
-                                    final btn = OutlinedButton.icon(
-                                      style: OutlinedButton.styleFrom(
-                                        foregroundColor: green,
-                                        side: BorderSide(
-                                            color: green.withOpacity(0.5)),
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 10, vertical: 6),
-                                        minimumSize: const Size(0, 32),
+                                      OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor: green,
+                                          backgroundColor:
+                                              green.withOpacity(0.08),
+                                          side: BorderSide(
+                                              color: green.withOpacity(0.5)),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 9, vertical: 5),
+                                          minimumSize: const Size(0, 31),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(7.5),
+                                          ),
+                                        ),
+                                        icon: const Icon(Icons.sell_rounded,
+                                            size: 13),
+                                        label: const Text('Mark Destroyed',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700)),
+                                        onPressed: canDestroy
+                                            ? () => _markDestroyed(
+                                                context, ref, r.saleItem)
+                                            : null,
                                       ),
-                                      icon: const Icon(Icons.sell_rounded,
-                                          size: 14),
-                                      label: const Text('Mark Destroyed',
-                                          style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700)),
-                                      onPressed: canDestroy
-                                          ? () => _markDestroyed(
-                                              context, ref, r.saleItem)
-                                          : null,
-                                    );
-                                    return canDestroy
-                                        ? btn
-                                        : Tooltip(
-                                            message: _destroyLockMessage(sale),
-                                            child: btn);
-                                  }()),
+                                      const Gap(6),
+                                      OutlinedButton.icon(
+                                        style: OutlinedButton.styleFrom(
+                                          foregroundColor:
+                                              context.colors.dangerRed,
+                                          backgroundColor: context
+                                              .colors.dangerRed
+                                              .withOpacity(0.08),
+                                          side: BorderSide(
+                                              color: context.colors.dangerRed
+                                                  .withOpacity(0.5)),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 9, vertical: 5),
+                                          minimumSize: const Size(0, 31),
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius:
+                                                BorderRadius.circular(7.5),
+                                          ),
+                                        ),
+                                        icon: const Icon(
+                                            Icons.cancel_outlined,
+                                            size: 13),
+                                        label: const Text('Mark Undestroyed',
+                                            style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w700)),
+                                        onPressed: canDestroy
+                                            ? () => _markUndestroyed(context,
+                                                ref, r.saleItem, f?.srNumber)
+                                            : null,
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                return canDestroy
+                                    ? btnRow
+                                    : Tooltip(
+                                        message: _destroyLockMessage(sale),
+                                        child: btnRow);
+                              }()),
                       )),
                       DataCell(Center(
                         child: pkg != null
@@ -6050,6 +6205,71 @@ class DestructionCard extends ConsumerWidget {
       context: context,
       builder: (ctx) => _MarkDestroyedDialog(item: item, ref: ref),
     );
+  }
+
+  Future<void> _markUndestroyed(BuildContext context, WidgetRef ref,
+      DestructionItemModel item, String? srNumber) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: context.colors.cardDark,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(color: context.colors.borderColor),
+        ),
+        title: Row(children: [
+          Icon(Icons.cancel_outlined,
+              color: context.colors.dangerRed, size: 20),
+          const Gap(10),
+          Text('Mark as Undestroyed',
+              style: TextStyle(
+                  color: context.colors.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700)),
+        ]),
+        content: Text(
+          'Mark ${srNumber ?? 'this package'} as Undestroyed? It will be moved to the Undestroyed page.',
+          style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Cancel',
+                style: TextStyle(color: context.colors.textMuted)),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: context.colors.dangerRed,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm Undestroyed'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await ref
+          .read(disposalServiceProvider)
+          .markDestructionItemUndestroyed(destructionItemId: item.id);
+      ref.read(destructionsRefreshProvider.notifier).trigger();
+      ref.invalidate(undestroyedDestructionsProvider);
+      if (context.mounted) {
+        DefaultTabController.of(context).animateTo(12);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '${srNumber ?? 'Package'} marked as Undestroyed — moved to Undestroyed'),
+          backgroundColor: context.colors.dangerRed,
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Error: $e'),
+          backgroundColor: context.colors.dangerRed,
+        ));
+      }
+    }
   }
 }
 
