@@ -81,6 +81,90 @@ final yardDirectoratesProvider =
 /// The yards under one directorate — the registration yard picker's source.
 /// Returns every yard when [directorateCode] is null, so the picker is usable
 /// before a directorate has been chosen.
+/// One entry a yard filter dropdown can offer.
+///
+/// [filterYard] is what a package/forfeited-package row's OWN `yard` field is
+/// compared against — always the bare yard code, e.g. "NNR". [directorate] is
+/// set only when this entry represents ONE of several directorates a yard sits
+/// under (e.g. "CED/NNR" vs "PSD/NNR"); a row must then ALSO match that
+/// directorate's SR-number prefix, which the picking code below applies.
+class YardFilterOption {
+  final String value; // unique dropdown key, e.g. "NNR" or "NNR|CED"
+  final String label; // "Grey Line 1" or "CED/NNR"
+  final String filterYard;
+  final String? directorate;
+  const YardFilterOption(
+      {required this.value,
+      required this.label,
+      required this.filterYard,
+      this.directorate});
+}
+
+/// The full set of yard-filter dropdown entries, built from ICT's live
+/// yards/directorates data.
+///
+/// A yard under exactly ONE directorate is a single plain entry (its own
+/// name). A yard under SEVERAL — NNR is CED and PSD; Katunayaka, Rathmalana
+/// and Mattala are B/A and ACD — becomes ONE ENTRY PER DIRECTORATE
+/// ("CED/NNR", "PSD/NNR"), because "NNR" alone cannot tell a CED package from
+/// a PSD one filed at the same physical yard. Adding or removing a yard/link
+/// in the ICT portal changes this list with no rebuild — see
+/// [directorateConfigRefreshProvider].
+final yardFilterOptionsProvider =
+    FutureProvider<List<YardFilterOption>>((ref) async {
+  final yards = await ref.watch(yardsProvider.future);
+  final directorates = await ref.watch(directoratesProvider.future);
+  final yardDirs = await ref.watch(yardDirectoratesProvider.future);
+  final byCode = {for (final d in directorates) d.code: d};
+
+  final out = <YardFilterOption>[];
+  for (final y in yards) {
+    if (!y.isActive) continue;
+    final dirCodes = yardDirs[y.code] ?? const <String>[];
+    if (dirCodes.length <= 1) {
+      out.add(YardFilterOption(value: y.code, label: y.name, filterYard: y.code));
+      continue;
+    }
+    for (final dc in dirCodes) {
+      final label = '${byCode[dc]?.srPrefix ?? dc}/${y.name}';
+      out.add(YardFilterOption(
+          value: '${y.code}|$dc',
+          label: label,
+          filterYard: y.code,
+          directorate: dc));
+    }
+  }
+  return out;
+});
+
+/// `{srPrefix: code}` for every live directorate — feeds
+/// [directorateOfSrNumber] so a filter split by directorate (see
+/// [yardFilterOptionsProvider]) recognises one ICT added at run time.
+final directorateSrPrefixMapProvider =
+    FutureProvider<Map<String, String>>((ref) async {
+  final directorates = await ref.watch(directoratesProvider.future);
+  return {for (final d in directorates) d.srPrefix: d.code};
+});
+
+/// Does one row (its `yard` + `srNumber`) match a yard-filter selection?
+///
+/// [filterValue] is a [YardFilterOption.value] — either a bare yard code
+/// ("NNR", from a single-directorate yard or "All Yards" callers passing
+/// null) or `"<yard>|<directorate>"` (from a split multi-directorate entry
+/// like "CED/NNR"). [prefixToCode] should come from
+/// [directorateSrPrefixMapProvider] so a directorate ICT just added is
+/// recognised; omit it to fall back to the seed list.
+bool matchesYardFilter(String? filterValue, String? rowYard, String rowSrNumber,
+    {Map<String, String>? prefixToCode}) {
+  if (filterValue == null) return true; // "All Yards"
+  final bar = filterValue.indexOf('|');
+  if (bar < 0) return rowYard == filterValue;
+  final yard = filterValue.substring(0, bar);
+  final dir = filterValue.substring(bar + 1);
+  if (rowYard != yard) return false;
+  return directorateOfSrNumber(rowSrNumber, prefixToCode: prefixToCode) == dir;
+}
+
 final yardsForDirectorateProvider =
     FutureProvider.family<List<YardModel>, String?>((ref, directorateCode) async {
   final yards = await ref.watch(yardsProvider.future);

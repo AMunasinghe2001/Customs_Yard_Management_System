@@ -486,7 +486,14 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               allLabel: widget.disposalMode ? 'All Yards' : 'Select Yard',
               icon: Icons.location_city_rounded,
               menuWidth: 260,
-              options: kYards
+              // A physical-yard picker -- reports are scoped by yard (server
+              // query / RLS), not split by directorate, since a report at a
+              // multi-directorate yard naturally covers all of that yard's
+              // goods regardless of which directorate filed them.
+              options: (ref.watch(yardsProvider).valueOrNull
+                          ?.where((y) => y.isActive)
+                          .toList() ??
+                      kYards.map((y) => YardModel(code: y.code, name: y.name, srPrefix: y.srPrefix)).toList())
                   .map((y) => StyledDropdownOption(y.code, y.name))
                   .toList(),
               onChanged: (v) => setState(() {

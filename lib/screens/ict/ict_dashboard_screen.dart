@@ -61,8 +61,22 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
   Future<void> _loadData() async {
     setState(() => _isLoading = true);
     try {
+      // Split "<yard>|<directorate>" from a multi-directorate yard's split
+      // entry -- see the Yard Location filter above.
+      String? yardArg;
+      String? directorateArg;
+      if (_selectedYard != 'all') {
+        final bar = _selectedYard.indexOf('|');
+        if (bar < 0) {
+          yardArg = _selectedYard;
+        } else {
+          yardArg = _selectedYard.substring(0, bar);
+          directorateArg = _selectedYard.substring(bar + 1);
+        }
+      }
       final list = await ref.read(ictServiceProvider).getAllYardStaff(
-            yard: _selectedYard == 'all' ? null : _selectedYard,
+            yard: yardArg,
+            directorate: directorateArg,
             role: _selectedRole == 'all' ? null : _selectedRole,
             query: _searchCtrl.text.trim(),
             activeOnly: _selectedStatus == 'active'
@@ -1077,10 +1091,23 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                           icon: Icons.warehouse_rounded,
                           accent: accent,
                           value: _selectedYard,
+                          // Value is a YardFilterOption.value: a bare yard
+                          // code, or "<yard>|<directorate>" for one entry of
+                          // a multi-directorate yard (e.g. "NNR|CED", shown
+                          // as "CED/NNR") -- see _loadData for how it's split.
                           options: [
                             const StyledDropdownOption('all', 'All Yards'),
-                            for (final y in kYards)
-                              StyledDropdownOption(y.code, y.name),
+                            for (final o in ref
+                                    .watch(yardFilterOptionsProvider)
+                                    .valueOrNull ??
+                                [
+                                  for (final y in kYards)
+                                    YardFilterOption(
+                                        value: y.code,
+                                        label: y.name,
+                                        filterYard: y.code)
+                                ])
+                              StyledDropdownOption(o.value, o.label),
                           ],
                           onChanged: (v) {
                             setState(() => _selectedYard = v ?? 'all');

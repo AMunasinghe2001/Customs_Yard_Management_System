@@ -152,7 +152,8 @@ class UnsoldDecisionTab extends ConsumerWidget {
                 var rows = list;
                 if (yardFilter != null) {
                   rows = rows
-                      .where((i) => i.forfeited.yard == yardFilter)
+                      .where((i) => matchesYardFilter(
+                          yardFilter, i.forfeited.yard, i.forfeited.srNumber))
                       .toList();
                 }
                 if (q.isNotEmpty) {

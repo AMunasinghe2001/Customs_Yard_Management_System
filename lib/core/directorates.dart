@@ -147,3 +147,24 @@ String stripDirectoratePrefix(String srNumber) {
 /// True when [srNumber] already carries a directorate prefix.
 bool hasDirectoratePrefix(String srNumber) =>
     stripDirectoratePrefix(srNumber) != srNumber;
+
+/// The directorate CODE whose prefix [srNumber] carries, or null if it has
+/// none (a pre-directorate registration, still minting the old unprefixed
+/// shape).
+///
+/// [prefixToCode] maps `srPrefix -> code` for every KNOWN directorate — pass
+/// the live map built from [directoratesProvider] wherever one is available,
+/// so a directorate ICT adds at run time is recognised immediately. Falls
+/// back to [kDirectorates] when omitted (a const-context caller, or a screen
+/// with no provider access).
+String? directorateOfSrNumber(String srNumber,
+    {Map<String, String>? prefixToCode}) {
+  final entries = prefixToCode?.entries ??
+      kDirectorates.map((d) => MapEntry(d.srPrefix, d.code));
+  for (final e in entries) {
+    final p = '${e.key}/';
+    if (srNumber.toUpperCase().startsWith(p.toUpperCase())) return e.value;
+  }
+  return null;
+}
+

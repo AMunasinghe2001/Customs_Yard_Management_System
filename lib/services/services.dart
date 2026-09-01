@@ -2288,6 +2288,11 @@ class IctService {
   /// Fetch all yard staff (Admins and Officers) across all yards, with optional filters.
   Future<List<ProfileModel>> getAllYardStaff({
     String? yard,
+    /// Narrows a multi-directorate yard's staff to ONE directorate (e.g.
+    /// "CED/NNR" vs "PSD/NNR") -- an officer's own `profiles.directorate` is
+    /// checked directly, unlike the SR-number-prefix match a package list
+    /// needs, since a profile is not tied to any one SR number.
+    String? directorate,
     String? role,
     String? query,
     bool? activeOnly,
@@ -2302,6 +2307,9 @@ class IctService {
 
     if (yard != null && yard.isNotEmpty && yard != 'all') {
       req = req.eq('yard', yard);
+    }
+    if (directorate != null && directorate.isNotEmpty) {
+      req = req.eq('directorate', directorate);
     }
 
     if (activeOnly == true) {

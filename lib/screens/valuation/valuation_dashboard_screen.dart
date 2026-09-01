@@ -1016,12 +1016,16 @@ class _ValSearchFieldState extends State<_ValSearchField> {
 
 /// Yard dropdown with an "All Yards" option — same styled menu as Central
 /// Disposal's Unsold page (StyledDropdownFormField).
-class _ValYardFilter extends StatelessWidget {
+/// [value] / the string [onChanged] reports is a [YardFilterOption.value] --
+/// apply it with [matchesYardFilter], not a bare `==` on `yard`.
+class _ValYardFilter extends ConsumerWidget {
   final String? value; // null = all
   final ValueChanged<String?> onChanged;
   const _ValYardFilter({required this.value, required this.onChanged});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(yardFilterOptionsProvider).valueOrNull ??
+        [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)];
     final gold = context.colors.primaryGold;
     OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -1051,7 +1055,7 @@ class _ValYardFilter extends StatelessWidget {
               Icon(Icons.warehouse_rounded, color: gold, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+            for (final o in options) StyledDropdownOption(o.value, o.label),
           ],
           onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
         ),
@@ -1167,7 +1171,8 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                     .toList();
                 if (yardFilter != null) {
                   rows = rows
-                      .where((info) => info.forfeited.yard == yardFilter)
+                      .where((info) => matchesYardFilter(yardFilter,
+                          info.forfeited.yard, info.forfeited.srNumber))
                       .toList();
                 }
                 if (q.isNotEmpty) {

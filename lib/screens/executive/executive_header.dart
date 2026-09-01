@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 
+import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -74,13 +76,17 @@ class ExecutiveSearchField extends StatelessWidget {
   }
 }
 
-class ExecutiveYardFilter extends StatelessWidget {
+/// [value] / the string [onChanged] reports is a [YardFilterOption.value] --
+/// apply it with [matchesYardFilter], not a bare `==` on `yard`.
+class ExecutiveYardFilter extends ConsumerWidget {
   final String? value;
   final ValueChanged<String?> onChanged;
   const ExecutiveYardFilter({required this.value, required this.onChanged});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(yardFilterOptionsProvider).valueOrNull ??
+        [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)];
     final accent = AppTheme.executiveTeal;
     // Width comes from the caller; the height comes from contentPadding, so
     // the tap target matches the drawn field exactly and the hover splash
@@ -119,7 +125,7 @@ class ExecutiveYardFilter extends StatelessWidget {
           prefixIcon: Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
-            ...kYards.map((y) => StyledDropdownOption(y.code, y.name)),
+            ...options.map((o) => StyledDropdownOption(o.value, o.label)),
           ],
           onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
         ));

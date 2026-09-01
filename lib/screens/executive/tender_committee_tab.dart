@@ -221,7 +221,8 @@ class TenderCommitteeTab extends ConsumerWidget {
                 var rows = list.toList();
                 if (yardFilter != null) {
                   rows = rows
-                      .where((info) => info.forfeited.yard == yardFilter)
+                      .where((info) => matchesYardFilter(yardFilter,
+                          info.forfeited.yard, info.forfeited.srNumber))
                       .toList();
                 }
                 if (q.isNotEmpty) {
@@ -429,12 +430,18 @@ class TenderCommitteeTab extends ConsumerWidget {
 }
 
 /// Yard dropdown with "All Yards" — teal-accented styled menu (executive).
-class _CommitteeYardFilter extends StatelessWidget {
+///
+/// [value] / the string [onChanged] reports is a [YardFilterOption.value]:
+/// apply it with [matchesYardFilter], not a bare `==` on `yard` — see
+/// [YardAllFilter] in disposal_shared.dart for the same contract.
+class _CommitteeYardFilter extends ConsumerWidget {
   final String? value; // null = all
   final ValueChanged<String?> onChanged;
   const _CommitteeYardFilter({required this.value, required this.onChanged});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(yardFilterOptionsProvider).valueOrNull ??
+        [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)];
     final accent = AppTheme.executiveTeal;
     OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
@@ -462,7 +469,7 @@ class _CommitteeYardFilter extends StatelessWidget {
           prefixIcon: Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+            for (final o in options) StyledDropdownOption(o.value, o.label),
           ],
           onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
         ),

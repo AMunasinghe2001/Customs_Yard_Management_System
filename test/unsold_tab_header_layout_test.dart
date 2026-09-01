@@ -27,6 +27,14 @@ void main() {
           // widget opens a real socket to PostgreSQL.
           tenderCommitteesProvider.overrideWith(
               (ref) => Future.value(const <String, TenderCommitteeModel>{})),
+          // The yard filter dropdown is now DB-driven (ICT's Yards &
+          // Directorates table), so rendering it opens a real socket unless
+          // its source providers are stubbed too.
+          yardsProvider.overrideWith((ref) => Future.value(const <YardModel>[])),
+          directoratesProvider
+              .overrideWith((ref) => Future.value(const <DirectorateModel>[])),
+          yardDirectoratesProvider.overrideWith(
+              (ref) => Future.value(const <String, List<String>>{})),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,

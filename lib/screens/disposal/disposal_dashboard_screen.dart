@@ -513,7 +513,8 @@ class UnsoldProposalsTab extends ConsumerWidget {
         }
         if (yardFilter != null) {
           filtered = filtered
-              .where((info) => info.forfeited.yard == yardFilter)
+              .where((info) => matchesYardFilter(
+                  yardFilter, info.forfeited.yard, info.forfeited.srNumber))
               .toList();
         }
         if (q.isNotEmpty) {
@@ -697,8 +698,13 @@ class _YardFilter extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedYard = ref.watch(disposalSelectedYardProvider);
+    // A physical-yard picker, not a filter -- "create this sale AT yard X" --
+    // so it lists bare yards, never split by directorate.
+    final yards = ref.watch(yardsProvider).valueOrNull?.where((y) => y.isActive) ??
+        kYards.map((y) => YardModel(code: y.code, name: y.name, srPrefix: y.srPrefix));
     return _StyledYardPicker(
       value: selectedYard,
+      yards: yards.toList(),
       onChanged: (v) => ref.read(disposalSelectedYardProvider.notifier).state =
           v ?? kYards.first.code,
     );
@@ -712,11 +718,18 @@ class _StyledYardPicker extends StatelessWidget {
   final String value;
   final ValueChanged<String?> onChanged;
   final double width;
-  const _StyledYardPicker({
+
+  /// Bare physical yards -- this picker always selects ONE yard to act as,
+  /// never a directorate-split filter entry. Defaults to the const seed for
+  /// callers that have not been updated to pass the live list.
+  final List<YardModel> yards;
+  _StyledYardPicker({
     required this.value,
     required this.onChanged,
     this.width = 240,
-  });
+    List<YardModel>? yards,
+  }) : yards = yards ??
+            [for (final y in kYards) YardModel(code: y.code, name: y.name, srPrefix: y.srPrefix)];
 
   @override
   Widget build(BuildContext context) {
@@ -752,7 +765,7 @@ class _StyledYardPicker extends StatelessWidget {
           prefixIcon: Icon(Icons.warehouse_rounded,
               color: context.colors.primaryGold, size: 20),
           options: [
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+            for (final y in yards) StyledDropdownOption(y.code, y.name),
           ],
           onChanged: onChanged,
         ),
@@ -1906,7 +1919,13 @@ class _DisposalRequestsTab extends ConsumerWidget {
                     ref.watch(disposalSearchProvider('requests')).toLowerCase();
                 var filtered = yardFilter == null
                     ? list
-                    : list.where((r) => r.yard == yardFilter).toList();
+                    // Per item, not the request's own yard: a request filed
+                    // at a multi-directorate yard can list items whose SR
+                    // numbers carry different directorate prefixes.
+                    : list
+                        .where((r) => r.items.any((i) => matchesYardFilter(
+                            yardFilter, r.yard, i.forfeited?.srNumber ?? '')))
+                        .toList();
                 if (q.isNotEmpty) {
                   filtered = filtered
                       .where((r) => r.items.any((i) =>
@@ -2403,8 +2422,10 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                     ref.watch(disposalSearchProvider('unsold')).toLowerCase();
                 final yf = ref.watch(disposalYardFilterProvider('unsold'));
                 if (yf != null) {
-                  list =
-                      list.where((info) => info.forfeited.yard == yf).toList();
+                  list = list
+                      .where((info) => matchesYardFilter(
+                          yf, info.forfeited.yard, info.forfeited.srNumber))
+                      .toList();
                 }
                 if (q.isNotEmpty) {
                   list = list
@@ -2634,7 +2655,15 @@ class _TenderSalesTab extends ConsumerWidget {
                 }).toList();
                 final yf = ref.watch(disposalYardFilterProvider('tendersales'));
                 if (yf != null) {
-                  visible = visible.where((s) => s.yard == yf).toList();
+                  // Match on any item's own yard + SR number, not the sale's
+                  // yard alone — a tender sale can mix items from a
+                  // multi-directorate yard (NNR items filed under CED sitting
+                  // beside ones filed under PSD), so the sale-level yard code
+                  // cannot tell them apart.
+                  visible = visible
+                      .where((s) => s.items.any((i) => matchesYardFilter(
+                          yf, i.yard, i.forfeited?.srNumber ?? '')))
+                      .toList();
                 }
                 if (q.isNotEmpty) {
                   visible = visible
@@ -3591,6 +3620,10 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               _StyledYardPicker(
                 value: _formYard,
                 width: double.infinity,
+                yards: ref.watch(yardsProvider).valueOrNull
+                        ?.where((y) => y.isActive)
+                        .toList() ??
+                    [for (final y in kYards) YardModel(code: y.code, name: y.name, srPrefix: y.srPrefix)],
                 onChanged: (v) {
                   if (v == null) return;
                   // Switching yards clears any selection from the previous yard
@@ -4069,7 +4102,10 @@ class _CommitteesTab extends ConsumerWidget {
                     .toList();
                 final yf = ref.watch(_committeesYardProvider);
                 if (yf != null) {
-                  rows = rows.where((i) => i.forfeited.yard == yf).toList();
+                  rows = rows
+                      .where((i) => matchesYardFilter(
+                          yf, i.forfeited.yard, i.forfeited.srNumber))
+                      .toList();
                 }
                 final qq = ref
                     .watch(disposalSearchProvider('committees'))
@@ -5524,7 +5560,13 @@ class _DestructionsTab extends ConsumerWidget {
                   return !windowClosed;
                 }).toList();
                 if (yf != null) {
-                  visible = visible.where((s) => s.yard == yf).toList();
+                  // Same reasoning as Tender Sales: match per item, not on the
+                  // sale's own yard, since a multi-directorate yard's items
+                  // can carry different SR-number prefixes within one sale.
+                  visible = visible
+                      .where((s) => s.items.any((i) => matchesYardFilter(
+                          yf, i.yard, i.forfeited?.srNumber ?? '')))
+                      .toList();
                 }
                 if (q.isNotEmpty) {
                   visible = visible
@@ -6294,6 +6336,10 @@ class _DestructionFormDialogState
               _StyledYardPicker(
                 value: _formYard,
                 width: double.infinity,
+                yards: ref.watch(yardsProvider).valueOrNull
+                        ?.where((y) => y.isActive)
+                        .toList() ??
+                    [for (final y in kYards) YardModel(code: y.code, name: y.name, srPrefix: y.srPrefix)],
                 onChanged: (v) {
                   if (v == null) return;
                   // Switching yards clears any selection from the previous yard
@@ -6871,8 +6917,10 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                     .toLowerCase();
                 final yf = ref.watch(disposalYardFilterProvider('undestroyed'));
                 if (yf != null) {
-                  list =
-                      list.where((info) => info.forfeited.yard == yf).toList();
+                  list = list
+                      .where((info) => matchesYardFilter(
+                          yf, info.forfeited.yard, info.forfeited.srNumber))
+                      .toList();
                 }
                 if (q.isNotEmpty) {
                   list = list

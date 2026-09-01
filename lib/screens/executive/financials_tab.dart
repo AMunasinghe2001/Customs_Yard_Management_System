@@ -71,8 +71,8 @@ class FinancialsTab extends ConsumerWidget {
         // same slice the table below it lists.
         var filtered = all.where((r) => !r.isEmpty);
         if (yardFilter != null) {
-          filtered = filtered.where(
-              (r) => (r.yard ?? yardOfSrNumber(r.srNumber)) == yardFilter);
+          filtered = filtered.where((r) => matchesYardFilter(
+              yardFilter, r.yard ?? yardOfSrNumber(r.srNumber), r.srNumber));
         }
         if (dateRange != null && dateFilterType != 'all') {
           filtered = filtered.where((r) => _matchesDateRange(r, dateRange));

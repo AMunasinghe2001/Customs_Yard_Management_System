@@ -663,7 +663,11 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                     .where((f) => !f.hasAppealDecision &&
                         (!f.isAppealExpired || f.isAppealHeld))
                     .toList();
-                if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
+                if (yard != null) {
+                  rows = rows
+                      .where((f) => matchesYardFilter(yard, f.yard, f.srNumber))
+                      .toList();
+                }
                 // Soonest deadline first, so the appeals needing attention
                 // most urgently lead instead of being paged out of sight.
                 rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
@@ -809,7 +813,11 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                 final q = ref.watch(_appealSearchProvider).toLowerCase();
                 final yard = ref.watch(_appealYardProvider);
                 var rows = list.where((f) => f.hasAppealDecision).toList();
-                if (yard != null) rows = rows.where((f) => f.yard == yard).toList();
+                if (yard != null) {
+                  rows = rows
+                      .where((f) => matchesYardFilter(yard, f.yard, f.srNumber))
+                      .toList();
+                }
                 // Soonest deadline first, so the appeals needing attention
                 // most urgently lead instead of being paged out of sight.
                 rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
@@ -865,14 +873,18 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
 }
 
 /// Yard dropdown ("All Yards" + every yard) tinted to the appeal accent.
-class _AppealYardFilter extends StatelessWidget {
+/// [value] / the string [onChanged] reports is a [YardFilterOption.value] --
+/// apply it with [matchesYardFilter], not a bare `==` on `yard`.
+class _AppealYardFilter extends ConsumerWidget {
   final Color accent;
   final String? value; // null = all
   final ValueChanged<String?> onChanged;
   const _AppealYardFilter(
       {required this.accent, required this.value, required this.onChanged});
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(yardFilterOptionsProvider).valueOrNull ??
+        [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)];
     OutlineInputBorder border(Color c, [double w = 1]) => OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
         borderSide: BorderSide(color: c, width: w));
@@ -901,7 +913,7 @@ class _AppealYardFilter extends StatelessWidget {
               Icon(Icons.warehouse_rounded, color: accent, size: 20),
           options: [
             const StyledDropdownOption('_all', 'All Yards'),
-            for (final y in kYards) StyledDropdownOption(y.code, y.name),
+            for (final o in options) StyledDropdownOption(o.value, o.label),
           ],
           onChanged: (v) => onChanged((v == null || v == '_all') ? null : v),
         ),
