@@ -3247,17 +3247,18 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           valuationQty: widget.valuationQty ??
                               widget.highlightEntry?.itemCount,
                         ),
-                      // Destroyed packages can also be delivered out — show a
-                      // Delivered/Pending section with a Mark Delivered button
-                      // (yard-side), mirroring the Sale & Financial section.
-                      if (isDestroyedEntry)
-                        _DestructionDeliverySection(
+                      if (isDestroyedEntry ||
+                          p.items.any((i) {
+                            final st = (i.status ?? '').toLowerCase();
+                            return st == 'destroyed' ||
+                                st == 'supposed to be destroyed' ||
+                                st == 'destroy';
+                          }))
+                        _DestructionFinancialsSection(
                           package: p,
-                          packageItemId: widget.highlightEntry?.packageItemId,
-                          valuationQty: widget.valuationQty ??
-                              widget.highlightEntry?.itemCount,
-                        ),
-                      if (widget.srFinancials != null)
+                          srFinancials: widget.srFinancials,
+                        )
+                      else if (widget.srFinancials != null)
                         _DisposalExpensesSection(sr: widget.srFinancials!),
                     ],
                   ),
@@ -3720,6 +3721,247 @@ class _DisposalExpensesSection extends StatelessWidget {
               ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Destruction financials section shown in the package-details popup for goods
+/// marked for destruction. Displays deposit, expense breakdown and refund/shortfall.
+class _DestructionFinancialsSection extends StatelessWidget {
+  final PackageModel package;
+  final SrFinancials? srFinancials;
+
+  const _DestructionFinancialsSection({
+    required this.package,
+    this.srFinancials,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final money = NumberFormat('#,##0.00');
+    final green = context.colors.successGreen;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // Determine destroyed status from package items or warehouse entries
+    final isDestroyed = package.status?.toLowerCase() == 'destroyed' ||
+        package.items.any((i) {
+          final st = (i.status ?? '').toLowerCase();
+          return st == 'destroyed';
+        }) ||
+        package.warehouseEntries.any((e) {
+          final n = (e.returnNotes ?? '').trim().toUpperCase();
+          return n.startsWith('[FINAL:DESTROYED');
+        });
+
+    return _DetailSection(
+      title: 'Destruction Status & Financials',
+      icon: Icons.local_fire_department_rounded,
+      delay: 350,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Status Badge ──
+          Row(
+            children: [
+              material.Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: (isDestroyed ? green : context.colors.warningAmber)
+                      .withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: (isDestroyed ? green : context.colors.warningAmber)
+                        .withOpacity(0.35),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    material.Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color:
+                            isDestroyed ? green : context.colors.warningAmber,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const Gap(8),
+                    Text(
+                      isDestroyed ? 'DESTROYED' : 'PENDING DESTRUCTION',
+                      style: material.TextStyle(
+                        color:
+                            isDestroyed ? green : context.colors.warningAmber,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const Gap(14),
+
+          if (srFinancials != null) ...[
+            // ── Deposit & Total Expenses ──
+            Row(
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.savings_rounded,
+                    label: 'Destruction Deposit',
+                    value:
+                        'LKR ${money.format(srFinancials!.destroyingDeposit)}',
+                    valueColor: green,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.payments_rounded,
+                    label: 'Total Expenses',
+                    value: 'LKR ${money.format(srFinancials!.depositSpent)}',
+                    valueColor: srFinancials!.depositSpent > 0
+                        ? context.colors.dangerRed
+                        : null,
+                  ),
+                ),
+              ],
+            ),
+
+            // ── Refund / Shortfall ──
+            Row(
+              children: [
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.undo_rounded,
+                    label: srFinancials!.deficit > 0
+                        ? 'Shortfall'
+                        : 'Refund Amount',
+                    value: srFinancials!.deficit > 0
+                        ? '− LKR ${money.format(srFinancials!.deficit)}'
+                        : 'LKR ${money.format(srFinancials!.refund)}',
+                    valueColor: srFinancials!.deficit > 0
+                        ? context.colors.dangerRed
+                        : green,
+                  ),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: _DetailItem(
+                    icon: Icons.info_outline_rounded,
+                    label: 'Expense Status',
+                    value: srFinancials!.depositSpent == 0
+                        ? 'Pending'
+                        : (srFinancials!.deficit > 0
+                            ? 'Shortfall'
+                            : 'Refundable'),
+                    valueColor: srFinancials!.depositSpent == 0
+                        ? context.colors.warningAmber
+                        : (srFinancials!.deficit > 0
+                            ? context.colors.dangerRed
+                            : green),
+                  ),
+                ),
+              ],
+            ),
+            const Gap(12),
+
+            // ── Cost Breakdown ──
+            material.Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color:
+                    isDark ? context.colors.surfaceDark : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Cost Breakdown',
+                    style: material.TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const Gap(8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Destruction',
+                          amount: srFinancials!.destructionExpense,
+                          color: context.colors.dangerRed,
+                        ),
+                      ),
+                      const Gap(8),
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Labour',
+                          amount: srFinancials!.labourExpense,
+                          color: context.colors.accentLightBlue,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Gap(8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Transport',
+                          amount: srFinancials!.transportExpense,
+                          color: context.colors.customsBlue,
+                        ),
+                      ),
+                      const Gap(8),
+                      Expanded(
+                        child: _ExpenseCostBox(
+                          label: 'Advertising',
+                          amount: srFinancials!.advertisingExpense,
+                          color: context.colors.warningAmber,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ] else
+            // No financial data available yet
+            material.Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color:
+                    isDark ? context.colors.surfaceDark : Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: context.colors.borderColor),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 18, color: context.colors.textMuted),
+                  const Gap(10),
+                  Expanded(
+                    child: Text(
+                      'Financial data will be available once destruction expenses are recorded by the Central Disposal Directorate.',
+                      style: material.TextStyle(
+                        color: context.colors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -4531,172 +4773,6 @@ class _SaleFinancialsSectionState
                     child: OutlinedButton.icon(
                       onPressed:
                           _toggling ? null : () => _toggleDelivery(saleItem),
-                      icon: _toggling
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.local_shipping_rounded, size: 18),
-                      label: const Text('Mark Delivered'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: actionColor,
-                        side: BorderSide(color: actionColor.withOpacity(0.6)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
-/// Delivery section for a DESTROYED package — Delivered/Pending status + a
-/// yard-side "Mark Delivered" button, mirroring the Sale & Financial section.
-class _DestructionDeliverySection extends ConsumerStatefulWidget {
-  final PackageModel package;
-  final String? packageItemId;
-
-  /// Quantity this destruction covers — see _SaleFinancialsSection.
-  final int? valuationQty;
-  const _DestructionDeliverySection(
-      {required this.package, this.packageItemId, this.valuationQty});
-  @override
-  ConsumerState<_DestructionDeliverySection> createState() =>
-      _DestructionDeliverySectionState();
-}
-
-class _DestructionDeliverySectionState
-    extends ConsumerState<_DestructionDeliverySection> {
-  bool _toggling = false;
-
-  String get _key => '${widget.package.id}|${widget.packageItemId ?? ''}';
-
-  Future<void> _toggle(DestructionItemModel item) async {
-    setState(() => _toggling = true);
-    final newValue = !item.delivered;
-    try {
-      await ref
-          .read(disposalServiceProvider)
-          .toggleDestructionDelivery(item.id, newValue);
-      ref.read(destructionsRefreshProvider.notifier).trigger();
-      ref.invalidate(destructionItemForPackageProvider(widget.package.id));
-      ref.invalidate(destructionItemForPackageItemProvider(_key));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(material.SnackBar(
-          content: material.Text(
-              newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
-          backgroundColor: newValue
-              ? context.colors.successGreen
-              : context.colors.warningAmber,
-        ));
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(material.SnackBar(
-          content: material.Text('Error: $e'),
-          backgroundColor: context.colors.dangerRed,
-        ));
-      }
-    } finally {
-      if (mounted) setState(() => _toggling = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final async = ref.watch(destructionItemForPackageItemProvider(_key));
-    return async.when(
-      loading: () => const material.Center(
-        child: material.Padding(
-            padding: EdgeInsets.all(16),
-            child: material.CircularProgressIndicator()),
-      ),
-      error: (_, __) => const material.SizedBox.shrink(),
-      data: (item) {
-        if (item == null) return const material.SizedBox.shrink();
-        final profile = ref.watch(currentProfileProvider);
-        // Only a yard (admin/officer) confirms delivery; Central Disposal views.
-        final canEdit = profile != null && !profile.isDisposal;
-        final delivered = item.delivered;
-        final actionColor = delivered
-            ? context.colors.warningAmber
-            : context.colors.successGreen;
-        return _DetailSection(
-          title: 'Destruction & Delivery',
-          icon: Icons.delete_forever_rounded,
-          delay: 650,
-          child: Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: context.colors.surfaceDark,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.colors.borderColor),
-            ),
-            child: Column(
-              children: [
-                _DetailItem(
-                  icon: Icons.delete_forever_rounded,
-                  label: 'Status',
-                  value: 'Destroyed',
-                  valueColor: context.colors.dangerRed,
-                ),
-                // Receipt No + Notes are stored combined as
-                // "Receipt No: <no> | Notes: <notes>" — split into two rows.
-                if (_receiptNoOf(item.notes) != null)
-                  _DetailItem(
-                    icon: Icons.receipt_long_rounded,
-                    label: 'Receipt No',
-                    value: _receiptNoOf(item.notes)!,
-                  ),
-                if (_notesOf(item.notes) != null)
-                  _DetailItem(
-                    icon: Icons.notes_rounded,
-                    label: 'Notes',
-                    value: _notesOf(item.notes)!,
-                  ),
-                // Valuation Directorate valuation, for comparison.
-                if (() {
-                  final fp = item.forfeited;
-                  return fp?.valuationCost != null;
-                }())
-                  _ValuationDetailRow(
-                      fp: item.forfeited!, soldQty: widget.valuationQty),
-                // Destruction records a price only — no taxes (unlike a sale).
-                _DetailItem(
-                  icon: Icons.payments_rounded,
-                  label: 'Destruction Price (Rs)',
-                  value: item.destroyedPrice.toStringAsFixed(2),
-                  valueColor: context.colors.primaryGold,
-                ),
-                _DetailItem(
-                  icon: Icons.local_shipping_rounded,
-                  label: 'Delivery Status',
-                  value: delivered ? 'Delivered' : 'Pending',
-                  valueColor: delivered
-                      ? context.colors.successGreen
-                      : context.colors.dangerRed,
-                ),
-                // Delivery date shown ONLY once delivered — captured
-                // automatically when Mark Delivered is pressed.
-                if (delivered && item.deliveredAt != null)
-                  _DetailItem(
-                    icon: Icons.event_available_rounded,
-                    label: 'Delivery Date',
-                    value: DateFormat('yyyy-MM-dd').format(item.deliveredAt!),
-                    valueColor: context.colors.successGreen,
-                  ),
-                if (canEdit && !delivered) ...[
-                  const Gap(10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _toggling ? null : () => _toggle(item),
                       icon: _toggling
                           ? const SizedBox(
                               width: 16,
@@ -6505,10 +6581,14 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
 
     // Role-based action permissions.
     // - Officers: no disposition actions enabled at all.
-    // - Admins: Release, Re-export, Abandoned, Forfeit and Other are enabled.
-    //   Destroy remains disabled for everyone.
+    // - Admins (DC/SDDC): every action is enabled, Destroy included — it goes
+    //   through the same [FINAL:DESTROYED] warehouse-entry write as Release /
+    //   Forfeit / Abandoned / Re-export / Other, just like the Final
+    //   Disposition sheet below already allows. This dialog used to disable
+    //   it unconditionally, so even an Appeal Directorate decision of DESTROY
+    //   could never actually be carried out from here.
     final isOfficer = ref.watch(currentProfileProvider)?.role == 'officer';
-    const _disabledForAll = {'Destroy'};
+    const _disabledForAll = <String>{};
     // The 30-day appeal window freezes EVERY action, whatever the status:
     // the owner may still appeal, so the goods cannot be released, forfeited,
     // abandoned, re-exported or destroyed until it closes.
@@ -7474,9 +7554,9 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       icon: Icons.delete_forever_rounded,
       label: 'Destroy',
       description:
-          'Send a disposal request to the Central Disposal Directorate.',
+          'Mark goods for destruction. DC / SDDC approval required.',
       color: Color(0xFFE64A19),
-      adminOnly: false,
+      adminOnly: true,
     ),
     _FinalActionDef(
       type: 'RE-EXPORTED',
@@ -7496,10 +7576,9 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
     ),
   ];
 
-  // Sale and Destroy are never written as a [FINAL:…] entry from this dialog —
-  // they are recorded by the Central Disposal Directorate. Picking one opens
-  // the disposal REQUEST flow instead (see [onRequestDisposal]).
-  static const _requestActions = {'SOLD', 'DESTROYED'};
+  // Sale is written via disposal request to Central Disposal Directorate.
+  // Release / Destroy / Re-export / Other are recorded directly.
+  static const _requestActions = {'SOLD'};
 
   // The final-action type that matches an Appeal Directorate decision code.
   static String? _typeForDecision(String code) {
@@ -7509,6 +7588,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       case 'SALE':
         return 'SOLD';
       case 'DESTROY':
+      case 'DESTRUCTION':
+      case 'SUPPOSED TO BE DESTROYED':
         return 'DESTROYED';
       case 'RE-EXPORT':
         return 'RE-EXPORTED';
@@ -7521,15 +7602,9 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
 
   // Whether THIS user may trigger the given action.
   // - Officers: nothing is enabled.
-  // - Sale / Destroy: ALWAYS disabled here. Those two outcomes belong to the
-  //   Central Disposal Directorate, and the only way to start them is the
-  //   "Send Disposal Request" button on the status page — one request, sent
-  //   deliberately, rather than a per-item action buried in a details popup.
-  // - When the Appeal Directorate has DECIDED, only the matching action is
-  //   enabled (the yard must proceed exactly as decided). A SALE / DESTROY
-  //   decision therefore enables nothing here — it is carried out by sending
-  //   the disposal request.
-  // - Otherwise (window passed, no decision): Release / Re-export / Other.
+  // - Sale: ALWAYS disabled here (must use "Send Disposal Request").
+  // - When Appeal Directorate has DECIDED: only matching action is enabled.
+  // - Otherwise: Release / Destroy / Re-export / Other are enabled for DC/SDDC.
   bool _isActionEnabled(_FinalActionDef a) {
     if (widget.isOfficer) return false;
     if (_requestActions.contains(a.type)) return false;
@@ -7705,7 +7780,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       ] else ...[
                         const Gap(6),
                         Text(
-                          'Sale / Destroy go to the Central Disposal Directorate as a request; Release / Re-export / Other are recorded directly.',
+                          'Sale goes to Central Disposal as a request; Release / Destroy / Re-export / Other are recorded directly.',
                           style: material.TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 11,
@@ -7747,16 +7822,10 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                                                 !_otherExpanded);
                                           } else if (_requestActions
                                               .contains(a.type)) {
-                                            // Sale / Destroy → disposal request (not a direct
-                                            // [FINAL:…] write).
-                                            widget.onRequestDisposal!(
-                                                a.type == 'SOLD'
-                                                    ? 'sale'
-                                                    : 'destruction');
+                                            // Sale → disposal request
+                                            widget.onRequestDisposal!('sale');
                                           } else {
-                                            // Release / Re-export → per-action confirm dialog
-                                            // (date + notes) before recording, like the
-                                            // warehouse action final step.
+                                            // Release / Destroy / Re-export → per-action confirm dialog
                                             _confirmFinalAction(a);
                                           }
                                         },

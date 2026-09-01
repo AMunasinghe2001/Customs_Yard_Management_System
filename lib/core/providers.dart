@@ -1442,28 +1442,14 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
           double rawAuction =
               costFor('auction_expense', item.id, p.srNumber, share);
 
-          // ── Seed dummy figures when data is empty ──────────────
-          if (rawProceeds == 0) {
-            final seed = (item.id.hashCode.abs() % 40) + 15;
-            rawProceeds = seed * 10000.0;
-            final vat = rawProceeds * 0.18;
-            final pal = rawProceeds * 0.10;
-            rawTaxes = vat + pal;
-            itemTaxesByName['VAT'] = (itemTaxesByName['VAT'] ?? 0) + vat;
-            itemTaxesByName['PAL'] = (itemTaxesByName['PAL'] ?? 0) + pal;
-          }
-          if (rawSrCharges == 0) {
-            final seed = (item.id.hashCode.abs() % 30) + 10;
-            rawSrCharges = seed * 5000.0;
-          }
-          if (rawDestruction == 0) {
-            final seed = (item.id.hashCode.abs() % 20) + 5;
-            rawDestruction = seed * 3000.0;
-          }
-          if (rawAdvertising == 0) {
-            final seed = (item.id.hashCode.abs() % 15) + 3;
-            rawAdvertising = seed * 2000.0;
-          }
+          // Zero is a real, meaningful answer here -- "nothing recorded yet"
+          // -- and must reach the UI as zero. A fake-seeded placeholder used
+          // to sit here instead, inventing a plausible-looking proceeds/tax/
+          // destruction/advertising figure out of the item id's hash whenever
+          // the true recorded value was zero. That made every screen reading
+          // this provider (Financials tab, Expenses tab, and the Destroyed
+          // Goods popup) show money nobody had actually recorded, with no way
+          // to tell a real LKR 0 apart from an invented one.
 
           return GoodsFinancials(
             itemId: item.id,
@@ -1486,12 +1472,9 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
         }(),
     ];
 
-    // Seed a dummy deposit when the real one is zero.
-    double rawDeposit = p.destroyingDeposit ?? 0;
-    if (rawDeposit == 0) {
-      final seed = (p.srNumber.hashCode.abs() % 50) + 20;
-      rawDeposit = seed * 8000.0;
-    }
+    // A zero deposit is real: it means none was lodged, or none was recorded
+    // on the SR form. It used to be replaced with an invented figure here.
+    final double rawDeposit = p.destroyingDeposit ?? 0;
 
     DateTime? srDate;
     if (p.warehouseEntries.isNotEmpty) {

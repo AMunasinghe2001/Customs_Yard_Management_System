@@ -779,7 +779,7 @@ class _ExpensesTable extends ConsumerWidget {
                         size: 20, color: context.colors.successGreen),
                     onPressed: () => showDialog(
                       context: context,
-                      builder: (_) => _RecordExpenseDialog(sr: r),
+                      builder: (_) => RecordExpenseDialog(sr: r),
                     ),
                   ),
                 )),
@@ -1037,16 +1037,16 @@ class _StatusBadge extends StatelessWidget {
 
 /// Records both costs for ONE SR, and previews the resulting refund
 /// live so the officer sees the consequence before saving.
-class _RecordExpenseDialog extends ConsumerStatefulWidget {
+class RecordExpenseDialog extends ConsumerStatefulWidget {
   final SrFinancials sr;
-  const _RecordExpenseDialog({required this.sr});
+  const RecordExpenseDialog({super.key, required this.sr});
 
   @override
-  ConsumerState<_RecordExpenseDialog> createState() =>
+  ConsumerState<RecordExpenseDialog> createState() =>
       _RecordExpenseDialogState();
 }
 
-class _RecordExpenseDialogState extends ConsumerState<_RecordExpenseDialog> {
+class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   /// One controller per recordable kind, keyed the same way the database is.
   /// Driving the form off `kRecordableExpenseKinds` means adding another cost
   /// needs no change here — only that map, and the icon table below.

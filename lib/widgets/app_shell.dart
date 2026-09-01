@@ -45,8 +45,6 @@ const _officerNav = [
   NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
   NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
   NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
-  NavItem('Destruction Sale', Icons.local_fire_department_rounded,
-      '/destruction-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
@@ -78,8 +76,6 @@ const _adminNav = [
   NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
   NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
   NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
-  NavItem('Destruction Sale', Icons.local_fire_department_rounded,
-      '/destruction-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];

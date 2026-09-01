@@ -14,6 +14,8 @@ import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../services/services.dart';
+import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
@@ -67,7 +69,7 @@ class _DispositionCategoryScreenState
   // finalTag to every bracket tag that belongs to it.
   static const Map<String, Set<String>> _acceptedTags = {
     'RE-EXPORTED': {'FINAL:RE-EXPORTED', 'RE-EXPORTED', 'RE-EXPORT'},
-    'DESTROYED': {'FINAL:DESTROYED', 'DESTROYED', 'DESTROY'},
+    'DESTROYED': {'FINAL:DESTROYED', 'DESTROYED', 'DESTROY', 'SUPPOSED TO BE DESTROYED'},
     'SOLD': {'FINAL:SOLD', 'SOLD'},
     'OTHER': {'FINAL:OTHER', 'OTHER'},
   };
@@ -92,7 +94,7 @@ class _DispositionCategoryScreenState
   // Maps finalTag → the item statuses that correspond to it.
   static const Map<String, Set<String>> _statusForTag = {
     'RE-EXPORTED': {'re-exported'},
-    'DESTROYED': {'destroyed'},
+    'DESTROYED': {'destroyed', 'supposed to be destroyed', 'destroy'},
     'SOLD': {'sold'},
     'OTHER': {'other'},
   };
@@ -408,17 +410,21 @@ class _DispositionCategoryScreenState
                         return false;
                       }
                       if (_hasDelivery && _deliveryFilter != null) {
-                        // Match the per-SALE delivery state (receipt-pinned),
-                        // falling back to the per-item / package-level value.
-                        final itemId = row.entry?.packageItemId ?? '';
-                        final receipt =
-                            _parseSaleReceipt(row.entry?.returnNotes) ?? '';
-                        final delivered = deliveredMap[
-                                '${row.package.id}|$itemId|$receipt'] ??
-                            deliveredMap['${row.package.id}|$itemId'] ??
-                            deliveredMap[row.package.id] ??
-                            false;
-                        if (delivered != _deliveryFilter) return false;
+                        if (widget.finalTag == 'DESTROYED') {
+                          if (row.isDestroyed != _deliveryFilter) return false;
+                        } else {
+                          // Match the per-SALE delivery state (receipt-pinned),
+                          // falling back to the per-item / package-level value.
+                          final itemId = row.entry?.packageItemId ?? '';
+                          final receipt =
+                              _parseSaleReceipt(row.entry?.returnNotes) ?? '';
+                          final delivered = deliveredMap[
+                                  '${row.package.id}|$itemId|$receipt'] ??
+                              deliveredMap['${row.package.id}|$itemId'] ??
+                              deliveredMap[row.package.id] ??
+                              false;
+                          if (delivered != _deliveryFilter) return false;
+                        }
                       }
                       return true;
                     }).toList();
@@ -470,25 +476,23 @@ class _DispositionCategoryScreenState
                                 fixedWidth: 70),
                             const DataColumn2(
                                 label: Text('Date'), size: ColumnSize.M),
-                            // Officer is hidden on the SOLD/DESTROYED tables —
-                            // who sold/destroyed it is shown in the details popup.
-                            if (!_hasDelivery)
+                            if (widget.finalTag != 'SOLD')
                               const DataColumn2(
                                   label: Text('Officer'), size: ColumnSize.M),
                             DataColumn2(
-                                label: Text(_hasDelivery ? 'Receipt No' : 'Notes'),
+                                label: Text(widget.finalTag == 'SOLD' ? 'Receipt No' : 'Notes'),
                                 size: ColumnSize.M),
-                            if (_hasDelivery)
+                            if (widget.finalTag == 'SOLD')
                               const DataColumn2(
                                   label: Text('Valuation'), size: ColumnSize.M),
-                            if (_hasDelivery)
+                            if (widget.finalTag == 'SOLD')
                               DataColumn2(
-                                  label: Text(widget.finalTag == 'SOLD'
-                                      ? 'Sold Price'
-                                      : 'Destruction Price'),
+                                  label: Text('Sold Price'),
                                   size: ColumnSize.M),
-                            if (_hasDelivery)
+                            if (widget.finalTag == 'SOLD')
                               const DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
+                            if (widget.finalTag == 'DESTROYED')
+                              const DataColumn2(label: Center(child: Text('Destroyed')), fixedWidth: 155),
                             const DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -522,13 +526,11 @@ class _DispositionCategoryScreenState
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.entry!.returnedAt!)
                                         : '—')),
-                                    if (!_hasDelivery)
+                                    if (widget.finalTag != 'SOLD')
                                       DataCell(TooltipText(row.officer,
                                           overflow: TextOverflow.ellipsis)),
                                     DataCell(TooltipText(
                                         (() {
-                                          // SOLD/DESTROYED: show the clean
-                                          // receipt number; other tags: notes.
                                           if (widget.finalTag == 'SOLD') {
                                             return _parseSaleReceipt(
                                                     row.entry?.returnNotes) ??
@@ -568,22 +570,14 @@ class _DispositionCategoryScreenState
                                             row.entry?.returnNotes),
                                       ))),
                                     if (widget.finalTag == 'DESTROYED')
-                                      DataCell(_DestructionFinancialsCell(
-                                        package: row.package,
-                                        packageItemId: row.entry?.packageItemId,
-                                        qty: row.entry?.itemCount ??
-                                            row.item?.quantity,
+                                      DataCell(Center(
+                                        child: _MarkDestroyedCell(
+                                          row: row,
+                                          onMarkDestroyed: () =>
+                                              _confirmMarkDestroyed(
+                                                  context, ref, row),
+                                        ),
                                       )),
-                                    if (widget.finalTag == 'DESTROYED')
-                                      DataCell(_DestructionPriceCell(
-                                        package: row.package,
-                                        packageItemId: row.entry?.packageItemId,
-                                      )),
-                                    if (widget.finalTag == 'DESTROYED')
-                                      DataCell(Center(child: _DestroyedDeliveryStatusCell(
-                                        package: row.package,
-                                        packageItemId: row.entry?.packageItemId,
-                                      ))),
                                     DataCell(Center(
                                         child: IconButton(
                                       icon: Icon(Icons.info_outline_rounded,
@@ -626,6 +620,21 @@ class _DispositionCategoryScreenState
                                             // reading "@ 665 × 150".
                                             valuationQty: row.entry?.itemCount ??
                                                 row.item?.quantity,
+                                            // Same figure the Central
+                                            // Disposal Destroyed Goods popup
+                                            // now carries -- without it the
+                                            // yard's own popup showed "not
+                                            // available" even once Central
+                                            // Disposal had recorded the
+                                            // destruction expenses.
+                                            srFinancials: ref
+                                                .watch(srFinancialsProvider)
+                                                .valueOrNull
+                                                ?.where((f) =>
+                                                    f.srNumber.trim() ==
+                                                    row.package.srNumber
+                                                        .trim())
+                                                .firstOrNull,
                                           ),
                                         );
                                       },
@@ -674,6 +683,13 @@ class _CategoryRow {
     required this.officer,
     this.item,
   });
+
+  bool get isDestroyed {
+    final notes = (entry?.returnNotes ?? '').trim().toUpperCase();
+    if (notes.startsWith('[FINAL:DESTROYED]') || notes.startsWith('[DESTROYED]')) return true;
+    if (item?.status?.toLowerCase() == 'destroyed') return true;
+    return false;
+  }
 }
 
 // Read-only delivery STATUS chip (the action button is in the details dialog,
@@ -808,105 +824,205 @@ class _SaleValuationCell extends ConsumerWidget {
   }
 }
 
-/// The actual destruction price + tax recorded when the item was destroyed.
-class _DestructionPriceCell extends ConsumerWidget {
-  final PackageModel package;
-  final String? packageItemId;
-  const _DestructionPriceCell({required this.package, this.packageItemId});
+class _MarkDestroyedCell extends StatelessWidget {
+  final _CategoryRow row;
+  final VoidCallback onMarkDestroyed;
+  const _MarkDestroyedCell(
+      {required this.row, required this.onMarkDestroyed});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}';
-    final async = ref.watch(destructionItemForPackageItemProvider(key));
-    return async.when(
-      loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
-      data: (item) {
-        if (item == null) {
-          return Text('—', style: TextStyle(color: context.colors.textMuted));
-        }
-        // Destruction records a price only — no taxes.
-        return Text('Rs ${item.destroyedPrice.toStringAsFixed(2)}',
-            style: const TextStyle(fontWeight: FontWeight.bold));
-      },
+  Widget build(BuildContext context) {
+    if (row.isDestroyed) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: context.colors.successGreen.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(8),
+          border:
+              Border.all(color: context.colors.successGreen.withOpacity(0.4)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.check_circle_rounded,
+              size: 13, color: context.colors.successGreen),
+          const SizedBox(width: 5),
+          Text('Destroyed',
+              style: TextStyle(
+                  color: context.colors.successGreen,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700)),
+        ]),
+      );
+    }
+    return ElevatedButton.icon(
+      style: ElevatedButton.styleFrom(
+        backgroundColor: context.colors.dangerRed.withOpacity(0.15),
+        foregroundColor: context.colors.dangerRed,
+        side: BorderSide(color: context.colors.dangerRed.withOpacity(0.4)),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        elevation: 0,
+      ),
+      icon: const Icon(Icons.local_fire_department_rounded, size: 14),
+      label: const Text('Mark Destroyed',
+          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+      onPressed: onMarkDestroyed,
     );
   }
 }
 
-/// Valuation total (unit cost × qty) for a DESTROYED item — destruction carries
-/// no sold price, so the figure shown is the Valuation Directorate's valuation.
-class _DestructionFinancialsCell extends ConsumerWidget {
-  final PackageModel package;
-  final String? packageItemId;
-  /// The quantity shown in the table's Qty column — the valuation must multiply
-  /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
-  final int? qty;
-  const _DestructionFinancialsCell(
-      {required this.package, this.packageItemId, this.qty});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}';
-    final async = ref.watch(destructionItemForPackageItemProvider(key));
-    return async.when(
-      loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => Text('—', style: TextStyle(color: context.colors.textMuted)),
-      data: (item) {
-        final fp = item?.forfeited;
-        final unitCost = fp?.valuationCost;
-        if (unitCost == null || fp == null) {
-          return Text('—', style: TextStyle(color: context.colors.textMuted));
-        }
-        final int effQty;
-        if (qty != null && qty! > 0) {
-          effQty = qty!;
-        } else if (fp.entryQty != null) {
-          effQty = fp.entryQty!;
-        } else if (fp.itemId != null) {
-          effQty = fp.packageDetails?.items
-                  .where((i) => i.id == fp.itemId)
-                  .firstOrNull
-                  ?.quantity ??
-              1;
-        } else {
-          effQty = fp.packageDetails?.items
-                  .fold<int>(0, (s, i) => s + i.quantity) ??
-              1;
-        }
-        final total = unitCost * effQty;
-        final fmt = NumberFormat('#,##0');
-        return Column(
-          mainAxisSize: MainAxisSize.min,
+Future<void> _confirmMarkDestroyed(
+    BuildContext context, WidgetRef ref, _CategoryRow row) async {
+  final itemId = row.entry?.packageItemId ?? row.item?.id;
+  if (itemId == null) return;
+  final qty = row.entry?.itemCount ?? row.item?.quantity ?? 1;
+  DateTime pickedDate = DateTime.now();
+  final notesCtrl = TextEditingController();
+
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setDlgState) => StyledFormDialog(
+        label: 'DESTROY GOODS',
+        title: 'Mark as Destroyed',
+        icon: Icons.local_fire_department_rounded,
+        headerAccentColor: ctx.colors.dangerRed,
+        width: 480,
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton.icon(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: ctx.colors.dangerRed,
+              foregroundColor: Colors.white,
+            ),
+            icon: const Icon(Icons.check_rounded, size: 16),
+            label: const Text('Confirm Destruction'),
+            onPressed: () => Navigator.pop(ctx, true),
+          ),
+        ],
+        child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Rs ${fmt.format(total)}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('@ ${fmt.format(unitCost)} × $effQty',
-                style: TextStyle(
-                    fontSize: 11, color: context.colors.textMuted)),
+            StyledFormSection(
+              title: 'Package Information',
+              icon: Icons.inventory_2_rounded,
+              children: [
+                _DialogDetailRow(
+                    label: 'SR Number', value: row.package.srNumber),
+                _DialogDetailRow(label: 'Goods Name', value: row.itemName),
+                _DialogDetailRow(label: 'Quantity', value: '$qty'),
+              ],
+            ),
+            const Gap(14),
+            StyledFormSection(
+              title: 'Destruction Details',
+              icon: Icons.edit_calendar_rounded,
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: Icon(Icons.calendar_today_rounded,
+                      color: ctx.colors.primaryGold, size: 20),
+                  title: const Text('Destruction Date',
+                      style:
+                          TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+                  subtitle:
+                      Text(DateFormat('yyyy-MM-dd').format(pickedDate)),
+                  trailing: OutlinedButton(
+                    onPressed: () async {
+                      final d = await showDatePicker(
+                        context: ctx,
+                        initialDate: pickedDate,
+                        firstDate: DateTime(2020),
+                        lastDate:
+                            DateTime.now().add(const Duration(days: 365)),
+                      );
+                      if (d != null) {
+                        setDlgState(() => pickedDate = d);
+                      }
+                    },
+                    child: const Text('Change'),
+                  ),
+                ),
+                const Gap(8),
+                TextField(
+                  controller: notesCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes / Remarks (Optional)',
+                    hintText:
+                        'Enter destruction certificate # or remarks...',
+                  ),
+                ),
+              ],
+            ),
           ],
+        ),
+      ),
+    ),
+  );
+
+  if (confirmed == true) {
+    try {
+      await WarehouseService().recordFinalDisposition(
+        packageItemId: itemId,
+        dispositionType: 'DESTROYED',
+        qty: qty,
+        dispositionDate: pickedDate,
+        notes: notesCtrl.text.trim().isNotEmpty ? notesCtrl.text.trim() : null,
+      );
+      ref.invalidate(livePackagesProvider);
+      ref.invalidate(disposalDestroyedPackagesProvider);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('${row.itemName} marked as Destroyed.'),
+            backgroundColor: context.colors.successGreen,
+          ),
         );
-      },
-    );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to mark destroyed: $e'),
+            backgroundColor: context.colors.dangerRed,
+          ),
+        );
+      }
+    }
   }
 }
 
-class _DestroyedDeliveryStatusCell extends ConsumerWidget {
-  final PackageModel package;
-  final String? packageItemId;
-  const _DestroyedDeliveryStatusCell(
-      {required this.package, this.packageItemId});
+class _DialogDetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+  const _DialogDetailRow({required this.label, required this.value});
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}';
-    final async = ref.watch(destructionItemForPackageItemProvider(key));
-    return async.when(
-      loading: () => const SizedBox(
-          width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => const Text('—'),
-      data: (item) =>
-          _DeliveryStatusChip(delivered: item?.delivered ?? false),
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(label,
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ),
+          Expanded(
+            child: Text(value,
+                style: TextStyle(
+                    color: context.colors.textPrimary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600)),
+          ),
+        ],
+      ),
     );
   }
 }

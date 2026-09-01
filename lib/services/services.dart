@@ -3385,11 +3385,18 @@ class ForfeitedPackageService {
         .eq('source', 'forfeit')
         .order('appeal_deadline', ascending: true));
 
-    const _nonDisposalDecisions = {'RELEASE', 'RE-EXPORT', 'OTHER'};
+    const _nonDisposalDecisions = {
+      'RELEASE',
+      'RE-EXPORT',
+      'OTHER',
+      'DESTROY',
+      'DESTRUCTION',
+      'SUPPOSED TO BE DESTROYED',
+    };
     // An item is requestable when it can go to a disposal request: the window
     // passed (yard picks the disposition) OR the Appeal Directorate gave it a
-    // SALE/DESTROY decision. NOT requestable when: it is on appeal hold, or it
-    // has a per-item RELEASE/RE-EXPORT/OTHER decision (handled directly).
+    // SALE decision. NOT requestable when: it is on appeal hold, or it
+    // has a per-item RELEASE/RE-EXPORT/OTHER/DESTROY decision.
     bool itemRequestable(ForfeitedPackageModel f, String itemId) {
       final held = f.heldItemIds.isNotEmpty
           ? f.heldItemIds.contains(itemId)
@@ -3397,10 +3404,11 @@ class ForfeitedPackageService {
       if (held) return false;
       final dec = (f.appealDecisionForItem(itemId) ?? '').toUpperCase();
       if (_nonDisposalDecisions.contains(dec)) return false;
+      if (f.reason.toUpperCase().contains('DESTROY')) return false;
       // Listing pending goods keeps them in the pool; the dialog greys them
       // out rather than hiding them.
       if (includePending) return true;
-      return f.isAppealExpired || dec == 'SALE' || dec == 'DESTROY';
+      return f.isAppealExpired || dec == 'SALE';
     }
 
     final baseForfeit = (fpData as List)

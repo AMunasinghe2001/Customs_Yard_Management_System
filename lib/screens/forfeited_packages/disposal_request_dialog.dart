@@ -45,8 +45,8 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
     if (_appliedAppealDefaults) return;
     final defaults = <String, String>{};
     for (final p in packages) {
-      final d = p.appealRequestDisposition; // 'destruction' | 'sale' | null
-      if (d != null) defaults[p.id] = d;
+      final d = p.appealRequestDisposition; // 'sale' | null
+      if (d == 'sale') defaults[p.id] = 'sale';
     }
     _appliedAppealDefaults = true;
     if (defaults.isEmpty) return;
@@ -356,17 +356,8 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                           fontWeight: FontWeight.bold)),
                                   const Spacer(),
                                   _MiniCount(
-                                      label: 'Destruction',
-                                      count: selected.values
-                                          .where((d) => d == 'destruction')
-                                          .length,
-                                      color: context.colors.dangerRed),
-                                  const Gap(8),
-                                  _MiniCount(
-                                      label: 'Sale',
-                                      count: selected.values
-                                          .where((d) => d == 'sale')
-                                          .length,
+                                      label: 'Tender Sale',
+                                      count: selected.length,
                                       color: context.colors.successGreen),
                                 ]),
                               ),
@@ -451,8 +442,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                         final map = <String, String>{};
                                         for (final p in packages) {
                                           if (!p.isActionable) continue;
-                                          map[p.id] =
-                                              selected[p.id] ?? 'destruction';
+                                          map[p.id] = 'sale';
                                         }
                                         ref
                                             .read(
@@ -534,7 +524,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                             if (isSelected) {
                                               map.remove(pkg.id);
                                             } else {
-                                              map[pkg.id] = 'destruction';
+                                              map[pkg.id] = 'sale';
                                             }
                                             ref
                                                 .read(
@@ -546,7 +536,7 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                             final map =
                                                 Map<String, String>.from(
                                                     selected);
-                                            map[pkg.id] = d;
+                                            map[pkg.id] = 'sale';
                                             ref
                                                 .read(
                                                     selectedRequestDispositionsProvider
@@ -758,11 +748,26 @@ class _PackageRequestRow extends StatelessWidget {
                         fontSize: 13, color: context.colors.textPrimary)),
               ),
               const Gap(8),
-              // Disposition picker — active only when the row is selected.
-              _DispositionToggle(
-                value: disposition,
-                enabled: isSelected && !pending,
-                onChanged: onDisposition,
+              // Disposition indicator — all items in this dialog are for Sale
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: context.colors.successGreen.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                      color: context.colors.successGreen.withOpacity(0.4)),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.sell_rounded,
+                      size: 12, color: context.colors.successGreen),
+                  const Gap(4),
+                  Text('Sale',
+                      style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: context.colors.successGreen)),
+                ]),
               ),
             ],
           ),

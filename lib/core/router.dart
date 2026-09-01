@@ -294,8 +294,7 @@ final routerProvider = Provider<GoRouter>((ref) {
               key: state.pageKey, child: const TenderDisposalScreen())),
       GoRoute(
           path: '/destruction-disposals',
-          pageBuilder: (_, state) => NoTransitionPage(
-              key: state.pageKey, child: const DestructionDisposalScreen())),
+          redirect: (_, __) => '/destroyed-packages'),
       GoRoute(
           path: '/admin',
           pageBuilder: (_, state) => NoTransitionPage(

@@ -53,7 +53,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 17,
+      length: 15,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -333,26 +333,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.gavel_rounded, size: 18),
-                              Gap(8),
-                              Text('Destructions'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.auto_delete_rounded, size: 18),
-                              Gap(8),
-                              Text('Undestroyed'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
                               Icon(Icons.groups_rounded, size: 18),
                               Gap(8),
                               Text('Committees'),
@@ -424,8 +404,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 _DisposalRequestsTab(),
                 _TenderSalesTab(),
                 _UnsoldReTenderTab(),
-                _DestructionsTab(),
-                _UndestroyedReDestructionTab(),
                 _CommitteesTab(),
                 TaxesTab(),
                 ExpensesTab(),
@@ -1299,30 +1277,75 @@ class _DestroyedPackagesTab extends ConsumerStatefulWidget {
       _DestroyedPackagesTabState();
 }
 
+class _DestroyedRow {
+  final PackageModel package;
+  final WarehouseEntryModel? entry;
+  final PackageItem? item;
+  final String itemName;
+  final String officer;
+  final bool isDestroyed;
+
+  _DestroyedRow({
+    required this.package,
+    this.entry,
+    this.item,
+    required this.itemName,
+    required this.officer,
+    required this.isDestroyed,
+  });
+}
+
 class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
   static const int _pageSize = 20;
   int _page = 0;
 
-  List<_SoldRow> _rows(List<PackageModel> packages) {
-    final rows = <_SoldRow>[];
+  List<_DestroyedRow> _rows(List<PackageModel> packages) {
+    final rows = <_DestroyedRow>[];
     for (final p in packages) {
+      final coveredItemIds = <String>{};
       for (final e in p.warehouseEntries) {
         if (!_isDestroyedEntry(e)) continue;
         final item = p.items.where((i) => i.id == e.packageItemId).firstOrNull;
-        // Never mislabel an un-linked entry as items.first in a multi-item
-        // package (see the Sold tab note).
+        if (e.packageItemId != null) coveredItemIds.add(e.packageItemId!);
         final itemName = item?.itemName ??
             (p.items.length == 1 ? p.items.first.itemName : '—');
-        rows.add(_SoldRow(
-          p,
-          e,
-          itemName,
-          e.returnedByName ?? e.returnedByBadge ?? '—',
+        final isDest = (e.returnNotes ?? '')
+                .toUpperCase()
+                .contains('FINAL:DESTROYED') ||
+            (e.returnNotes ?? '').toUpperCase().contains('DESTROYED');
+        rows.add(_DestroyedRow(
+          package: p,
+          entry: e,
+          item: item,
+          itemName: itemName,
+          officer: e.returnedByName ?? e.returnedByBadge ?? '—',
+          isDestroyed: isDest,
         ));
       }
+      for (final item in p.items) {
+        if (coveredItemIds.contains(item.id)) continue;
+        final st = (item.status ?? '').toLowerCase();
+        if (st == 'destroyed' ||
+            st == 'supposed to be destroyed' ||
+            st == 'destroy') {
+          rows.add(_DestroyedRow(
+            package: p,
+            entry: null,
+            item: item,
+            itemName: item.itemName,
+            officer: '—',
+            isDestroyed: st == 'destroyed',
+          ));
+        }
+      }
     }
-    rows.sort((a, b) => (b.entry.returnedAt ?? b.entry.admittedAt)
-        .compareTo(a.entry.returnedAt ?? a.entry.admittedAt));
+    rows.sort((a, b) {
+      final aDate =
+          a.entry?.returnedAt ?? a.entry?.admittedAt ?? a.package.updatedAt;
+      final bDate =
+          b.entry?.returnedAt ?? b.entry?.admittedAt ?? b.package.updatedAt;
+      return bDate.compareTo(aDate);
+    });
     return rows;
   }
 
@@ -1334,8 +1357,6 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
     final yardFilter = ref.watch(disposalDestroyedYardFilterProvider);
     final destroyed = ref.watch(disposalDestroyedPackagesProvider);
     final deliveryFilter = ref.watch(_destroyedDeliveryFilterProvider);
-    final deliveredMap =
-        ref.watch(packageDestroyedDeliveredMapProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final yardLabel = yardFilter == null ? 'all yards' : yardName(yardFilter);
@@ -1397,9 +1418,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                 }
                 if (deliveryFilter != null) {
                   rows = rows
-                      .where((r) =>
-                          (deliveredMap[r.package.id] ?? false) ==
-                          deliveryFilter)
+                      .where((r) => r.isDestroyed == deliveryFilter)
                       .toList();
                 }
                 final total = rows.length;
@@ -1435,24 +1454,17 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                 size: ColumnSize.S,
                                 fixedWidth: 60),
                             DataColumn2(
-                                label: Text('Destroyed Date'),
+                                label: Text('Date'), size: ColumnSize.M),
+                            DataColumn2(
+                                label: Text('Destruction Expenses'),
                                 size: ColumnSize.M),
                             DataColumn2(
-                                label: Text('Receipt No'), size: ColumnSize.S),
-                            DataColumn2(
-                                label: Text('Valuation'),
-                                size: ColumnSize.S,
-                                fixedWidth: 132),
-                            DataColumn2(
-                                label: Text('Destruction Price'),
-                                size: ColumnSize.M),
-                            DataColumn2(
-                                label: Center(child: Text('Delivery')),
-                                fixedWidth: 130),
+                                label: Center(child: Text('Status')),
+                                fixedWidth: 120),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
-                                fixedWidth: 70),
+                                fixedWidth: 60),
                           ],
                           rows: pageRows
                               .map((r) => DataRow(cells: [
@@ -1463,28 +1475,24 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                             fontWeight: FontWeight.w600))),
                                     DataCell(TooltipText(r.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(
-                                        TooltipText('${r.entry.itemCount}')),
                                     DataCell(TooltipText(
-                                        r.entry.returnedAt != null
+                                        '${r.entry?.itemCount ?? r.item?.quantity ?? 0}')),
+                                    DataCell(TooltipText(r.entry?.returnedAt !=
+                                            null
+                                        ? DateFormat('yyyy-MM-dd')
+                                            .format(r.entry!.returnedAt!)
+                                        : (r.entry?.admittedAt != null
                                             ? DateFormat('yyyy-MM-dd')
-                                                .format(r.entry.returnedAt!)
-                                            : '—')),
-                                    DataCell(TooltipText(
-                                        _parseDestroyReceipt(
-                                                r.entry.returnNotes) ??
-                                            '—',
-                                        overflow: TextOverflow.ellipsis)),
-                                    DataCell(_DestructionValuationCell(
-                                        package: r.package,
-                                        packageItemId: r.entry.packageItemId,
-                                        qty: r.entry.itemCount)),
-                                    DataCell(_DestructionPriceCell(
-                                        package: r.package,
-                                        packageItemId: r.entry.packageItemId)),
+                                                .format(r.entry!.admittedAt!)
+                                            : DateFormat('yyyy-MM-dd')
+                                                .format(r.package.updatedAt)))),
+                                    DataCell(_DisposalExpensesCell(
+                                        package: r.package)),
                                     DataCell(Center(
-                                        child: _DestroyedDeliveryCell(
-                                            package: r.package))),
+                                      child: _DisposalStatusChip(
+                                        isDestroyed: r.isDestroyed,
+                                      ),
+                                    )),
                                     DataCell(Center(
                                       child: IconButton(
                                         icon: Icon(Icons.info_outline_rounded,
@@ -1499,6 +1507,19 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                             headerAccentColor: green,
                                             highlightEntry: r.entry,
                                             useLegacySummary: true,
+                                            // Same lookup the "Destruction
+                                            // Expenses" column beside this
+                                            // uses -- without it the popup
+                                            // showed "not available" while the
+                                            // table it opened from showed a
+                                            // real figure.
+                                            srFinancials: ref
+                                                .watch(srFinancialsProvider)
+                                                .valueOrNull
+                                                ?.where((f) =>
+                                                    f.srNumber.trim() ==
+                                                    r.package.srNumber.trim())
+                                                .firstOrNull,
                                           ),
                                         ),
                                       ),
@@ -1528,25 +1549,88 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
 /// Destroyed-tab delivery sub-filter: null = all, true = delivered, false = pending.
 final _destroyedDeliveryFilterProvider = StateProvider<bool?>((ref) => null);
 
-/// Read-only Delivered/Pending chip for a destroyed package (watches the
-/// per-package destruction-item provider so it stays live across sessions).
-class _DestroyedDeliveryCell extends ConsumerWidget {
+class _DisposalStatusChip extends StatelessWidget {
+  final bool isDestroyed;
+  const _DisposalStatusChip({required this.isDestroyed});
+  @override
+  Widget build(BuildContext context) {
+    final color =
+        isDestroyed ? context.colors.successGreen : context.colors.warningAmber;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(isDestroyed ? Icons.check_circle_rounded : Icons.schedule_rounded,
+            size: 13, color: color),
+        const SizedBox(width: 5),
+        Text(isDestroyed ? 'Destroyed' : 'Pending',
+            style: TextStyle(
+                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
+      ]),
+    );
+  }
+}
+
+class _DisposalExpensesCell extends ConsumerWidget {
   final PackageModel package;
-  const _DestroyedDeliveryCell({required this.package});
+  const _DisposalExpensesCell({required this.package});
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(destructionItemForPackageProvider(package.id));
-    return async.when(
-      // Keep the previous value while re-fetching: without this every
-      // realtime event drops every row's cell to a spinner and back,
-      // which reads as the whole table constantly refreshing.
-      skipLoadingOnReload: true,
+    final financialsAsync = ref.watch(srFinancialsProvider);
+    final fmt = NumberFormat('#,##0.00');
+    return financialsAsync.when(
       loading: () => const SizedBox(
           width: 16,
           height: 16,
           child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => const Text('—'),
-      data: (item) => DeliveryStatusChip(delivered: item?.delivered ?? false),
+      error: (_, __) =>
+          Text('—', style: TextStyle(color: context.colors.textMuted)),
+      data: (allFinancials) {
+        final sr = allFinancials
+            .where((f) => f.srNumber.trim() == package.srNumber.trim())
+            .firstOrNull;
+        final expense = sr?.destructionExpense ?? 0;
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              expense > 0 ? 'LKR ${fmt.format(expense)}' : '—',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: expense > 0
+                    ? context.colors.dangerRed
+                    : context.colors.textMuted,
+                fontSize: 12,
+              ),
+            ),
+            const Gap(4),
+            IconButton(
+              tooltip: 'Record / Edit destruction costs',
+              icon: Icon(Icons.edit_note_rounded,
+                  size: 18, color: context.colors.successGreen),
+              onPressed: () {
+                if (sr != null) {
+                  showDialog(
+                    context: context,
+                    builder: (_) => RecordExpenseDialog(sr: sr),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                        content: Text(
+                            'Financial records not found for this SR.')),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }
