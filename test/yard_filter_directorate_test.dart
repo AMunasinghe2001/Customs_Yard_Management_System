@@ -25,7 +25,7 @@ void main() {
   }
 
   group('yardFilterOptionsProvider', () {
-    test('a single-directorate yard is ONE plain entry', () async {
+    test('a single-directorate yard is ONE entry, still prefixed', () async {
       final c = buildContainer(
         yards: const [YardModel(code: 'GL1', name: 'Grey Line 1', srPrefix: 'GL1')],
         directorates: const [
@@ -35,9 +35,25 @@ void main() {
       );
       final options = await c.read(yardFilterOptionsProvider.future);
       expect(options, hasLength(1));
+      // Labelled like the SR numbers it mints -- CED/GL1/SR/25/2026.
+      expect(options.single.label, 'CED/GL1');
+      // ...but the VALUE stays bare: filtering by yard alone is already exact
+      // here, and it keeps matching legacy unprefixed SR numbers.
       expect(options.single.value, 'GL1');
-      expect(options.single.label, 'Grey Line 1');
-      expect(options.single.directorate, isNull);
+    });
+
+    test('a yard with NO directorate keeps its bare code', () async {
+      final c = buildContainer(
+        yards: const [YardModel(code: 'CVT', name: 'CVT', srPrefix: 'CVT')],
+        directorates: const [
+          DirectorateModel(code: 'CED', name: 'Customs Enforcement', srPrefix: 'CED'),
+        ],
+        yardDirs: const {},
+      );
+      final options = await c.read(yardFilterOptionsProvider.future);
+      expect(options.single.label, 'CVT',
+          reason: 'Such a yard mints CVT/SR/01/2026, with no prefix.');
+      expect(options.single.value, 'CVT');
     });
 
     test('a multi-directorate yard becomes one entry PER directorate', () async {
@@ -52,6 +68,9 @@ void main() {
       final options = await c.read(yardFilterOptionsProvider.future);
       expect(options, hasLength(2));
       expect(options.map((o) => o.label), containsAll(['CED/NNR', 'PSD/NNR']));
+      // The label uses the yard CODE, not its display name, so the picker
+      // reads exactly like the SR number on the goods.
+      expect(options.map((o) => o.label), everyElement(contains('/NNR')));
       // Both must resolve back to the SAME physical yard for the row match.
       expect(options.every((o) => o.filterYard == 'NNR'), isTrue);
       // Values must be distinct so the dropdown never collides.

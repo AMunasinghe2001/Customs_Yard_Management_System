@@ -103,33 +103,53 @@ class YardFilterOption {
 /// The full set of yard-filter dropdown entries, built from ICT's live
 /// yards/directorates data.
 ///
-/// A yard under exactly ONE directorate is a single plain entry (its own
-/// name). A yard under SEVERAL — NNR is CED and PSD; Katunayaka, Rathmalana
-/// and Mattala are B/A and ACD — becomes ONE ENTRY PER DIRECTORATE
-/// ("CED/NNR", "PSD/NNR"), because "NNR" alone cannot tell a CED package from
-/// a PSD one filed at the same physical yard. Adding or removing a yard/link
-/// in the ICT portal changes this list with no rebuild — see
-/// [directorateConfigRefreshProvider].
+/// EVERY yard is labelled `<DIRECTORATE>/<YARD CODE>` — the same shape as the
+/// SR numbers it produces, and as the ICT portal's own "Example SR" column, so
+/// "CED/GL1" in the picker reads exactly like the `CED/GL1/SR/25/2026` on the
+/// goods. A yard under SEVERAL directorates (NNR is CED and PSD; Katunayaka,
+/// Rathmalana and Mattala are B/A and ACD) becomes ONE ENTRY PER DIRECTORATE,
+/// because "NNR" alone cannot tell a CED package from a PSD one filed at the
+/// same physical yard. A yard with NO directorate keeps its bare code, matching
+/// the unprefixed `CVT/SR/01/2026` such a yard still mints.
+///
+/// ⚠️ The VALUE is only split (`"<yard>|<dir>"`) for a MULTI-directorate yard.
+/// A single-directorate yard keeps the bare code even though its label is
+/// prefixed: filtering it by yard alone is already exact, and it also keeps
+/// matching the legacy unprefixed SR numbers (`GL1/SR/62/2026`) that pre-date
+/// directorates — a `"GL1|CED"` value would silently drop those rows.
+///
+/// Adding or removing a yard/link in the ICT portal changes this list with no
+/// rebuild — see [directorateConfigRefreshProvider].
 final yardFilterOptionsProvider =
     FutureProvider<List<YardFilterOption>>((ref) async {
   final yards = await ref.watch(yardsProvider.future);
   final directorates = await ref.watch(directoratesProvider.future);
   final yardDirs = await ref.watch(yardDirectoratesProvider.future);
   final byCode = {for (final d in directorates) d.code: d};
+  String prefixOf(String dirCode) => byCode[dirCode]?.srPrefix ?? dirCode;
 
   final out = <YardFilterOption>[];
   for (final y in yards) {
     if (!y.isActive) continue;
     final dirCodes = yardDirs[y.code] ?? const <String>[];
-    if (dirCodes.length <= 1) {
-      out.add(YardFilterOption(value: y.code, label: y.name, filterYard: y.code));
+    if (dirCodes.isEmpty) {
+      // No directorate yet — its SR numbers carry no prefix either.
+      out.add(YardFilterOption(
+          value: y.code, label: y.code, filterYard: y.code));
+      continue;
+    }
+    if (dirCodes.length == 1) {
+      out.add(YardFilterOption(
+          value: y.code,
+          label: '${prefixOf(dirCodes.first)}/${y.code}',
+          filterYard: y.code,
+          directorate: dirCodes.first));
       continue;
     }
     for (final dc in dirCodes) {
-      final label = '${byCode[dc]?.srPrefix ?? dc}/${y.name}';
       out.add(YardFilterOption(
           value: '${y.code}|$dc',
-          label: label,
+          label: '${prefixOf(dc)}/${y.code}',
           filterYard: y.code,
           directorate: dc));
     }
