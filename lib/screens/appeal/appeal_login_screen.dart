@@ -28,6 +28,11 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
   final _otpCtrl = TextEditingController();
   bool _obscurePassword = true;
   bool _isLoading = false;
+
+  /// Resending is its OWN action. It used to share `_isLoading`, so
+  /// tapping "Resend code" put the Verify button into "Verifying..."
+  /// while nothing was being verified.
+  bool _isResending = false;
   bool _rememberMe = false;
   bool _otpStage = false;
   String _resolvedEmail = '';
@@ -126,7 +131,11 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
       if (!_formKey.currentState!.validate()) return;
     }
     setState(() {
-      _isLoading = true;
+      if (isResend) {
+        _isResending = true;
+      } else {
+        _isLoading = true;
+      }
       _error = null;
       _success = null;
     });
@@ -163,7 +172,10 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
       }
       final email = await ref
           .read(authServiceProvider)
-          .startOtpLogin(_idCtrl.text.trim(), _passwordCtrl.text);
+          .startOtpLogin(_idCtrl.text.trim(), _passwordCtrl.text,
+              // Reject a wrong-portal account HERE, before a code
+              // is sent, instead of after it has been spent.
+              requireRole: 'appeal');
       if (isResend) {
         _resendCount++;
         if (_resendCount >= _maxResends) {
@@ -188,7 +200,15 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
     } catch (e) {
       setState(() => _error = _friendlyError(e.toString()));
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      // BOTH flags: a resend sets _isResending, and leaving it true left
+      // the Verify button stuck on "Verifying..." beside a "Code
+      // expired" notice, with no verification actually running.
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _isResending = false;
+        });
+      }
     }
   }
 
@@ -325,6 +345,11 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
     // "Verify & Sign In" finds nothing left. Without this the user saw the
     // generic "Sign in failed", which told them to retry something that can
     // never succeed and hid the real reason the FIRST attempt was rejected.
+    // Raised by startOtpLogin BEFORE any code is sent, so the user is
+    // told on the first screen rather than after spending a code.
+    if (raw.contains('wrong_portal')) {
+      return 'This account is not an Appeal Directorate account. Use the correct portal.';
+    }
     if (low.contains('no verification code')) {
       return 'That code has already been used. Tap "Resend code" for a new one.';
     }
@@ -357,8 +382,14 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           minimumSize: const Size(0, 0),
           tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+      // Its OWN progress text, so a resend in flight is visible HERE rather
+      // than on the Verify button, which is not doing the work.
       child: Text(
-        _secondsLeft > 0 ? 'Resend code' : 'Resend code ($remaining left)',
+        _isResending
+            ? 'Sending...'
+            : (_secondsLeft > 0
+                ? 'Resend code'
+                : 'Resend code ($remaining left)'),
         style: TextStyle(
           color: _canResend ? accent : context.colors.textMuted,
           fontWeight: FontWeight.w700,
@@ -655,7 +686,11 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                               style: ElevatedButton.styleFrom(
                                   backgroundColor: accent,
                                   foregroundColor: Colors.white),
-                              icon: _isLoading
+                              // A RESEND must not make this read
+                              // "Verifying..." -- nothing is being verified.
+                              // It is still disabled while one is in flight,
+                              // so the code cannot be checked mid-resend.
+                              icon: _isLoading && !_isResending
                                   ? const SizedBox(
                                       width: 20,
                                       height: 20,
@@ -663,11 +698,12 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                                           strokeWidth: 2, color: Colors.white))
                                   : const Icon(Icons.login_rounded),
                               label: Text(
-                                  _isLoading
+                                  _isLoading && !_isResending
                                       ? 'Verifying...'
                                       : 'Verify & Sign In',
                                   style: const TextStyle(fontSize: 16)),
-                              onPressed: _isLoading ? null : _verify,
+                              onPressed:
+                                  (_isLoading || _isResending) ? null : _verify,
                             ),
                           ),
                         ],

@@ -59,4 +59,49 @@ void main() {
       expect(src, contains("low.contains('too many attempts')"), reason: path);
     }
   });
+
+  const otpPortals = [
+    'lib/screens/disposal/disposal_login_screen.dart',
+    'lib/screens/appeal/appeal_login_screen.dart',
+    'lib/screens/valuation/valuation_login_screen.dart',
+    'lib/screens/executive/executive_login_screen.dart',
+    'lib/screens/ict/ict_login_screen.dart',
+  ];
+
+  // The wrong-portal check used to run only AFTER the code was verified, so a
+  // Valuation officer typing into the Disposal page still got an email, still
+  // reached the OTP screen, and was only turned away once the code had been
+  // spent -- which then made a second tap fail with a different message.
+  test('every portal rejects a wrong-portal account BEFORE sending a code',
+      () {
+    for (final path in otpPortals) {
+      final src = File(path).readAsStringSync();
+      expect(src, contains('requireRole:'),
+          reason: '$path sends a code before checking the portal.');
+      expect(src, contains("raw.contains('wrong_portal')"),
+          reason: '$path would show the generic failure instead.');
+    }
+    // The gate itself must run before the code is issued.
+    final svc = File('lib/services/services.dart').readAsStringSync();
+    final gate = svc.indexOf("throw Exception('wrong_portal')");
+    final send = svc.indexOf('GmailOtpService.instance.sendCode');
+    expect(gate, greaterThan(-1));
+    expect(gate, lessThan(send),
+        reason: 'The role must be checked before the code is emailed.');
+  });
+
+  // Tapping "Resend code" set _isResending but nothing ever cleared it, and
+  // the Verify button read the shared _isLoading -- so it sat on
+  // "Verifying..." beside a "Code expired" notice with nothing running.
+  test('a resend never leaves the Verify button spinning', () {
+    for (final path in otpPortals) {
+      final src = File(path).readAsStringSync();
+      expect(src, contains('_isResending = false'),
+          reason: '$path never clears the resend flag.');
+      expect(src, contains('_isLoading && !_isResending'),
+          reason: '$path shows "Verifying..." during a resend.');
+      expect(src, contains("'Sending...'"),
+          reason: '$path gives the resend no progress text of its own.');
+    }
+  });
 }

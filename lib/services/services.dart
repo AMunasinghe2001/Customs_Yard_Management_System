@@ -288,7 +288,14 @@ class AuthService {
   /// Step 1 of OTP-gated login (Disposal Directorate, every login):
   /// verify the password, then email a one-time code. Returns the resolved
   /// account email to use in [finishOtpLogin].
-  Future<String> startOtpLogin(String identifier, String password) async {
+  ///
+  /// [requireRole] rejects an account that belongs to a DIFFERENT portal
+  /// BEFORE any code is sent. Without it the wrong-portal check only ran after
+  /// verification, so a Valuation officer typing into the Disposal page still
+  /// got an email, still reached the OTP screen, and was only turned away
+  /// after spending the code — which then made a second tap fail differently.
+  Future<String> startOtpLogin(String identifier, String password,
+      {String? requireRole}) async {
     final id = identifier.trim();
     String email = id;
     if (!id.contains('@')) {
@@ -301,9 +308,31 @@ class AuthService {
     }
     // Verify the password (throws on bad credentials), then discard that
     // session so the user cannot proceed without the emailed code.
-    await _withNetworkRetry(() =>
+    final res = await _withNetworkRetry(() =>
         supabase.auth.signInWithPassword(email: email, password: password));
+    // Check the portal BEFORE spending a code. Read the role while the
+    // session is still alive — RLS needs it — then sign out either way.
+    String? role;
+    if (requireRole != null) {
+      final uid = res.user?.id ?? supabase.auth.currentUser?.id;
+      if (uid != null) {
+        try {
+          final row = await supabase
+              .from('profiles')
+              .select('role')
+              .eq('id', uid)
+              .single();
+          role = row['role'] as String?;
+        } catch (_) {
+          // Unreadable profile: fall through and let the post-OTP check
+          // decide, rather than locking someone out on a transient error.
+        }
+      }
+    }
     await supabase.auth.signOut();
+    if (requireRole != null && role != null && role != requireRole) {
+      throw Exception('wrong_portal');
+    }
     // Issue our own 6-digit code and e-mail it via Gmail (not Supabase).
     await GmailOtpService.instance.sendCode(email);
     return email;
