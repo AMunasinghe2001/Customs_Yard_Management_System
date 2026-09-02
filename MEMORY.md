@@ -1210,3 +1210,24 @@ Card-list tabs (Tender Sales, Committees, Destructions) legitimately keep the sw
 - **Destroyed-goods report** no longer shows Valuation / Destroyed Price from the old destruction-tender tables. Destruction has no buyer — nothing is realised and there is no price. It now shows **Destroying Deposit / Total Costs / Refund** from `srFinancialsProvider`, the same source as both Destroyed Goods tables and the expense form, so all four agree. A shortfall shows as a **negative** refund; don't clamp it.
 - ⚠️ **The report emblem's `_loadLogo` caches its result** and its guard only re-runs while `_logoSvg` is null, so one transient failure used to downgrade *every later report in the session* to the "SLC" monogram. It also sat inside `_ensureFontsLoaded`, where `PdfGoogleFonts` **throws** if the asset manifest is unreadable — taking the emblem down for an unrelated reason. Now guarded separately, retried each report, and an empty asset falls through to the next candidate. `currentColor` must be resolved to a literal (a PDF has no notion of it).
 - **Top Management → Tender Sales** (`lib/screens/executive/tender_sales_view_tab.dart`) is **read-only** and reuses `TenderSaleCard(readOnly: true)`. It applies **the same visibility rule as Central Disposal's tab** (unsold items remaining AND window still open), so a sale leaves the page once Disposal finishes it — intentional, and the caption says so. Yard filter matches **per item**, not per sale: a sale can mix items from a multi-directorate yard.
+
+### Tender reports, and the emblem's REAL cause (2026-09-02)
+
+- **All Tenders** — every portal. One row per SALE (not per item): goods count, sold, unsold, proceeds, Open/Closed. Open tenders are shown and labelled; it is a register, so nothing is withheld.
+- **Tender Sale Sheet** — Top Management ONLY (`widget.executiveMode`). Goods in a tender with the **reserve price**, to carry into the sale. ⚠️ Only sales past `saleEnded` contribute rows — **the valuation IS the reserve, so it cannot be shown while bidding is open**. This is why the report is legitimately empty until a tender closes. The card always stays on the page; only the rows come and go.
+- Both filter yard **per item**, not per sale (a sale can mix items from a multi-directorate yard).
+
+### ⚠️ The report emblem: `currentColor` (2026-09-02)
+
+The long-running "logo shows as SLC" bug, finally reproduced instead of guessed at. `Sri_Lanka_Customs_logo_tinted.svg` paints with `fill:currentColor` (50 occurrences, inside `style="…"`). **The `pdf` package cannot resolve `currentColor`** — it logs `Unknown color: currentColor` and draws *nothing*, so `_buildHeader` falls back to the "SLC" monogram.
+
+Measured, because a failed emblem still produces a valid PDF:
+
+| input | bytes |
+|---|---|
+| blank page | 527 |
+| tinted SVG **raw** | 1233 ← draws nothing |
+| tinted SVG, currentColor replaced | 33630 |
+| plain `Sri_Lanka_Customs_logo.svg` | 33626 |
+
+`replaceAll('currentColor', '#0D47A1')` in `_loadLogo` is therefore **load-bearing, not cosmetic**. `test/destroyed_report_and_tender_view_test.dart` renders all three and asserts the byte sizes, so this cannot silently regress. (Same root cause as the earlier flutter_svg note — see [[logo-ship-plane]].)
