@@ -1277,3 +1277,13 @@ Everyone signs in by username now, but **8 of 11 accounts had none** — reachab
 `Anushanga` (DC/SDDC) · `Deepal` `kaushan` `onela` (Officer) · `appeal.ad` · `disposal.dc` · `vdc` · `exec.dg` `exec.adg` `exec.dc` · `ict.admin`
 
 Directorate profiles now show and edit the **username** in place of Full Name, and the Role row is gone (the portal already says which directorate it is).
+
+### Perishable goods take a different path entirely (2026-09-03)
+
+Food, chemicals and the like spoil, so they **never reach a warehouse** and **never sit out the 30-day appeal window** — it would outlast the goods.
+
+- **`package_items.nature`** — `'normal'` or `'perishable'`, CHECK-constrained. ⚠️ **Defaults to `'normal'`** in the DB and the model, which is what left all 101 existing items and every existing query behaving exactly as before. `postgres/06_perishable_goods.sql`, self-verifying.
+- **SR form** asks **Nature before Status**, because it decides whether a status is asked at all — Detain/Forfeit describe nothing that happens to a perishable. The item gets its own `'Perishable'` status so the disposition pages (which group by status) don't claim it.
+- **`getRequestableExpiredPackages`** — a package holding a perishable is never skipped for the window, and the item passes `itemPassesWindow` unconditionally. Own `source: 'perishable'`, so it never takes the abandoned/other branches.
+- **Perishable Goods page** (`perishable_goods_screen.dart`) — yard sends; Central Disposal gets `readOnly: true` (its tab is **appended LAST**: two `animateTo` calls in that file address tabs by index, so inserting earlier silently misroutes them). Shows days-waiting, reddening with age.
+- ⚠️ **Perishables tender ONLY as `'special'`**, and a special sale carries **only** perishables — the gate is `isPerishable == (_tenderType == 'special')`, deliberately both ways so the two are never mixed into one lot.
