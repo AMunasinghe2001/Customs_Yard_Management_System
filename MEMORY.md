@@ -1145,3 +1145,12 @@ Goods can be registered under an **OA** number as well as an **SR** one. The two
 - ⚠️ `stripDirectoratePrefix` hard-coded `parts[2] == 'SR'`, so `CED/GL1/OA/01/2026` kept its directorate prefix and then failed to match its own package. Now checks `isSrDocType`. **Any new helper that splits an SR number must not assume the literal `SR` segment.**
 - `compareSrNewestFirst` gained a whole-string tiebreak: the same year+serial now legitimately exists in both registers.
 - The registration form has a "Register" dropdown beside SR Number; changing it re-mints, and loading an existing package follows that package's register.
+
+### Destruction is not a disposal request (2026-09-02)
+
+Once Destroy became a direct Final Disposition (see the 2026-09-02 entries above), a disposal request tagged **Destruction** had nowhere to go: it sat in the Valuation Directorate's Pending Valuation queue and Central Disposal's Disposal Requests with **no route by which anyone could action it**. The request dialog was still offering the choice.
+
+- `kDispositions` is sale-only now; `kDefaultDisposition = 'sale'`. `_DispositionToggle` in `disposal_request_dialog.dart` is deleted — it was already dead code (never rendered) while the row hard-coded `'sale'` on select.
+- A row that already says `destruction` **still reads back as destruction** — historical data is not relabelled. Only a row *missing* its disposition defaults to sale.
+- **Data migrated 2026-09-02**: 7 destruction request items removed. 4 named items already destroyed (they appear on Destroyed Goods via their own tags, so the request rows were duplicates); 3 (`SR/12/2026`, `SR/23/2025`, `SR/34/2025`) were never destroyed — still Forfeit with no tag — and returned to the yard's Final Disposition flow. Also removed: 6 `destruction_items` rows with `destroyed=false` and 4 `destructions` left holding nothing. The 4 genuinely-destroyed records were kept, and no request was left empty.
+- ⚠️ The legacy **Destruction Sale** flow (`DestructionCard`, `destructions` / `destruction_items` tables, `/destruction-disposals`) still exists and is separate from this. Do not confuse it with the direct Destroy path.
