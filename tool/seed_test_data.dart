@@ -22,6 +22,17 @@ import 'package:postgres/postgres.dart';
 final _rng = Random(20260903);
 
 const _yard = 'GL1';
+
+/// How much each zone holds.
+///
+/// ⚠️ Used BOTH when the zone row is written and when the seeder books space
+/// against it. If the two ever disagreed the seeder would fill zones to a
+/// number the Zone Capacity page does not share -- so there is one definition.
+///
+/// Sized to fit the whole seed with a little headroom: a couple of zones
+/// finishing at or near 100% is wanted, items left unplaced is not.
+int _zoneCapacity(String warehouseCode) =>
+    warehouseCode == 'OA1' ? 5200 : 3400;
 const _directoratePrefix = 'CED';
 
 /// Goods that spoil, and goods that do not. Kept apart because the two take
@@ -87,8 +98,8 @@ const _normalGoods = <(String, String, String, int, int)>[
 const _dispositions = <String>[
   'Detain', 'Detain', 'Detain', 'Detain',
   'Forfeit', 'Forfeit', 'Forfeit',
-  'Abandoned', 'Abandoned',
-  'Other',
+  'Abandoned', 'Abandoned', 'Abandoned', 'Abandoned',
+  'Other', 'Other',
 ];
 
 const _detainReasons = [
@@ -209,7 +220,7 @@ Future<void> main() async {
           warehouses[e.key],
           z,
           '${e.key}-$z',
-          e.key == 'OA1' ? 4000 : 2500,
+          _zoneCapacity(e.key),
           e.key == 'OA1' ? 'Open hardstanding bay' : 'Covered bay',
         ],
       );
@@ -276,9 +287,13 @@ Future<void> main() async {
   // meant nothing, and the Zone Capacity page was a wall of red.
   final space = <String, int>{
     for (final e in zones.entries)
-      for (final z in e.value) '${e.key}|$z': e.key == 'OA1' ? 4000 : 2500,
+      for (final z in e.value) '${e.key}|$z': _zoneCapacity(e.key),
   };
   await _seedPackages(conn, warehouses, space);
+  // ⚠️ Order matters: the detain rows must exist BEFORE outcomes are seeded,
+  // or the ruling pass has nothing to rule on for detained goods.
+  await _seedDetainAppeals(conn);
+  await _seedAppealOutcomes(conn);
 
   print('\n── Final counts ' + '─' * 53);
   for (final t in const [
@@ -399,7 +414,11 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
       );
       final pkgId = pkgRes.first.first as String;
 
-      final itemCount = isPerishable ? 1 + _rng.nextInt(2) : 1 + _rng.nextInt(3);
+      // ⚠️ One SR/OA number covers ONE package, and a package can hold several
+      // distinct goods. So the same number appearing on several rows of a
+      // status table is correct, not a duplicate -- each row is a different
+      // item under the one number. Seeded up to 4 so that shows up plainly.
+      final itemCount = isPerishable ? 1 + _rng.nextInt(2) : 1 + _rng.nextInt(4);
       for (var k = 0; k < itemCount; k++) {
         // The register decides what the goods are: an OA number is opened for
         // the bulky, weather-tolerant cargo the Open Area holds, so its items
@@ -509,12 +528,15 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
   }
 
   // ── The still-appealable cohort ──────────────────────────────────────────
-  // Forfeit / Abandoned / Other only: Detain has no appeal window of its own,
-  // and a perishable never waits one out.
-  const appealable = ['Forfeit', 'Abandoned', 'Other'];
+  // The 30-day window runs from the ENTRY DATE and applies to every status
+  // alike -- a Detain is frozen for its first 30 days exactly as a Forfeit is.
+  // Detain therefore belongs here too; only a perishable is exempt, since it
+  // never waits a window out.
+  const appealable = ['Forfeit', 'Abandoned', 'Other', 'Detain'];
   final recentSpan = _appealWindowTo.difference(_appealWindowFrom).inDays;
   var recent = 0;
-  for (var i = 0; i < 18; i++) {
+  var recentItems = 0;
+  for (var i = 0; i < 26; i++) {
     final entry = _appealWindowFrom.add(Duration(
         days: _rng.nextInt(recentSpan + 1),
         hours: 8 + _rng.nextInt(9),
@@ -563,64 +585,81 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
     final pkgId = pkgRes.first.first as String;
 
     final pool = register == 'OA' ? _openAreaGoods : _normalGoods;
-    final (name, desc, hs, value, qty) = pool[_rng.nextInt(pool.length)];
-    final status = appealable[_rng.nextInt(appealable.length)];
-    statusTally[status] = (statusTally[status] ?? 0) + 1;
+    // Several goods under the one recent number, so the multi-item case is
+    // visible inside the appeal window too and not only in the history.
+    final itemCount = 1 + _rng.nextInt(3);
+    for (var k = 0; k < itemCount; k++) {
+      final (name, desc, hs, value, qty) = pool[_rng.nextInt(pool.length)];
+      final status = appealable[_rng.nextInt(appealable.length)];
+      statusTally[status] = (statusTally[status] ?? 0) + 1;
 
-    final itemRes = await conn.execute(
-      r'insert into public.package_items '
-      r'(package_id, item_name, goods_description, quantity, unit_of_measure, '
-      r' unit_value, hs_code, category, status, reasons, nature, yard, created_at) '
-      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id',
-      parameters: [
-        pkgId, name, desc, qty, 'Pieces', value.toDouble(), hs,
-        _categoryFor(name, false), status, 'Supposed to be Sold / Auction',
-        'normal', _yard, entry,
-      ],
-    );
-    final itemId = itemRes.first.first as String;
-
-    final wh = _placeIn(name, qty, warehouses, space, openArea: register == 'OA');
-    if (wh != null) {
-      await conn.execute(
-        r'insert into public.warehouse_entries '
-        r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
-        r' zone, yard, daily_rate, admitted_at, created_at, updated_at) '
-        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9)',
+      final itemRes = await conn.execute(
+        r'insert into public.package_items '
+        r'(package_id, item_name, goods_description, quantity, unit_of_measure, '
+        r' unit_value, hs_code, category, status, reasons, nature, yard, created_at) '
+        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id',
         parameters: [
-          pkgId, itemId, wh.$1, 'Pending Inquiry', qty, wh.$2, _yard, 50.0,
-          entry.add(const Duration(hours: 3)),
+          pkgId, name, desc, qty + _rng.nextInt(30) - 15, 'Pieces',
+          value.toDouble(), hs, _categoryFor(name, false), status,
+          status == 'Detain'
+              ? _detainReasons[_rng.nextInt(_detainReasons.length)]
+              : 'Supposed to be Sold / Auction',
+          'normal', _yard, entry,
         ],
       );
-    } else {
-      unplaced++;
-    }
+      final itemId = itemRes.first.first as String;
 
-    // Forfeited AT the entry date, so the 30-day window from that date is
-    // genuinely still running -- which is what leaves the status disabled.
-    await conn.execute(
-      r'insert into public.forfeited_packages '
-      r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
-      r' appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) '
-      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$5,$5)',
-      parameters: [
-        pkgId, itemId, srNumber, consignee, entry,
-        entry.add(const Duration(days: 30)),
-        status == 'Forfeit'
-            ? 'Forfeited under Customs Ordinance'
-            : (status == 'Abandoned'
-                ? 'Abandoned by the consignee'
-                : 'Routed via Other disposition'),
-        status.toLowerCase(), _yard, qty,
-      ],
-    );
+      final wh =
+          _placeIn(name, qty, warehouses, space, openArea: register == 'OA');
+      if (wh != null) {
+        await conn.execute(
+          r'insert into public.warehouse_entries '
+          r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
+          r' zone, yard, daily_rate, admitted_at, created_at, updated_at) '
+          r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9)',
+          parameters: [
+            pkgId, itemId, wh.$1,
+            status == 'Detain'
+                ? _detainReasons[_rng.nextInt(_detainReasons.length)]
+                : 'Pending Inquiry',
+            qty, wh.$2, _yard, 50.0, entry.add(const Duration(hours: 3)),
+          ],
+        );
+      } else {
+        unplaced++;
+      }
+
+      // A Detain is held on its own footing -- it has no forfeited_packages
+      // row, and its window is read straight off the entry date.
+      if (status != 'Detain') {
+        // Forfeited AT the entry date, so the 30-day window from that date is
+        // genuinely still running -- which is what leaves the status disabled.
+        await conn.execute(
+          r'insert into public.forfeited_packages '
+          r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
+          r' appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) '
+          r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$5,$5)',
+          parameters: [
+            pkgId, itemId, srNumber, consignee, entry,
+            entry.add(const Duration(days: 30)),
+            status == 'Forfeit'
+                ? 'Forfeited under Customs Ordinance'
+                : (status == 'Abandoned'
+                    ? 'Abandoned by the consignee'
+                    : 'Routed via Other disposition'),
+            status.toLowerCase(), _yard, qty,
+          ],
+        );
+      }
+      recentItems++;
+    }
     made++;
     recent++;
   }
 
   print('  $made packages');
-  print('  $recent of them entered in the last 24 days -- appeal window OPEN, '
-      'status disabled');
+  print('  $recent of them entered in the last 24 days ($recentItems items) '
+      '-- appeal window OPEN, status disabled');
   print('  perishable items: $perishableCount (no warehouse, by design)');
   if (unplaced > 0) {
     print('  ⚠ $unplaced items could not be placed -- every zone was full');
@@ -630,6 +669,225 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
   print('  registers: ' +
       serials.entries.map((e) => '${e.key}:${e.value}').join(', '));
 }
+
+/// Rules on a share of the appeals, so the Appeal Directorate has a history.
+///
+/// Without this every forfeited row sits in one of only two states -- counting
+/// down, or expired -- and the two states that need a HUMAN decision never
+/// appear at all: "Decided Goods" is permanently empty, and no row ever shows
+/// "On Appeal Hold". Both are reachable only by someone ruling, so the seed
+/// has to rule.
+///
+/// ⚠️ Decisions are stored PER ITEM in `item_appeal_decisions`, keyed by item
+/// id -- never in the package-level `appeal_decision` column. On a multi-item
+/// package the package-level column is deliberately ignored (deciding one item
+/// must not mark its siblings decided), so writing there would produce rows the
+/// app refuses to treat as decided.
+/// Lodges appeals against DETAINED goods.
+///
+/// ⚠️ A detained item has no `forfeited_packages` row of its own -- the Appeal
+/// portal synthesises one (`source: 'detain'`) so the item can be seen. But a
+/// synthesised row is rebuilt on every read, so it can hold NOTHING: no hold,
+/// no decision, no stable id. The moment an appeal is actually lodged against
+/// detained goods, a real row has to exist to carry it -- which is exactly what
+/// `getAppealablePackages` looks for when it prefers the STORED row.
+///
+/// Without this, detained goods could only ever show "Appealing" or "Enabled":
+/// the two ruled states were unreachable for them, whatever the yard did.
+Future<void> _seedDetainAppeals(Connection conn) async {
+  // Only items still held in a warehouse -- a returned item is not detained
+  // any more, and the portal skips it.
+  final rows = await conn.execute(
+    'select pi.id, pi.package_id, p.sr_number, p.consignee_name, pi.quantity, '
+    '       coalesce(p.entry_date, p.created_at) as entered '
+    'from public.package_items pi '
+    'join public.packages p on p.id = pi.package_id '
+    'where pi.status = ' r"'Detain'" ' '
+    '  and exists (select 1 from public.warehouse_entries we '
+    '               where we.package_item_id = pi.id '
+    '                 and coalesce(we.is_returned, false) = false) '
+    'order by coalesce(p.entry_date, p.created_at) asc',
+  );
+
+  var made = 0;
+  for (final r in rows) {
+    // Half of the detained goods are appealed. It has to be a decent share:
+    // the coverage pass below claims the first row of each kind for a HOLD, so
+    // a thin pool leaves almost nothing over to be decided or left counting
+    // down, and detained goods show only one of the four states.
+    if (_rng.nextInt(2) != 0) continue;
+
+    final itemId = r[0] as String;
+    final pkgId = r[1] as String;
+    final srNumber = r[2] as String;
+    final consignee = r[3] as String? ?? '';
+    final qty = r[4] as int? ?? 0;
+    final entered = r[5] as DateTime;
+
+    await conn.execute(
+      r'insert into public.forfeited_packages '
+      r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
+      r' appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,' r"'detain'" r',$8,$9,$5,$5)',
+      parameters: [
+        pkgId, itemId, srNumber, consignee, entered,
+        entered.add(const Duration(days: 30)),
+        'Detained pending inquiry', _yard, qty,
+      ],
+    );
+    made++;
+  }
+  print('  $made detained items now carry an appeal row');
+}
+
+Future<void> _seedAppealOutcomes(Connection conn) async {
+  // ⚠️ OLDEST first, and it matters. Ruling on a row ends its countdown, so
+  // working newest-first spent every still-open appeal on a hold or a decision
+  // and left "Appealing - Nd" with nothing in it at all. The expired rows are
+  // ruled on first; the live ones are reached last, and are protected below.
+  final rows = await conn.execute(
+    'select fp.id, fp.item_id, fp.source, pi.item_name, '
+    '       (fp.appeal_deadline > now()) as in_window '
+    'from public.forfeited_packages fp '
+    'join public.package_items pi on pi.id = fp.item_id '
+    'where fp.item_id is not null order by fp.forfeited_at asc',
+  );
+
+  var decided = 0;
+  var held = 0;
+
+  // ⚠️ A random roll leaves whole kinds of goods untouched -- with a dozen
+  // goods names across three sources, the rarer combinations never come up,
+  // and those goods can never be seen in that state at all. So coverage is
+  // taken FIRST: every (source, goods name) pair gets a hold and a decision
+  // before anything is left to chance.
+  //
+  // The HOLD is claimed first, because it is the scarcer state and the one a
+  // pair with only a single row would otherwise never reach -- spending that
+  // lone row on a decision is what left 15 pairs with no hold at all.
+  final pairs = <String>{
+    for (final r in rows) '${r[2]}|${r[3]}',
+  };
+  final needHold = {...pairs};
+  final needDecision = {...pairs};
+
+  // Most of the still-open appeals are left strictly alone, so the plain
+  // countdown state survives -- it is the state the yard sees most often, and
+  // ruling on all of them erases it.
+  var liveSeen = 0;
+
+  for (final r in rows) {
+    final id = r[0] as String;
+    final itemId = r[1] as String;
+    final pair = '${r[2]}|${r[3]}';
+    final inWindow = r[4] as bool;
+
+    // Coverage first, then the ordinary mix: roughly a fifth ruled on and a
+    // smaller slice still under review. Untouched stays the majority.
+    final roll = _rng.nextInt(100);
+    final coverHold = needHold.contains(pair);
+
+    // Every third live appeal may be ruled on; the rest keep counting down.
+    // Coverage overrides this -- some kinds of goods (other|Used Engine
+    // Blocks) exist ONLY as a live appeal, and skipping those left them with
+    // no hold at all, which the check below then caught.
+    if (inWindow && !coverHold && (liveSeen++ % 3 != 0)) continue;
+    // The decision is claimed only when this row is not needed for the hold.
+    final coverDecision = !coverHold && needDecision.contains(pair);
+
+    if (coverHold) {
+      needHold.remove(pair);
+    } else if (coverDecision) {
+      needDecision.remove(pair);
+    }
+
+    if (coverDecision || (!coverHold && roll < 20)) {
+      final decision = _appealDecisions[_rng.nextInt(_appealDecisions.length)];
+      await conn.execute(
+        r'update public.forfeited_packages '
+        r'set item_appeal_decisions = coalesce(item_appeal_decisions, ' r"'{}'" r'::jsonb) '
+        r'      || jsonb_build_object($2::text, jsonb_build_object('
+        r'           ' r"'decision'" r', $3::text, '
+        r'           ' r"'note'" r', $4::text, '
+        r'           ' r"'decided_at'" r', $5::timestamptz)), '
+        r'    appeal_hold = false, '
+        r'    held_item_ids = ' r"'{}'" r'::uuid[], '
+        r'    appeal_decided_at = $5 '
+        r'where id = $1',
+        parameters: [
+          id,
+          itemId,
+          decision.$1,
+          decision.$2,
+          DateTime.now().subtract(Duration(days: 1 + _rng.nextInt(45))),
+        ],
+      );
+      decided++;
+    } else if (coverHold || roll < 28) {
+      // An appeal lodged and NOT yet ruled on. A hold outlasts the deadline:
+      // these stay blocked even once the 30 days have run out, which is the
+      // one state the calendar alone can never produce.
+      await conn.execute(
+        r'update public.forfeited_packages '
+        r'set appeal_hold = true, '
+        r'    held_item_ids = array[$2::uuid], '
+        r'    appeal_hold_note = $3, '
+        r'    appeal_held_at = $4 '
+        r'where id = $1',
+        parameters: [
+          id,
+          itemId,
+          _appealHoldNotes[_rng.nextInt(_appealHoldNotes.length)],
+          DateTime.now().subtract(Duration(days: 1 + _rng.nextInt(20))),
+        ],
+      );
+      held++;
+    }
+  }
+
+  print('\n── Appeal outcomes ' + '─' * 50);
+  print('  decided        $decided');
+  print('  on appeal hold $held');
+  print('  untouched      ${rows.length - decided - held}');
+  // A hold is guaranteed for every kind of goods -- that was the requirement,
+  // and it is checked hard.
+  if (needHold.isNotEmpty) {
+    throw StateError('no appeal hold seeded for: ${needHold.join(', ')}');
+  }
+  // A decision cannot be: a pair with only ONE forfeited row spends it on the
+  // hold, since a single row cannot be both held and decided. Those pairs are
+  // reported rather than treated as a failure.
+  if (needDecision.isNotEmpty) {
+    print('  ${needDecision.length} kinds have a hold but no decision '
+        '(only one row each)');
+  }
+}
+
+/// The rulings the Appeal Directorate can return, with the note it files.
+///
+/// ⚠️ These five codes are exactly the five actions the yard can carry out in
+/// Final Disposition (Release / Sale / Destroy / Re-export / Other). A ruling
+/// is an instruction to take ONE of them, so a code outside that set would name
+/// an action the yard has no way to perform -- and [ItemAppealOutcome.label]
+/// returns null for anything it does not know, which renders as no decision at
+/// all.
+///
+/// The note for 'OTHER' becomes the chip's LABEL, so it is kept short; the
+/// others are free to explain themselves, since their label is fixed.
+const _appealDecisions = <(String, String)>[
+  ('RELEASE', 'Appeal allowed — goods released to the owner'),
+  ('SALE', 'Appeal dismissed — goods to be sold at auction'),
+  ('DESTROY', 'Appeal dismissed — goods unfit, to be destroyed'),
+  ('RE-EXPORT', 'Appeal allowed in part — re-export permitted'),
+  ('OTHER', 'Referred back to yard'),
+];
+
+const _appealHoldNotes = [
+  'Appeal lodged by the consignee — under review',
+  'Written objection received, awaiting hearing',
+  'Documents called for from the declarant',
+  'Hearing scheduled — decision reserved',
+];
 
 /// Routes goods to the category that suits them, so the category, the
 /// warehouse and the zone all agree with what the item actually is.

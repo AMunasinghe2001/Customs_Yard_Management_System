@@ -1287,3 +1287,43 @@ Food, chemicals and the like spoil, so they **never reach a warehouse** and **ne
 - **`getRequestableExpiredPackages`** — a package holding a perishable is never skipped for the window, and the item passes `itemPassesWindow` unconditionally. Own `source: 'perishable'`, so it never takes the abandoned/other branches.
 - **Perishable Goods page** (`perishable_goods_screen.dart`) — yard sends; Central Disposal gets `readOnly: true` (its tab is **appended LAST**: two `animateTo` calls in that file address tabs by index, so inserting earlier silently misroutes them). Shows days-waiting, reddening with age.
 - ⚠️ **Perishables tender ONLY as `'special'`**, and a special sale carries **only** perishables — the gate is `isPerishable == (_tenderType == 'special')`, deliberately both ways so the two are never mixed into one lot.
+
+### The four appeal states, and the two nothing ever produced (2026-09-03)
+
+A row's appeal state is **not** a function of the calendar alone. There are four, and the seed could only ever reach two of them:
+
+| State | Comes from | Was seeded? |
+|---|---|---|
+| `Appealing · Nd` | window still open | ✅ |
+| `Enabled` | window expired | ✅ |
+| `On Appeal Hold` | **a person lodging an appeal** | ❌ never |
+| `Decided · X` | **a person ruling on one** | ❌ never |
+
+The last two exist only because someone acts, so nothing in a date-driven seed could produce them: Appeal Directorate → **Decided Goods was permanently empty**, and **no row anywhere showed a hold**. `_seedAppealOutcomes` now rules on a share of the appeals.
+
+- ⚠️ **Decisions go in `item_appeal_decisions`, keyed by item id — never the package-level `appeal_decision` column.** On a multi-item package `appealDecisionForItem` deliberately ignores the package-level value (deciding one item must not mark its siblings decided), so a decision written there produces a row the app refuses to treat as decided. A test reintroduces the bleed and confirms the test catches it.
+- ⚠️ **A hold must outlast the deadline.** `unblocksAction` is `isDecided && !onHold` — a hold beats both the calendar and a ruling. It is the one state the date can never imply.
+- **Coverage is taken before chance.** A random roll left 15 (source, goods-name) pairs with no hold at all — the rarer combinations simply never came up, so those goods could not be seen in that state. Every pair now claims a **hold first** (the scarcer state; a pair with only one row would otherwise spend it on a decision), then a decision. Missing holds **throw**; pairs that end up with a hold and no decision are only reported — one row cannot be both.
+- ⚠️ **Rows are ruled on OLDEST first.** Newest-first spent every still-open appeal on a ruling and left `Appealing · Nd` **empty** — ruling on a row ends its countdown. Live appeals are now largely skipped, but **coverage overrides the skip**: some kinds (`other|Used Engine Blocks`) exist only as a live appeal, and skipping them tripped the missing-hold check.
+
+### One SR number, several goods (2026-09-03)
+
+A package is one number; the goods inside it are separate items. **The same SR/OA number appearing on several rows of a status table is correct, not a duplicate** — each row is a different item under that one number. Seeded up to 4 items per package so this is plainly visible (Other went from 1 such number to 9).
+
+Also: **Detain gets the 30-day window too.** It has no `forfeited_packages` row of its own, which makes it easy to assume it has no window either — but the window runs from the **entry date** and freezes a Detain exactly as it freezes a Forfeit. It was excluded from the recent cohort, so **every detained item was past its window** and none could be seen blocked; 19 now sit inside it.
+
+**Zone capacity has one definition.** `_zoneCapacity()` is used both when the zone row is written and when the seeder books space against it — previously the same numbers were written out twice and could drift, filling zones to a figure the Zone Capacity page did not share.
+
+### A ruling names one of the yard's five actions (2026-09-03)
+
+The Appeal Directorate's five decisions are **exactly** the five actions the yard can carry out in Final Disposition — `RELEASE` / `SALE` / `DESTROY` / `RE-EXPORT` / `OTHER`. A ruling is an instruction to take one of them, so a code outside that set would name an action the yard has no way to perform, and `ItemAppealOutcome.label` returns **null** for anything it does not recognise — which renders as *no decision at all*, not as an error.
+
+⚠️ **An `OTHER` decision shows its custom note as the chip's label.** That note is free text an officer typed, and a sentence-long one ("Referred back to the yard for further inquiry") **overflowed the chip and was clipped mid-word**. `appealDecisionLabelForItem` now trims to `kAppealDecisionLabelMaxChars`; the full text stays in `appealDecisionNoteForItem`, which the tooltip and details dialog read.
+
+### Detained goods can be appealed too (2026-09-03)
+
+A detained item has **no `forfeited_packages` row of its own** — the Appeal portal synthesises one (`source: 'detain'`) so the item can be seen at all. But a synthesised row is rebuilt on every read, so it can carry **nothing**: no hold, no decision, no stable id. `getAppealablePackages` already prefers the **stored** row when one exists ("so its hold, decision and real uuid come through") — that is the seam.
+
+So detained goods could only ever show `Appealing` or `Enabled`; the two ruled states were **unreachable for them, whatever the yard did**. `_seedDetainAppeals` now lodges real rows for half the detained items. ⚠️ It must run **before** `_seedAppealOutcomes`, or the ruling pass has nothing to rule on. The screen code was already correct and needed no change — it reads `allItemAppealOutcomesProvider` and renders `AppealStateChip` like every other page.
+
+⚠️ The pool has to be a **decent share**: coverage claims the first row of each kind for a hold, so a thin pool leaves nothing over to be decided or left counting down, and detained goods show only one of the four states.

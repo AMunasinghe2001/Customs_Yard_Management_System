@@ -1417,6 +1417,9 @@ class ItemAppealOutcome {
   }
 }
 
+/// How much of a custom 'OTHER' decision note fits in a decision chip.
+const kAppealDecisionLabelMaxChars = 28;
+
 // ── Appeal window (shared by EVERY status) ───────────────────
 //
 // The 30-day appeal window is NOT a forfeit-only rule: a Detain, Abandoned or
@@ -1617,6 +1620,13 @@ class ForfeitedPackageModel {
 
   /// Human-friendly label for a specific item's decision (falls back to the
   /// custom note for 'OTHER').
+  ///
+  /// ⚠️ The label goes inside a CHIP, so it has to stay short. An 'OTHER'
+  /// decision shows its custom note -- which is free text an officer typed, and
+  /// a sentence-long one ("Referred back to the yard for further inquiry")
+  /// overflowed the chip and was clipped mid-word. Long notes are trimmed here;
+  /// the full text stays available through [appealDecisionNoteForItem], which
+  /// is what the tooltip and the details dialog read.
   String? appealDecisionLabelForItem(String? id) {
     final dec = appealDecisionForItem(id);
     switch ((dec ?? '').toUpperCase()) {
@@ -1629,8 +1639,11 @@ class ForfeitedPackageModel {
       case 'RE-EXPORT':
         return 'Re-export';
       case 'OTHER':
-        final note = appealDecisionNoteForItem(id);
-        return (note?.trim().isNotEmpty == true) ? note!.trim() : 'Other';
+        final note = appealDecisionNoteForItem(id)?.trim();
+        if (note == null || note.isEmpty) return 'Other';
+        return note.length <= kAppealDecisionLabelMaxChars
+            ? note
+            : '${note.substring(0, kAppealDecisionLabelMaxChars - 1).trimRight()}…';
       default:
         return dec;
     }
