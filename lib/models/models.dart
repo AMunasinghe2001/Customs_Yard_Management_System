@@ -2473,13 +2473,23 @@ class ReDestructionInfo {
 // ── Disposal Requests (Yard → Central Disposal Directorate) ──────────────
 //
 // A yard submits a request listing forfeited packages whose 30-day appeal
-// window has passed. Each package is tagged for either DESTRUCTION or SALE.
+// window has passed. Every requested package is for SALE.
+//
+// Destruction is NOT a disposal request. A yard destroying goods records it as
+// a Final Disposition, which writes the item's destruction tag directly and
+// puts it on the Destroyed Goods pages — it never reaches the Valuation
+// Directorate or Central Disposal's Disposal Requests, and there is no route
+// by which it could. Offering it here produced request rows that then sat in
+// both queues with nothing anyone could do to them.
 
-/// The two disposition options offered per requested package.
+/// The disposition a requested package carries. Sale is the only one: see
+/// above for why destruction is not a request.
 const Map<String, String> kDispositions = {
-  'destruction': 'Destruction',
   'sale': 'Sale',
 };
+
+/// The disposition every new request item is created with.
+const String kDefaultDisposition = 'sale';
 
 String dispositionLabel(String? code) => kDispositions[code] ?? (code ?? '—');
 
@@ -2558,7 +2568,7 @@ class DisposalRequestItemModel {
       id: json['id'] as String,
       requestId: json['request_id'] as String,
       forfeitedPackageId: json['forfeited_package_id'] as String,
-      disposition: json['disposition'] as String? ?? 'destruction',
+      disposition: json['disposition'] as String? ?? kDefaultDisposition,
       forfeited: json['forfeited_packages'] != null
           ? ForfeitedPackageModel.fromJson(
               json['forfeited_packages'] as Map<String, dynamic>)

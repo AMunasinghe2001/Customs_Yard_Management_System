@@ -532,17 +532,6 @@ class _DisposalRequestDialogState extends ConsumerState<DisposalRequestDialog> {
                                                         .notifier)
                                                 .state = map;
                                           },
-                                          onDisposition: (d) {
-                                            final map =
-                                                Map<String, String>.from(
-                                                    selected);
-                                            map[pkg.id] = 'sale';
-                                            ref
-                                                .read(
-                                                    selectedRequestDispositionsProvider
-                                                        .notifier)
-                                                .state = map;
-                                          },
                                         );
                                       },
                                     ),
@@ -619,7 +608,6 @@ class _PackageRequestRow extends StatelessWidget {
   final bool isSelected;
   final String? disposition;
   final VoidCallback onToggle;
-  final ValueChanged<String> onDisposition;
 
   /// Still inside its 30-day appeal window with no decision yet, so it cannot
   /// be sent. Listed anyway — greyed out — so the officer can see it is there
@@ -639,7 +627,6 @@ class _PackageRequestRow extends StatelessWidget {
     required this.isSelected,
     required this.disposition,
     required this.onToggle,
-    required this.onDisposition,
     this.pending = false,
     this.daysLeft = 0,
   });
@@ -801,69 +788,6 @@ class _SourceChip extends StatelessWidget {
       child: Text(label,
           style: TextStyle(
               color: color, fontSize: 9.5, fontWeight: FontWeight.w800)),
-    );
-  }
-}
-
-class _DispositionToggle extends StatelessWidget {
-  final String? value;
-  final bool enabled;
-  final ValueChanged<String> onChanged;
-  const _DispositionToggle(
-      {required this.value, required this.enabled, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context) {
-    Widget seg(String code, IconData icon, Color color) {
-      final active = enabled && value == code;
-      return InkWell(
-        onTap: enabled ? () => onChanged(code) : null,
-        borderRadius: BorderRadius.circular(8),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-          decoration: BoxDecoration(
-            color: active ? color.withOpacity(0.15) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-                color: active ? color.withOpacity(0.6) : Colors.transparent),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Icon(icon,
-                size: 14,
-                color: active
-                    ? color
-                    : context.colors.textMuted.withOpacity(enabled ? 1 : 0.5)),
-            const Gap(5),
-            Text(dispositionLabel(code),
-                style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: active
-                        ? color
-                        : context.colors.textMuted
-                            .withOpacity(enabled ? 1 : 0.5))),
-          ]),
-        ),
-      );
-    }
-
-    return Opacity(
-      opacity: enabled ? 1 : 0.45,
-      child: Container(
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: context.colors.textPrimary.withOpacity(0.03),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: context.colors.borderColor),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          seg('destruction', Icons.delete_forever_rounded,
-              context.colors.dangerRed),
-          const Gap(2),
-          seg('sale', Icons.sell_rounded, context.colors.successGreen),
-        ]),
-      ),
     );
   }
 }
