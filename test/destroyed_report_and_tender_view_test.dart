@@ -1,11 +1,30 @@
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 
 String _read(String path) =>
     File(path).readAsStringSync().replaceAll('\r\n', '\n');
 
+/// Renders [svg] alone on a page and returns the PDF's size.
+///
+/// A PDF that failed to draw the emblem still SAVES -- it is simply an empty
+/// box -- so the only way to tell a working emblem from a blank one is by how
+/// much got written. An empty page is the baseline.
+Future<int> _renderedBytes(String svg) async {
+  final doc = pw.Document();
+  doc.addPage(pw.Page(
+    pageFormat: PdfPageFormat.a4,
+    build: (_) =>
+        pw.SizedBox(width: 46, height: 46, child: pw.SvgImage(svg: svg)),
+  ));
+  return (await doc.save()).length;
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
   final reports = _read('lib/screens/reports/reports_screen.dart');
   final reportSvc = _read('lib/services/report_service.dart');
   final exec = _read('lib/screens/executive/executive_dashboard_screen.dart');
@@ -28,6 +47,7 @@ void main() {
     });
 
     test('the deposit, the costs and the refund take their place', () {
+      expect(block, contains("'Goods Description'"));
       expect(block, contains("'Destroying Deposit (LKR)'"));
       expect(block, contains("'Total Costs (LKR)'"));
       expect(block, contains("'Refund (LKR)'"));
@@ -74,6 +94,33 @@ void main() {
       // A PDF has no notion of currentColor; unresolved, the emblem paints
       // as nothing.
       expect(reportSvc, contains("replaceAll('currentColor', '#0D47A1')"));
+    });
+
+    test('the tinted emblem is UNDRAWABLE until currentColor is resolved',
+        () async {
+      // The actual failure, reproduced: the pdf package logs "Unknown color:
+      // currentColor" and draws nothing, so the header falls back to "SLC".
+      final raw =
+          await rootBundle.loadString('Sri_Lanka_Customs_logo_tinted.svg');
+      final blank = await _renderedBytes(
+          '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"></svg>');
+      final unresolved = await _renderedBytes(raw);
+      expect(unresolved, lessThan(blank * 3),
+          reason: 'raw currentColor should draw (almost) nothing');
+    });
+
+    test('and it really draws once resolved', () async {
+      final raw =
+          await rootBundle.loadString('Sri_Lanka_Customs_logo_tinted.svg');
+      final resolved =
+          await _renderedBytes(raw.replaceAll('currentColor', '#0D47A1'));
+      expect(resolved, greaterThan(20000),
+          reason: 'the emblem is a large path set; a blank box is ~500 bytes');
+    });
+
+    test('the plain emblem draws as-is, so the fallback is real', () async {
+      final raw = await rootBundle.loadString('Sri_Lanka_Customs_logo.svg');
+      expect(await _renderedBytes(raw), greaterThan(20000));
     });
 
     test('a font failure can no longer take the emblem down with it', () {

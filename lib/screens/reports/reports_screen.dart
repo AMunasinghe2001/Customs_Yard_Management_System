@@ -2735,6 +2735,36 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onPdf: () => _generateReleasedGoodsReport('pdf'),
                       onExcel: () => _generateReleasedGoodsReport('excel'),
                     ),
+                    _buildReportCard(
+                      title: 'All Tenders',
+                      description:
+                          'Every tender sale, with its goods, proceeds & status.',
+                      icon: Icons.storefront_rounded,
+                      color: const Color(0xFF00695C),
+                      onView: () => _stockRevenueReport('all_tenders', 'view'),
+                      onPdf: () => _stockRevenueReport('all_tenders', 'pdf'),
+                      onExcel: () =>
+                          _stockRevenueReport('all_tenders', 'excel'),
+                    ),
+                    // Top Management only: the sheet the DG carries INTO a
+                    // tender sale. It shows the reserve price, so it can only
+                    // exist once bidding has closed -- see the 'tender_day'
+                    // case. The card itself always stays put; it is the rows
+                    // that come and go with each sale.
+                    if (widget.executiveMode)
+                      _buildReportCard(
+                        title: 'Tender Sale Sheet',
+                        description:
+                            'Goods in a closed tender with their valuations — '
+                            'available once the tender closes.',
+                        icon: Icons.gavel_rounded,
+                        color: const Color(0xFF4527A0),
+                        onView: () =>
+                            _stockRevenueReport('tender_day', 'view'),
+                        onPdf: () => _stockRevenueReport('tender_day', 'pdf'),
+                        onExcel: () =>
+                            _stockRevenueReport('tender_day', 'excel'),
+                      ),
                   ],
                 ),
 
@@ -3661,6 +3691,122 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           ];
           break;
 
+        case 'all_tenders':
+          // Every tender sale ever run, one row per sale -- the register of
+          // tenders, not of goods. Its own headline counts sales.
+          final allSales = await disposal.getTenderSales();
+          var tenders = allSales
+              .where((sale) => inPeriod(sale.saleDate ?? sale.createdAt))
+              .toList();
+          if (_yardArg != null) {
+            // Per ITEM, not the sale's own yard: a sale can mix items from a
+            // multi-directorate yard, so the sale-level code cannot tell them
+            // apart.
+            tenders = tenders
+                .where((sale) => sale.items.any((i) => i.yard == _yardArg))
+                .toList();
+          }
+          tenders.sort((a, b) => (b.saleDate ?? b.createdAt)
+              .compareTo(a.saleDate ?? a.createdAt));
+
+          title = 'ALL TENDER SALES';
+          columns = [
+            'Tender No',
+            'Sale Date',
+            'Type',
+            'Goods',
+            'Sold',
+            'Unsold',
+            'Proceeds (LKR)',
+            'Status',
+          ];
+          rows = [];
+          rowItemIds = [];
+          for (final sale in tenders) {
+            final items = sale.dedupedItems;
+            final sold = items.where((i) => i.sold).length;
+            final proceeds = items
+                .where((i) => i.sold)
+                .fold<double>(0, (t, i) => t + i.soldPrice);
+            rows.add([
+              sale.saleNumber ?? '—',
+              sale.saleDate != null
+                  ? DateFormat('yyyy-MM-dd').format(sale.saleDate!)
+                  : '—',
+              sale.typeLabel,
+              '${items.length}',
+              '$sold',
+              '${items.length - sold}',
+              proceeds > 0 ? money.format(proceeds) : '—',
+              sale.saleEnded ? 'Closed' : 'Open',
+            ]);
+            rowItemIds.add(null);
+          }
+          headline = '${rows.length} tender sales';
+          break;
+
+        case 'tender_day':
+          // The sheet the DG carries INTO a tender sale: the goods going under
+          // the hammer that day, with the reserve price beside each.
+          //
+          // The valuation is that reserve, so it stays sealed until bidding
+          // closes -- exactly the rule the on-screen columns follow
+          // (TenderSaleModel.saleEnded). A sale still open therefore
+          // contributes no rows, which is why this report is empty until a
+          // tender has closed and fills again on the next one.
+          final daySales = await disposal.getTenderSales();
+          var closed = daySales
+              .where((sale) =>
+                  sale.saleEnded && inPeriod(sale.saleDate ?? sale.createdAt))
+              .toList();
+          if (_yardArg != null) {
+            closed = closed
+                .where((sale) => sale.items.any((i) => i.yard == _yardArg))
+                .toList();
+          }
+          closed.sort((a, b) => (b.saleDate ?? b.createdAt)
+              .compareTo(a.saleDate ?? a.createdAt));
+
+          title = 'TENDER SALE — GOODS & VALUATIONS';
+          columns = [
+            'Tender No',
+            'Sale Date',
+            'SR Number',
+            'Goods Name',
+            'Qty',
+            'Valuation (LKR)',
+            'Status',
+          ];
+          rows = [];
+          rowItemIds = [];
+          for (final sale in closed) {
+            final dateStr = sale.saleDate != null
+                ? DateFormat('yyyy-MM-dd').format(sale.saleDate!)
+                : '—';
+            for (final it in sale.dedupedItems) {
+              final f = it.forfeited;
+              final pkgItems =
+                  f?.packageDetails?.items ?? const <PackageItem>[];
+              final match = f?.itemId == null
+                  ? null
+                  : pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
+              final qty = f?.entryQty ?? match?.quantity ?? 1;
+              final unit = f?.valuationCost;
+              rows.add([
+                sale.saleNumber ?? '—',
+                dateStr,
+                f?.srNumber ?? '—',
+                f?.itemName ?? match?.itemName ?? '—',
+                '$qty',
+                (unit != null && unit > 0) ? money.format(unit * qty) : '—',
+                it.sold ? 'Sold' : 'Unsold',
+              ]);
+              rowItemIds.add(f?.itemId);
+            }
+          }
+          headline = '${rows.length} goods';
+          break;
+
         case 'destroyed':
           // Destruction is no longer a tender: there is no buyer, so no
           // valuation is realised and no "destroyed price" exists. What the
@@ -3693,7 +3839,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           columns = [
             'SR Number',
             'Goods Name',
-            'Qty',
+            'Goods Description',
             'Destroying Deposit (LKR)',
             'Total Costs (LKR)',
             'Refund (LKR)',
@@ -3708,10 +3854,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             // A shortfall is shown as a negative refund rather than hidden:
             // costs CAN exceed the deposit, and the report must say so.
             final refund = deposit - spent;
+            final desc = r.item.goodsDescription?.trim();
             rows.add([
               r.pkg.srNumber,
               r.item.itemName,
-              '${r.item.quantity}',
+              (desc?.isNotEmpty == true) ? desc! : '—',
               deposit > 0 ? money.format(deposit) : '—',
               spent > 0 ? money.format(spent) : '—',
               (deposit > 0 || spent > 0) ? money.format(refund) : '—',
