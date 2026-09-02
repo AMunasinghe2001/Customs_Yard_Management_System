@@ -484,9 +484,16 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                             onPressed: () => context.go('/'),
                           ),
                           const Gap(8),
-                          Text('Appeal Sign In',
-                              style:
-                                  Theme.of(context).textTheme.headlineMedium),
+                          // Flexible: the title sits beside a back
+                          // button in a bare Row, so a longer one
+                          // ('Top Management Sign In') had nowhere
+                          // to give and overflowed the panel.
+                          Flexible(
+                            child:
+                            Text('Appeal Sign In',
+                                style:
+                                    Theme.of(context).textTheme.headlineMedium),
+                          ),
                         ]).animate().fadeIn(duration: 400.ms),
                         const Gap(8),
                         Padding(
@@ -532,7 +539,13 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                             validator: (v) => v == null || v.isEmpty
                                 ? 'Username or email required'
                                 : null,
-                          ),
+                          )
+                              .animate()
+                              .slideX(
+                                  begin: 0.1,
+                                  duration: 400.ms,
+                                  delay: 200.ms)
+                              .fadeIn(),
                           const Gap(16),
                           TextFormField(
                             controller: _passwordCtrl,
@@ -555,7 +568,13 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                                 ? 'Password required'
                                 : null,
                             onFieldSubmitted: (_) => _continue(),
-                          ),
+                          )
+                              .animate()
+                              .slideX(
+                                  begin: 0.1,
+                                  duration: 400.ms,
+                                  delay: 300.ms)
+                              .fadeIn(),
                           const Gap(12),
                           Row(children: [
                             SizedBox(
@@ -593,7 +612,13 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                                   style: const TextStyle(fontSize: 16)),
                               onPressed: _isLoading ? null : () => _continue(),
                             ),
-                          ),
+                          )
+                              .animate()
+                              .slideX(
+                                  begin: 0.1,
+                                  duration: 400.ms,
+                                  delay: 400.ms)
+                              .fadeIn(),
                           const Gap(20),
                           Divider(
                               color:
@@ -643,7 +668,13 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                                 const InputDecoration(labelText: 'OTP Code *'),
                             onFieldSubmitted: (_) =>
                                 _isLoading ? null : _verify(),
-                          ),
+                          )
+                              .animate()
+                              .slideX(
+                                  begin: 0.1,
+                                  duration: 400.ms,
+                                  delay: 200.ms)
+                              .fadeIn(),
                           const Gap(14),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,

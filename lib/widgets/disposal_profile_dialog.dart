@@ -27,6 +27,7 @@ class DisposalProfileDialog extends ConsumerStatefulWidget {
 
 class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
   final _formKey = GlobalKey<FormState>();
+  late final TextEditingController _usernameCtrl;
   late final TextEditingController _mobileCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _imageCtrl;
@@ -43,6 +44,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
     super.initState();
     final profile = ref.read(currentProfileProvider);
     _originalEmail = supabase.auth.currentUser?.email ?? '';
+    _usernameCtrl = TextEditingController(text: profile?.username ?? '');
     _mobileCtrl = TextEditingController(text: profile?.mobileNumber ?? '');
     _emailCtrl = TextEditingController(text: _originalEmail);
     _imageCtrl = TextEditingController(text: profile?.profileImageUrl ?? '');
@@ -50,6 +52,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
 
   @override
   void dispose() {
+    _usernameCtrl.dispose();
     _mobileCtrl.dispose();
     _emailCtrl.dispose();
     _imageCtrl.dispose();
@@ -82,6 +85,9 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
     try {
       await ref.read(adminServiceProvider).updateProfile(
             profile.id,
+            username: _usernameCtrl.text.trim().isEmpty
+                ? null
+                : _usernameCtrl.text.trim(),
             mobileNumber: _mobileCtrl.text.trim().isEmpty
                 ? null
                 : _mobileCtrl.text.trim(),
@@ -271,10 +277,12 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _infoRow(context, Icons.person_outline_rounded, 'Full Name',
-            profile?.fullName ?? '—'),
-        _infoRow(context, Icons.admin_panel_settings_outlined, 'Role',
-            (profile?.role ?? '').toUpperCase()),
+        // The USERNAME, not the full name: it is what this account signs in
+        // with, so it is the thing the officer needs to be able to read back.
+        // "Role" is gone -- the portal the dialog opens from already says
+        // which directorate this is, so the row only ever repeated it.
+        _infoRow(context, Icons.alternate_email_rounded, 'Username',
+            profile?.username?.isNotEmpty == true ? profile!.username! : '—'),
         _infoRow(context, Icons.email_outlined, 'Branch Email', _originalEmail),
         _infoRow(context, Icons.phone_android_rounded, 'Mobile Number',
             profile?.mobileNumber?.isNotEmpty == true
@@ -340,6 +348,24 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
             ),
           ),
         ],
+        const Gap(16),
+        TextFormField(
+          controller: _usernameCtrl,
+          decoration: InputDecoration(
+            labelText: 'Username',
+            helperText: 'Used to sign in (email also works)',
+            prefixIcon: Icon(Icons.alternate_email_rounded,
+                color: context.colors.textMuted),
+          ),
+          validator: (v) {
+            final t = v?.trim() ?? '';
+            if (t.isEmpty) return null; // optional
+            if (t.length < 3) return 'Min 3 characters';
+            if (t.contains('@')) return 'Username cannot contain @';
+            if (t.contains(' ')) return 'No spaces allowed';
+            return null;
+          },
+        ),
         const Gap(16),
         TextFormField(
           controller: _emailCtrl,
