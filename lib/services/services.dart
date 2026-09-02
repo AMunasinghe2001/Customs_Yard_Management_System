@@ -508,17 +508,28 @@ class PackageService {
   /// `<YARD>/SR/<NN>/<YYYY>` when it does not — accounts created before
   /// directorates existed keep working unchanged.
   ///
-  /// The serial counts PER YARD PER YEAR, not per directorate. A yard under two
-  /// directorates (NNR is CED and PSD) must not hand out
+  /// The serial counts PER YARD PER REGISTER PER YEAR, not per directorate. A
+  /// yard under two directorates (NNR is CED and PSD) must not hand out
   /// `CED/NNR/SR/07/2026` and `PSD/NNR/SR/07/2026` to two different packages,
   /// so the search deliberately matches both shapes and takes the highest.
-  Future<String> getNextSrNumber({String? yard, String? directorate}) async {
+  ///
+  /// [docType] picks the register (`SR`, `OA` — see [kSrDocTypes]). Each runs
+  /// its own serial: the number after `SR/87` is `SR/88`, and an `OA` number
+  /// never continues an `SR` one, so the count is scoped to one register.
+  Future<String> getNextSrNumber({
+    String? yard,
+    String? directorate,
+    String docType = kDefaultSrDocType,
+  }) async {
     final now = DateTime.now();
     final year = now.year;
     final startOfYear = DateTime(year, 1, 1).toIso8601String();
     final prefix =
         yardSrPrefix(yard ?? AppSession.currentYard); // e.g. GL1, RCT...
     final dir = directorate ?? AppSession.currentDirectorate;
+    final type = docType.trim().isEmpty
+        ? kDefaultSrDocType
+        : docType.trim().toUpperCase();
 
     // `%` also covers the unprefixed shape, since ilike anchors nothing before
     // it — so one query finds both `GL1/SR/…` and `CED/GL1/SR/…`.
@@ -526,7 +537,7 @@ class PackageService {
         .from('packages')
         .select('sr_number')
         .gte('created_at', startOfYear)
-        .ilike('sr_number', '%$prefix/SR/%/$year');
+        .ilike('sr_number', '%$prefix/$type/%/$year');
 
     // Ordering by created_at picked the most RECENTLY CREATED row, not the
     // HIGHEST serial — a back-dated or repaired row could hand out a duplicate.
@@ -536,9 +547,12 @@ class PackageService {
       final sr = row['sr_number'] as String?;
       if (sr == null) continue;
       final parts = stripDirectoratePrefix(sr).split('/');
-      // <YARD>/SR/<serial>/<year> — reject a yard that merely ends in `prefix`.
+      // <YARD>/<REGISTER>/<serial>/<year> — reject a yard that merely ends in
+      // `prefix`, and a number from the OTHER register, whose serials run
+      // independently of this one.
       if (parts.length < 4) continue;
       if (parts[0].toUpperCase() != prefix.toUpperCase()) continue;
+      if (parts[1].trim().toUpperCase() != type) continue;
       final n = int.tryParse(parts[2].trim());
       if (n != null && n >= nextNum) nextNum = n + 1;
     }
@@ -548,6 +562,7 @@ class PackageService {
       serial: nextNum,
       year: year,
       directorateCode: dir,
+      docType: type,
     );
   }
 

@@ -43,6 +43,10 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
   // yard; the prefix of the generated SR number follows this selection.
   // Normalised through yardByCode so it always matches a dropdown item.
   String _selectedYard = yardByCode(AppSession.currentYard).code;
+  /// Which register this number is minted from -- SR or OA. Each keeps
+  /// its own serial run, so switching this re-mints the number rather
+  /// than continuing the other register's count.
+  String _srDocType = kDefaultSrDocType;
   final _caseNumberCtrl = TextEditingController();
   final _originCtrl = TextEditingController();
   final _valueCtrl = TextEditingController();
@@ -142,6 +146,9 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _notesCtrl.text = pkg.notes ?? '';
       _oldSrNumberCtrl.text = pkg.oldSrNumber ?? '';
       setState(() {
+        // Follow the loaded number's own register, so editing an OA package
+        // does not show "SR" beside an OA number.
+        _srDocType = docTypeOfSrNumber(pkg.srNumber) ?? _srDocType;
         _entryMode = (pkg.oldSrNumber != null && pkg.oldSrNumber!.isNotEmpty)
             ? 'old'
             : 'new';
@@ -323,7 +330,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     try {
       final sr = await ref
           .read(packageServiceProvider)
-          .getNextSrNumber(yard: _selectedYard);
+          .getNextSrNumber(yard: _selectedYard, docType: _srDocType);
       setState(() {
         _srNumberCtrl.text = sr;
       });
@@ -503,6 +510,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
     _formKey.currentState?.reset();
     _srNumberCtrl.clear();
     _oldSrNumberCtrl.clear();
+    _srDocType = kDefaultSrDocType;
     _entryMode = 'new';
     _originCtrl.clear();
     _valueCtrl.clear();
@@ -794,6 +802,44 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                       ),
                                     ),
                                     const Gap(12),
+                                    // Which register the number comes from.
+                                    // SR and OA run INDEPENDENT serials, so
+                                    // changing this re-mints the number from
+                                    // that register's own count instead of
+                                    // continuing the other one's.
+                                    SizedBox(
+                                      width: 108,
+                                      child: StyledDropdownFormField<String>(
+                                        label: 'Register',
+                                        menuWidth: 140,
+                                        isDense: false,
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(
+                                                horizontal: 12, vertical: 16),
+                                        valueStyle: TextStyle(
+                                            fontSize: 16,
+                                            color: context.colors.textPrimary),
+                                        labelStyle:
+                                            const TextStyle(fontSize: 14),
+                                        value: _srDocType,
+                                        options: [
+                                          for (final t in kSrDocTypes)
+                                            StyledDropdownOption(t, t),
+                                        ],
+                                        onChanged: (v) {
+                                          // Editing an existing package must
+                                          // not re-mint its number.
+                                          if (_isUpdate ||
+                                              v == null ||
+                                              v == _srDocType) {
+                                            return;
+                                          }
+                                          setState(() => _srDocType = v);
+                                          _generateNextSr();
+                                        },
+                                      ),
+                                    ),
+                                    const Gap(12),
                                     Expanded(
                                       flex: 2,
                                       child: TextFormField(
@@ -806,7 +852,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                         decoration: _fieldDecoration(
                                           labelText: 'SR Number *',
                                           hintText:
-                                              'e.g. GL1/SR/01/2025 or GL1/MISC/187/2025',
+                                              'e.g. GL1/SR/01/2025 or GL1/OA/01/2025',
                                           suffixIcon: Tooltip(
                                             message: isOfficer
                                                 ? 'Loading existing SR entries is restricted to administrators only'

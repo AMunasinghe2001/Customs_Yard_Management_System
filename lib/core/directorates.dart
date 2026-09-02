@@ -106,19 +106,57 @@ const Map<String, List<String>> kYardDirectorates = {
 List<String> directoratesForYard(String? yardCode) =>
     kYardDirectorates[yardCode] ?? const [];
 
+/// The register a number belongs to — the segment after the yard.
+///
+/// A yard keeps more than one register, and each runs its OWN serial: the
+/// number after `SR/87` is `SR/88`, never `OA/88`, and an OA number can never
+/// continue an SR one. They are separate books that happen to share a yard and
+/// a year, so every serial lookup must be scoped by type as well.
+///
+/// Goods registered under either type are the same goods everywhere else in
+/// the app — the type changes how a number is minted, nothing about how the
+/// package is then treated.
+const List<String> kSrDocTypes = ['SR', 'OA'];
+
+/// The default register, used wherever a caller does not name one. Keeping SR
+/// the default is what leaves every existing call site behaving unchanged.
+const String kDefaultSrDocType = 'SR';
+
+/// True when [segment] names a register this build knows.
+bool isSrDocType(String segment) =>
+    kSrDocTypes.any((t) => t.toUpperCase() == segment.trim().toUpperCase());
+
+/// The register [srNumber] belongs to (`SR`, `OA`, …), or null when its shape
+/// names none. Reads the segment after the yard, on the directorate-stripped
+/// form, so both `GL1/OA/07/2026` and `CED/GL1/OA/07/2026` answer `OA`.
+String? docTypeOfSrNumber(String? srNumber) {
+  if (srNumber == null || srNumber.trim().isEmpty) return null;
+  final parts = stripDirectoratePrefix(srNumber.trim()).split('/');
+  if (parts.length < 4) return null;
+  final seg = parts[1].trim().toUpperCase();
+  return isSrDocType(seg) ? seg : null;
+}
+
 /// Builds the full SR number from its parts.
 ///
 /// [directorateCode] may be null or unmapped — an account created before
 /// directorates existed still gets a working, unprefixed number rather than an
 /// error.
+///
+/// [docType] selects the register (see [kSrDocTypes]); each carries its own
+/// serial run, so the caller must pass the same type it counted with.
 String composeSrNumber({
   required String yardPrefix,
   required int serial,
   required int year,
   String? directorateCode,
+  String docType = kDefaultSrDocType,
 }) {
   final dir = directorateSrPrefix(directorateCode);
-  final body = '$yardPrefix/SR/${serial.toString().padLeft(2, '0')}/$year';
+  final type = docType.trim().isEmpty
+      ? kDefaultSrDocType
+      : docType.trim().toUpperCase();
+  final body = '$yardPrefix/$type/${serial.toString().padLeft(2, '0')}/$year';
   return dir.isEmpty ? body : '$dir/$body';
 }
 
@@ -136,9 +174,10 @@ String stripDirectoratePrefix(String srNumber) {
       return srNumber.substring(p.length);
     }
   }
-  // Unknown leading segment followed by <yard>/SR/... — drop it anyway, so a
-  // directorate ICT added after this build still resolves.
-  if (parts.length >= 5 && parts[2] == 'SR') {
+  // Unknown leading segment followed by <yard>/<register>/... — drop it
+  // anyway, so a directorate ICT added after this build still resolves. The
+  // register is SR or OA (see kSrDocTypes), never SR alone.
+  if (parts.length >= 5 && isSrDocType(parts[2])) {
     return parts.sublist(1).join('/');
   }
   return srNumber;
