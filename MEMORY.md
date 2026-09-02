@@ -1303,7 +1303,8 @@ The last two exist only because someone acts, so nothing in a date-driven seed c
 
 - ⚠️ **Decisions go in `item_appeal_decisions`, keyed by item id — never the package-level `appeal_decision` column.** On a multi-item package `appealDecisionForItem` deliberately ignores the package-level value (deciding one item must not mark its siblings decided), so a decision written there produces a row the app refuses to treat as decided. A test reintroduces the bleed and confirms the test catches it.
 - ⚠️ **A hold must outlast the deadline.** `unblocksAction` is `isDecided && !onHold` — a hold beats both the calendar and a ruling. It is the one state the date can never imply.
-- **Coverage is taken before chance.** A random roll left 15 (source, goods-name) pairs with no hold at all — the rarer combinations simply never came up, so those goods could not be seen in that state. Every pair now claims a **hold first** (the scarcer state; a pair with only one row would otherwise spend it on a decision), then a decision. Missing holds **throw**; pairs that end up with a hold and no decision are only reported — one row cannot be both.
+- **Coverage is taken before chance, keyed on the GOODS NAME.** A random roll left 15 kinds with no hold at all. Keying on `(source, goods)` then over-corrected: 26 kinds of goods became 94 pairs and so 94 holds, burying the Appeal Directorate under **more open appeals than decided ones**. Every kind of goods needs to be *seen* on hold; it does not need to be on hold once per disposition. Missing holds **throw**.
+- ⚠️ **A hold is an appeal still waiting to be heard**, so few should be outstanding: holds are spent on coverage only (one per kind), and everything else is ruled on. But **most EXPIRED rows are left alone** — ruling on all of them wiped out `Enabled` entirely, which is the ordinary state of goods whose window ran out with no appeal ever lodged, and the one the yard sees most. An appeal is the exception, not the rule.
 - ⚠️ **Rows are ruled on OLDEST first.** Newest-first spent every still-open appeal on a ruling and left `Appealing · Nd` **empty** — ruling on a row ends its countdown. Live appeals are now largely skipped, but **coverage overrides the skip**: some kinds (`other|Used Engine Blocks`) exist only as a live appeal, and skipping them tripped the missing-hold check.
 
 ### One SR number, several goods (2026-09-03)
@@ -1318,7 +1319,10 @@ Also: **Detain gets the 30-day window too.** It has no `forfeited_packages` row 
 
 The Appeal Directorate's five decisions are **exactly** the five actions the yard can carry out in Final Disposition — `RELEASE` / `SALE` / `DESTROY` / `RE-EXPORT` / `OTHER`. A ruling is an instruction to take one of them, so a code outside that set would name an action the yard has no way to perform, and `ItemAppealOutcome.label` returns **null** for anything it does not recognise — which renders as *no decision at all*, not as an error.
 
-⚠️ **An `OTHER` decision shows its custom note as the chip's label.** That note is free text an officer typed, and a sentence-long one ("Referred back to the yard for further inquiry") **overflowed the chip and was clipped mid-word**. `appealDecisionLabelForItem` now trims to `kAppealDecisionLabelMaxChars`; the full text stays in `appealDecisionNoteForItem`, which the tooltip and details dialog read.
+⚠️ **An `OTHER` decision shows its custom note as the chip's label**, and that note is **free text the officer types** — the app supplies no wording of its own for it. Two consequences, both hit:
+
+1. A sentence-long note **overflowed the chip and was clipped mid-word**. `appealDecisionLabelForItem` now trims to `kAppealDecisionLabelMaxChars`; the full text stays in `appealDecisionNoteForItem`, which the tooltip and details dialog read.
+2. Because it reads exactly like a decision name, the note must describe an outcome the yard can **actually record**. A seeded note of *"Referred back to yard"* looked like a **sixth decision the app does not have** — there are five, and they are the five Final Disposition actions. A test now asserts no sixth exists.
 
 ### Detained goods can be appealed too (2026-09-03)
 

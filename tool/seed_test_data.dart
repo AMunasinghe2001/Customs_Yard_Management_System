@@ -867,17 +867,16 @@ Future<void> _seedAppealOutcomes(Connection conn) async {
   var decided = 0;
   var held = 0;
 
-  // ⚠️ A random roll leaves whole kinds of goods untouched -- with a dozen
-  // goods names across three sources, the rarer combinations never come up,
-  // and those goods can never be seen in that state at all. So coverage is
-  // taken FIRST: every (source, goods name) pair gets a hold and a decision
-  // before anything is left to chance.
+  // ⚠️ A random roll leaves whole kinds of goods untouched -- the rarer ones
+  // never come up, and those goods can never be seen in that state at all. So
+  // coverage is taken FIRST, and it is keyed on the GOODS NAME.
   //
-  // The HOLD is claimed first, because it is the scarcer state and the one a
-  // pair with only a single row would otherwise never reach -- spending that
-  // lone row on a decision is what left 15 pairs with no hold at all.
+  // Not on (source, goods): that made 94 pairs out of 26 kinds of goods and so
+  // 94 separate holds, which is what buried the Appeal Directorate under more
+  // open appeals than decided ones. Every kind of goods needs to be SEEN on
+  // hold; it does not need to be on hold once per disposition.
   final pairs = <String>{
-    for (final r in rows) '${r[2]}|${r[3]}',
+    for (final r in rows) r[3] as String,
   };
   final needHold = {...pairs};
   final needDecision = {...pairs};
@@ -890,29 +889,35 @@ Future<void> _seedAppealOutcomes(Connection conn) async {
   for (final r in rows) {
     final id = r[0] as String;
     final itemId = r[1] as String;
-    final pair = '${r[2]}|${r[3]}';
+    final pair = r[3] as String;
     final inWindow = r[4] as bool;
 
-    // Coverage first, then the ordinary mix: roughly a fifth ruled on and a
-    // smaller slice still under review. Untouched stays the majority.
-    final roll = _rng.nextInt(100);
+    // A HOLD is an appeal still waiting to be heard, so only a few should be
+    // outstanding at once -- an Appeal Directorate with 84 open appeals and 22
+    // ruled has the balance backwards. Holds are therefore spent ONLY on
+    // coverage: one per kind of goods, so every kind can be seen in that
+    // state, and no more. Everything else is ruled on.
     final coverHold = needHold.contains(pair);
 
-    // Every third live appeal may be ruled on; the rest keep counting down.
-    // Coverage overrides this -- some kinds of goods (other|Used Engine
-    // Blocks) exist ONLY as a live appeal, and skipping those left them with
-    // no hold at all, which the check below then caught.
+    // Every third live appeal is left counting down, so "In Appeal Window"
+    // keeps a real population. Coverage overrides this -- some kinds of goods
+    // (other|Used Engine Blocks) exist ONLY as a live appeal, and skipping
+    // those left them with no hold at all, which the check below then caught.
     if (inWindow && !coverHold && (liveSeen++ % 3 != 0)) continue;
-    // The decision is claimed only when this row is not needed for the hold.
-    final coverDecision = !coverHold && needDecision.contains(pair);
+
+    // ⚠️ Most EXPIRED rows are left alone. Ruling on every one of them wiped
+    // out "Enabled" entirely -- the ordinary state of goods whose window ran
+    // out with no appeal ever lodged, and the one the yard sees most. An
+    // appeal is the exception, not the rule: most goods are never appealed.
+    if (!inWindow && !coverHold && _rng.nextInt(100) >= 30) continue;
 
     if (coverHold) {
       needHold.remove(pair);
-    } else if (coverDecision) {
+    } else {
       needDecision.remove(pair);
     }
 
-    if (coverDecision || (!coverHold && roll < 20)) {
+    if (!coverHold) {
       final decision = _appealDecisions[_rng.nextInt(_appealDecisions.length)];
       await conn.execute(
         r'update public.forfeited_packages '
@@ -934,7 +939,7 @@ Future<void> _seedAppealOutcomes(Connection conn) async {
         ],
       );
       decided++;
-    } else if (coverHold || roll < 28) {
+    } else {
       // An appeal lodged and NOT yet ruled on. A hold outlasts the deadline:
       // these stay blocked even once the 30 days have run out, which is the
       // one state the calendar alone can never produce.
@@ -965,9 +970,9 @@ Future<void> _seedAppealOutcomes(Connection conn) async {
   if (needHold.isNotEmpty) {
     throw StateError('no appeal hold seeded for: ${needHold.join(', ')}');
   }
-  // A decision cannot be: a pair with only ONE forfeited row spends it on the
-  // hold, since a single row cannot be both held and decided. Those pairs are
-  // reported rather than treated as a failure.
+  // A decision cannot be guaranteed the same way: a kind with only ONE
+  // forfeited row spends it on the hold, since a single row cannot be both
+  // held and decided. Those are reported, not treated as a failure.
   if (needDecision.isNotEmpty) {
     print('  ${needDecision.length} kinds have a hold but no decision '
         '(only one row each)');
@@ -983,14 +988,18 @@ Future<void> _seedAppealOutcomes(Connection conn) async {
 /// returns null for anything it does not know, which renders as no decision at
 /// all.
 ///
-/// The note for 'OTHER' becomes the chip's LABEL, so it is kept short; the
-/// others are free to explain themselves, since their label is fixed.
+/// ⚠️ The note for 'OTHER' becomes the chip's LABEL, and it is FREE TEXT the
+/// officer types -- the app supplies no wording of its own for it. So it must
+/// read as one of the outcomes the yard can actually record, never as an
+/// invented decision of its own ("Referred back to yard" was such an
+/// invention: it looked like a sixth decision the app does not have). The
+/// other four have fixed labels and their note is free to explain itself.
 const _appealDecisions = <(String, String)>[
   ('RELEASE', 'Appeal allowed — goods released to the owner'),
   ('SALE', 'Appeal dismissed — goods to be sold at auction'),
   ('DESTROY', 'Appeal dismissed — goods unfit, to be destroyed'),
   ('RE-EXPORT', 'Appeal allowed in part — re-export permitted'),
-  ('OTHER', 'Referred back to yard'),
+  ('OTHER', 'Disposal by public auction'),
 ];
 
 const _appealHoldNotes = [

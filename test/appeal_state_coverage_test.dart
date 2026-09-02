@@ -80,6 +80,26 @@ void main() {
       const bogus = ItemAppealOutcome(decision: 'REFER-BACK');
       expect(bogus.label, isNull);
     });
+
+    // ⚠️ An OTHER note is FREE TEXT and becomes the chip's label, so it reads
+    // to the officer exactly like a decision name. It must therefore describe
+    // an outcome the yard can record -- never invent a decision the app does
+    // not have. "Referred back to yard" was such an invention: it looked like
+    // a sixth decision sitting alongside the five real ones.
+    test('there are exactly five decisions, and no sixth', () {
+      const real = ['RELEASE', 'SALE', 'DESTROY', 'RE-EXPORT', 'OTHER'];
+      expect(real.length, 5);
+      for (final invented in const [
+        'REFER-BACK',
+        'REFERRED',
+        'RETURN-TO-YARD',
+        'PENDING',
+      ]) {
+        expect(real.contains(invented), isFalse);
+        expect(ItemAppealOutcome(decision: invented).label, isNull,
+            reason: "$invented is not one of the five yard actions");
+      }
+    });
   });
 
   group('the 30-day window applies to every status alike', () {
