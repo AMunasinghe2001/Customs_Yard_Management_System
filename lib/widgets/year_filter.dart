@@ -7,12 +7,24 @@ final RegExp _srYearRegex = RegExp(r'/(\d{4})$');
 
 /// Unique 4-digit years parsed from the trailing "/YYYY" of SR numbers,
 /// sorted newest-first. Used to populate the "All Years" filter.
-List<String> srYears(Iterable<String> srNumbers) {
-  return srNumbers
-      .map((s) => _srYearRegex.firstMatch(s)?.group(1))
-      .whereType<String>()
-      .toSet()
-      .toList()
+///
+/// The CURRENT year and the NEXT one are always offered, whether or not any
+/// SR carries them yet. Derived purely from the data, the list went stale at
+/// every new year: on 1 January nothing had been registered yet, so the year
+/// the officer was working in was missing from the very filter meant to find
+/// it. Rolling forward one year also covers an SR filed ahead of time.
+///
+/// Both come from [DateTime.now], so the list advances on its own and needs no
+/// yearly edit.
+List<String> srYears(Iterable<String> srNumbers, {DateTime? now}) {
+  final today = now ?? DateTime.now();
+  return {
+    ...srNumbers
+        .map((s) => _srYearRegex.firstMatch(s)?.group(1))
+        .whereType<String>(),
+    '${today.year}',
+    '${today.year + 1}',
+  }.toList()
     ..sort((a, b) => b.compareTo(a));
 }
 

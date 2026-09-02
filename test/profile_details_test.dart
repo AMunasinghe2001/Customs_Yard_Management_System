@@ -124,7 +124,7 @@ void main() {
 
     test('an account with no post recorded still reads sensibly', () {
       expect(_profile(role: 'admin').postTitle, 'DC / SDDC');
-      expect(_profile(role: 'officer').postTitle, 'Yard Officer');
+      expect(_profile(role: 'officer').postTitle, 'Officer');
     });
 
     test('a free-text job role is shown as typed', () {

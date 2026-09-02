@@ -851,7 +851,7 @@ class ProfileModel {
     if (j != null && j.isNotEmpty) {
       return kPostTitles[j] ?? j;
     }
-    return isAdmin ? 'DC / SDDC' : 'Yard Officer';
+    return isAdmin ? 'DC / SDDC' : 'Officer';
   }
 
   /// Yard officer (front-line yard staff, not a directorate account).
@@ -1037,7 +1037,7 @@ const Map<String, String> kExpenseKinds = {
 /// so the role alone cannot tell them apart -- which is why the post is its
 /// own field rather than being derived from the role.
 const Map<String, String> kPostTitles = {
-  'officer': 'Yard Officer',
+  'officer': 'Officer',
   'dc': 'DC (Deputy Commissioner)',
   'sddc': 'SDDC (Senior Deputy Commissioner)',
 };

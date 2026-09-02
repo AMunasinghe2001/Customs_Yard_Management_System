@@ -203,7 +203,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               _loadData();
 
               final emailed = res['emailed'] == true;
-              final roleLabel = kPostTitles[selectedPost] ?? 'Yard Officer';
+              final roleLabel = kPostTitles[selectedPost] ?? 'Officer';
               final yardLabel = yardByCode(selectedYard).name;
               final dirLabel = directorateName(selectedDirectorate);
 

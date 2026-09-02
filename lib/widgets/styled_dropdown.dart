@@ -322,6 +322,28 @@ class _StyledDropdownContentState<T>
     extends State<_StyledDropdownContent<T>> {
   int _page = 0;
 
+  /// Shows a search box once the list is long enough to page.
+  ///
+  /// Paging through several pages to reach a known yard, warehouse or category
+  /// is slow and easy to overshoot, and some of these lists run to five pages.
+  /// Typing narrows them in place instead. A list that fits on one page needs
+  /// no box -- everything is already visible.
+  static const int _searchAbove = 8;
+
+  final _searchCtrl = TextEditingController();
+  String _query = '';
+
+  bool get _searchable => widget.options.length > _searchAbove;
+
+  /// The options matching the current query, in their original order.
+  List<StyledDropdownOption<T>> get _filtered {
+    if (_query.trim().isEmpty) return widget.options;
+    final q = _query.trim().toLowerCase();
+    return widget.options
+        .where((o) => o.label.toLowerCase().contains(q))
+        .toList();
+  }
+
   @override
   void initState() {
     super.initState();
@@ -333,12 +355,20 @@ class _StyledDropdownContentState<T>
   }
 
   @override
+  void dispose() {
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final options = _filtered;
     final totalPages =
-        (widget.options.length / widget.perPage).ceil().clamp(1, 9999);
-    final start = _page * widget.perPage;
-    final pageOptions =
-        widget.options.skip(start).take(widget.perPage).toList();
+        (options.length / widget.perPage).ceil().clamp(1, 9999);
+    // The query can shorten the list past the page being shown.
+    final page = _page.clamp(0, totalPages - 1);
+    final start = page * widget.perPage;
+    final pageOptions = options.skip(start).take(widget.perPage).toList();
 
     final innerWidth = widget.menuWidth - 24; // padding 12 each side
     final cellWidth = widget.columns <= 1
@@ -353,6 +383,60 @@ class _StyledDropdownContentState<T>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (_searchable) ...[
+              SizedBox(
+                width: innerWidth,
+                child: TextField(
+                  controller: _searchCtrl,
+                  autofocus: true,
+                  style: TextStyle(
+                      color: context.colors.textPrimary, fontSize: 13),
+                  decoration: InputDecoration(
+                    hintText: 'Type to search\u2026',
+                    hintStyle: TextStyle(
+                        color: context.colors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.search_rounded,
+                        size: 18, color: context.colors.primaryGold),
+                    suffixIcon: _query.isEmpty
+                        ? null
+                        : IconButton(
+                            icon: Icon(Icons.clear_rounded,
+                                size: 16, color: context.colors.textMuted),
+                            onPressed: () {
+                              _searchCtrl.clear();
+                              setState(() {
+                                _query = '';
+                                _page = 0;
+                              });
+                            },
+                          ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide:
+                            BorderSide(color: context.colors.borderColor)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide:
+                            BorderSide(color: context.colors.borderColor)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                        borderSide: BorderSide(
+                            color: context.colors.primaryGold, width: 1.5)),
+                  ),
+                  onChanged: (v) => setState(() {
+                    _query = v;
+                    // A narrowed list is shorter, so start it from the top.
+                    _page = 0;
+                  }),
+                ),
+              ),
+              const Gap(10),
+            ],
+            // "All" is a reset, not an option: it stays put while a query
+            // narrows the list, so clearing the filter is always one tap away.
             if (widget.includeAll) ...[
               _StyledDropdownCell(
                 label: widget.allLabel,
@@ -364,6 +448,17 @@ class _StyledDropdownContentState<T>
               ),
               const Gap(10),
             ],
+            if (pageOptions.isEmpty)
+              SizedBox(
+                width: innerWidth,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 18),
+                  child: Text('No match for that search',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 12.5)),
+                ),
+              ),
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -389,13 +484,13 @@ class _StyledDropdownContentState<T>
                     icon: const Icon(Icons.chevron_left_rounded, size: 20),
                     tooltip: 'Previous',
                     visualDensity: VisualDensity.compact,
-                    color: _page > 0
+                    color: page > 0
                         ? context.colors.primaryGold
                         : context.colors.textMuted.withOpacity(0.4),
                     onPressed:
-                        _page > 0 ? () => setState(() => _page--) : null,
+                        page > 0 ? () => setState(() => _page = page - 1) : null,
                   ),
-                  Text('${_page + 1} / $totalPages',
+                  Text('${page + 1} / $totalPages',
                       style: TextStyle(
                           color: context.colors.textSecondary,
                           fontSize: 12,
@@ -404,11 +499,11 @@ class _StyledDropdownContentState<T>
                     icon: const Icon(Icons.chevron_right_rounded, size: 20),
                     tooltip: 'Next',
                     visualDensity: VisualDensity.compact,
-                    color: _page < totalPages - 1
+                    color: page < totalPages - 1
                         ? context.colors.primaryGold
                         : context.colors.textMuted.withOpacity(0.4),
-                    onPressed: _page < totalPages - 1
-                        ? () => setState(() => _page++)
+                    onPressed: page < totalPages - 1
+                        ? () => setState(() => _page = page + 1)
                         : null,
                   ),
                 ],
