@@ -1240,3 +1240,11 @@ Both were reworked the day after they landed — the first cut answered the wron
 - ⚠️ **Tender Sale Sheet** was gated on `saleEnded`, i.e. it showed **closed** tenders — the opposite of a sheet carried *into* a sale. It now mirrors **Top Management's own Tender Sales page**: same rule (`items.any((i) => !i.sold)` AND window still open), plus `if (it.sold) continue;` since a sold item has left the sale. Columns: Tender No, SR Number, Goods Name, Goods Description, Qty, Yard / Warehouse (newest warehouse entry, so goods can be pulled), Latest Valuation. **Keep it matched to that page** — that is what makes report and screen agree.
 - `TenderSaleCard(readOnly: true)` said **"Pending"**, which reads as an action the *viewer* owes. Nobody watching a read-only card acts → **"Awaiting Tender"**.
 - The Top Management tender tab used `customsBlue`; the portal's accent is `AppTheme.executiveTeal`. Match the portal, not a nearby blue.
+
+### Dropdowns are searchable; the year filter rolls forward (2026-09-02)
+
+- ⚠️ **`srYears()` always includes the current AND next year** (`lib/widgets/year_filter.dart`), on top of whatever the SR numbers carry. Built from data alone it went stale every **1 January** — nothing registered yet, so the year being worked in was missing from the filter meant to find it. Both come from `DateTime.now`, so it advances with no yearly edit; the `now:` parameter exists so tests can pin a date. Every year dropdown in the app reads this one function.
+- **Every dropdown in the app is searchable.** `_StyledDropdownContentState` in `lib/widgets/styled_dropdown.dart` shows a search box once `options.length > 8` (a list that fits on one page needs none) and filters on the label, case-insensitively. One widget backs `StyledDropdownButton` and `StyledDropdownFormField`, so the change reached everything at once — don't add per-screen search.
+  - "All" is rendered **outside** the filtered grid: it is a reset, not an option, and must stay one tap away while a query narrows the list.
+  - `page` is clamped against the *filtered* length; typing also resets `_page = 0`.
+- `kPostTitles['officer']` is **'Officer'**, not 'Yard Officer' — the other two name the post plainly ('DC (Deputy Commissioner)', 'SDDC (…)') and the odd one out made the list look admins-only. `ProfileModel.postTitle`'s fallback matches.
