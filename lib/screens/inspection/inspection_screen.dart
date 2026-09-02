@@ -835,7 +835,21 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                                             return;
                                           }
                                           setState(() => _srDocType = v);
-                                          _generateNextSr();
+                                          // Keep the serial the officer is
+                                          // already looking at: this is a
+                                          // correction to the number's
+                                          // REGISTER, not a request for a
+                                          // different number. Only when there
+                                          // is nothing to rewrite do we mint
+                                          // one from the new register's count.
+                                          final swapped = withSrDocType(
+                                              _srNumberCtrl.text, v);
+                                          if (swapped != null) {
+                                            setState(() =>
+                                                _srNumberCtrl.text = swapped);
+                                          } else {
+                                            _generateNextSr();
+                                          }
                                         },
                                       ),
                                     ),

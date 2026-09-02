@@ -108,10 +108,14 @@ List<String> directoratesForYard(String? yardCode) =>
 
 /// The register a number belongs to — the segment after the yard.
 ///
-/// A yard keeps more than one register, and each runs its OWN serial: the
-/// number after `SR/87` is `SR/88`, never `OA/88`, and an OA number can never
-/// continue an SR one. They are separate books that happen to share a yard and
-/// a year, so every serial lookup must be scoped by type as well.
+/// A yard keeps more than one register, and each runs its OWN serial when a
+/// number is MINTED: the next free `SR` is counted among `SR` numbers only,
+/// and the next free `OA` among `OA` numbers only. So `getNextSrNumber` scopes
+/// its scan by type.
+///
+/// Switching the register on a number already on screen is a different thing —
+/// a correction, not a request for another number — and keeps the serial. See
+/// [withSrDocType].
 ///
 /// Goods registered under either type are the same goods everywhere else in
 /// the app — the type changes how a number is minted, nothing about how the
@@ -158,6 +162,37 @@ String composeSrNumber({
       : docType.trim().toUpperCase();
   final body = '$yardPrefix/$type/${serial.toString().padLeft(2, '0')}/$year';
   return dir.isEmpty ? body : '$dir/$body';
+}
+
+/// Swaps the REGISTER segment of [srNumber], leaving the serial alone.
+///
+/// Switching the register on the registration form is a correction -- "this
+/// should have been an OA, not an SR" -- about a number the officer is already
+/// looking at. Re-minting from the other register's own count moved the serial
+/// out from under them, so a number they had just read changed to something
+/// else. The serial, yard, directorate and year all stay; only the register
+/// segment changes.
+///
+/// Returns null when [srNumber] is not a shape this can rewrite, so the caller
+/// can fall back to minting a fresh number.
+String? withSrDocType(String srNumber, String docType) {
+  final trimmed = srNumber.trim();
+  if (trimmed.isEmpty) return null;
+  final type = docType.trim().toUpperCase();
+  if (!isSrDocType(type)) return null;
+
+  final bare = stripDirectoratePrefix(trimmed);
+  final parts = bare.split('/');
+  // <YARD>/<REGISTER>/<serial>/<year>
+  if (parts.length < 4) return null;
+  if (!isSrDocType(parts[1])) return null;
+
+  parts[1] = type;
+  final rebuilt = parts.join('/');
+  // Put back whatever prefix was in front, so a directorate-prefixed number
+  // stays prefixed.
+  final prefixLen = trimmed.length - bare.length;
+  return prefixLen > 0 ? trimmed.substring(0, prefixLen) + rebuilt : rebuilt;
 }
 
 /// Strips a leading directorate prefix, if present.

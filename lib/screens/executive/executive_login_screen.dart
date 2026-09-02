@@ -486,10 +486,13 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                             onPressed: () => context.go('/'),
                           ),
                           const Gap(8),
-                          Text('Executive Sign In',
+                          // Named for the DIRECTORATE, like every other
+                          // portal (Appeal / Disposal / Valuation Sign In).
+                          // 'Executive' named an office nothing else calls it.
+                          Text('Top Management Sign In',
                               style:
                                   Theme.of(context).textTheme.headlineMedium),
-                        ]),
+                        ]).animate().fadeIn(duration: 400.ms),
                         const Gap(8),
                         Padding(
                           padding: const EdgeInsets.only(left: 48),
@@ -504,10 +507,14 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                               style: TextStyle(
                                   color: context.colors.textSecondary,
                                   fontSize: 14)),
-                        ),
+                        ).animate().fadeIn(delay: 100.ms),
                         const Gap(36),
                         if (_success != null && _otpStage) ...[
-                          _banner(context, _success!, accent,
+                          // Green, not the portal accent: this is a
+                          // confirmation that the code went out, and it has to
+                          // read as one on every portal alike.
+                          _banner(context, _success!,
+                              context.colors.successGreen,
                               Icons.check_circle_outline),
                           const Gap(16),
                         ],

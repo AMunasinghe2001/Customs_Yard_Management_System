@@ -3212,16 +3212,39 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                       context.colors.dangerRed);
                                 }
                                 if (widget.readOnly) {
-                                  // "Pending" read as something the VIEWER
-                                  // owed an action on. Nobody watching this
-                                  // card acts: the item is simply waiting for
-                                  // Central Disposal to run the tender, and
-                                  // the label now says which.
-                                  return _statusChip(
-                                      context,
-                                      'Awaiting Tender',
-                                      Icons.hourglass_top_rounded,
-                                      context.colors.warningAmber);
+                                  // A watcher cannot act, so the chip reports
+                                  // where the SALE has got to rather than
+                                  // asking for anything. "Pending" said
+                                  // nothing about which of four quite
+                                  // different situations this was, and read as
+                                  // an action the viewer owed.
+                                  final stage = widget.sale.stage;
+                                  return Tooltip(
+                                    message: stage.description,
+                                    child: _statusChip(
+                                        context,
+                                        stage.label,
+                                        switch (stage) {
+                                          TenderStage.open =>
+                                            Icons.event_available_rounded,
+                                          TenderStage.running =>
+                                            Icons.gavel_rounded,
+                                          TenderStage.awaitingDecision =>
+                                            Icons.hourglass_top_rounded,
+                                          TenderStage.lapsed =>
+                                            Icons.lock_clock_rounded,
+                                        },
+                                        switch (stage) {
+                                          // Bidding under way is the only
+                                          // state where something is actively
+                                          // happening.
+                                          TenderStage.running =>
+                                            context.colors.successGreen,
+                                          TenderStage.lapsed =>
+                                            context.colors.textMuted,
+                                          _ => context.colors.warningAmber,
+                                        }),
+                                  );
                                 }
                                 final canSell = widget.sale.saleTimePassed;
                                 final btnRow = FittedBox(

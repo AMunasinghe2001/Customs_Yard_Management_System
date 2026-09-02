@@ -78,14 +78,28 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
       final list = await ref.read(ictServiceProvider).getAllYardStaff(
             yard: yardArg,
             directorate: directorateArg,
-            role: _selectedRole == 'all' ? null : _selectedRole,
+            // The query speaks in permission roles; _selectedRole holds a
+            // POST. Send the role it carries, then narrow to the exact post
+            // below -- DC and SDDC both come back as 'admin'.
+            role: _selectedRole == 'all' ? null : kPostRoles[_selectedRole],
             query: _searchCtrl.text.trim(),
             activeOnly: _selectedStatus == 'active'
                 ? true
                 : (_selectedStatus == 'inactive' ? false : null),
           );
       setState(() {
-        _staffList = list;
+        // DC and SDDC both come back as 'admin', so the exact post is settled
+        // here. An account provisioned before ICT recorded a post has none:
+        // fall back to what its role implies, so it is not filtered away.
+        _staffList = _selectedRole == 'all'
+            ? list
+            : list.where((p) {
+                final post = p.jobRole?.trim();
+                if (post != null && kPostTitles.containsKey(post)) {
+                  return post == _selectedRole;
+                }
+                return kPostRoles[_selectedRole] == p.role;
+              }).toList();
         _isLoading = false;
         _error = null;
       });
@@ -1146,10 +1160,14 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                           icon: Icons.badge_rounded,
                           accent: accent,
                           value: _selectedRole,
-                          options: const [
-                            StyledDropdownOption('all', 'All Roles'),
-                            StyledDropdownOption('admin', 'DC / SDDC'),
-                            StyledDropdownOption('officer', 'Officer'),
+                          // Posts, not permission roles: DC and SDDC share the
+                          // 'admin' role, so filtering by role alone could
+                          // never tell them apart and the two had to be listed
+                          // as one entry.
+                          options: [
+                            const StyledDropdownOption('all', 'All Roles'),
+                            for (final e in kPostTitles.entries)
+                              StyledDropdownOption(e.key, e.value),
                           ],
                           onChanged: (v) {
                             setState(() => _selectedRole = v ?? 'all');
@@ -1362,7 +1380,10 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                             ),
                                           ),
                                           child: Text(
-                                            staff.isAdmin ? 'DC / SDDC' : 'OFFICER',
+                                            // The POST held. This read
+                                            // "DC / SDDC" for both, which are
+                                            // two different posts.
+                                            staff.postShortTitle.toUpperCase(),
                                             style: TextStyle(
                                               color: staff.isAdmin
                                                   ? context.colors.primaryGold

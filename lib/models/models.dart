@@ -854,6 +854,20 @@ class ProfileModel {
     return isAdmin ? 'DC / SDDC' : 'Officer';
   }
 
+  /// [postTitle] shortened for a chip or badge.
+  ///
+  /// The full title carries the expansion ("DC (Deputy Commissioner)"), which
+  /// overflows a table row. Falls back to the same "DC / SDDC" as [postTitle]
+  /// for an account with no post recorded -- the two cannot be told apart
+  /// without one.
+  String get postShortTitle {
+    final j = jobRole?.trim();
+    if (j != null && j.isNotEmpty) {
+      return kPostShortTitles[j] ?? kPostTitles[j] ?? j;
+    }
+    return isAdmin ? 'DC / SDDC' : 'Officer';
+  }
+
   /// Yard officer (front-line yard staff, not a directorate account).
   bool get isOfficer => role == 'officer';
 
@@ -1040,6 +1054,14 @@ const Map<String, String> kPostTitles = {
   'officer': 'Officer',
   'dc': 'DC (Deputy Commissioner)',
   'sddc': 'SDDC (Senior Deputy Commissioner)',
+};
+
+/// The SHORT form of each post, for a table chip or a badge where the full
+/// title would overflow the row.
+const Map<String, String> kPostShortTitles = {
+  'officer': 'Officer',
+  'dc': 'DC',
+  'sddc': 'SDDC',
 };
 
 /// The permission role each post carries.
@@ -2192,6 +2214,33 @@ class TenderSaleItemModel {
   String? get effectiveYard => yard.isNotEmpty ? yard : forfeited?.yard;
 }
 
+/// The stage a tender sale has reached, in order.
+///
+/// Read off the sale's own three moments -- it opens when it is created, starts
+/// at [TenderSaleModel.saleMoment], closes at [TenderSaleModel.saleEndMoment],
+/// and its items lapse to Unsold at [TenderSaleModel.unsoldDeadline].
+enum TenderStage {
+  /// Announced, bidding not yet started.
+  open('Tender Open', 'Bidding has not started yet'),
+
+  /// Bidding is under way.
+  running('Tender Started', 'Bidding is open'),
+
+  /// Bidding has closed; Central Disposal is marking each item sold or unsold.
+  awaitingDecision('Awaiting Decision', 'Central Disposal is deciding'),
+
+  /// The window to decide has passed; anything unmarked has gone to Unsold.
+  lapsed('Tender Closed', 'The window to decide has passed');
+
+  /// The chip's label.
+  final String label;
+
+  /// What it means, for a tooltip.
+  final String description;
+
+  const TenderStage(this.label, this.description);
+}
+
 class TenderSaleModel {
   final String id;
   final String? saleNumber;
@@ -2259,6 +2308,26 @@ class TenderSaleModel {
     final moment = saleEndMoment;
     if (moment == null) return false;
     return DateTime.now().isAfter(moment);
+  }
+
+  /// Where this sale has got to, for a watcher who cannot act on it.
+  ///
+  /// "Pending" said nothing about which of four quite different situations the
+  /// item was in, and read as an action the viewer owed. These do not: each
+  /// names what the SALE is doing, and the last one names who is being waited
+  /// on.
+  TenderStage get stage {
+    if (saleEnded) {
+      // Bidding is over. Until the deadline passes, Central Disposal is
+      // deciding each item; after it, an unmarked item has lapsed to Unsold.
+      final deadline = unsoldDeadline;
+      if (deadline != null && DateTime.now().isAfter(deadline)) {
+        return TenderStage.lapsed;
+      }
+      return TenderStage.awaitingDecision;
+    }
+    if (saleTimePassed) return TenderStage.running;
+    return TenderStage.open;
   }
 
   /// The moment the package leaves this sale as UNSOLD: the END of the next

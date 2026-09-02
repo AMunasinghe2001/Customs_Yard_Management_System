@@ -138,9 +138,11 @@ void main() {
   group('the ICT form writes the post it collected', () {
     final ict = _read('lib/screens/ict/ict_dashboard_screen.dart');
 
-    test('both dialogs offer all three posts from the shared map', () {
-      expect('for (final e in kPostTitles.entries)'.allMatches(ict).length, 2,
-          reason: 'the Add and Edit dialogs must offer the same posts');
+    test('every post picker is built from the shared map', () {
+      // Add, Edit and the Role Filter -- so a post added to kPostTitles shows
+      // up in all three without another edit.
+      expect('for (final e in kPostTitles.entries)'.allMatches(ict).length, 3,
+          reason: 'the two dialogs and the filter must offer the same posts');
     });
 
     test('the Edit dialog uses the same styled dropdown as Add', () {

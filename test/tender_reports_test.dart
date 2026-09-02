@@ -126,15 +126,17 @@ void main() {
     });
   });
 
-  group('the read-only status names who is waiting on what', () {
+  group('the read-only status names where the sale has got to', () {
     final disposal = _read('lib/screens/disposal/disposal_dashboard_screen.dart');
 
-    test('a watched item says it is awaiting the tender, not "Pending"', () {
-      // "Pending" read as an action the VIEWER owed. Nobody watching a
-      // read-only card acts.
-      expect(disposal, contains("'Awaiting Tender'"));
+    test('a watched item reports the tender STAGE, not "Pending"', () {
+      // "Pending" read as an action the VIEWER owed, and said nothing about
+      // which of four situations the sale was in. See the stage tests in
+      // register_swap_and_portal_polish_test.dart.
       final ro = disposal.substring(disposal.indexOf('if (widget.readOnly) {'));
-      expect(ro.substring(0, 600), isNot(contains("'Pending'")));
+      final block = ro.substring(0, 1400);
+      expect(block, contains('widget.sale.stage'));
+      expect(block, isNot(contains("'Pending'")));
     });
   });
 
