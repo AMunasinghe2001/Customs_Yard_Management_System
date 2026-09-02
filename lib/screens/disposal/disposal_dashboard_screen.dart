@@ -3212,10 +3212,15 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                       context.colors.dangerRed);
                                 }
                                 if (widget.readOnly) {
+                                  // "Pending" read as something the VIEWER
+                                  // owed an action on. Nobody watching this
+                                  // card acts: the item is simply waiting for
+                                  // Central Disposal to run the tender, and
+                                  // the label now says which.
                                   return _statusChip(
                                       context,
-                                      'Pending',
-                                      Icons.schedule_rounded,
+                                      'Awaiting Tender',
+                                      Icons.hourglass_top_rounded,
                                       context.colors.warningAmber);
                                 }
                                 final canSell = widget.sale.saleTimePassed;

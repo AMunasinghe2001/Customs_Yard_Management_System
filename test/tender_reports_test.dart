@@ -27,7 +27,7 @@ void main() {
   String block(String label, String next) => reports.substring(
       reports.indexOf("case '$label':"), reports.indexOf("case '$next':"));
 
-  group('All Tenders — the register of tenders', () {
+  group('All Tenders — every tender, by the goods that went into it', () {
     final b = block('all_tenders', 'tender_day');
 
     test('every portal gets the card', () {
@@ -40,27 +40,37 @@ void main() {
       expect(reports, contains("_stockRevenueReport('all_tenders', 'excel')"));
     });
 
-    test('one row per SALE, not per item', () {
-      expect(b, contains("headline = '\${rows.length} tender sales';"));
-      expect(b, contains("'Tender No'"));
-      expect(b, contains("'Sold'"));
-      expect(b, contains("'Unsold'"));
-      expect(b, contains("'Proceeds (LKR)'"));
+    test('it lists the GOODS, with the tender they went into', () {
+      expect(b, contains("headline = '\${rows.length} goods';"));
+      for (final col in [
+        "'Tender No'",
+        "'Sale Date'",
+        "'SR Number'",
+        "'Goods Name'",
+        "'Qty'",
+        "'Latest Valuation (LKR)'",
+        "'Sold Price (LKR)'",
+      ]) {
+        expect(b, contains(col), reason: '$col is missing from All Tenders');
+      }
     });
 
-    test('open and closed tenders both appear, labelled', () {
-      // Unlike the sale sheet, this is a register: nothing is withheld.
-      expect(b, contains("sale.saleEnded ? 'Closed' : 'Open'"));
-      expect(b, isNot(contains('where((sale) => sale.saleEnded')));
+    test('a sold item shows its price; an unsold one says so', () {
+      // "No price" and "sold for nothing" are different facts.
+      expect(b, contains("it.sold ? money.format(it.soldPrice) : '—'"));
+      expect(b, contains("it.sold ? 'Sold' : 'Unsold'"));
+    });
+
+    test('open tenders are not withheld', () {
+      // Unlike the sale sheet, this is the historical register.
+      expect(b, isNot(contains('sale.saleEnded &&')));
     });
 
     test('the yard filter matches per item, not per sale', () {
-      // A sale can mix items from a multi-directorate yard.
+      // A sale can mix items from a multi-directorate yard, so the
+      // sale-level yard code cannot tell them apart.
       expect(b, contains('sale.items.any((i) => i.yard == _yardArg)'));
-    });
-
-    test('proceeds count only what actually sold', () {
-      expect(b, contains('items\n                .where((i) => i.sold)'));
+      expect(b, contains('if (_yardArg != null && it.yard != _yardArg) continue;'));
     });
   });
 
@@ -75,25 +85,65 @@ void main() {
       expect(before, contains('if (widget.executiveMode)'));
     });
 
-    test('it lists goods with their valuation', () {
-      expect(b, contains("'Valuation (LKR)'"));
-      expect(b, contains("'Qty'"));
-      expect(b, contains('money.format(unit * qty)'));
+    test('it carries exactly the columns the DG needs at the sale', () {
+      for (final col in [
+        "'Tender No'",
+        "'SR Number'",
+        "'Goods Name'",
+        "'Goods Description'",
+        "'Qty'",
+        "'Yard / Warehouse'",
+        "'Latest Valuation (LKR)'",
+      ]) {
+        expect(b, contains(col), reason: '$col is missing from the sale sheet');
+      }
     });
 
-    test('ONLY closed tenders contribute rows', () {
-      // The valuation is the reserve price: it may not be shown while
-      // bidding is open. This is what makes the report empty until a tender
-      // closes, and fill again on the next one.
-      expect(b, contains('sale.saleEnded &&'));
+    test('it mirrors the Tender Sales PAGE, not the closed-tender history', () {
+      // Same rule that page applies: unsold items remaining AND the window
+      // still open. That is what makes the report empty exactly when the
+      // page is empty.
+      expect(b, contains('sale.items.any((i) => !i.sold)'));
+      expect(b, contains('DateTime.now().isAfter(sale.unsoldDeadline!)'));
+    });
+
+    test('an item already sold has left the sale, so it is skipped', () {
+      expect(b, contains('if (it.sold) continue;'));
+    });
+
+    test('the location comes from the newest warehouse entry', () {
+      // So the goods can actually be pulled for the sale.
+      expect(b, contains('b.admittedAt.compareTo(a.admittedAt)'));
+      expect(b, contains('w.warehouseName'));
     });
 
     test('the card stays on the page even with nothing to report', () {
-      // The user asked for exactly this: the div stays, the rows come and go.
+      // The rows come and go; the card does not.
       final idx = reports.indexOf("title: 'Tender Sale Sheet'");
       final card = reports.substring(idx, idx + 900);
       expect(card, isNot(contains('rows.isEmpty')));
-      expect(card, contains('available once the tender closes'));
+      expect(card, contains('to carry into the sale'));
+    });
+  });
+
+  group('the read-only status names who is waiting on what', () {
+    final disposal = _read('lib/screens/disposal/disposal_dashboard_screen.dart');
+
+    test('a watched item says it is awaiting the tender, not "Pending"', () {
+      // "Pending" read as an action the VIEWER owed. Nobody watching a
+      // read-only card acts.
+      expect(disposal, contains("'Awaiting Tender'"));
+      final ro = disposal.substring(disposal.indexOf('if (widget.readOnly) {'));
+      expect(ro.substring(0, 600), isNot(contains("'Pending'")));
+    });
+  });
+
+  group('the Top Management tender page uses its own accent', () {
+    final tab = _read('lib/screens/executive/tender_sales_view_tab.dart');
+
+    test('teal, like the rest of the portal — not a second blue', () {
+      expect(tab, contains('AppTheme.executiveTeal'));
+      expect(tab, isNot(contains('context.colors.customsBlue')));
     });
   });
 

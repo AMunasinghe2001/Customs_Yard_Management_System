@@ -37,7 +37,10 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.colors.customsBlue;
+    // The portal's own accent, so the yard dropdown and the count chip match
+    // the tab strip above them. This was customsBlue, which is a different
+    // blue from the teal every other Top Management control uses.
+    final accent = AppTheme.executiveTeal;
     final async = ref.watch(tenderSalesProvider);
 
     return Padding(
