@@ -113,6 +113,11 @@ void main() {
             packageDestroyedDeliveredMapProvider.overrideWith(
               (ref) => Future.value(const <String, bool>{}),
             ),
+            // The Destruction Expenses column reads the SR's recorded costs,
+            // so rendering the table opens a real socket without this.
+            srFinancialsProvider.overrideWith(
+              (ref) => Future.value(const <SrFinancials>[]),
+            ),
           ],
           child: MaterialApp(
             theme: AppTheme.darkTheme,

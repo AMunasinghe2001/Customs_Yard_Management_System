@@ -1267,7 +1267,13 @@ bool _isDestroyedEntry(WarehouseEntryModel e) {
   final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
   if (m == null) return false;
   final tag = m.group(1)!.trim();
-  return tag == 'FINAL:DESTROYED' || tag == 'DESTROYED' || tag == 'DESTROY';
+  // 'FINAL:DESTROY' (no ED) is the PENDING tag disposeWarehouseItem writes.
+  // It belongs on this tab too -- the row shows a Pending status until the
+  // yard confirms the destruction, which rewrites it as FINAL:DESTROYED.
+  return tag == 'FINAL:DESTROYED' ||
+      tag == 'FINAL:DESTROY' ||
+      tag == 'DESTROYED' ||
+      tag == 'DESTROY';
 }
 
 class _DestroyedPackagesTab extends ConsumerStatefulWidget {

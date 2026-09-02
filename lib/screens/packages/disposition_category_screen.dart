@@ -69,7 +69,17 @@ class _DispositionCategoryScreenState
   // finalTag to every bracket tag that belongs to it.
   static const Map<String, Set<String>> _acceptedTags = {
     'RE-EXPORTED': {'FINAL:RE-EXPORTED', 'RE-EXPORTED', 'RE-EXPORT'},
-    'DESTROYED': {'FINAL:DESTROYED', 'DESTROYED', 'DESTROY', 'SUPPOSED TO BE DESTROYED'},
+    // ⚠️ 'FINAL:DESTROY' (no ED) is the PENDING tag disposeWarehouseItem
+    // writes -- it upper-cases the action name, and the action is
+    // "Destroy". Without it here a package marked for destruction never
+    // reached this page at all, so it could never be confirmed.
+    'DESTROYED': {
+      'FINAL:DESTROYED',
+      'FINAL:DESTROY',
+      'DESTROYED',
+      'DESTROY',
+      'SUPPOSED TO BE DESTROYED'
+    },
     'SOLD': {'FINAL:SOLD', 'SOLD'},
     'OTHER': {'FINAL:OTHER', 'OTHER'},
   };
@@ -491,6 +501,14 @@ class _DispositionCategoryScreenState
                                   size: ColumnSize.M),
                             if (widget.finalTag == 'SOLD')
                               const DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
+                            // What the destruction actually cost -- the same
+                            // SR-level figure Central Disposal's own Destroyed
+                            // Goods table shows, so the yard can see the spend
+                            // without opening the popup.
+                            if (widget.finalTag == 'DESTROYED')
+                              const DataColumn2(
+                                  label: Text('Destruction Expenses'),
+                                  size: ColumnSize.M),
                             if (widget.finalTag == 'DESTROYED')
                               const DataColumn2(label: Center(child: Text('Destroyed')), fixedWidth: 155),
                             const DataColumn2(
@@ -569,6 +587,9 @@ class _DispositionCategoryScreenState
                                         receipt: _parseSaleReceipt(
                                             row.entry?.returnNotes),
                                       ))),
+                                    if (widget.finalTag == 'DESTROYED')
+                                      DataCell(_YardDestructionExpenseCell(
+                                          package: row.package)),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(Center(
                                         child: _MarkDestroyedCell(
@@ -820,6 +841,34 @@ class _SaleValuationCell extends ConsumerWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// What the destruction cost, read from the SR's recorded expenses -- the same
+/// figure Central Disposal's own Destroyed Goods table shows, so the yard sees
+/// the spend without opening the popup. Blank until Central Disposal records
+/// it: a real zero, never an invented placeholder.
+class _YardDestructionExpenseCell extends ConsumerWidget {
+  final PackageModel package;
+  const _YardDestructionExpenseCell({required this.package});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final fmt = NumberFormat('#,##0.00');
+    final sr = ref.watch(srFinancialsProvider).valueOrNull?.where((f) {
+      return f.srNumber.trim() == package.srNumber.trim();
+    }).firstOrNull;
+    final spent = sr?.depositSpent ?? 0;
+    if (spent <= 0) {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    return TooltipText(
+      'LKR ${fmt.format(spent)}',
+      style: TextStyle(
+          color: context.colors.dangerRed,
+          fontWeight: FontWeight.w700,
+          fontSize: 12),
     );
   }
 }
