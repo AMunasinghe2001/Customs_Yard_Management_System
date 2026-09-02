@@ -61,8 +61,8 @@ void main() {
 
   group('the tab is wired into the ICT dashboard', () {
     test('the controller has room for it', () {
-      expect(dash, contains('TabController(length: 3, vsync: this)'),
-          reason: 'a third tab needs a third slot, or the view throws');
+      expect(dash, contains('TabController(length: 4, vsync: this)'),
+          reason: 'every tab needs a slot, or the view throws');
       expect(dash, contains("Text('Activity Logs')"));
       expect(dash, contains('ActivityLogsTab(accent: accent)'));
     });
@@ -71,7 +71,7 @@ void main() {
       // A TabBar with more tabs than the controller allows throws at build.
       final tabsBlock =
           dash.substring(dash.indexOf('tabs: const ['), dash.indexOf('// ── Body Content'));
-      expect('Tab('.allMatches(tabsBlock).length, 3);
+      expect('Tab('.allMatches(tabsBlock).length, 4);
     });
   });
 

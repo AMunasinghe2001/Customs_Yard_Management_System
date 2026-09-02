@@ -15,6 +15,7 @@ import '../../widgets/account_cells.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import 'activity_logs_tab.dart';
+import 'directorate_access_tab.dart';
 import 'yard_directorate_tab.dart';
 
 /// ICT Directorate Portal: Central user provisioning and management for
@@ -29,12 +30,13 @@ class IctDashboardScreen extends ConsumerStatefulWidget {
 class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     with SingleTickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
-  /// 0 = Staff Accounts, 1 = Yards & Directorates, 2 = Activity Logs.
+  /// 0 = Staff Accounts, 1 = Yards & Directorates, 2 = Directorate Access,
+  /// 3 = Activity Logs.
   ///
   /// A TabController rather than a plain int so the pages can also be SWIPED,
   /// the way every other directorate's tabs work. The custom tab strip below
   /// both drives it and follows it.
-  late final TabController _tabs = TabController(length: 3, vsync: this)
+  late final TabController _tabs = TabController(length: 4, vsync: this)
     ..addListener(() {
       if (mounted) setState(() {});
     });
@@ -985,6 +987,16 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                           mainAxisSize: MainAxisSize.min,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
+                            Icon(Icons.vpn_key_rounded, size: 18),
+                            Gap(8),
+                            Text('Directorate Access'),
+                          ])),
+                  Tab(
+                      height: 44,
+                      child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
                             Icon(Icons.history_rounded, size: 18),
                             Gap(8),
                             Text('Activity Logs'),
@@ -1456,6 +1468,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               ),
             ),
                 YardDirectorateTab(accent: accent),
+                // Reissues a directorate account's sign-in details. Yard
+                // staff are absent: they reset their own from the login page.
+                DirectorateAccessTab(accent: accent),
                 // Every action across every office. The tab scrolls its own
                 // table, so unlike the two above it is not wrapped in a
                 // SingleChildScrollView.

@@ -1044,6 +1044,32 @@ const Map<String, String> kExpenseKinds = {
 /// The kinds Central Disposal actually RECORDS. A refund is not typed in — it
 /// is what is left of the goods' destroying deposit once these are paid, so it
 /// is derived (see [SrFinancials.refund]) rather than entered.
+/// The roles that belong to a head-office DIRECTORATE rather than a yard.
+///
+/// These accounts are institutional: they belong to a POST, and whoever holds
+/// it next may never have signed in. That is why they never auto-expire (see
+/// ProfileModel.isExpired) and why ICT reissues their credentials rather than
+/// emailing a self-service reset link.
+///
+/// ⚠️ Keep in step with the exemptions in [ProfileModel.isExpired] and
+/// [ProfileModel.daysUntilExpiry]: the same accounts, for the same reason.
+const List<String> kDirectorateRoles = [
+  'disposal',
+  'appeal',
+  'valuation',
+  'executive',
+  'ict',
+];
+
+/// The portal each directorate role signs in to, for a picker or a message.
+const Map<String, String> kDirectorateRoleNames = {
+  'disposal': 'Central Disposal Directorate',
+  'appeal': 'Appeal Directorate',
+  'valuation': 'Valuation Directorate',
+  'executive': 'Top Management Directorate',
+  'ict': 'ICT Directorate',
+};
+
 /// The posts ICT can assign to a yard account, keyed by what is stored in
 /// `profiles.job_role`.
 ///

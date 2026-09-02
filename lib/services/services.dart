@@ -2605,6 +2605,80 @@ class IctService {
   }
 
   /// Toggle Active / Inactive status of an account
+  /// Every directorate account, for the credential-reset page.
+  ///
+  /// Yard staff are excluded: they reset their own password from the login
+  /// page, and only a directorate account -- which is institutional and shared
+  /// across whoever holds the post -- needs ICT to reissue its credentials.
+  Future<List<ProfileModel>> getDirectorateAccounts() async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('profiles')
+        .select('*')
+        .inFilter('role', kDirectorateRoles)
+        .order('role'));
+    return [
+      for (final r in (rows as List))
+        ProfileModel.fromJson(r as Map<String, dynamic>)
+    ];
+  }
+
+  /// Issues a fresh username and password for a directorate account and emails
+  /// both to the address it is registered to.
+  ///
+  /// A directorate account belongs to a POST, not a person, so there is nobody
+  /// to send a "reset your own password" link to -- whoever holds the post
+  /// next may never have signed in. ICT reissues instead, and the holder
+  /// changes both from their profile once they are in.
+  ///
+  /// Returns the new username, so the page can say what was sent without
+  /// showing the password on screen: it belongs in the mailbox, not on an
+  /// office monitor.
+  Future<String> resetDirectorateCredentials(String profileId) async {
+    final row = await AuthService._withNetworkRetry(() => supabase
+        .from('profiles')
+        .select('id, full_name, role')
+        .eq('id', profileId)
+        .single());
+
+    final fullName = (row['full_name'] as String?)?.trim() ?? 'Directorate';
+    final role = (row['role'] as String?)?.trim() ?? '';
+
+    // The address is on auth.users, not profiles.
+    final userRow = await AuthService._withNetworkRetry(
+        () => supabase.from('auth.users').select('email').eq('id', profileId).single());
+    final email = (userRow['email'] as String?)?.trim() ?? '';
+    if (email.isEmpty) {
+      throw Exception('That account has no email address to send to.');
+    }
+
+    final username = await AdminService()._uniqueUsername(fullName);
+    final password = AdminService._randomOfficerPassword();
+
+    // The password first: if the email fails, the account is left reachable
+    // with credentials nobody has, so the write is what must not happen
+    // without the send. Ordering it this way means a failed send is reported
+    // and ICT can simply reissue.
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+        'reset_password_for_identifier',
+        params: {'p_identifier': email, 'p_password': password}));
+    await AuthService._withNetworkRetry(() => supabase
+        .from('profiles')
+        .update({'username': username}).eq('id', profileId));
+
+    await GmailOtpService.instance
+        .sendCredentials(email, fullName, username, password);
+
+    await AuditLogService().recordLog(
+      userId: supabase.auth.currentUser?.id,
+      action: 'Reset directorate credentials for $fullName',
+      entityType: 'auth',
+      entityId: profileId,
+      // Deliberately NOT the password.
+      details: {'role': role, 'username': username},
+    );
+    return username;
+  }
+
   Future<void> toggleUserStatus(String profileId, bool active) async {
     await supabase
         .from('profiles')
