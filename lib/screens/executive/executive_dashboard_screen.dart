@@ -11,6 +11,7 @@ import '../reports/reports_screen.dart';
 import 'tender_committee_tab.dart';
 import 'unsold_decision_tab.dart';
 import 'financials_tab.dart';
+import 'tender_sales_view_tab.dart';
 
 /// Executive Office (DG / ADG) portal. Standalone scaffold (not AppShell).
 /// Customs' two highest posts pick a yard and generate/view/print any report
@@ -31,7 +32,7 @@ class _ExecutiveDashboardScreenState
   /// never drift out of step with the number of Tab widgets — when it does,
   /// the bar still PAINTS every tab but clicks resolve against the shorter
   /// controller, so tapping does nothing while swiping still works.
-  static const int _kTabCount = 4;
+  static const int _kTabCount = 5;
 
   // Not `late final`: a hot reload keeps the old controller alive, so a
   // changed _kTabCount would leave a stale one behind. didUpdateWidget-style
@@ -223,6 +224,16 @@ class _ExecutiveDashboardScreenState
                     child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          Icon(Icons.storefront_rounded, size: 18),
+                          Gap(8),
+                          Text('Tender Sales'),
+                        ]),
+                  ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
                           Icon(Icons.account_balance_wallet_rounded, size: 18),
                           Gap(8),
                           Text('Financials'),
@@ -250,6 +261,7 @@ class _ExecutiveDashboardScreenState
               children: const [
                 TenderCommitteeTab(),
                 UnsoldDecisionTab(),
+                TenderSalesViewTab(),
                 FinancialsTab(),
                 ReportsScreen(executiveMode: true),
               ],

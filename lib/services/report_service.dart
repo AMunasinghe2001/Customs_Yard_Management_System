@@ -26,24 +26,27 @@ class ReportService {
 
   static Future<void> _loadLogo() async {
     if (_logoSvg != null && _logoSvg!.isNotEmpty) return;
-    try {
-      final raw =
-          await rootBundle.loadString('Sri_Lanka_Customs_logo_tinted.svg');
-      _logoSvg = raw.replaceAll('currentColor', '#0D47A1');
-      return;
-    } catch (e) {
-      debugPrint('report logo: tinted SVG unavailable ($e), trying plain');
+    for (final asset in const [
+      'Sri_Lanka_Customs_logo_tinted.svg',
+      'Sri_Lanka_Customs_logo.svg',
+    ]) {
+      try {
+        final raw = await rootBundle.loadString(asset);
+        if (raw.trim().isEmpty) continue;
+        // The tinted emblem paints with `currentColor`, which a PDF has no
+        // notion of -- it has to be resolved to a literal before rendering.
+        _logoSvg = raw.replaceAll('currentColor', '#0D47A1');
+        return;
+      } catch (e) {
+        debugPrint('report logo: $asset unavailable ($e)');
+      }
     }
-    try {
-      final raw = await rootBundle.loadString('Sri_Lanka_Customs_logo.svg');
-      _logoSvg = raw;
-    } catch (e) {
-      // Falling back to the lettered "SLC" monogram. Logged, because an
-      // emblem silently missing from every report reads as a design choice
-      // rather than a failed asset load.
-      debugPrint('report logo: no SVG could be loaded ($e), using SLC');
-      _logoSvg = null;
-    }
+    // Every asset failed. Left NULL rather than cached as "missing", so the
+    // next report retries: this used to be a permanent downgrade to the "SLC"
+    // monogram for the rest of the session after one transient failure --
+    // and the guard above only re-runs while _logoSvg is null.
+    _logoSvg = null;
+    debugPrint('report logo: no SVG could be loaded, using the SLC monogram');
   }
 
   /// The emblem for a report header, or the lettered fallback.
@@ -78,7 +81,16 @@ class ReportService {
   Future<void> _ensureFontsLoaded() async {
     // The emblem rides along with the fonts: every report needs both, and this
     // runs before each one is built.
-    await _loadLogo();
+    //
+    // Guarded separately from the fonts on purpose. PdfGoogleFonts reads the
+    // asset manifest and THROWS when it cannot; that used to abort this whole
+    // method, so a font problem took the emblem down with it and every report
+    // in the session fell back to the "SLC" monogram for an unrelated reason.
+    try {
+      await _loadLogo();
+    } catch (e) {
+      debugPrint('report logo: load failed ($e), using the SLC monogram');
+    }
     if (_font != null && _fontBold != null && _fontSinhala != null) return;
     _font = await PdfGoogleFonts.notoSansRegular();
     _fontBold = await PdfGoogleFonts.notoSansBold();

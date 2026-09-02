@@ -3662,83 +3662,63 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           break;
 
         case 'destroyed':
-          final destructions = await disposal.getDestructions();
-          final items = [
-            for (final dn in destructions)
-              for (final it in dn.items)
-                if (it.destroyed &&
-                    inPeriod(it.destroyedAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
-                  it
-          ];
-          title = 'GOODS DESTROYED IN DESTRUCTION TENDER';
+          // Destruction is no longer a tender: there is no buyer, so no
+          // valuation is realised and no "destroyed price" exists. What the
+          // report has to answer is what the destruction COST and what is
+          // left of the deposit -- the same figures the Destroyed Goods pages
+          // and the expense form show, read from the same provider so the
+          // three can never disagree.
+          final financials = await ref.read(srFinancialsProvider.future);
+          final bySr = {
+            for (final f in financials) f.srNumber.trim(): f,
+          };
+
+          // Every item currently marked destroyed OR pending destruction,
+          // taken from the packages themselves rather than the old
+          // destruction-tender tables.
+          final destroyedRows = <({PackageModel pkg, PackageItem item})>[];
+          for (final p in packages) {
+            for (final i in p.items ?? const <PackageItem>[]) {
+              final st = (i.status ?? '').toLowerCase();
+              if (st == 'destroyed' ||
+                  st == 'supposed to be destroyed' ||
+                  st == 'destroy') {
+                if (!inPeriod(p.updatedAt)) continue;
+                destroyedRows.add((pkg: p, item: i));
+              }
+            }
+          }
+
+          title = 'DESTROYED GOODS';
           columns = [
             'SR Number',
             'Goods Name',
-            'Goods Description',
-            'Valuation (LKR)',
-            'Destroyed Price (LKR)',
+            'Qty',
+            'Destroying Deposit (LKR)',
+            'Total Costs (LKR)',
+            'Refund (LKR)',
           ];
           rows = [];
           rowItemIds = [];
 
-          String valuationOf(ForfeitedPackageModel? f, PackageItem? match) {
-            if (f?.valuationCost != null && f!.valuationCost! > 0) {
-              final qty = f.entryQty ?? match?.quantity ?? 1;
-              return money.format(f.valuationCost! * qty);
-            }
-            if (match != null && match.unitValue > 0) {
-              return money.format(match.unitValue * match.quantity);
-            }
-            if (f?.packageDetails?.declaredValue != null &&
-                f!.packageDetails!.declaredValue > 0) {
-              return money.format(f.packageDetails!.declaredValue);
-            }
-            return '—';
+          for (final r in destroyedRows) {
+            final fin = bySr[r.pkg.srNumber.trim()];
+            final deposit = fin?.destroyingDeposit ?? 0;
+            final spent = fin?.depositSpent ?? 0;
+            // A shortfall is shown as a negative refund rather than hidden:
+            // costs CAN exceed the deposit, and the report must say so.
+            final refund = deposit - spent;
+            rows.add([
+              r.pkg.srNumber,
+              r.item.itemName,
+              '${r.item.quantity}',
+              deposit > 0 ? money.format(deposit) : '—',
+              spent > 0 ? money.format(spent) : '—',
+              (deposit > 0 || spent > 0) ? money.format(refund) : '—',
+            ]);
+            rowItemIds.add(r.item.id);
           }
 
-          String priceOf(DestructionItemModel it) =>
-              it.destroyedPrice > 0 ? money.format(it.destroyedPrice) : '—';
-
-          for (final it in items) {
-            final f = it.forfeited;
-            final pkgItems = f?.packageDetails?.items ?? const <PackageItem>[];
-            if (f?.itemId != null) {
-              final match =
-                  pkgItems.where((i) => i.id == f!.itemId).firstOrNull;
-              final name = f?.itemName ?? match?.itemName ?? '—';
-              final desc = match?.goodsDescription?.trim();
-              rows.add([
-                f?.srNumber ?? '—',
-                name,
-                (desc?.isNotEmpty == true) ? desc! : '—',
-                valuationOf(f, match),
-                priceOf(it),
-              ]);
-              rowItemIds.add(f?.itemId);
-            } else if (pkgItems.isNotEmpty) {
-              for (final i in pkgItems) {
-                final desc = i.goodsDescription?.trim();
-                rows.add([
-                  f?.srNumber ?? '—',
-                  i.itemName,
-                  (desc?.isNotEmpty == true) ? desc! : '—',
-                  valuationOf(f, i),
-                  priceOf(it),
-                ]);
-                rowItemIds.add(i.id);
-              }
-            } else {
-              rows.add([
-                f?.srNumber ?? '—',
-                f?.itemName ?? '—',
-                '—',
-                valuationOf(f, null),
-                priceOf(it),
-              ]);
-              rowItemIds.add(null);
-            }
-          }
           headline = '${rows.length} goods';
           break;
 
