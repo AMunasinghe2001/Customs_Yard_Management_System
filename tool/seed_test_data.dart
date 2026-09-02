@@ -303,6 +303,10 @@ Future<void> main() async {
   // the rulings exist -- otherwise every completed row looks like one the
   // yard finished directly.
   await _seedFinalOtherOutcomes(conn);
+  // ⚠️ LAST of all: it selects only goods that are still disposable, so every
+  // pass that RETIRES goods (released, finished as Other) must already have
+  // run -- otherwise it would tender goods that have left the yard.
+  await _seedTenderPipeline(conn);
 
   print('\n── Final counts ' + '─' * 53);
   for (final t in const [
@@ -692,6 +696,280 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
 /// package the package-level column is deliberately ignored (deciding one item
 /// must not mark its siblings decided), so writing there would produce rows the
 /// app refuses to treat as decided.
+/// Runs goods through the whole disposal-and-tender pipeline.
+///
+/// Nothing seeded any of it, so every screen downstream of "Send Disposal
+/// Request" was empty: Pending Valuation, Unsold Tenders, Tender Sales, Sold
+/// Goods and Unsold Goods. The chain is:
+///
+///   disposal_requests
+///     -> disposal_request_items   (valuation_cost, then forwarded)
+///       -> tender_sales           (a sale, with a close time)
+///         -> tender_sale_items    (sold / not sold, per item)
+///           -> tender_bids + tender_revaluations  (for a round that failed)
+///
+/// ⚠️ A request stays in the Pending Valuation feed while ANY of its items is
+/// NOT forwarded. So a request whose items are all forwarded has moved on to
+/// Central Disposal and must not be counted as pending -- and one left
+/// unforwarded is what makes that page show anything at all.
+///
+/// ⚠️ Re-tendering does NOT reuse the item's row. Each round INSERTS a new
+/// tender_sale_items row against a new sale, leaving the previous round's row
+/// untouched and still marked unsold -- that is what "times tendered" counts.
+/// Overwriting the old row would erase the history the Valuation portal reads.
+Future<void> _seedTenderPipeline(Connection conn) async {
+  // Goods that are genuinely disposable: past the appeal window, not held, not
+  // already finished. These are what a yard would actually send.
+  final rows = await conn.execute(
+    'select fp.id, fp.yard, fp.item_id, pi.unit_value, pi.quantity '
+    'from public.forfeited_packages fp '
+    'join public.package_items pi on pi.id = fp.item_id '
+    'where fp.appeal_deadline < now() '
+    '  and coalesce(fp.appeal_hold, false) = false '
+    "  and pi.status not in ('returned', 'other', 'sold', 'destroyed') "
+    'order by fp.forfeited_at asc',
+  );
+
+  if (rows.isEmpty) {
+    print('  no disposable packages -- tender pipeline skipped');
+    return;
+  }
+
+  // Split the pool across the outcomes that need to exist.
+  final pool = rows.toList();
+  var pendingValuation = 0;
+  var soldFirstRound = 0;
+  final soldOnRound = <int, int>{};
+  var stillUnsold = 0;
+  var saleSerial = 0;
+
+  // ── 1. Requests still awaiting valuation ─────────────────────────────────
+  // Left with valuation_cost null and forwarded false, which is the only
+  // state the Valuation portal's first tab shows.
+  final awaiting = pool.take(14).toList();
+  pool.removeRange(0, awaiting.length);
+  if (awaiting.isNotEmpty) {
+    final reqId = await _newDisposalRequest(
+        conn, DateTime.now().subtract(Duration(days: 2 + _rng.nextInt(9))),
+        'pending_valuation');
+    for (final r in awaiting) {
+      await conn.execute(
+        r'insert into public.disposal_request_items '
+        r'(request_id, forfeited_package_id, disposition, forwarded) '
+        r"values ($1,$2,'sale',false)",
+        parameters: [reqId, r[0] as String],
+      );
+      pendingValuation++;
+    }
+  }
+
+  // ── 2. Everything else was valued, forwarded and tendered ────────────────
+  // Each package gets a number of ROUNDS. A round that fails leaves bids and a
+  // re-valuation behind and the goods go round again -- which is exactly what
+  // the Unsold Tenders tab is for.
+  // The request currently being filled, and how many more packages go on it.
+  String? batchReqId;
+  DateTime? batchAt;
+  var batchLeft = 0;
+
+  for (final r in pool) {
+    if (_rng.nextInt(100) >= 55) continue;
+
+    final fpId = r[0] as String;
+    final itemId = r[2] as String?;
+    // ⚠️ A postgres `numeric` comes back as a STRING, not a num -- casting it
+    // straight to num? throws. Parse it instead.
+    final unitValue = double.tryParse('${r[3]}') ?? 5000;
+    final qty = (r[4] as int?) ?? 1;
+
+    // A valuation is the reserve the goods are offered at.
+    var valuation = (unitValue * qty * (0.55 + _rng.nextDouble() * 0.35))
+        .roundToDouble();
+
+    // A yard sends a BATCH, not one package at a time -- so several packages
+    // share a request, the way the Central Disposal list actually reads.
+    if (batchLeft == 0 || batchReqId == null) {
+      batchAt = DateTime.now().subtract(Duration(days: 60 + _rng.nextInt(500)));
+      batchReqId = await _newDisposalRequest(conn, batchAt!, 'forwarded');
+      batchLeft = 2 + _rng.nextInt(5);
+    }
+    batchLeft--;
+    final requestedAt = batchAt!;
+    final reqId = batchReqId!;
+    await conn.execute(
+      r'insert into public.disposal_request_items '
+      r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
+      r"values ($1,$2,'sale',$3,true)",
+      parameters: [reqId, fpId, valuation],
+    );
+
+    // How many times it goes to tender before it sells -- or never does.
+    // 1 is much the commonest: most goods sell first time.
+    final roll = _rng.nextInt(100);
+    final int rounds;
+    final bool everSells;
+    if (roll < 45) {
+      rounds = 1;
+      everSells = true;
+    } else if (roll < 62) {
+      rounds = 2;
+      everSells = true;
+    } else if (roll < 74) {
+      rounds = 3;
+      everSells = true;
+    } else if (roll < 82) {
+      rounds = 4;
+      everSells = true;
+    } else {
+      // Still going round: every round so far failed, and the last one is
+      // still sitting in the unsold pool waiting to be re-valued.
+      rounds = 1 + _rng.nextInt(3);
+      everSells = false;
+    }
+
+    var saleAt = requestedAt.add(Duration(days: 10 + _rng.nextInt(25)));
+
+    for (var round = 1; round <= rounds; round++) {
+      // The last round sells only when the goods ever sell.
+      final isLast = round == rounds;
+      final sold = isLast && everSells;
+
+      // Every sale must already have closed, or the goods are still on offer
+      // and cannot be counted sold or unsold yet.
+      if (saleAt.isAfter(DateTime.now().subtract(const Duration(days: 2)))) {
+        saleAt = DateTime.now().subtract(Duration(days: 3 + _rng.nextInt(40)));
+      }
+
+      saleSerial++;
+      final saleId = await _newTenderSale(conn, saleAt, saleSerial);
+
+      final soldPrice = sold
+          ? (valuation * (1.0 + _rng.nextDouble() * 0.45)).roundToDouble()
+          : null;
+
+      await conn.execute(
+        r'insert into public.tender_sale_items '
+        r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
+        r' sold_at, sold_price, receipt_number, is_delivered, delivered_at, created_at) '
+        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)',
+        parameters: [
+          saleId, fpId, itemId, _yard, sold,
+          sold ? saleAt : null,
+          soldPrice,
+          sold ? 'TR/$_yard/${saleAt.year}/${2000 + saleSerial}' : null,
+          sold && _rng.nextBool(),
+          sold && _rng.nextBool() ? saleAt.add(const Duration(days: 3)) : null,
+          saleAt,
+        ],
+      );
+
+      if (sold) {
+        // The goods have left the yard.
+        if (itemId != null) {
+          await conn.execute(
+            r"update public.package_items set status = 'sold' where id = $1",
+            parameters: [itemId],
+          );
+        }
+        if (round == 1) {
+          soldFirstRound++;
+        } else {
+          soldOnRound[round] = (soldOnRound[round] ?? 0) + 1;
+        }
+      } else {
+        // A failed round: the bids that came in, all under the reserve, and
+        // the re-valuation that follows from them.
+        final bidCount = _rng.nextInt(4);
+        for (var b = 0; b < bidCount; b++) {
+          await conn.execute(
+            r'insert into public.tender_bids '
+            r'(forfeited_package_id, tender_sale_id, amount, yard, created_at) '
+            r'values ($1,$2,$3,$4,$5)',
+            parameters: [
+              fpId, saleId,
+              (valuation * (0.35 + _rng.nextDouble() * 0.45)).roundToDouble(),
+              _yard, saleAt.add(Duration(hours: 1 + b)),
+            ],
+          );
+        }
+
+        // The re-valuation is only recorded when the goods go round AGAIN --
+        // the last failed round is left PENDING re-valuation on purpose, so
+        // the Valuation portal has something waiting in its second tab.
+        if (!isLast) {
+          // Goods that did not sell are worth less than the reserve said.
+          valuation = (valuation * (0.72 + _rng.nextDouble() * 0.15))
+              .roundToDouble();
+          await conn.execute(
+            r'insert into public.tender_revaluations '
+            r'(forfeited_package_id, tender_sale_id, valuation_cost, note, yard, created_at) '
+            r'values ($1,$2,$3,$4,$5,$6)',
+            parameters: [
+              fpId, saleId, valuation,
+              bidCount == 0
+                  ? 'No bids received — reserve lowered for re-tender'
+                  : 'Bids below reserve — reserve lowered for re-tender',
+              _yard, saleAt.add(const Duration(days: 1)),
+            ],
+          );
+        } else {
+          stillUnsold++;
+        }
+      }
+
+      saleAt = saleAt.add(Duration(days: 25 + _rng.nextInt(40)));
+    }
+  }
+
+  final laterRounds =
+      soldOnRound.entries.map((e) => 'round ${e.key}: ${e.value}').join(', ');
+  print('  tender pipeline:');
+  print('    $pendingValuation awaiting valuation');
+  print('    $soldFirstRound sold first time'
+      '${laterRounds.isEmpty ? '' : ' · $laterRounds'}');
+  print('    $stillUnsold still unsold (awaiting re-valuation)');
+}
+
+/// One disposal request, dated and with the valuation state given.
+Future<String> _newDisposalRequest(
+    Connection conn, DateTime at, String valuationStatus) async {
+  final res = await conn.execute(
+    r'insert into public.disposal_requests '
+    r'(yard, request_date, status, valuation_status, valued_at, created_at) '
+    r'values ($1,$2,$3,$4,$5,$6) returning id',
+    parameters: [
+      _yard,
+      _iso(at),
+      valuationStatus == 'pending_valuation' ? 'pending' : 'forwarded',
+      valuationStatus,
+      valuationStatus == 'pending_valuation' ? null : at,
+      at,
+    ],
+  );
+  return res.first.first as String;
+}
+
+/// One tender sale. The close time is in the PAST for every seeded sale, so
+/// the valuation is unsealed and the items can be counted sold or unsold.
+Future<String> _newTenderSale(
+    Connection conn, DateTime saleAt, int serial) async {
+  final res = await conn.execute(
+    r'insert into public.tender_sales '
+    r'(sale_number, sale_date, serial, year, tender_type, yard, sale_time, '
+    r' sale_end_time, created_at) '
+    r"values ($1,$2,$3,$4,'general',$5,'09:00','15:00',$6) returning id",
+    parameters: [
+      'TS/$_yard/${saleAt.year}/${serial.toString().padLeft(3, '0')}',
+      _iso(saleAt),
+      serial.toString(),
+      saleAt.year,
+      _yard,
+      saleAt,
+    ],
+  );
+  return res.first.first as String;
+}
+
 /// Finishes off a share of the "Other" goods.
 ///
 /// An "Other" item that is still being worked reads as Enabled / On Appeal

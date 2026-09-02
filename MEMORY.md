@@ -1356,3 +1356,27 @@ Only `recordFinalDisposition` produces it, and `_seedFinalOtherOutcomes` mirrors
 ⚠️ **The separator is an EM DASH.** `_finalOtherLabel` matches `[FINAL:OTHER]\s*—\s*(.+)`. A hyphen still marks the row completed but the label falls back to a bare "Other" and the outcome text is silently lost — data that looks like it works.
 
 **Both routes in are seeded**, because the yard reaches this state two ways that look identical afterwards: goods that went to appeal and came back with a ruling, and goods finished directly with no appeal. ⚠️ The appealed ones are **scarce** — only a fraction of Other items were ever ruled on — so sampling both at the same rate left barely any. A ruling is an instruction to act, so **every ruled item is carried out**; the plentiful unappealed ones are sampled. This pass must run **last**, after the rulings exist, or every completed row looks like one the yard finished directly.
+
+### The disposal-to-tender pipeline (2026-09-03)
+
+Nothing seeded any of it, so **every screen downstream of "Send Disposal Request" was empty**: Pending Valuation, Unsold Tenders, Tender Sales, Sold Goods, Unsold Goods. The chain:
+
+```
+disposal_requests
+  → disposal_request_items   (valuation_cost, then forwarded)
+    → tender_sales           (a sale, with a close time)
+      → tender_sale_items    (sold / not sold, per item)
+        → tender_bids + tender_revaluations   (for a round that failed)
+```
+
+⚠️ **Re-tendering APPENDS a round, it does not overwrite one.** Each round inserts a new `tender_sale_items` row against a new sale and leaves the previous round's row untouched and still unsold. That history is what "Times" counts and what the Valuation portal reads — overwriting would erase it and every package would read as tendered exactly once.
+
+⚠️ **A request stays in Pending Valuation while ANY of its items is unforwarded.** A fully forwarded request has moved on to Central Disposal, so leaving one request unforwarded is what makes that page show anything at all.
+
+⚠️ **The reserve falls each time a round fails.** A re-valuation lowers it before the next round, so a sale price must beat the reserve **in force**, not the original — 33 sales look like underpayments against the original and are correct against the reserve that actually applied.
+
+⚠️ **A postgres `numeric` comes back as a STRING**, not a num — `r[3] as num?` throws. Parse it. (`unit_value` hit this.)
+
+⚠️ `disposal_request_items.disposition` is CHECK-constrained to lowercase **`'sale'` / `'destruction'`**.
+
+Seeded spread: 14 awaiting valuation · sold on round 1 (38), 2 (16), 3 (19), 4 (8) · 18 still unsold awaiting re-valuation, each with bids and a valuation history. Runs **last of all**, after every pass that retires goods (released, finished as Other), so it never tenders goods that have left the yard.
