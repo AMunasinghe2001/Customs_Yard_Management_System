@@ -1231,3 +1231,12 @@ Measured, because a failed emblem still produces a valid PDF:
 | plain `Sri_Lanka_Customs_logo.svg` | 33626 |
 
 `replaceAll('currentColor', '#0D47A1')` in `_loadLogo` is therefore **load-bearing, not cosmetic**. `test/destroyed_report_and_tender_view_test.dart` renders all three and asserts the byte sizes, so this cannot silently regress. (Same root cause as the earlier flutter_svg note — see [[logo-ship-plane]].)
+
+### The two tender reports, corrected (2026-09-02)
+
+Both were reworked the day after they landed — the first cut answered the wrong question.
+
+- **All Tenders** now lists the **GOODS**, not one row per sale. Tender number + date repeat down each tender's items; SR number, qty, latest valuation, sold price, Sold/Unsold. An unsold item says *Unsold* rather than a blank price — "no price" and "sold for nothing" are different facts. Still every portal, still shows open tenders (it is the register).
+- ⚠️ **Tender Sale Sheet** was gated on `saleEnded`, i.e. it showed **closed** tenders — the opposite of a sheet carried *into* a sale. It now mirrors **Top Management's own Tender Sales page**: same rule (`items.any((i) => !i.sold)` AND window still open), plus `if (it.sold) continue;` since a sold item has left the sale. Columns: Tender No, SR Number, Goods Name, Goods Description, Qty, Yard / Warehouse (newest warehouse entry, so goods can be pulled), Latest Valuation. **Keep it matched to that page** — that is what makes report and screen agree.
+- `TenderSaleCard(readOnly: true)` said **"Pending"**, which reads as an action the *viewer* owes. Nobody watching a read-only card acts → **"Awaiting Tender"**.
+- The Top Management tender tab used `customsBlue`; the portal's accent is `AppTheme.executiveTeal`. Match the portal, not a nearby blue.
