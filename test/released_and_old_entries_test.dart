@@ -84,6 +84,56 @@ void main() {
     });
   });
 
+  group('a completed "Other" process is read-only', () {
+    // An "Other" item still being worked shows an appeal state and offers
+    // actions. Once the yard records the outcome the process is OVER: the row
+    // becomes a completed, read-only record with a _CompletedChip instead.
+    // Only a [FINAL:OTHER] entry produces that.
+    bool isFinalOther(String? notes) =>
+        (notes ?? '').trim().toUpperCase().startsWith('[FINAL:OTHER]');
+
+    /// Mirrors `_finalOtherLabel` -- the outcome text shown on the chip.
+    String finalOtherLabel(String? notes) {
+      final n = (notes ?? '').trim();
+      final m = RegExp(r'^\[FINAL:OTHER\]\s*—\s*(.+)$',
+              caseSensitive: false)
+          .firstMatch(n);
+      if (m != null) {
+        final t = m.group(1)!.trim();
+        if (t.isNotEmpty) return t;
+      }
+      return 'Other';
+    }
+
+    test('the seeded tag marks the row completed', () {
+      expect(isFinalOther('[FINAL:OTHER] — Donated to a charity'), isTrue);
+      expect(isFinalOther('Receipt No: RCP/1 | Date: 2026-01-01'), isFalse);
+    });
+
+    // ⚠️ The separator is an EM DASH. A hyphen still marks the row completed,
+    // but the label falls back to a bare "Other" and the outcome is lost --
+    // a silent failure that looks like working data.
+    test('an em dash carries the outcome text; a hyphen loses it', () {
+      expect(finalOtherLabel('[FINAL:OTHER] — Handed over to the Police'),
+          'Handed over to the Police');
+      expect(finalOtherLabel('[FINAL:OTHER] - Handed over to the Police'),
+          'Other');
+    });
+
+    test('a tag with no outcome text falls back to "Other"', () {
+      expect(finalOtherLabel('[FINAL:OTHER]'), 'Other');
+    });
+
+    test('both routes into the completed state are distinguishable', () {
+      // The yard reaches this state two ways and they look identical
+      // afterwards, so the outcome text is what tells them apart.
+      expect(finalOtherLabel('[FINAL:OTHER] — Released on appeal ruling'),
+          contains('appeal'));
+      expect(finalOtherLabel('[FINAL:OTHER] — Transferred to Government Use'),
+          isNot(contains('appeal')));
+    });
+  });
+
   group('an old entry is a package carried over from a previous register', () {
     // The old register was kept by hand in a different shape: no directorate
     // prefix, no yard segment. It is deliberately NOT a valid new SR number --

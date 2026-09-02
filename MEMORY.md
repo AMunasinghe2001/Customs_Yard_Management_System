@@ -1343,3 +1343,16 @@ Both pages were empty because **neither has a record of its own** — each reads
 - Releases run **before** the appeal passes, so an appeal is never lodged against goods that have already gone home.
 
 **An old entry is a package whose `old_sr_number` is set** — goods already in the yard under the previous register when this system took over, carried across keeping both numbers. Only the **earliest** packages get one: a migration happened once, at changeover. The old number is deliberately **not** a valid current SR number (`SR/1780/2021` — no directorate prefix, no yard segment); that shape is what makes it recognisably old.
+
+### An "Other" process that is finished is read-only (2026-09-03)
+
+An "Other" item still being worked shows an appeal state (Enabled / On Appeal Hold / Decided) and offers actions. **Once the yard records the outcome the process is over**: the row becomes a completed, read-only record — a `_CompletedChip` instead of an appeal state, and no actions. Nothing seeded that, so the finished half of the page never appeared.
+
+Only `recordFinalDisposition` produces it, and `_seedFinalOtherOutcomes` mirrors it exactly:
+- inserts a **returned** entry tagged `[FINAL:OTHER] — <outcome>`,
+- sets the item's status to `'other'` (lowercase; the page's marker tests are case-insensitive),
+- and **deletes the remaining held entry** — the goods have left the yard, so they must stop occupying and being charged for a zone.
+
+⚠️ **The separator is an EM DASH.** `_finalOtherLabel` matches `[FINAL:OTHER]\s*—\s*(.+)`. A hyphen still marks the row completed but the label falls back to a bare "Other" and the outcome text is silently lost — data that looks like it works.
+
+**Both routes in are seeded**, because the yard reaches this state two ways that look identical afterwards: goods that went to appeal and came back with a ruling, and goods finished directly with no appeal. ⚠️ The appealed ones are **scarce** — only a fraction of Other items were ever ruled on — so sampling both at the same rate left barely any. A ruling is an instruction to act, so **every ruled item is carried out**; the plentiful unappealed ones are sampled. This pass must run **last**, after the rulings exist, or every completed row looks like one the yard finished directly.

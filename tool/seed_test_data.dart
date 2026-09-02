@@ -299,6 +299,10 @@ Future<void> main() async {
   // has nothing to rule on for detained goods.
   await _seedDetainAppeals(conn);
   await _seedAppealOutcomes(conn);
+  // ⚠️ LAST: it reads whether an appeal was decided, so it has to run after
+  // the rulings exist -- otherwise every completed row looks like one the
+  // yard finished directly.
+  await _seedFinalOtherOutcomes(conn);
 
   print('\n── Final counts ' + '─' * 53);
   for (final t in const [
@@ -688,6 +692,135 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
 /// package the package-level column is deliberately ignored (deciding one item
 /// must not mark its siblings decided), so writing there would produce rows the
 /// app refuses to treat as decided.
+/// Finishes off a share of the "Other" goods.
+///
+/// An "Other" item that is still being worked reads as Enabled / On Appeal
+/// Hold / Decided. But once the yard records the outcome the process is OVER,
+/// and the row becomes a completed, read-only record -- the page shows a
+/// `_CompletedChip` instead of an appeal state, and offers no actions. Nothing
+/// seeded that, so the finished half of the page never appeared.
+///
+/// Mirrors `recordFinalDisposition`, which is the only thing that produces it:
+///
+///   * inserts a RETURNED entry tagged "[FINAL:OTHER] — <outcome>",
+///   * sets the item's status to 'other',
+///   * and DELETES the remaining held entry, because the goods have left the
+///     yard and must stop occupying (and being charged for) a zone.
+///
+/// ⚠️ The tag format is exact: `[FINAL:OTHER] — <text>` with an EM DASH.
+/// `_finalOtherLabel` matches on it, and the outcome text shown on the chip is
+/// whatever follows it -- a hyphen there leaves every row labelled a bare
+/// "Other".
+///
+/// Both routes into it are seeded, because the yard reaches this state two
+/// ways and they look identical afterwards:
+///   * goods that went to appeal and came back with a ruling, and
+///   * goods the yard finished directly, no appeal ever lodged.
+Future<void> _seedFinalOtherOutcomes(Connection conn) async {
+  // Only items whose window has closed: goods still inside their 30 days
+  // cannot have been disposed of yet.
+  final rows = await conn.execute(
+    'select we.id, we.package_item_id, we.item_count, we.admitted_at, '
+    '       we.package_id, we.warehouse_id, we.zone, we.hold_reason, '
+    '       we.daily_rate, '
+    '       (fp.id is not null and fp.item_appeal_decisions <> ' r"'{}'" '::jsonb) '
+    '         as was_appealed '
+    'from public.warehouse_entries we '
+    'join public.package_items pi on pi.id = we.package_item_id '
+    'join public.packages p on p.id = we.package_id '
+    'left join public.forfeited_packages fp on fp.item_id = pi.id '
+    'where pi.status = ' r"'Other'" ' '
+    '  and coalesce(we.is_returned, false) = false '
+    '  and coalesce(p.entry_date, p.created_at) < now() - interval ' r"'30 days'" ' '
+    'order by we.admitted_at asc',
+  );
+
+  var afterAppeal = 0;
+  var direct = 0;
+
+  for (final r in rows) {
+    final appealed = (r[9] as bool?) ?? false;
+    // ⚠️ Goods that came BACK from an appeal are the scarce case -- only a
+    // fraction of "Other" items were ever ruled on, so sampling them at the
+    // same rate as the rest left barely any. A ruling is an instruction to
+    // act, so every ruled item is carried out; the unappealed ones, which are
+    // plentiful, are sampled.
+    if (!appealed && _rng.nextInt(100) >= 30) continue;
+
+    final entryId = r[0] as String;
+    final itemId = r[1] as String;
+    final qty = r[2] as int? ?? 0;
+    final admittedAt = r[3] as DateTime;
+    final pkgId = r[4] as String;
+    final warehouseId = r[5] as String?;
+    final zone = r[6] as String?;
+    final holdReason = r[7] as String?;
+    final dailyRate = r[8];
+    final wasAppealed = appealed;
+
+    // Finished some time after admission, but never in the future.
+    var finishedAt = admittedAt.add(Duration(days: 35 + _rng.nextInt(150)));
+    final now = DateTime.now();
+    if (finishedAt.isAfter(now)) {
+      finishedAt = now.subtract(Duration(days: 1 + _rng.nextInt(30)));
+    }
+
+    final outcome = wasAppealed
+        ? _finalOtherAfterAppeal[_rng.nextInt(_finalOtherAfterAppeal.length)]
+        : _finalOtherDirect[_rng.nextInt(_finalOtherDirect.length)];
+
+    await conn.execute(
+      r'insert into public.warehouse_entries '
+      r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
+      r' zone, yard, daily_rate, admitted_at, is_returned, returned_at, '
+      r' return_notes, created_at, updated_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10,$11,$10,$10)',
+      parameters: [
+        pkgId, itemId, warehouseId, holdReason, qty, zone, _yard,
+        dailyRate, admittedAt, finishedAt,
+        '[FINAL:OTHER] — $outcome',
+      ],
+    );
+
+    await conn.execute(
+      r"update public.package_items set status = 'other' where id = $1",
+      parameters: [itemId],
+    );
+
+    // The goods have left the yard: the held entry goes, exactly as
+    // recordFinalDisposition deletes it, so the zone is freed.
+    await conn.execute(
+      r'delete from public.warehouse_entries where id = $1',
+      parameters: [entryId],
+    );
+
+    if (wasAppealed) {
+      afterAppeal++;
+    } else {
+      direct++;
+    }
+  }
+  print('  ${afterAppeal + direct} "Other" processes completed '
+      '($afterAppeal after an appeal, $direct directly)');
+}
+
+/// Outcomes recorded once an appeal came back and the yard acted on it.
+const _finalOtherAfterAppeal = [
+  'Released on appeal ruling',
+  'Re-exported per appeal ruling',
+  'Handed to the owner after appeal',
+  'Auctioned per appeal ruling',
+];
+
+/// Outcomes the yard recorded directly, with no appeal ever lodged.
+const _finalOtherDirect = [
+  'Transferred to Government Use',
+  'Handed over to the Police',
+  'Donated to a charity',
+  'Returned to the shipping line',
+  'Disposed of by public auction',
+];
+
 /// Releases a share of the detained goods back to their owners.
 ///
 /// Mirrors what `markAsReturned` does for a FULL release, because the Released
