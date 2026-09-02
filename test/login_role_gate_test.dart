@@ -82,10 +82,17 @@ void main() {
           reason: '$path would show the generic failure instead.');
     }
     // The gate itself must run before the code is issued.
+    //
+    // Scoped to startOtpLogin: other flows (a forgotten-password reset) also
+    // send codes, and a bare indexOf over the whole file would compare this
+    // gate against whichever sendCode happened to come first.
     final svc = File('lib/services/services.dart').readAsStringSync();
-    final gate = svc.indexOf("throw Exception('wrong_portal')");
-    final send = svc.indexOf('GmailOtpService.instance.sendCode');
+    final fn = svc.substring(svc.indexOf('Future<String> startOtpLogin'));
+    final body = fn.substring(0, fn.indexOf('\n  }'));
+    final gate = body.indexOf("throw Exception('wrong_portal')");
+    final send = body.indexOf('GmailOtpService.instance.sendCode');
     expect(gate, greaterThan(-1));
+    expect(send, greaterThan(-1));
     expect(gate, lessThan(send),
         reason: 'The role must be checked before the code is emailed.');
   });

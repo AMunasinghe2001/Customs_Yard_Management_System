@@ -253,6 +253,46 @@ class AuthService {
     return signIn(email, password);
   }
 
+  /// Step 1 of a forgotten-password reset: email a one-time code.
+  ///
+  /// Returns the address the code went to, or null when [identifier] matches
+  /// no active account. The CALLER must not report which -- saying "no such
+  /// account" would let anyone test which usernames and addresses are real, so
+  /// the screens say "if that account exists, a code has been sent" either way.
+  Future<String?> startPasswordReset(String identifier) async {
+    final id = identifier.trim();
+    if (id.isEmpty) return null;
+    final resolved = await _withNetworkRetry(
+      () => supabase
+          .rpc('reset_email_for_identifier', params: {'p_identifier': id}),
+    );
+    final email = resolved is String ? resolved.trim() : '';
+    if (email.isEmpty) return null;
+    await GmailOtpService.instance.sendCode(email);
+    return email;
+  }
+
+  /// Step 2: check the code, then set the new password.
+  ///
+  /// Throws whatever [GmailOtpService.verifyCode] throws for a wrong or
+  /// expired code, so the screens can report those apart from a failure to
+  /// save. The code is verified against the address the ACCOUNT is registered
+  /// to, never one the caller supplied.
+  Future<void> finishPasswordReset({
+    required String identifier,
+    required String email,
+    required String otp,
+    required String newPassword,
+  }) async {
+    GmailOtpService.instance.verifyCode(email.trim(), otp.trim());
+    await _withNetworkRetry(
+      () => supabase.rpc('reset_password_for_identifier', params: {
+        'p_identifier': identifier.trim(),
+        'p_password': newPassword,
+      }),
+    );
+  }
+
   /// Change the currently signed-in user's password.
   Future<void> changePassword(String newPassword) async {
     await supabase.auth.updateUser(UserAttributes(password: newPassword));
