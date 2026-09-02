@@ -1327,3 +1327,15 @@ A detained item has **no `forfeited_packages` row of its own** — the Appeal po
 So detained goods could only ever show `Appealing` or `Enabled`; the two ruled states were **unreachable for them, whatever the yard did**. `_seedDetainAppeals` now lodges real rows for half the detained items. ⚠️ It must run **before** `_seedAppealOutcomes`, or the ruling pass has nothing to rule on. The screen code was already correct and needed no change — it reads `allItemAppealOutcomesProvider` and renders `AppealStateChip` like every other page.
 
 ⚠️ The pool has to be a **decent share**: coverage claims the first row of each kind for a hold, so a thin pool leaves nothing over to be decided or left counting down, and detained goods show only one of the four states.
+
+### Released Goods and Old Entries: no table of their own (2026-09-03)
+
+Both pages were empty because **neither has a record of its own** — each reads a flag on data that already exists, and nothing had ever set it.
+
+**A release is a `warehouse_entries` row flipped to `is_returned`**, plus the item's status becoming `'returned'` (which is what drops it off Detained Goods). `_seedReleases` mirrors `markAsReturned`'s full-release path.
+
+- ⚠️ **The receipt number lives inside `return_notes`**, formatted `Receipt No: <no> | Date: <date>` — there is **no receipt column**. The page parses it back out of that string, so the format is load-bearing; a note that does not match shows an empty Receipt No.
+- ⚠️ **A returned entry is not automatically a release.** A note starting with `[` is a **disposition tag** ([FINAL:DESTROYED], [FINAL:OTHER]) recorded on the same flag, and `_isReleaseEntry` filters those off the page. A released row must never begin with one — except the explicit `[FINAL:RELEASED]` / `[RELEASE…]`.
+- Releases run **before** the appeal passes, so an appeal is never lodged against goods that have already gone home.
+
+**An old entry is a package whose `old_sr_number` is set** — goods already in the yard under the previous register when this system took over, carried across keeping both numbers. Only the **earliest** packages get one: a migration happened once, at changeover. The old number is deliberately **not** a valid current SR number (`SR/1780/2021` — no directorate prefix, no yard segment); that shape is what makes it recognisably old.

@@ -290,8 +290,13 @@ Future<void> main() async {
       for (final z in e.value) '${e.key}|$z': _zoneCapacity(e.key),
   };
   await _seedPackages(conn, warehouses, space);
-  // ⚠️ Order matters: the detain rows must exist BEFORE outcomes are seeded,
-  // or the ruling pass has nothing to rule on for detained goods.
+  // ⚠️ Order matters. Releases run FIRST: a released item's status becomes
+  // 'returned', which takes it out of the detained pool -- so the appeal pass
+  // below cannot lodge an appeal against goods that have already gone home.
+  await _seedReleases(conn);
+  await _seedOldEntries(conn);
+  // The detain rows must exist BEFORE outcomes are seeded, or the ruling pass
+  // has nothing to rule on for detained goods.
   await _seedDetainAppeals(conn);
   await _seedAppealOutcomes(conn);
 
@@ -683,6 +688,112 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
 /// package the package-level column is deliberately ignored (deciding one item
 /// must not mark its siblings decided), so writing there would produce rows the
 /// app refuses to treat as decided.
+/// Releases a share of the detained goods back to their owners.
+///
+/// Mirrors what `markAsReturned` does for a FULL release, because the Released
+/// Goods page reads the result rather than any release record of its own:
+///
+///   * the held warehouse_entries row is REPLACED by a returned one
+///     (`is_returned`, `returned_at`, `return_notes`) -- the held row is
+///     deleted, so the goods stop occupying the zone,
+///   * and the item's status becomes 'returned'.
+///
+/// ⚠️ The receipt number lives INSIDE `return_notes`, formatted
+/// "Receipt No: <no> | Date: <date>" -- there is no receipt column. The page
+/// parses it back out of that string, so the format is load-bearing: a note
+/// that does not match shows an empty Receipt No.
+///
+/// ⚠️ A note starting with "[" is read as a DISPOSITION tag, not a release
+/// ([FINAL:RELEASED] aside), so a released row must never begin with one --
+/// `_isReleaseEntry` would filter it straight off the page.
+Future<void> _seedReleases(Connection conn) async {
+  // Only goods still held, and only Detain -- releasing forfeited or abandoned
+  // goods would contradict the disposition they already carry.
+  final rows = await conn.execute(
+    'select we.id, we.package_item_id, we.item_count, we.admitted_at, p.entry_date '
+    'from public.warehouse_entries we '
+    'join public.package_items pi on pi.id = we.package_item_id '
+    'join public.packages p on p.id = we.package_id '
+    'where pi.status = ' r"'Detain'" ' '
+    '  and coalesce(we.is_returned, false) = false '
+    'order by we.admitted_at asc',
+  );
+
+  var released = 0;
+  for (final r in rows) {
+    // One in three detained items is released back to its owner.
+    if (_rng.nextInt(3) != 0) continue;
+
+    final entryId = r[0] as String;
+    final itemId = r[1] as String;
+    final admittedAt = r[3] as DateTime;
+
+    // Released some time after admission, but never in the future.
+    var releasedAt = admittedAt.add(Duration(days: 12 + _rng.nextInt(120)));
+    final now = DateTime.now();
+    if (releasedAt.isAfter(now)) {
+      releasedAt = now.subtract(Duration(days: 1 + _rng.nextInt(20)));
+    }
+
+    final receiptNo = 'RCP/$_yard/${releasedAt.year}/'
+        '${(1000 + _rng.nextInt(8999))}';
+    final notes = 'Receipt No: $receiptNo | Date: ${_iso(releasedAt)}';
+
+    // The held row BECOMES the returned row. markAsReturned inserts a new one
+    // and deletes the held one; the outcome is identical and this keeps the
+    // warehouse_entries id stable for anything already pointing at it.
+    await conn.execute(
+      r'update public.warehouse_entries '
+      r'set is_returned = true, returned_at = $2, return_notes = $3, '
+      r'    updated_at = $2 '
+      r'where id = $1',
+      parameters: [entryId, releasedAt, notes],
+    );
+
+    await conn.execute(
+      r"update public.package_items set status = 'returned' where id = $1",
+      parameters: [itemId],
+    );
+    released++;
+  }
+  print('  $released detained items released back to their owners');
+}
+
+/// Marks a share of the packages as migrated from a previous register.
+///
+/// The Old Entries page lists packages whose `old_sr_number` is set -- goods
+/// that were already in the yard under the PREVIOUS register when this system
+/// took over, and were carried across keeping both numbers. Nothing else marks
+/// a package as migrated, so with the column empty everywhere the page has
+/// nothing to show.
+Future<void> _seedOldEntries(Connection conn) async {
+  // Only the earliest packages: a migration happened once, at changeover, so
+  // goods registered later cannot have come from the old book.
+  final rows = await conn.execute(
+    'select id, sr_number from public.packages '
+    'where old_sr_number is null '
+    'order by coalesce(entry_date, created_at) asc limit 60',
+  );
+
+  var migrated = 0;
+  for (final r in rows) {
+    if (_rng.nextInt(3) != 0) continue;
+
+    final id = r[0] as String;
+    // The old register was kept by hand in a different shape entirely --
+    // no directorate prefix, no yard, just a book and a page.
+    final oldNumber = 'SR/${1200 + _rng.nextInt(2600)}/'
+        '${2021 + _rng.nextInt(3)}';
+
+    await conn.execute(
+      r'update public.packages set old_sr_number = $2 where id = $1',
+      parameters: [id, oldNumber],
+    );
+    migrated++;
+  }
+  print('  $migrated packages carried over from the previous register');
+}
+
 /// Lodges appeals against DETAINED goods.
 ///
 /// ⚠️ A detained item has no `forfeited_packages` row of its own -- the Appeal
