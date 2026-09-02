@@ -1178,3 +1178,11 @@ The five outcome tabs (Government Use, Remanded, Auction, Converted, Removed) ar
 - All five inherited the Unsold tab's message, "No unresolved unsold packages", naming goods the tab doesn't list. `emptyMessage` / `emptySubtitle` / `emptyIcon` are now per-tab.
 
 Card-list tabs (Tender Sales, Committees, Destructions) legitimately keep the swap — they have no columns to preserve.
+
+### Profile: photo cap, ICT-owned fields, grouped details (2026-09-02)
+
+- **Profile photos are capped at 2MB** (`_maxProfileImageBytes`, `edit_profile_screen.dart`). Measured with `File(path).length()`, not the picker's reported size — the file is what gets stored on the profile and shipped with it.
+- **Job Role and Yard are ICT's, not the officer's.** ICT assigns them at provisioning, so both are read-only on the profile form ("Set by ICT") and **not sent on save** — `updateProfile` skips a null, so ICT's values stand. Don't re-add the yard dropdown.
+- **"Role" removed from the details card**: it named the same thing as Job Role in coarser words. Replaced by the **"Disables In"** countdown ICT's staff table already showed.
+- The card's nine stacked full-width bars are now four titled groups (Identity / Contact / Posting / Account), two fields per row above 620px and one below.
+- ⚠️ **`daysUntilExpiry` and `isExpired` must exempt the same roles.** `isExpired` exempted ICT; `daysUntilExpiry` did not, so an ICT account counted down towards an expiry that would never be enforced. Both now exempt disposal / appeal / valuation / executive / ict. Add a new institutional role to **both**.
