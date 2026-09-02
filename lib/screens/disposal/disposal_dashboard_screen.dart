@@ -26,6 +26,7 @@ import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/destruction_status_pill.dart';
 import '../executive/unsold_shared.dart';
 
 /// The quantity actually forfeited & sent for disposal for a request row.
@@ -1468,9 +1469,17 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                             DataColumn2(
                                 label: Text('Destruction Expenses'),
                                 size: ColumnSize.M),
+                            // The record/edit action gets its own column rather
+                            // than riding inside the money cell, so the figure
+                            // reads cleanly and the button sits under a header
+                            // that says what it does.
+                            DataColumn2(
+                                label: Center(child: Text('Costs')),
+                                size: ColumnSize.S,
+                                fixedWidth: 70),
                             DataColumn2(
                                 label: Center(child: Text('Status')),
-                                fixedWidth: 120),
+                                fixedWidth: kDestructionStatusColumnWidth),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -1496,12 +1505,16 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                                 .format(r.entry!.admittedAt!)
                                             : DateFormat('yyyy-MM-dd')
                                                 .format(r.package.updatedAt)))),
-                                    DataCell(_DisposalExpensesCell(
-                                        package: r.package)),
+                                    DataCell(DestructionExpenseCell(
+                                        srNumber: r.package.srNumber)),
                                     DataCell(Center(
-                                      child: _DisposalStatusChip(
-                                        isDestroyed: r.isDestroyed,
-                                      ),
+                                        child: _RecordCostsButton(
+                                            srNumber: r.package.srNumber))),
+                                    DataCell(Center(
+                                      // Read-only here: only the yard confirms
+                                      // a destruction, so no onMark.
+                                      child: DestructionStatusPill(
+                                          destroyed: r.isDestroyed),
                                     )),
                                     DataCell(Center(
                                       child: IconButton(
@@ -1559,94 +1572,33 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
 /// Destroyed-tab delivery sub-filter: null = all, true = delivered, false = pending.
 final _destroyedDeliveryFilterProvider = StateProvider<bool?>((ref) => null);
 
-// Same pill the yard's own status column renders (see _MarkDestroyedCell in
-// disposition_category_screen.dart, "Destroyed" branch, and _DeliveryStatusChip)
-// -- kept pixel-identical (padding, radius, icon size, font) so the same status
-// looks the same on both screens. Central Disposal is read-only here: only the
-// yard can confirm a destruction, so "Pending" never becomes a button here.
-class _DisposalStatusChip extends StatelessWidget {
-  final bool isDestroyed;
-  const _DisposalStatusChip({required this.isDestroyed});
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        isDestroyed ? context.colors.successGreen : context.colors.warningAmber;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(isDestroyed ? Icons.check_circle_rounded : Icons.schedule_rounded,
-            size: 13, color: color),
-        const SizedBox(width: 5),
-        Text(isDestroyed ? 'Destroyed' : 'Pending',
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-      ]),
-    );
-  }
-}
-
-class _DisposalExpensesCell extends ConsumerWidget {
-  final PackageModel package;
-  const _DisposalExpensesCell({required this.package});
+/// The record/edit-costs action for one SR's destruction, in its own column.
+///
+/// Opens the same cost form the Expenses tab uses, in its destruction shape:
+/// what is saved here is the SAME `financial_expenses` data that tab reads, so
+/// a figure entered on either screen shows on the other.
+class _RecordCostsButton extends ConsumerWidget {
+  final String srNumber;
+  const _RecordCostsButton({required this.srNumber});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final financialsAsync = ref.watch(srFinancialsProvider);
-    final fmt = NumberFormat('#,##0.00');
-    return financialsAsync.when(
-      loading: () => const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) =>
-          Text('—', style: TextStyle(color: context.colors.textMuted)),
-      data: (allFinancials) {
-        final sr = allFinancials
-            .where((f) => f.srNumber.trim() == package.srNumber.trim())
-            .firstOrNull;
-        final expense = sr?.destructionExpense ?? 0;
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              expense > 0 ? 'LKR ${fmt.format(expense)}' : '—',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: expense > 0
-                    ? context.colors.dangerRed
-                    : context.colors.textMuted,
-                fontSize: 12,
+    final sr = ref
+        .watch(srFinancialsProvider)
+        .valueOrNull
+        ?.where((f) => f.srNumber.trim() == srNumber.trim())
+        .firstOrNull;
+    return IconButton(
+      tooltip: 'Record / edit destruction costs',
+      icon: Icon(Icons.edit_note_rounded,
+          size: 20, color: context.colors.successGreen),
+      onPressed: sr == null
+          ? null
+          : () => showDialog(
+                context: context,
+                builder: (_) =>
+                    RecordExpenseDialog(sr: sr, forDestruction: true),
               ),
-            ),
-            const Gap(4),
-            IconButton(
-              tooltip: 'Record / Edit destruction costs',
-              icon: Icon(Icons.edit_note_rounded,
-                  size: 18, color: context.colors.successGreen),
-              onPressed: () {
-                if (sr != null) {
-                  showDialog(
-                    context: context,
-                    builder: (_) =>
-                        RecordExpenseDialog(sr: sr, forDestruction: true),
-                  );
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                        content: Text(
-                            'Financial records not found for this SR.')),
-                  );
-                }
-              },
-            ),
-          ],
-        );
-      },
     );
   }
 }

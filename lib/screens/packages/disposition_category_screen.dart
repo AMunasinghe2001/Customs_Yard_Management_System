@@ -17,6 +17,7 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../services/services.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/destruction_status_pill.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
 /// Re-exported / Other). Reads warehouse entries tagged "[FINAL:<TAG>]".
@@ -495,9 +496,16 @@ class _DispositionCategoryScreenState
                                 widget.finalTag != 'DESTROYED')
                               const DataColumn2(
                                   label: Text('Officer'), size: ColumnSize.M),
-                            DataColumn2(
-                                label: Text(widget.finalTag == 'SOLD' ? 'Receipt No' : 'Notes'),
-                                size: ColumnSize.M),
+                            // Destroyed rows carry no receipt and no useful
+                            // note -- the column only ever printed the DSR
+                            // number already shown elsewhere, so it is dropped
+                            // there to match Central Disposal's own table.
+                            if (widget.finalTag != 'DESTROYED')
+                              DataColumn2(
+                                  label: Text(widget.finalTag == 'SOLD'
+                                      ? 'Receipt No'
+                                      : 'Notes'),
+                                  size: ColumnSize.M),
                             if (widget.finalTag == 'SOLD')
                               const DataColumn2(
                                   label: Text('Valuation'), size: ColumnSize.M),
@@ -516,7 +524,9 @@ class _DispositionCategoryScreenState
                                   label: Text('Destruction Expenses'),
                                   size: ColumnSize.M),
                             if (widget.finalTag == 'DESTROYED')
-                              const DataColumn2(label: Center(child: Text('Destroyed')), fixedWidth: 155),
+                              const DataColumn2(
+                                  label: Center(child: Text('Status')),
+                                  fixedWidth: kDestructionStatusColumnWidth),
                             const DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -556,23 +566,19 @@ class _DispositionCategoryScreenState
                                         widget.finalTag != 'DESTROYED')
                                       DataCell(TooltipText(row.officer,
                                           overflow: TextOverflow.ellipsis)),
-                                    DataCell(TooltipText(
-                                        (() {
-                                          if (widget.finalTag == 'SOLD') {
-                                            return _parseSaleReceipt(
-                                                    row.entry?.returnNotes) ??
-                                                '—';
-                                          }
-                                          if (widget.finalTag == 'DESTROYED') {
-                                            return _parseDestroyReceipt(
-                                                    row.entry?.returnNotes) ??
-                                                '—';
-                                          }
-                                          return row.note.isEmpty
-                                              ? '—'
-                                              : row.note;
-                                        })(),
-                                        overflow: TextOverflow.ellipsis)),
+                                    if (widget.finalTag != 'DESTROYED')
+                                      DataCell(TooltipText(
+                                          (() {
+                                            if (widget.finalTag == 'SOLD') {
+                                              return _parseSaleReceipt(
+                                                      row.entry?.returnNotes) ??
+                                                  '—';
+                                            }
+                                            return row.note.isEmpty
+                                                ? '—'
+                                                : row.note;
+                                          })(),
+                                          overflow: TextOverflow.ellipsis)),
                                     if (widget.finalTag == 'SOLD')
                                       DataCell(_SaleValuationCell(
                                         package: row.package,
@@ -597,14 +603,15 @@ class _DispositionCategoryScreenState
                                             row.entry?.returnNotes),
                                       ))),
                                     if (widget.finalTag == 'DESTROYED')
-                                      DataCell(_YardDestructionExpenseCell(
-                                          package: row.package)),
+                                      DataCell(DestructionExpenseCell(
+                                          srNumber: row.package.srNumber)),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(Center(
-                                        child: _MarkDestroyedCell(
-                                          row: row,
-                                          onMarkDestroyed: () =>
-                                              _confirmMarkDestroyed(
+                                        child: DestructionStatusPill(
+                                          destroyed: row.isDestroyed,
+                                          onMark: row.isDestroyed
+                                              ? null
+                                              : () => _confirmMarkDestroyed(
                                                   context, ref, row),
                                         ),
                                       )),
@@ -854,80 +861,6 @@ class _SaleValuationCell extends ConsumerWidget {
   }
 }
 
-/// What the destruction cost, read from the SR's recorded expenses -- the same
-/// figure Central Disposal's own Destroyed Goods table shows, so the yard sees
-/// the spend without opening the popup. Blank until Central Disposal records
-/// it: a real zero, never an invented placeholder.
-class _YardDestructionExpenseCell extends ConsumerWidget {
-  final PackageModel package;
-  const _YardDestructionExpenseCell({required this.package});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final fmt = NumberFormat('#,##0.00');
-    final sr = ref.watch(srFinancialsProvider).valueOrNull?.where((f) {
-      return f.srNumber.trim() == package.srNumber.trim();
-    }).firstOrNull;
-    final spent = sr?.depositSpent ?? 0;
-    if (spent <= 0) {
-      return Text('—', style: TextStyle(color: context.colors.textMuted));
-    }
-    return TooltipText(
-      'LKR ${fmt.format(spent)}',
-      style: TextStyle(
-          color: context.colors.dangerRed,
-          fontWeight: FontWeight.w700,
-          fontSize: 12),
-    );
-  }
-}
-
-class _MarkDestroyedCell extends StatelessWidget {
-  final _CategoryRow row;
-  final VoidCallback onMarkDestroyed;
-  const _MarkDestroyedCell(
-      {required this.row, required this.onMarkDestroyed});
-
-  @override
-  Widget build(BuildContext context) {
-    if (row.isDestroyed) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: context.colors.successGreen.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(8),
-          border:
-              Border.all(color: context.colors.successGreen.withOpacity(0.4)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.check_circle_rounded,
-              size: 13, color: context.colors.successGreen),
-          const SizedBox(width: 5),
-          Text('Destroyed',
-              style: TextStyle(
-                  color: context.colors.successGreen,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700)),
-        ]),
-      );
-    }
-    return ElevatedButton.icon(
-      style: ElevatedButton.styleFrom(
-        backgroundColor: context.colors.dangerRed.withOpacity(0.15),
-        foregroundColor: context.colors.dangerRed,
-        side: BorderSide(color: context.colors.dangerRed.withOpacity(0.4)),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        elevation: 0,
-      ),
-      icon: const Icon(Icons.local_fire_department_rounded, size: 14),
-      label: const Text('Mark Destroyed',
-          style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-      onPressed: onMarkDestroyed,
-    );
-  }
-}
-
 Future<void> _confirmMarkDestroyed(
     BuildContext context, WidgetRef ref, _CategoryRow row) async {
   final itemId = row.entry?.packageItemId ?? row.item?.id;
@@ -1119,22 +1052,6 @@ String? _parseSaleReceipt(String? returnNotes) {
   final m = RegExp(r'Receipt:\s*([^\|—]+)', caseSensitive: false)
       .firstMatch(returnNotes);
   return m?.group(1)?.trim();
-}
-
-/// The receipt NUMBER only for the Destroyed table's "Receipt No" column.
-/// The stored note can be "[FINAL:DESTROYED] — Receipt/Notes: Receipt No: <no>
-/// | Notes: <notes>", so we peel the disposition tag AND the inner "Receipt No:"
-/// prefix, and drop any "| Notes:" tail — leaving just the number.
-String? _parseDestroyReceipt(String? returnNotes) {
-  if (returnNotes == null) return null;
-  var s = returnNotes;
-  final tag = RegExp(r'Receipt/Notes:\s*(.+)$', caseSensitive: false)
-      .firstMatch(s);
-  if (tag != null) s = tag.group(1)!;
-  // Strip a leading "Receipt No:" and anything from "| Notes:" onward.
-  s = s.replaceFirst(RegExp(r'^\s*Receipt No:\s*', caseSensitive: false), '');
-  s = s.split(RegExp(r'\|?\s*Notes:', caseSensitive: false)).first.trim();
-  return s.isEmpty ? null : s;
 }
 
 /// Read-only sold price + tax total for a sold package. Uses per-item provider.

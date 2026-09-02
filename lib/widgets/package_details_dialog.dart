@@ -3922,14 +3922,30 @@ class _DestructionFinancialsSection extends StatelessWidget {
                           color: context.colors.customsBlue,
                         ),
                       ),
-                      const Gap(8),
-                      Expanded(
-                        child: _ExpenseCostBox(
-                          label: 'Advertising',
-                          amount: srFinancials!.advertisingExpense,
-                          color: context.colors.warningAmber,
+                      // Advertising and auction are not destruction costs --
+                      // the goods go straight to the destroying contractor --
+                      // so they appear only where legacy data actually carries
+                      // one, instead of as permanently empty boxes.
+                      if (srFinancials!.advertisingExpense > 0) ...[
+                        const Gap(8),
+                        Expanded(
+                          child: _ExpenseCostBox(
+                            label: 'Advertising',
+                            amount: srFinancials!.advertisingExpense,
+                            color: context.colors.warningAmber,
+                          ),
                         ),
-                      ),
+                      ],
+                      if (srFinancials!.auctionExpense > 0) ...[
+                        const Gap(8),
+                        Expanded(
+                          child: _ExpenseCostBox(
+                            label: 'Auction',
+                            amount: srFinancials!.auctionExpense,
+                            color: context.colors.primaryGold,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ],

@@ -1058,12 +1058,27 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   late final Map<String, TextEditingController> _fields;
   bool _saving = false;
 
-  /// The kinds this dialog offers -- Auction Expenses dropped for a
-  /// destruction, since nothing is auctioned when goods are destroyed.
+  /// Kinds a destruction never incurs. The goods are handed straight to the
+  /// destroying contractor, so nothing is advertised and nothing is auctioned
+  /// -- what a destruction costs is the destruction itself plus getting the
+  /// goods and the hands there.
+  static const _notForDestruction = {'advertising_expense', 'auction_expense'};
+
+  /// The kinds this dialog offers.
   Iterable<MapEntry<String, String>> get _kinds => widget.forDestruction
       ? kRecordableExpenseKinds.entries
-          .where((e) => e.key != 'auction_expense')
+          .where((e) => !_notForDestruction.contains(e.key))
       : kRecordableExpenseKinds.entries;
+
+  /// What is already recorded under the kinds this dialog does NOT offer.
+  ///
+  /// The deposit pays for every cost booked against the SR, not just the ones
+  /// on screen. Leaving these out of the arithmetic would show a refund larger
+  /// than the depositor is actually owed whenever an earlier advertising or
+  /// auction cost exists.
+  double get _hiddenSpend => widget.forDestruction
+      ? _notForDestruction.fold<double>(0, (a, k) => a + _existing(k))
+      : 0;
 
   /// The figure already recorded for [kind] on this SR.
   double _existing(String kind) {
@@ -1131,7 +1146,8 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   double _valueOf(String kind) =>
       double.tryParse(_fields[kind]?.text.trim() ?? '') ?? 0;
 
-  double get _spent => _fields.keys.fold<double>(0, (a, k) => a + _valueOf(k));
+  double get _spent =>
+      _fields.keys.fold<double>(0, (a, k) => a + _valueOf(k)) + _hiddenSpend;
 
   double get _refund {
     final left = widget.sr.destroyingDeposit - _spent;
