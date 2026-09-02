@@ -18,6 +18,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/disposal_page_header.dart';
 import '../../widgets/tooltip_text.dart';
 
 final abandonedPackageSearchProvider = StateProvider<String>((ref) => '');
@@ -228,131 +229,72 @@ class _AbandonedPackagesScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header row
-              SizedBox(
-                width: double.infinity,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  runSpacing: 16,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Abandoned Goods',
-                            style: Theme.of(context).textTheme.headlineLarge),
-                        Text(
-                            'Manage abandoned goods and send them for disposal',
-                            style:
-                                TextStyle(color: context.colors.textSecondary)),
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final pkgs = ref.watch(livePackagesProvider);
-                            final sk = ref
-                                    .watch(sentAbandonedOtherFpKeysProvider)
-                                    .valueOrNull ??
-                                {};
-                            final outcomes = ref
-                                    .watch(allItemAppealOutcomesProvider)
-                                    .valueOrNull ??
-                                const <String, ItemAppealOutcome>{};
-                            return pkgs.when(
-                              data: (list) {
-                                // Counts the SAME rows the table renders, so
-                                // the header always agrees with the list below.
-                                final rows = _buildRows(list, sentKeys: sk);
-                                final total = rows.length;
-                                final actionable = rows
-                                    .where((r) => _isRowActionable(
-                                        r, outcomes[r.item.id]))
-                                    .length;
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _AbandonedStatChip(
-                                        label: 'Total',
-                                        value: '$total',
-                                        color: context.colors.accentLightBlue),
-                                    const Gap(8),
-                                    _AbandonedStatChip(
-                                        label: 'In Appeal',
-                                        value:
-                                            '${total - actionable < 0 ? 0 : total - actionable}',
-                                        color: context.colors.warningAmber),
-                                    const Gap(8),
-                                    _AbandonedStatChip(
-                                        label: 'Actionable',
-                                        value: '$actionable',
-                                        color: context.colors.successGreen),
-                                  ],
-                                );
-                              },
-                              loading: () => const SizedBox(),
-                              error: (_, __) => const SizedBox(),
-                            );
-                          },
+              Consumer(
+                builder: (context, ref, child) {
+                  final sk =
+                      ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ??
+                          {};
+                  final outcomes =
+                      ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
+                          const <String, ItemAppealOutcome>{};
+                  // Counts the SAME rows the table renders, so the header
+                  // always agrees with the list below.
+                  final rows = ref.watch(livePackagesProvider).maybeWhen(
+                      data: (list) => _buildRows(list, sentKeys: sk),
+                      orElse: () => const <_AbandonedRow>[]);
+                  final total = rows.length;
+                  final actionable = rows
+                      .where((r) => _isRowActionable(r, outcomes[r.item.id]))
+                      .length;
+                  return DisposalPageHeader(
+                    title: 'Abandoned Goods',
+                    subtitle: 'Manage abandoned goods and send them for disposal',
+                    trailing: [
+                      _AbandonedStatChip(
+                          label: 'Total',
+                          value: '$total',
+                          color: context.colors.accentLightBlue),
+                      _AbandonedStatChip(
+                          label: 'In Appeal',
+                          value:
+                              '${total - actionable < 0 ? 0 : total - actionable}',
+                          color: context.colors.warningAmber),
+                      _AbandonedStatChip(
+                          label: 'Actionable',
+                          value: '$actionable',
+                          color: context.colors.successGreen),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.local_shipping_rounded, size: 16),
+                        label: const Text('Send Disposal Request'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: actionable > 0
+                              ? context.colors.primaryGold
+                              : context.colors.textMuted.withOpacity(0.2),
+                          foregroundColor: actionable > 0
+                              ? Colors.white
+                              : context.colors.textMuted,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          elevation: actionable > 0 ? 2 : 0,
                         ),
-                        const Gap(16),
-                        Consumer(
-                          builder: (context, ref, child) {
-                            // Enabled from data already on screen, so the
-                            // button lights up with the table rather than
-                            // after a separate cross-table query.
-                            final sk = ref
-                                    .watch(sentAbandonedOtherFpKeysProvider)
-                                    .valueOrNull ??
-                                {};
-                            final outcomes = ref
-                                    .watch(allItemAppealOutcomesProvider)
-                                    .valueOrNull ??
-                                const <String, ItemAppealOutcome>{};
-                            final n = ref.watch(livePackagesProvider).maybeWhen(
-                                data: (list) => _buildRows(list, sentKeys: sk)
-                                    .where((r) => _isRowActionable(
-                                        r, outcomes[r.item.id]))
-                                    .length,
-                                orElse: () => 0);
-                            return ElevatedButton.icon(
-                              icon: const Icon(Icons.local_shipping_rounded,
-                                  size: 16),
-                              label: const Text('Send Disposal Request'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: n > 0
-                                    ? context.colors.primaryGold
-                                    : context.colors.textMuted.withOpacity(0.2),
-                                foregroundColor: n > 0
-                                    ? Colors.white
-                                    : context.colors.textMuted,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 20, vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                                elevation: n > 0 ? 2 : 0,
-                              ),
-                              onPressed: n > 0
-                                  ? () => showDialog(
-                                        context: context,
-                                        builder: (ctx) => DisposalRequestDialog(
-                                          onSubmitted: () {
-                                            ref.invalidate(
-                                                requestableForfeitedPackagesProvider);
-                                            ref.invalidate(
-                                                livePackagesProvider);
-                                          },
-                                        ),
-                                      )
-                                  : null,
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
+                        onPressed: actionable > 0
+                            ? () => showDialog(
+                                  context: context,
+                                  builder: (ctx) => DisposalRequestDialog(
+                                    onSubmitted: () {
+                                      ref.invalidate(
+                                          requestableForfeitedPackagesProvider);
+                                      ref.invalidate(livePackagesProvider);
+                                    },
+                                  ),
+                                )
+                            : null,
+                      ),
+                    ],
+                  );
+                },
               ).animate().fadeIn(),
               const Gap(20),
 

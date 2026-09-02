@@ -15,6 +15,7 @@ import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/disposal_page_header.dart';
 import '../../widgets/appeal_state_chip.dart';
 import 'disposal_request_dialog.dart';
 import '../../widgets/tooltip_text.dart';
@@ -343,100 +344,56 @@ class _ForfeitedPackagesScreenState
                   final actionableCount =
                       headerRows.where((r) => r.forfeited.isActionable).length;
 
-                  return SizedBox(
-                    width: double.infinity,
-                    child: Wrap(
-                      alignment: WrapAlignment.spaceBetween,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      runSpacing: 16,
-                      children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text('Forfeited Goods',
-                                style:
-                                    Theme.of(context).textTheme.headlineLarge),
-                            const Gap(4),
-                            Text(
-                              'Manage forfeited packages and their 30-day appeal periods',
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 14),
-                            ),
-                          ],
-                        )
-                            .animate()
-                            .slideY(begin: 0.1, duration: 400.ms)
-                            .fadeIn(),
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _StatChip(
-                                    label: 'Total',
-                                    value: totalCount.toString(),
-                                    color: context.colors.accentLightBlue)
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 100.ms)
-                                .fadeIn(),
-                            const Gap(8),
-                            // "In Appeal" counts what is BLOCKED, so it must
-                            // exclude rows an appeal decision already freed —
-                            // otherwise the two chips overlap.
-                            _StatChip(
-                                    label: 'In Appeal',
-                                    value: (totalCount - actionableCount)
-                                        .toString(),
-                                    color: context.colors.warningAmber)
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 200.ms)
-                                .fadeIn(),
-                            const Gap(8),
-                            _StatChip(
-                                    label: 'Actionable',
-                                    value: actionableCount.toString(),
-                                    color: context.colors.successGreen)
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 300.ms)
-                                .fadeIn(),
-                            const Gap(16),
-                            ElevatedButton.icon(
-                              icon: const Icon(Icons.local_shipping_rounded,
-                                  size: 16),
-                              label: const Text('Send Disposal Request'),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: actionableCount > 0
-                                    ? context.colors.primaryGold
-                                    : context.colors.textMuted.withOpacity(0.2),
-                                foregroundColor: actionableCount > 0
-                                    ? Colors.white
-                                    : context.colors.textMuted,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 20, vertical: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8)),
-                                elevation: actionableCount > 0 ? 2 : 0,
-                              ),
-                              onPressed: actionableCount > 0
-                                  ? () => showDialog(
-                                        context: context,
-                                        builder: (ctx) => DisposalRequestDialog(
-                                          onSubmitted: () => ref.invalidate(
-                                              forfeitedPackagesProvider),
-                                        ),
-                                      )
-                                  : null,
-                            )
-                                .animate()
-                                .slideY(
-                                    begin: 0.1, duration: 400.ms, delay: 400.ms)
-                                .fadeIn(),
-                          ],
+                  return DisposalPageHeader(
+                    title: 'Forfeited Goods',
+                    subtitle:
+                        'Manage forfeited packages and their 30-day appeal periods',
+                    trailing: [
+                      _StatChip(
+                          label: 'Total',
+                          value: totalCount.toString(),
+                          color: context.colors.accentLightBlue),
+                      // "In Appeal" counts what is BLOCKED, so it must exclude
+                      // rows an appeal decision already freed — otherwise the
+                      // two chips overlap.
+                      _StatChip(
+                          label: 'In Appeal',
+                          value: (totalCount - actionableCount).toString(),
+                          color: context.colors.warningAmber),
+                      _StatChip(
+                          label: 'Actionable',
+                          value: actionableCount.toString(),
+                          color: context.colors.successGreen),
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.local_shipping_rounded, size: 16),
+                        label: const Text('Send Disposal Request'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: actionableCount > 0
+                              ? context.colors.primaryGold
+                              : context.colors.textMuted.withOpacity(0.2),
+                          foregroundColor: actionableCount > 0
+                              ? Colors.white
+                              : context.colors.textMuted,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          elevation: actionableCount > 0 ? 2 : 0,
                         ),
-                      ],
-                    ),
+                        onPressed: actionableCount > 0
+                            ? () => showDialog(
+                                  context: context,
+                                  builder: (ctx) => DisposalRequestDialog(
+                                    onSubmitted: () {
+                                      ref.invalidate(forfeitedPackagesProvider);
+                                      ref.invalidate(
+                                          requestableForfeitedPackagesProvider);
+                                    },
+                                  ),
+                                )
+                            : null,
+                      ),
+                    ],
                   );
                 },
                 loading: () => const SizedBox(),

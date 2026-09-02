@@ -642,8 +642,9 @@ class _PackageRequestRow extends StatelessWidget {
           color: isSelected
               ? context.colors.primaryGold.withOpacity(0.06)
               : Colors.transparent,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Checkbox(
                 activeColor: context.colors.primaryGold,
@@ -651,58 +652,64 @@ class _PackageRequestRow extends StatelessWidget {
                 onChanged: pending ? null : (_) => onToggle(),
               ),
               const Gap(4),
+              // Goods block. The SR line and the item line each wrap on their
+              // own, so a long name or an extra chip pushes nothing into the
+              // column beside it -- they used to sit in bare Rows where the
+              // chips had no room to give and collided with the text.
               Expanded(
                 flex: 5,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Row(children: [
-                      Flexible(
-                        child: Text(srNumber,
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        Text(srNumber,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                                 fontWeight: FontWeight.w700,
                                 color: context.colors.accentLightBlue)),
-                      ),
-                      const Gap(8),
-                      _SourceChip(source: source),
-                      if (pending) ...[
-                        const Gap(8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color:
-                                context.colors.warningAmber.withOpacity(0.12),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                                color: context.colors.warningAmber
-                                    .withOpacity(0.4)),
+                        _SourceChip(source: source),
+                        if (pending)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 2),
+                            decoration: BoxDecoration(
+                              color:
+                                  context.colors.warningAmber.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                  color: context.colors.warningAmber
+                                      .withOpacity(0.4)),
+                            ),
+                            child: Text(
+                                daysLeft > 0
+                                    ? 'In appeal · ${daysLeft}d'
+                                    : 'In appeal',
+                                style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: context.colors.warningAmber)),
                           ),
-                          child: Text(
-                              daysLeft > 0
-                                  ? 'In appeal \u00b7 ${daysLeft}d'
-                                  : 'In appeal',
-                              style: TextStyle(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: context.colors.warningAmber)),
-                        ),
                       ],
-                    ]),
-                    Row(
+                    ),
+                    const Gap(3),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      crossAxisAlignment: WrapCrossAlignment.center,
                       children: [
-                        Flexible(
-                          child: Text(itemName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  fontSize: 12,
-                                  color: context.colors.textSecondary)),
-                        ),
-                        if (quantity != null) ...[
-                          const Gap(6),
+                        Text(itemName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                                fontSize: 12,
+                                color: context.colors.textSecondary)),
+                        if (quantity != null)
                           Container(
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 6, vertical: 1),
@@ -720,41 +727,46 @@ class _PackageRequestRow extends StatelessWidget {
                               ),
                             ),
                           ),
-                        ],
                       ],
                     ),
                   ],
                 ),
               ),
+              const Gap(12),
               Expanded(
                 flex: 4,
                 child: Text(consignee,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         fontSize: 13, color: context.colors.textPrimary)),
               ),
-              const Gap(8),
-              // Disposition indicator — all items in this dialog are for Sale
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: context.colors.successGreen.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                      color: context.colors.successGreen.withOpacity(0.4)),
+              const Gap(12),
+              // Disposition indicator — every item in this dialog is for Sale.
+              // Fixed width so the badges line up down the list instead of
+              // sitting at a different x on every row.
+              SizedBox(
+                width: 74,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: context.colors.successGreen.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                        color: context.colors.successGreen.withOpacity(0.4)),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(Icons.sell_rounded,
+                        size: 12, color: context.colors.successGreen),
+                    const Gap(4),
+                    Text('Sale',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            color: context.colors.successGreen)),
+                  ]),
                 ),
-                child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(Icons.sell_rounded,
-                      size: 12, color: context.colors.successGreen),
-                  const Gap(4),
-                  Text('Sale',
-                      style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: context.colors.successGreen)),
-                ]),
               ),
             ],
           ),

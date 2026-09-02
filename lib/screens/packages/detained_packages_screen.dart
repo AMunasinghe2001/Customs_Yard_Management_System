@@ -19,6 +19,7 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/disposal_page_header.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 
 final detainedPackageSearchProvider = StateProvider<String>((ref) => '');
@@ -196,119 +197,76 @@ class _DetainedPackagesScreenState
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ── Header ──
-              SizedBox(
-                width: double.infinity,
-                child: Wrap(
-                  alignment: WrapAlignment.spaceBetween,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  runSpacing: 16,
-                  children: [
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Detained Goods',
-                            style: Theme.of(context).textTheme.headlineLarge),
-                        Text(
-                            'Goods held under inquiry — decide their outcome or '
-                            'send them for sale or destruction',
-                            style:
-                                TextStyle(color: context.colors.textSecondary)),
-                      ],
-                    ),
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final pkgs = ref.watch(livePackagesProvider);
-                            final sk = ref
-                                    .watch(sentAbandonedOtherFpKeysProvider)
-                                    .valueOrNull ??
-                                {};
-                            final outcomes = ref
-                                    .watch(allItemAppealOutcomesProvider)
-                                    .valueOrNull ??
-                                const <String, ItemAppealOutcome>{};
-                            return pkgs.when(
-                              data: (list) {
-                                // Count the SAME rows the table renders, so the
-                                // header always agrees with the list below.
-                                final rows = _buildRows(list, sentKeys: sk);
-                                final actionable = rows
-                                    .where((r) =>
-                                        _isActionable(r, outcomes[r.item.id]))
-                                    .length;
-                                return Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _DetainStatChip(
-                                        label: 'Total',
-                                        value: '${rows.length}',
-                                        color: context.colors.accentLightBlue),
-                                    const Gap(8),
-                                    _DetainStatChip(
-                                        label: 'In Appeal',
-                                        value: '${rows.length - actionable}',
-                                        color: context.colors.warningAmber),
-                                    const Gap(8),
-                                    _DetainStatChip(
-                                        label: 'Actionable',
-                                        value: '$actionable',
-                                        color: context.colors.successGreen),
-                                    const Gap(16),
-                                    // Enabled once ANY row is actionable: the
-                                    // window passed, or an appeal decision is
-                                    // in. Opens the same bulk dialog the
-                                    // Forfeited page uses — detained goods now
-                                    // appear in it as `source='detain'` rows.
-                                    ElevatedButton.icon(
-                                      icon: const Icon(
-                                          Icons.local_shipping_rounded,
-                                          size: 16),
-                                      label:
-                                          const Text('Send Disposal Request'),
-                                      style: ElevatedButton.styleFrom(
-                                        backgroundColor: actionable > 0
-                                            ? context.colors.primaryGold
-                                            : context.colors.textMuted
-                                                .withOpacity(0.2),
-                                        foregroundColor: actionable > 0
-                                            ? Colors.white
-                                            : context.colors.textMuted,
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 20, vertical: 14),
-                                        shape: RoundedRectangleBorder(
-                                            borderRadius:
-                                                BorderRadius.circular(8)),
-                                        elevation: actionable > 0 ? 2 : 0,
-                                      ),
-                                      onPressed: actionable > 0
-                                          ? () => showDialog(
-                                                context: context,
-                                                builder: (ctx) =>
-                                                    DisposalRequestDialog(
-                                                  onSubmitted: () {
-                                                    ref.invalidate(
-                                                        livePackagesProvider);
-                                                    ref.invalidate(
-                                                        requestableForfeitedPackagesProvider);
-                                                  },
-                                                ),
-                                              )
-                                          : null,
-                                    ),
-                                  ],
-                                );
-                              },
-                              loading: () => const SizedBox(),
-                              error: (_, __) => const SizedBox(),
-                            );
-                          },
+              Consumer(
+                builder: (context, ref, child) {
+                  final pkgs = ref.watch(livePackagesProvider);
+                  final sk =
+                      ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ??
+                          {};
+                  final outcomes =
+                      ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
+                          const <String, ItemAppealOutcome>{};
+                  // Count the SAME rows the table renders, so the header
+                  // always agrees with the list below.
+                  final rows = pkgs.valueOrNull == null
+                      ? const <_DetainRow>[]
+                      : _buildRows(pkgs.valueOrNull!, sentKeys: sk);
+                  final actionable = rows
+                      .where((r) => _isActionable(r, outcomes[r.item.id]))
+                      .length;
+                  return DisposalPageHeader(
+                    title: 'Detained Goods',
+                    subtitle: 'Goods held under inquiry — decide their outcome '
+                        'or send them for sale or destruction',
+                    trailing: [
+                      _DetainStatChip(
+                          label: 'Total',
+                          value: '${rows.length}',
+                          color: context.colors.accentLightBlue),
+                      _DetainStatChip(
+                          label: 'In Appeal',
+                          value: '${rows.length - actionable}',
+                          color: context.colors.warningAmber),
+                      _DetainStatChip(
+                          label: 'Actionable',
+                          value: '$actionable',
+                          color: context.colors.successGreen),
+                      // Enabled once ANY row is actionable: the window passed,
+                      // or an appeal decision is in. Opens the same bulk
+                      // dialog the Forfeited page uses — detained goods appear
+                      // in it as `source='detain'` rows.
+                      ElevatedButton.icon(
+                        icon: const Icon(Icons.local_shipping_rounded, size: 16),
+                        label: const Text('Send Disposal Request'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: actionable > 0
+                              ? context.colors.primaryGold
+                              : context.colors.textMuted.withOpacity(0.2),
+                          foregroundColor: actionable > 0
+                              ? Colors.white
+                              : context.colors.textMuted,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8)),
+                          elevation: actionable > 0 ? 2 : 0,
                         ),
-                      ],
-                    ),
-                  ],
-                ),
+                        onPressed: actionable > 0
+                            ? () => showDialog(
+                                  context: context,
+                                  builder: (ctx) => DisposalRequestDialog(
+                                    onSubmitted: () {
+                                      ref.invalidate(livePackagesProvider);
+                                      ref.invalidate(
+                                          requestableForfeitedPackagesProvider);
+                                    },
+                                  ),
+                                )
+                            : null,
+                      ),
+                    ],
+                  );
+                },
               ).animate().fadeIn(),
               const Gap(20),
 
