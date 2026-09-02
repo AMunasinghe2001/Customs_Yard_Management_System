@@ -366,7 +366,11 @@ class _DispositionCategoryScreenState
                         if (_hasDelivery) ...[
                           _deliveryFilterChip('All', null, Icons.all_inbox_rounded),
                           _deliveryFilterChip(
-                              'Delivered', true, Icons.check_circle_rounded),
+                              widget.finalTag == 'DESTROYED'
+                                  ? 'Destroyed'
+                                  : 'Delivered',
+                              true,
+                              Icons.check_circle_rounded),
                           _deliveryFilterChip(
                               'Pending', false, Icons.schedule_rounded),
                         ],
@@ -476,17 +480,19 @@ class _DispositionCategoryScreenState
                                 label: Text('SR Number'), size: ColumnSize.M),
                             const DataColumn2(
                                 label: Text('Goods Name'), size: ColumnSize.M),
-                            const DataColumn2(
-                                label: Text('HS Code'),
-                                size: ColumnSize.S,
-                                fixedWidth: 110),
+                            if (widget.finalTag != 'DESTROYED')
+                              const DataColumn2(
+                                  label: Text('HS Code'),
+                                  size: ColumnSize.S,
+                                  fixedWidth: 110),
                             const DataColumn2(
                                 label: Text('Qty'),
                                 size: ColumnSize.S,
                                 fixedWidth: 70),
                             const DataColumn2(
                                 label: Text('Date'), size: ColumnSize.M),
-                            if (widget.finalTag != 'SOLD')
+                            if (widget.finalTag != 'SOLD' &&
+                                widget.finalTag != 'DESTROYED')
                               const DataColumn2(
                                   label: Text('Officer'), size: ColumnSize.M),
                             DataColumn2(
@@ -525,26 +531,29 @@ class _DispositionCategoryScreenState
                                             fontWeight: FontWeight.w600))),
                                     DataCell(TooltipText(row.itemName,
                                         overflow: TextOverflow.ellipsis)),
-                                    DataCell(TooltipText((() {
-                                      final itemId = row.entry?.packageItemId ??
-                                          row.item?.id;
-                                      final hs = row.package.items
-                                          .where((i) => i.id == itemId)
-                                          .firstOrNull
-                                          ?.hsCode;
-                                      return (hs != null && hs.isNotEmpty)
-                                          ? hs
-                                          : '—';
-                                    })(),
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(fontSize: 12))),
+                                    if (widget.finalTag != 'DESTROYED')
+                                      DataCell(TooltipText((() {
+                                        final itemId =
+                                            row.entry?.packageItemId ??
+                                                row.item?.id;
+                                        final hs = row.package.items
+                                            .where((i) => i.id == itemId)
+                                            .firstOrNull
+                                            ?.hsCode;
+                                        return (hs != null && hs.isNotEmpty)
+                                            ? hs
+                                            : '—';
+                                      })(),
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(fontSize: 12))),
                                     DataCell(TooltipText(
                                         '${row.entry?.itemCount ?? row.item?.quantity ?? 0}')),
                                     DataCell(TooltipText(row.entry?.returnedAt != null
                                         ? DateFormat('yyyy-MM-dd')
                                             .format(row.entry!.returnedAt!)
                                         : '—')),
-                                    if (widget.finalTag != 'SOLD')
+                                    if (widget.finalTag != 'SOLD' &&
+                                        widget.finalTag != 'DESTROYED')
                                       DataCell(TooltipText(row.officer,
                                           overflow: TextOverflow.ellipsis)),
                                     DataCell(TooltipText(

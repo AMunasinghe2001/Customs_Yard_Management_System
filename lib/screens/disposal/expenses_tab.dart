@@ -1039,7 +1039,12 @@ class _StatusBadge extends StatelessWidget {
 /// live so the officer sees the consequence before saving.
 class RecordExpenseDialog extends ConsumerStatefulWidget {
   final SrFinancials sr;
-  const RecordExpenseDialog({super.key, required this.sr});
+  /// Opened from the Destroyed Goods table: hides Auction Expenses (it never
+  /// applies to a destruction) and adjusts the copy to talk about destruction
+  /// specifically instead of disposal in general.
+  final bool forDestruction;
+  const RecordExpenseDialog(
+      {super.key, required this.sr, this.forDestruction = false});
 
   @override
   ConsumerState<RecordExpenseDialog> createState() =>
@@ -1052,6 +1057,13 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   /// needs no change here — only that map, and the icon table below.
   late final Map<String, TextEditingController> _fields;
   bool _saving = false;
+
+  /// The kinds this dialog offers -- Auction Expenses dropped for a
+  /// destruction, since nothing is auctioned when goods are destroyed.
+  Iterable<MapEntry<String, String>> get _kinds => widget.forDestruction
+      ? kRecordableExpenseKinds.entries
+          .where((e) => e.key != 'auction_expense')
+      : kRecordableExpenseKinds.entries;
 
   /// The figure already recorded for [kind] on this SR.
   double _existing(String kind) {
@@ -1098,7 +1110,7 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
   void initState() {
     super.initState();
     _fields = {
-      for (final kind in kRecordableExpenseKinds.keys)
+      for (final kind in _kinds.map((e) => e.key))
         kind: TextEditingController(
             text:
                 _existing(kind) == 0 ? '' : _existing(kind).toStringAsFixed(2))
@@ -1139,7 +1151,7 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
           widget.sr.goods.isNotEmpty ? widget.sr.goods.first.itemId : null;
       // Every kind is written, zeros included: clearing a field must record
       // the zero, not leave the old figure standing.
-      for (final entry in kRecordableExpenseKinds.entries) {
+      for (final entry in _kinds) {
         await svc.addFinancialExpense(
           kind: entry.key,
           amount: _valueOf(entry.key),
@@ -1165,9 +1177,11 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
     final green = context.colors.successGreen;
 
     return StyledFormDialog(
-      label: 'DISPOSAL EXPENSES',
+      label: widget.forDestruction ? 'DESTRUCTION EXPENSES' : 'DISPOSAL EXPENSES',
       title: widget.sr.srNumber,
-      icon: Icons.receipt_long_rounded,
+      icon: widget.forDestruction
+          ? Icons.local_fire_department_rounded
+          : Icons.receipt_long_rounded,
       headerAccentColor: green,
       width: 520,
       actions: [
@@ -1221,7 +1235,7 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
             children: [
               // One field per recordable kind, driven off the shared map so
               // this form never drifts from what the database accepts.
-              for (final entry in kRecordableExpenseKinds.entries) ...[
+              for (final entry in _kinds) ...[
                 TextField(
                   controller: _fields[entry.key],
                   keyboardType:
@@ -1257,7 +1271,9 @@ class _RecordExpenseDialogState extends ConsumerState<RecordExpenseDialog> {
                     const Gap(10),
                     Expanded(
                       child: Text(
-                        'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
+                        widget.forDestruction
+                            ? 'Notice: Costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.'
+                            : 'Notice: Destruction and advertising costs entered here are deducted from the lodged Destroying Deposit. Remaining balance will be calculated as a refund.',
                         style: TextStyle(
                           color: context.colors.textSecondary,
                           fontSize: 12,

@@ -1210,8 +1210,11 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
 class _DeliverySegmentedFilter extends StatelessWidget {
   final bool? value; // null = all
   final ValueChanged<bool?> onChanged;
+  /// Label for the `true` state -- "Delivered" on Sold, "Destroyed" on
+  /// Destroyed Goods, since a destruction has no delivery concept.
+  final String trueLabel;
   const _DeliverySegmentedFilter(
-      {required this.value, required this.onChanged});
+      {required this.value, required this.onChanged, this.trueLabel = 'Delivered'});
 
   @override
   Widget build(BuildContext context) {
@@ -1250,7 +1253,7 @@ class _DeliverySegmentedFilter extends StatelessWidget {
     return Row(children: [
       seg('All', null, Icons.all_inbox_rounded),
       const Gap(8),
-      seg('Delivered', true, Icons.check_circle_rounded),
+      seg(trueLabel, true, Icons.check_circle_rounded),
       const Gap(8),
       seg('Pending', false, Icons.schedule_rounded),
     ]);
@@ -1394,6 +1397,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
           const Gap(12),
           _DeliverySegmentedFilter(
             value: deliveryFilter,
+            trueLabel: 'Destroyed',
             onChanged: (v) {
               ref.read(_destroyedDeliveryFilterProvider.notifier).state = v;
               setState(() => _page = 0);
@@ -1555,6 +1559,11 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
 /// Destroyed-tab delivery sub-filter: null = all, true = delivered, false = pending.
 final _destroyedDeliveryFilterProvider = StateProvider<bool?>((ref) => null);
 
+// Same pill the yard's own status column renders (see _MarkDestroyedCell in
+// disposition_category_screen.dart, "Destroyed" branch, and _DeliveryStatusChip)
+// -- kept pixel-identical (padding, radius, icon size, font) so the same status
+// looks the same on both screens. Central Disposal is read-only here: only the
+// yard can confirm a destruction, so "Pending" never becomes a button here.
 class _DisposalStatusChip extends StatelessWidget {
   final bool isDestroyed;
   const _DisposalStatusChip({required this.isDestroyed});
@@ -1563,7 +1572,7 @@ class _DisposalStatusChip extends StatelessWidget {
     final color =
         isDestroyed ? context.colors.successGreen : context.colors.warningAmber;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: color.withOpacity(0.12),
         borderRadius: BorderRadius.circular(8),
@@ -1623,7 +1632,8 @@ class _DisposalExpensesCell extends ConsumerWidget {
                 if (sr != null) {
                   showDialog(
                     context: context,
-                    builder: (_) => RecordExpenseDialog(sr: sr),
+                    builder: (_) =>
+                        RecordExpenseDialog(sr: sr, forDestruction: true),
                   );
                 } else {
                   ScaffoldMessenger.of(context).showSnackBar(
