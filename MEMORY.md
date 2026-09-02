@@ -1163,3 +1163,18 @@ Detained, Forfeited, Abandoned and Other each built the same header from a `Wrap
 - ⚠️ That cap is **load-bearing, not cosmetic**: at the app's 1000px minimum window the 3 chips + button want ~869px, more than the content area after the nav rail. Uncapped the Row overflows; capped, the trailing block scrolls horizontally and the button still never leaves the header line. Don't "simplify" it away.
 - `test/disposal_page_header_test.dart` checks all four pages at 1600→700px for overflow, and that the button stays to the right of the title.
 - Same class of bug in `disposal_request_dialog.dart`'s rows: SR number + source chip + appeal chip shared a bare `Row` where only the text could give, so chips collided; item name did the same against its Qty chip. Both lines are `Wrap`s now, and the Sale badge has a fixed width so badges line up down the list.
+
+### The nav rail scrolled itself back to the top (2026-09-02)
+
+Clicking a nav item near the BOTTOM of the yard's rail scrolled the rail back to the top the moment the page opened — hiding the item just selected.
+
+⚠️ **Every screen wraps itself in its own `AppShell`** (26 call sites), so navigating disposes one shell and builds another. The rail's `ListView` had no controller, and a `ScrollController` held in `State` would have been born at offset 0 every time too. The remembered offset therefore lives at **module level in `app_shell.dart`** (`_navScrollOffset`), outside the widget tree; the controller is seeded from it and writes back on scroll. Don't "tidy" it into the State class — that reintroduces the bug.
+
+### Empty Central Disposal outcome tabs showed no columns (2026-09-02)
+
+The five outcome tabs (Government Use, Remanded, Auction, Converted, Removed) are all one widget — `UnsoldProposalsTab` with a different `proposalFilter`. Two consequences, both fixed:
+
+- It did `rows.isEmpty ? _listCard(EmptyTableState) : Column(table)`, **swapping the whole `DataTable2` out**, so an empty tab lost its column headers. Now the table always renders and the empty state goes through `DataTable2.empty` — the pattern the yard's pages already used. Pager hidden when there are no rows.
+- All five inherited the Unsold tab's message, "No unresolved unsold packages", naming goods the tab doesn't list. `emptyMessage` / `emptySubtitle` / `emptyIcon` are now per-tab.
+
+Card-list tabs (Tender Sales, Committees, Destructions) legitimately keep the swap — they have no columns to preserve.
