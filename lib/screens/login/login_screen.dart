@@ -6,6 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/forgot_password_dialog.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
@@ -113,6 +114,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       return 'Your session has timed out due to inactivity. Please sign in again.';
     }
     return 'Sign in failed. Please check your credentials.';
+  }
+
+  /// Opens the reset flow, pre-filled with whatever was already typed.
+  ///
+  /// On success the dialog closes and the officer is left on this page with a
+  /// note to sign in again -- which is exactly where they need to be.
+  Future<void> _openForgotPassword() async {
+    final done = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => ForgotPasswordDialog(
+        accent: context.colors.accentLightBlue,
+        initialIdentifier: _emailCtrl.text.trim(),
+      ),
+    );
+    if (done == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text(
+            'Password changed. Sign in with your new password.'),
+        backgroundColor: context.colors.successGreen,
+      ));
+    }
   }
 
   @override
@@ -266,6 +289,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                     const Gap(8),
                     Text('Remember me', style: TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+                    const Spacer(),
+                    // Beside Remember-me: both are things an officer
+                    // reaches for at a sign-in that will not go through.
+                    TextButton(
+                      onPressed: _openForgotPassword,
+                      style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                      child: Text('Forgot password?',
+                          style: TextStyle(
+                              color: context.colors.accentLightBlue,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600)),
+                    ),
                   ]).animate().fadeIn(delay: 350.ms),
                   const Gap(24),
                   SizedBox(height: 54, child: ElevatedButton(
