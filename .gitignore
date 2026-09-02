@@ -64,3 +64,6 @@ app.*.map.json
 
 # Per-terminal build output from tool/run_instance.ps1 — see that script.
 .flutter-instances/
+
+# Database dumps. They carry real account rows, so they stay local.
+backups/
