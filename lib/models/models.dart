@@ -839,6 +839,21 @@ class ProfileModel {
 
   bool get isAdmin => role == 'admin';
 
+  /// The officer's POST, as shown on their profile and in ICT's staff table.
+  ///
+  /// `role` is the permission level and has only two yard values -- 'admin'
+  /// and 'officer'. DC and SDDC are two DIFFERENT posts that happen to share
+  /// the admin permission, so which one an officer holds lives in `job_role`,
+  /// set by ICT at provisioning. Falls back to the role's own name for an
+  /// account created before ICT recorded a post.
+  String get postTitle {
+    final j = jobRole?.trim();
+    if (j != null && j.isNotEmpty) {
+      return kPostTitles[j] ?? j;
+    }
+    return isAdmin ? 'DC / SDDC' : 'Yard Officer';
+  }
+
   /// Yard officer (front-line yard staff, not a directorate account).
   bool get isOfficer => role == 'officer';
 
@@ -1015,6 +1030,25 @@ const Map<String, String> kExpenseKinds = {
 /// The kinds Central Disposal actually RECORDS. A refund is not typed in — it
 /// is what is left of the goods' destroying deposit once these are paid, so it
 /// is derived (see [SrFinancials.refund]) rather than entered.
+/// The posts ICT can assign to a yard account, keyed by what is stored in
+/// `profiles.job_role`.
+///
+/// DC and SDDC are two separate posts. They share the 'admin' permission role,
+/// so the role alone cannot tell them apart -- which is why the post is its
+/// own field rather than being derived from the role.
+const Map<String, String> kPostTitles = {
+  'officer': 'Yard Officer',
+  'dc': 'DC (Deputy Commissioner)',
+  'sddc': 'SDDC (Senior Deputy Commissioner)',
+};
+
+/// The permission role each post carries.
+const Map<String, String> kPostRoles = {
+  'officer': 'officer',
+  'dc': 'admin',
+  'sddc': 'admin',
+};
+
 const Map<String, String> kRecordableExpenseKinds = {
   'destruction_expense': 'Destruction Expenses',
   'advertising_expense': 'Advertising Expenses',

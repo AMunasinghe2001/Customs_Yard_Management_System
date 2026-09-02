@@ -2468,6 +2468,9 @@ class IctService {
     String? mobileNumber,
     String? badgeNumber,
     required String role, // 'admin' (DC / SDDC) or 'officer'
+    /// The POST held: a key of `kPostTitles` ('officer', 'dc', 'sddc'). DC and
+    /// SDDC share the admin role, so the role alone cannot record which.
+    String? jobRole,
     required String yard,
     String? directorate,
   }) async {
@@ -2486,6 +2489,7 @@ class IctService {
       'mobile_number': mobileNumber?.trim(),
       'yard': yard,
       'username': username,
+      if (jobRole != null && jobRole.isNotEmpty) 'job_role': jobRole,
       if (directorate != null && directorate.isNotEmpty)
         'directorate': directorate,
     };
@@ -2576,6 +2580,8 @@ class IctService {
     String? mobileNumber,
     required String yard,
     required String role,
+    /// The POST held — a key of `kPostTitles`. See verifyAndCreateUser.
+    String? jobRole,
     String? directorate,
   }) async {
     await supabase.from('profiles').update({
@@ -2585,6 +2591,7 @@ class IctService {
       'mobile_number': mobileNumber?.trim(),
       'yard': yard,
       'role': role,
+      if (jobRole != null && jobRole.isNotEmpty) 'job_role': jobRole,
       // Sent even when null: clearing an account's directorate is a legitimate
       // edit, and `if (… != null)` would silently ignore it.
       'directorate': (directorate == null || directorate.isEmpty)

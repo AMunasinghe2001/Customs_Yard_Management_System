@@ -8,6 +8,9 @@ import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../core/supabase_client.dart';
+import '../../core/directorates.dart';
+import '../../models/models.dart';
+import '../../widgets/styled_form_dialog.dart';
 import '../../core/yards.dart';
 import '../../core/app_session.dart';
 import '../../services/services.dart';
@@ -153,14 +156,32 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
   /// the profile, so an unbounded pick means an unbounded row.
   static const int _maxProfileImageBytes = 2 * 1024 * 1024; // 2 MB
 
+  /// The image formats accepted. Narrow on purpose: FileType.image lets the
+  /// picker offer anything the platform calls an image -- including SVG, which
+  /// is a document that can carry script, and formats nothing here can decode.
+  /// These three are what the app actually renders.
+  static const List<String> _allowedImageExtensions = ['jpg', 'jpeg', 'png'];
+
   Future<String?> _pickProfileImage() async {
     final result = await FilePicker.platform.pickFiles(
-      type: FileType.image,
+      type: FileType.custom,
+      allowedExtensions: _allowedImageExtensions,
       allowMultiple: false,
     );
     if (result == null || result.files.isEmpty) return null;
     final path = result.files.single.path;
     if (path == null) return null;
+
+    // Re-checked here, not just handed to the picker: a picker filter is a
+    // convenience the platform may not honour, and a path can arrive by other
+    // routes. The extension is what decides.
+    final ext = path.split('.').last.toLowerCase();
+    if (!_allowedImageExtensions.contains(ext)) {
+      if (mounted) {
+        context.showError('Only JPG and PNG images are accepted.');
+      }
+      return null;
+    }
 
     // Checked off the file itself rather than the picker's reported size:
     // that is what actually gets read and stored.
@@ -195,17 +216,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       context: context,
       barrierDismissible: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDlgState) => AlertDialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
-          contentPadding: const EdgeInsets.fromLTRB(24, 12, 24, 8),
-          actionsPadding: const EdgeInsets.fromLTRB(24, 0, 24, 16),
-          title: const Text('Edit Profile'),
-          content: Container(
-            width: 620,
-            constraints: const BoxConstraints(minHeight: 520, maxHeight: 680),
-            child: SingleChildScrollView(
-              child: Form(
+        builder: (ctx, setDlgState) => StyledFormDialog(
+          label: 'MY ACCOUNT',
+          title: 'Edit Profile',
+          icon: Icons.manage_accounts_rounded,
+          width: 620,
+          child: Form(
                 key: _formKey,
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -271,6 +287,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         ),
                       ],
                       const Gap(16),
+                      StyledFormSection(
+                        title: 'Your Details',
+                        icon: Icons.person_outline_rounded,
+                        children: [
                       TextFormField(
                         controller: _nameCtrl!,
                         style: TextStyle(color: context.colors.textPrimary),
@@ -372,17 +392,13 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           ),
                         ],
                       ),
-                      const Gap(10),
-                      const Divider(height: 28),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('Change Password',
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700)),
+                        ],
                       ),
-                      const Gap(2),
+                      const Gap(14),
+                      StyledFormSection(
+                        title: 'Change Password',
+                        icon: Icons.lock_outline_rounded,
+                        children: [
                       Align(
                         alignment: Alignment.centerLeft,
                         child: Text(
@@ -455,10 +471,10 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                           fillColor: context.colors.borderColor.withOpacity(0.3),
                         ),
                       ),
+                        ],
+                      ),
                   ],
                 ),
-              ),
-            ),
           ),
           actions: [
             TextButton(
@@ -541,12 +557,12 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
               const Gap(24),
               _ProfileHeroCard(
                 name: profile.fullName,
-                role: profile.role,
+                role: profile.postTitle,
                 email: email,
                 badge: profile.badgeNumber,
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
-                yard: yardName(profile.yard),
+                yard: _yardWithDirectorate(profile),
                 profileImageUrl: profile.profileImageUrl,
                 initials: _initials(profile.fullName),
               ).animate().fadeIn(duration: 400.ms, delay: 100.ms).slideY(begin: 0.1),
@@ -559,7 +575,7 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 isActive: profile.isActive,
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
-                yard: yardName(profile.yard),
+                yard: _yardWithDirectorate(profile),
                 daysUntilExpiry: profile.daysUntilExpiry,
               ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideY(begin: 0.1),
             ],
@@ -568,6 +584,19 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
       ),
     );
   }
+}
+
+/// The yard as it is actually referred to: with the directorate it sits under.
+///
+/// A yard alone is ambiguous — NNR is both CED and PSD, and the directorate is
+/// what puts the prefix on every SR number the officer registers. "Grey Line 1"
+/// on its own left that unsaid.
+String _yardWithDirectorate(ProfileModel profile) {
+  final yard = yardName(profile.yard);
+  final dir = profile.directorate;
+  if (dir == null || dir.trim().isEmpty) return yard;
+  final prefix = directorateSrPrefix(dir);
+  return prefix.isEmpty ? yard : '$prefix / $yard';
 }
 
 class _ProfileHeroCard extends StatelessWidget {
@@ -688,7 +717,10 @@ class _ProfileHeroCard extends StatelessWidget {
                       color: context.colors.accentLightBlue.withOpacity(0.4),
                     ),
                   ),
-                  child: Text(role.toUpperCase(),
+                  // The officer's POST, not the raw permission role: there
+                  // are no "admins" in this service, and "ADMIN" told the
+                  // officer nothing about the job they actually hold.
+                  child: Text(role,
                       style: TextStyle(
                           color: context.colors.accentLightBlue,
                           fontSize: 12,

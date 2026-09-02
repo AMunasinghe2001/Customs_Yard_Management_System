@@ -105,7 +105,10 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     final mobileC = TextEditingController();
     final otpC = TextEditingController();
 
-    String selectedRole = 'officer'; // 'admin' or 'officer'
+    // The POST held, a key of kPostTitles. The permission role is derived
+    // from it (kPostRoles): DC and SDDC are different posts that share the
+    // 'admin' role, so the role alone cannot record which one this is.
+    String selectedPost = 'officer';
     // Both start unset: the yard list depends on the directorate, and a
     // pre-filled pair would quietly assign whichever yard happened to be first.
     String? selectedDirectorate;
@@ -155,7 +158,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     fullName: '$first $last',
                     mobileNumber: mobileC.text.trim(),
                     badgeNumber: salaryC.text.trim(),
-                    role: selectedRole,
+                    role: kPostRoles[selectedPost] ?? 'officer',
                     yard: selectedYard!,
                   );
               setDialogState(() {
@@ -190,7 +193,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     fullName: '${firstC.text.trim()} ${lastC.text.trim()}',
                     mobileNumber: mobileC.text.trim(),
                     badgeNumber: salaryC.text.trim(),
-                    role: selectedRole,
+                    role: kPostRoles[selectedPost] ?? 'officer',
+                    jobRole: selectedPost,
                     yard: selectedYard!,
                     directorate: selectedDirectorate,
                   );
@@ -199,8 +203,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               _loadData();
 
               final emailed = res['emailed'] == true;
-              final roleLabel =
-                  selectedRole == 'admin' ? 'DC / SDDC (Admin)' : 'Yard Officer';
+              final roleLabel = kPostTitles[selectedPost] ?? 'Yard Officer';
               final yardLabel = yardByCode(selectedYard).name;
               final dirLabel = directorateName(selectedDirectorate);
 
@@ -282,19 +285,18 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                   Row(children: [
                     Expanded(
                       child: _IctDialogDropdown(
-                        label: 'Account Role *',
+                        label: 'Post *',
                         icon: Icons.shield_outlined,
                         accent: AppTheme.ictCyan,
-                        value: selectedRole,
-                        options: const [
-                          StyledDropdownOption('officer', 'Yard Officer'),
-                          StyledDropdownOption(
-                              'admin', 'DC / SDDC (Yard Admin)'),
+                        value: selectedPost,
+                        options: [
+                          for (final e in kPostTitles.entries)
+                            StyledDropdownOption(e.key, e.value),
                         ],
                         onChanged: otpSent
                             ? null
                             : (v) => setDialogState(
-                                () => selectedRole = v ?? 'officer'),
+                                () => selectedPost = v ?? 'officer'),
                       ),
                     ),
                     const Gap(12),
@@ -561,7 +563,12 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
     final unameC = TextEditingController(text: staff.username ?? '');
     final salaryC = TextEditingController(text: staff.badgeNumber ?? '');
     final mobileC = TextEditingController(text: staff.mobileNumber ?? '');
-    String selectedRole = staff.role;
+    // The POST held. An account provisioned before ICT recorded one falls
+    // back to whatever its permission role implies.
+    String selectedPost = staff.jobRole?.trim().isNotEmpty == true &&
+            kPostTitles.containsKey(staff.jobRole!.trim())
+        ? staff.jobRole!.trim()
+        : (staff.isAdmin ? 'dc' : 'officer');
     String? selectedDirectorate = staff.directorate;
     String? selectedYard = staff.yard;
     bool loading = false;
@@ -588,7 +595,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     badgeNumber: salaryC.text.trim(),
                     mobileNumber: mobileC.text.trim(),
                     yard: selectedYard ?? staff.yard ?? kDefaultYardCode,
-                    role: selectedRole,
+                    role: kPostRoles[selectedPost] ?? 'officer',
+                    jobRole: selectedPost,
                     directorate: selectedDirectorate,
                   );
               if (ctx.mounted) Navigator.pop(ctx);
@@ -659,17 +667,20 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               const Gap(12),
               Row(children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
-                    value: selectedRole,
-                    decoration: const InputDecoration(labelText: 'Role'),
-                    items: const [
-                      DropdownMenuItem(
-                          value: 'officer', child: Text('Yard Officer')),
-                      DropdownMenuItem(
-                          value: 'admin', child: Text('DC / SDDC (Admin)')),
+                  // The same styled dropdown the Add form uses -- this was a
+                  // bare DropdownButtonFormField, so the two forms that edit
+                  // the same field looked nothing alike.
+                  child: _IctDialogDropdown(
+                    label: 'Post *',
+                    icon: Icons.shield_outlined,
+                    accent: AppTheme.ictCyan,
+                    value: selectedPost,
+                    options: [
+                      for (final e in kPostTitles.entries)
+                        StyledDropdownOption(e.key, e.value),
                     ],
                     onChanged: (v) =>
-                        setDialogState(() => selectedRole = v ?? 'officer'),
+                        setDialogState(() => selectedPost = v ?? 'officer'),
                   ),
                 ),
                 const Gap(12),
