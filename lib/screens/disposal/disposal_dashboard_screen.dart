@@ -380,27 +380,52 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     title: 'Government Use Goods',
                     countNoun: 'For government use',
                     proposalFilter: 'government_use',
-                    tabKey: 'outcome-government-use'),
+                    tabKey: 'outcome-government-use',
+                    emptyIcon: Icons.account_balance_rounded,
+                    emptyMessage: 'No goods assigned to government use',
+                    emptySubtitle:
+                        'Unsold goods the Top Management Directorate assigns '
+                        'to a government department will appear here.'),
                 UnsoldProposalsTab(
                     title: 'Remanded Goods',
                     countNoun: 'Remanded',
                     proposalFilter: 'remand',
-                    tabKey: 'outcome-remand'),
+                    tabKey: 'outcome-remand',
+                    emptyIcon: Icons.gavel_rounded,
+                    emptyMessage: 'No remanded goods',
+                    emptySubtitle:
+                        'Unsold goods the Top Management Directorate remands '
+                        'to court custody will appear here.'),
                 UnsoldProposalsTab(
                     title: 'Auction Goods',
                     countNoun: 'For auction',
                     proposalFilter: 'auction',
-                    tabKey: 'outcome-auction'),
+                    tabKey: 'outcome-auction',
+                    emptyIcon: Icons.gavel_rounded,
+                    emptyMessage: 'No goods sent to auction',
+                    emptySubtitle:
+                        'Unsold goods the Top Management Directorate sends to '
+                        'public auction will appear here.'),
                 UnsoldProposalsTab(
                     title: 'Converted Goods',
                     countNoun: 'Converted',
                     proposalFilter: 'convert',
-                    tabKey: 'outcome-convert'),
+                    tabKey: 'outcome-convert',
+                    emptyIcon: Icons.autorenew_rounded,
+                    emptyMessage: 'No converted goods',
+                    emptySubtitle:
+                        'Unsold goods converted to another use or form will '
+                        'appear here.'),
                 UnsoldProposalsTab(
                     title: 'Removed from the Premises',
                     countNoun: 'Removed',
                     proposalFilter: 'remove_from_premises',
-                    tabKey: 'outcome-removed'),
+                    tabKey: 'outcome-removed',
+                    emptyIcon: Icons.logout_rounded,
+                    emptyMessage: 'No goods removed from the premises',
+                    emptySubtitle:
+                        'Unsold goods removed from customs premises will '
+                        'appear here.'),
                 _DestroyedPackagesTab(),
                 _DisposalRequestsTab(),
                 _TenderSalesTab(),
@@ -448,12 +473,23 @@ class UnsoldProposalsTab extends ConsumerWidget {
   /// does not carry one tab's search into another.
   final String tabKey;
 
+  /// What an empty table says. One widget serves every outcome tab, so
+  /// without these each of Removed / Converted / Auction / Remanded read
+  /// "No unresolved unsold packages" -- the Unsold tab's wording -- and gave
+  /// no clue which tab you were even on.
+  final String? emptyMessage;
+  final String? emptySubtitle;
+  final IconData emptyIcon;
+
   const UnsoldProposalsTab({
     super.key,
     this.title = 'Unsold Goods',
     this.countNoun = 'Unsold',
     this.proposalFilter,
     this.tabKey = 'unsold-proposals',
+    this.emptyMessage,
+    this.emptySubtitle,
+    this.emptyIcon = Icons.refresh_rounded,
   });
 
   static const int _pageSize = 20;
@@ -568,17 +604,12 @@ class UnsoldProposalsTab extends ConsumerWidget {
                 color: amber),
           ),
           Expanded(
-            child: rows.isEmpty
-                ? _listCard(
-                    context,
-                    const EmptyTableState(
-                      icon: Icons.refresh_rounded,
-                      message: 'No unresolved unsold packages',
-                      subtitle:
-                          'Packages that remain unsold after re-opening will appear here.',
-                    ),
-                  )
-                : Column(
+            // The table renders even with no rows, so the column headers stay
+            // on screen and an empty tab still says what it would list -- the
+            // yard's own pages have always done this. Swapping the whole
+            // DataTable2 out for a bare EmptyTableState hid the headers and
+            // left every empty tab looking identical.
+            child: Column(
                     children: [
                       Expanded(
                         child: _listCard(
@@ -589,6 +620,14 @@ class UnsoldProposalsTab extends ConsumerWidget {
                             fixedTopRows: 1,
                             minWidth: kUnsoldTableMinWidth,
                             headingRowColor: _headingColor(context),
+                            empty: EmptyTableState(
+                              icon: emptyIcon,
+                              message: emptyMessage ??
+                                  'No unresolved unsold packages',
+                              subtitle: emptySubtitle ??
+                                  'Packages that remain unsold after '
+                                      're-opening will appear here.',
+                            ),
                             // An outcome tab already filters to one outcome,
                             // so a Final Outcome column would repeat the tab
                             // title on every row; it shows the date instead.
@@ -655,14 +694,15 @@ class UnsoldProposalsTab extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      TablePager(
-                        total: rows.length,
-                        page: page,
-                        pageSize: _pageSize,
-                        onPageChanged: (p) => ref
-                            .read(_unsoldPageProvider(tabKey).notifier)
-                            .state = p,
-                      ),
+                      if (rows.isNotEmpty)
+                        TablePager(
+                          total: rows.length,
+                          page: page,
+                          pageSize: _pageSize,
+                          onPageChanged: (p) => ref
+                              .read(_unsoldPageProvider(tabKey).notifier)
+                              .state = p,
+                        ),
                     ],
                   ),
           ),

@@ -80,6 +80,18 @@ const _adminNav = [
   NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
 ];
 
+/// Where the nav rail is scrolled to, kept OUTSIDE the widget tree.
+///
+/// Every screen wraps itself in its own [AppShell], so navigating disposes one
+/// shell and builds another. A ScrollController held in State is therefore
+/// born at offset 0 on every navigation — which is why clicking a nav item far
+/// down the rail jumped the rail back to the top the instant the page opened,
+/// hiding the very item that had just been selected.
+///
+/// A single module-level offset survives that rebuild, so the rail stays
+/// exactly where the officer left it.
+double _navScrollOffset = 0;
+
 class AppShell extends ConsumerStatefulWidget {
   final Widget child;
   final String currentRoute;
@@ -91,6 +103,18 @@ class AppShell extends ConsumerStatefulWidget {
 
 class _AppShellState extends ConsumerState<AppShell> {
   Timer? _heartbeatTimer;
+
+  /// Restores the rail to wherever the previous shell left it, and keeps
+  /// [_navScrollOffset] up to date as the officer scrolls.
+  late final ScrollController _navScrollCtrl =
+      ScrollController(initialScrollOffset: _navScrollOffset)
+        ..addListener(_rememberNavScroll);
+
+  void _rememberNavScroll() {
+    if (_navScrollCtrl.hasClients) {
+      _navScrollOffset = _navScrollCtrl.offset;
+    }
+  }
 
   @override
   void initState() {
@@ -115,6 +139,8 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   void dispose() {
     _heartbeatTimer?.cancel();
+    _navScrollCtrl.removeListener(_rememberNavScroll);
+    _navScrollCtrl.dispose();
     super.dispose();
   }
 
@@ -193,6 +219,7 @@ class _AppShellState extends ConsumerState<AppShell> {
                 const SizedBox(height: 12),
                 Expanded(
                   child: ListView(
+                    controller: _navScrollCtrl,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
                     children: navItems.map((item) {
                       final isActive = item.route == '/admin'
