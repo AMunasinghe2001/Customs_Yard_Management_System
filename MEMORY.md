@@ -1248,3 +1248,14 @@ Both were reworked the day after they landed — the first cut answered the wron
   - "All" is rendered **outside** the filtered grid: it is a reset, not an option, and must stay one tap away while a query narrows the list.
   - `page` is clamped against the *filtered* length; typing also resets `_page = 0`.
 - `kPostTitles['officer']` is **'Officer'**, not 'Yard Officer' — the other two name the post plainly ('DC (Deputy Commissioner)', 'SDDC (…)') and the odd one out made the list look admins-only. `ProfileModel.postTitle`'s fallback matches.
+
+### Searchable dropdowns, rolling year filter, posts vs roles (2026-09-02)
+
+- ⚠️ **`srYears` always offers the current year AND the next**, from `DateTime.now()`. Derived purely from the data it went stale every **1 January** — nothing registered yet, so the year being worked in was missing from the filter meant to find it. It advances on its own; never "simplify" it back to data-only.
+- **Every dropdown in the app is `_StyledDropdownContent`** — one widget. It now shows a **search box once the list exceeds 8 options** (i.e. once it pages) and narrows in place. Lists that fit one page get none. `All` stays put while a query narrows, because it is a **reset**, not an option. Typing resets to page 1.
+- ⚠️ **Two different rules for SR/OA**, don't merge them:
+  - MINTING a new number (`getNextSrNumber`) is scoped to one register — the next free SR counts SR numbers only.
+  - SWITCHING the register on a number already on screen (`withSrDocType`) is a **correction** and **keeps the serial** — `CED/GL1/SR/87/2026` → `CED/GL1/OA/87/2026`. Re-minting moved the serial out from under the officer.
+- **DC and SDDC are shown apart** in ICT's table and role filter, via `postShortTitle` / `kPostShortTitles`. The permission role cannot distinguish them, so the filter sends `kPostRoles[post]` to the server and narrows to the exact post client-side. An account with **no post recorded** still reads `DC / SDDC` — without one they genuinely are indistinguishable. Post list reads **"Officer"**, not "Yard Officer".
+- **`TenderStage`** (models.dart) replaces the read-only "Pending" chip: `Tender Open` → `Tender Started` → `Awaiting Decision` → `Tender Closed`, read off the sale's own moments (`saleMoment` / `saleEndMoment` / `unsoldDeadline`), each with a tooltip.
+- Portal polish: Top Management's sign-in is **"Top Management Sign In"** (was "Executive" — nothing else calls it that); the four directorate portals animate their heading in like ICT, and the **OTP-sent banner is green on every portal**, not the portal accent — it is a confirmation, not chrome.
