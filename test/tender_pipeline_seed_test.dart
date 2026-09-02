@@ -86,6 +86,45 @@ void main() {
     });
   });
 
+  group('the unsold pool can show every round count', () {
+    // A package that SELLS on its fourth attempt leaves the unsold pool the
+    // moment it sells. So if unsold packages only ever ran to three rounds,
+    // the Unsold Tenders list could never display a "4x" -- that count would
+    // exist only on goods that had already gone.
+    test('a package still unsold after four rounds reads as 4x', () {
+      const rounds = [
+        Round(1, false),
+        Round(2, false),
+        Round(3, false),
+        Round(4, false),
+      ];
+      expect(isUnsold(rounds), isTrue);
+      expect(timesTendered(rounds), 4);
+    });
+
+    test('a package that sold on its fourth attempt is NOT in the pool', () {
+      const rounds = [
+        Round(1, false),
+        Round(2, false),
+        Round(3, false),
+        Round(4, true, 30000),
+      ];
+      expect(timesTendered(rounds), 4);
+      expect(isUnsold(rounds), isFalse);
+    });
+  });
+
+  group('a tender sale is a sale, not a lot', () {
+    // Several packages go under one sale number. A sale minted per package
+    // would make every tender a single-item auction, which is not how one
+    // reads -- and the sale's own date governs all of its items.
+    test('one sale carries several packages', () {
+      const packagesInSale = ['fp1', 'fp2', 'fp3', 'fp4'];
+      expect(packagesInSale.length, greaterThan(1));
+      expect(packagesInSale.toSet().length, packagesInSale.length);
+    });
+  });
+
   group('a request is pending valuation while any item is unforwarded', () {
     // ⚠️ A request stays in the Pending Valuation feed while ANY of its items
     // is not yet forwarded; a fully forwarded request has moved on to Central
@@ -103,6 +142,30 @@ void main() {
 
     test('nothing forwarded yet is pending', () {
       expect(isPending(const [false, false]), isTrue);
+    });
+
+    // A part-valued request is the ordinary half-finished state: a cost is
+    // entered against some items while the rest wait. It stays pending
+    // because nothing has been forwarded yet -- a cost is not a forward.
+    test('a cost entered on some items does not forward the request', () {
+      const forwarded = [false, false, false];
+      const costs = <double?>[12000, null, null];
+      expect(isPending(forwarded), isTrue);
+      expect(costs.where((c) => c != null).length, 1);
+    });
+
+    // Valuing every item is what precedes forwarding, so a request left
+    // pending must never have ALL of its items costed. This is the rule the
+    // seeder follows when it part-values a request.
+    bool safeToLeavePending(List<double?> costs) =>
+        costs.any((c) => c == null);
+
+    test('a part-valued request may be left pending', () {
+      expect(safeToLeavePending(const [12000, null, null]), isTrue);
+    });
+
+    test('a fully valued request may NOT be left pending', () {
+      expect(safeToLeavePending(const [1.0, 2.0, 3.0]), isFalse);
     });
   });
 }

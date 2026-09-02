@@ -307,6 +307,10 @@ Future<void> main() async {
   // pass that RETIRES goods (released, finished as Other) must already have
   // run -- otherwise it would tender goods that have left the yard.
   await _seedTenderPipeline(conn);
+  // ⚠️ AFTER the tender pipeline, and it excludes anything already tendered or
+  // already on a disposal request. The same goods cannot be both sold and
+  // destroyed, and whichever pass runs second has to say so.
+  await _seedDestructions(conn);
 
   print('\n── Final counts ' + '─' * 53);
   for (final t in const [
@@ -696,6 +700,206 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
 /// package the package-level column is deliberately ignored (deciding one item
 /// must not mark its siblings decided), so writing there would produce rows the
 /// app refuses to treat as decided.
+/// Sends goods for destruction, and destroys some of them.
+///
+/// Destroyed Goods has TWO states and the page filters on them, so seeding
+/// only one leaves half the page empty:
+///
+///   * PENDING  -- item status 'supposed to be destroyed'. The goods are
+///     listed for destruction but it has not happened yet.
+///   * DESTROYED -- item status 'destroyed' AND the destruction_items row
+///     marked destroyed, which is what carries the date and the receipt.
+///
+/// Both routes in are seeded, because a yard reaches destruction two ways:
+///   * through the VALUATION directorate (a disposal request costed and
+///     forwarded, disposition 'destruction'), and
+///   * DIRECTLY, when the yard records Destroy as a final disposition with no
+///     request at all -- perishables especially, which cannot wait.
+///
+/// ⚠️ The "Destruction Expenses" column does NOT come from the destruction
+/// row. It is read from `financial_expenses` (kind 'destruction_expense')
+/// against the SR NUMBER, so a destroyed row with no expense row shows a
+/// blank spend however complete the destruction looks.
+Future<void> _seedDestructions(Connection conn) async {
+  final rows = await conn.execute(
+    'select fp.id, fp.item_id, fp.sr_number, pi.quantity, pi.unit_value, '
+    '       pi.nature '
+    'from public.forfeited_packages fp '
+    'join public.package_items pi on pi.id = fp.item_id '
+    'where fp.appeal_deadline < now() '
+    '  and coalesce(fp.appeal_hold, false) = false '
+    "  and pi.status not in ('returned', 'other', 'sold', 'destroyed', "
+    "                        'supposed to be destroyed') "
+    '  and not exists (select 1 from public.tender_sale_items t '
+    '                   where t.forfeited_package_id = fp.id) '
+    '  and not exists (select 1 from public.disposal_request_items d '
+    '                   where d.forfeited_package_id = fp.id) '
+    'order by fp.forfeited_at asc',
+  );
+
+  var viaValuation = 0;
+  var direct = 0;
+  var destroyed = 0;
+  var pending = 0;
+  var serial = 0;
+
+  String? batchReqId;
+  DateTime? batchAt;
+  var batchLeft = 0;
+
+  for (final r in rows) {
+    if (_rng.nextInt(100) >= 60) continue;
+
+    final fpId = r[0] as String;
+    final itemId = r[1] as String?;
+    final srNumber = r[2] as String;
+    final qty = (r[3] as int?) ?? 1;
+    final unitValue = double.tryParse('${r[4]}') ?? 5000;
+
+    final sentAt =
+        DateTime.now().subtract(Duration(days: 25 + _rng.nextInt(420)));
+
+    // Two in three go through Valuation; the rest the yard destroys directly.
+    final throughValuation = _rng.nextInt(3) != 0;
+    if (throughValuation) {
+      if (batchLeft == 0 || batchReqId == null) {
+        batchAt = sentAt;
+        batchReqId = await _newDisposalRequest(conn, batchAt!, 'forwarded');
+        batchLeft = 2 + _rng.nextInt(4);
+      }
+      batchLeft--;
+      await conn.execute(
+        r'insert into public.disposal_request_items '
+        r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
+        r"values ($1,$2,'destruction',$3,true)",
+        parameters: [
+          batchReqId,
+          fpId,
+          (unitValue * qty * (0.4 + _rng.nextDouble() * 0.3)).roundToDouble(),
+        ],
+      );
+      viaValuation++;
+    } else {
+      direct++;
+    }
+
+    // Has the destruction actually been carried out yet? The page has its own
+    // Pending filter, so the waiting half needs a real population too.
+    final isDone = _rng.nextInt(100) < 58;
+    final destroyedAt = isDone
+        ? sentAt.add(Duration(days: 5 + _rng.nextInt(30)))
+        : null;
+
+    serial++;
+    final destructionId = await _newDestruction(conn, sentAt, serial);
+
+    await conn.execute(
+      r'insert into public.destruction_items '
+      r'(destruction_id, forfeited_package_id, package_item_id, yard, '
+      r' destroyed, destroyed_at, destroyed_price, receipt_number, notes, '
+      r' delivered, delivered_at, created_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)',
+      parameters: [
+        destructionId, fpId, itemId, _yard,
+        isDone,
+        destroyedAt,
+        // NOT NULL, default 0 -- a destruction that has not happened yet has
+        // cost nothing, so 0 is the honest value, not null.
+        isDone
+            ? (unitValue * qty * (0.05 + _rng.nextDouble() * 0.12))
+                .roundToDouble()
+            : 0.0,
+        isDone ? 'DR/$_yard/${sentAt.year}/${3000 + serial}' : null,
+        _destructionNotes[_rng.nextInt(_destructionNotes.length)],
+        isDone && _rng.nextBool(),
+        isDone && _rng.nextBool()
+            ? destroyedAt!.add(const Duration(days: 2))
+            : null,
+        sentAt,
+      ],
+    );
+
+    if (itemId != null) {
+      await conn.execute(
+        r'update public.package_items set status = $2 where id = $1',
+        parameters: [
+          itemId,
+          isDone ? 'destroyed' : 'supposed to be destroyed',
+        ],
+      );
+    }
+
+    if (isDone) {
+      destroyed++;
+      // ⚠️ What the destruction COST is a financial_expenses row keyed on the
+      // SR number -- not a column on the destruction. Without it the
+      // "Destruction Expenses" column is blank on an otherwise finished row.
+      await conn.execute(
+        r'insert into public.financial_expenses '
+        r'(kind, amount, description, yard, sr_number, package_item_id, '
+        r' incurred_on, created_at) '
+        r"values ('destruction_expense',$1,$2,$3,$4,$5,$6,$7)",
+        parameters: [
+          (3000 + _rng.nextInt(48000)).toDouble(),
+          _destructionExpenseNotes[
+              _rng.nextInt(_destructionExpenseNotes.length)],
+          _yard, srNumber, itemId, _iso(destroyedAt!), destroyedAt,
+        ],
+      );
+      // The goods are gone: the held entry goes with them, so they stop
+      // occupying a zone.
+      if (itemId != null) {
+        await conn.execute(
+          r'delete from public.warehouse_entries '
+          r'where package_item_id = $1 and coalesce(is_returned,false) = false',
+          parameters: [itemId],
+        );
+      }
+    } else {
+      pending++;
+    }
+  }
+
+  print('  destruction:');
+  print('    $viaValuation via Valuation · $direct recorded directly');
+  print('    $destroyed destroyed · $pending still pending');
+}
+
+const _destructionNotes = [
+  'Unfit for human consumption',
+  'Prohibited goods — court ordered destruction',
+  'Damaged beyond recovery',
+  'Expired stock',
+  'Counterfeit goods',
+];
+
+const _destructionExpenseNotes = [
+  'Incinerator hire and fuel',
+  'Transport to the destruction site',
+  'Labour and supervision',
+  'Landfill and handling charges',
+];
+
+/// One destruction batch. Mirrors the tender-sale shape, which it shares.
+Future<String> _newDestruction(
+    Connection conn, DateTime at, int serial) async {
+  final res = await conn.execute(
+    r'insert into public.destructions '
+    r'(sale_number, sale_date, serial, year, tender_type, yard, sale_time, '
+    r' sale_end_time, created_at) '
+    r"values ($1,$2,$3,$4,'destruction',$5,'09:00','15:00',$6) returning id",
+    parameters: [
+      'DS/$_yard/${at.year}/${serial.toString().padLeft(3, '0')}',
+      _iso(at),
+      serial,
+      at.year,
+      _yard,
+      at,
+    ],
+  );
+  return res.first.first as String;
+}
+
 /// Runs goods through the whole disposal-and-tender pipeline.
 ///
 /// Nothing seeded any of it, so every screen downstream of "Send Disposal
@@ -746,18 +950,49 @@ Future<void> _seedTenderPipeline(Connection conn) async {
   // ── 1. Requests still awaiting valuation ─────────────────────────────────
   // Left with valuation_cost null and forwarded false, which is the only
   // state the Valuation portal's first tab shows.
-  final awaiting = pool.take(14).toList();
+  // ⚠️ Several SEPARATE requests, not one big one. A yard sends a batch and
+  // then sends another; the directorate sees a queue of arrivals, each with
+  // its own date. Putting all 14 on one request made the page read "1
+  // request(s)" -- a queue of one, which is not what a queue looks like.
+  //
+  // Some of them are PART-VALUED: a cost entered against a few items while the
+  // rest wait. That is the ordinary half-finished state, and the request stays
+  // pending because at least one item is still unforwarded.
+  final awaiting = pool.take(26).toList();
   pool.removeRange(0, awaiting.length);
-  if (awaiting.isNotEmpty) {
+  var idx = 0;
+  var reqNo = 0;
+  while (idx < awaiting.length) {
+    final size = 3 + _rng.nextInt(4);
+    final slice = awaiting.skip(idx).take(size).toList();
+    idx += slice.length;
+    reqNo++;
+
     final reqId = await _newDisposalRequest(
-        conn, DateTime.now().subtract(Duration(days: 2 + _rng.nextInt(9))),
+        conn,
+        DateTime.now().subtract(Duration(days: 1 + _rng.nextInt(20))),
         'pending_valuation');
-    for (final r in awaiting) {
+
+    // Every second request arrives with some of its items already costed.
+    final partValued = reqNo.isEven;
+    for (var i = 0; i < slice.length; i++) {
+      final r = slice[i];
+      // Never value them all -- a fully valued request would be forwarded.
+      final valued = partValued && i < slice.length - 1 && _rng.nextBool();
+      final unitValue = double.tryParse('${r[3]}') ?? 5000;
+      final qty = (r[4] as int?) ?? 1;
       await conn.execute(
         r'insert into public.disposal_request_items '
-        r'(request_id, forfeited_package_id, disposition, forwarded) '
-        r"values ($1,$2,'sale',false)",
-        parameters: [reqId, r[0] as String],
+        r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
+        r"values ($1,$2,'sale',$3,false)",
+        parameters: [
+          reqId,
+          r[0] as String,
+          valued
+              ? (unitValue * qty * (0.55 + _rng.nextDouble() * 0.35))
+                  .roundToDouble()
+              : null,
+        ],
       );
       pendingValuation++;
     }
@@ -771,6 +1006,12 @@ Future<void> _seedTenderPipeline(Connection conn) async {
   String? batchReqId;
   DateTime? batchAt;
   var batchLeft = 0;
+
+  // Sales already opened, so several packages can share one -- keyed by the
+  // month and round they fall in, with the sale's own date and how full it is.
+  final saleByKey = <String, String>{};
+  final saleFill = <String, int>{};
+  final saleDateByKey = <String, DateTime>{};
 
   for (final r in pool) {
     if (_rng.nextInt(100) >= 55) continue;
@@ -823,7 +1064,12 @@ Future<void> _seedTenderPipeline(Connection conn) async {
     } else {
       // Still going round: every round so far failed, and the last one is
       // still sitting in the unsold pool waiting to be re-valued.
-      rounds = 1 + _rng.nextInt(3);
+      //
+      // ⚠️ Up to FOUR, not three. A package that sells on its fourth attempt
+      // leaves the unsold pool the moment it sells, so if unsold packages
+      // stopped at three rounds the Unsold Tenders list could never show a
+      // "4x" -- the count only ever appeared on goods that had already gone.
+      rounds = 1 + _rng.nextInt(4);
       everSells = false;
     }
 
@@ -840,8 +1086,22 @@ Future<void> _seedTenderPipeline(Connection conn) async {
         saleAt = DateTime.now().subtract(Duration(days: 3 + _rng.nextInt(40)));
       }
 
-      saleSerial++;
-      final saleId = await _newTenderSale(conn, saleAt, saleSerial);
+      // ⚠️ A tender sale is a SALE, not a lot: several packages go under the
+      // one sale number. Minting a fresh sale per package made every sale a
+      // single-item auction, which is not how a tender reads. Packages whose
+      // round falls near the same date share the sale.
+      final saleKey = '${saleAt.year}-${saleAt.month}-${round}';
+      var saleId = saleByKey[saleKey];
+      if (saleId == null || (saleFill[saleKey] ?? 0) >= 4) {
+        saleSerial++;
+        saleId = await _newTenderSale(conn, saleAt, saleSerial);
+        saleByKey[saleKey] = saleId;
+        saleFill[saleKey] = 0;
+        saleDateByKey[saleKey] = saleAt;
+      }
+      saleFill[saleKey] = (saleFill[saleKey] ?? 0) + 1;
+      // Every package in one sale is sold or unsold on that sale's own date.
+      saleAt = saleDateByKey[saleKey]!;
 
       final soldPrice = sold
           ? (valuation * (1.0 + _rng.nextDouble() * 0.45)).roundToDouble()
@@ -924,7 +1184,7 @@ Future<void> _seedTenderPipeline(Connection conn) async {
   final laterRounds =
       soldOnRound.entries.map((e) => 'round ${e.key}: ${e.value}').join(', ');
   print('  tender pipeline:');
-  print('    $pendingValuation awaiting valuation');
+  print('    $pendingValuation awaiting valuation across $reqNo requests');
   print('    $soldFirstRound sold first time'
       '${laterRounds.isEmpty ? '' : ' · $laterRounds'}');
   print('    $stillUnsold still unsold (awaiting re-valuation)');

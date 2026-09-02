@@ -1380,3 +1380,26 @@ disposal_requests
 ⚠️ `disposal_request_items.disposition` is CHECK-constrained to lowercase **`'sale'` / `'destruction'`**.
 
 Seeded spread: 14 awaiting valuation · sold on round 1 (38), 2 (16), 3 (19), 4 (8) · 18 still unsold awaiting re-valuation, each with bids and a valuation history. Runs **last of all**, after every pass that retires goods (released, finished as Other), so it never tenders goods that have left the yard.
+
+### Destruction: two states, two routes in (2026-09-03)
+
+Destroyed Goods filters on **Pending vs Destroyed**, so seeding one leaves half the page empty:
+
+- **Pending** — item status `'supposed to be destroyed'`. Listed for destruction; it has not happened.
+- **Destroyed** — status `'destroyed'` **and** the `destruction_items` row marked destroyed, which carries the date and receipt.
+
+Both routes in are seeded, because a yard reaches destruction two ways: through the **Valuation** directorate (a request costed and forwarded, disposition `'destruction'`), and **directly**, when the yard records Destroy as a final disposition with no request — perishables especially, which cannot wait.
+
+⚠️ **"Destruction Expenses" does NOT come from the destruction row.** It is read from `financial_expenses` (kind `'destruction_expense'`) against the **SR number**, so a destroyed row with no expense row shows a blank spend however complete it looks.
+
+⚠️ `destruction_items.destroyed_price` is **NOT NULL, default 0** — a destruction that has not happened has cost nothing, so 0 is the honest value, not null.
+
+Runs **after** the tender pipeline and excludes anything already tendered or on a request: the same goods cannot be both sold and destroyed, and whichever pass runs second has to say so.
+
+### Three shape bugs in the seeded pipeline (2026-09-03)
+
+⚠️ **The unsold pool could never show `4×`.** A package that *sells* on its fourth attempt leaves the pool the moment it sells, so with unsold packages capped at three rounds that count only ever existed on goods that had already gone. Unsold packages now run to four.
+
+⚠️ **A tender sale is a SALE, not a lot.** Minting a fresh sale per package made every tender a single-item auction. Packages whose round falls in the same month now share a sale (up to 4), and the sale's own date governs all of its items.
+
+⚠️ **Pending Valuation is a QUEUE.** All 14 items on one request made the page read "1 request(s)" — a queue of one. Now several separate requests with their own dates, and every second one arrives **part-valued** (a cost against some items while the rest wait). It stays pending because **a cost is not a forward** — but a request must never be left pending with *all* items costed, since valuing them all is what precedes forwarding.
