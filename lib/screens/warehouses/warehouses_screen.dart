@@ -43,17 +43,18 @@ bool _itemLeftYard(String? s) =>
 class WarehousesScreen extends ConsumerWidget {
   const WarehousesScreen({super.key});
 
+  /// Tidies a stored warehouse name for display.
+  ///
+  /// This used to pull the first number out of the name and rebuild it as
+  /// "Warehouse N" -- so "Open Area 01" came back as "Warehouse 1", and two
+  /// differently named places showed the same label. A facility is not always
+  /// a warehouse; the name it was given is the name it keeps.
+  ///
+  /// Only a legacy "SR " prefix is dropped, which is what the rewrite was
+  /// really there for.
   String _formatWarehouseName(String name) {
-    // Extract warehouse number from names like "SR Warehouse 03" -> "Warehouse 3"
-    final regex = RegExp(r'(\d+)');
-    final match = regex.firstMatch(name);
-    if (match != null) {
-      final number = int.tryParse(match.group(1)!);
-      if (number != null) {
-        return 'Warehouse $number';
-      }
-    }
-    return name;
+    final trimmed = name.trim();
+    return trimmed.startsWith('SR ') ? trimmed.substring(3) : trimmed;
   }
 
   @override
@@ -226,15 +227,9 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
   WarehouseModel get warehouse => widget.warehouse;
 
   String _formatWarehouseName(String name) {
-    final regex = RegExp(r'(\d+)');
-    final match = regex.firstMatch(name);
-    if (match != null) {
-      final number = int.tryParse(match.group(1)!);
-      if (number != null) {
-        return 'Warehouse $number';
-      }
-    }
-    return name;
+    // See the copy on WarehousesScreen: the name is shown as stored.
+    final trimmed = name.trim();
+    return trimmed.startsWith('SR ') ? trimmed.substring(3) : trimmed;
   }
 
   @override

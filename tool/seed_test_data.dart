@@ -39,6 +39,26 @@ const _perishableGoods = <(String, String, String, int, int)>[
   ('Live Ornamental Fish', 'Aquarium stock in bags', '0301.11.00', 2100, 90),
 ];
 
+/// The goods an OA number carries: vehicle parts, metals and building
+/// material -- bulky, weather-tolerant cargo that belongs on open hardstanding
+/// rather than under a roof. That is what the Open Area is for, and it is why
+/// the OA register exists as its own book.
+const _openAreaGoods = <(String, String, String, int, int)>[
+  ('Engine Cylinder Block', 'Used motorcycle blocks, 125cc', '8409.91.00', 7800, 55),
+  ('Clutch Plate Set', 'Friction plates, 5-plate', '8708.93.00', 2400, 75),
+  ('Rubber Conveyor Belt', 'Industrial belting, 800mm', '4010.12.00', 22000, 55),
+  ('Vehicle Leaf Springs', 'Heavy vehicle suspension', '7320.10.00', 5400, 60),
+  ('Truck Tyres', 'Radial, 11R22.5', '4011.20.00', 34000, 40),
+  ('Scrap Steel Bundles', 'Mixed ferrous scrap', '7204.49.00', 1200, 300),
+  ('Galvanised Steel Sheets', '1.2mm, 8ft', '7210.49.00', 6200, 85),
+  ('Cast Iron Pipes', 'Ductile iron, 150mm', '7303.00.00', 8800, 70),
+  ('Ceramic Floor Tiles', '60x60cm, assorted', '6907.21.00', 1850, 240),
+  ('PVC Electrical Conduit', '20mm rigid conduit', '3917.23.00', 420, 420),
+  ('Steel Reinforcement Bars', 'Deformed bar, 12mm', '7214.20.00', 2100, 350),
+  ('Used Engine Blocks', 'Assorted vehicle engines', '8409.99.00', 15000, 30),
+];
+
+/// Everything an SR number carries: goods that go under cover.
 const _normalGoods = <(String, String, String, int, int)>[
   ('Steel Cooking Pots', 'Stainless steel, 5L', '7323.93.00', 3200, 110),
   ('Cutlery Sets', '24-piece stainless sets', '8215.10.00', 2400, 95),
@@ -167,11 +187,18 @@ Future<void> main() async {
   }
 
   // Every zone a category points at has to exist, or admitting goods fails.
+  //
+  // Enough zones that the goods fit: the seed fills a zone only up to its
+  // capacity and moves to the next, the way the SR form lets an officer pick
+  // another zone when the first is full. Too few zones and there would be
+  // nowhere left to put the tail of the data.
   final zones = <String, List<String>>{
-    'W01': ['A', 'B'],
-    'W02': ['A', 'B', 'C'],
-    'W03': ['A', 'B'],
-    'OA1': ['Y1', 'Y2'],
+    'W01': ['A', 'B', 'C', 'D'],
+    'W02': ['A', 'B', 'C', 'D'],
+    'W03': ['A', 'B', 'C', 'D'],
+    // Six bays: OA goods never spill into a covered warehouse, so the open
+    // area has to hold the whole OA register on its own.
+    'OA1': ['Y1', 'Y2', 'Y3', 'Y4', 'Y5', 'Y6'],
   };
   for (final e in zones.entries) {
     for (final z in e.value) {
@@ -244,7 +271,14 @@ Future<void> main() async {
   print('  3 customs rules');
 
   print('\n── Packages ' + '─' * 57);
-  await _seedPackages(conn, warehouses);
+  // Room left in each zone, spent as goods are placed. Without this the seed
+  // routed purely by category and buried every zone at 150-240% -- capacity
+  // meant nothing, and the Zone Capacity page was a wall of red.
+  final space = <String, int>{
+    for (final e in zones.entries)
+      for (final z in e.value) '${e.key}|$z': e.key == 'OA1' ? 4000 : 2500,
+  };
+  await _seedPackages(conn, warehouses, space);
 
   print('\n── Final counts ' + '─' * 53);
   for (final t in const [
@@ -277,12 +311,26 @@ final _periods = <(int, DateTime, DateTime)>[
   (2026, DateTime(2026, 1, 5), DateTime(2026, 3, 31)),
 ];
 
-Future<void> _seedPackages(
-    Connection conn, Map<String, String> warehouses) async {
+/// A recent cohort, entered inside the last few weeks.
+///
+/// The appeal window runs 30 days from the ENTRY DATE, so goods entered before
+/// April have all long since become actionable -- every Forfeit, Abandoned and
+/// Other row above is past its window and its status is enabled. Without a
+/// recent batch there is nothing to test the *blocked* half against: no row
+/// showing days remaining, and no disabled status to click at.
+///
+/// Dated relative to now rather than fixed, so the cohort stays inside the
+/// window however long after the seed it is looked at.
+final _appealWindowFrom = DateTime.now().subtract(const Duration(days: 24));
+final _appealWindowTo = DateTime.now().subtract(const Duration(days: 2));
+
+Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
+    Map<String, int> space) async {
   // Serials run per register per year, exactly as getNextSrNumber mints them.
   final serials = <String, int>{};
   var made = 0;
   var perishableCount = 0;
+  var unplaced = 0;
   final statusTally = <String, int>{};
 
   for (final (year, from, to) in _periods) {
@@ -353,7 +401,12 @@ Future<void> _seedPackages(
 
       final itemCount = isPerishable ? 1 + _rng.nextInt(2) : 1 + _rng.nextInt(3);
       for (var k = 0; k < itemCount; k++) {
-        final pool = isPerishable ? _perishableGoods : _normalGoods;
+        // The register decides what the goods are: an OA number is opened for
+        // the bulky, weather-tolerant cargo the Open Area holds, so its items
+        // come from that list and land there.
+        final pool = isPerishable
+            ? _perishableGoods
+            : (register == 'OA' ? _openAreaGoods : _normalGoods);
         final (name, desc, hs, value, qty) = pool[_rng.nextInt(pool.length)];
 
         final status = isPerishable
@@ -392,7 +445,16 @@ Future<void> _seedPackages(
         // ⚠️ Perishable goods never reach a warehouse -- that is the whole
         // point of the nature. Only normal goods get an entry.
         if (!isPerishable) {
-          final wh = _warehouseFor(name, warehouses);
+          final qtyHeld = qty;
+          final wh = _placeIn(name, qtyHeld, warehouses, space,
+              openArea: register == 'OA');
+          if (wh == null) {
+            // Every zone full. Rather than overfill one -- which is what made
+            // the capacity page meaningless -- the goods are left unplaced and
+            // reported, so the shortfall is visible instead of hidden.
+            unplaced++;
+            continue;
+          }
           await conn.execute(
             r'insert into public.warehouse_entries '
             r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
@@ -446,8 +508,123 @@ Future<void> _seedPackages(
     }
   }
 
+  // ── The still-appealable cohort ──────────────────────────────────────────
+  // Forfeit / Abandoned / Other only: Detain has no appeal window of its own,
+  // and a perishable never waits one out.
+  const appealable = ['Forfeit', 'Abandoned', 'Other'];
+  final recentSpan = _appealWindowTo.difference(_appealWindowFrom).inDays;
+  var recent = 0;
+  for (var i = 0; i < 18; i++) {
+    final entry = _appealWindowFrom.add(Duration(
+        days: _rng.nextInt(recentSpan + 1),
+        hours: 8 + _rng.nextInt(9),
+        minutes: _rng.nextInt(60)));
+    final year = entry.year;
+    final register = _rng.nextInt(4) == 0 ? 'OA' : 'SR';
+    final key = '$register-$year';
+    final serial = (serials[key] ?? 0) + 1;
+    serials[key] = serial;
+    final srNumber = '$_directoratePrefix/$_yard/$register/'
+        '${serial.toString().padLeft(2, '0')}/$year';
+    final (consignee, declarant) =
+        _consignees[_rng.nextInt(_consignees.length)];
+
+    final pkgRes = await conn.execute(
+      r'insert into public.packages '
+      r'(sr_number, case_number, consignee_name, consignee_nic, consignee_address, '
+      r' consignee_phone, declarant_name, cusdec_no, cusdec_date, entry_date, '
+      r' origin_country, declared_value, weight_kg, container_number, description, '
+      r' status, yard, destroying_deposit, created_at, updated_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$19) '
+      r'returning id',
+      parameters: [
+        srNumber,
+        '$_yard/CASE/$year/${(2000 + i).toString()}',
+        consignee,
+        '${197000000000 + _rng.nextInt(29000000)}V',
+        '${10 + _rng.nextInt(400)}, Main Street, Colombo ${1 + _rng.nextInt(15)}',
+        '07${1 + _rng.nextInt(8)}${(1000000 + _rng.nextInt(8999999))}',
+        declarant,
+        'CUSDEC/$year/${3000 + i}',
+        _iso(entry.subtract(const Duration(days: 1))),
+        entry,
+        const ['India', 'China', 'Singapore', 'Malaysia', 'UAE',
+            'Thailand'][_rng.nextInt(6)],
+        (50000 + _rng.nextInt(900000)).toDouble(),
+        (100 + _rng.nextInt(2400)).toDouble(),
+        'CONT${4000000 + _rng.nextInt(900000)}',
+        'Recent consignment — appeal window still open',
+        'pending',
+        _yard,
+        _rng.nextInt(3) == 0 ? (5000 + _rng.nextInt(70000)).toDouble() : null,
+        entry,
+      ],
+    );
+    final pkgId = pkgRes.first.first as String;
+
+    final pool = register == 'OA' ? _openAreaGoods : _normalGoods;
+    final (name, desc, hs, value, qty) = pool[_rng.nextInt(pool.length)];
+    final status = appealable[_rng.nextInt(appealable.length)];
+    statusTally[status] = (statusTally[status] ?? 0) + 1;
+
+    final itemRes = await conn.execute(
+      r'insert into public.package_items '
+      r'(package_id, item_name, goods_description, quantity, unit_of_measure, '
+      r' unit_value, hs_code, category, status, reasons, nature, yard, created_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) returning id',
+      parameters: [
+        pkgId, name, desc, qty, 'Pieces', value.toDouble(), hs,
+        _categoryFor(name, false), status, 'Supposed to be Sold / Auction',
+        'normal', _yard, entry,
+      ],
+    );
+    final itemId = itemRes.first.first as String;
+
+    final wh = _placeIn(name, qty, warehouses, space, openArea: register == 'OA');
+    if (wh != null) {
+      await conn.execute(
+        r'insert into public.warehouse_entries '
+        r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
+        r' zone, yard, daily_rate, admitted_at, created_at, updated_at) '
+        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$9,$9)',
+        parameters: [
+          pkgId, itemId, wh.$1, 'Pending Inquiry', qty, wh.$2, _yard, 50.0,
+          entry.add(const Duration(hours: 3)),
+        ],
+      );
+    } else {
+      unplaced++;
+    }
+
+    // Forfeited AT the entry date, so the 30-day window from that date is
+    // genuinely still running -- which is what leaves the status disabled.
+    await conn.execute(
+      r'insert into public.forfeited_packages '
+      r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
+      r' appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$5,$5)',
+      parameters: [
+        pkgId, itemId, srNumber, consignee, entry,
+        entry.add(const Duration(days: 30)),
+        status == 'Forfeit'
+            ? 'Forfeited under Customs Ordinance'
+            : (status == 'Abandoned'
+                ? 'Abandoned by the consignee'
+                : 'Routed via Other disposition'),
+        status.toLowerCase(), _yard, qty,
+      ],
+    );
+    made++;
+    recent++;
+  }
+
   print('  $made packages');
-  print('  perishable items: $perishableCount');
+  print('  $recent of them entered in the last 24 days -- appeal window OPEN, '
+      'status disabled');
+  print('  perishable items: $perishableCount (no warehouse, by design)');
+  if (unplaced > 0) {
+    print('  ⚠ $unplaced items could not be placed -- every zone was full');
+  }
   final tally = statusTally.entries.map((e) => '${e.key}=${e.value}').join(', ');
   print('  item statuses: $tally');
   print('  registers: ' +
@@ -483,28 +660,66 @@ String _categoryFor(String itemName, bool perishable) {
     'Wrist Watches': 'Metals & Hardware',
     'Paint Thinner Cans': 'Chemicals & Solvents',
     'Latex Gloves': 'Medical Supplies',
+    // Open-area goods.
+    'Vehicle Leaf Springs': 'Vehicle Parts and Tyres',
+    'Truck Tyres': 'Vehicle Parts and Tyres',
+    'Used Engine Blocks': 'Vehicle Parts and Tyres',
+    'Scrap Steel Bundles': 'Metals & Hardware',
+    'Cast Iron Pipes': 'Metals & Hardware',
+    'Steel Reinforcement Bars': 'Building Materials',
   };
   return map[itemName] ?? 'General Cargo';
 }
 
-/// The warehouse and zone a category routes to. Bulky, weather-tolerant cargo
-/// goes to the open area; everything else under cover.
-(String, String) _warehouseFor(String itemName, Map<String, String> whs) {
+/// The warehouse each category prefers. Bulky, weather-tolerant cargo goes to
+/// the open area; everything else under cover.
+/// ⚠️ No entry here is 'OA1'. The open area belongs to the OA register alone,
+/// and _placeIn sends those there directly -- an SR item must stay under
+/// cover even when its category is the bulky kind, or the two registers stop
+/// meaning anything.
+const _preferredWarehouse = {
+  'Household & Kitchenware': 'W01',
+  'Textiles and Apparel': 'W01',
+  'General Cargo': 'W01',
+  'Electrical & Electronics': 'W02',
+  'Medical Supplies': 'W02',
+  'Foodstuffs & Perishables': 'W02',
+  'Metals & Hardware': 'W03',
+  'Chemicals & Solvents': 'W03',
+  'Building Materials': 'W03',
+  'Vehicle Parts and Tyres': 'W01',
+};
+
+/// Finds a zone with room for [qty] and books the space.
+///
+/// Tries the category's own warehouse first, then any other -- which is what
+/// the SR form lets an officer do when the zone they wanted is full. A zone is
+/// never taken past its capacity, so the Zone Capacity page reports something
+/// true; returns null only when nothing anywhere can take the goods.
+(String, String)? _placeIn(String itemName, int qty,
+    Map<String, String> whs, Map<String, int> space,
+    {bool openArea = false}) {
   final cat = _categoryFor(itemName, false);
-  const routing = {
-    'Household & Kitchenware': ('W01', 'A'),
-    'Textiles and Apparel': ('W01', 'B'),
-    'General Cargo': ('W01', 'A'),
-    'Electrical & Electronics': ('W02', 'A'),
-    'Medical Supplies': ('W02', 'B'),
-    'Foodstuffs & Perishables': ('W02', 'C'),
-    'Metals & Hardware': ('W03', 'A'),
-    'Chemicals & Solvents': ('W03', 'B'),
-    'Building Materials': ('OA1', 'Y1'),
-    'Vehicle Parts and Tyres': ('OA1', 'Y2'),
-  };
-  final (code, zone) = routing[cat] ?? ('W01', 'A');
-  return (whs[code]!, zone);
+  final preferred = openArea ? 'OA1' : (_preferredWarehouse[cat] ?? 'W01');
+
+  // ⚠️ An OA number's goods belong in the Open Area, and an SR number's under
+  // cover. The two registers exist to keep them apart, so the fallback never
+  // crosses between them -- it only tries other zones of the same kind.
+  final order = openArea
+      ? ['OA1']
+      : [preferred, ...whs.keys.where((c) => c != preferred && c != 'OA1')];
+
+  for (final code in order) {
+    final keys = space.keys.where((k) => k.startsWith('$code|')).toList()
+      ..sort();
+    for (final k in keys) {
+      if ((space[k] ?? 0) >= qty) {
+        space[k] = space[k]! - qty;
+        return (whs[code]!, k.split('|')[1]);
+      }
+    }
+  }
+  return null;
 }
 
 String _iso(DateTime d) =>
