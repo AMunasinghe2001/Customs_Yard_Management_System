@@ -413,6 +413,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
                 goodsDescription: r.goodsDescriptionCtrl.text.trim().isEmpty
                     ? null
                     : r.goodsDescriptionCtrl.text.trim(),
+                nature: r.nature,
                 // Cartons are stored "inverted": the operational quantity/unit
                 // become the INNER contents (e.g. 1176 Pieces), and the outer
                 // packaging (20 Cartons) is kept in innerUnit/innerQuantity.
@@ -2098,6 +2099,11 @@ class _ItemRow {
   final hsCodeCtrl = TextEditingController();
   final categoryCtrl = TextEditingController();
   String status = 'Detain';
+
+  /// Normal or perishable -- see [kGoodsNatures]. Perishable goods skip the
+  /// warehouse and the appeal window entirely, so this decides the whole path
+  /// the item takes and is asked before anything else about it.
+  String nature = kNatureNormal;
   final otherStatusCtrl = TextEditingController();
   final List<String?> selectedReasons = [null]; // Start with 1 mandatory reason
 }
@@ -2336,6 +2342,44 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               ),
             ],
             const Gap(10),
+            // Asked before the status, because it decides whether a status is
+            // asked at all: a perishable item never reaches a warehouse and
+            // never sits out an appeal window, so Detain / Forfeit describe
+            // nothing that will happen to it.
+            Expanded(
+              flex: 2,
+              child: StyledDropdownFormField<String>(
+                label: 'Nature *',
+                menuWidth: 220,
+                value: widget.row.nature,
+                options: [
+                  for (final e in kGoodsNatures.entries)
+                    StyledDropdownOption(e.key, e.value),
+                ],
+                onChanged: (v) {
+                  setState(() {
+                    widget.row.nature = v ?? kNatureNormal;
+                    if (widget.row.nature == kNaturePerishable) {
+                      // Its own status, so every screen that groups by status
+                      // has somewhere to put it, and none of the disposition
+                      // pages claim it by mistake.
+                      widget.row.status = 'Perishable';
+                      widget.row.selectedReasons
+                        ..clear()
+                        ..add(null);
+                    } else if (widget.row.status == 'Perishable') {
+                      widget.row.status = 'Detain';
+                      widget.row.selectedReasons
+                        ..clear()
+                        ..add(null);
+                    }
+                  });
+                  widget.onChanged();
+                },
+              ),
+            ),
+            if (widget.row.nature != kNaturePerishable) ...[
+            const Gap(10),
             Expanded(
               flex: 2,
               child: StyledDropdownFormField<String>(
@@ -2386,6 +2430,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                   onChanged: (_) => widget.onChanged(),
                 ),
               ),
+            ],
             ],
             const Gap(10),
             Expanded(

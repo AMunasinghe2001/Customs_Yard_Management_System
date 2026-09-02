@@ -345,6 +345,9 @@ class PackageItem {
   final String packageId;
   final String itemName;
   final String? goodsDescription;
+
+  /// [kNatureNormal] or [kNaturePerishable] -- see [kGoodsNatures].
+  final String nature;
   final int quantity;
   final String unitOfMeasure;
   final String? unitOther;
@@ -364,6 +367,7 @@ class PackageItem {
     required this.packageId,
     required this.itemName,
     this.goodsDescription,
+    this.nature = kNatureNormal,
     required this.quantity,
     this.unitOfMeasure = 'Pieces',
     this.unitOther,
@@ -406,6 +410,11 @@ class PackageItem {
       packageId: json['package_id'] as String,
       itemName: json['item_name'] as String,
       goodsDescription: json['goods_description'] as String?,
+      // Defaulted rather than required: a row written before the column
+      // existed carries no nature, and it is a normal one.
+      nature: (json['nature'] as String?)?.trim().isNotEmpty == true
+          ? json['nature'] as String
+          : kNatureNormal,
       quantity: (parseDbInt(json['quantity']) ?? 0),
       unitOfMeasure: json['unit_of_measure'] as String? ?? 'Pieces',
       unitOther: json['unit_other'] as String?,
@@ -427,6 +436,7 @@ class PackageItem {
       'package_id': pkgId,
       'item_name': itemName,
       'goods_description': goodsDescription,
+      'nature': nature,
       'quantity': quantity,
       'unit_of_measure': unitOfMeasure,
       'unit_other': unitOther,
@@ -447,6 +457,7 @@ class PackageItem {
     String? packageId,
     String? itemName,
     String? goodsDescription,
+    String? nature,
     int? quantity,
     String? unitOfMeasure,
     String? unitOther,
@@ -465,6 +476,7 @@ class PackageItem {
       packageId: packageId ?? this.packageId,
       itemName: itemName ?? this.itemName,
       goodsDescription: goodsDescription ?? this.goodsDescription,
+      nature: nature ?? this.nature,
       quantity: quantity ?? this.quantity,
       unitOfMeasure: unitOfMeasure ?? this.unitOfMeasure,
       unitOther: unitOther ?? this.unitOther,
@@ -1044,6 +1056,25 @@ const Map<String, String> kExpenseKinds = {
 /// The kinds Central Disposal actually RECORDS. A refund is not typed in — it
 /// is what is left of the goods' destroying deposit once these are paid, so it
 /// is derived (see [SrFinancials.refund]) rather than entered.
+/// What kind of goods an item is, which decides the whole path it takes.
+///
+/// Asked once on the SR form, then read everywhere downstream:
+///
+///   normal      -- warehouse, the 30-day appeal window, the existing flow
+///   perishable  -- neither. Food, chemicals and the like spoil, so by the
+///                  time an appeal window expired there would be nothing left
+///                  to dispose of. They go straight to a disposal request.
+///
+/// ⚠️ 'normal' is the default in the database too, which is what leaves every
+/// item registered before this behaving exactly as it did.
+const String kNatureNormal = 'normal';
+const String kNaturePerishable = 'perishable';
+
+const Map<String, String> kGoodsNatures = {
+  kNatureNormal: 'Normal Goods',
+  kNaturePerishable: 'Perishable Goods',
+};
+
 /// The roles that belong to a head-office DIRECTORATE rather than a yard.
 ///
 /// These accounts are institutional: they belong to a POST, and whoever holds
