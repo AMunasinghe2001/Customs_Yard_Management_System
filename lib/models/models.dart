@@ -887,9 +887,16 @@ class ProfileModel {
 
   /// Whole days until the account auto-deactivates (its 8-month lifetime).
   /// Negative once already expired. `null` for institutional directorate
-  /// accounts (Disposal / Appeal / Valuation) that never auto-expire.
+  /// accounts that never auto-expire.
+  ///
+  /// The exemptions here MUST match [isExpired]'s. ICT was missing, so an ICT
+  /// account was counted down towards an expiry [isExpired] would never let
+  /// happen -- harmless while only ICT's own staff table read this, wrong the
+  /// moment a profile shows the officer their own countdown.
   int? get daysUntilExpiry {
-    if (isDisposal || isAppeal || isValuation || isExecutive) return null;
+    if (isDisposal || isAppeal || isValuation || isExecutive || isIct) {
+      return null;
+    }
     return expiresAt.difference(DateTime.now()).inDays;
   }
 

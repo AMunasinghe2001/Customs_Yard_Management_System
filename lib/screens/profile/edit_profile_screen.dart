@@ -13,7 +13,6 @@ import '../../core/app_session.dart';
 import '../../services/services.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
-import '../../widgets/styled_dropdown.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -87,9 +86,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
           badgeNumber: _salaryCtrl!.text.trim(),
           mobileNumber:
             _mobileCtrl!.text.trim().isEmpty ? null : _mobileCtrl!.text.trim(),
-          jobRole:
-            _jobRoleCtrl!.text.trim().isEmpty ? null : _jobRoleCtrl!.text.trim(),
-          yard: _selectedYard,
+          // jobRole and yard are deliberately NOT sent: ICT owns them, the
+          // fields are read-only above, and updateProfile skips a null.
           profileImageUrl: _profileImageCtrl!.text.trim().isEmpty
             ? null
             : _profileImageCtrl!.text.trim(),
@@ -151,13 +149,31 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
     return '${parts[0][0]}${parts[1][0]}'.toUpperCase();
   }
 
+  /// The largest profile photo accepted. The image is stored and shipped with
+  /// the profile, so an unbounded pick means an unbounded row.
+  static const int _maxProfileImageBytes = 2 * 1024 * 1024; // 2 MB
+
   Future<String?> _pickProfileImage() async {
     final result = await FilePicker.platform.pickFiles(
       type: FileType.image,
       allowMultiple: false,
     );
     if (result == null || result.files.isEmpty) return null;
-    return result.files.single.path;
+    final path = result.files.single.path;
+    if (path == null) return null;
+
+    // Checked off the file itself rather than the picker's reported size:
+    // that is what actually gets read and stored.
+    final length = await File(path).length();
+    if (length > _maxProfileImageBytes) {
+      if (mounted) {
+        final mb = (length / (1024 * 1024)).toStringAsFixed(1);
+        context.showError(
+            'That photo is ${mb}MB. Please choose one under 2MB.');
+      }
+      return null;
+    }
+    return path;
   }
 
   void _openEditDialog(BuildContext context) {
@@ -317,35 +333,41 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         },
                       ),
                       const Gap(10),
+                      // Job Role and Yard are set by ICT when the account is
+                      // provisioned -- an officer cannot reassign their own
+                      // posting, so they are shown for context, greyed, and
+                      // never sent on save.
                       Row(
                         children: [
                           Expanded(
                             child: TextFormField(
                               controller: _jobRoleCtrl!,
-                              style: TextStyle(color: context.colors.textPrimary),
+                              readOnly: true,
+                              enabled: false,
+                              style:
+                                  TextStyle(color: context.colors.textPrimary),
                               decoration: const InputDecoration(
                                 labelText: 'Job Role',
-                                contentPadding:
-                                    EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                                helperText: 'Set by ICT',
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 14),
                               ),
                             ),
                           ),
                           const Gap(10),
                           Expanded(
-                            child: StyledDropdownFormField<String>(
-                              value: _selectedYard,
-                              label: 'Yard',
-                              helperText: null,
-                              isDense: false,
-                              contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 14),
-                              menuWidth: 280,
-                              options: [
-                                for (final y in kYards)
-                                  StyledDropdownOption(y.code, y.name),
-                              ],
-                              onChanged: (v) => setDlgState(
-                                  () => _selectedYard = v ?? kDefaultYardCode),
+                            child: TextFormField(
+                              initialValue: yardName(_selectedYard),
+                              readOnly: true,
+                              enabled: false,
+                              style:
+                                  TextStyle(color: context.colors.textPrimary),
+                              decoration: const InputDecoration(
+                                labelText: 'Yard',
+                                helperText: 'Set by ICT',
+                                contentPadding: EdgeInsets.symmetric(
+                                    horizontal: 14, vertical: 14),
+                              ),
                             ),
                           ),
                         ],
@@ -534,11 +556,11 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                 username: profile.username,
                 badge: profile.badgeNumber,
                 email: email,
-                role: profile.role,
                 isActive: profile.isActive,
                 mobile: profile.mobileNumber,
                 jobRole: profile.jobRole,
                 yard: yardName(profile.yard),
+                daysUntilExpiry: profile.daysUntilExpiry,
               ).animate().fadeIn(duration: 400.ms, delay: 200.ms).slideY(begin: 0.1),
             ],
           ),
@@ -681,33 +703,53 @@ class _ProfileHeroCard extends StatelessWidget {
   }
 }
 
+/// The profile's details, grouped and laid out as a responsive grid.
+///
+/// This was one column of full-width rows: nine identical bars stacked down
+/// the page, every field given the same weight whether it was the officer's
+/// name or a yard code, and a lot of empty space to the right of each. Now the
+/// fields sit in titled groups -- who the account is, how to reach them, where
+/// they are posted -- two to a row on a wide window and one on a narrow one.
 class _ProfileDetailsCard extends StatelessWidget {
   final String fullName;
   final String? username;
   final String? badge;
   final String email;
-  final String role;
   final bool isActive;
   final String? mobile;
   final String? jobRole;
   final String? yard;
+
+  /// Whole days until the account auto-deactivates, or null for an
+  /// institutional directorate account that never expires.
+  final int? daysUntilExpiry;
 
   const _ProfileDetailsCard({
     required this.fullName,
     this.username,
     required this.badge,
     required this.email,
-    required this.role,
     required this.isActive,
     required this.mobile,
     required this.jobRole,
     required this.yard,
+    required this.daysUntilExpiry,
   });
 
   @override
   Widget build(BuildContext context) {
     final statusColor =
         isActive ? context.colors.successGreen : context.colors.dangerRed;
+
+    // The expiry countdown ICT's staff table shows, brought to the officer's
+    // own profile so they can see their account lapsing before it does.
+    final (String expiryValue, Color? expiryColor) = switch (daysUntilExpiry) {
+      null => ('Never expires', context.colors.textSecondary),
+      final d when d < 0 => ('Expired', context.colors.dangerRed),
+      final d when d <= 30 => ('$d days', context.colors.warningAmber),
+      final d => ('$d days', context.colors.textPrimary),
+    };
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -720,52 +762,151 @@ class _ProfileDetailsCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Profile Details',
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700)),
-          const Gap(20),
-          _InfoRow(
-              label: 'Full Name',
-              value: fullName,
-              icon: Icons.person_outline_rounded),
-          _InfoRow(
-              label: 'Username',
-              value: username?.isNotEmpty == true ? username! : '—',
-              icon: Icons.alternate_email_rounded),
-          _InfoRow(
-              label: 'Salary Number',
-              value: badge?.isNotEmpty == true ? badge! : '—',
-              icon: Icons.badge_outlined),
-          _InfoRow(
-              label: 'Mobile Number',
-              value: mobile?.isNotEmpty == true ? mobile! : '—',
-              icon: Icons.phone_android_rounded),
-          _InfoRow(
-              label: 'Email Address',
-              value: email,
-              icon: Icons.email_outlined),
-          _InfoRow(
-              label: 'Role',
-              value: role.toUpperCase(),
-              icon: Icons.admin_panel_settings_outlined),
-          _InfoRow(
-              label: 'Job Role',
-              value: jobRole?.isNotEmpty == true ? jobRole! : '—',
-              icon: Icons.work_outline_rounded),
-          _InfoRow(
-              label: 'Yard',
-              value: yard?.isNotEmpty == true ? yard! : '—',
-              icon: Icons.warehouse_rounded),
-          _InfoRow(
-            label: 'Status',
-            value: isActive ? 'ACTIVE' : 'INACTIVE',
-            valueColor: statusColor,
+          _Group(
+            title: 'Identity',
+            icon: Icons.person_outline_rounded,
+            fields: [
+              _Field('Full Name', fullName, Icons.badge_outlined),
+              _Field('Username', username, Icons.alternate_email_rounded),
+              _Field('Salary Number', badge, Icons.pin_outlined),
+            ],
+          ),
+          const Gap(22),
+          _Group(
+            title: 'Contact',
+            icon: Icons.contact_mail_outlined,
+            fields: [
+              _Field('Email Address', email, Icons.email_outlined),
+              _Field('Mobile Number', mobile, Icons.phone_android_rounded),
+            ],
+          ),
+          const Gap(22),
+          _Group(
+            title: 'Posting',
+            icon: Icons.work_outline_rounded,
+            // Set by ICT when the account is provisioned, so they are shown
+            // here but not editable. "Role" is deliberately absent: it named
+            // the same thing as Job Role in coarser words.
+            subtitle: 'Assigned by ICT',
+            fields: [
+              _Field('Job Role', jobRole, Icons.work_outline_rounded),
+              _Field('Yard', yard, Icons.warehouse_rounded),
+            ],
+          ),
+          const Gap(22),
+          _Group(
+            title: 'Account',
             icon: Icons.verified_user_outlined,
+            fields: [
+              _Field(
+                'Status',
+                isActive ? 'ACTIVE' : 'INACTIVE',
+                Icons.verified_user_outlined,
+                color: statusColor,
+              ),
+              _Field(
+                'Disables In',
+                expiryValue,
+                Icons.schedule_rounded,
+                color: expiryColor,
+              ),
+            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+/// One field's label, value and icon. A null or blank [value] renders as a dash.
+class _Field {
+  final String label;
+  final String? value;
+  final IconData icon;
+  final Color? color;
+  const _Field(this.label, this.value, this.icon, {this.color});
+}
+
+/// A titled group of fields, two to a row when there is room for two.
+class _Group extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final String? subtitle;
+  final List<_Field> fields;
+
+  const _Group({
+    required this.title,
+    required this.icon,
+    required this.fields,
+    this.subtitle,
+  });
+
+  /// Below this a row of two would squeeze both values to nothing, so the
+  /// fields go one per row instead.
+  static const double _twoColumnMinWidth = 620;
+  static const double _gap = 12;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 15, color: context.colors.primaryGold),
+            const Gap(8),
+            Text(title.toUpperCase(),
+                style: TextStyle(
+                    color: context.colors.primaryGold,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1)),
+            const Gap(10),
+            // A hairline carrying the eye across to the group's note, so the
+            // groups read as bands rather than as more stacked boxes.
+            Expanded(
+              child: Container(
+                  height: 1, color: context.colors.borderColor),
+            ),
+            if (subtitle != null) ...[
+              const Gap(10),
+              Text(subtitle!,
+                  style: TextStyle(
+                      color: context.colors.textMuted,
+                      fontSize: 10.5,
+                      fontStyle: FontStyle.italic)),
+            ],
+          ],
+        ),
+        const Gap(12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final twoUp = constraints.maxWidth >= _twoColumnMinWidth;
+            final cellWidth = twoUp
+                ? (constraints.maxWidth - _gap) / 2
+                : constraints.maxWidth;
+            return Wrap(
+              spacing: _gap,
+              runSpacing: _gap,
+              children: [
+                for (final f in fields)
+                  SizedBox(
+                    width: cellWidth,
+                    child: _InfoRow(
+                      label: f.label,
+                      value: f.value?.trim().isNotEmpty == true
+                          ? f.value!
+                          : '—',
+                      valueColor: f.color,
+                      icon: f.icon,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
