@@ -1186,3 +1186,21 @@ Card-list tabs (Tender Sales, Committees, Destructions) legitimately keep the sw
 - **"Role" removed from the details card**: it named the same thing as Job Role in coarser words. Replaced by the **"Disables In"** countdown ICT's staff table already showed.
 - The card's nine stacked full-width bars are now four titled groups (Identity / Contact / Posting / Account), two fields per row above 620px and one below.
 - ⚠️ **`daysUntilExpiry` and `isExpired` must exempt the same roles.** `isExpired` exempted ICT; `daysUntilExpiry` did not, so an ICT account counted down towards an expiry that would never be enforced. Both now exempt disposal / appeal / valuation / executive / ict. Add a new institutional role to **both**.
+
+### ICT Activity Logs tab; posts vs roles (2026-09-02)
+
+**Activity Logs** (`lib/screens/ict/activity_logs_tab.dart`) — ICT's third tab, every action across every office.
+
+- `AuditLogService.getAllLogs()` is the YARD ADMIN's view: one yard, admin+officer only. `getAllLogsAcrossOffices()` is ICT's: no yard filter, no role filter. **Don't merge them** — they answer opposite questions.
+- `AuditLogModel` gained `userRole` and `yard`; the role used to be dropped on parse, so nothing could filter by office.
+- Filters: yard, directorate/role, activity type, free text, plus a date window (all / day / range / month / year). The window is pushed into **SQL** (`ictLogRangeProvider` → `gte`/`lte`), not filtered client-side — the log is the one unbounded table between purges.
+- A month window is built as `DateTime(y, m + 1, 0)` (the 0th of the next month), so a short February needs no special case. The end bound uses `23, 59, 59` or that day's own rows are lost.
+
+### DC and SDDC are two posts, not one role (2026-09-02)
+
+⚠️ **`role` is the permission level; the POST is `job_role`.** `profiles.role` only has `admin`/`officer` for a yard, so it *cannot* distinguish DC from SDDC. `kPostTitles` (officer/dc/sddc) and `kPostRoles` (post → permission) in `models.dart` are the source; `ProfileModel.postTitle` reads it back, falling back to the role's own name for an account provisioned before ICT recorded a post.
+
+- ICT **never wrote `job_role`** before this, which is why a profile could show a stale hand-typed value. Both `verifyAndCreateUser` and `updateUserProfile` stamp it now.
+- The profile hero badge shows `postTitle`, never `role.toUpperCase()` — **there are no "admins"** in this service.
+- Yard is displayed as `<DIRECTORATE PREFIX> / <yard>` (`_yardWithDirectorate`): a yard alone is ambiguous (NNR is both CED and PSD) and the directorate prefixes every SR number.
+- Photo picker uses `FileType.custom` + `['jpg','jpeg','png']` and **re-checks the extension after the pick** — `FileType.image` would let the platform offer SVG, a scriptable document. See also the 2MB cap.
