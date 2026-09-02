@@ -1154,3 +1154,12 @@ Once Destroy became a direct Final Disposition (see the 2026-09-02 entries above
 - A row that already says `destruction` **still reads back as destruction** — historical data is not relabelled. Only a row *missing* its disposition defaults to sale.
 - **Data migrated 2026-09-02**: 7 destruction request items removed. 4 named items already destroyed (they appear on Destroyed Goods via their own tags, so the request rows were duplicates); 3 (`SR/12/2026`, `SR/23/2025`, `SR/34/2025`) were never destroyed — still Forfeit with no tag — and returned to the yard's Final Disposition flow. Also removed: 6 `destruction_items` rows with `destroyed=false` and 4 `destructions` left holding nothing. The 4 genuinely-destroyed records were kept, and no request was left empty.
 - ⚠️ The legacy **Destruction Sale** flow (`DestructionCard`, `destructions` / `destruction_items` tables, `/destruction-disposals`) still exists and is separate from this. Do not confuse it with the direct Destroy path.
+
+### One header for the four Send-Disposal-Request pages (2026-09-02)
+
+Detained, Forfeited, Abandoned and Other each built the same header from a `Wrap` holding the title block and an unbreakable `Row` of stat chips + the button. **A Wrap child cannot shrink**, so that Row dropped to its own line as soon as the title block left it no room — and since only the subtitle length differed between the four, they broke at four *different* widths. Detained's subtitle is much the longest, so it dropped while space clearly remained.
+
+- `lib/widgets/disposal_page_header.dart` is now the single header. The **title** is the part that gives: the trailing block is capped at `available - minTitleWidth - gap`, and the title `Expanded`s into the rest, wrapping to 2 lines then ellipsizing.
+- ⚠️ That cap is **load-bearing, not cosmetic**: at the app's 1000px minimum window the 3 chips + button want ~869px, more than the content area after the nav rail. Uncapped the Row overflows; capped, the trailing block scrolls horizontally and the button still never leaves the header line. Don't "simplify" it away.
+- `test/disposal_page_header_test.dart` checks all four pages at 1600→700px for overflow, and that the button stays to the right of the title.
+- Same class of bug in `disposal_request_dialog.dart`'s rows: SR number + source chip + appeal chip shared a bare `Row` where only the text could give, so chips collided; item name did the same against its Qty chip. Both lines are `Wrap`s now, and the Sale badge has a fixed width so badges line up down the list.
