@@ -125,6 +125,70 @@ void main() {
     });
   });
 
+  group('a re-valuation prices the NEXT round, not the current one', () {
+    // ⚠️ The app keys re-valuations by round and reads the NULL-keyed one as
+    // "the price for the round to come". A figure attached to a sale is that
+    // round's own reserve, which every held round already has -- so attaching
+    // them all to a sale made every unsold row read "Awaiting value" and
+    // nothing ever became re-tenderable.
+    String roundKey(String? tenderSaleId) => tenderSaleId ?? '';
+
+    bool isReValued(List<String?> revaluationSaleIds) =>
+        revaluationSaleIds.map(roundKey).contains('');
+
+    test('a re-valuation with no sale id prices the next round', () {
+      expect(isReValued(const [null]), isTrue);
+    });
+
+    test("a re-valuation tied to a sale is that round's own reserve", () {
+      expect(isReValued(const ['sale-1', 'sale-2']), isFalse);
+    });
+
+    test('past reserves alongside a pending one still read as re-valued', () {
+      expect(isReValued(const ['sale-1', 'sale-2', null]), isTrue);
+    });
+  });
+
+  group('a committee figure is not approved until the ADG submits it', () {
+    // Writing the pending re-valuation at committee time would show the
+    // package as ready to re-tender before anyone had approved it -- the
+    // approval skipped rather than modelled.
+    bool readyToReTender(
+            {required double? committeeValue, required double? submittedValue}) =>
+        committeeValue != null && submittedValue != null;
+
+    test('priced but unsubmitted is NOT ready', () {
+      expect(readyToReTender(committeeValue: 50000, submittedValue: null),
+          isFalse);
+    });
+
+    test('submitted by the ADG is ready', () {
+      expect(readyToReTender(committeeValue: 50000, submittedValue: 50000),
+          isTrue);
+    });
+  });
+
+  group('an active tender sale has not closed yet', () {
+    // A sale shows on the Tender Sales tab only while it holds an unsold item
+    // AND its window is still open. Every seeded sale being in the past is
+    // what left that tab empty.
+    bool isActive(
+            {required bool hasUnsoldItem, required int daysUntilClose}) =>
+        hasUnsoldItem && daysUntilClose >= 0;
+
+    test('a sale opening in two days is active', () {
+      expect(isActive(hasUnsoldItem: true, daysUntilClose: 2), isTrue);
+    });
+
+    test('a closed sale is not active however many items are unsold', () {
+      expect(isActive(hasUnsoldItem: true, daysUntilClose: -5), isFalse);
+    });
+
+    test('a fully sold sale is not active', () {
+      expect(isActive(hasUnsoldItem: false, daysUntilClose: 3), isFalse);
+    });
+  });
+
   group('a request is pending valuation while any item is unforwarded', () {
     // ⚠️ A request stays in the Pending Valuation feed while ANY of its items
     // is not yet forwarded; a fully forwarded request has moved on to Central

@@ -1403,3 +1403,21 @@ Runs **after** the tender pipeline and excludes anything already tendered or on 
 ⚠️ **A tender sale is a SALE, not a lot.** Minting a fresh sale per package made every tender a single-item auction. Packages whose round falls in the same month now share a sale (up to 4), and the sale's own date governs all of its items.
 
 ⚠️ **Pending Valuation is a QUEUE.** All 14 items on one request made the page read "1 request(s)" — a queue of one. Now several separate requests with their own dates, and every second one arrives **part-valued** (a cost against some items while the rest wait). It stays pending because **a cost is not a forward** — but a request must never be left pending with *all* items costed, since valuing them all is what precedes forwarding.
+
+### Why the unsold pool read "Awaiting value" for everything (2026-09-03)
+
+⚠️ **A re-valuation prices the NEXT round only when its `tender_sale_id` is NULL.** The app keys re-valuations by round and reads the null-keyed one as "the price for the round to come"; a figure attached to a sale is *that round's own reserve*, which every held round already has. The seeder attached them all to a sale, so nothing ever read as re-valued or became re-tenderable — `revals['']` was always empty.
+
+**Two hands price these goods, and the chip tells them apart:**
+- the **Valuation** directorate re-values directly → "Re-valued", ready to re-tender;
+- a **tender committee** prices one that has gone round too many times → "Committee valued" until the ADG submits it, at which point the submitted figure becomes the pending re-valuation.
+
+⚠️ **A committee's figure is not a re-valuation on its own.** Writing one at committee time would show the package ready to re-tender before the ADG had approved it — the approval skipped rather than modelled.
+
+⚠️ `tender_committees.members` is **JSONB holding objects** (`name`, `designation`, `salary_no`), not a list of strings — a plain string list parses to an empty committee because no entry has a `name`.
+
+### An active tender sale, and the final outcome (2026-09-03)
+
+⚠️ **A sale is ACTIVE only while it holds an unsold item AND its window is still open.** Every seeded sale was dated in the past so its items could be counted sold or unsold — which left the Tender Sales tab completely empty. Some sales are now dated a day or two **ahead** with their items unsold, filled from packages the pipeline has not already used.
+
+**`unsold_proposals` is the end of the road** — Top Management's final outcome for goods that were priced, re-tendered and still did not sell. It is what moves a package off Unsold Goods and onto its own tab. ⚠️ The five outcomes (`government_use`, `remand`, `auction`, `convert`, `remove_from_premises`) are **cycled, not picked at random**: each has its own tab, and a random pick over a small pool leaves some of those tabs empty.
