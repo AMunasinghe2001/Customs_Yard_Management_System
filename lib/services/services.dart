@@ -3734,6 +3734,20 @@ class ForfeitedPackageService {
       return itemId != null ? '$pkgId:$itemId' : pkgId;
     }).toSet();
 
+    // ── 5. PERISHABLE items already sent ────────────────────────────────────
+    final existingPerishableFp = await AuthService._withNetworkRetry(() =>
+        supabase
+            .from('disposal_request_items')
+            .select('forfeited_packages!inner(package_id, item_id, source)')
+            .eq('forfeited_packages.source', 'perishable'));
+    final perishableFpItemKeys = (existingPerishableFp as List).map((row) {
+      final e = (row as Map<String, dynamic>)['forfeited_packages']
+          as Map<String, dynamic>;
+      final pkgId = e['package_id'].toString();
+      final itemId = e['item_id']?.toString();
+      return itemId != null ? '$pkgId:$itemId' : pkgId;
+    }).toSet();
+
     // Appeal rulings, keyed by item id — a decision lets goods into this pool
     // before the window closes, a hold keeps them out after it does.
     final appealOutcomes = await getAllItemAppealOutcomes();
@@ -3756,7 +3770,13 @@ class ForfeitedPackageService {
         for (final item in pkg.items)
           if (appealOutcomes[item.id]?.unblocksAction ?? false) item.id,
       };
+      // Perishable goods do not wait. They spoil, so an appeal window would
+      // outlast the goods themselves -- a package holding any is never skipped
+      // for the window, and each perishable item passes it below.
+      final hasPerishable =
+          pkg.items.any((i) => i.nature == kNaturePerishable);
       if (!includePending &&
+          !hasPerishable &&
           isWithinAppealWindow(entryDate) &&
           decidedItemIds.isEmpty) {
         continue;
@@ -3767,6 +3787,9 @@ class ForfeitedPackageService {
       bool itemPassesWindow(String itemId) {
         // A hold always excludes: that appeal is still open.
         if (appealOutcomes[itemId]?.onHold ?? false) return false;
+        // A perishable item has no window to pass -- see above.
+        final it = pkg.items.where((i) => i.id == itemId).firstOrNull;
+        if (it != null && it.nature == kNaturePerishable) return true;
         if (includePending) return true;
         if (!isWithinAppealWindow(entryDate)) return true;
         return decidedItemIds.contains(itemId);
@@ -3782,6 +3805,32 @@ class ForfeitedPackageService {
         final alreadyOther = otherFpItemKeys.contains('${pkg.id}:${item.id}') ||
             otherFpItemKeys.contains(pkg.id);
         if (!itemPassesWindow(item.id)) continue;
+
+        // Perishable goods take their own path: no warehouse, no window, so
+        // none of the branches below apply to them.
+        if (item.nature == kNaturePerishable) {
+          final alreadySent =
+              perishableFpItemKeys.contains('${pkg.id}:${item.id}') ||
+                  perishableFpItemKeys.contains(pkg.id);
+          if (!alreadySent) {
+            result.add(ForfeitedPackageModel(
+              id: '${pkg.id}:${item.id}:perishable',
+              packageId: pkg.id,
+              srNumber: pkg.srNumber,
+              consigneeName: pkg.consigneeName,
+              forfeitedAt: pkg.entryDate ?? pkg.createdAt,
+              // Already open: nothing is waiting on it.
+              appealDeadline: pkg.entryDate ?? pkg.createdAt,
+              reason: 'Perishable goods',
+              yard: AppSession.currentYard,
+              source: 'perishable',
+              packageDetails: pkg,
+              itemId: item.id,
+              itemName: item.itemName,
+            ));
+          }
+          continue;
+        }
 
         if (!alreadyAbandoned) {
           final abandonedEntries = _abandonedEntriesForItem(pkg, item);

@@ -29,6 +29,7 @@ import '../screens/packages/returned_packages_screen.dart';
 import '../screens/packages/abandoned_packages_screen.dart';
 import '../screens/packages/detained_packages_screen.dart';
 import '../screens/packages/other_packages_screen.dart';
+import '../screens/packages/perishable_goods_screen.dart';
 import '../screens/packages/old_entries_screen.dart';
 import '../screens/packages/disposition_category_screen.dart';
 import '../screens/packages/unsold_packages_screen.dart';
@@ -198,6 +199,10 @@ final routerProvider = Provider<GoRouter>((ref) {
           path: '/detained-packages',
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey, child: const DetainedPackagesScreen())),
+      GoRoute(
+          path: '/perishable-goods',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey, child: const PerishableGoodsScreen())),
       GoRoute(
           path: '/other-packages',
           pageBuilder: (_, state) => NoTransitionPage(

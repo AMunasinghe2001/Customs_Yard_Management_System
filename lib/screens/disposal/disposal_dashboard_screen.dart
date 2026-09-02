@@ -18,6 +18,7 @@ import '../../widgets/empty_table_state.dart';
 import 'disposal_shared.dart';
 import 'taxes_tab.dart';
 import 'expenses_tab.dart';
+import '../packages/perishable_goods_screen.dart';
 import '../reports/reports_screen.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/styled_form_dialog.dart';
@@ -54,7 +55,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      length: 15,
+      length: 16,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -368,6 +369,16 @@ class DisposalDashboardScreen extends ConsumerWidget {
                               Gap(8),
                               Text('Reports'),
                             ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.eco_rounded, size: 18),
+                              Gap(8),
+                              Text('Perishable'),
+                            ])),
                   ],
                 ),
               ),
@@ -434,6 +445,9 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 TaxesTab(),
                 ExpensesTab(),
                 ReportsScreen(disposalMode: true),
+                // Read-only: Central Disposal watches what each yard is
+                // holding, but the yard is what sends the request.
+                PerishableGoodsScreen(readOnly: true),
               ]),
             ),
           ],
@@ -2328,6 +2342,7 @@ class _SourceChip extends StatelessWidget {
     final (label, color) = switch (source) {
       'abandoned' => ('Abandoned', context.colors.heldOrange),
       'other' => ('Other', context.colors.warningAmber),
+      'perishable' => ('Perishable', context.colors.dangerRed),
       _ => ('Forfeit', context.colors.accentBlue),
     };
     return Container(
@@ -3811,7 +3826,22 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
                 .toList())
             : ref.watch(saleRequestItemsProvider))
         .whenData((list) =>
-            list.where((it) => it.forfeited?.yard == _formYard).toList());
+            list.where((it) {
+              if (it.forfeited?.yard != _formYard) return false;
+              // Perishable goods belong in a SPECIAL tender sale and nowhere
+              // else: that type exists for goods which spoil, and a general
+              // sale runs too slowly for them. The rule holds both ways -- a
+              // special sale carries only perishables -- so the two are never
+              // mixed into one lot.
+              final f = it.forfeited;
+              final items = f?.packageDetails?.items ?? const <PackageItem>[];
+              final match = f?.itemId == null
+                  ? null
+                  : items.where((i) => i.id == f!.itemId).firstOrNull;
+              final isPerishable = match?.nature == kNaturePerishable ||
+                  (match == null && f?.source == 'perishable');
+              return isPerishable == (_tenderType == 'special');
+            }).toList());
     return StyledFormDialog(
       label: 'Tender Sale',
       title: widget.reTender ? 'Re-tender Sale' : 'New Tender Sale',

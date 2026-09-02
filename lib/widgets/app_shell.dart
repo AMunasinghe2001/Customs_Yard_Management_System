@@ -27,6 +27,9 @@ const _officerNav = [
   NavItem(
       'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Detained Goods', Icons.gpp_maybe_rounded, '/detained-packages'),
+  // Perishable goods never reach a warehouse, so they appear on no
+  // disposition page -- this is the only place they are listed.
+  NavItem('Perishable Goods', Icons.eco_rounded, '/perishable-goods'),
   NavItem('Abandoned Goods', Icons.inbox_rounded, '/abandoned-packages'),
   NavItem('Forfeited Goods', Icons.gavel_rounded, '/forfeited-packages'),
   NavItem('Other Goods', Icons.label_important_rounded, '/other-packages'),
@@ -58,6 +61,9 @@ const _adminNav = [
   NavItem(
       'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Detained Goods', Icons.gpp_maybe_rounded, '/detained-packages'),
+  // Perishable goods never reach a warehouse, so they appear on no
+  // disposition page -- this is the only place they are listed.
+  NavItem('Perishable Goods', Icons.eco_rounded, '/perishable-goods'),
   NavItem('Abandoned Goods', Icons.inbox_rounded, '/abandoned-packages'),
   NavItem('Forfeited Goods', Icons.gavel_rounded, '/forfeited-packages'),
   NavItem('Other Goods', Icons.label_important_rounded, '/other-packages'),

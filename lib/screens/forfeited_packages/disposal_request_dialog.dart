@@ -787,6 +787,7 @@ class _SourceChip extends StatelessWidget {
     final (label, color) = switch (source) {
       'abandoned' => ('Abandoned', context.colors.heldOrange),
       'other' => ('Other', context.colors.warningAmber),
+      'perishable' => ('Perishable', context.colors.dangerRed),
       'detain' => ('Detained', context.colors.primaryGold),
       _ => ('Forfeit', context.colors.accentBlue),
     };
