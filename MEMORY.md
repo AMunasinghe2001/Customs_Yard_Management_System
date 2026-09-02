@@ -1135,3 +1135,13 @@ Applies everywhere at once, since it is set on the app rather than per screen.
 - Yard's Destroyed table dropped HS Code, Officer and Notes (Notes only ever repeated the DSR number), matching Central's SR / Goods / Qty / Date / Destruction Expenses / Status / Details shape. Central's record-costs action moved out of the money cell into its own "Costs" column.
 - The cost form drops **Advertising and Auction** for a destruction (goods go straight to the destroying contractor). Anything already recorded under those kinds still counts against the deposit via `_hiddenSpend` — otherwise the refund would come out larger than the depositor is owed.
 - ⚠️ **The 69,000 / 87,000 figures Central Disposal showed were never real.** `financial_expenses` held rows only for the legacy `GL1/SR/01..21` SRs — nothing for `CED/GL1/SR/38|39|41`. Those numbers were the removed fake-seed generator's output (destruction = `((hash%20)+5)*3000`, advertising = `((hash%15)+3)*2000`), still showing from a stale session. Real destruction costs are now seeded for the four destroyed SRs. **When a figure looks plausible but the table beside it shows a dash, check the database before trusting either.**
+
+### SR and OA are two registers with independent serials (2026-09-02)
+
+Goods can be registered under an **OA** number as well as an **SR** one. The two are separate books that share a yard and a year: the number after `SR/87` is `SR/88`, **never** `OA/88`, and an OA number can never continue an SR one. An OA package is treated exactly like an SR package everywhere else — the register only changes how the number is minted.
+
+- `kSrDocTypes` (`lib/core/directorates.dart`) is the list; `composeSrNumber(docType:)` mints, `docTypeOfSrNumber()` reads one back.
+- `getNextSrNumber(docType:)` scopes **both** halves of its scan — the `ilike` asks for one register AND the serial loop rejects `parts[1]` from the other. Dropping either half makes OA continue SR's count.
+- ⚠️ `stripDirectoratePrefix` hard-coded `parts[2] == 'SR'`, so `CED/GL1/OA/01/2026` kept its directorate prefix and then failed to match its own package. Now checks `isSrDocType`. **Any new helper that splits an SR number must not assume the literal `SR` segment.**
+- `compareSrNewestFirst` gained a whole-string tiebreak: the same year+serial now legitimately exists in both registers.
+- The registration form has a "Register" dropdown beside SR Number; changing it re-mints, and loading an existing package follows that package's register.
