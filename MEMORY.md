@@ -1259,3 +1259,21 @@ Both were reworked the day after they landed — the first cut answered the wron
 - **DC and SDDC are shown apart** in ICT's table and role filter, via `postShortTitle` / `kPostShortTitles`. The permission role cannot distinguish them, so the filter sends `kPostRoles[post]` to the server and narrows to the exact post client-side. An account with **no post recorded** still reads `DC / SDDC` — without one they genuinely are indistinguishable. Post list reads **"Officer"**, not "Yard Officer".
 - **`TenderStage`** (models.dart) replaces the read-only "Pending" chip: `Tender Open` → `Tender Started` → `Awaiting Decision` → `Tender Closed`, read off the sale's own moments (`saleMoment` / `saleEndMoment` / `unsoldDeadline`), each with a tooltip.
 - Portal polish: Top Management's sign-in is **"Top Management Sign In"** (was "Executive" — nothing else calls it that); the four directorate portals animate their heading in like ICT, and the **OTP-sent banner is green on every portal**, not the portal accent — it is a confirmation, not chrome.
+
+### Password reset: two different flows, on purpose (2026-09-03)
+
+**Yard staff reset their own; ICT reissues a directorate account.** They are not the same thing and must not be merged.
+
+- **`postgres/05_password_reset.sql`** — `reset_email_for_identifier` and `reset_password_for_identifier`, both `SECURITY DEFINER` (auth.uid() is NULL with no session, so ordinary RLS denies everything). Resolves through the **same `email_for_login`** sign-in uses, refuses a **deactivated** account, delegates to `auth.change_password` so hashing/min-length live in one place, restarts the 90-day clock and clears any lockout. The file **verifies itself** — a `DO $verify$` block that ran green against the live DB.
+- ⚠️ **Neither the SQL nor the UI ever says whether the account exists.** "No such account" would let anyone test which usernames and addresses are real. Step one advances to the code step either way; the code simply never arrives.
+- **`lib/widgets/forgot_password_dialog.dart`** — one dialog, both yard portals (Officer + DC/SDDC), reached from beside Remember-me. Three steps; a bad code sends the officer back one step **with the typed password kept**.
+- **ICT → Directorate Access** (`directorate_access_tab.dart`) — a directorate account belongs to a **post, not a person**, so there is no personal mailbox for a self-service link. ICT generates username + password and emails both. The **password never appears on screen or in the audit log**. A deactivated account cannot be reissued.
+- **`kDirectorateRoles`** (models.dart) is the one list of institutional roles. ⚠️ **Keep it in step with the exemptions in `isExpired` and `daysUntilExpiry`** — same accounts, same reason; a test asserts all three agree.
+
+### Usernames assigned to every account (2026-09-03)
+
+Everyone signs in by username now, but **8 of 11 accounts had none** — reachable only by email address. Assigned and verified through `email_for_login`:
+
+`Anushanga` (DC/SDDC) · `Deepal` `kaushan` `onela` (Officer) · `appeal.ad` · `disposal.dc` · `vdc` · `exec.dg` `exec.adg` `exec.dc` · `ict.admin`
+
+Directorate profiles now show and edit the **username** in place of Full Name, and the Role row is gone (the portal already says which directorate it is).
