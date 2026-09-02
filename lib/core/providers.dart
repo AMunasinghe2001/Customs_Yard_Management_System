@@ -604,6 +604,32 @@ final allLogsProvider = FutureProvider<List<AuditLogModel>>((ref) async {
   return ref.read(auditLogServiceProvider).getAllLogs();
 });
 
+/// The date window the ICT Activity Logs tab is showing, or null for "all".
+///
+/// Held as state rather than filtered client-side so the window is pushed into
+/// SQL — the log is the one table that grows without bound between purges.
+final ictLogRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
+
+/// Every log across every yard and directorate, for the ICT Directorate.
+///
+/// Re-fetches when the date window changes. Cross-office by design: ICT
+/// provisions all these accounts, so unlike [allLogsProvider] this is scoped
+/// to no yard and drops nobody's role.
+final ictAllOfficeLogsProvider =
+    FutureProvider<List<AuditLogModel>>((ref) async {
+  ref.watch(auditLogsChangeTriggerProvider);
+  final range = ref.watch(ictLogRangeProvider);
+  return ref.read(auditLogServiceProvider).getAllLogsAcrossOffices(
+        from: range?.start,
+        // The picker hands back a date, so the end day is inclusive only if
+        // we reach the end OF that day.
+        to: range == null
+            ? null
+            : DateTime(range.end.year, range.end.month, range.end.day,
+                23, 59, 59),
+      );
+});
+
 final packageCategoriesProvider =
     FutureProvider<List<PackageCategory>>((ref) async {
   ref.watch(categoryChangeTriggerProvider);

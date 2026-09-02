@@ -955,8 +955,19 @@ class AuditLogModel {
   final String entityId;
   final Map<String, dynamic>? details;
   final DateTime createdAt;
-  // Joined field
+
+  /// The yard the action was performed under, stamped at write time.
+  final String? yard;
+
+  // Joined fields — the actor's name and role.
   final String? userFullName;
+
+  /// The actor's role ('officer', 'admin', 'disposal', 'ict', …).
+  ///
+  /// A yard admin's log view filters this OUT (head-office staff are not the
+  /// yard's own activity); ICT's cross-office view filters BY it, so the role
+  /// has to travel with the row rather than being dropped on parse.
+  final String? userRole;
 
   const AuditLogModel({
     required this.id,
@@ -966,10 +977,13 @@ class AuditLogModel {
     required this.entityId,
     this.details,
     required this.createdAt,
+    this.yard,
     this.userFullName,
+    this.userRole,
   });
 
   factory AuditLogModel.fromJson(Map<String, dynamic> json) {
+    final profile = json['profiles'] as Map<String, dynamic>?;
     return AuditLogModel(
       id: json['id'] as String,
       userId: json['user_id'] as String,
@@ -978,8 +992,9 @@ class AuditLogModel {
       entityId: json['entity_id'] as String,
       details: json['details'] as Map<String, dynamic>?,
       createdAt: parseDbDateRequired(json['created_at']),
-      userFullName:
-          (json['profiles'] as Map<String, dynamic>?)?['full_name'] as String?,
+      yard: json['yard'] as String?,
+      userFullName: profile?['full_name'] as String?,
+      userRole: profile?['role'] as String?,
     );
   }
 }

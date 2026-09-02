@@ -2765,6 +2765,36 @@ class AuditLogService {
     ];
   }
 
+  /// EVERY log across every yard and directorate, for the ICT Directorate.
+  ///
+  /// Deliberately the opposite of [getAllLogs], which scopes to one yard and
+  /// drops head-office staff: ICT provisions and oversees all of them, so it
+  /// needs the whole picture and filters it itself. The actor's role and yard
+  /// ride along so it can.
+  ///
+  /// [from] / [to] push the date window into SQL rather than filtering a full
+  /// year client-side. Retention still caps the table at 12 months
+  /// (purge_old_audit_logs), so an unbounded call is bounded in practice.
+  Future<List<AuditLogModel>> getAllLogsAcrossOffices({
+    DateTime? from,
+    DateTime? to,
+  }) async {
+    var query = supabase
+        .from('audit_logs')
+        .select('*, profiles!inner(full_name, role)');
+    if (from != null) {
+      query = query.gte('created_at', from.toIso8601String());
+    }
+    if (to != null) {
+      query = query.lte('created_at', to.toIso8601String());
+    }
+    final data = await query.order('created_at', ascending: false);
+    return [
+      for (final e in (data as List))
+        AuditLogModel.fromJson(e as Map<String, dynamic>)
+    ];
+  }
+
   Future<void> recordLog({
     required String? userId,
     required String action,
