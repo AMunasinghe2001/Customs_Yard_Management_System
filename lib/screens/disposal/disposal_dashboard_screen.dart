@@ -1180,9 +1180,10 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                 fixedWidth: 132),
                             DataColumn2(
                                 label: Text('Sold Price'), size: ColumnSize.M),
+                            // Fits the shared status pill, like the yard's.
                             DataColumn2(
                                 label: Center(child: Text('Delivery')),
-                                fixedWidth: 120),
+                                fixedWidth: kDestructionStatusColumnWidth),
                             DataColumn2(
                                 label: Center(child: Text('Details')),
                                 size: ColumnSize.S,
@@ -1952,37 +1953,14 @@ class _DeliveryStatusCell extends ConsumerWidget {
       error: (_, __) => const Text('—'),
       data: (item) => item == null
           ? const Text('—')
-          : DeliveryStatusChip(delivered: item.isDelivered),
+          // The SAME pill the yard's table uses. Central Disposal watches
+          // delivery but does not confirm it, so no onMark.
+          : DeliveryStatusPill(delivered: item.isDelivered),
     );
   }
 }
 
 /// Small read-only Delivered/Pending chip shared by the Sold tables.
-class DeliveryStatusChip extends StatelessWidget {
-  final bool delivered;
-  const DeliveryStatusChip({super.key, required this.delivered});
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        delivered ? context.colors.successGreen : context.colors.warningAmber;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(delivered ? Icons.check_circle_rounded : Icons.schedule_rounded,
-            size: 13, color: color),
-        const Gap(5),
-        Text(delivered ? 'Delivered' : 'Pending',
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-      ]),
-    );
-  }
-}
 
 // ── Disposal Requests (per yard, per submission) ──────────────────
 // null = all yards.

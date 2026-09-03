@@ -687,6 +687,28 @@ class PackageService {
   /// Server-side paged fetch for the Package History page so it opens fast even
   /// with very large tables (only [limit] rows leave the DB per call). Filters
   /// are applied server-side. Returns the page rows + the total matching count
+  /// The years Goods History actually holds, newest first.
+  ///
+  /// ⚠️ Goods History is SERVER-paginated -- only one page of rows ever
+  /// reaches the app -- so it cannot derive its year list from loaded data the
+  /// way every other page does with `srYears()`. It used a hard-coded
+  /// "this year back six years" loop instead, which offered years with nothing
+  /// in them (2020-2023) and never offered NEXT year, so the one dropdown in
+  /// the app behaved differently from all the others.
+  ///
+  /// This asks the database instead: the distinct trailing '/YYYY' of every SR
+  /// number. [srYears] then adds the current and next year, exactly as it does
+  /// elsewhere.
+  Future<List<String>> getPackageYears({String? yard}) async {
+    var q = supabase.from('packages').select('sr_number');
+    if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+    final data = await AuthService._withNetworkRetry(() => q);
+    return [
+      for (final row in (data as List))
+        (row as Map<String, dynamic>)['sr_number']?.toString() ?? '',
+    ];
+  }
+
   /// (for the pager). [year] matches the SR-number suffix '/YYYY'.
   Future<({List<PackageModel> rows, int total})> getPackagesPaged({
     required int offset,

@@ -16,6 +16,7 @@ import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/year_filter.dart';
 
 class PackagesScreen extends ConsumerStatefulWidget {
   const PackagesScreen({super.key});
@@ -350,48 +351,27 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                             ],
                           );
                         }),
-                        // Year Filter Dropdown
+                        // ⚠️ The SAME YearFilterButton + srYears() every other
+                        // page uses. This one built its own list from a
+                        // hard-coded "this year back six years" loop, so it
+                        // offered years with nothing in them and never offered
+                        // NEXT year -- the one dropdown in the app that behaved
+                        // differently from all the rest.
+                        //
+                        // Goods History pages on the SERVER, so it cannot read
+                        // the years off its loaded rows (only one page is ever
+                        // loaded); packageYearSourceProvider fetches the SR
+                        // numbers alone for exactly this.
                         Consumer(builder: (context, ref, _) {
-                          final selectedYear = ref.watch(packageYearFilterProvider);
-                          // Recent years (newest first). Avoids loading every
-                          // package just to list years — the server filters by
-                          // the chosen year via the SR-number suffix.
-                          final thisYear = DateTime.now().year;
-                          final years = [
-                            for (var y = thisYear; y >= thisYear - 6; y--)
-                              y.toString()
-                          ];
-                          return Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              StyledDropdownButton<String>(
-                                value: selectedYear,
-                                allLabel: 'All Years',
-                                icon: Icons.calendar_today_rounded,
-                                columns: 2,
-                                options: years
-                                    .map((y) =>
-                                        StyledDropdownOption(y, y))
-                                    .toList(),
-                                onChanged: (val) => ref
-                                    .read(packageYearFilterProvider.notifier)
-                                    .state = val,
-                              ),
-                              if (selectedYear != null) ...[
-                                const Gap(8),
-                                IconButton(
-                                  icon: Icon(Icons.clear_rounded,
-                                      size: 16,
-                                      color: context.colors.dangerRed),
-                                  onPressed: () => ref
-                                      .read(packageYearFilterProvider.notifier)
-                                      .state = null,
-                                  tooltip: 'Clear Year Filter',
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(),
-                                ),
-                              ],
-                            ],
+                          final srNumbers =
+                              ref.watch(packageYearSourceProvider).valueOrNull ??
+                                  const <String>[];
+                          return YearFilterButton(
+                            value: ref.watch(packageYearFilterProvider),
+                            years: srYears(srNumbers),
+                            onChanged: (val) => ref
+                                .read(packageYearFilterProvider.notifier)
+                                .state = val,
                           );
                         }),
                       ],

@@ -17,74 +17,115 @@ class NavItem {
   const NavItem(this.label, this.icon, this.route);
 }
 
-const _officerNav = [
-  NavItem('Dashboard', Icons.dashboard_rounded, '/dashboard'),
+/// A captioned run of nav items.
+///
+/// The rail is over twenty entries long. Ungrouped, finding "Converted Goods"
+/// meant reading every label from the top -- so the items are grouped by the
+/// stage of the yard's work they belong to, and each group is captioned.
+class NavSection {
+  final String title;
+  final List<NavItem> items;
+  const NavSection(this.title, this.items);
+}
+
+// ── The sections, in the order the work actually happens ──────────────────
+// Goods arrive, are held, get a disposition, are disposed of, and finally
+// reach an outcome. Reading the rail top to bottom now follows that path.
+
+const _navRegister = [
   NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
   NavItem('Old Entries', Icons.history_edu_rounded, '/old-entries'),
+  NavItem('Goods History', Icons.inventory_2_rounded, '/packages'),
+];
+
+const _navStorage = [
   NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
   NavItem('Zone Capacity', Icons.donut_large_rounded, '/zone-capacity'),
-  NavItem('Goods History', Icons.inventory_2_rounded, '/packages'),
-  NavItem(
-      'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
+];
+
+/// What the goods are held AS, while the yard decides.
+const _navHolding = [
   NavItem('Detained Goods', Icons.gpp_maybe_rounded, '/detained-packages'),
-  // Perishable goods never reach a warehouse, so they appear on no
-  // disposition page -- this is the only place they are listed.
-  NavItem('Perishable Goods', Icons.eco_rounded, '/perishable-goods'),
   NavItem('Abandoned Goods', Icons.inbox_rounded, '/abandoned-packages'),
   NavItem('Forfeited Goods', Icons.gavel_rounded, '/forfeited-packages'),
   NavItem('Other Goods', Icons.label_important_rounded, '/other-packages'),
+  // Perishable goods never reach a warehouse, so they appear on no
+  // disposition page -- this is the only place they are listed.
+  NavItem('Perishable Goods', Icons.eco_rounded, '/perishable-goods'),
+];
+
+/// How they LEFT: the four ordinary endings.
+const _navDisposed = [
+  NavItem(
+      'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
   NavItem('Sold Goods', Icons.sell_rounded, '/sold-packages'),
   NavItem('Unsold Goods', Icons.rule_folder_rounded, '/unsold-packages'),
   NavItem(
       'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
   NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
       '/reexported-packages'),
-  // The Top Management Directorate's outcomes for goods nothing could sell. Grouped after
-  // Re-exported so the whole disposal chain reads in order.
+];
+
+/// The Top Management Directorate's outcomes for goods nothing could sell.
+const _navOutcomes = [
   NavItem('Government Use', Icons.account_balance_rounded,
       '/government-use-packages'),
   NavItem('Remanded Goods', Icons.reply_all_rounded, '/remanded-packages'),
   NavItem('Auction Goods', Icons.gavel_rounded, '/auction-packages'),
   NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
   NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
+];
+
+const _navReporting = [
   NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
   NavItem('Reports', Icons.summarize_rounded, '/reports'),
 ];
 
-const _adminNav = [
-  NavItem('Dashboard', Icons.dashboard_rounded, '/admin'),
-  NavItem('SR Registration', Icons.assignment_outlined, '/inspection'),
-  NavItem('Old Entries', Icons.history_edu_rounded, '/old-entries'),
-  NavItem('Warehouses', Icons.warehouse_rounded, '/warehouses'),
-  NavItem('Zone Capacity', Icons.donut_large_rounded, '/zone-capacity'),
-  NavItem('Goods History', Icons.inventory_2_rounded, '/packages'),
-  NavItem(
-      'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),
-  NavItem('Detained Goods', Icons.gpp_maybe_rounded, '/detained-packages'),
-  // Perishable goods never reach a warehouse, so they appear on no
-  // disposition page -- this is the only place they are listed.
-  NavItem('Perishable Goods', Icons.eco_rounded, '/perishable-goods'),
-  NavItem('Abandoned Goods', Icons.inbox_rounded, '/abandoned-packages'),
-  NavItem('Forfeited Goods', Icons.gavel_rounded, '/forfeited-packages'),
-  NavItem('Other Goods', Icons.label_important_rounded, '/other-packages'),
-  NavItem('Sold Goods', Icons.sell_rounded, '/sold-packages'),
-  NavItem('Unsold Goods', Icons.rule_folder_rounded, '/unsold-packages'),
-  NavItem(
-      'Destroyed Goods', Icons.delete_forever_rounded, '/destroyed-packages'),
-  NavItem('Re-exported Goods', Icons.flight_takeoff_rounded,
-      '/reexported-packages'),
-  // The Top Management Directorate's outcomes for goods nothing could sell. Grouped after
-  // Re-exported so the whole disposal chain reads in order.
-  NavItem('Government Use', Icons.account_balance_rounded,
-      '/government-use-packages'),
-  NavItem('Remanded Goods', Icons.reply_all_rounded, '/remanded-packages'),
-  NavItem('Auction Goods', Icons.gavel_rounded, '/auction-packages'),
-  NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
-  NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),
-  NavItem('Tender Sale', Icons.assignment_ind_rounded, '/tender-disposals'),
-  NavItem('Reports', Icons.summarize_rounded, '/reports'),
-  NavItem('Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
-];
+/// The officer's rail. ⚠️ The admin rail differs only in its Dashboard route
+/// and its extra Admin Panel entry, so both are built from ONE definition --
+/// the two hand-maintained copies had already drifted once.
+List<NavSection> navSectionsFor({required bool isAdmin}) => [
+      NavSection('', [
+        NavItem('Dashboard', Icons.dashboard_rounded,
+            isAdmin ? '/admin' : '/dashboard'),
+      ]),
+      const NavSection('Register', _navRegister),
+      const NavSection('Storage', _navStorage),
+      const NavSection('Held Goods', _navHolding),
+      const NavSection('Disposed', _navDisposed),
+      const NavSection('Final Outcomes', _navOutcomes),
+      NavSection('Reporting', [
+        ..._navReporting,
+        if (isAdmin)
+          const NavItem(
+              'Admin Panel', Icons.admin_panel_settings_rounded, '/admin/panel'),
+      ]),
+    ];
+
+/// A small caption above a run of nav items.
+///
+/// Deliberately quiet -- it labels the group without competing with the items
+/// themselves, which are what people actually click.
+class _NavSectionHeading extends StatelessWidget {
+  final String title;
+  const _NavSectionHeading(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          color: Colors.white.withOpacity(0.38),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 1.1,
+        ),
+      ),
+    );
+  }
+}
 
 /// Where the nav rail is scrolled to, kept OUTSIDE the widget tree.
 ///
@@ -153,7 +194,7 @@ class _AppShellState extends ConsumerState<AppShell> {
   @override
   Widget build(BuildContext context) {
     final profile = ref.watch(currentProfileProvider);
-    final navItems = profile?.isAdmin == true ? _adminNav : _officerNav;
+    final navSections = navSectionsFor(isAdmin: profile?.isAdmin == true);
     final isDark = ref.watch(themeModeProvider) == ThemeMode.dark;
 
     return Scaffold(
@@ -227,14 +268,27 @@ class _AppShellState extends ConsumerState<AppShell> {
                   child: ListView(
                     controller: _navScrollCtrl,
                     padding: const EdgeInsets.symmetric(horizontal: 12),
-                    children: navItems.map((item) {
-                      final isActive = item.route == '/admin'
-                          ? widget.currentRoute == '/admin'
-                          : (widget.currentRoute == item.route ||
-                              (widget.currentRoute.startsWith(item.route) &&
-                                  item.route.length > 1));
-                      return _NavTile(item: item, isActive: isActive);
-                    }).toList(),
+                    children: [
+                      for (final section in navSections) ...[
+                        if (section.title.isNotEmpty)
+                          _NavSectionHeading(section.title),
+                        for (final item in section.items)
+                          _NavTile(
+                            item: item,
+                            // ⚠️ '/admin' must match EXACTLY. Every other route
+                            // matches by prefix, but '/admin' is a prefix of
+                            // '/admin/panel', so a prefix test would light up
+                            // Dashboard while the Admin Panel is open.
+                            isActive: item.route == '/admin'
+                                ? widget.currentRoute == '/admin'
+                                : (widget.currentRoute == item.route ||
+                                    (widget.currentRoute
+                                            .startsWith(item.route) &&
+                                        item.route.length > 1)),
+                          ),
+                      ],
+                      const SizedBox(height: 8),
+                    ],
                   ),
                 ),
                 Divider(height: 1, color: context.colors.borderColor),
@@ -338,58 +392,82 @@ class _AppShellState extends ConsumerState<AppShell> {
   }
 }
 
-class _NavTile extends StatelessWidget {
+class _NavTile extends StatefulWidget {
   final NavItem item;
   final bool isActive;
   const _NavTile({required this.item, required this.isActive});
 
   @override
+  State<_NavTile> createState() => _NavTileState();
+}
+
+class _NavTileState extends State<_NavTile> {
+  /// ⚠️ Tracked explicitly. An InkWell's own hover highlight is a faint
+  /// overlay that all but vanishes against the dark navy rail, so pointing at
+  /// an item gave almost no feedback -- on a rail this long you could not tell
+  /// which row you were about to click.
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
+    final item = widget.item;
+    final isActive = widget.isActive;
+    final gold = context.colors.primaryGold;
+    // Active wins over hover: a row that is already open should not change
+    // appearance just because the pointer crosses it.
+    final tint = isActive
+        ? gold
+        : (_hovered ? gold.withOpacity(0.85) : Colors.white.withOpacity(0.85));
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Material(
+          color: Colors.transparent,
           borderRadius: BorderRadius.circular(10),
-          onTap: () => context.go(item.route),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 200),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-            decoration: BoxDecoration(
-              color: isActive
-                  ? context.colors.primaryGold.withOpacity(0.15)
-                  : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
-              border: isActive
-                  ? Border.all(
-                      color: context.colors.primaryGold.withOpacity(0.3))
-                  : null,
-            ),
-            child: Row(
-              children: [
-                // Sidebar is always dark navy — use light colors for contrast
-                // in both light and dark themes.
-                Icon(item.icon,
-                    color: isActive
-                        ? context.colors.primaryGold
-                        : Colors.white.withOpacity(0.85),
-                    size: 20),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(item.label,
-                      overflow: TextOverflow.ellipsis,
-                      softWrap: false,
-                      style: TextStyle(
-                        color: isActive
-                            ? context.colors.primaryGold
-                            : Colors.white.withOpacity(0.85),
-                        fontWeight:
-                            isActive ? FontWeight.w600 : FontWeight.w500,
-                        fontSize: 14,
-                      )),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: () => context.go(item.route),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+              decoration: BoxDecoration(
+                color: isActive
+                    ? gold.withOpacity(0.15)
+                    : (_hovered
+                        ? Colors.white.withOpacity(0.07)
+                        : Colors.transparent),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: isActive
+                      ? gold.withOpacity(0.3)
+                      : (_hovered
+                          ? gold.withOpacity(0.25)
+                          : Colors.transparent),
                 ),
-              ],
+              ),
+              child: Row(
+                children: [
+                  // Sidebar is always dark navy — use light colors for contrast
+                  // in both light and dark themes.
+                  Icon(item.icon, color: tint, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(item.label,
+                        overflow: TextOverflow.ellipsis,
+                        softWrap: false,
+                        style: TextStyle(
+                          color: tint,
+                          fontWeight:
+                              isActive ? FontWeight.w600 : FontWeight.w500,
+                          fontSize: 14,
+                        )),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

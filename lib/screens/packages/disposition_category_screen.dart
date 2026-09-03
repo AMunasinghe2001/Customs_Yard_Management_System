@@ -514,7 +514,12 @@ class _DispositionCategoryScreenState
                                   label: Text('Sold Price'),
                                   size: ColumnSize.M),
                             if (widget.finalTag == 'SOLD')
-                              const DataColumn2(label: Center(child: Text('Delivery')), fixedWidth: 120),
+                              // Same width as the Destroyed Goods status
+                              // column: both hold the same fixed-size pill, so
+                              // a narrower box here would clip it.
+                              const DataColumn2(
+                                  label: Center(child: Text('Delivery')),
+                                  fixedWidth: kDestructionStatusColumnWidth),
                             // What the destruction actually cost -- the same
                             // SR-level figure Central Disposal's own Destroyed
                             // Goods table shows, so the yard can see the spend
@@ -796,33 +801,19 @@ class _DeliveryStatusCellState extends ConsumerState<_DeliveryStatusCell> {
       error: (_, __) => const Text('—'),
       data: (item) {
         if (item == null) return const Text('—');
-        if (item.isDelivered || !canEdit) {
-          return _DeliveryStatusChip(delivered: item.isDelivered);
-        }
-        final green = context.colors.successGreen;
+        // The SAME pill the Destroyed Goods column uses -- one fixed box for
+        // all three states, so neither column jumps as a row changes state and
+        // the two tables line up beside each other.
         return Tooltip(
-          message: 'Confirm the buyer has taken the goods',
-          child: TextButton.icon(
-            onPressed: _saving ? null : () => _markDelivered(item),
-            icon: _saving
-                ? const SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(strokeWidth: 2))
-                : Icon(Icons.local_shipping_rounded, size: 14, color: green),
-            label: Text('Mark Delivered',
-                style: TextStyle(
-                    fontSize: 11, fontWeight: FontWeight.w600, color: green)),
-            style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              minimumSize: const Size(0, 30),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              backgroundColor: green.withOpacity(0.10),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-                side: BorderSide(color: green.withOpacity(0.35)),
-              ),
-            ),
+          message: item.isDelivered
+              ? 'The buyer has taken the goods'
+              : (canEdit
+                  ? 'Confirm the buyer has taken the goods'
+                  : 'Awaiting the yard to confirm hand-over'),
+          child: DeliveryStatusPill(
+            delivered: item.isDelivered,
+            busy: _saving,
+            onMark: canEdit ? () => _markDelivered(item) : null,
           ),
         );
       },
@@ -1100,31 +1091,6 @@ class _DialogDetailRow extends StatelessWidget {
   }
 }
 
-class _DeliveryStatusChip extends StatelessWidget {
-  final bool delivered;
-  const _DeliveryStatusChip({required this.delivered});
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        delivered ? context.colors.successGreen : context.colors.warningAmber;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(delivered ? Icons.check_circle_rounded : Icons.schedule_rounded,
-            size: 13, color: color),
-        const SizedBox(width: 5),
-        Text(delivered ? 'Delivered' : 'Pending',
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-      ]),
-    );
-  }
-}
 
 /// Parse the receipt number from a "[FINAL:SOLD] — Receipt: <no>" warehouse
 /// note. Used to pin the exact TSI row for an item sold across several partial

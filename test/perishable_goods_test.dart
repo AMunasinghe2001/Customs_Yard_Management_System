@@ -260,8 +260,16 @@ void main() {
   group('the yard reaches the page from its nav rail', () {
     test('both rails list it, and the route exists', () {
       final shell = _read('lib/widgets/app_shell.dart');
-      expect("NavItem('Perishable Goods'".allMatches(shell).length, 2,
-          reason: 'officer and DC/SDDC rails must both have it');
+      // ⚠️ Declared ONCE, not once per rail. The officer and DC/SDDC rails
+      // used to be two hand-maintained copies, so this counted 2 occurrences
+      // to prove neither had been forgotten. They are now built from one
+      // definition by navSectionsFor(), which makes the omission impossible
+      // rather than merely detectable -- so one occurrence is the correct
+      // count, and counting 2 would mean the duplication had come back.
+      expect("NavItem('Perishable Goods'".allMatches(shell).length, 1,
+          reason: 'one shared definition feeds both rails');
+      expect(shell, contains('navSectionsFor('),
+          reason: 'both rails must come from the same definition');
       final router = _read('lib/core/router.dart');
       expect(router, contains("path: '/perishable-goods'"));
       expect(router, contains('PerishableGoodsScreen()'));

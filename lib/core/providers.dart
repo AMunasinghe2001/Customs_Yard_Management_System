@@ -381,6 +381,17 @@ final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
 /// Rows per page on the Package History table.
 const int kPackagePageSize = 20;
 
+/// Every SR number in Goods History, for its year filter.
+///
+/// Goods History pages on the server, so the loaded rows are only ever one
+/// page -- not enough to know which years exist. This asks for the numbers
+/// alone (one small column) so `srYears()` can build the same list every other
+/// page builds.
+final packageYearSourceProvider = FutureProvider<List<String>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getPackageYears();
+});
+
 /// Current zero-based page index for the Package History table.
 final packagePageProvider = StateProvider<int>((ref) => 0);
 

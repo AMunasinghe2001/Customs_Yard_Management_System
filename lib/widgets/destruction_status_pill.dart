@@ -67,52 +67,126 @@ class DestructionStatusPill extends StatelessWidget {
     );
   }
 
+  // Renders through the SHARED box, so the Destroyed and Delivered columns
+  // cannot drift apart.
   Widget _pill(
     BuildContext context, {
     required Color color,
     required IconData icon,
     required String label,
     VoidCallback? onTap,
-  }) {
-    final box = Container(
-      width: kDestructionPillWidth,
-      height: kDestructionPillHeight,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, size: _kPillIconSize, color: color),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: color,
-                  fontSize: _kPillFontSize,
-                  fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-    if (onTap == null) return box;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: box,
-      ),
+  }) =>
+      _statusPill(context,
+          color: color, icon: icon, label: label, onTap: onTap);
+}
+
+/// The one control both Sold Goods tables use for a package's delivery state.
+///
+/// Delivery mirrors destruction exactly: two states, and only the yard
+/// confirms one. So it renders through the SAME fixed box -- a "Mark
+/// Delivered" that is a different size and shape from "Delivered" makes the
+/// column jump as rows change state, and makes the two tables disagree with
+/// the Destroyed Goods column right beside them.
+///
+/// ⚠️ There is no revert. Once delivered the pill is a plain label: goods that
+/// left with their buyer cannot un-leave, so [onMark] is ignored then.
+class DeliveryStatusPill extends StatelessWidget {
+  /// True once delivery is confirmed.
+  final bool delivered;
+
+  /// Supplied only where delivery can be confirmed (the yard). When null an
+  /// undelivered row shows a read-only "Pending" pill instead.
+  final VoidCallback? onMark;
+
+  /// Shows a spinner in place of the icon while the write is in flight.
+  final bool busy;
+
+  const DeliveryStatusPill(
+      {super.key, required this.delivered, this.onMark, this.busy = false});
+
+  @override
+  Widget build(BuildContext context) {
+    if (delivered) {
+      return _statusPill(
+        context,
+        color: context.colors.successGreen,
+        icon: Icons.check_circle_rounded,
+        label: 'Delivered',
+      );
+    }
+    if (onMark == null) {
+      return _statusPill(
+        context,
+        color: context.colors.warningAmber,
+        icon: Icons.schedule_rounded,
+        label: 'Pending',
+      );
+    }
+    return _statusPill(
+      context,
+      color: context.colors.successGreen,
+      icon: Icons.local_shipping_rounded,
+      label: 'Mark Delivered',
+      onTap: busy ? null : onMark,
+      busy: busy,
     );
   }
+}
+
+/// The shared box every status pill renders through, so the Destroyed and
+/// Delivered columns match each other exactly.
+Widget _statusPill(
+  BuildContext context, {
+  required Color color,
+  required IconData icon,
+  required String label,
+  VoidCallback? onTap,
+  bool busy = false,
+}) {
+  final box = Container(
+    width: kDestructionPillWidth,
+    height: kDestructionPillHeight,
+    alignment: Alignment.center,
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.12),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: color.withOpacity(0.4)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (busy)
+          SizedBox(
+              width: _kPillIconSize,
+              height: _kPillIconSize,
+              child: CircularProgressIndicator(strokeWidth: 2, color: color))
+        else
+          Icon(icon, size: _kPillIconSize, color: color),
+        const SizedBox(width: 5),
+        Flexible(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+                color: color,
+                fontSize: _kPillFontSize,
+                fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    ),
+  );
+  if (onTap == null) return box;
+  return Material(
+    color: Colors.transparent,
+    child: InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: onTap,
+      child: box,
+    ),
+  );
 }
 
 /// What an SR's destruction actually cost, shown identically on both Destroyed

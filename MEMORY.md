@@ -1519,3 +1519,19 @@ Destroyed Goods is still fully populated (21 destroyed · 22 pending), all throu
 - Only a yard sees the button (`!profile.isDisposal`); Central Disposal watches.
 
 **4. ⚠️ The red bar down the Sold Goods table was a RenderFlex overflow.** `Row(mainAxisSize: min)` with an **unconstrained** `Text` — a large re-valued figure (`Rs 22,768,380`) plus the price-change icon is wider than the column, and Flutter paints its overflow stripes vertically. `Flexible` + ellipsis lets the number give way. Fixed in **both** copies: the yard's table and Central Disposal's, which had the same latent bug behind wider columns.
+
+### The nav rail: one definition, grouped, and it responds to the pointer (2026-09-03)
+
+⚠️ **The officer and DC/SDDC rails were two hand-maintained copies** of the same twenty-odd entries, and had already drifted once. `navSectionsFor({required bool isAdmin})` now builds both from one list — the admin rail differs only in its Dashboard route and its extra Admin Panel entry. A test asserts the duplicated lists do not come back.
+
+**Grouped in the order the work happens**: Register → Storage → Held Goods → Disposed → Final Outcomes → Reporting. Goods arrive, are held, get a disposition, are disposed of, and reach an outcome — reading the rail top to bottom now follows that path. Each group carries a quiet caption; the Dashboard sits in an unnamed section and needs none.
+
+⚠️ **Hover is tracked explicitly** (`MouseRegion` + `_hovered`). An `InkWell`'s own hover highlight is a faint overlay that all but vanishes against the dark navy rail, so pointing at an item gave almost no feedback — on a rail this long you could not tell which row you were about to click. **Active wins over hover**: an already-open page must not restyle just because the pointer crosses it.
+
+⚠️ `'/admin'` must match **exactly**. Every other route matches by prefix, but `'/admin'` is a prefix of `'/admin/panel'`, so a prefix test lights up Dashboard while the Admin Panel is open.
+
+### Two dropdown/pill inconsistencies (2026-09-03)
+
+**Goods History's year filter was the one dropdown that behaved differently.** It built its own list from a hard-coded "this year back six years" loop, so it offered years with nothing in them (2020–2023) and never offered **next** year. ⚠️ It could not use `srYears()` like every other page because Goods History pages on the **server** — only one page of rows ever reaches the app, so the years cannot be read off loaded data. `packageYearSourceProvider` fetches the SR numbers alone (one small column) so `srYears()` can build the same list everywhere.
+
+**Mark Delivered now renders through the same fixed box as Mark Destroyed.** `DeliveryStatusPill` shares `_statusPill` with `DestructionStatusPill`, so neither column jumps as a row changes state and the two line up beside each other. ⚠️ The Delivery column was `fixedWidth: 120` against a 132px pill — it would have clipped; both now use `kDestructionStatusColumnWidth`.
