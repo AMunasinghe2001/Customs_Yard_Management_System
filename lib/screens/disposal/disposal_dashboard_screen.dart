@@ -224,6 +224,57 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
+                              Icon(Icons.assignment_turned_in_rounded,
+                                  size: 18),
+                              Gap(8),
+                              Text('Disposal Requests'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.storefront_rounded, size: 18),
+                              Gap(8),
+                              Text('Tender Sales'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.replay_rounded, size: 18),
+                              Gap(8),
+                              Text('Unsold Tenders'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.groups_rounded, size: 18),
+                              Gap(8),
+                              Text('Committees'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.eco_rounded, size: 18),
+                              Gap(8),
+                              Text('Perishable'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
                               Icon(Icons.sell_rounded, size: 18),
                               Gap(8),
                               Text('Sold Goods'),
@@ -237,6 +288,16 @@ class DisposalDashboardScreen extends ConsumerWidget {
                               Icon(Icons.pending_actions_rounded, size: 18),
                               Gap(8),
                               Text('Unsold Goods'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.delete_forever_rounded, size: 18),
+                              Gap(8),
+                              Text('Destroyed Goods'),
                             ])),
                     // ── The Top Management Directorate's outcomes, one tab each ──
                     Tab(
@@ -295,57 +356,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.delete_forever_rounded, size: 18),
-                              Gap(8),
-                              Text('Destroyed Goods'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.assignment_turned_in_rounded,
-                                  size: 18),
-                              Gap(8),
-                              Text('Disposal Requests'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.storefront_rounded, size: 18),
-                              Gap(8),
-                              Text('Tender Sales'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.replay_rounded, size: 18),
-                              Gap(8),
-                              Text('Unsold Tenders'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.groups_rounded, size: 18),
-                              Gap(8),
-                              Text('Committees'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
                               Icon(Icons.receipt_long_rounded, size: 18),
                               Gap(8),
                               Text('Taxes'),
@@ -370,24 +380,22 @@ class DisposalDashboardScreen extends ConsumerWidget {
                               Gap(8),
                               Text('Reports'),
                             ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.eco_rounded, size: 18),
-                              Gap(8),
-                              Text('Perishable'),
-                            ])),
                   ],
                 ),
               ),
             ).animate().fadeIn(duration: 350.ms, delay: 80.ms),
             const Expanded(
               child: TabBarView(children: [
+                _DisposalRequestsTab(),
+                _TenderSalesTab(),
+                _UnsoldReTenderTab(),
+                _CommitteesTab(),
+                // Read-only: Central Disposal watches what each yard is
+                // holding, but the yard is what sends the request.
+                PerishableGoodsScreen(readOnly: true),
                 _SoldPackagesTab(),
                 UnsoldProposalsTab(),
+                _DestroyedPackagesTab(),
                 UnsoldProposalsTab(
                     title: 'Government Use Goods',
                     countNoun: 'For government use',
@@ -438,17 +446,9 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     emptySubtitle:
                         'Unsold goods removed from customs premises will '
                         'appear here.'),
-                _DestroyedPackagesTab(),
-                _DisposalRequestsTab(),
-                _TenderSalesTab(),
-                _UnsoldReTenderTab(),
-                _CommitteesTab(),
                 TaxesTab(),
                 ExpensesTab(),
                 ReportsScreen(disposalMode: true),
-                // Read-only: Central Disposal watches what each yard is
-                // holding, but the yard is what sends the request.
-                PerishableGoodsScreen(readOnly: true),
               ]),
             ),
           ],

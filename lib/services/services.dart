@@ -4809,7 +4809,10 @@ class DisposalService {
     return (data as List).map((e) => TenderSaleModel.fromJson(e)).toList();
   }
 
-  Future<List<ReTenderSaleInfo>> getUnsoldTenderSales() async {
+  /// [includePerishable] is false everywhere except the DG's own perishable
+  /// list: goods that spoil never re-enter the tender pool.
+  Future<List<ReTenderSaleInfo>> getUnsoldTenderSales(
+      {bool includePerishable = false}) async {
     final sales = await getTenderSales();
     // forfeited id → tender sales containing it
     final byPkg = <String, List<TenderSaleModel>>{};
@@ -4857,6 +4860,13 @@ class DisposalService {
     final result = <ReTenderSaleInfo>[];
     for (final e in (fp as List)) {
       final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
+      // ⚠️ A PERISHABLE never joins the re-tender pool. Goods that spoil get
+      // no second round: one failed Special Tender Sale and they go straight
+      // to Top Management, who decide what becomes of them. Offering them
+      // again would be offering goods that will not last the wait -- and it
+      // would hide them from the DG, who is the only one who can act.
+      // getUnsoldPerishables serves that list from the same query.
+      if (!includePerishable && f.source == 'perishable') continue;
       result.add(
           ReTenderSaleInfo(forfeited: f, sales: eligible[f.id] ?? const []));
     }
@@ -5479,21 +5489,14 @@ class DisposalService {
   /// submission the way [getExhaustedUnsoldPackages] does. The single
   /// condition is: it went to a sale, that sale has ended, and it did not sell.
   Future<List<ReTenderSaleInfo>> getUnsoldPerishables() async {
-    final unsold = await getUnsoldTenderSales();
+    // ⚠️ `includePerishable: true` -- getUnsoldTenderSales EXCLUDES them by
+    // default, because they must never appear in Central Disposal's re-tender
+    // pool. This is the one list that wants them, and only them.
+    final unsold = await getUnsoldTenderSales(includePerishable: true);
     if (unsold.isEmpty) return [];
-    return unsold.where((i) {
-      final items = i.forfeited.packageDetails?.items ?? const <PackageItem>[];
-      final itemId = i.forfeited.itemId;
-      // The FP row names its item, so judge that item -- not the package,
-      // which may hold normal goods beside the perishable one.
-      final item = itemId == null
-          ? (items.isNotEmpty ? items.first : null)
-          : items.where((x) => x.id == itemId).firstOrNull;
-      if (item == null || item.nature != kNaturePerishable) return false;
-      // `getUnsoldTenderSales` already guarantees "not sold" and "the latest
-      // round's deadline has passed".
-      return i.sales.isNotEmpty;
-    }).toList();
+    return unsold
+        .where((i) => i.forfeited.source == 'perishable' && i.sales.isNotEmpty)
+        .toList();
   }
 
   Future<List<ReTenderSaleInfo>> getExhaustedUnsoldPackages() async {

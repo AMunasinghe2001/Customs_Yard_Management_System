@@ -1584,3 +1584,21 @@ Three places carry `PerishableTag`: the **Valuation** request card, Central Disp
 The seeder now batches **3 perishables per request** — one request per item would make the tag true but pointless.
 
 > The user first asked for this page in the **Appeal** Directorate, then corrected it to **Valuation** ("that is where the value is given"). The Appeal portal was the wrong home anyway: a perishable has no appeal.
+
+### Perishables never re-enter the tender pool (2026-09-03)
+
+⚠️ **Goods that spoil get NO second round.** One failed Special Tender Sale and they go straight to Top Management. `getUnsoldTenderSales` now **excludes** them by default (`includePerishable: false`), so neither Unsold Tenders tab — Central Disposal's nor Valuation's, which share `unsoldTenderSalesProvider` — can offer them again. Offering them would be offering goods that will not last the wait, **and it would hide them from the DG**, the only one who can act. `getUnsoldPerishables` is the one caller that passes `includePerishable: true`, and keeps only them.
+
+### The Valuation Directorate's perishable tab (2026-09-03)
+
+A third tab, `_PendingValuationTab(perishableOnly: true)`. ⚠️ **Its own tab, not a filter on the first** — an officer could not otherwise tell them apart, and a perishable is on a completely different clock: no warehouse, no appeal window, one sale, then the DG. Valuing one as though it had months is the mistake this prevents.
+
+⚠️ It **splits the same list** rather than fetching a different one, so the two tabs can never disagree: whatever the directorate holds appears on exactly one of them. A request counts as perishable when **every** item is.
+
+### Central Disposal's tabs read in the yard rail's order (2026-09-03)
+
+In hand (Disposal Requests → Tender Sales → Unsold Tenders → Committees → Perishable) → Disposed (Sold → Unsold → Destroyed) → Final Outcomes (Government Use → Remanded → Auction → Converted → Removed) → Reference (Taxes → Expenses → Reports). It has no register or storage stage of its own, so it starts at the work.
+
+⚠️ **The real risk in reordering is a tab pointing at another tab's view.** The five outcome tabs share ONE widget and are told apart only by `proposalFilter`, so a shuffle there is silent. A test asserts the filters still line up with their labels, and that all 16 tabs and views stayed paired.
+
+Seeded so each surface has something: **6 perishable requests awaiting Central Disposal** (a request drops off that tab the moment its goods are tendered, so tendering every one left it empty) and **1 special sale still to open** (every other sale is dated in the past so its items can be counted sold or unsold).

@@ -103,7 +103,10 @@ void main() {
           reason: 'a perishable is not gated on the round count');
       expect(body.contains('committee'), isFalse,
           reason: 'a perishable never reaches a committee');
-      expect(body, contains('kNaturePerishable'));
+      // ⚠️ It judges on the SOURCE, not the item's nature through a join.
+      // postgres/07_perishable_source.sql made 'perishable' a real
+      // forfeited_packages source, so the row says what the goods are.
+      expect(body, contains("source == 'perishable'"));
     });
   });
 

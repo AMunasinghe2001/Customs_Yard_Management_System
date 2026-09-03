@@ -949,6 +949,7 @@ Future<void> _seedPerishableSales(Connection conn) async {
   var saleFill = 0;
   String? reqId;
   var reqFill = 0;
+  var awaitingCd = 0;
 
   for (final r in rows) {
     if (_rng.nextInt(100) >= 55) continue;
@@ -1000,6 +1001,15 @@ Future<void> _seedPerishableSales(Connection conn) async {
       r"values ($1,$2,'sale',$3,true)",
       parameters: [reqId, fpId, valuation],
     );
+
+    // ⚠️ Some requests are left UNACTED. A request drops off Central
+    // Disposal's Disposal Requests tab the moment its goods are placed in a
+    // sale, so tendering every perishable meant that tab never showed one --
+    // and the whole point of the perishable TAG is that it can be seen there.
+    if (awaitingCd < 6) {
+      awaitingCd++;
+      continue;
+    }
 
     // Several perishables share one special sale.
     if (saleId == null || saleFill >= 4) {
@@ -1062,8 +1072,71 @@ Future<void> _seedPerishableSales(Connection conn) async {
     }
   }
 
+  // ── A special sale still to open ─────────────────────────────────────────
+  // ⚠️ Every sale above is dated in the PAST so its items can be counted sold
+  // or unsold -- which left the Tender Sales tab with no special sale at all,
+  // and therefore nowhere to see the perishable label on a sale header.
+  final upcoming = await conn.execute(
+    'select pi.id, pi.package_id, p.sr_number, p.consignee_name, '
+    '       pi.quantity, pi.unit_value, coalesce(p.entry_date, p.created_at) '
+    'from public.package_items pi '
+    'join public.packages p on p.id = pi.package_id '
+    "where pi.nature = 'perishable' and pi.status = 'Perishable' "
+    '  and not exists (select 1 from public.forfeited_packages f '
+    '                   where f.item_id = pi.id) '
+    'order by coalesce(p.entry_date, p.created_at) desc limit 3',
+  );
+  if (upcoming.isNotEmpty) {
+    final at = DateTime.now().add(const Duration(days: 2));
+    serial++;
+    final openSaleId = await _newSpecialSale(conn, at, serial);
+    var scheduled = 0;
+    for (final r in upcoming) {
+      final itemId = r[0] as String;
+      final pkgId = r[1] as String;
+      final srNumber = r[2] as String;
+      final consignee = r[3] as String? ?? '';
+      final qty = (r[4] as int?) ?? 1;
+      final unitValue = double.tryParse('${r[5]}') ?? 5000;
+      final entered = r[6] as DateTime;
+
+      final fpRes = await conn.execute(
+        r'insert into public.forfeited_packages '
+        r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
+        r" appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) "
+        r"values ($1,$2,$3,$4,$5,$5,'Perishable goods — immediate disposal',"
+        r"        'perishable',$6,$7,$5,$5) returning id",
+        parameters: [pkgId, itemId, srNumber, consignee, entered, _yard, qty],
+      );
+      final fpId = fpRes.first.first as String;
+
+      final reqId2 = await _newDisposalRequest(
+          conn, entered.add(const Duration(days: 1)), 'forwarded');
+      await conn.execute(
+        r'insert into public.disposal_request_items '
+        r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
+        r"values ($1,$2,'sale',$3,true)",
+        parameters: [
+          reqId2,
+          fpId,
+          (unitValue * qty * (0.4 + _rng.nextDouble() * 0.3)).roundToDouble(),
+        ],
+      );
+
+      await conn.execute(
+        r'insert into public.tender_sale_items '
+        r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
+        r' created_at) values ($1,$2,$3,$4,false,$5)',
+        parameters: [openSaleId, fpId, itemId, _yard, DateTime.now()],
+      );
+      scheduled++;
+    }
+    print('  perishables: $scheduled in a special sale yet to open');
+  }
+
   print('  perishables: $sold sold in $serial special sales, '
       '$pending unsold ($decided decided by Top Management)');
+  print('  perishables: $awaitingCd requests awaiting Central Disposal');
 }
 
 /// What Top Management does with a perishable nothing would buy.

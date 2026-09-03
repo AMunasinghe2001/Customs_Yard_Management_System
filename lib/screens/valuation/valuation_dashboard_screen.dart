@@ -58,7 +58,11 @@ class _ValuationDashboardScreenState
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // ⚠️ Three tabs now. The length, the Tab widgets and the TabBarView
+    // children must move together: a short controller still PAINTS every tab,
+    // but clicks resolve against the shorter one, so tapping does nothing
+    // while swiping still works.
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -243,6 +247,16 @@ class _ValuationDashboardScreenState
                     child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          Icon(Icons.eco_rounded, size: 18),
+                          Gap(8),
+                          Text('Perishable Goods'),
+                        ]),
+                  ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
                           Icon(Icons.sell_rounded, size: 18),
                           Gap(8),
                           Text('Unsold Tenders · Bids'),
@@ -258,73 +272,16 @@ class _ValuationDashboardScreenState
             child: TabBarView(
               controller: _tabController,
               children: [
-                // Tab 1: existing pending-valuation list.
-                Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(children: [
-                        Text('Pending Valuation',
-                            style: TextStyle(
-                                color: context.colors.textPrimary,
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700)),
-                        const Gap(12),
-                        requests.maybeWhen(
-                          data: (list) => Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: gold.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(999),
-                              border: Border.all(color: gold.withOpacity(0.3)),
-                            ),
-                            child: Text('${list.length} request(s)',
-                                style: TextStyle(
-                                    color: gold,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 12)),
-                          ),
-                          orElse: () => const SizedBox(),
-                        ),
-                      ]).animate().fadeIn(duration: 300.ms),
-                      const Gap(16),
-                      Expanded(
-                        child: requests.when(
-                          skipLoadingOnReload: true,
-                          loading: () => Center(
-                              child: CircularProgressIndicator(color: gold)),
-                          error: (e, _) => ErrorView(
-                              error: e,
-                              onRetry: () =>
-                                  ref.refresh(valuationRequestsProvider)),
-                          data: (list) {
-                            if (list.isEmpty) {
-                              return SizedBox(
-                                width: double.infinity,
-                                child: EmptyStateCard(
-                                    icon: Icons.calculate_outlined,
-                                    message: 'Nothing awaiting valuation',
-                                    subtitle:
-                                        'Monitoring all ${kYards.length} yards — new disposal requests will appear here for costing.'),
-                              );
-                            }
-                            return ListView.separated(
-                              itemCount: list.length,
-                              separatorBuilder: (_, __) => const Gap(16),
-                              itemBuilder: (context, i) =>
-                                  _ValuationRequestCard(request: list[i]),
-                            )
-                                .animate()
-                                .fadeIn(duration: 350.ms)
-                                .slideY(begin: 0.05);
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                // Tab 1: everything awaiting valuation.
+                const _PendingValuationTab(),
+                // Tab 2: PERISHABLES only.
+                //
+                // ⚠️ Their own tab, not a filter on the first. An officer
+                // cannot otherwise tell them apart, and they are on a
+                // completely different clock: no warehouse, no appeal window,
+                // one Special Tender Sale and then the DG decides. Valuing one
+                // as though it had months is the mistake this prevents.
+                const _PendingValuationTab(perishableOnly: true),
                 // Tab 2: unsold tenders — view bids + set re-valuation.
                 const _UnsoldTendersValTab(),
               ],
@@ -333,6 +290,96 @@ class _ValuationDashboardScreenState
         ],
       ),
     );
+  }
+}
+
+/// The list of requests awaiting a cost, on one of the two Valuation tabs.
+///
+/// ⚠️ [perishableOnly] splits the SAME list rather than fetching a different
+/// one, so the two tabs can never disagree about a request: whatever the
+/// directorate is holding appears on exactly one of them.
+class _PendingValuationTab extends ConsumerWidget {
+  final bool perishableOnly;
+  const _PendingValuationTab({this.perishableOnly = false});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final gold = context.colors.primaryGold;
+    // A request is perishable when EVERY item is -- perishables arrive as
+    // their own request, so a mixed one is not a perishable batch.
+    bool isPerishable(DisposalRequestModel r) =>
+        r.items.isNotEmpty &&
+        r.items.every((i) => i.forfeited?.source == 'perishable');
+
+    final requests = ref.watch(valuationRequestsProvider).whenData(
+        (list) => list.where((r) => isPerishable(r) == perishableOnly).toList());
+
+    return Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Text('Pending Valuation',
+                  style: TextStyle(
+                      color: context.colors.textPrimary,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700)),
+              const Gap(12),
+              requests.maybeWhen(
+                data: (list) => Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: gold.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: gold.withOpacity(0.3)),
+                  ),
+                  child: Text('${list.length} request(s)',
+                      style: TextStyle(
+                          color: gold,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12)),
+                ),
+                orElse: () => const SizedBox(),
+              ),
+            ]).animate().fadeIn(duration: 300.ms),
+            const Gap(16),
+            Expanded(
+              child: requests.when(
+                skipLoadingOnReload: true,
+                loading: () => Center(
+                    child: CircularProgressIndicator(color: gold)),
+                error: (e, _) => ErrorView(
+                    error: e,
+                    onRetry: () =>
+                        ref.refresh(valuationRequestsProvider)),
+                data: (list) {
+                  if (list.isEmpty) {
+                    return SizedBox(
+                      width: double.infinity,
+                      child: EmptyStateCard(
+                          icon: Icons.calculate_outlined,
+                          message: 'Nothing awaiting valuation',
+                          subtitle:
+                              'Monitoring all ${kYards.length} yards — new disposal requests will appear here for costing.'),
+                    );
+                  }
+                  return ListView.separated(
+                    itemCount: list.length,
+                    separatorBuilder: (_, __) => const Gap(16),
+                    itemBuilder: (context, i) =>
+                        _ValuationRequestCard(request: list[i]),
+                  )
+                      .animate()
+                      .fadeIn(duration: 350.ms)
+                      .slideY(begin: 0.05);
+                },
+              ),
+            ),
+          ],
+        ),
+      );
   }
 }
 
