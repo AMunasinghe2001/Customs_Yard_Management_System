@@ -98,7 +98,7 @@ void main() {
 
     // With no outcome recorded yet, the Final Outcome column reads as awaiting
     // the Top Management Directorate rather than showing a decision.
-    expect(find.text('Awaiting Top Management Directorate'), findsWidgets);
+    expect(find.text('Awaiting Top Management'), findsWidgets);
   });
 
   testWidgets('shows the recorded final outcome once one exists',
@@ -188,6 +188,6 @@ void main() {
     expect(find.text('SR-100'), findsWidgets);
     // The decision is reported, not offered as a choice.
     expect(find.text('Government Use'), findsWidgets);
-    expect(find.text('Awaiting Top Management Directorate'), findsNothing);
+    expect(find.text('Awaiting Top Management'), findsNothing);
   });
 }

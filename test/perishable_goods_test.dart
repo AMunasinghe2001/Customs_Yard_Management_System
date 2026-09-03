@@ -45,6 +45,9 @@ Widget _harness({
         // a real database socket.
         unsoldProposalsByItemProvider
             .overrideWith((ref) => Future.value(outcomes)),
+        // Central Disposal's copy carries a yard dropdown, which fetches the
+        // yard list -- overridden here or the widget opens a real socket.
+        yardFilterOptionsProvider.overrideWith((ref) => Future.value(const [])),
         storageRateProvider
             .overrideWith((ref) => Future.value(const <DateTime, double>{})),
       ],

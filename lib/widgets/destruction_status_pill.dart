@@ -13,7 +13,12 @@ import 'tooltip_text.dart';
 /// must render at the SAME size — otherwise "Pending" comes out narrower than
 /// "Destroyed", and the yard's clickable "Mark Destroyed" dwarfs both. A fixed
 /// box is what keeps the three states interchangeable across the two screens.
-const double kDestructionPillWidth = 132;
+/// ⚠️ Wide enough for the LONGEST label any of these pills carries --
+/// "Remove from the Premises" and "Awaiting Top Management" are the two that
+/// set it. At 132 they were clipped to "Remove from the P..." and "Awaiting
+/// Top Mana...", which is worse than a ragged column: the officer could not
+/// read what had been decided at all.
+const double kDestructionPillWidth = 196;
 const double kDestructionPillHeight = 28;
 const double _kPillFontSize = 11;
 const double _kPillIconSize = 13;
@@ -21,7 +26,7 @@ const double _kPillIconSize = 13;
 /// The column width that fits [kDestructionPillWidth] with the table's own
 /// cell padding. Both Destroyed Goods tables use it, so their status columns
 /// line up.
-const double kDestructionStatusColumnWidth = 150;
+const double kDestructionStatusColumnWidth = 214;
 
 /// The one control both Destroyed Goods tables use for a package's destruction
 /// state.

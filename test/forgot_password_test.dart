@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/theme.dart';
-import 'package:cus_yard_management/widgets/forgot_password_dialog.dart';
+import 'package:cus_yard_management/widgets/forgot_password_panel.dart';
 
 String _read(String path) =>
     File(path).readAsStringSync().replaceAll('\r\n', '\n');
@@ -13,16 +13,12 @@ Widget _harness() => ProviderScope(
       child: MaterialApp(
         theme: AppTheme.lightTheme,
         home: Scaffold(
-          body: Builder(
-            builder: (context) => Center(
-              child: ElevatedButton(
-                onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) =>
-                      const ForgotPasswordDialog(accent: Color(0xFF3949AB)),
-                ),
-                child: const Text('open'),
-              ),
+          // Rendered inline, the way the sign-in panel shows it -- there is no
+          // dialog to push any more.
+          body: SingleChildScrollView(
+            child: ForgotPasswordPanel(
+              accent: const Color(0xFF3949AB),
+              onClose: (_) {},
             ),
           ),
         ),
@@ -37,10 +33,10 @@ void main() {
     };
 
     for (final p in portals.entries) {
-      test('${p.key} has a Forgot password link that opens the dialog', () {
+      test('${p.key} has a Forgot password link that shows the panel', () {
         final src = _read(p.value);
         expect(src, contains("Text('Forgot password?'"));
-        expect(src, contains('ForgotPasswordDialog('));
+        expect(src, contains('ForgotPasswordPanel('));
         expect(src, contains('_openForgotPassword'));
       });
 
@@ -57,10 +53,9 @@ void main() {
     }
   });
 
-  group('the dialog walks the three steps', () {
-    testWidgets('it opens asking who the account is', (tester) async {
+  group('the panel walks the three steps', () {
+    testWidgets('it starts by asking who the account is', (tester) async {
       await tester.pumpWidget(_harness());
-      await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
       expect(find.text('Reset your password'), findsOneWidget);
@@ -71,7 +66,6 @@ void main() {
     testWidgets('an empty identifier is refused before anything is sent',
         (tester) async {
       await tester.pumpWidget(_harness());
-      await tester.tap(find.text('open'));
       await tester.pumpAndSettle();
 
       await tester.tap(find.text('Send code'));
@@ -82,18 +76,32 @@ void main() {
       expect(find.text('Reset your password'), findsOneWidget);
     });
 
-    testWidgets('cancel closes it without doing anything', (tester) async {
-      await tester.pumpWidget(_harness());
-      await tester.tap(find.text('open'));
+    // ⚠️ It hands control BACK rather than popping a route -- the panel is
+    // part of the page, so there is nothing to pop. The login screen decides
+    // what to show next.
+    testWidgets('going back reports that nothing changed', (tester) async {
+      final closed = <bool>[];
+      await tester.pumpWidget(MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: ForgotPasswordPanel(
+              accent: const Color(0xFF3949AB),
+              onClose: closed.add,
+            ),
+          ),
+        ),
+      ));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Cancel'));
+
+      await tester.tap(find.text('Back to sign in'));
       await tester.pumpAndSettle();
-      expect(find.text('Reset your password'), findsNothing);
+      expect(closed, [false]);
     });
   });
 
   group('what the dialog will and will not say', () {
-    final src = _read('lib/widgets/forgot_password_dialog.dart');
+    final src = _read('lib/widgets/forgot_password_panel.dart');
 
     test('it never reports whether the account exists', () {
       // Saying "no such account" would let anyone test which usernames and

@@ -1632,3 +1632,25 @@ The same shape as before, three more times — a tab whose *purpose* is to act o
 - **Tender Committees**: every eligible package already had a committee, so there was nothing left to appoint one for. 4 are now waiting (5 appointed).
 - **Tender Sales · progress**: every open sale was wholly unsold, so the header could only ever read `0 / n sold`. Bidding closes item by item, so a live sale normally has some of both — two sales now read `1 / 4` and `2 / 4`.
 - **Tender Sales · re-tender badge**: every re-tendered round was dated in the past, so the badge existed only on closed sales and never appeared on the tab, which shows open ones. One open sale is now a genuine second round.
+
+### Forgot password lives in the sign-in panel (2026-09-03)
+
+⚠️ **Not a dialog.** Resetting a password is the same act as signing in — the officer is getting into their account — so it happens in the **same right-hand panel**, as the next page of one flow. A modal read as an interruption, dimmed the page behind it, and gave the three steps a different shape from the form the officer had just been using.
+
+`ForgotPasswordPanel` (was `ForgotPasswordDialog`) takes an `onClose(bool changed)` callback and **never pops a route** — it is part of the page, and the login screen decides what to show next. Both yard portals swap it in with `_resetting`.
+
+### The status pill was clipping (2026-09-03)
+
+⚠️ Fixing the width at **132** made the column tidy but cut the labels: "Remove from the P…", "Awaiting Top Mana…". **A clipped label is worse than a ragged column** — the officer could not read what had been decided at all. Now **196** (column **214**), sized to the longest label these pills carry.
+
+⚠️ The pending label itself was **"Awaiting Top Management Directorate"** — no width holds that, and the clipped part was the half that says *who* is being waited for. Shortened to "Awaiting Top Management"; the tooltip carries the rest.
+
+⚠️ A column holding one must use `kDestructionStatusColumnWidth`, **not a number typed in beside it** — a hard-coded 190 silently became too narrow the moment the pill grew. A test asserts the constant is used.
+
+### Central Disposal's Perishable page filters by yard (2026-09-03)
+
+That page watches **every** yard there, so without a yard dropdown an officer cannot narrow to the one they are dealing with — the same reason every other cross-yard page has one. Only on the read-only copy: the yard's own page shows one yard and needs none. Matched on the **SR number's** yard segment, like the other pages.
+
+### A tender that has already RUN (2026-09-03)
+
+⚠️ **The valuation is SEALED until the sale's close time passes** — it is the reserve price, so it may only be shown after bidding closes. Every seeded open sale closed in the *future*, so the Latest Valuation column on Tender Sales read "Sealed" on every row and was never once populated. A sale dated **today whose close time has already gone** is the state that shows it: bidding finished, reserve out, still listed because items remain undecided.

@@ -6,7 +6,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
-import '../../widgets/forgot_password_dialog.dart';
+import '../../widgets/forgot_password_panel.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
@@ -116,20 +116,24 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return 'Sign in failed. Please check your credentials.';
   }
 
-  /// Opens the reset flow, pre-filled with whatever was already typed.
+  /// Whether the right-hand panel is showing the reset flow instead of the
+  /// sign-in form.
   ///
-  /// On success the dialog closes and the officer is left on this page with a
-  /// note to sign in again -- which is exactly where they need to be.
-  Future<void> _openForgotPassword() async {
-    final done = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => ForgotPasswordDialog(
-        accent: context.colors.accentLightBlue,
-        initialIdentifier: _emailCtrl.text.trim(),
-      ),
-    );
-    if (done == true && mounted) {
+  /// ⚠️ Not a dialog. Resetting a password is the same act as signing in --
+  /// the officer is getting into their account -- so it happens in the same
+  /// panel, as the next page of one flow.
+  bool _resetting = false;
+
+  /// Shows the reset flow, pre-filled with whatever was already typed.
+  void _openForgotPassword() => setState(() => _resetting = true);
+
+  /// Back from the reset flow. On success the officer is left on the sign-in
+  /// form with a note to sign in again -- which is exactly where they need
+  /// to be.
+  void _closeForgotPassword(bool changed) {
+    if (!mounted) return;
+    setState(() => _resetting = false);
+    if (changed) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: const Text(
             'Password changed. Sign in with your new password.'),
@@ -213,7 +217,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Container(
               constraints: const BoxConstraints(maxWidth: 460),
               padding: const EdgeInsets.all(52),
-              child: Form(key: _formKey, child: Column(
+              child: _resetting
+                  ? ForgotPasswordPanel(
+                      accent: context.colors.accentLightBlue,
+                      initialIdentifier: _emailCtrl.text.trim(),
+                      onClose: _closeForgotPassword,
+                    )
+                  : Form(key: _formKey, child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [

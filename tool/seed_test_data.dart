@@ -2170,6 +2170,55 @@ Future<void> _seedTenderPipeline(Connection conn) async {
     }
   }
 
+  // ── A tender that has already RUN ────────────────────────────────────────
+  // ⚠️ The valuation is SEALED until the sale's close time passes -- it is the
+  // reserve price, so it may only be shown after bidding has closed. Every
+  // seeded open sale closed in the future, so its figure read "Sealed" and the
+  // Latest Valuation column was never once populated on the Tender Sales tab.
+  //
+  // A sale dated TODAY whose close time has already gone is the state that
+  // shows it: bidding has finished, the reserve is out, and the sale is still
+  // listed because items remain undecided.
+  var startedGoods = 0;
+  final startable = pool.where((r) => !usedFp.contains(r[0] as String)).toList();
+  if (startable.isNotEmpty) {
+    final today = DateTime.now();
+    saleSerial++;
+    final startedId = await _newTenderSale(conn, today, saleSerial,
+        startTime: '08:00', endTime: '09:00');
+    for (final r in startable.take(3)) {
+      final fpId = r[0] as String;
+      usedFp.add(fpId);
+      final itemId = r[2] as String?;
+      final unitValue = double.tryParse('${r[3]}') ?? 5000;
+      final qty = (r[4] as int?) ?? 1;
+
+      final reqId = await _newDisposalRequest(
+          conn, today.subtract(Duration(days: 14 + _rng.nextInt(20))),
+          'forwarded');
+      await conn.execute(
+        r'insert into public.disposal_request_items '
+        r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
+        r"values ($1,$2,'sale',$3,true)",
+        parameters: [
+          reqId,
+          fpId,
+          (unitValue * qty * (0.55 + _rng.nextDouble() * 0.35)).roundToDouble(),
+        ],
+      );
+      await conn.execute(
+        r'insert into public.tender_sale_items '
+        r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
+        r' created_at) values ($1,$2,$3,$4,false,$5)',
+        parameters: [startedId, fpId, itemId, _yard, today],
+      );
+      startedGoods++;
+    }
+    scheduledSales++;
+    print('    $startedGoods goods in a tender that has already run '
+        '(valuation unsealed)');
+  }
+
   // ── A RE-TENDER that is still open ───────────────────────────────────────
   // ⚠️ The re-tender badge marks a sale that shares a package with an EARLIER
   // sale. Every re-tendered round above is dated in the past, so the badge
@@ -2240,12 +2289,13 @@ Future<String> _newDisposalRequest(
 /// One tender sale. The close time is in the PAST for every seeded sale, so
 /// the valuation is unsealed and the items can be counted sold or unsold.
 Future<String> _newTenderSale(
-    Connection conn, DateTime saleAt, int serial) async {
+    Connection conn, DateTime saleAt, int serial,
+    {String startTime = '09:00', String endTime = '15:00'}) async {
   final res = await conn.execute(
     r'insert into public.tender_sales '
     r'(sale_number, sale_date, serial, year, tender_type, yard, sale_time, '
     r' sale_end_time, created_at) '
-    r"values ($1,$2,$3,$4,'general',$5,'09:00','15:00',$6) returning id",
+    r"values ($1,$2,$3,$4,'general',$5,$7,$8,$6) returning id",
     parameters: [
       'TS/$_yard/${saleAt.year}/${serial.toString().padLeft(3, '0')}',
       _iso(saleAt),
@@ -2253,6 +2303,8 @@ Future<String> _newTenderSale(
       saleAt.year,
       _yard,
       saleAt,
+      startTime,
+      endTime,
     ],
   );
   return res.first.first as String;

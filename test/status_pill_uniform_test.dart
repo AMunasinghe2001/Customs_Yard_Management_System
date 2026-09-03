@@ -44,14 +44,12 @@ void main() {
       expect(kDestructionStatusColumnWidth,
           greaterThanOrEqualTo(kStatusPillWidth));
 
+      // ⚠️ The column uses the shared CONSTANT, not a number typed in beside
+      // it. A hard-coded width silently became too narrow the moment the pill
+      // grew -- which is exactly how "Remove from the P..." happened.
       final perishable =
           _read('lib/screens/packages/perishable_goods_screen.dart');
-      final match =
-          RegExp(r"Text\('Final Outcome'\)[\s\S]{0,200}?fixedWidth: (\d+)")
-              .firstMatch(perishable);
-      expect(match, isNotNull);
-      expect(int.parse(match!.group(1)!),
-          greaterThanOrEqualTo(kStatusPillWidth.round()));
+      expect(perishable, contains('fixedWidth: kDestructionStatusColumnWidth'));
     });
   });
 }

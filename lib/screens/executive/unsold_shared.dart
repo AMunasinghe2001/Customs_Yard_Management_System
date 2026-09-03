@@ -319,7 +319,11 @@ class UnsoldOutcomeChip extends StatelessWidget {
   const UnsoldOutcomeChip({
     super.key,
     required this.proposal,
-    this.pendingLabel = 'Awaiting Top Management Directorate',
+    // ⚠️ Short enough to READ in the pill. The full
+    // "Awaiting Top Management Directorate" was always clipped, so the word
+    // that mattered -- who is being waited for -- was the part cut off. The
+    // tooltip carries the full wording.
+    this.pendingLabel = 'Awaiting Top Management',
   });
 
   /// Pending label for use inside the Top Management Directorate portal itself.

@@ -20,6 +20,8 @@ import '../../widgets/tooltip_text.dart';
 import '../../widgets/year_filter.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 import '../executive/unsold_shared.dart';
+import '../../widgets/destruction_status_pill.dart';
+import '../disposal/disposal_shared.dart';
 
 /// One perishable item, with the package it belongs to.
 class PerishableRow {
@@ -107,6 +109,9 @@ class _PerishableGoodsScreenState
   final _searchCtrl = TextEditingController();
   String _search = '';
   String? _yearFilter;
+
+  /// Central Disposal only: which yard's goods to show. Null = every yard.
+  String? _yardFilter;
   int _page = 0;
 
   @override
@@ -118,6 +123,14 @@ class _PerishableGoodsScreenState
   List<PerishableRow> _filter(List<PerishableRow> rows) {
     return rows.where((r) {
       if (!srYearMatches(r.package.srNumber, _yearFilter)) return false;
+      // Matched on the SR number's own yard segment, like every other
+      // cross-yard page -- the package's `yard` column can be the filing
+      // directorate rather than the yard holding the goods.
+      // The SR number carries the yard, which is what the table itself shows.
+      if (!matchesYardFilter(
+          _yardFilter, yardOfSrNumber(r.package.srNumber), r.package.srNumber)) {
+        return false;
+      }
       if (_search.isEmpty) return true;
       final q = _search.toLowerCase();
       return r.package.srNumber.toLowerCase().contains(q) ||
@@ -230,6 +243,21 @@ class _PerishableGoodsScreenState
                       _page = 0;
                     }),
                   ),
+                  // ⚠️ Only on Central Disposal's copy. This page watches
+                  // EVERY yard there, so without a yard filter the officer
+                  // cannot narrow to the one they are dealing with -- the
+                  // same reason every other cross-yard page has one. The
+                  // yard's own copy shows one yard, so it needs none.
+                  if (widget.readOnly) ...[
+                    const Gap(8),
+                    YardAllFilter(
+                      value: _yardFilter,
+                      onChanged: (v) => setState(() {
+                        _yardFilter = v;
+                        _page = 0;
+                      }),
+                    ),
+                  ],
                 ],
               ),
             ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
@@ -310,7 +338,10 @@ class _PerishableGoodsScreenState
                                 const DataColumn2(
                                     label: Center(child: Text('Final Outcome')),
                                     size: ColumnSize.S,
-                                    fixedWidth: 190),
+                                    // The shared constant, so this column and
+                                    // the Destroyed/Delivered ones stay in
+                                    // step when the pill width changes.
+                                    fixedWidth: kDestructionStatusColumnWidth),
                                 const DataColumn2(
                                     label: Center(child: Text('Details')),
                                     size: ColumnSize.S,

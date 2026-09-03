@@ -7,7 +7,7 @@ import 'package:gap/gap.dart';
 
 import '../core/providers.dart';
 import '../core/theme.dart';
-import 'styled_form_dialog.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 
 /// "I forgot my password", in three steps: name the account, prove you can
 /// read its mailbox, then set a new password.
@@ -19,27 +19,35 @@ import 'styled_form_dialog.dart';
 /// account" would let anyone test which usernames and addresses are real, so
 /// it moves to the code step either way; a code simply never arrives for an
 /// account that does not exist. See `reset_email_for_identifier`.
-class ForgotPasswordDialog extends ConsumerStatefulWidget {
+class ForgotPasswordPanel extends ConsumerStatefulWidget {
   final Color accent;
 
   /// Pre-fills the identifier with whatever was already typed on the login
   /// form, so the officer does not type it twice.
   final String initialIdentifier;
 
-  const ForgotPasswordDialog({
+  /// Called when the panel is finished with: `true` once the password has
+  /// been changed, `false` when the officer goes back to sign in.
+  ///
+  /// ⚠️ The panel does NOT pop a route -- it is part of the page, not a
+  /// dialog over it. The login screen decides what to show next.
+  final void Function(bool changed) onClose;
+
+  const ForgotPasswordPanel({
     super.key,
     required this.accent,
+    required this.onClose,
     this.initialIdentifier = '',
   });
 
   @override
-  ConsumerState<ForgotPasswordDialog> createState() =>
-      _ForgotPasswordDialogState();
+  ConsumerState<ForgotPasswordPanel> createState() =>
+      _ForgotPasswordPanelState();
 }
 
 enum _Step { identify, verify, reset }
 
-class _ForgotPasswordDialogState extends ConsumerState<ForgotPasswordDialog> {
+class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _idCtrl =
       TextEditingController(text: widget.initialIdentifier);
@@ -184,7 +192,9 @@ class _ForgotPasswordDialogState extends ConsumerState<ForgotPasswordDialog> {
           );
       if (!mounted) return;
       // Straight back to the login form, which is where they now have to go.
-      Navigator.pop(context, true);
+      // The panel is part of the page, so it hands control back rather than
+      // popping a route that was never pushed.
+      widget.onClose(true);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -209,75 +219,106 @@ class _ForgotPasswordDialogState extends ConsumerState<ForgotPasswordDialog> {
           Icons.password_rounded),
     };
 
-    return StyledFormDialog(
-      label: label,
-      title: title,
-      icon: icon,
-      headerAccentColor: accent,
-      width: 480,
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
-        ),
-        const Gap(8),
-        ElevatedButton.icon(
-          style: ElevatedButton.styleFrom(
-            backgroundColor: accent,
-            foregroundColor: Colors.white,
-          ),
-          icon: _busy
-              ? const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 2, color: Colors.white))
-              : Icon(switch (_step) {
-                  _Step.identify => Icons.send_rounded,
-                  _Step.verify => Icons.arrow_forward_rounded,
-                  _Step.reset => Icons.check_rounded,
-                }),
-          label: Text(switch (_step) {
-            _Step.identify => _busy ? 'Sending...' : 'Send code',
-            _Step.verify => 'Continue',
-            _Step.reset => _busy ? 'Saving...' : 'Save password',
-          }),
-          onPressed: _busy
-              ? null
-              : switch (_step) {
-                  _Step.identify => _sendCode,
-                  _Step.verify => _checkCode,
-                  _Step.reset => _save,
-                },
-        ),
-      ],
-      child: Form(
-        key: _formKey,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_info != null) ...[
-              _Banner(
-                  text: _info!,
-                  color: context.colors.successGreen,
-                  icon: Icons.check_circle_outline),
-              const Gap(14),
-            ],
-            if (_error != null) ...[
-              _Banner(
-                  text: _error!,
-                  color: context.colors.dangerRed,
-                  icon: Icons.error_outline),
-              const Gap(14),
-            ],
-            if (_step == _Step.identify) ..._identifyFields(context),
-            if (_step == _Step.verify) ..._verifyFields(context, accent),
-            if (_step == _Step.reset) ..._resetFields(context),
+    // ⚠️ Laid out INLINE, in the sign-in panel -- not in a dialog over it.
+    // Resetting a password is the same act as signing in: the officer is
+    // getting into their account. A modal made it read as an interruption,
+    // dimmed the page behind it, and gave the three steps a different shape
+    // from the one they had just been using.
+    return Form(
+      key: _formKey,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // The same back-arrow-and-heading row the sign-in panel uses, so the
+          // step reads as the next page of one flow.
+          Row(children: [
+            IconButton(
+              icon: Icon(Icons.arrow_back_rounded,
+                  color: context.colors.textSecondary),
+              tooltip: 'Back to sign in',
+              onPressed: _busy ? null : () => widget.onClose(false),
+            ),
+            const Gap(8),
+            Expanded(
+              child: Text(title,
+                  style: Theme.of(context).textTheme.headlineMedium),
+            ),
+          ]).animate().fadeIn(duration: 400.ms),
+          const Gap(8),
+          Padding(
+            padding: const EdgeInsets.only(left: 48),
+            child: Text(label,
+                style: TextStyle(
+                    color: accent,
+                    fontSize: 11,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w800)),
+          ).animate().fadeIn(delay: 100.ms),
+          const Gap(28),
+          if (_info != null) ...[
+            _Banner(
+                text: _info!,
+                color: context.colors.successGreen,
+                icon: Icons.check_circle_outline),
+            const Gap(14),
           ],
-        ),
+          if (_error != null) ...[
+            _Banner(
+                text: _error!,
+                color: context.colors.dangerRed,
+                icon: Icons.error_outline),
+            const Gap(14),
+          ],
+          if (_step == _Step.identify) ..._identifyFields(context),
+          if (_step == _Step.verify) ..._verifyFields(context, accent),
+          if (_step == _Step.reset) ..._resetFields(context),
+          const Gap(28),
+          SizedBox(
+            height: 52,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: accent,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+              icon: _busy
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Icon(switch (_step) {
+                      _Step.identify => Icons.send_rounded,
+                      _Step.verify => Icons.arrow_forward_rounded,
+                      _Step.reset => Icons.check_rounded,
+                    }),
+              label: Text(
+                  switch (_step) {
+                    _Step.identify => _busy ? 'Sending...' : 'Send code',
+                    _Step.verify => 'Continue',
+                    _Step.reset => _busy ? 'Saving...' : 'Save password',
+                  },
+                  style: const TextStyle(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              onPressed: _busy
+                  ? null
+                  : switch (_step) {
+                      _Step.identify => _sendCode,
+                      _Step.verify => _checkCode,
+                      _Step.reset => _save,
+                    },
+            ),
+          ),
+          const Gap(12),
+          TextButton(
+            onPressed: _busy ? null : () => widget.onClose(false),
+            child: const Text('Back to sign in'),
+          ),
+        ],
       ),
-    );
+    ).animate().fadeIn(duration: 350.ms).slideX(begin: 0.06);
   }
 
   List<Widget> _identifyFields(BuildContext context) => [
