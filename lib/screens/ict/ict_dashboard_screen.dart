@@ -36,12 +36,21 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
   /// 3 = Activity Logs.
   ///
   /// A TabController rather than a plain int so the pages can also be SWIPED,
-  /// the way every other directorate's tabs work. The custom tab strip below
-  /// both drives it and follows it.
-  late final TabController _tabs = TabController(length: 4, vsync: this)
-    ..addListener(() {
-      if (mounted) setState(() {});
-    });
+  /// the way every other directorate's tabs work. The rail both drives it and
+  /// follows it.
+  ///
+  /// ⚠️ NO listener on this. A TabController is an `Animation<double>`, so
+  /// `addListener` fires on every ANIMATION TICK, not on index changes — and
+  /// this one called `setState` on the whole screen. Changing tab rebuilt the
+  /// entire console, metric tiles and staff table included, sixty times a
+  /// second for the length of the transition. That was the rail's "lag": it
+  /// was not animating slowly, it was waiting behind a full rebuild of the
+  /// page each frame.
+  ///
+  /// Nothing needs it. The two things that follow the controller — the rail
+  /// and the header's section name — each listen through their own
+  /// AnimatedBuilder, so only those few widgets rebuild as it moves.
+  late final TabController _tabs = TabController(length: 4, vsync: this);
   String _selectedYard = 'all';
   String _selectedRole = 'all';
   String _selectedStatus = 'all'; // 'all', 'active', 'inactive'
@@ -286,6 +295,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
             // Without this the header gradient falls back to gold — Central
             // Disposal's colour — on an ICT form.
             headerAccentColor: AppTheme.ictCyan,
+            erp: true,
             icon: Icons.person_add_alt_1_rounded,
             width: 520,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -297,6 +307,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     Icons.error_outline_rounded),
 
               StyledFormSection(
+                erp: true,
+                accentColor: AppTheme.ictCyan,
                 title: 'Role & Yard Assignment',
                 icon: Icons.admin_panel_settings_outlined,
                 children: [
@@ -348,6 +360,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               const Gap(16),
 
               StyledFormSection(
+                erp: true,
+                accentColor: AppTheme.ictCyan,
                 title: 'Personal & Contact Details',
                 icon: Icons.badge_outlined,
                 children: [
@@ -435,6 +449,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 child: const Text('Cancel'),
               ),
               StyledDialogPrimaryButton(
+                erp: true,
+                accentColor: AppTheme.ictCyan,
                 labelText: otpSent ? 'Verify & Create' : 'Send OTP',
                 icon: otpSent ? Icons.how_to_reg_rounded : Icons.send_rounded,
                 loading: dialogLoading,
@@ -637,6 +653,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
             label: 'Edit User',
             title: 'Edit Officer Details',
             headerAccentColor: AppTheme.ictCyan,
+            erp: true,
             icon: Icons.edit_note_rounded,
             width: 480,
             child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -729,6 +746,8 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 child: const Text('Cancel'),
               ),
               StyledDialogPrimaryButton(
+                erp: true,
+                accentColor: AppTheme.ictCyan,
                 labelText: 'Save Changes',
                 icon: Icons.save_rounded,
                 loading: loading,
@@ -1202,7 +1221,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                 minWidth: 960,
                                 headingRowHeight: kIctHeadingHeight,
                                 dataRowHeight: kIctRowHeight,
-                                dividerThickness: 0,
                                 columns: [
                                   ictCol('Officer Name', size: ColumnSize.L),
                                   ictCol('Username / Salary No',
@@ -1469,73 +1487,78 @@ class _IctSideRailState extends State<_IctSideRail> {
     final accent = widget.accent;
     final controller = widget.controller;
     return Container(
-      width: 264,
+      width: 258,
       decoration: BoxDecoration(
         color: context.colors.cardDark,
-        border: Border(
-            right: BorderSide(color: context.colors.borderColor)),
+        border:
+            Border(right: BorderSide(color: context.colors.borderColor)),
       ),
-      child: AnimatedBuilder(
-        // Rebuilds as the controller animates, so a swipe moves the rail with
-        // the page rather than snapping at the end of it.
-        animation: controller.animation ?? controller,
-        builder: (context, _) => Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // ── Brand ────────────────────────────────────────────────────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
-              child: Row(children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: accent.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: accent.withOpacity(0.3)),
-                  ),
-                  child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                      width: 26,
-                      height: 26,
-                      colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Brand ──────────────────────────────────────────────────────
+          // ⚠️ OUTSIDE the AnimatedBuilder. It used to be inside, so every
+          // frame of a tab change re-rasterised the SVG emblem -- sixty times
+          // a second, for a picture that never changes. That was the lag: the
+          // rail was not animating slowly, it was re-drawing the logo.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: accent.withOpacity(0.3)),
                 ),
-                const Gap(12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text('SL Customs',
-                          style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800)),
-                      Text('ICT Console',
-                          style: TextStyle(
-                              color: accent,
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700)),
-                    ],
-                  ),
+                child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                    width: 24,
+                    height: 24,
+                    colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
+              ),
+              const Gap(11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('SL Customs',
+                        style: TextStyle(
+                            color: context.colors.textPrimary,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w800)),
+                    Text('ICT Console',
+                        style: TextStyle(
+                            color: accent,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ],
                 ),
-              ]),
-            ),
-            Divider(height: 1, color: context.colors.borderColor),
-            const Gap(14),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
-              child: Text('ADMINISTRATION',
-                  style: TextStyle(
-                      color: context.colors.textMuted,
-                      fontSize: 9.5,
-                      letterSpacing: 1.2,
-                      fontWeight: FontWeight.w800)),
-            ),
-            // The whole group is one MouseRegion as well: leaving the rail
-            // sideways — out to the page, or off the window — is the one exit
-            // no individual row is guaranteed to see.
-            MouseRegion(
-              onExit: (_) => setState(() => _hovered = null),
-              child: Column(
+              ),
+            ]),
+          ),
+          Divider(height: 1, color: context.colors.borderColor),
+          const Gap(12),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),
+            child: Text('ADMINISTRATION',
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 9.5,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w800)),
+          ),
+
+          // ── The four modules ───────────────────────────────────────────
+          // Only THIS follows the controller, and only the four cheap rows
+          // are rebuilt as it moves. The whole group is one MouseRegion as
+          // well: leaving the rail sideways -- out to the page, or off the
+          // window -- is the one exit no individual row is guaranteed to see.
+          MouseRegion(
+            onExit: (_) => setState(() => _hovered = null),
+            child: AnimatedBuilder(
+              animation: controller.animation ?? controller,
+              builder: (context, _) => Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   for (var i = 0; i < _IctSideRail._items.length; i++)
@@ -1544,31 +1567,30 @@ class _IctSideRailState extends State<_IctSideRail> {
                       accent: accent,
                       selected: controller.index == i,
                       hovered: _hovered == i,
-                      onHover: (on) =>
-                          setState(() => _hovered = on ? i : null),
+                      onHover: (on) => setState(() => _hovered = on ? i : null),
                       onTap: () => controller.animateTo(i),
                     ),
                 ],
               ),
             ),
-            const Spacer(),
-            Divider(height: 1, color: context.colors.borderColor),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
-              child: Row(children: [
-                Icon(Icons.shield_moon_rounded,
-                    size: 14, color: context.colors.textMuted),
-                const Gap(8),
-                Expanded(
-                  child: Text('System Administration',
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: context.colors.textMuted, fontSize: 11)),
-                ),
-              ]),
-            ),
-          ],
-        ),
+          ),
+          const Spacer(),
+          Divider(height: 1, color: context.colors.borderColor),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 14),
+            child: Row(children: [
+              Icon(Icons.shield_moon_rounded,
+                  size: 14, color: context.colors.textMuted),
+              const Gap(8),
+              Expanded(
+                child: Text('System Administration',
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: context.colors.textMuted, fontSize: 11)),
+              ),
+            ]),
+          ),
+        ],
       ),
     );
   }
@@ -1577,9 +1599,12 @@ class _IctSideRailState extends State<_IctSideRail> {
 /// One rail row: the active bar, the icon, the label, and the line of hint
 /// text under it.
 ///
-/// ⚠️ Stateless. Its highlight is told to it by [_IctSideRailState], which
-/// holds the one hovered index for the rail — see the note there for why the
-/// state cannot live in the row.
+/// ⚠️ Stateless, and it animates NOTHING. Its highlight is told to it by
+/// [_IctSideRailState], which holds the one hovered index for the rail — see
+/// the note there for why the state cannot live in the row. The
+/// AnimatedContainers it used to have ran two implicit animations per row on
+/// every rebuild, which on a rail that rebuilds with the tab animation meant
+/// eight animations chasing a change that had already happened.
 class _IctRailTile extends StatelessWidget {
   final _IctRailItem item;
   final Color accent;
@@ -1598,15 +1623,26 @@ class _IctRailTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Selected wins over hover: an open page must not restyle just because
-    // the pointer crosses it. Hover is a step towards the accent, not the
-    // accent itself, so the two states never read as the same thing.
+    // ⚠️ Hover is deliberately WEAKER than selected, not a different colour of
+    // the same strength. Pointing at one row while another was open read as
+    // two open rows: both had a filled box, and the fill is what the eye takes
+    // for "this is the page you are on". Hover now says only "the pointer is
+    // here" — a faint grey wash and brighter text, no accent anywhere, and no
+    // bar. The accent fill and the edge bar belong to the open page alone.
+    final Color fill;
+    if (selected) {
+      fill = accent.withOpacity(0.13);
+    } else if (hovered) {
+      fill = context.colors.surfaceDark.withOpacity(0.55);
+    } else {
+      fill = Colors.transparent;
+    }
     final tint = selected
         ? accent
         : (hovered ? context.colors.textPrimary : context.colors.textSecondary);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 0, 10, 3),
+      padding: const EdgeInsets.fromLTRB(10, 0, 10, 2),
       child: MouseRegion(
         cursor: SystemMouseCursors.click,
         onEnter: (_) => onHover(true),
@@ -1617,30 +1653,24 @@ class _IctRailTile extends StatelessWidget {
           child: InkWell(
             borderRadius: BorderRadius.circular(kIctControlRadius),
             onTap: onTap,
-            // ⚠️ The InkWell's own hover overlay is turned off. It is a faint
-            // wash that barely registers on a rail this dark, and it fades on
-            // its own schedule — so on a fast pass it stayed lit under the
-            // painted highlight and gave the second stuck row its colour.
+            // ⚠️ The InkWell's own hover overlay is off. It is a faint wash
+            // that barely registers on a rail this dark, and it fades on its
+            // own schedule — so on a fast pass it stayed lit under the painted
+            // highlight and gave the second stuck row its colour.
             hoverColor: Colors.transparent,
             splashColor: accent.withOpacity(0.12),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 140),
-              padding: const EdgeInsets.fromLTRB(0, 10, 12, 10),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(0, 9, 12, 9),
               decoration: BoxDecoration(
-                color: selected
-                    ? accent.withOpacity(0.13)
-                    : (hovered
-                        ? context.colors.surfaceDark
-                        : Colors.transparent),
+                color: fill,
                 borderRadius: BorderRadius.circular(kIctControlRadius),
               ),
               child: Row(children: [
                 // The active bar — an ERP rail marks the open module on the
                 // rail's own edge, so the eye finds it without reading.
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 140),
+                Container(
                   width: 3,
-                  height: 30,
+                  height: 26,
                   margin: const EdgeInsets.only(right: 11),
                   decoration: BoxDecoration(
                     color: selected ? accent : Colors.transparent,
@@ -1659,15 +1689,15 @@ class _IctRailTile extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                               color: tint,
-                              fontSize: 13,
+                              fontSize: 12.5,
                               fontWeight: selected
                                   ? FontWeight.w700
                                   : FontWeight.w600)),
-                      const Gap(2),
+                      const Gap(1),
                       Text(item.hint,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                              color: context.colors.textMuted, fontSize: 10.5)),
+                              color: context.colors.textMuted, fontSize: 10)),
                     ],
                   ),
                 ),

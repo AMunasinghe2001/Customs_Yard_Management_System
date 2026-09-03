@@ -29,19 +29,41 @@ const double kIctCardRadius = 12;
 const double kIctControlRadius = 10;
 const double kIctPillRadius = 6;
 
-/// Every filter, search box and toolbar button is this tall, so a toolbar
-/// reads as one strip instead of a set of controls that each chose a height.
-const double kIctControlHeight = 42;
+/// ⚠️ ONE height for every control in the console — filters, search boxes,
+/// toolbar buttons, the header's own controls. Nothing in ICT sets its own.
+///
+/// 36, not 42: a console is a dense screen. The taller controls pushed the
+/// table down the page and made the filter strip read as a second header.
+const double kIctControlHeight = 36;
+
+/// A control inside a table row, which has less height to give.
+const double kIctDenseHeight = 30;
+
+/// Square icon actions — row actions, the header's icon buttons. Same radius
+/// and border as every other control; only the width is different.
+const double kIctIconButtonSize = 30;
 
 /// ⚠️ One width for every status pill in ICT. The widest label any of them
 /// carries is "INACTIVE"; sizing each to its own text left a status column of
 /// ragged boxes, which is a good part of why the tables looked hand-assembled.
-const double kIctPillWidth = 92;
+const double kIctPillWidth = 88;
+const double kIctPillHeight = 22;
 
 /// The ICT table row height, shared by DataTable2 and by the hand-built rows
 /// in the Yards & Directorates tab so the two cannot drift apart.
-const double kIctRowHeight = 50;
-const double kIctHeadingHeight = 40;
+const double kIctRowHeight = 44;
+const double kIctHeadingHeight = 36;
+
+/// The gap between two columns of a table row.
+const double kIctCellGap = 12;
+
+/// ⚠️ The Status and Actions columns are FIXED, never flex. Given a flex share
+/// they end up the narrowest columns in a wide row — which is how the Yards
+/// table got a pill touching a button and a toggle 6px past the card's edge.
+/// Wide enough for a kIctPillWidth pill, and for two icon buttons and the gap
+/// between them, plus the cell gap on each side.
+const double kIctStatusColumnWidth = kIctPillWidth + 16;
+const double kIctActionsColumnWidth = kIctIconButtonSize * 2 + 8 + 16;
 
 // ── Surfaces ────────────────────────────────────────────────────────────────
 
@@ -143,7 +165,7 @@ class IctSectionCard extends StatelessWidget {
               : MainAxisSize.max,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 13, 16, 13),
+              padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               child: Row(children: [
                 if (icon != null) ...[
                   Icon(icon, size: 18, color: c.textSecondary),
@@ -236,7 +258,9 @@ class IctMetricCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      // Tight: four of these sit above the table, and every pixel they
+      // take is a row the officer cannot see without scrolling.
+      padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
       decoration: BoxDecoration(
         color: c.cardDark,
         borderRadius: BorderRadius.circular(kIctCardRadius),
@@ -256,14 +280,14 @@ class IctMetricCard extends StatelessWidget {
                       fontSize: 10,
                       letterSpacing: 0.8,
                       fontWeight: FontWeight.w800)),
-              const Gap(9),
+              const Gap(6),
               Text(value,
                   style: TextStyle(
                       color: c.textPrimary,
-                      fontSize: 26,
+                      fontSize: 21,
                       height: 1,
                       fontWeight: FontWeight.w800)),
-              const Gap(7),
+              const Gap(5),
               Text(caption,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -275,14 +299,14 @@ class IctMetricCard extends StatelessWidget {
         // The measure's colour as a small square rather than a full wash:
         // four tinted tiles in a row would compete with the data below them.
         Container(
-          width: 36,
-          height: 36,
+          width: 30,
+          height: 30,
           decoration: BoxDecoration(
             color: color.withOpacity(0.12),
-            borderRadius: BorderRadius.circular(kIctControlRadius),
+            borderRadius: BorderRadius.circular(8),
             border: Border.all(color: color.withOpacity(0.28)),
           ),
-          child: Icon(icon, color: color, size: 19),
+          child: Icon(icon, color: color, size: 16),
         ),
       ]),
     );
@@ -300,7 +324,7 @@ class IctToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: context.colors.cardDark,
         borderRadius: BorderRadius.circular(kIctCardRadius),
@@ -370,7 +394,7 @@ class IctSearchField extends StatelessWidget {
           filled: true,
           fillColor: c.surfaceDark,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           border: border,
           enabledBorder: border,
           focusedBorder: OutlineInputBorder(
@@ -434,7 +458,7 @@ class IctSelect extends StatelessWidget {
                 fontSize: 9.5,
                 letterSpacing: 0.8,
                 fontWeight: FontWeight.w800)),
-        const Gap(6),
+        const Gap(4),
         SizedBox(
           height: kIctControlHeight,
           child: Theme(
@@ -460,9 +484,9 @@ class IctSelect extends StatelessWidget {
               menuWidth: menuWidth,
               fillColor: set ? accent.withOpacity(0.07) : c.surfaceDark,
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               prefixIcon: Icon(icon,
-                  size: 17, color: set ? accent : c.textMuted),
+                  size: 16, color: set ? accent : c.textMuted),
               valueStyle: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
@@ -498,17 +522,17 @@ class IctPrimaryButton extends StatelessWidget {
       height: kIctControlHeight,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: 17, color: Colors.white),
+        icon: Icon(icon, size: 16, color: Colors.white),
         label: Text(label,
             style: const TextStyle(
                 color: Colors.white,
-                fontSize: 12.5,
+                fontSize: 12,
                 fontWeight: FontWeight.w700)),
         style: ElevatedButton.styleFrom(
           backgroundColor: accent,
           foregroundColor: Colors.white,
           elevation: 0,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kIctControlRadius)),
         ),
@@ -545,18 +569,18 @@ class IctGhostButton extends StatelessWidget {
     final on = onPressed != null;
     final tint = on ? accent : context.colors.textMuted;
     return SizedBox(
-      height: dense ? 32 : kIctControlHeight,
+      height: dense ? kIctDenseHeight : kIctControlHeight,
       child: OutlinedButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: dense ? 14 : 16),
+        icon: Icon(icon, size: dense ? 13 : 16),
         label: Text(label,
             style: TextStyle(
-                fontSize: dense ? 11.5 : 12.5, fontWeight: FontWeight.w700)),
+                fontSize: dense ? 11 : 12, fontWeight: FontWeight.w700)),
         style: OutlinedButton.styleFrom(
           foregroundColor: tint,
           backgroundColor: on ? accent.withOpacity(0.07) : Colors.transparent,
           side: BorderSide(color: tint.withOpacity(on ? 0.45 : 0.3)),
-          padding: EdgeInsets.symmetric(horizontal: dense ? 10 : 14),
+          padding: EdgeInsets.symmetric(horizontal: dense ? 9 : 14),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kIctControlRadius)),
         ),
@@ -585,7 +609,7 @@ class IctSegmented extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
-      padding: const EdgeInsets.all(4),
+      padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: c.surfaceDark,
         borderRadius: BorderRadius.circular(kIctControlRadius),
@@ -629,7 +653,7 @@ class _IctSegmentTile extends StatelessWidget {
         onTap: segment.onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
             color: on ? c.cardDark : Colors.transparent,
             borderRadius: BorderRadius.circular(kIctPillRadius),
@@ -643,7 +667,7 @@ class _IctSegmentTile extends StatelessWidget {
             Text(segment.label,
                 style: TextStyle(
                     color: on ? accent : c.textSecondary,
-                    fontSize: 12.5,
+                    fontSize: 12,
                     fontWeight: on ? FontWeight.w700 : FontWeight.w500)),
           ]),
         ),
@@ -681,6 +705,11 @@ class IctTableTheme extends StatelessWidget {
               dataTextStyle: TextStyle(color: c.textPrimary, fontSize: 12.5),
               dividerThickness: 1,
             ),
+        // ⚠️ DataTable takes its row divider from ThemeData.dividerColor, NOT
+        // from DataTableThemeData -- there is no divider colour on the table
+        // theme at all. Setting it here is the only way to make the rule
+        // between rows lighter than the borders around the card.
+        dividerColor: c.borderColor.withOpacity(0.5),
       ),
       child: child,
     );
@@ -706,18 +735,69 @@ DataColumn2 ictCol(
   );
 }
 
-/// Zebra striping for row [i].
+/// Row fill for row [i].
 ///
-/// ⚠️ Alternating fills, not a divider under every row. At ICT's row heights a
-/// full-width rule every 50px turns a long table into a ladder; a very faint
-/// band on every other row tracks the eye across a wide row just as well and
-/// leaves the data as the only thing with edges.
+/// ⚠️ Rows are told apart by a light RULE between them (see the dividerColor
+/// in [IctTableTheme]), not by banding. Banding and a rule together is one
+/// pattern too many: the eye ends up reading the stripes as groups. So this
+/// leaves the row transparent and only answers the pointer.
 WidgetStateProperty<Color?> ictRowColor(BuildContext context, int i) {
   final c = context.colors;
   return WidgetStateProperty.resolveWith((states) {
     if (states.contains(WidgetState.hovered)) return c.surfaceDark;
-    return i.isEven ? Colors.transparent : c.surfaceDark.withOpacity(0.45);
+    return Colors.transparent;
   });
+}
+
+/// The one square icon action in the console.
+///
+/// ⚠️ Every icon-only action in ICT is this: the row's Edit, the row's
+/// activate/deactivate, the header's theme toggle. They were an IconButton at
+/// 34px, a tinted square at 27px and a bare 20px icon — three sizes for the
+/// same kind of thing, and the 34px one is what pushed the Yards table's
+/// Actions column past its edge.
+class IctIconButton extends StatelessWidget {
+  const IctIconButton({
+    super.key,
+    required this.icon,
+    required this.color,
+    required this.tooltip,
+    required this.onPressed,
+    this.filled = true,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  /// A tinted fill, as a row action wants. Off for a button on a surface that
+  /// is already tinted.
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(8),
+          child: Container(
+            width: kIctIconButtonSize,
+            height: kIctIconButtonSize,
+            decoration: BoxDecoration(
+              color: filled ? color.withOpacity(0.1) : Colors.transparent,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color.withOpacity(filled ? 0.3 : 0.25)),
+            ),
+            child: Icon(icon, size: 15, color: color),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// A status pill: a dot, then the state, at one width for the whole console.
@@ -744,7 +824,7 @@ class IctStatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final pill = Container(
       width: width,
-      height: 24,
+      height: kIctPillHeight,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: color.withOpacity(0.12),

@@ -1686,3 +1686,19 @@ The login and signup screens needed no change — they are separate screens, not
 ⚠️ **`IctSectionCard` only flexes its body when given a `height` or `fill: true`.** The Yards & Directorates tab scrolls its whole page, and any flexed child in an unbounded-height column is a layout assertion, not a smaller card. `test/ict_yards_tab_layout_test.dart` renders that tab for exactly this reason.
 
 ⚠️ **Rail hover is ONE index on `_IctSideRailState`, not a bool per row.** With a bool per row, two rows could light at once — and did. The rail rebuilds as the tab controller animates, and a `MouseRegion` rebuilt while the pointer is already inside it never receives the exit that would have cleared the row the pointer left, so a quick pass down the rail left a trail of stuck highlights. A single index cannot represent two rows. The row's `InkWell` also sets `hoverColor: Colors.transparent` — its overlay fades on its own schedule and stayed lit under the painted one.
+
+**What made the rail "lag" (2026-09-04).** Not the animation — a full rebuild of the page behind it, sixty times a second:
+
+- ⚠️ **`TabController` is an `Animation<double>`, so `addListener` fires on every animation TICK, not on index changes.** ICT's controller carried `..addListener(() => setState(() {}))`, so changing tab rebuilt the whole console — metric tiles, staff table and all — every frame of the transition. **There is no listener now.** The rail and the header's section name each follow the controller through their own `AnimatedBuilder`, so only those few widgets rebuild.
+- ⚠️ **The brand block, emblem included, was inside the rail's `AnimatedBuilder`** — so the SVG was re-rasterised every frame for a picture that never changes. Only the four rows are inside it now.
+- The rows animate **nothing**. Two `AnimatedContainer`s per row meant eight implicit animations chasing a change that had already happened.
+
+⚠️ **Rail hover is deliberately WEAKER than selected, not a different colour of the same strength.** Both used to be a filled box, and a filled box is what the eye reads as "the page you are on" — so pointing at one row while another was open read as *two* open rows. Hover is now a faint grey wash and brighter text; the accent fill and the edge bar belong to the open page alone.
+
+**Rows are told apart by a light rule, not by banding.** ⚠️ `DataTable` takes its row divider from `ThemeData.dividerColor`, **not** from `DataTableThemeData` — there is no divider colour on the table theme at all, so `IctTableTheme` sets it on the ThemeData. The hand-built rows in Yards & Directorates draw the same rule themselves.
+
+⚠️ **Status and Actions columns are FIXED width, never flex** (`kIctStatusColumnWidth`, `kIctActionsColumnWidth`). Given a flex share they end up the narrowest columns in a wide row — which is how the Yards table got a pill touching a button and a toggle 6px past the card's edge.
+
+⚠️ **`StyledFormDialog`/`StyledFormSection`/`StyledDialogPrimaryButton` take an opt-in `erp` flag and an `accentColor`.** It must stay opt-in: that dialog is the form chrome for **every** portal, and only ICT was redesigned. A test asserts no other screen passes it. The flat header is not decoration — a gradient header reads as *an event*; an admin console's forms are opened dozens of times a day to do routine work, so they are drawn as a panel of the console.
+
+⚠️ **Directorate Access does not show the username.** It is half a working credential for an account a whole office signs in with, and the page is read on an open monitor. The column carries the **password's 90-day rotation** instead — which is the actual reason someone is locked out and asking ICT for a reset.

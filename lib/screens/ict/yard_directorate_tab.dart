@@ -8,7 +8,6 @@ import '../../core/theme.dart';
 import 'ict_ui.dart';
 import '../../models/models.dart';
 import '../../widgets/empty_table_state.dart';
-import '../../widgets/account_cells.dart';
 import '../../widgets/styled_form_dialog.dart';
 
 /// ICT Directorate → **Yards & Directorates**.
@@ -191,6 +190,7 @@ class YardDirectorateTab extends ConsumerWidget {
           label: isNew ? 'NEW DIRECTORATE' : 'EDIT DIRECTORATE',
           title: isNew ? 'Add a Directorate' : 'Edit ${existing.code}',
           headerAccentColor: accent,
+          erp: true,
           icon: Icons.account_balance_rounded,
           width: 460,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -199,6 +199,8 @@ class YardDirectorateTab extends ConsumerWidget {
               const Gap(12),
             ],
             StyledFormSection(
+              erp: true,
+              accentColor: accent,
               title: 'Directorate',
               icon: Icons.badge_outlined,
               children: [
@@ -245,6 +247,8 @@ class YardDirectorateTab extends ConsumerWidget {
               child: const Text('Cancel'),
             ),
             StyledDialogPrimaryButton(
+              erp: true,
+              accentColor: accent,
               labelText: isNew ? 'Create' : 'Save Changes',
               icon: Icons.save_rounded,
               loading: saving,
@@ -324,6 +328,7 @@ class YardDirectorateTab extends ConsumerWidget {
           label: isNew ? 'NEW YARD' : 'EDIT YARD',
           title: isNew ? 'Add a Yard' : 'Edit ${existing.code}',
           headerAccentColor: accent,
+          erp: true,
           icon: Icons.warehouse_rounded,
           width: 520,
           child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -332,6 +337,8 @@ class YardDirectorateTab extends ConsumerWidget {
               const Gap(12),
             ],
             StyledFormSection(
+              erp: true,
+              accentColor: accent,
               title: 'Yard',
               icon: Icons.badge_outlined,
               children: [
@@ -369,6 +376,8 @@ class YardDirectorateTab extends ConsumerWidget {
             ),
             const Gap(14),
             StyledFormSection(
+              erp: true,
+              accentColor: accent,
               title: 'Belongs to',
               icon: Icons.account_tree_outlined,
               children: [
@@ -409,6 +418,8 @@ class YardDirectorateTab extends ConsumerWidget {
               child: const Text('Cancel'),
             ),
             StyledDialogPrimaryButton(
+              erp: true,
+              accentColor: accent,
               labelText: isNew ? 'Create' : 'Save Changes',
               icon: Icons.save_rounded,
               loading: saving,
@@ -465,16 +476,23 @@ class _DirectorateTable extends StatelessWidget {
         subtitle: 'Add the first one to start assigning yards to it.',
       );
     }
-    const widths = [1, 1, 4, 1, 1];
+    // ⚠️ Status and Actions are FIXED, not flex. As flex 1 each they were
+    // the narrowest columns in a wide row: the pill and the buttons ended
+    // up touching, and the toggle spilled past the card's edge (the 6px
+    // overflow stripe). Fixed widths cannot be squeezed by a long name.
+    const widths = [1, 1, 4];
+    const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];
     return _TableShell(
       columns: const ['SR Prefix', 'Code', 'Name', 'Status', 'Actions'],
       widths: widths,
+      fixed: fixed,
       children: [
         for (var i = 0; i < rows.length; i++)
           _TableRow(
             index: i,
             faded: !rows[i].isActive,
             widths: widths,
+            fixed: fixed,
             cells: [
               _MonoChip(text: rows[i].srPrefix, color: accent),
               Text(rows[i].code),
@@ -517,18 +535,21 @@ class _YardTable extends StatelessWidget {
         subtitle: 'Add a yard and tick the directorates it belongs to.',
       );
     }
-    const widths = [3, 1, 3, 3, 1, 1];
+    const widths = [3, 1, 3, 3];
+    const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];
     return _TableShell(
       columns: const [
         'Yard', 'Code', 'Directorates', 'Example SR', 'Status', 'Actions'
       ],
       widths: widths,
+      fixed: fixed,
       children: [
         for (var i = 0; i < rows.length; i++)
           _TableRow(
             index: i,
             faded: !rows[i].isActive,
             widths: widths,
+            fixed: fixed,
             cells: [
               Text(rows[i].name, overflow: TextOverflow.ellipsis),
               Text(rows[i].code),
@@ -615,15 +636,38 @@ class _ExampleSr extends StatelessWidget {
 
 // ── Small shared pieces ─────────────────────────────────────────────────────
 
+/// A column layout shared by the header and every row, so the two cannot
+/// drift: [widths] are flex columns from the left, [fixed] are pixel columns
+/// pinned to the right.
+List<Widget> _ictColumns({
+  required List<Widget> cells,
+  required List<int> widths,
+  required List<double> fixed,
+}) {
+  final out = <Widget>[];
+  for (var i = 0; i < cells.length; i++) {
+    final w = i < widths.length ? cells[i] : cells[i];
+    if (i > 0) out.add(const Gap(kIctCellGap));
+    if (i < widths.length) {
+      out.add(Expanded(flex: widths[i], child: w));
+    } else {
+      out.add(SizedBox(width: fixed[i - widths.length], child: w));
+    }
+  }
+  return out;
+}
+
 class _TableShell extends StatelessWidget {
   const _TableShell({
     required this.columns,
     required this.widths,
+    required this.fixed,
     required this.children,
   });
 
   final List<String> columns;
   final List<int> widths;
+  final List<double> fixed;
   final List<Widget> children;
 
   @override
@@ -636,21 +680,25 @@ class _TableShell extends StatelessWidget {
         height: kIctHeadingHeight,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         color: context.colors.surfaceDark,
-        child: Row(children: [
-          for (var i = 0; i < columns.length; i++)
-            Expanded(
-              flex: widths[i],
-              // The same quiet uppercase rule DataTable2 gets from
-              // IctTableTheme -- these rows are hand-built, so the two would
-              // otherwise be the console's only mismatched headings.
-              child: Text(columns[i].toUpperCase(),
-                  style: TextStyle(
-                      color: context.colors.textMuted,
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0.9)),
-            ),
-        ]),
+        child: Row(
+          children: _ictColumns(
+            widths: widths,
+            fixed: fixed,
+            // The same quiet uppercase rule DataTable2 gets from
+            // IctTableTheme -- these rows are hand-built, so the two would
+            // otherwise be the console's only mismatched headings.
+            cells: [
+              for (final c in columns)
+                Text(c.toUpperCase(),
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: context.colors.textMuted,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.9)),
+            ],
+          ),
+        ),
       ),
       ...children,
     ]);
@@ -661,47 +709,50 @@ class _TableRow extends StatelessWidget {
   const _TableRow(
       {required this.cells,
       required this.widths,
+      required this.fixed,
       required this.index,
       this.faded = false});
 
   final List<Widget> cells;
 
-  /// Must match the header's widths, or the columns will not line up.
+  /// Must match the header's, or the columns will not line up.
   final List<int> widths;
+  final List<double> fixed;
 
-  /// Row number, for the banding — see [ictRowColor].
+  /// Row number. Kept because the row above the first needs no rule.
   final int index;
   final bool faded;
 
   @override
   Widget build(BuildContext context) {
-    // A deactivated row stays visible — its code is still stamped on historical
-    // data — but reads as switched off.
+    // A deactivated row stays visible — its code is still stamped on
+    // historical data — but reads as switched off.
     final row = Container(
-      // 52px, matching DataTable2's dataRowHeight everywhere else. These rows
-      // were padding-driven and noticeably tighter than every other table.
       constraints: const BoxConstraints(minHeight: kIctRowHeight),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      // ⚠️ A band on every other row, not a rule under every row. At this row
-      // height a full-width rule every 50px turns a long list into a ladder;
-      // the band tracks the eye across a wide row just as well and leaves the
-      // data as the only thing on the card with edges.
-      color: index.isEven
-          ? Colors.transparent
-          : context.colors.surfaceDark.withOpacity(0.45),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      // A light rule between rows, so a wide row can be followed across —
+      // the same rule DataTable2 draws from IctTableTheme's dividerColor.
+      decoration: index == 0
+          ? null
+          : BoxDecoration(
+              border: Border(
+                  top: BorderSide(
+                      color: context.colors.borderColor.withOpacity(0.5))),
+            ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          for (var i = 0; i < cells.length; i++)
-            Expanded(
-              flex: widths[i],
-              child: DefaultTextStyle.merge(
+        children: _ictColumns(
+          widths: widths,
+          fixed: fixed,
+          cells: [
+            for (final c in cells)
+              DefaultTextStyle.merge(
                 style: TextStyle(
-                    color: context.colors.textPrimary, fontSize: 13),
-                child: cells[i],
+                    color: context.colors.textPrimary, fontSize: 12.5),
+                child: c,
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
     return faded ? Opacity(opacity: 0.45, child: row) : row;
@@ -768,17 +819,27 @@ class _RowActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ Two IctIconButtons, at the console's one icon size. This was the
+    // shared Edit button (a 27px tinted square) beside a 34px IconButton
+    // holding a toggle glyph — two different sizes for two actions on the
+    // same row, and the oversized one is what pushed this column past the
+    // card's edge.
+    //
+    // Deactivating, not deleting: the code is stamped on historical rows.
     return Row(mainAxisAlignment: MainAxisAlignment.start, children: [
-      // The shared Edit button, plus the on/off toggle this table needs —
-      // deactivating, not deleting, because the code is stamped on historical
-      // rows. The toggle stays a switch rather than a bin so that reads clearly.
-      RowActionButtons(accent: accent, onEdit: onEdit),
-      const Gap(4),
-      IconButton(
-        icon: Icon(active ? Icons.toggle_on_rounded : Icons.toggle_off_rounded,
-            size: 34,
-            color:
-                active ? context.colors.successGreen : context.colors.textMuted),
+      IctIconButton(
+        icon: Icons.edit_rounded,
+        color: accent,
+        tooltip: 'Edit',
+        onPressed: onEdit,
+      ),
+      const Gap(8),
+      IctIconButton(
+        icon: active
+            ? Icons.toggle_on_rounded
+            : Icons.toggle_off_outlined,
+        color:
+            active ? context.colors.successGreen : context.colors.textMuted,
         tooltip: active ? 'Deactivate (hides it from pickers)' : 'Activate',
         onPressed: onToggle,
       ),

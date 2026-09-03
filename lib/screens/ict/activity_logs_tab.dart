@@ -398,7 +398,6 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                           minWidth: 1080,
                           headingRowHeight: kIctHeadingHeight,
                           dataRowHeight: kIctRowHeight,
-                          dividerThickness: 0,
                           isHorizontalScrollBarVisible: false,
                           empty: const EmptyTableState(
                             icon: Icons.history_rounded,

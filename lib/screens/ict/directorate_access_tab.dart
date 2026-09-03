@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme.dart';
@@ -49,6 +50,7 @@ class DirectorateAccessTab extends ConsumerWidget {
         title: 'Reissue sign-in details',
         icon: Icons.key_rounded,
         headerAccentColor: accent,
+        erp: true,
         width: 520,
         actions: [
           TextButton(
@@ -56,11 +58,14 @@ class DirectorateAccessTab extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           const Gap(8),
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: accent, foregroundColor: Colors.white),
-            icon: const Icon(Icons.send_rounded, size: 18),
-            label: const Text('Send new details'),
+          // The same footer button every other ICT form ends with -- this one
+          // was a raw ElevatedButton, so it was the only confirm button in
+          // the console at a different height and radius.
+          StyledDialogPrimaryButton(
+            erp: true,
+            accentColor: accent,
+            labelText: 'Send new details',
+            icon: Icons.send_rounded,
             onPressed: () => Navigator.pop(ctx, true),
           ),
         ],
@@ -69,6 +74,8 @@ class DirectorateAccessTab extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             StyledFormSection(
+              erp: true,
+              accentColor: accent,
               title: 'Account',
               icon: Icons.account_balance_rounded,
               children: [
@@ -164,7 +171,6 @@ class DirectorateAccessTab extends ConsumerWidget {
               fixedTopRows: 1,
               headingRowHeight: kIctHeadingHeight,
               dataRowHeight: kIctRowHeight,
-              dividerThickness: 0,
               isHorizontalScrollBarVisible: false,
               empty: const EmptyTableState(
                 icon: Icons.vpn_key_outlined,
@@ -174,7 +180,13 @@ class DirectorateAccessTab extends ConsumerWidget {
               columns: [
                 ictCol('Directorate', size: ColumnSize.M),
                 ictCol('Account', size: ColumnSize.L),
-                ictCol('Username', size: ColumnSize.M),
+                // ⚠️ NOT the username. It is half of a working credential
+                // for an account a whole directorate signs in with, and this
+                // table is read on an office monitor with people walking past
+                // it. What ICT actually needs here is whether the password is
+                // near its rotation — the reason someone gets locked out and
+                // asks for a reset in the first place.
+                ictCol('Password', size: ColumnSize.M),
                 ictCol('Status',
                     size: ColumnSize.S,
                     fixedWidth: kIctPillWidth + 24,
@@ -195,12 +207,7 @@ class DirectorateAccessTab extends ConsumerWidget {
                             fontWeight: FontWeight.w700))),
                     DataCell(TooltipText(a.fullName,
                         overflow: TextOverflow.ellipsis)),
-                    DataCell(TooltipText(
-                        a.username?.isNotEmpty == true ? a.username! : '—',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: context.colors.accentLightBlue,
-                            fontWeight: FontWeight.w600))),
+                    DataCell(_PasswordAge(profile: a)),
                     DataCell(Center(
                       child: IctStatusPill(
                         label: a.isActive ? 'Active' : 'Inactive',
@@ -234,6 +241,52 @@ class DirectorateAccessTab extends ConsumerWidget {
   }
 }
 
+/// How long this account's password has left of its 90-day rotation, and the
+/// date it turns over.
+///
+/// Replaces the username column. ICT resets an account because its holder
+/// cannot get in, and the commonest reason is that the password has rotated —
+/// so this is the column that answers the question the page is open for,
+/// without printing a live credential on the screen.
+class _PasswordAge extends StatelessWidget {
+  const _PasswordAge({required this.profile});
+  final ProfileModel profile;
+
+  @override
+  Widget build(BuildContext context) {
+    final days = profile.daysUntilPasswordExpiry;
+    final on = profile.passwordUpdatedAt ?? profile.createdAt;
+    final due = on.add(
+        const Duration(days: ProfileModel.passwordMaxAgeDays));
+    final dueStr = DateFormat('dd MMM yyyy').format(due);
+
+    final (String label, Color color) = profile.isPasswordExpired
+        ? ('Expired $dueStr', context.colors.dangerRed)
+        : profile.isPasswordExpiringSoon
+            ? ('Resets in $days ${days == 1 ? 'day' : 'days'}',
+                context.colors.warningAmber)
+            : ('Resets in $days days', context.colors.textSecondary);
+
+    return Tooltip(
+      message: profile.isPasswordExpired
+          ? 'Password expired on $dueStr — the holder cannot sign in.'
+          : 'Password rotates on $dueStr (90 days from the last change).',
+      child: Row(children: [
+        Icon(Icons.lock_clock_rounded, size: 14, color: color),
+        const Gap(7),
+        Flexible(
+          child: Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: color, fontSize: 12, fontWeight: FontWeight.w600)),
+        ),
+      ]),
+    );
+  }
+}
+
+/// The key/value line inside the reset confirmation.
 class _Kv extends StatelessWidget {
   final String label;
   final String value;

@@ -154,7 +154,7 @@ void main() {
     // The hand-built rows in Yards & Directorates are the console's only
     // table that is not a DataTable2, so it has to be held to the same rule.
     test('the hand-built table matches the real ones', () {
-      expect(yards, contains('columns[i].toUpperCase()'));
+      expect(yards, contains('c.toUpperCase()'));
       expect(yards, contains('height: kIctHeadingHeight'));
       expect(yards, contains('minHeight: kIctRowHeight'));
     });
@@ -164,7 +164,8 @@ void main() {
     // The request was explicit: every status box the same size and the same
     // design, on every page.
     test('the width is set once', () {
-      expect(ui, contains('const double kIctPillWidth = 92'));
+      expect(ui, contains('const double kIctPillWidth ='));
+      expect(ui, contains('const double kIctPillHeight ='));
       expect(ui, contains('this.width = kIctPillWidth'));
     });
 
@@ -199,6 +200,76 @@ void main() {
       expect(ict, contains('IctSectionCard('));
       // The count moved from a floating chip into the card's header.
       expect(logs.contains('_CountChip'), isFalse);
+    });
+  });
+
+  group('one height, one button, everywhere', () {
+    // ⚠️ The request was explicit: every button in ICT the same size and the
+    // same design. These lock the two ways that drifts — a control that sets
+    // its own height, and a second kind of icon button.
+    test('the control height is named once and nothing overrides it', () {
+      expect(ui, contains('const double kIctControlHeight = 36'));
+      // No ICT screen hard-codes a height for a control of its own.
+      for (final src in [logs, access, yards]) {
+        expect(src.contains('ElevatedButton.icon('), isFalse,
+            reason: 'use IctPrimaryButton or StyledDialogPrimaryButton');
+      }
+    });
+
+    test('row actions are the console icon button, not three sizes of one', () {
+      expect(ui, contains('class IctIconButton'));
+      expect(yards, contains('IctIconButton('));
+      // The 34px IconButton holding a toggle glyph is what pushed the Yards
+      // table's Actions column past the card's edge. Counted rather than
+      // searched for: a bare "IconButton(" also matches inside
+      // "IctIconButton(", so the two counts being equal is what says there
+      // is no plain one left.
+      expect('IconButton('.allMatches(yards).length,
+          'IctIconButton('.allMatches(yards).length);
+    });
+
+    test('the dialogs take the console shape, and only ICT does', () {
+      for (final src in [ict, access, yards]) {
+        expect(src, contains('erp: true'));
+      }
+      // ⚠️ StyledFormDialog is every portal's form chrome. The flag must stay
+      // opt-in, or redesigning ICT would silently redesign the yard's forms.
+      final dialog = _read('lib/widgets/styled_form_dialog.dart');
+      expect(dialog, contains('this.erp = false'));
+      for (final p in [
+        'lib/screens/admin/admin_screen.dart',
+        'lib/screens/disposal/disposal_dashboard_screen.dart',
+      ]) {
+        expect(_read(p).contains('erp: true'), isFalse);
+      }
+    });
+  });
+
+  group('rows are told apart by a rule, not by banding', () {
+    test('the table theme sets a light divider colour', () {
+      // ⚠️ DataTable reads its row divider from ThemeData.dividerColor, not
+      // from DataTableThemeData — there is no divider colour on the table
+      // theme at all, so setting it here is the only way.
+      expect(ui, contains('dividerColor: c.borderColor.withOpacity(0.5)'));
+      // And no table cancels it back out.
+      for (final src in [ict, logs, access]) {
+        expect(src.contains('dividerThickness: 0'), isFalse);
+      }
+    });
+
+    test('the hand-built rows draw the same rule', () {
+      expect(yards, contains('borderColor.withOpacity(0.5)'));
+    });
+  });
+
+  group('the console does not print a live credential', () {
+    // ⚠️ A directorate username is half a working credential for an account a
+    // whole office signs in with, and this page is read on an open monitor.
+    test('Directorate Access shows the password rotation, not the username',
+        () {
+      expect(access.contains("ictCol('Username'"), isFalse);
+      expect(access, contains("ictCol('Password'"));
+      expect(access, contains('class _PasswordAge'));
     });
   });
 }

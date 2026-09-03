@@ -98,7 +98,16 @@ void main() {
       expect(find.text('Directorate Accounts'), findsOneWidget);
       expect(find.text('Central Disposal Directorate'), findsOneWidget);
       expect(find.text('Appeal Directorate'), findsOneWidget);
-      expect(find.text('disposal.dc'), findsOneWidget);
+      // ⚠️ The USERNAME is deliberately not on this page. It is half of a
+      // working credential for an account a whole directorate signs in
+      // with, and the page is read on an office monitor. The column now
+      // carries what ICT is actually here to judge: how close the password
+      // is to its 90-day rotation.
+      expect(find.text('disposal.dc'), findsNothing);
+      // The column renders for every account. Asserted by its icon rather
+      // than its words: the words are a countdown against today's date, so a
+      // text match would pass or fail depending on when the suite is run.
+      expect(find.byIcon(Icons.lock_clock_rounded), findsNWidgets(4));
       expect(find.text('Reset access'), findsNWidgets(4));
     });
 
