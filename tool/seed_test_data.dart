@@ -950,6 +950,9 @@ Future<void> _seedPerishableSales(Connection conn) async {
   String? reqId;
   var reqFill = 0;
   var awaitingCd = 0;
+  var awaitingValuation = 0;
+  String? valReqId;
+  var valReqFill = 0;
 
   for (final r in rows) {
     if (_rng.nextInt(100) >= 55) continue;
@@ -982,9 +985,32 @@ Future<void> _seedPerishableSales(Connection conn) async {
     );
     final fpId = fpRes.first.first as String;
 
-    // Valued and forwarded, as any sale item must be.
     final valuation =
         (unitValue * qty * (0.4 + _rng.nextDouble() * 0.3)).roundToDouble();
+
+    // ⚠️ The FIRST few stop at the Valuation Directorate, unvalued and
+    // unforwarded. Every perishable being valued and forwarded already left
+    // the Valuation portal's own Perishable Goods tab empty -- the tab exists
+    // precisely so an officer can see which goods are on the short clock
+    // BEFORE pricing them, so there has to be something waiting there.
+    if (awaitingValuation < 5) {
+      awaitingValuation++;
+      if (valReqId == null || valReqFill >= 3) {
+        valReqId = await _newDisposalRequest(
+            conn, entered.add(const Duration(days: 1)), 'pending_valuation');
+        valReqFill = 0;
+      }
+      valReqFill++;
+      await conn.execute(
+        r'insert into public.disposal_request_items '
+        r'(request_id, forfeited_package_id, disposition, forwarded) '
+        r"values ($1,$2,'sale',false)",
+        parameters: [valReqId, fpId],
+      );
+      continue;
+    }
+
+    // Valued and forwarded, as any sale item must be.
     // ⚠️ Several perishables share ONE request. They are sent together --
     // that is exactly why a header label works: the whole batch is
     // perishable, so there is nothing in it the tag could misdescribe. One
@@ -1136,7 +1162,8 @@ Future<void> _seedPerishableSales(Connection conn) async {
 
   print('  perishables: $sold sold in $serial special sales, '
       '$pending unsold ($decided decided by Top Management)');
-  print('  perishables: $awaitingCd requests awaiting Central Disposal');
+  print('  perishables: $awaitingCd requests awaiting Central Disposal, '
+      '$awaitingValuation awaiting valuation');
 }
 
 /// What Top Management does with a perishable nothing would buy.

@@ -1602,3 +1602,19 @@ In hand (Disposal Requests → Tender Sales → Unsold Tenders → Committees �
 ⚠️ **The real risk in reordering is a tab pointing at another tab's view.** The five outcome tabs share ONE widget and are told apart only by `proposalFilter`, so a shuffle there is silent. A test asserts the filters still line up with their labels, and that all 16 tabs and views stayed paired.
 
 Seeded so each surface has something: **6 perishable requests awaiting Central Disposal** (a request drops off that tab the moment its goods are tendered, so tendering every one left it empty) and **1 special sale still to open** (every other sale is dated in the past so its items can be counted sold or unsold).
+
+### The perishable chain, seeded at every stage (2026-09-03)
+
+Each screen only shows goods at ITS stage, so a stage with nothing in it reads as a broken page. The seed now leaves some at each:
+
+| Stage | Where | Seeded |
+|---|---|---|
+| Registered, not yet sent | Yard · Perishable Goods | 35 |
+| Sent, **awaiting valuation** | Valuation · Perishable Goods | 5 (2 requests) |
+| Valued & forwarded, not yet tendered | Central Disposal · Disposal Requests | 2 requests |
+| In a sale still to open | Central Disposal · Tender Sales | 1 sale |
+| Sold | Sold Goods | 12 |
+| Failed its one sale | Top Management · Unsold Perishables | 7 |
+| Ruled on | …and back on the yard's Perishable page | 5 |
+
+⚠️ **A stage is emptied by the NEXT one.** Valuing and forwarding every perishable emptied the Valuation tab; tendering every forwarded one emptied Disposal Requests; dating every sale in the past emptied Tender Sales. Each fix is the same shape — hold a few back — and each has to be made deliberately, because the natural seeding order runs every item all the way to the end.
