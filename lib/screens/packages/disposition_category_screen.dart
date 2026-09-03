@@ -975,12 +975,7 @@ Future<void> _confirmMarkDestroyed(
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Failed to mark destroyed: $e'),
-            backgroundColor: context.colors.dangerRed,
-          ),
-        );
+        showErrorSnack(context, e);
       }
     }
   }

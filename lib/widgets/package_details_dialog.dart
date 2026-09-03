@@ -98,6 +98,7 @@ import 'one_tap_date_picker.dart';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
+import 'error_view.dart';
 
 /// The valuation row shown in the Sale / Destruction sections.
 ///
@@ -984,9 +985,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                   if (ctx.mounted) Navigator.pop(ctx, true);
                 } catch (e) {
                   if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: context.colors.dangerRed));
+                    showErrorSnack(ctx, e);
                   }
                 }
               },
@@ -1267,7 +1266,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
           // any of it up afterwards would fail.
           final messenger = material.ScaffoldMessenger.maybeOf(ctx);
           final successColour = context.colors.successGreen;
-          final failColour = context.colors.dangerRed;
+          // No failure colour captured: showErrorSnack picks it by kind.
 
           // Close the details dialog BEFORE the write, not after it.
           //
@@ -1302,12 +1301,9 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
               ),
             );
           } catch (e) {
-            messenger?.showSnackBar(
-              material.SnackBar(
-                content: Text('Failed: $e'),
-                backgroundColor: failColour,
-              ),
-            );
+            // Worded by kind, like everywhere else -- a timeout here is not a
+            // failure the officer caused, and should not read like one.
+            if (ctx.mounted) showErrorSnack(ctx, e);
           }
         },
       ),
@@ -4670,10 +4666,7 @@ class _SaleFinancialsSectionState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: context.colors.dangerRed,
-        ));
+        showErrorSnack(context, e);
       }
     } finally {
       if (mounted) setState(() => _toggling = false);
@@ -5509,11 +5502,7 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text('Error updating package: $e'),
-              backgroundColor: context.colors.dangerRed),
-        );
+        showErrorSnack(context, e);
       }
     } finally {
       if (mounted) setState(() => _isUpdating = false);

@@ -17,6 +17,7 @@ import '../../widgets/disposal_profile_dialog.dart';
 import 'activity_logs_tab.dart';
 import 'directorate_access_tab.dart';
 import 'yard_directorate_tab.dart';
+import '../../widgets/error_view.dart';
 
 /// ICT Directorate Portal: Central user provisioning and management for
 /// DC / SDDC (Yard Admins) and Yard Officers across all customs yards.
@@ -756,10 +757,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: context.colors.dangerRed,
-        ));
+        showErrorSnack(context, e);
       }
     }
   }

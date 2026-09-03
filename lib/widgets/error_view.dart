@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:iconsax/iconsax.dart';
@@ -17,9 +18,87 @@ enum _Kind {
   /// Permission / row-level security.
   permission,
 
+  /// The query was still running when its time ran out and was cancelled.
+  ///
+  /// ⚠️ NOT a [database] fault. Postgres reports a cancelled statement as
+  /// `57014: canceling statement due to user request`, carrying the same
+  /// "Severity.error" every genuine SQL error does -- so it was classified as
+  /// "the database rejected this request", which blamed a bug in the app for
+  /// what is really a slow or busy moment the user can simply retry.
+  timeout,
+
   /// Anything else.
   unknown,
 }
+
+/// Shows [error] in a snackbar, worded the way [ErrorView] would word it.
+///
+/// ⚠️ Use this instead of `Text('Error: $e')`. Dumping the raw object puts
+/// driver text in front of an officer -- "Severity.error 57014: canceling
+/// statement due to user request" tells them nothing they can act on, and
+/// reads like the app is broken when the honest answer is "that took too long,
+/// try again". The full-page [ErrorView] already knows how to say each kind of
+/// failure; a snackbar for the same cause should say the same thing.
+///
+/// [action] names what the user was doing ("Save the valuation"), so the
+/// message can lead with it rather than with the failure.
+void showErrorSnack(BuildContext context, Object error, {String? action}) {
+  final kind = ErrorView.classifyForTest(error);
+  final (icon, tint, title, _) = ErrorView.wordingForTest(kind, context);
+  final lead = action == null ? title : '$action failed — ${title.toLowerCase()}';
+  ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      backgroundColor: tint,
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 5),
+      content: Row(children: [
+        Icon(icon, color: Colors.white, size: 18),
+        const Gap(10),
+        Expanded(
+            child: Text(lead,
+                style: const TextStyle(fontWeight: FontWeight.w600))),
+      ]),
+    ));
+}
+
+/// A one-line failure notice for a small panel.
+///
+/// ⚠️ The full [ErrorView] is a 64px icon in 40px of padding -- right for a
+/// page that failed, far too big for a dashboard card. Those cards fell back
+/// to `Text('Error: $e')`, which puts driver text on the dashboard. This says
+/// the same thing [ErrorView] would, in one line.
+class InlineError extends StatelessWidget {
+  final Object error;
+  const InlineError(this.error, {super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final kind = ErrorView.classifyForTest(error);
+    final (icon, tint, title, _) = ErrorView.wordingForTest(kind, context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 16, color: tint),
+        const Gap(8),
+        Flexible(
+          child: Text(title,
+              style: TextStyle(color: tint, fontSize: 12.5,
+                  fontWeight: FontWeight.w600),
+              overflow: TextOverflow.ellipsis),
+        ),
+      ]),
+    );
+  }
+}
+
+/// The kind name [ErrorView] would use for [error], for tests.
+///
+/// Classification decides what the user is TOLD to do -- check the network,
+/// call ICT, or just retry -- so it is worth testing on its own, without
+/// pumping a widget to read a string off the screen.
+String describeErrorForTest(Object error) =>
+    ErrorView.classifyForTest(error).name;
 
 /// The standard "this panel failed to load" view.
 ///
@@ -41,6 +120,15 @@ class ErrorView extends StatelessWidget {
   /// Classifies by the SPECIFIC signals each kind carries, most specific
   /// first — a Postgres error mentioning "connection" must not be read as a
   /// network failure.
+  /// Test seam for [describeErrorForTest]; the classifier itself stays private.
+  @visibleForTesting
+  static _Kind classifyForTest(Object error) => _classify(error);
+
+  /// The wording for a kind, so [showErrorSnack] says what the page says.
+  static (IconData, Color, String, String) wordingForTest(
+          _Kind kind, BuildContext context) =>
+      _wordingFor(kind, context);
+
   static _Kind _classify(Object error) {
     final s = error.toString().toLowerCase();
 
@@ -50,6 +138,17 @@ class ErrorView extends StatelessWidget {
         (s.contains('refused') || s.contains('unreachable'))) {
       return _Kind.network;
     }
+    // ⚠️ Before the database branch: a cancelled statement carries
+    // "Severity.error" like any other Postgres error, so checking that first
+    // would report a timeout as a fault in the app.
+    if (s.contains('57014') ||
+        s.contains('canceling statement') ||
+        s.contains('cancelling statement') ||
+        s.contains('query timed out') ||
+        error is TimeoutException) {
+      return _Kind.timeout;
+    }
+
     if (s.contains('severity.error') ||
         s.contains('pgexception') ||
         s.contains('postgresexception') ||
@@ -106,7 +205,17 @@ class ErrorView extends StatelessWidget {
     final kind = _classify(error);
     final detail = _detail(error);
 
-    final (icon, tint, title, advice) = switch (kind) {
+    final (icon, tint, title, advice) = _wordingFor(kind, context);
+    return _buildView(context, icon, tint, title, advice, detail);
+  }
+
+  /// What each kind of failure is CALLED and what to do about it.
+  ///
+  /// Shared with [showErrorSnack] so a failure worded one way on a full page
+  /// is not worded differently in a snackbar for the same cause.
+  static (IconData, Color, String, String) _wordingFor(
+      _Kind kind, BuildContext context) {
+    return switch (kind) {
       _Kind.network => (
           Iconsax.wifi_square,
           context.colors.warningAmber,
@@ -128,6 +237,14 @@ class ErrorView extends StatelessWidget {
           'This account is not allowed to see these records. Check you are '
               'signed in to the right portal and yard.',
         ),
+      _Kind.timeout => (
+          Iconsax.timer_1,
+          context.colors.warningAmber,
+          'This took too long to load',
+          'The server was still working when the request ran out of time. '
+              'Nothing has been lost and nothing is broken — this usually '
+              'means several screens were loading at once. Try again.',
+        ),
       _Kind.unknown => (
           Iconsax.danger,
           context.colors.dangerRed,
@@ -135,7 +252,10 @@ class ErrorView extends StatelessWidget {
           'The details below say what failed.',
         ),
     };
+  }
 
+  Widget _buildView(BuildContext context, IconData icon, Color tint,
+      String title, String advice, String detail) {
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(40),

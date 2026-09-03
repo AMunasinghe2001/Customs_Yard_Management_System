@@ -1461,3 +1461,36 @@ Logs are **derived from what was actually seeded**, not invented — an SR numbe
 `_recordSaleInWarehouse` mirrors the RPC and is shared by both sale paths (general pipeline and perishable special sales). It returns quietly when there is no held entry — a perishable never reached a warehouse in the first place.
 
 After the fix: 0 sold/destroyed/re-exported goods in a zone, fullest zone 80%, 68 `[FINAL:SOLD]` records of sale.
+
+### Two tabs that were empty by construction (2026-09-03)
+
+**Disposal Requests** — ⚠️ Central Disposal sees a request only while its packages are still **waiting**. `getDisposalRequests` filters out anything already placed in a tender or destruction, because it has moved on to Tender Sales. The pipeline tendered everything it forwarded, so the tab was empty despite 99 forwarded items. Some requests are now forwarded and deliberately **left unacted on** (both `sale` and `destruction` dispositions, since Central Disposal decides both ways).
+
+**Unsold Goods (the final table)** — a package gets there only when *all three* hold:
+1. **more than `kMaxBidTenderRounds` (3)** rounds have failed,
+2. the committee valued it **and the ADG submitted** that figure,
+3. it was tendered **again at that price, after the submission**, and that round **ended** still unsold.
+
+⚠️ Condition 3 was missing entirely. Without it the DG would be deciding the fate of goods that still had a live chance of selling — and the app would not list them as exhausted either, so a recorded decision sat on a package **no tab claimed**.
+
+⚠️ **A committee cannot be appointed before 3 rounds have failed.** `times >= 2` looked harmless but capped the count below the threshold, so those packages could *never* reach the final table however many rounds followed.
+
+⚠️ **The whole committee sequence must fit before today**: appointed → submitted (+2 days) → re-tendered → that round ended. A committee dated a few days ago leaves no room, and the package can never become exhausted — dating it 20–80 days back fixes it. A decision is only recorded when the round **actually ran**.
+
+Result: 16 exhausted — 3 awaiting a decision, 13 decided across the five outcome tabs, 0 strays.
+
+### "The database rejected this request" was a queue, not a rejection (2026-09-03)
+
+The Perishable tab failed with `57014: canceling statement due to user request`. Its own query takes **13 ms** — it was never slow, it was **ninth in line**.
+
+⚠️ **`PgDatabase` held ONE connection.** Postgres runs one query at a time per connection, so a screen loading a dozen providers at once queued them all behind each other, and whichever was last waited out the 60-second client timeout and was cancelled. Now a `Pool` (default 8, `PG_POOL_SIZE`). Measured against the live DB: **8 × 1-second queries in 1456 ms** (was 8s+).
+
+⚠️ **`onOpen` is not optional on the pool.** The session variables RLS reads (`app.current_user_id`, `app.current_role`) are **per connection**, so a pool opening a second one without re-applying them runs that user's queries as `anon` — every user-scoped policy denying, on *some* queries and not others, depending purely on which connection the pool handed out. Verified: all 8 pooled connections report the same user.
+
+⚠️ **Sign-in/out must reach every pooled connection**, so `setCurrentUser` now **closes the pool** on a change; the next query opens fresh connections and `onOpen` runs on each. Leaving them would answer as the previous user on whichever connection came up next.
+
+### Errors now say what actually happened (2026-09-03)
+
+⚠️ **A cancelled statement carries the same `Severity.error` a genuine SQL fault does**, so it was classified as "the database rejected this request — this is a fault in the app". A new `_Kind.timeout` is checked **before** the database branch: *"This took too long to load… nothing has been lost."*
+
+⚠️ **24 snackbars dumped the raw object** as `Text('Error: $e')`, putting driver text in front of an officer. `showErrorSnack(context, e, action: …)` routes through the **same classifier** the full page uses, so the two can never word the same failure differently — and the colour now follows the kind (amber for a timeout, red for a real fault) instead of always red.

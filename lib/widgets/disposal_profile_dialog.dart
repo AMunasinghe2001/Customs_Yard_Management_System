@@ -9,6 +9,7 @@ import '../core/providers.dart';
 import '../core/supabase_client.dart';
 import '../models/models.dart';
 import '../services/services.dart';
+import 'error_view.dart';
 
 /// Profile view + edit dialog for an institutional directorate account
 /// (Central Disposal DC/SDDC, Appeal AD/ADD). Opened from the account chip in
@@ -123,10 +124,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.dangerRed,
-          content: Text('Failed to update profile: $e'),
-        ));
+        showErrorSnack(context, e);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

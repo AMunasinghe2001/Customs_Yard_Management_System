@@ -982,13 +982,7 @@ class _WarehousesTab extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showErrorSnack(context, e);
       }
     }
   }
@@ -1037,13 +1031,7 @@ class _WarehousesTab extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showErrorSnack(context, e);
       }
     }
   }
@@ -1141,13 +1129,7 @@ class _WarehousesTab extends ConsumerWidget {
                         }
                       } catch (e) {
                         if (ctx.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('Error: ${e.toString()}'),
-                              backgroundColor: Colors.red,
-                              duration: const Duration(seconds: 4),
-                            ),
-                          );
+                          showErrorSnack(context, e);
                         }
                       } finally {
                         setState(() => loading = false);
@@ -1199,13 +1181,7 @@ class _WarehousesTab extends ConsumerWidget {
                 }
               } catch (e) {
                 if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error: ${e.toString()}'),
-                      backgroundColor: Colors.red,
-                      duration: const Duration(seconds: 4),
-                    ),
-                  );
+                  showErrorSnack(context, e);
                 }
               }
             },
@@ -1257,9 +1233,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
             loading: () => Center(
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
-            error: (e, _) => Center(
-                child: Text('Error: $e',
-                    style: TextStyle(color: context.colors.dangerRed))),
+            error: (e, _) => Center(child: InlineError(e)),
             data: (list) {
               final pageItems = pageSlice(list, _page, kClientPageSize);
               return Column(children: [
@@ -1653,7 +1627,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                           }),
                         ),
                         loading: () => const CircularProgressIndicator(),
-                        error: (e, _) => Text('Error: $e'),
+                        error: (e, _) => InlineError(e),
                       ),
                       if (selectedWarehouseId != null)
                         Builder(builder: (_) {
@@ -1804,7 +1778,7 @@ class _CategoriesTabState extends ConsumerState<_CategoriesTab> {
                           }),
                         ),
                         loading: () => const CircularProgressIndicator(),
-                        error: (e, _) => Text('Error: $e'),
+                        error: (e, _) => InlineError(e),
                       ),
                       if (selectedWarehouseId != null)
                         Builder(builder: (_) {
@@ -2030,9 +2004,7 @@ class _StatusToggleState extends State<_StatusToggle> {
         } catch (e) {
           if (mounted) {
             setState(() => _currentValue = !v);
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Failed: $e'),
-                backgroundColor: context.colors.dangerRed));
+            showErrorSnack(context, e);
           }
         } finally {
           if (mounted) setState(() => _loading = false);
@@ -2109,9 +2081,7 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
             loading: () => Center(
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
-            error: (e, _) => Center(
-                child: Text('Error: $e',
-                    style: TextStyle(color: context.colors.dangerRed))),
+            error: (e, _) => Center(child: InlineError(e)),
             data: (list) {
               final pageItems = pageSlice(list, _page, kClientPageSize);
               return Column(children: [
@@ -2305,9 +2275,7 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
       }
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: context.colors.dangerRed));
+        showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _loading = false);
     }

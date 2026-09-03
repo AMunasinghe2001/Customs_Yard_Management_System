@@ -62,8 +62,7 @@ class _TenderPlacementScreenState
       await Printing.layoutPdf(onLayout: (_) async => pdfBytes);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
+        showErrorSnack(context, e);
       }
     } finally {
       if (mounted) setState(() => _isGeneratingReport = false);
@@ -110,8 +109,7 @@ class _TenderPlacementScreenState
       context.showSuccess('Tender created successfully');
       if (mounted) context.go('/tender-disposals');
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
+      showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

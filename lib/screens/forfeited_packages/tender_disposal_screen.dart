@@ -844,8 +844,7 @@ class _DisposalDialogState extends ConsumerState<DisposalDialog> {
         Navigator.pop(context);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Error: $e')));
+      showErrorSnack(context, e);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }

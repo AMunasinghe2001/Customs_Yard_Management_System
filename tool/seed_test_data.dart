@@ -1218,6 +1218,8 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
   var awaitingAdg = 0;
   var settled = 0;
   var outcomeIdx = 0;
+  var committeeSerial = 0;
+  var committeeRounds = 0;
   final byOutcome = <String, int>{};
 
   for (final r in rows) {
@@ -1232,7 +1234,12 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
 
     // A package that has gone round three times or more goes to a committee;
     // the rest the Valuation Directorate re-values itself.
-    final toCommittee = times >= 2 && _rng.nextInt(100) < 75;
+    // A committee is appointed only after the Valuation Tender AND Tenders
+    // 1-3 have all failed. ⚠️ The final Unsold Goods table requires
+    // tenderCount > kMaxBidTenderRounds (3), so a package sent to committee
+    // any earlier can NEVER reach that table however many rounds follow --
+    // its count is already short.
+    final toCommittee = times > kMaxBidTenderRoundsSeed;
 
     if (!toCommittee) {
       // A quarter are left untouched, so "Awaiting value" keeps a population.
@@ -1244,8 +1251,13 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
     }
 
     // ── The committee route ─────────────────────────────────────────────────
+    // ⚠️ Far enough back that the whole committee sequence still fits BEFORE
+    // today: appointed, submitted two days later, then re-tendered and that
+    // round ended. A committee dated a few days ago leaves no room for the
+    // round, and the package can never become exhausted -- yet a decision
+    // recorded against it would sit on a package no tab claims.
     final committeeAt =
-        DateTime.now().subtract(Duration(days: 3 + _rng.nextInt(40)));
+        DateTime.now().subtract(Duration(days: 20 + _rng.nextInt(60)));
     final committeeValue = reserve.roundToDouble();
     // Two in three have been submitted by the ADG; the rest are still waiting.
     final submitted = _rng.nextInt(4) != 0;
@@ -1278,9 +1290,53 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
           'Committee valuation submitted by the ADG');
       committeeValued++;
 
-      // Some of those have since been re-tendered and STILL not sold: every
-      // avenue is exhausted, so Top Management records a final outcome.
-      if (_rng.nextInt(100) < 90) {
+      // ⚠️ A package only reaches the FINAL Unsold Goods table once it has
+      // been tendered AGAIN at the committee's price and STILL not sold.
+      // Without that round the DG would be deciding the fate of goods that
+      // still had a live chance of selling -- so the seed has to run the
+      // round, and `getExhaustedUnsoldPackages` checks for exactly it: a sale
+      // whose MOMENT falls after the submission and whose window has ended.
+      var ranCommitteeRound = false;
+      final submittedAt = committeeAt.add(const Duration(days: 2));
+      var committeeRoundAt = submittedAt.add(Duration(days: 3 + _rng.nextInt(9)));
+      final now = DateTime.now();
+      // The round has to have ENDED, so it cannot be today or later.
+      if (!committeeRoundAt.isBefore(now.subtract(const Duration(days: 1)))) {
+        committeeRoundAt = now.subtract(Duration(days: 2 + _rng.nextInt(10)));
+      }
+      // ...and still after the submission, or it does not count as a round
+      // run at the committee's price.
+      if (!committeeRoundAt.isAfter(submittedAt)) {
+        committeeRoundAt = submittedAt.add(const Duration(days: 1));
+      }
+
+      if (committeeRoundAt.isBefore(now)) {
+        committeeSerial++;
+        final saleId =
+            await _newTenderSale(conn, committeeRoundAt, 9000 + committeeSerial);
+        final itemId = await conn.execute(
+          r'select item_id from public.forfeited_packages where id = $1',
+          parameters: [fpId],
+        );
+        await conn.execute(
+          r'insert into public.tender_sale_items '
+          r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
+          r' created_at) values ($1,$2,$3,$4,false,$5)',
+          parameters: [
+            saleId, fpId, itemId.first.first as String?, _yard,
+            committeeRoundAt,
+          ],
+        );
+        committeeRounds++;
+        ranCommitteeRound = true;
+      }
+
+      // ⚠️ Only a package that ACTUALLY ran that round has run out of road.
+      // Deciding one without it records Top Management's final outcome for
+      // goods that still had a live chance of selling -- and the app would
+      // not list it as exhausted either, so the decision would sit on a
+      // package no tab claims.
+      if (ranCommitteeRound && _rng.nextInt(100) < 90) {
         // ⚠️ Cycled, not chosen at random. Each outcome has its OWN tab
         // (Government Use / Remanded / Auction / Converted / Removed), and a
         // random pick over a small pool leaves some of those tabs empty.
@@ -1307,6 +1363,8 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
   print('  unsold pool:');
   print('    $revalued re-valued by Valuation · $committeeValued committee '
       'valuations submitted · $awaitingAdg awaiting the ADG');
+  print('    $committeeRounds re-tendered at the committee price and still '
+      'unsold');
   print('    $settled given a final outcome${spread.isEmpty ? '' : ' ($spread)'}');
 }
 
@@ -1337,6 +1395,10 @@ Future<void> _pendingRevaluation(
 /// ⚠️ `tender_committees.members` is JSONB holding OBJECTS -- name,
 /// designation, salary_no -- not a list of strings. A plain string list parses
 /// to an empty committee, since every entry would have no `name`.
+/// Mirrors `kMaxBidTenderRounds` in models.dart: the Valuation Tender plus
+/// Tenders 1-3. Past this a package goes to a tender committee.
+const kMaxBidTenderRoundsSeed = 3;
+
 final _committeeMembers = jsonEncode([
   {'name': 'D. M. Perera', 'designation': 'Chairperson', 'salary_no': '41207'},
   {'name': 'S. Fernando', 'designation': 'Valuation Directorate',
@@ -1731,7 +1793,10 @@ Future<void> _seedTenderPipeline(Connection conn) async {
       // leaves the unsold pool the moment it sells, so if unsold packages
       // stopped at three rounds the Unsold Tenders list could never show a
       // "4x" -- the count only ever appeared on goods that had already gone.
-      rounds = 1 + _rng.nextInt(4);
+      //
+      // Weighted towards four, because only a package PAST three rounds can
+      // go to a committee and so reach the final Unsold Goods table at all.
+      rounds = _rng.nextInt(100) < 55 ? 4 : 1 + _rng.nextInt(3);
       everSells = false;
     }
 
@@ -1849,6 +1914,49 @@ Future<void> _seedTenderPipeline(Connection conn) async {
     }
   }
 
+  // ── Forwarded, waiting for Central Disposal to act ───────────────────────
+  // ⚠️ A request DROPS OFF the Disposal Requests tab the moment its packages
+  // are placed in a tender or a destruction -- `getDisposalRequests` filters
+  // them out, because they have moved on to Tender Sales. Every request the
+  // pipeline made was tendered immediately, so the tab was empty even with 99
+  // items forwarded.
+  //
+  // These are the ones Central Disposal has NOT acted on yet: valued by the
+  // Valuation Directorate, forwarded, and sitting in the queue.
+  final waiting =
+      pool.where((r) => !usedFp.contains(r[0] as String)).toList();
+  var forwardedWaiting = 0;
+  var waitingRequests = 0;
+  var wIdx = 0;
+  while (wIdx < waiting.length && waitingRequests < 5) {
+    final size = 2 + _rng.nextInt(4);
+    final slice = waiting.skip(wIdx).take(size).toList();
+    wIdx += slice.length;
+    if (slice.isEmpty) break;
+    waitingRequests++;
+
+    final at = DateTime.now().subtract(Duration(days: 1 + _rng.nextInt(25)));
+    final reqId = await _newDisposalRequest(conn, at, 'forwarded');
+    for (final r in slice) {
+      usedFp.add(r[0] as String);
+      final unitValue = double.tryParse('${r[3]}') ?? 5000;
+      final qty = (r[4] as int?) ?? 1;
+      await conn.execute(
+        r'insert into public.disposal_request_items '
+        r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
+        r"values ($1,$2,$3,$4,true)",
+        parameters: [
+          reqId,
+          r[0] as String,
+          // Central Disposal decides both ways, so the queue carries both.
+          _rng.nextInt(4) == 0 ? 'destruction' : 'sale',
+          (unitValue * qty * (0.5 + _rng.nextDouble() * 0.35)).roundToDouble(),
+        ],
+      );
+      forwardedWaiting++;
+    }
+  }
+
   // ── Sales still to come ──────────────────────────────────────────────────
   // ⚠️ A sale is ACTIVE only while it holds an unsold item AND its window has
   // not closed. Every sale above is dated in the past so its items can be
@@ -1910,6 +2018,8 @@ Future<void> _seedTenderPipeline(Connection conn) async {
       '${laterRounds.isEmpty ? '' : ' · $laterRounds'}');
   print('    $stillUnsold still unsold');
   print('    $scheduled goods in $scheduledSales sales yet to open');
+  print('    $forwardedWaiting forwarded goods in $waitingRequests requests '
+      'awaiting Central Disposal');
 }
 
 /// One disposal request, dated and with the valuation state given.

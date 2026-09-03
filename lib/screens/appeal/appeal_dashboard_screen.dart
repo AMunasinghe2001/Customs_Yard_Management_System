@@ -503,10 +503,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.dangerRed,
-          content: Text('Error: $e'),
-        ));
+        showErrorSnack(context, e);
       }
     }
   }

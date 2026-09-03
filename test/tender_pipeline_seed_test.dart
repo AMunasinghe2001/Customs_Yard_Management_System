@@ -189,6 +189,121 @@ void main() {
     });
   });
 
+  group('a request leaves the Disposal Requests tab once it is acted on', () {
+    // ⚠️ Central Disposal sees a request only while its packages are still
+    // WAITING. The moment they are placed in a tender or a destruction the
+    // request drops off -- it has moved on to Tender Sales. Tendering
+    // everything that was forwarded is what left the tab empty with 99 items
+    // forwarded.
+    bool showsOnRequestsTab(
+            {required bool forwarded,
+            required bool inATender,
+            required bool inADestruction}) =>
+        forwarded && !inATender && !inADestruction;
+
+    test('forwarded and untouched shows', () {
+      expect(
+          showsOnRequestsTab(
+              forwarded: true, inATender: false, inADestruction: false),
+          isTrue);
+    });
+
+    test('placed in a tender, it has moved on', () {
+      expect(
+          showsOnRequestsTab(
+              forwarded: true, inATender: true, inADestruction: false),
+          isFalse);
+    });
+
+    test('placed in a destruction, it has moved on', () {
+      expect(
+          showsOnRequestsTab(
+              forwarded: true, inATender: false, inADestruction: true),
+          isFalse);
+    });
+
+    test('not yet forwarded, Central Disposal never sees it', () {
+      expect(
+          showsOnRequestsTab(
+              forwarded: false, inATender: false, inADestruction: false),
+          isFalse);
+    });
+  });
+
+  group('goods reach the final Unsold table only when out of road', () {
+    // The three conditions, all required:
+    //   1. more than kMaxBidTenderRounds (3) rounds have failed,
+    //   2. the committee valued it AND the ADG submitted that figure,
+    //   3. it was tendered AGAIN at that price, after the submission, and
+    //      that round has ENDED still unsold.
+    const maxBidRounds = 3;
+
+    bool isExhausted({
+      required int rounds,
+      required bool everSold,
+      required bool adgSubmitted,
+      required bool roundRanAfterSubmission,
+    }) =>
+        rounds > maxBidRounds &&
+        !everSold &&
+        adgSubmitted &&
+        roundRanAfterSubmission;
+
+    test('all three conditions met', () {
+      expect(
+          isExhausted(
+              rounds: 5,
+              everSold: false,
+              adgSubmitted: true,
+              roundRanAfterSubmission: true),
+          isTrue);
+    });
+
+    // ⚠️ Without the post-submission round the DG would be deciding the fate
+    // of goods that still had a live chance of selling.
+    test('submitted but never re-tendered is NOT exhausted', () {
+      expect(
+          isExhausted(
+              rounds: 5,
+              everSold: false,
+              adgSubmitted: true,
+              roundRanAfterSubmission: false),
+          isFalse);
+    });
+
+    // ⚠️ A package sent to committee at 2 rounds can never reach the table,
+    // however many rounds follow -- its count is already short.
+    test('too few rounds can never qualify', () {
+      expect(
+          isExhausted(
+              rounds: 3,
+              everSold: false,
+              adgSubmitted: true,
+              roundRanAfterSubmission: true),
+          isFalse);
+    });
+
+    test('the ADG not having submitted stops it', () {
+      expect(
+          isExhausted(
+              rounds: 5,
+              everSold: false,
+              adgSubmitted: false,
+              roundRanAfterSubmission: true),
+          isFalse);
+    });
+
+    test('a package that sold is never exhausted', () {
+      expect(
+          isExhausted(
+              rounds: 5,
+              everSold: true,
+              adgSubmitted: true,
+              roundRanAfterSubmission: true),
+          isFalse);
+    });
+  });
+
   group('goods that leave the yard stop occupying a zone', () {
     // ⚠️ Selling does THREE things, and the status update is only one. The
     // yard's own RPC also writes a [FINAL:SOLD] record of sale and DELETES the

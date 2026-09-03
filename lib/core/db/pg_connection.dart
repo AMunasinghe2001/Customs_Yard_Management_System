@@ -36,6 +36,8 @@ class PgConfig {
   static const bool _sslVerifyDefine = bool.fromEnvironment('PG_SSL_VERIFY');
   static const int _connectTimeoutDefine =
       int.fromEnvironment('PG_CONNECT_TIMEOUT', defaultValue: -1);
+  static const int _poolSizeDefine =
+      int.fromEnvironment('PG_POOL_SIZE', defaultValue: -1);
   static const int _queryTimeoutDefine =
       int.fromEnvironment('PG_QUERY_TIMEOUT', defaultValue: -1);
 
@@ -90,6 +92,36 @@ class PgConfig {
     return verifySsl ? SslMode.verifyFull : SslMode.require;
   }
 
+  /// How many physical connections the pool may open.
+  ///
+  /// ⚠️ A SINGLE connection serialises every statement: Postgres runs one
+  /// query at a time per connection, so a dashboard that loads a dozen
+  /// providers at once queues them all behind each other, and whichever
+  /// happens to be last waits out the whole queue. That is what produced
+  /// `57014: canceling statement due to user request` on a screen whose own
+  /// query takes 13ms -- it was never slow, it was ninth in line.
+  static int get poolSizeSetting => AppEnv.readInt('PG_POOL_SIZE',
+      dartDefine: _poolSizeDefine, fallback: 8, dartDefineSentinel: -1);
+
+  /// Pool settings: the same connection settings, plus the size cap and the
+  /// per-connection session hook.
+  ///
+  /// ⚠️ [onOpen] is not optional. The session variables RLS reads
+  /// (`app.current_user_id`, `app.current_role`) are PER CONNECTION, so a
+  /// pool that opens a second one without re-applying them would run that
+  /// user's queries as 'anon' -- every user-scoped policy denying, on some
+  /// queries and not others, depending purely on which connection the pool
+  /// handed out.
+  static PoolSettings poolSettings(
+          Future<void> Function(Connection) onOpen) =>
+      PoolSettings(
+        maxConnectionCount: poolSizeSetting,
+        connectTimeout: Duration(seconds: connectTimeoutSeconds),
+        queryTimeout: Duration(seconds: queryTimeoutSeconds),
+        sslMode: sslMode,
+        onOpen: onOpen,
+      );
+
   static ConnectionSettings get settings => ConnectionSettings(
         sslMode: sslMode,
         // The app is long-running and mostly idle between actions; without a
@@ -135,11 +167,22 @@ class PgDatabase {
   PgDatabase._();
   static final PgDatabase instance = PgDatabase._();
 
-  Connection? _conn;
+  /// The pool, not a single connection.
+  ///
+  /// ⚠️ One connection ran every statement in the app one after another,
+  /// because Postgres allows only one active query per connection. A screen
+  /// that loads a dozen providers at once therefore queued them, and the ones
+  /// at the back timed out -- reported as `57014`, which reads like a broken
+  /// query but was only a queue.
+  Pool? _pool;
+
+  /// Whether [close] has retired the pool. A closed pool cannot be reused, so
+  /// holding the reference alone is not enough to know it is usable.
+  bool _poolClosed = false;
 
   /// Guards against a burst of queries each opening their own connection while
   /// the first one is still handshaking.
-  Future<Connection>? _connecting;
+  Future<Pool>? _connecting;
 
   /// Who the database should believe is running each statement.
   ///
@@ -163,10 +206,15 @@ class PgDatabase {
   /// Applied to the live connection immediately AND remembered, because the
   /// setting is per-session: a reconnect starts a fresh session that would
   /// otherwise come back as 'anon'.
+  /// ⚠️ Signing in or out must reach EVERY pooled connection, not just one.
+  /// The variables are per-connection, so a pool holding several idle ones
+  /// would keep answering as the previous user on whichever the next query
+  /// happened to get. Closing the pool is the only way to be certain: the
+  /// next query opens fresh connections, and [_applySession] runs on each.
   Future<void> setCurrentUser(String? userId) async {
+    final changed = _currentUserId != userId;
     _currentUserId = userId;
-    final conn = _conn;
-    if (conn != null && conn.isOpen) await _applySession(conn);
+    if (changed) await close();
   }
 
   String? get currentUserId => _currentUserId;
@@ -175,7 +223,7 @@ class PgDatabase {
   ///
   /// `set_config(..., false)` makes them last for the whole session rather
   /// than one transaction, so every later query sees them.
-  Future<void> _applySession(Connection conn) async {
+  Future<void> _applySession(Session conn) async {
     await conn.execute(
       Sql.named(
           "select set_config('app.current_user_id', @uid, false), "
@@ -192,27 +240,41 @@ class PgDatabase {
   /// Whether a live connection is currently held. Never assume from this that
   /// the next query will succeed — the socket can drop between the check and
   /// the query, which is why [_run] retries.
-  bool get isConnected => _conn?.isOpen ?? false;
+  bool get isConnected => _pool != null && !_poolClosed;
 
-  Future<Connection> _open() async {
-    final existing = _conn;
-    if (existing != null && existing.isOpen) return existing;
+  Future<Pool> _open() async {
+    final existing = _pool;
+    if (existing != null && !_poolClosed) return existing;
 
     // Someone else is already opening one — wait for theirs.
     final pending = _connecting;
     if (pending != null) return pending;
 
-    final future = Connection.open(PgConfig.endpoint,
-        settings: PgConfig.settings);
+    // ⚠️ Every physical connection the pool opens starts a FRESH session with
+    // no settings, so the signed-in user has to be re-declared on each one or
+    // RLS sees 'anon'. Doing it here rather than after the first open is what
+    // makes a pool safe: the pool decides when to open a connection and never
+    // tells us, so any later application would be too late for whichever
+    // query got that connection first.
+    final future = Future<Pool>(() async {
+      final pool = Pool.withEndpoints(
+        [PgConfig.endpoint],
+        settings: PgConfig.poolSettings(_applySession),
+      );
+      // Prove the credentials now rather than on whichever screen queries
+      // first: the pool opens lazily, so without this a bad password would
+      // surface as a random panel failing.
+      await pool.execute('select 1');
+      return pool;
+    });
     _connecting = future;
     try {
-      final conn = await future;
-      _conn = conn;
-      // A new session starts with no settings, so the signed-in user has to be
-      // re-declared or RLS would see 'anon' after every reconnect.
-      await _applySession(conn);
-      debugPrint('PostgreSQL connected: ${PgConfig.describe}');
-      return conn;
+      final pool = await future;
+      _pool = pool;
+      _poolClosed = false;
+      debugPrint('PostgreSQL connected: ${PgConfig.describe} '
+          '(pool of ${PgConfig.poolSizeSetting})');
+      return pool;
     } finally {
       _connecting = null;
     }
@@ -225,9 +287,10 @@ class PgDatabase {
   }
 
   Future<void> close() async {
-    final conn = _conn;
-    _conn = null;
-    if (conn != null && conn.isOpen) await conn.close();
+    final pool = _pool;
+    _pool = null;
+    _poolClosed = true;
+    if (pool != null) await pool.close();
   }
 
   /// Runs [sql], reconnecting once if the socket has died.
@@ -238,19 +301,19 @@ class PgDatabase {
   /// server that is genuinely down.
   Future<Result> _run(String sql, {Map<String, Object?>? parameters}) async {
     try {
-      final conn = await _open();
-      return await conn.execute(Sql.named(sql), parameters: parameters ?? {});
+      final pool = await _open();
+      return await pool.execute(Sql.named(sql), parameters: parameters ?? {});
     } on PgException catch (e) {
       // A server-side error (bad SQL, constraint violation) is the caller's to
       // handle — reconnecting would not change the outcome.
       if (!_looksLikeDroppedConnection(e)) rethrow;
       await close();
-      final conn = await _open();
-      return await conn.execute(Sql.named(sql), parameters: parameters ?? {});
+      final pool = await _open();
+      return await pool.execute(Sql.named(sql), parameters: parameters ?? {});
     } on SocketException {
       await close();
-      final conn = await _open();
-      return await conn.execute(Sql.named(sql), parameters: parameters ?? {});
+      final pool = await _open();
+      return await pool.execute(Sql.named(sql), parameters: parameters ?? {});
     }
   }
 
@@ -278,7 +341,7 @@ class PgDatabase {
 
   /// Runs [body] inside a transaction, rolling back if it throws.
   Future<T> transaction<T>(Future<T> Function(TxSession tx) body) async {
-    final conn = await _open();
-    return conn.runTx(body);
+    final pool = await _open();
+    return pool.runTx(body);
   }
 }

@@ -3499,10 +3499,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: context.colors.dangerRed,
-        ));
+        showErrorSnack(context, e);
       }
     }
   }
@@ -4276,10 +4273,7 @@ class _TenderSaleFormDialogState extends ConsumerState<_TenderSaleFormDialog> {
               }
             } catch (e) {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Error: $e'),
-                  backgroundColor: context.colors.dangerRed,
-                ));
+                showErrorSnack(context, e);
               }
             } finally {
               if (mounted) setState(() => _loading = false);
@@ -5161,9 +5155,7 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to save bids: $e'),
-          backgroundColor: context.colors.dangerRed));
+      showErrorSnack(context, e);
     }
   }
 
@@ -6414,10 +6406,7 @@ class DestructionCard extends ConsumerWidget {
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: context.colors.dangerRed,
-        ));
+        showErrorSnack(context, e);
       }
     }
   }
@@ -7103,10 +7092,7 @@ class _DestructionFormDialogState
               }
             } catch (e) {
               if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                  content: Text('Error: $e'),
-                  backgroundColor: context.colors.dangerRed,
-                ));
+                showErrorSnack(context, e);
               }
             } finally {
               if (mounted) setState(() => _loading = false);

@@ -307,7 +307,7 @@ class DashboardScreen extends ConsumerWidget {
                         ref.watch(categoryStatsProvider).when(
                           data: (stats) => _GridSummary(stats: stats, color: Colors.teal),
                           loading: () => const Center(child: LinearProgressIndicator()),
-                          error: (e, _) => Text('Error: $e'),
+                          error: (e, _) => InlineError(e),
                         ),
                       ],
                     ),
@@ -322,7 +322,7 @@ class DashboardScreen extends ConsumerWidget {
                         ref.watch(zoneStatsProvider).when(
                           data: (stats) => _GridSummary(stats: stats, color: Colors.purple),
                           loading: () => const Center(child: LinearProgressIndicator()),
-                          error: (e, _) => Text('Error: $e'),
+                          error: (e, _) => InlineError(e),
                         ),
                       ],
                     ),
@@ -430,7 +430,7 @@ class DashboardScreen extends ConsumerWidget {
               );
             },
             loading: () => const Center(child: LinearProgressIndicator()),
-            error: (e, _) => Text('Error: $e'),
+            error: (e, _) => InlineError(e),
           ),
         ),
       ],

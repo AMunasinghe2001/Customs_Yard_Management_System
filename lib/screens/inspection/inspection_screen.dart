@@ -499,9 +499,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
       _tabController.animateTo(1);
     } catch (e) {
       if (mounted)
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: context.colors.dangerRed));
+        showErrorSnack(context, e);
     } finally {
       setState(() => _isChecking = false);
     }

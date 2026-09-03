@@ -104,10 +104,7 @@ class _AbandonedPackagesScreenState
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          backgroundColor: context.colors.dangerRed,
-          content: Text('Error: $e'),
-        ));
+        showErrorSnack(context, e);
       }
     }
   }

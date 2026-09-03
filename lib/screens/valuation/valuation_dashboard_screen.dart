@@ -685,9 +685,7 @@ class _ForwardAllButtonState extends ConsumerState<_ForwardAllButton> {
     } catch (e) {
       if (mounted) {
         setState(() => _busy = false);
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Failed: $e'),
-            backgroundColor: context.colors.dangerRed));
+        showErrorSnack(context, e);
       }
     }
   }
@@ -784,9 +782,7 @@ class _ItemValuationDialogState extends ConsumerState<_ItemValuationDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _busy = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed: $e'),
-          backgroundColor: context.colors.dangerRed));
+      showErrorSnack(context, e);
     }
   }
 
@@ -1475,9 +1471,7 @@ class _ValBidsAndRevalDialogState
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to save: $e'),
-          backgroundColor: context.colors.dangerRed));
+      showErrorSnack(context, e, action: 'Saving the re-valuation');
     }
   }
 

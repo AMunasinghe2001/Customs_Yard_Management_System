@@ -889,9 +889,7 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                         backgroundColor: context.colors.successGreen));
                 } catch (e) {
                   if (context.mounted)
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                        content: Text('Error: $e'),
-                        backgroundColor: context.colors.dangerRed));
+                    showErrorSnack(context, e);
                 }
               },
               child: const Text('Confirm Release'),

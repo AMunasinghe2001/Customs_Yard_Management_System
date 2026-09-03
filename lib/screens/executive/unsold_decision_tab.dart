@@ -404,9 +404,7 @@ class _DecisionDialogState extends ConsumerState<_DecisionDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed to save: $e'),
-          backgroundColor: context.colors.dangerRed));
+      showErrorSnack(context, e);
     }
   }
 

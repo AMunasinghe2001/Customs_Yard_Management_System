@@ -9,6 +9,7 @@ import '../../services/services.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/error_view.dart';
 
 final taxesProvider = FutureProvider<List<DisposalTaxModel>>((ref) async {
   return DisposalService().getTaxes();
@@ -61,7 +62,7 @@ class TaxesTab extends ConsumerWidget {
                   return _buildTable(context, ref, filtered);
                 },
                 loading: () => const Center(child: CircularProgressIndicator()),
-                error: (e, st) => Center(child: Text('Error: $e')),
+                error: (e, _) => InlineError(e),
               ),
             ),
           ),
@@ -155,9 +156,7 @@ class TaxesTab extends ConsumerWidget {
         await DisposalService().deleteTax(tax.id);
         ref.refresh(taxesProvider);
       } catch (e) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        showErrorSnack(context, e);
       }
     }
   }
@@ -210,9 +209,7 @@ class _TaxDialogState extends State<_TaxDialog> {
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error: $e')),
-        );
+        showErrorSnack(context, e);
       }
     } finally {
       if (mounted) setState(() => _isLoading = false);

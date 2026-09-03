@@ -591,9 +591,7 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Failed: $e'),
-          backgroundColor: context.colors.dangerRed));
+      showErrorSnack(context, e);
     }
   }
 
