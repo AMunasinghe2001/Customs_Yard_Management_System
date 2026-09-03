@@ -315,6 +315,17 @@ Future<void> main() async {
   // ⚠️ AFTER the tender pipeline: it reads the unsold pool that pipeline
   // leaves behind, so it has nothing to price until those rounds exist.
   await _seedUnsoldOutcomes(conn);
+  // ⚠️ LAST: it snapshots the tax charged onto sales that already exist, so
+  // every sale has to have been made before it runs.
+  // ⚠️ Before the tax pass, so perishable sales get their snapshot too.
+  await _seedPerishableSales(conn);
+  await _seedTaxesAndExpenses(conn);
+  // ⚠️ After the tender and destruction passes, and it skips anything they
+  // touched: goods cannot be sold, destroyed AND sent home again.
+  await _seedReExports(conn);
+  // ⚠️ LAST of all: it derives the trail from what the other passes actually
+  // did, so every one of them has to have run first.
+  await _seedAuditLogs(conn);
 
   print('\n── Final counts ' + '─' * 53);
   for (final t in const [
@@ -704,6 +715,462 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
 /// package the package-level column is deliberately ignored (deciding one item
 /// must not mark its siblings decided), so writing there would produce rows the
 /// app refuses to treat as decided.
+/// Records a sale against the warehouse, the way the yard's own RPC does.
+///
+/// ⚠️ Selling goods does THREE things, and setting the item status is only one
+/// of them. `disposal_mark_sale_item_sold` also writes a `[FINAL:SOLD]` entry
+/// as the record of sale and DELETES the still-held entry -- because the goods
+/// have left the yard and must stop occupying (and being charged for) a zone.
+/// Doing only the status update left 68 sold items still filling zones, which
+/// makes the Zone Capacity page overstate what is actually in the shed.
+///
+/// The note format `[FINAL:SOLD] — Receipt: <no>` is the RPC's own, em dash
+/// included; the finished-category views parse it.
+Future<void> _recordSaleInWarehouse(
+    Connection conn, String itemId, String? receipt, DateTime at) async {
+  final held = await conn.execute(
+    r'select id, package_id, warehouse_id, zone, hold_reason, item_count, '
+    r'       admitted_at, daily_rate '
+    r'from public.warehouse_entries '
+    r'where package_item_id = $1 and coalesce(is_returned, false) = false '
+    r'limit 1',
+    parameters: [itemId],
+  );
+  if (held.isEmpty) return;
+  final h = held.first;
+
+  await conn.execute(
+    r'insert into public.warehouse_entries '
+    r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
+    r' zone, yard, daily_rate, admitted_at, is_returned, returned_at, '
+    r' return_notes, created_at, updated_at) '
+    r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10,$11,$10,$10)',
+    parameters: [
+      h[1] as String, itemId, h[2] as String?, h[4] as String?,
+      h[5] as int? ?? 1, h[3] as String?, _yard, h[7], h[6] as DateTime, at,
+      receipt == null || receipt.isEmpty
+          ? '[FINAL:SOLD]'
+          : '[FINAL:SOLD] — Receipt: $receipt',
+    ],
+  );
+
+  await conn.execute(
+    r'delete from public.warehouse_entries where id = $1',
+    parameters: [h[0] as String],
+  );
+}
+
+/// Writes the audit trail for everything the seed just did.
+///
+/// ICT's Activity Logs tab reads `audit_logs`, which was empty -- so a system
+/// carrying 176 packages, 90-odd sales and a full year of disposals had no
+/// record of a single action having been taken.
+///
+/// ⚠️ The query joins `profiles!inner`, so a log with a null or unknown
+/// `user_id` is dropped SILENTLY -- it inserts fine and simply never appears.
+/// Every row here is attributed to a real profile, and the role is matched to
+/// the work: a yard officer registers goods, the Valuation directorate values
+/// them, Central Disposal runs the sales, Appeal rules on appeals.
+///
+/// The logs are DERIVED from what was actually seeded rather than invented, so
+/// the trail agrees with the data it describes -- an SR number in a log line
+/// is a package that really exists, on the date it really happened.
+Future<void> _seedAuditLogs(Connection conn) async {
+  // Who does what. A log attributed to the wrong role reads as nonsense to
+  // anyone auditing it.
+  final byRole = <String, String>{};
+  final profiles = await conn.execute(
+    "select id, role from public.profiles where yard = '$_yard'",
+  );
+  for (final r in profiles) {
+    final role = (r[1] as String?) ?? '';
+    byRole.putIfAbsent(role, () => r[0] as String);
+  }
+  final officer = byRole['officer'] ?? byRole['admin'];
+  if (officer == null) {
+    print('  no profiles to attribute logs to -- audit trail skipped');
+    return;
+  }
+  final valuation = byRole['valuation'] ?? officer;
+  final disposal = byRole['disposal'] ?? officer;
+  final appeal = byRole['appeal'] ?? officer;
+
+  var written = 0;
+  Future<void> log(String? userId, String action, String entityType,
+      String entityId, DateTime at,
+      [Map<String, dynamic>? details]) async {
+    // ⚠️ A log records something that HAS happened, so it can never be dated
+    // ahead. A sale scheduled for next week is legitimately future-dated, but
+    // the log of CREATING it belongs to the day it was created.
+    final now = DateTime.now();
+    final loggedAt = at.isAfter(now)
+        ? now.subtract(Duration(hours: 1 + _rng.nextInt(72)))
+        : at;
+    await conn.execute(
+      r'insert into public.audit_logs '
+      r'(user_id, yard, action, entity_type, entity_id, details, created_at) '
+      r'values ($1,$2,$3,$4,$5,$6::jsonb,$7)',
+      parameters: [
+        userId ?? officer, _yard, action, entityType, entityId,
+        details == null ? null : jsonEncode(details), loggedAt,
+      ],
+    );
+    written++;
+  }
+
+  // ── Registration ────────────────────────────────────────────────────────
+  final packages = await conn.execute(
+    'select id, sr_number, coalesce(entry_date, created_at) '
+    'from public.packages order by coalesce(entry_date, created_at) desc '
+    'limit 60',
+  );
+  for (final r in packages) {
+    await log(officer, 'Created new package SR: ${r[1]}', 'package',
+        r[0] as String, r[2] as DateTime);
+  }
+
+  // ── Valuation ───────────────────────────────────────────────────────────
+  final valued = await conn.execute(
+    'select i.id, i.valuation_cost, r.created_at '
+    'from public.disposal_request_items i '
+    'join public.disposal_requests r on r.id = i.request_id '
+    'where i.forwarded order by r.created_at desc limit 40',
+  );
+  for (final r in valued) {
+    await log(
+        valuation,
+        'Forwarded valued item to Central Disposal',
+        'disposal_request_item',
+        r[0] as String,
+        r[2] as DateTime,
+        {'valuation_cost': '${r[1]}'});
+  }
+
+  // ── Sales ───────────────────────────────────────────────────────────────
+  final sales = await conn.execute(
+    'select id, sale_number, sale_date, tender_type from public.tender_sales '
+    'order by sale_date desc limit 40',
+  );
+  for (final r in sales) {
+    final on = r[2] as DateTime;
+    await log(disposal, 'Created tender sale ${r[1]}', 'tender_sale',
+        r[0] as String, on, {'tender_type': r[3]});
+  }
+
+  final soldItems = await conn.execute(
+    'select tsi.id, fp.sr_number, tsi.sold_price, tsi.sold_at '
+    'from public.tender_sale_items tsi '
+    'join public.forfeited_packages fp on fp.id = tsi.forfeited_package_id '
+    'where tsi.sold and tsi.sold_at is not null '
+    'order by tsi.sold_at desc limit 40',
+  );
+  for (final r in soldItems) {
+    await log(disposal, 'Marked tender item sold', 'tender_sale_item',
+        r[0] as String, r[3] as DateTime,
+        {'sr_number': r[1], 'sold_price': '${r[2]}'});
+  }
+
+  // ── Appeal rulings ──────────────────────────────────────────────────────
+  final decided = await conn.execute(
+    "select fp.id, fp.sr_number, e.value->>'decision', e.value->>'decided_at' "
+    'from public.forfeited_packages fp, '
+    '     jsonb_each(fp.item_appeal_decisions) e '
+    'limit 40',
+  );
+  for (final r in decided) {
+    final at = DateTime.tryParse('${r[3]}') ??
+        DateTime.now().subtract(const Duration(days: 30));
+    await log(appeal, 'Appeal decision: ${r[2]}', 'forfeited_package',
+        r[0] as String, at, {'sr_number': r[1]});
+  }
+
+  // ── Destructions ────────────────────────────────────────────────────────
+  final destroyed = await conn.execute(
+    'select di.id, fp.sr_number, di.destroyed_at from public.destruction_items di '
+    'join public.forfeited_packages fp on fp.id = di.forfeited_package_id '
+    'where di.destroyed and di.destroyed_at is not null '
+    'order by di.destroyed_at desc limit 25',
+  );
+  for (final r in destroyed) {
+    await log(disposal, 'Marked destruction package destroyed',
+        'destruction_item', r[0] as String, r[2] as DateTime,
+        {'sr_number': r[1]});
+  }
+
+  // ── Releases ────────────────────────────────────────────────────────────
+  final released = await conn.execute(
+    'select we.id, p.sr_number, we.returned_at from public.warehouse_entries we '
+    'join public.packages p on p.id = we.package_id '
+    "where we.is_returned and we.return_notes like 'Receipt No:%' "
+    'order by we.returned_at desc limit 25',
+  );
+  for (final r in released) {
+    await log(officer, 'Released goods to the owner', 'warehouse_entry',
+        r[0] as String, r[2] as DateTime, {'sr_number': r[1]});
+  }
+
+  print('  $written audit log entries written');
+}
+
+/// Runs perishable goods through a SPECIAL tender sale.
+///
+/// Perishables never reached a tender at all: 47 of them sat on the Perishable
+/// Goods page and nothing downstream ever saw one. They cannot go through the
+/// ordinary path -- a general sale runs too slowly for goods that spoil -- so
+/// they have a sale type of their own.
+///
+/// ⚠️ The rule holds BOTH ways: a perishable may only enter a `special` sale,
+/// and a special sale carries only perishables. Mixing them into one lot is
+/// exactly what the two types exist to prevent.
+///
+/// ⚠️ `source` is CHECK-constrained to forfeit / abandoned / other / detain.
+/// The `'perishable'` source the app shows is SYNTHETIC -- built on the fly for
+/// goods that have no forfeited_packages row -- so a perishable that really
+/// reaches a sale needs a real row under a permitted source. What routes it to
+/// a special sale is the ITEM's nature, not the source.
+Future<void> _seedPerishableSales(Connection conn) async {
+  final rows = await conn.execute(
+    'select pi.id, pi.package_id, p.sr_number, p.consignee_name, '
+    '       pi.quantity, pi.unit_value, coalesce(p.entry_date, p.created_at) '
+    'from public.package_items pi '
+    'join public.packages p on p.id = pi.package_id '
+    "where pi.nature = 'perishable' "
+    "  and pi.status = 'Perishable' "
+    'order by coalesce(p.entry_date, p.created_at) asc',
+  );
+
+  var sold = 0;
+  var pending = 0;
+  var serial = 0;
+  String? saleId;
+  DateTime? saleAt;
+  var saleFill = 0;
+
+  for (final r in rows) {
+    if (_rng.nextInt(100) >= 55) continue;
+
+    final itemId = r[0] as String;
+    final pkgId = r[1] as String;
+    final srNumber = r[2] as String;
+    final consignee = r[3] as String? ?? '';
+    final qty = (r[4] as int?) ?? 1;
+    final unitValue = double.tryParse('${r[5]}') ?? 5000;
+    final entered = r[6] as DateTime;
+
+    // A perishable is disposed of FAST -- days, not the 30-day wait.
+    var at = entered.add(Duration(days: 2 + _rng.nextInt(8)));
+    final now = DateTime.now();
+    if (at.isAfter(now)) {
+      at = now.subtract(Duration(days: 2 + _rng.nextInt(15)));
+    }
+
+    // A real forfeited_packages row, so the sale has something to point at.
+    // The appeal deadline is the entry date itself: a perishable waits out no
+    // window, which is the whole reason it takes this path.
+    final fpRes = await conn.execute(
+      r'insert into public.forfeited_packages '
+      r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
+      r" appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) "
+      r"values ($1,$2,$3,$4,$5,$5,'Perishable goods — immediate disposal',"
+      r"        'forfeit',$6,$7,$5,$5) returning id",
+      parameters: [pkgId, itemId, srNumber, consignee, entered, _yard, qty],
+    );
+    final fpId = fpRes.first.first as String;
+
+    // Valued and forwarded, as any sale item must be.
+    final valuation =
+        (unitValue * qty * (0.4 + _rng.nextDouble() * 0.3)).roundToDouble();
+    final reqId = await _newDisposalRequest(
+        conn, entered.add(const Duration(days: 1)), 'forwarded');
+    await conn.execute(
+      r'insert into public.disposal_request_items '
+      r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
+      r"values ($1,$2,'sale',$3,true)",
+      parameters: [reqId, fpId, valuation],
+    );
+
+    // Several perishables share one special sale.
+    if (saleId == null || saleFill >= 4) {
+      serial++;
+      saleAt = at;
+      saleId = await _newSpecialSale(conn, at, serial);
+      saleFill = 0;
+    }
+    saleFill++;
+
+    // Perishables mostly clear -- that is the point of selling them fast.
+    final didSell = _rng.nextInt(100) < 75;
+    await conn.execute(
+      r'insert into public.tender_sale_items '
+      r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
+      r' sold_at, sold_price, receipt_number, created_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+      parameters: [
+        saleId, fpId, itemId, _yard, didSell,
+        didSell ? saleAt : null,
+        didSell
+            ? (valuation * (1.0 + _rng.nextDouble() * 0.3)).roundToDouble()
+            : null,
+        didSell ? 'TR/$_yard/${saleAt!.year}/SP${900 + serial}' : null,
+        saleAt,
+      ],
+    );
+
+    if (didSell) {
+      await conn.execute(
+        r"update public.package_items set status = 'sold' where id = $1",
+        parameters: [itemId],
+      );
+      // A perishable never reached a warehouse, so there is usually nothing to
+      // clear -- the helper returns quietly when no held entry exists.
+      await _recordSaleInWarehouse(
+          conn, itemId, 'TR/$_yard/${saleAt!.year}/SP${900 + serial}', saleAt!);
+      sold++;
+    } else {
+      pending++;
+    }
+  }
+
+  print('  perishables: $sold sold in $serial special sales, '
+      '$pending unsold');
+}
+
+/// A SPECIAL tender sale — the only kind a perishable may enter.
+Future<String> _newSpecialSale(
+    Connection conn, DateTime saleAt, int serial) async {
+  final res = await conn.execute(
+    r'insert into public.tender_sales '
+    r'(sale_number, sale_date, serial, year, tender_type, yard, sale_time, '
+    r' sale_end_time, created_at) '
+    r"values ($1,$2,$3,$4,'special',$5,'08:00','12:00',$6) returning id",
+    parameters: [
+      'TS/$_yard/${saleAt.year}/SP${serial.toString().padLeft(2, '0')}',
+      _iso(saleAt),
+      'SP$serial',
+      saleAt.year,
+      _yard,
+      saleAt,
+    ],
+  );
+  return res.first.first as String;
+}
+
+/// The taxes charged on a tender sale, and the expenses a disposal runs up.
+///
+/// `disposal_taxes` is CONFIGURATION -- the rates Central Disposal maintains --
+/// and the Taxes tab lists it directly, so with the table empty the tab has
+/// nothing to show and no sale can carry a tax breakdown either.
+///
+/// ⚠️ A sold item does NOT reference the tax rows. It stores a SNAPSHOT of what
+/// was charged in `applied_taxes` (id, name, percentage, amount), so a later
+/// rate change never rewrites the history of a sale already made. Both have to
+/// be seeded: the rates for the tab, the snapshot for the sale.
+Future<void> _seedTaxesAndExpenses(Connection conn) async {
+  for (final (name, pct, active) in _disposalTaxes) {
+    await conn.execute(
+      r'insert into public.disposal_taxes (name, percentage, is_active) '
+      r'values ($1,$2,$3)',
+      parameters: [name, pct, active],
+    );
+  }
+
+  // Apply the ACTIVE rates to every sale already made.
+  final active =
+      _disposalTaxes.where((t) => t.$3).toList();
+  final ids = await conn.execute(
+    'select id, name, percentage from public.disposal_taxes where is_active',
+  );
+  final rates = [
+    for (final r in ids)
+      (r[0] as String, r[1] as String, double.tryParse('${r[2]}') ?? 0.0),
+  ];
+
+  final sold = await conn.execute(
+    'select id, sold_price from public.tender_sale_items '
+    'where sold and sold_price is not null',
+  );
+  var taxed = 0;
+  for (final r in sold) {
+    final price = double.tryParse('${r[1]}') ?? 0;
+    final snapshot = [
+      for (final (id, name, pct) in rates)
+        {
+          'id': id,
+          'name': name,
+          'percentage': pct,
+          'amount': (price * pct / 100),
+        },
+    ];
+    await conn.execute(
+      r'update public.tender_sale_items set applied_taxes = $2::jsonb '
+      r'where id = $1',
+      parameters: [r[0] as String, jsonEncode(snapshot)],
+    );
+    taxed++;
+  }
+
+  // ── The other expense kinds ─────────────────────────────────────────────
+  // The Expenses tab groups by kind, so seeding only destruction_expense left
+  // every other kind with an empty group. A tender sale runs up advertising,
+  // labour, transport and auction costs of its own.
+  final sales = await conn.execute(
+    'select ts.id, ts.sale_date, fp.sr_number '
+    'from public.tender_sales ts '
+    'join public.tender_sale_items tsi on tsi.tender_sale_id = ts.id '
+    'join public.forfeited_packages fp on fp.id = tsi.forfeited_package_id '
+    'where tsi.sold order by ts.sale_date desc limit 40',
+  );
+  var expenses = 0;
+  for (final r in sales) {
+    final on = r[1] as DateTime;
+    final srNumber = r[2] as String;
+    // One or two costs per sale, drawn from the kinds that are not destruction.
+    final howMany = 1 + _rng.nextInt(2);
+    for (var i = 0; i < howMany; i++) {
+      final (kind, note) =
+          _saleExpenses[_rng.nextInt(_saleExpenses.length)];
+      await conn.execute(
+        r'insert into public.financial_expenses '
+        r'(kind, amount, description, yard, sr_number, incurred_on, created_at) '
+        r'values ($1,$2,$3,$4,$5,$6,$7)',
+        parameters: [
+          kind,
+          (2000 + _rng.nextInt(38000)).toDouble(),
+          note, _yard, srNumber, _iso(on), on,
+        ],
+      );
+      expenses++;
+    }
+  }
+
+  print('  taxes & expenses:');
+  print('    ${_disposalTaxes.length} tax rates (${active.length} active) '
+      'applied to $taxed sales');
+  final kinds = _saleExpenses.map((e) => e.$1).toSet().length;
+  print('    $expenses sale expenses across $kinds kinds');
+}
+
+/// The rates Central Disposal maintains. An INACTIVE one is kept deliberately:
+/// the tab distinguishes them, and an inactive rate must not be charged.
+const _disposalTaxes = <(String, double, bool)>[
+  ('VAT', 18.0, true),
+  ('Cess', 5.0, true),
+  ('Stamp Duty', 1.5, true),
+  ('PAL', 10.0, false),
+];
+
+/// Costs a tender sale runs up, keyed by the kinds `financial_expenses`
+/// allows (destruction_expense is charged elsewhere, on the destruction).
+const _saleExpenses = <(String, String)>[
+  ('advertising_expense', 'Newspaper notice of the tender sale'),
+  ('advertising_expense', 'Gazette publication'),
+  ('labour_expense', 'Loading and handling on sale day'),
+  ('labour_expense', 'Security for the sale premises'),
+  ('transport_expense', 'Transport of goods to the sale yard'),
+  ('auction_expense', 'Auctioneer commission'),
+  ('auction_expense', 'Hire of the auction hall'),
+];
+
 /// Prices the unsold pool, and settles the ones that have run out of road.
 ///
 /// The Unsold Tenders list showed every row as "Awaiting value", because a
@@ -781,7 +1248,7 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
         DateTime.now().subtract(Duration(days: 3 + _rng.nextInt(40)));
     final committeeValue = reserve.roundToDouble();
     // Two in three have been submitted by the ADG; the rest are still waiting.
-    final submitted = _rng.nextInt(3) != 0;
+    final submitted = _rng.nextInt(4) != 0;
 
     await conn.execute(
       r'insert into public.tender_committees '
@@ -813,7 +1280,7 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
 
       // Some of those have since been re-tendered and STILL not sold: every
       // avenue is exhausted, so Top Management records a final outcome.
-      if (_rng.nextInt(100) < 75) {
+      if (_rng.nextInt(100) < 90) {
         // ⚠️ Cycled, not chosen at random. Each outcome has its OWN tab
         // (Government Use / Remanded / Auction / Converted / Removed), and a
         // random pick over a small pool leaves some of those tabs empty.
@@ -1253,7 +1720,7 @@ Future<void> _seedTenderPipeline(Connection conn) async {
     } else if (roll < 67) {
       rounds = 3;
       everSells = true;
-    } else if (roll < 76) {
+    } else if (roll < 70) {
       rounds = 4;
       everSells = true;
     } else {
@@ -1319,12 +1786,18 @@ Future<void> _seedTenderPipeline(Connection conn) async {
       );
 
       if (sold) {
-        // The goods have left the yard.
+        // The goods have left the yard -- status, record of sale, and the
+        // held entry cleared, exactly as the yard's own RPC does it.
         if (itemId != null) {
           await conn.execute(
             r"update public.package_items set status = 'sold' where id = $1",
             parameters: [itemId],
           );
+          await _recordSaleInWarehouse(
+              conn,
+              itemId,
+              'TR/$_yard/${saleAt.year}/${2000 + saleSerial}',
+              saleAt);
         }
         if (round == 1) {
           soldFirstRound++;
@@ -1478,6 +1951,88 @@ Future<String> _newTenderSale(
   );
   return res.first.first as String;
 }
+
+/// Re-exports a share of the goods.
+///
+/// Re-exported Goods reads the same way the completed "Other" page does -- a
+/// returned entry tagged `[FINAL:RE-EXPORTED]` plus the item status -- so
+/// nothing appeared there for exactly the same reason.
+///
+/// Re-export is what happens when goods should never have been imported: the
+/// consignment goes back where it came from rather than being sold here. So
+/// they are drawn from goods with an appeal ruling of RE-EXPORT where there is
+/// one, and otherwise from ordinary disposable stock.
+Future<void> _seedReExports(Connection conn) async {
+  final rows = await conn.execute(
+    'select we.id, we.package_item_id, we.item_count, we.admitted_at, '
+    '       we.package_id, we.warehouse_id, we.zone, we.hold_reason, '
+    '       we.daily_rate '
+    'from public.warehouse_entries we '
+    'join public.package_items pi on pi.id = we.package_item_id '
+    'join public.packages p on p.id = we.package_id '
+    'where coalesce(we.is_returned, false) = false '
+    "  and pi.status in ('Forfeit', 'Abandoned', 'Detain') "
+    "  and coalesce(p.entry_date, p.created_at) < now() - interval '30 days' "
+    '  and not exists (select 1 from public.tender_sale_items t '
+    '                   join public.forfeited_packages f on f.id = t.forfeited_package_id '
+    '                  where f.item_id = pi.id) '
+    '  and not exists (select 1 from public.destruction_items d '
+    '                   join public.forfeited_packages f2 on f2.id = d.forfeited_package_id '
+    '                  where f2.item_id = pi.id) '
+    'order by we.admitted_at asc',
+  );
+
+  var made = 0;
+  for (final r in rows) {
+    if (_rng.nextInt(100) >= 12) continue;
+
+    final entryId = r[0] as String;
+    final itemId = r[1] as String;
+    final qty = r[2] as int? ?? 0;
+    final admittedAt = r[3] as DateTime;
+    final pkgId = r[4] as String;
+
+    var at = admittedAt.add(Duration(days: 40 + _rng.nextInt(200)));
+    final now = DateTime.now();
+    if (at.isAfter(now)) {
+      at = now.subtract(Duration(days: 2 + _rng.nextInt(40)));
+    }
+
+    await conn.execute(
+      r'insert into public.warehouse_entries '
+      r'(package_id, package_item_id, warehouse_id, hold_reason, item_count, '
+      r' zone, yard, daily_rate, admitted_at, is_returned, returned_at, '
+      r' return_notes, created_at, updated_at) '
+      r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9,true,$10,$11,$10,$10)',
+      parameters: [
+        pkgId, itemId, r[5] as String?, r[7] as String?, qty, r[6] as String?,
+        _yard, r[8], admittedAt, at,
+        '[FINAL:RE-EXPORTED] — '
+            '${_reExportReasons[_rng.nextInt(_reExportReasons.length)]}',
+      ],
+    );
+
+    await conn.execute(
+      r"update public.package_items set status = 're-exported' where id = $1",
+      parameters: [itemId],
+    );
+
+    // The goods have left the country, so they leave the zone with it.
+    await conn.execute(
+      r'delete from public.warehouse_entries where id = $1',
+      parameters: [entryId],
+    );
+    made++;
+  }
+  print('  $made items re-exported to their country of origin');
+}
+
+const _reExportReasons = [
+  'Returned to the shipper at their expense',
+  'Import licence refused — sent back to origin',
+  'Goods not conforming to the declaration',
+  'Re-exported under Customs supervision',
+];
 
 /// Finishes off a share of the "Other" goods.
 ///

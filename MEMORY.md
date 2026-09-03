@@ -1421,3 +1421,43 @@ Runs **after** the tender pipeline and excludes anything already tendered or on 
 ⚠️ **A sale is ACTIVE only while it holds an unsold item AND its window is still open.** Every seeded sale was dated in the past so its items could be counted sold or unsold — which left the Tender Sales tab completely empty. Some sales are now dated a day or two **ahead** with their items unsold, filled from packages the pipeline has not already used.
 
 **`unsold_proposals` is the end of the road** — Top Management's final outcome for goods that were priced, re-tendered and still did not sell. It is what moves a package off Unsold Goods and onto its own tab. ⚠️ The five outcomes (`government_use`, `remand`, `auction`, `convert`, `remove_from_premises`) are **cycled, not picked at random**: each has its own tab, and a random pick over a small pool leaves some of those tabs empty.
+
+### Taxes, expenses and re-export (2026-09-03)
+
+**`disposal_taxes` is CONFIGURATION** — the rates Central Disposal maintains — and the Taxes tab lists it directly, so an empty table means no tab and no tax breakdown on any sale.
+
+⚠️ **A sold item does not reference the tax rows.** It stores a **snapshot** in `applied_taxes` (id, name, percentage, amount), so a later rate change never rewrites the history of a sale already made. Both have to be seeded: the rates for the tab, the snapshot for the sale. An **inactive** rate is kept in the table (the tab shows it as inactive — not the same as deleting it) and must never be charged; `PAL` is seeded inactive to prove it.
+
+**The Expenses tab groups by kind**, so seeding only `destruction_expense` left every other kind empty. A tender sale runs up advertising, labour, transport and auction costs of its own — all five kinds now have rows. ⚠️ Destruction expense is charged on the **destruction**, the others on the **sale**.
+
+**Re-exported Goods reads exactly like completed "Other"** — a returned entry tagged `[FINAL:RE-EXPORTED]` plus the item status — and was empty for the same reason. Re-export is for goods that should never have been imported: they go home rather than being sold here, and they leave the zone with it. The pass skips anything the tender or destruction passes touched — goods cannot be sold, destroyed *and* sent home.
+
+⚠️ **In a Dart RAW string, `\$1` is a literal backslash plus `$1`** — a postgres placeholder must be a bare `$1`. Two of these slipped in through a shell heredoc and would have broken the SQL at runtime.
+
+### Perishables finally reach a sale (2026-09-03)
+
+47 perishables sat on the Perishable Goods page and **nothing downstream ever saw one** — no tender, and not a single `special` sale existed.
+
+⚠️ **The rule holds BOTH ways**: a perishable may only enter a `special` sale, and a special sale carries **only** perishables. A general sale runs too slowly for goods that spoil, and mixing them into one lot is what the two types exist to prevent. Verified in both directions after seeding: 0 perishables in a general sale, 0 normal goods in a special one.
+
+⚠️ **`forfeited_packages.source` is CHECK-constrained to forfeit / abandoned / other / detain.** The `'perishable'` source the app displays is **synthetic** — built on the fly for goods that have no `forfeited_packages` row at all. So a perishable that really reaches a sale needs a real row under a *permitted* source; what routes it to a special sale is the **item's `nature`**, not the source.
+
+A perishable also waits out **no appeal window** — its `appeal_deadline` is the entry moment itself, which is why it can be disposed of within days rather than 30.
+
+### The audit trail was empty (2026-09-03)
+
+ICT's Activity Logs reads `audit_logs`, which had **0 rows** — a system carrying 176 packages, ~90 sales and a year of disposals had no record of a single action.
+
+⚠️ **The query joins `profiles!inner`, so a log with a null or unknown `user_id` is dropped SILENTLY** — it inserts fine and simply never appears. Every seeded row is attributed to a real profile, with the **role matched to the work**: a yard officer registers and releases goods, Valuation values them, Central Disposal runs the sales and destructions, Appeal rules on appeals. A log under the wrong role reads as nonsense to anyone auditing it.
+
+Logs are **derived from what was actually seeded**, not invented — an SR number in a log line is a package that really exists, on the date it really happened.
+
+⚠️ **A log records something that HAS happened, so it can never be dated ahead.** A sale scheduled for next week is legitimately future-dated, but the log of *creating* it belongs to the day it was created — 3 rows were future-dated before this was clamped.
+
+### Selling goods does three things, not one (2026-09-03)
+
+⚠️ `disposal_mark_sale_item_sold` — the yard's own RPC — writes a **`[FINAL:SOLD] — Receipt: <no>`** entry as the record of sale, sets the item status, **and DELETES the still-held entry**. Setting the status alone left **68 sold items still filling zones**, which makes Zone Capacity overstate what is actually in the shed. Same rule for destroyed and re-exported goods: anything that has left the yard stops occupying (and being charged for) space. A *pending* destruction has not happened yet and correctly keeps its space.
+
+`_recordSaleInWarehouse` mirrors the RPC and is shared by both sale paths (general pipeline and perishable special sales). It returns quietly when there is no held entry — a perishable never reached a warehouse in the first place.
+
+After the fix: 0 sold/destroyed/re-exported goods in a zone, fullest zone 80%, 68 `[FINAL:SOLD]` records of sale.

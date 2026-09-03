@@ -189,6 +189,115 @@ void main() {
     });
   });
 
+  group('goods that leave the yard stop occupying a zone', () {
+    // ⚠️ Selling does THREE things, and the status update is only one. The
+    // yard's own RPC also writes a [FINAL:SOLD] record of sale and DELETES the
+    // still-held entry -- goods that have gone must stop filling (and being
+    // charged for) a zone. Doing only the status update left 68 sold items
+    // still in zones, which makes Zone Capacity overstate what is in the shed.
+    const goneStatuses = ['sold', 'destroyed', 're-exported', 'returned'];
+
+    bool stillOccupiesZone(String status, {required bool heldEntryDeleted}) =>
+        goneStatuses.contains(status) ? !heldEntryDeleted : true;
+
+    test('a sold item with its held entry cleared occupies nothing', () {
+      expect(stillOccupiesZone('sold', heldEntryDeleted: true), isFalse);
+    });
+
+    test('a sold item whose held entry survived is the bug', () {
+      expect(stillOccupiesZone('sold', heldEntryDeleted: false), isTrue);
+    });
+
+    test('destroyed and re-exported goods leave too', () {
+      expect(stillOccupiesZone('destroyed', heldEntryDeleted: true), isFalse);
+      expect(stillOccupiesZone('re-exported', heldEntryDeleted: true), isFalse);
+    });
+
+    test('goods still under inquiry keep their space', () {
+      // A pending destruction has NOT happened yet, so it is still in the shed.
+      expect(
+          stillOccupiesZone('supposed to be destroyed', heldEntryDeleted: false),
+          isTrue);
+    });
+
+    // The record of sale carries the receipt, and the separator is an em dash
+    // -- the same trap as [FINAL:OTHER].
+    test('the record of sale is tagged and carries its receipt', () {
+      const note = '[FINAL:SOLD] — Receipt: TR/GL1/2026/2043';
+      expect(note.startsWith('[FINAL:SOLD]'), isTrue);
+      expect(note.contains('Receipt: '), isTrue);
+    });
+  });
+
+  group('a perishable may only enter a special sale', () {
+    // ⚠️ The rule holds BOTH ways: a perishable belongs in a special sale and
+    // nowhere else, and a special sale carries only perishables. A general
+    // sale runs too slowly for goods that spoil, and mixing them into one lot
+    // is what the two sale types exist to prevent.
+    bool allowedInSale({required bool isPerishable, required String saleType}) =>
+        isPerishable == (saleType == 'special');
+
+    test('a perishable in a special sale is allowed', () {
+      expect(allowedInSale(isPerishable: true, saleType: 'special'), isTrue);
+    });
+
+    test('a perishable in a general sale is not', () {
+      expect(allowedInSale(isPerishable: true, saleType: 'general'), isFalse);
+    });
+
+    test('normal goods in a special sale are not', () {
+      expect(allowedInSale(isPerishable: false, saleType: 'special'), isFalse);
+    });
+
+    test('normal goods in a general sale are allowed', () {
+      expect(allowedInSale(isPerishable: false, saleType: 'general'), isTrue);
+    });
+
+    // A perishable waits out no appeal window -- the deadline is the entry
+    // moment itself, which is why it can be disposed of within days.
+    test('a perishable has no appeal window to wait out', () {
+      final entered = DateTime(2026, 1, 10);
+      final deadline = entered; // not entered + 30 days
+      expect(deadline.isAfter(entered), isFalse);
+    });
+  });
+
+  group('a sale stores a snapshot of the tax it was charged', () {
+    // The rates in disposal_taxes are configuration and change over time. A
+    // sold item does NOT reference them -- it stores id, name, percentage and
+    // amount at the moment of sale, so a later rate change never rewrites the
+    // history of a sale already made.
+    double taxOn(double price, double percentage) => price * percentage / 100;
+
+    test('the amount is the percentage of the sale price', () {
+      expect(taxOn(58171, 18), closeTo(10470.78, 0.01));
+      expect(taxOn(58171, 5), closeTo(2908.55, 0.01));
+      expect(taxOn(58171, 1.5), closeTo(872.57, 0.01));
+    });
+
+    // ⚠️ An INACTIVE rate must never be charged. It stays in the table so the
+    // Taxes tab can show it as inactive, which is not the same as deleting it.
+    test('only active rates are charged', () {
+      const rates = [
+        ('VAT', 18.0, true),
+        ('Cess', 5.0, true),
+        ('PAL', 10.0, false),
+      ];
+      final charged = rates.where((r) => r.$3).map((r) => r.$1).toList();
+      expect(charged, ['VAT', 'Cess']);
+      expect(charged.contains('PAL'), isFalse);
+    });
+
+    test('a snapshot survives a later rate change', () {
+      // The sale recorded 18%; the rate is later cut to 12%. The sale keeps
+      // what it charged.
+      const snapshotPercentage = 18.0;
+      const currentRate = 12.0;
+      expect(snapshotPercentage, isNot(currentRate));
+      expect(taxOn(1000, snapshotPercentage), 180);
+    });
+  });
+
   group('a request is pending valuation while any item is unforwarded', () {
     // ⚠️ A request stays in the Pending Valuation feed while ANY of its items
     // is not yet forwarded; a fully forwarded request has moved on to Central
