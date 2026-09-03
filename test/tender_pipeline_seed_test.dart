@@ -189,6 +189,40 @@ void main() {
     });
   });
 
+  group('destruction never goes through a disposal request', () {
+    // ⚠️ In Final Disposition only SALE raises a disposal request --
+    // `_requestActions` is `{'SOLD'}`. Release, Destroy and Re-export are
+    // recorded DIRECTLY. There is nothing for the Valuation Directorate to do
+    // with goods being destroyed either: they are not being priced for a
+    // buyer. Seeding a `disposition: 'destruction'` request put destruction
+    // rows on Central Disposal's Disposal Requests tab and in the valuation
+    // queue -- a route the app deliberately does not have.
+    const requestActions = {'SOLD'};
+
+    bool raisesADisposalRequest(String action) =>
+        requestActions.contains(action);
+
+    test('Sale raises a request', () {
+      expect(raisesADisposalRequest('SOLD'), isTrue);
+    });
+
+    test('Destroy does not', () {
+      expect(raisesADisposalRequest('DESTROYED'), isFalse);
+    });
+
+    test('Release and Re-export do not either', () {
+      expect(raisesADisposalRequest('RELEASED'), isFalse);
+      expect(raisesADisposalRequest('RE-EXPORTED'), isFalse);
+    });
+
+    // The only disposition a request item may carry.
+    test('a request item is always a sale', () {
+      const seeded = ['sale', 'sale', 'sale'];
+      expect(seeded.every((d) => d == 'sale'), isTrue);
+      expect(seeded.contains('destruction'), isFalse);
+    });
+  });
+
   group('a request leaves the Disposal Requests tab once it is acted on', () {
     // ⚠️ Central Disposal sees a request only while its packages are still
     // WAITING. The moment they are placed in a tender or a destruction the

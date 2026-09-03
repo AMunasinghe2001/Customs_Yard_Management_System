@@ -1494,3 +1494,15 @@ The Perishable tab failed with `57014: canceling statement due to user request`.
 ⚠️ **A cancelled statement carries the same `Severity.error` a genuine SQL fault does**, so it was classified as "the database rejected this request — this is a fault in the app". A new `_Kind.timeout` is checked **before** the database branch: *"This took too long to load… nothing has been lost."*
 
 ⚠️ **24 snackbars dumped the raw object** as `Text('Error: $e')`, putting driver text in front of an officer. `showErrorSnack(context, e, action: …)` routes through the **same classifier** the full page uses, so the two can never word the same failure differently — and the colour now follows the kind (amber for a timeout, red for a real fault) instead of always red.
+
+### Destruction never goes through a disposal request (2026-09-03)
+
+⚠️ **In Final Disposition only SALE raises a disposal request** — `_requestActions` is `{'SOLD'}` (package_details_dialog.dart). Release, Destroy and Re-export are recorded **directly**. And there is nothing for the **Valuation Directorate** to do with goods being destroyed: they are not being priced for a buyer.
+
+The app was already correct; **the seeder was wrong.** It wrote `disposition: 'destruction'` request items, which put destruction rows on Central Disposal's **Disposal Requests** tab and into the valuation queue — a route the app deliberately does not have (it existed once and was removed). 25 such rows were in the database and are gone.
+
+A `disposal_request_items.disposition` is now always `'sale'` in seeded data. The CHECK constraint still allows `'destruction'` for the historical rows the column was built for, so the constraint was left alone — the rule is about which path *creates* one.
+
+⚠️ Not every `'destruction'` string in the code is a database row: `disposal_dashboard_screen.dart:6678` and `:7041` build **in-memory view models** for Central Disposal's own Destroyed tab. Those are correct and must not be "fixed".
+
+Destroyed Goods is still fully populated (21 destroyed · 22 pending), all through the direct route.

@@ -1429,11 +1429,11 @@ const _unsoldOutcomes = <(String, String)>[
 ///   * DESTROYED -- item status 'destroyed' AND the destruction_items row
 ///     marked destroyed, which is what carries the date and the receipt.
 ///
-/// Both routes in are seeded, because a yard reaches destruction two ways:
-///   * through the VALUATION directorate (a disposal request costed and
-///     forwarded, disposition 'destruction'), and
-///   * DIRECTLY, when the yard records Destroy as a final disposition with no
-///     request at all -- perishables especially, which cannot wait.
+/// ⚠️ There is only ONE route in: the yard records Destroy as a final
+/// disposition, directly. Destruction never raises a disposal request and
+/// never reaches the Valuation Directorate -- in Final Disposition only SALE
+/// raises a request, and goods being destroyed are not being priced for a
+/// buyer, so there is nothing to value.
 ///
 /// ⚠️ The "Destruction Expenses" column does NOT come from the destruction
 /// row. It is read from `financial_expenses` (kind 'destruction_expense')
@@ -1456,18 +1456,13 @@ Future<void> _seedDestructions(Connection conn) async {
     'order by fp.forfeited_at asc',
   );
 
-  var viaValuation = 0;
   var direct = 0;
   var destroyed = 0;
   var pending = 0;
   var serial = 0;
 
-  String? batchReqId;
-  DateTime? batchAt;
-  var batchLeft = 0;
-
   for (final r in rows) {
-    if (_rng.nextInt(100) >= 60) continue;
+    if (_rng.nextInt(100) >= 75) continue;
 
     final fpId = r[0] as String;
     final itemId = r[1] as String?;
@@ -1478,33 +1473,20 @@ Future<void> _seedDestructions(Connection conn) async {
     final sentAt =
         DateTime.now().subtract(Duration(days: 25 + _rng.nextInt(420)));
 
-    // Two in three go through Valuation; the rest the yard destroys directly.
-    final throughValuation = _rng.nextInt(3) != 0;
-    if (throughValuation) {
-      if (batchLeft == 0 || batchReqId == null) {
-        batchAt = sentAt;
-        batchReqId = await _newDisposalRequest(conn, batchAt!, 'forwarded');
-        batchLeft = 2 + _rng.nextInt(4);
-      }
-      batchLeft--;
-      await conn.execute(
-        r'insert into public.disposal_request_items '
-        r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
-        r"values ($1,$2,'destruction',$3,true)",
-        parameters: [
-          batchReqId,
-          fpId,
-          (unitValue * qty * (0.4 + _rng.nextDouble() * 0.3)).roundToDouble(),
-        ],
-      );
-      viaValuation++;
-    } else {
-      direct++;
-    }
+    // ⚠️ Destruction NEVER goes through a disposal request, and never through
+    // the Valuation Directorate. In Final Disposition only SALE raises a
+    // request (`_requestActions` is `{'SOLD'}`); Release, Destroy and
+    // Re-export are recorded DIRECTLY. There is nothing to value either --
+    // goods being destroyed are not being priced for a buyer.
+    //
+    // Seeding a `disposition: 'destruction'` request put destruction rows on
+    // Central Disposal's Disposal Requests tab and in the valuation queue,
+    // which is a route the app deliberately does not have.
+    direct++;
 
     // Has the destruction actually been carried out yet? The page has its own
     // Pending filter, so the waiting half needs a real population too.
-    final isDone = _rng.nextInt(100) < 58;
+    final isDone = _rng.nextInt(100) < 55;
     final destroyedAt = isDone
         ? sentAt.add(Duration(days: 5 + _rng.nextInt(30)))
         : null;
@@ -1580,7 +1562,7 @@ Future<void> _seedDestructions(Connection conn) async {
   }
 
   print('  destruction:');
-  print('    $viaValuation via Valuation · $direct recorded directly');
+  print('    $direct recorded directly (never via a disposal request)');
   print('    $destroyed destroyed · $pending still pending');
 }
 
@@ -1948,8 +1930,9 @@ Future<void> _seedTenderPipeline(Connection conn) async {
         parameters: [
           reqId,
           r[0] as String,
-          // Central Disposal decides both ways, so the queue carries both.
-          _rng.nextInt(4) == 0 ? 'destruction' : 'sale',
+          // ⚠️ Always 'sale'. A disposal request exists to get goods SOLD;
+          // destruction is recorded directly and never queues here.
+          'sale',
           (unitValue * qty * (0.5 + _rng.nextDouble() * 0.35)).roundToDouble(),
         ],
       );
