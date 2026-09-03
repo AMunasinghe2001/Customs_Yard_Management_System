@@ -1664,3 +1664,13 @@ It was wired into six places — the decision dialog, a Central Disposal tab, a 
 The six that remain — destroy / government_use / auction / re_export / convert / remove_from_premises — each name something the department actually does.
 
 ⚠️ **The tab and its view had to be dropped together.** Removing one alone leaves the controller a length out of step: the bar still paints every tab, but clicks resolve against the shorter list, so tapping does nothing while swiping still works. 15 tabs remain, tabs and views paired.
+
+### The ICT portal is an ERP console (2026-09-03)
+
+⚠️ **ICT alone has a permanent left rail; every other portal keeps its top tab strip.** The others are single-purpose — an officer opens one to do one job. ICT is an **admin console**: four unrelated areas (accounts, the org chart, credentials, the audit trail) that a system admin moves between all day, so a rail keeps all four in view and named at once.
+
+⚠️ **The rail is driven by the SAME `TabController` the body uses**, and rebuilds on `controller.animation`. A rail holding its own copy of the selection falls out of step the moment someone swipes the body — it would still point at the old page. Only the chrome moved; the four tab bodies are untouched.
+
+⚠️ **The emblem appears once, on the rail.** The header names the current *section* instead (`_IctSideRail.itemAt`) — an ERP console names the section you are in at the top and the product once, on the rail. Repeating both wasted the width the header needs for its actions.
+
+The login and signup screens needed no change — they are separate screens, not part of the console shell.

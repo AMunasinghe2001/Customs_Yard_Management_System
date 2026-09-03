@@ -192,14 +192,31 @@ void main() {
     test('the controller has room for it', () {
       expect(dash, contains('TabController(length: 4, vsync: this)'),
           reason: 'a fourth tab needs a fourth slot, or the view throws');
-      expect(dash, contains("Text('Directorate Access')"));
+      // The label now names a rail entry, not a Tab.
+      expect(dash, contains("_IctRailItem('Directorate Access'"));
       expect(dash, contains('DirectorateAccessTab(accent: accent)'));
     });
 
-    test('the strip and the view stay the same length', () {
-      final strip = dash.substring(
-          dash.indexOf('tabs: const ['), dash.indexOf('// ── Body Content'));
-      expect('Tab('.allMatches(strip).length, 4);
+    test('the rail and the view stay the same length', () {
+      // ⚠️ ICT's tab strip became a left RAIL (_IctSideRail), so the four
+      // entries live in its own list now. The count still has to match the
+      // controller and the view: a short controller paints every entry but
+      // resolves clicks against the shorter list, so tapping does nothing.
+      final railStart = dash.indexOf('static const _items = [');
+      final rail = dash.substring(railStart, dash.indexOf('];', railStart));
+      expect('_IctRailItem('.allMatches(rail).length, 4);
+      // The four bodies the TabBarView holds. Counted by NAME rather than by
+      // slicing the children list: its first child is a large inline widget,
+      // so the first "]," closes an inner list, not the TabBarView's.
+      final views = dash.substring(dash.indexOf('// ── Body Content'));
+      for (final tab in const [
+        'YardDirectorateTab(',
+        'DirectorateAccessTab(',
+        'ActivityLogsTab(',
+      ]) {
+        expect(views, contains(tab));
+      }
+      expect(dash, contains('TabController(length: 4'));
     });
   });
 }

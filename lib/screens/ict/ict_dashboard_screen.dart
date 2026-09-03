@@ -776,7 +776,19 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
-      body: Column(
+      // ⚠️ ICT alone is laid out as an ERP console: a permanent left rail and
+      // the work to its right. The other portals are single-purpose -- an
+      // officer opens one to do one job -- so a top tab strip suits them. ICT
+      // is an ADMIN console: four unrelated areas (accounts, the org chart,
+      // credentials, the audit trail) that a system admin moves between all
+      // day, and a rail keeps all four in view and named at once.
+      //
+      // The tab CONTROLLER is unchanged, so swiping still works and the four
+      // tab bodies are untouched -- only the chrome around them moved.
+      body: Row(children: [
+        _IctSideRail(controller: _tabs, accent: accent),
+        Expanded(
+          child: Column(
         children: [
           // ── Top Header ──────────────────────────────────────────
           Container(
@@ -793,45 +805,34 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                   Border(bottom: BorderSide(color: context.colors.borderColor)),
             ),
             child: Row(children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: accent.withOpacity(0.3)),
-                ),
-                // The Customs emblem, matching Appeal / Valuation / Central
-                // Disposal / Top Management. ICT used a terminal glyph, which
-                // made it the one portal that did not look like the others.
-                //
-                // Flat tint (colorFilter, not currentColor) because at 30px the
-                // emblem's inner ship/plane detail renders as a dark blob.
-                child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                    width: 30,
-                    height: 30,
-                    colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
-              ),
-              const Gap(14),
-              // Title + one subtitle line, exactly like the other
-              // directorates. The old version added a
-              // "User Management & Provisioning" pill that none of them have,
-              // and the extra Row is what pushed the filter bar wide enough to
-              // overflow.
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text('ICT Directorate',
-                      style: TextStyle(
-                          color: context.colors.textPrimary,
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800)),
-                  Text(
-                    'User provisioning · yards & directorates across all offices',
-                    style: TextStyle(
-                        color: context.colors.textMuted, fontSize: 12),
-                  ),
-                ],
+              // ⚠️ No emblem or portal name here -- the rail carries both, and
+              // repeating them wastes the width the header needs for the page
+              // title and its actions. An ERP console names the SECTION you
+              // are in at the top; the product is named once, on the rail.
+              AnimatedBuilder(
+                animation: _tabs.animation ?? _tabs,
+                builder: (context, _) {
+                  final item = _IctSideRail.itemAt(_tabs.index);
+                  return Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(item.icon, color: accent, size: 20),
+                    const Gap(12),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(item.label,
+                            style: TextStyle(
+                                color: context.colors.textPrimary,
+                                fontSize: 17,
+                                fontWeight: FontWeight.w800)),
+                        Text(item.hint,
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 12)),
+                      ],
+                    ),
+                  ]);
+                },
               ),
               const Spacer(),
 
@@ -927,81 +928,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 },
               ),
             ]),
-          ),
-
-          // ── Tab bar ─────────────────────────────────────────────
-          // A real TabBar, not a hand-rolled strip: its indicator is driven by
-          // the controller's animation, so it SLIDES with a swipe. The custom
-          // version repainted a plain Container and simply snapped.
-          Container(
-            color: context.colors.cardDark,
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
-            child: Container(
-              decoration: BoxDecoration(
-                color: context.colors.surfaceDark,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.colors.borderColor),
-              ),
-              child: TabBar(
-                controller: _tabs,
-                splashFactory: NoSplash.splashFactory,
-                overlayColor: WidgetStateProperty.all(Colors.transparent),
-                indicatorSize: TabBarIndicatorSize.tab,
-                indicatorPadding: const EdgeInsets.all(4),
-                dividerColor: Colors.transparent,
-                indicator: BoxDecoration(
-                  color: accent.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(9),
-                  border: Border.all(color: accent.withOpacity(0.5)),
-                ),
-                labelColor: accent,
-                unselectedLabelColor: context.colors.textMuted,
-                labelStyle:
-                    const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                tabs: const [
-                  Tab(
-                      height: 44,
-                      child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.groups_rounded, size: 18),
-                            Gap(8),
-                            Text('Staff Accounts'),
-                          ])),
-                  Tab(
-                      height: 44,
-                      child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.account_tree_rounded, size: 18),
-                            Gap(8),
-                            Text('Yards & Directorates'),
-                          ])),
-                  Tab(
-                      height: 44,
-                      child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.vpn_key_rounded, size: 18),
-                            Gap(8),
-                            Text('Directorate Access'),
-                          ])),
-                  Tab(
-                      height: 44,
-                      child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.history_rounded, size: 18),
-                            Gap(8),
-                            Text('Activity Logs'),
-                          ])),
-                ],
-              ),
-            ),
           ),
 
           // ── Body Content ────────────────────────────────────────
@@ -1477,7 +1403,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
             ),
           ),
         ],
-      ),
+          ),
+        ),
+      ]),
     );
   }
 
@@ -1541,6 +1469,227 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
 //  the login/sign-up screens use the styled variant via DirectorateYardPicker.
 
 /// Picks the head-office directorate an account belongs to.
+/// One entry on the ICT console's left rail.
+class _IctRailItem {
+  final String label;
+  final String hint;
+  final IconData icon;
+  const _IctRailItem(this.label, this.hint, this.icon);
+}
+
+/// The ICT console's permanent left rail.
+///
+/// ⚠️ Driven by the SAME [TabController] the body uses, not by its own index.
+/// A rail holding a copy of the selection would fall out of step the moment
+/// someone swiped the body -- the rail would still point at the old page. It
+/// listens to the controller and repaints, so the two can never disagree.
+class _IctSideRail extends StatelessWidget {
+  final TabController controller;
+  final Color accent;
+  const _IctSideRail({required this.controller, required this.accent});
+
+  /// The entry at [index], for the header that names the current section.
+  static _IctRailItem itemAt(int index) =>
+      _items[index.clamp(0, _items.length - 1)];
+
+  static const _items = [
+    _IctRailItem('Staff Accounts', 'Officers & DC / SDDC',
+        Icons.groups_2_rounded),
+    _IctRailItem('Yards & Directorates', 'Offices and their yards',
+        Icons.account_tree_rounded),
+    _IctRailItem('Directorate Access', 'Reissue sign-in details',
+        Icons.vpn_key_rounded),
+    _IctRailItem('Activity Logs', 'Every action, every office',
+        Icons.history_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 264,
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        border: Border(
+            right: BorderSide(color: context.colors.borderColor)),
+      ),
+      child: AnimatedBuilder(
+        // Rebuilds as the controller animates, so a swipe moves the rail with
+        // the page rather than snapping at the end of it.
+        animation: controller.animation ?? controller,
+        builder: (context, _) => Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // ── Brand ────────────────────────────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+              child: Row(children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: accent.withOpacity(0.3)),
+                  ),
+                  child: SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                      width: 26,
+                      height: 26,
+                      colorFilter: ColorFilter.mode(accent, BlendMode.srcIn)),
+                ),
+                const Gap(12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('SL Customs',
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800)),
+                      Text('ICT Console',
+                          style: TextStyle(
+                              color: accent,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+              ]),
+            ),
+            Divider(height: 1, color: context.colors.borderColor),
+            const Gap(14),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+              child: Text('ADMINISTRATION',
+                  style: TextStyle(
+                      color: context.colors.textMuted,
+                      fontSize: 9.5,
+                      letterSpacing: 1.2,
+                      fontWeight: FontWeight.w800)),
+            ),
+            for (var i = 0; i < _items.length; i++)
+              _IctRailTile(
+                item: _items[i],
+                accent: accent,
+                selected: controller.index == i,
+                onTap: () => controller.animateTo(i),
+              ),
+            const Spacer(),
+            Divider(height: 1, color: context.colors.borderColor),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+              child: Row(children: [
+                Icon(Icons.shield_moon_rounded,
+                    size: 14, color: context.colors.textMuted),
+                const Gap(8),
+                Expanded(
+                  child: Text('System Administration',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 11)),
+                ),
+              ]),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One rail row: icon, label, and the line of hint text under it.
+class _IctRailTile extends StatefulWidget {
+  final _IctRailItem item;
+  final Color accent;
+  final bool selected;
+  final VoidCallback onTap;
+  const _IctRailTile({
+    required this.item,
+    required this.accent,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  State<_IctRailTile> createState() => _IctRailTileState();
+}
+
+class _IctRailTileState extends State<_IctRailTile> {
+  /// ⚠️ Tracked explicitly, like the yard rail's. An InkWell's own hover
+  /// highlight is a faint overlay that barely registers against a dark rail,
+  /// so pointing at a row gave almost no feedback.
+  bool _hovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = widget.accent;
+    final selected = widget.selected;
+    // Selected wins over hover: an open page must not restyle just because
+    // the pointer crosses it.
+    final tint = selected
+        ? accent
+        : (_hovered ? accent.withOpacity(0.85) : context.colors.textSecondary);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 0, 12, 4),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hovered = true),
+        onExit: (_) => setState(() => _hovered = false),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: widget.onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 160),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: selected
+                    ? accent.withOpacity(0.14)
+                    : (_hovered
+                        ? context.colors.surfaceDark
+                        : Colors.transparent),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: selected
+                      ? accent.withOpacity(0.4)
+                      : Colors.transparent,
+                ),
+              ),
+              child: Row(children: [
+                Icon(widget.item.icon, size: 19, color: tint),
+                const Gap(12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(widget.item.label,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: tint,
+                              fontSize: 13.5,
+                              fontWeight:
+                                  selected ? FontWeight.w700 : FontWeight.w600)),
+                      const Gap(2),
+                      Text(widget.item.hint,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 10.5)),
+                    ],
+                  ),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DirectorateField extends ConsumerWidget {
   const _DirectorateField({
     required this.value,
