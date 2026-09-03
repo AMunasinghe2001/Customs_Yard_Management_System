@@ -109,7 +109,7 @@ void main() {
       'Disposal Requests', 'Tender Sales', 'Unsold Tenders', 'Committees',
       'Perishable',
       'Sold Goods', 'Unsold Goods', 'Destroyed Goods',
-      'Government Use', 'Remanded', 'Auction', 'Converted', 'Removed',
+      'Government Use', 'Auction', 'Converted', 'Removed',
       'Taxes', 'Expenses', 'Reports',
     ];
 
@@ -141,13 +141,16 @@ void main() {
           .map((m) => m.group(1)!)
           .toList();
       expect(filters, [
-        'government_use', 'remand', 'auction', 'convert', 'remove_from_premises',
+        'government_use', 'auction', 'convert', 'remove_from_premises',
       ]);
     });
 
     test('no tab was lost or gained in the reorder', () {
       expect(labels.toSet().length, labels.length, reason: 'a duplicate label');
-      expect(labels.length, 16);
+      // ⚠️ Against the EXPECTED list, not a number typed here. A hard-coded
+      // count has to be edited every time a tab is added or removed, and the
+      // edit is what gets forgotten.
+      expect(labels.length, expected.length);
     });
   });
 }

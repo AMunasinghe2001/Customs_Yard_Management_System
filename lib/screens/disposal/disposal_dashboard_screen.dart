@@ -316,16 +316,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(Icons.reply_all_rounded, size: 18),
-                              Gap(8),
-                              Text('Remanded'),
-                            ])),
-                    Tab(
-                        height: 44,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
                               Icon(Icons.gavel_rounded, size: 18),
                               Gap(8),
                               Text('Auction'),
@@ -407,16 +397,6 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'Unsold goods the Top Management Directorate assigns '
                         'to a government department will appear here.'),
                 UnsoldProposalsTab(
-                    title: 'Remanded Goods',
-                    countNoun: 'Remanded',
-                    proposalFilter: 'remand',
-                    tabKey: 'outcome-remand',
-                    emptyIcon: Icons.gavel_rounded,
-                    emptyMessage: 'No remanded goods',
-                    emptySubtitle:
-                        'Unsold goods the Top Management Directorate remands '
-                        'to court custody will appear here.'),
-                UnsoldProposalsTab(
                     title: 'Auction Goods',
                     countNoun: 'For auction',
                     proposalFilter: 'auction',
@@ -481,7 +461,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
   ///
   /// Null keeps this the Unsold Goods tab; set to an outcome code it lists
   /// only the goods the Top Management Directorate decided that way, so Government Use /
-  /// Remand / Convert / Removed each get a tab without a copy of this file.
+  /// Convert / Removed each get a tab without a copy of this file.
   final String? proposalFilter;
 
   /// Keys this tab's own search box, yard filter and pager, so switching tabs
@@ -489,7 +469,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
   final String tabKey;
 
   /// What an empty table says. One widget serves every outcome tab, so
-  /// without these each of Removed / Converted / Auction / Remanded read
+  /// without these each of Removed / Converted / Auction read
   /// "No unresolved unsold packages" -- the Unsold tab's wording -- and gave
   /// no clue which tab you were even on.
   final String? emptyMessage;

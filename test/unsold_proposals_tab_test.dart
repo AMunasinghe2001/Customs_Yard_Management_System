@@ -105,7 +105,7 @@ void main() {
       (tester) async {
     // Central Disposal's tab is READ-ONLY: the outcome is chosen in the Top
     // Management Directorate's portal (unsold_decision_tab.dart) and this tab
-    // only reports it. The old version of this test expected Destroy / Remand /
+    // only reports it. The old version of this test expected Destroy /
     // Government Use / Auction action buttons here, which is a capability this
     // widget deliberately no longer has.
     final now = DateTime.now();

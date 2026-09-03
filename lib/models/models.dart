@@ -1878,7 +1878,8 @@ class UnsoldProposalModel {
   final String id;
   final String forfeitedPackageId;
 
-  /// destroy | remand | government_use | auction
+  /// destroy | government_use | auction | re_export | convert |
+  /// remove_from_premises
   final String proposal;
   final String? note;
   final String? yard;
@@ -1907,9 +1908,14 @@ class UnsoldProposalModel {
 }
 
 /// The outcomes, in the order the Top Management Directorate sees them.
+///
+/// ⚠️ There is no 'remand' here. Remand is a COURT's act, not a disposal --
+/// no yard action stands behind it, and nothing carries it out. Offering it
+/// made it a dead end: the goods left Unsold Goods, appeared on a page named
+/// Remanded, and stayed there for ever because nothing acts on them. See
+/// postgres/08_drop_remand_outcome.sql.
 const List<String> kUnsoldProposals = [
   'destroy',
-  'remand',
   'government_use',
   'auction',
   're_export',
@@ -1921,8 +1927,6 @@ String unsoldProposalLabel(String? p) {
   switch (p) {
     case 'destroy':
       return 'Destroy';
-    case 'remand':
-      return 'Remand';
     case 'government_use':
       return 'Government Use';
     case 'auction':

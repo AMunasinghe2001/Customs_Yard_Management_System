@@ -37,7 +37,7 @@ void main() {
       '/other-packages', '/perishable-goods',
       '/returned-packages', '/sold-packages', '/unsold-packages',
       '/destroyed-packages', '/reexported-packages',
-      '/government-use-packages', '/remanded-packages', '/auction-packages',
+      '/government-use-packages', '/auction-packages',
       '/converted-packages', '/removed-packages',
       '/tender-disposals', '/reports',
     ];

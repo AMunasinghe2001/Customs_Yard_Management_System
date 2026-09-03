@@ -1654,3 +1654,13 @@ That page watches **every** yard there, so without a yard dropdown an officer ca
 ### A tender that has already RUN (2026-09-03)
 
 ⚠️ **The valuation is SEALED until the sale's close time passes** — it is the reserve price, so it may only be shown after bidding closes. Every seeded open sale closed in the *future*, so the Latest Valuation column on Tender Sales read "Sealed" on every row and was never once populated. A sale dated **today whose close time has already gone** is the state that shows it: bidding finished, reserve out, still listed because items remain undecided.
+
+### 'remand' is not an outcome this system has (2026-09-03)
+
+⚠️ **Remand is a COURT's act, not a disposal.** No yard action stands behind it, no page carries it out, and nothing changes as a result of choosing it. Offering it made it a **dead end**: the goods left Unsold Goods, appeared on a page named Remanded, and stayed there for ever because nothing acts on them.
+
+It was wired into six places — the decision dialog, a Central Disposal tab, a nav entry, a route, a report card, and the seeder. `postgres/08_drop_remand_outcome.sql` drops it from the CHECK constraint and re-files the one existing row as `remove_from_premises` (the nearest real outcome: the goods leave, and the record says so). Self-verifying; ran green.
+
+The six that remain — destroy / government_use / auction / re_export / convert / remove_from_premises — each name something the department actually does.
+
+⚠️ **The tab and its view had to be dropped together.** Removing one alone leaves the controller a length out of step: the bar still paints every tab, but clicks resolve against the shorter list, so tapping does nothing while swiping still works. 15 tabs remain, tabs and views paired.

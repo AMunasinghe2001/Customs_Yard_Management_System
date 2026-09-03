@@ -103,12 +103,11 @@ void main() {
     });
 
     test('each outcome tab says something specific when empty', () {
-      // One widget serves all five outcome tabs, so without per-tab wording
-      // each of Removed / Converted / Auction / Remanded / Government Use
-      // read "No unresolved unsold packages" — the Unsold tab's own message.
+      // One widget serves all four outcome tabs, so without per-tab wording
+      // each of Removed / Converted / Auction / Government Use read
+      // "No unresolved unsold packages" — the Unsold tab's own message.
       for (final phrase in [
         'No goods assigned to government use',
-        'No remanded goods',
         'No goods sent to auction',
         'No converted goods',
         'No goods removed from the premises',

@@ -70,7 +70,6 @@ const _navDisposed = [
 const _navOutcomes = [
   NavItem('Government Use', Icons.account_balance_rounded,
       '/government-use-packages'),
-  NavItem('Remanded Goods', Icons.reply_all_rounded, '/remanded-packages'),
   NavItem('Auction Goods', Icons.gavel_rounded, '/auction-packages'),
   NavItem('Converted Goods', Icons.autorenew_rounded, '/converted-packages'),
   NavItem('Removed from Premises', Icons.logout_rounded, '/removed-packages'),

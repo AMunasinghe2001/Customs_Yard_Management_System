@@ -1896,7 +1896,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// The goods that exhausted EVERY avenue: the Valuation Tender, Tender 1-3
   /// and the committee-priced final tender all failed. For each one it prints
   /// the committee the ADG appointed to value it and the final outcome the DG
-  /// proposed (destroy / remand / government use / auction), or "Pending
+  /// proposed (destroy / government use / auction / convert), or "Pending
   /// decision" when the DG has not ruled yet.
   Future<void> _generateNotSoldReport(String format) async {
     const key = 'Not Sold Packages';
@@ -2146,7 +2146,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   static String _reportMoney(double v) =>
       v == 0 ? '-' : NumberFormat('#,##0.00').format(v);
 
-  /// Goods the Top Management Directorate decided a particular way — Unsold, Remand, Auction
+  /// Goods the Top Management Directorate decided a particular way — Unsold, Auction
   /// or Convert. One generator for all of them: the report differs only by
   /// which `unsold_proposals.proposal` it keeps.
   ///
@@ -2624,27 +2624,6 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                       onExcel: () => _generateNotSoldReport('excel'),
                     ),
                     // ── The Outcomes, one report each ──
-                    _buildReportCard(
-                      title: 'Remanded Goods',
-                      description: 'Unsold goods remanded for further action.',
-                      icon: Icons.reply_all_rounded,
-                      color: const Color(0xFF1565C0),
-                      onView: () => _generateOutcomeReport('view',
-                          key: 'Remanded Goods',
-                          title: 'REMANDED GOODS',
-                          fileBase: 'Remanded_Goods',
-                          outcome: 'remand'),
-                      onPdf: () => _generateOutcomeReport('pdf',
-                          key: 'Remanded Goods',
-                          title: 'REMANDED GOODS',
-                          fileBase: 'Remanded_Goods',
-                          outcome: 'remand'),
-                      onExcel: () => _generateOutcomeReport('excel',
-                          key: 'Remanded Goods',
-                          title: 'REMANDED GOODS',
-                          fileBase: 'Remanded_Goods',
-                          outcome: 'remand'),
-                    ),
                     _buildReportCard(
                       title: 'Auction Goods',
                       description: 'Unsold goods sent to public auction.',

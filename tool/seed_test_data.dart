@@ -1335,7 +1335,7 @@ const _saleExpenses = <(String, String)>[
 /// Finally some packages exhaust every avenue: priced, re-tendered, still
 /// unsold. Those get an `unsold_proposals` row -- the Top Management
 /// directorate's final outcome -- which is what moves them off Unsold Goods
-/// and onto Government Use / Remanded / Auction / Converted / Removed.
+/// and onto Government Use / Auction / Converted / Removed.
 Future<void> _seedUnsoldOutcomes(Connection conn) async {
   // The unsold pool: every round failed, and the last one is still open.
   final rows = await conn.execute(
@@ -1491,7 +1491,7 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
       // package no tab claims.
       if (ranCommitteeRound && _rng.nextInt(100) < 90) {
         // ⚠️ Cycled, not chosen at random. Each outcome has its OWN tab
-        // (Government Use / Remanded / Auction / Converted / Removed), and a
+        // (Government Use / Auction / Converted / Removed), and a
         // random pick over a small pool leaves some of those tabs empty.
         final outcome = _unsoldOutcomes[outcomeIdx++ % _unsoldOutcomes.length];
         await conn.execute(
@@ -1567,7 +1567,6 @@ final _committeeMembers = jsonEncode([
 /// carries the package onto that outcome's own tab.
 const _unsoldOutcomes = <(String, String)>[
   ('government_use', 'Allocated to a government department'),
-  ('remand', 'Remanded pending further inquiry'),
   ('auction', 'Referred to public auction'),
   ('convert', 'To be converted for departmental use'),
   ('remove_from_premises', 'To be removed from the premises'),

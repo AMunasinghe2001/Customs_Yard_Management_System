@@ -234,16 +234,6 @@ final routerProvider = Provider<GoRouter>((ref) {
                   countLabel: 'For Government Use',
                   proposalFilter: 'government_use'))),
       GoRoute(
-          path: '/remanded-packages',
-          pageBuilder: (_, state) => NoTransitionPage(
-              key: state.pageKey,
-              child: const UnsoldPackagesScreen(
-                  route: '/remanded-packages',
-                  title: 'Remanded Goods',
-                  subtitle: 'Unsold goods remanded for further action',
-                  countLabel: 'Remanded',
-                  proposalFilter: 'remand'))),
-      GoRoute(
           path: '/auction-packages',
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey,

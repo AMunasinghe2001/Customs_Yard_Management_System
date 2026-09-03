@@ -24,7 +24,7 @@ import '../executive/unsold_shared.dart';
 ///
 /// One widget serves SIX pages. With [proposalFilter] null it lists every
 /// unsold package (the Unsold Goods page); set to an outcome code it lists
-/// only the goods decided that way — Government Use, Remand, Convert and
+/// only the goods decided that way — Government Use, Convert and
 /// "Removed from the Premises" each get their own page that way, without
 /// duplicating the header, filters, table and pager five times over.
 ///

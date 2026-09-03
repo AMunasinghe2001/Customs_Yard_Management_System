@@ -75,11 +75,6 @@ String unsoldLocation(PackageModel? pkg, String? itemId) {
         icon: Icons.delete_forever_rounded,
         colour: context.colors.dangerRed
       );
-    case 'remand':
-      return (
-        icon: Icons.reply_all_rounded,
-        colour: context.colors.accentLightBlue
-      );
     case 'government_use':
       return (
         icon: Icons.account_balance_rounded,
@@ -121,7 +116,7 @@ const double kUnsoldTableMinWidth = 945;
 ///
 /// The same reasoning governs the last data column. On the Unsold Goods page
 /// the outcome varies row to row, so **Final Outcome** earns its place. On a
-/// single-outcome page (Government Use, Remanded, Auction, Converted, Removed)
+/// single-outcome page (Government Use, Auction, Converted, Removed)
 /// every row carries the SAME chip — it is the page's own title repeated — so
 /// those pages show **Decided On** instead, which does differ per row.
 const List<DataColumn2> kUnsoldColumns = [
