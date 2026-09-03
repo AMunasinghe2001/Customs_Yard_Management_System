@@ -5417,6 +5417,29 @@ class DisposalService {
     return out;
   }
 
+  /// Every recorded final outcome, keyed by **package_item_id**.
+  ///
+  /// ⚠️ The proposals table keys on `forfeited_package_id`, which the pages
+  /// that decide already hold. The Perishable Goods page does not: it lists
+  /// package ITEMS straight off the packages, and never loads a forfeited row.
+  /// Without this it could not show the DG's decision at all -- the yard and
+  /// Central Disposal would be looking at goods whose fate had been settled
+  /// and see nothing of it.
+  Future<Map<String, UnsoldProposalModel>> getUnsoldProposalsByItem() async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('unsold_proposals')
+        .select('*, forfeited_packages!inner(item_id)'));
+    final out = <String, UnsoldProposalModel>{};
+    for (final e in (rows as List)) {
+      final row = e as Map<String, dynamic>;
+      final fp = row['forfeited_packages'] as Map<String, dynamic>?;
+      final itemId = fp?['item_id']?.toString();
+      if (itemId == null || itemId.isEmpty) continue;
+      out[itemId] = UnsoldProposalModel.fromJson(row);
+    }
+    return out;
+  }
+
   /// Record (or replace) the Top Management Directorate's final outcome for a package.
   Future<void> saveUnsoldProposal({
     required String forfeitedPackageId,

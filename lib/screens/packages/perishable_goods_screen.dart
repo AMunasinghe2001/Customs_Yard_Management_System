@@ -19,6 +19,7 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/year_filter.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
+import '../executive/unsold_shared.dart';
 
 /// One perishable item, with the package it belongs to.
 class PerishableRow {
@@ -40,13 +41,26 @@ class PerishableRow {
 final perishableRowsProvider = FutureProvider<List<PerishableRow>>((ref) async {
   final packages = await ref.watch(livePackagesProvider.future);
   final sentKeys = await ref.watch(sentPerishableKeysProvider.future);
+  // ⚠️ An item the DG has ruled on STAYS on this page. It has been sent, so
+  // `sentKeys` holds it -- but dropping it would mean the yard and Central
+  // Disposal never see the decision at all: the goods would simply vanish
+  // from the only page that lists them. The row stays, carrying its outcome.
+  //
+  // ⚠️ NOT awaited. Awaiting it would make the whole list wait on the
+  // outcomes query, so a slow or unavailable one leaves the page empty rather
+  // than merely un-annotated -- and the goods matter more than the label.
+  final decided =
+      ref.watch(unsoldProposalsByItemProvider).valueOrNull ?? const {};
 
   final rows = <PerishableRow>[];
   for (final p in packages) {
     for (final i in p.items) {
       if (i.nature != kNaturePerishable) continue;
-      // Once sent it belongs to the disposal request, not here.
-      if (sentKeys.contains('${p.id}:${i.id}')) continue;
+      // Once sent it belongs to the disposal request, not here -- unless a
+      // final outcome has come back for it.
+      if (sentKeys.contains('${p.id}:${i.id}') && !decided.containsKey(i.id)) {
+        continue;
+      }
       rows.add(PerishableRow(package: p, item: i));
     }
   }
@@ -115,6 +129,10 @@ class _PerishableGoodsScreenState
   @override
   Widget build(BuildContext context) {
     final async = ref.watch(perishableRowsProvider);
+    // The DG's rulings, keyed by item. Both portals read the same map, so the
+    // yard and Central Disposal cannot describe one outcome differently.
+    final outcomes = ref.watch(unsoldProposalsByItemProvider).valueOrNull ??
+        const <String, UnsoldProposalModel>{};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
@@ -284,6 +302,15 @@ class _PerishableGoodsScreenState
                                 // perishable has NO appeal window; that is the
                                 // whole point of the nature. Nothing is being
                                 // waited out, so nothing should be counted.
+                                //
+                                // The DG's ruling, once there is one. Both the
+                                // yard and Central Disposal read the SAME chip
+                                // the Top Management portal shows, so the three
+                                // cannot describe one outcome differently.
+                                const DataColumn2(
+                                    label: Center(child: Text('Final Outcome')),
+                                    size: ColumnSize.S,
+                                    fixedWidth: 190),
                                 const DataColumn2(
                                     label: Center(child: Text('Details')),
                                     size: ColumnSize.S,
@@ -315,6 +342,10 @@ class _PerishableGoodsScreenState
                                                   r.package.srNumber)),
                                               overflow:
                                                   TextOverflow.ellipsis)),
+                                        DataCell(Center(
+                                            child: UnsoldOutcomeChip(
+                                                proposal:
+                                                    outcomes[r.item.id]))),
                                         DataCell(Center(
                                           child: IconButton(
                                             icon: Icon(

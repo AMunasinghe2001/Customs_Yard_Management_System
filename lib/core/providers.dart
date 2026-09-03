@@ -844,6 +844,15 @@ final exhaustedUnsoldProvider =
 });
 
 // The recorded final outcomes, keyed by forfeited_package_id.
+/// The DG's final outcomes keyed by package_item_id, for pages that list
+/// items rather than forfeited packages (Perishable Goods).
+final unsoldProposalsByItemProvider =
+    FutureProvider<Map<String, UnsoldProposalModel>>((ref) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getUnsoldProposalsByItem();
+});
+
 final unsoldProposalsProvider =
     FutureProvider<Map<String, UnsoldProposalModel>>((ref) async {
   ref.watch(tenderBidsChangeTriggerProvider);

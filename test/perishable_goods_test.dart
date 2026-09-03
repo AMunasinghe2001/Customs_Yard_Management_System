@@ -33,12 +33,18 @@ PackageModel _pkg(List<PackageItem> items, {DateTime? entry}) => PackageModel(
 Widget _harness({
   required List<PackageModel> packages,
   Set<String> sent = const {},
+  Map<String, UnsoldProposalModel> outcomes = const {},
   bool readOnly = false,
 }) =>
     ProviderScope(
       overrides: [
         livePackagesProvider.overrideWith((ref) => Future.value(packages)),
         sentPerishableKeysProvider.overrideWith((ref) => Future.value(sent)),
+        // The DG's rulings, shown on this page so the yard and Central
+        // Disposal see what was decided. Overridden here or the widget opens
+        // a real database socket.
+        unsoldProposalsByItemProvider
+            .overrideWith((ref) => Future.value(outcomes)),
         storageRateProvider
             .overrideWith((ref) => Future.value(const <DateTime, double>{})),
       ],
@@ -120,6 +126,38 @@ void main() {
       expect(find.text('Fresh Prawns'), findsOneWidget);
       expect(find.text('Steel Bolts'), findsNothing,
           reason: 'a normal item belongs on the disposition pages');
+    });
+
+    testWidgets('a decided item STAYS, carrying the DG\'s outcome',
+        (tester) async {
+      // ⚠️ It has been sent, so `sentKeys` holds it -- but dropping it would
+      // mean the yard and Central Disposal never see what was decided: the
+      // goods would simply vanish from the only page that lists them.
+      tester.view.physicalSize = const Size(1600, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+
+      await tester.pumpWidget(_harness(
+        packages: [
+          _pkg([_item('Fresh Prawns', nature: kNaturePerishable)])
+        ],
+        sent: {'p1:Fresh Prawns'},
+        outcomes: {
+          'Fresh Prawns': UnsoldProposalModel(
+            id: 'u1',
+            forfeitedPackageId: 'f1',
+            proposal: 'destroy',
+            note: 'Unsold and spoiling',
+            yard: 'GL1',
+            decidedAt: DateTime(2026, 5, 1),
+          ),
+        },
+      ));
+      await tester.pumpAndSettle();
+      expect(find.text('Fresh Prawns'), findsOneWidget,
+          reason: 'a decided item must not vanish');
+      expect(find.text('Destroy'), findsOneWidget,
+          reason: "the DG's outcome is shown on the row");
     });
 
     testWidgets('an item already sent leaves the page', (tester) async {

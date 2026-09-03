@@ -1557,3 +1557,11 @@ So `getUnsoldPerishables` deliberately tests **neither** `tenderCount` **nor** a
 ⚠️ **`_kTabCount`, the `Tab` widgets and the `TabBarView` children must move together** — a short controller still *paints* every tab, but clicks resolve against the shorter one, so tapping does nothing while swiping still works. A test asserts all three agree.
 
 Seeded: 14 unsold perishables — 6 awaiting a decision, 8 decided. Their outcomes are a **narrower** set than for normal goods (destroy / remove / convert): re-offering spoiling goods at auction is not a real option.
+
+### The DG's decision reaches the Perishable page (2026-09-03)
+
+⚠️ **`unsold_proposals` keys on `forfeited_package_id`, which the Perishable Goods page never loads** — it lists package ITEMS straight off the packages. `getUnsoldProposalsByItem` re-keys them by `package_item_id` (via `forfeited_packages!inner(item_id)`), so the yard and Central Disposal can show the same `UnsoldOutcomeChip` the Top Management portal shows.
+
+⚠️ **A decided item STAYS on the page.** It has been sent, so `sentKeys` holds it — but dropping it would mean the two portals never see the ruling at all: the goods would simply vanish from the only page that lists them.
+
+⚠️ **The outcomes are read with `.valueOrNull`, not awaited.** Awaiting inside `perishableRowsProvider` made the whole list wait on that query, so a slow one left the page **empty** rather than merely un-annotated — the goods matter more than the label. (It also opened a real DB socket under test until the harness overrode it.)
