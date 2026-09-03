@@ -91,7 +91,11 @@ void main() {
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
 
-      expect(find.text('Directorate Access'), findsOneWidget);
+      // ⚠️ The section name comes from the CONSOLE header now, not from
+      // the tab -- a module that reprints its own title twenty pixels
+      // under the header is what the redesign got rid of. The tab names
+      // the table it holds instead.
+      expect(find.text('Directorate Accounts'), findsOneWidget);
       expect(find.text('Central Disposal Directorate'), findsOneWidget);
       expect(find.text('Appeal Directorate'), findsOneWidget);
       expect(find.text('disposal.dc'), findsOneWidget);

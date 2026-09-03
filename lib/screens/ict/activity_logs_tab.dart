@@ -15,6 +15,7 @@ import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
+import 'ict_ui.dart';
 
 /// How the log's date window is being chosen.
 ///
@@ -215,201 +216,150 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
 
     return Padding(
       padding: const EdgeInsets.all(24),
+      // ⚠️ No page heading here. The console header names this section and
+      // says what it holds; a screen that prints its own title again twenty
+      // pixels below is the surest sign of a page designed on its own rather
+      // than as one module of a console.
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Header ────────────────────────────────────────────
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text('Activity Logs',
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700)),
-                    Text(
-                        'Every action across all yards and directorates',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: context.colors.textSecondary,
-                            fontSize: 13)),
-                  ],
-                ),
-              ),
-              const Gap(16),
-              // The window currently in force, and a one-tap way out of it.
+          // ── Period ────────────────────────────────────────────
+          // One setting with five positions, so it is drawn as one track --
+          // see IctSegmented for why five separate buttons read wrongly.
+          Row(children: [
+            IctSegmented(
+              accent: accent,
+              children: [
+                for (final p in LogPeriod.values)
+                  IctSegment(
+                    label: p.label,
+                    icon: switch (p) {
+                      LogPeriod.all => Icons.all_inclusive_rounded,
+                      LogPeriod.day => Icons.today_rounded,
+                      LogPeriod.range => Icons.date_range_rounded,
+                      LogPeriod.month => Icons.calendar_view_month_rounded,
+                      LogPeriod.year => Icons.calendar_today_rounded,
+                    },
+                    selected: _period == p,
+                    onTap: () => _pickPeriod(p),
+                  ),
+              ],
+            ),
+            const Gap(12),
+            // The exact window in force, and a one-tap way out of it. Only
+            // once one IS in force: with no window the segmented control
+            // already says "All Time", and a chip repeating it is noise.
+            if (range != null)
               _PeriodChip(
                 label: _periodLabel(range),
                 accent: accent,
-                active: range != null,
-                onClear: range == null
-                    ? null
-                    : () {
-                        ref.read(ictLogRangeProvider.notifier).state = null;
-                        setState(() {
-                          _period = LogPeriod.all;
-                          _resetPage();
-                        });
-                      },
+                active: true,
+                onClear: () {
+                  ref.read(ictLogRangeProvider.notifier).state = null;
+                  setState(() {
+                    _period = LogPeriod.all;
+                    _resetPage();
+                  });
+                },
               ),
-            ],
-          ).animate().fadeIn(duration: 300.ms),
-          const Gap(18),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(14),
 
-          // ── Period buttons ────────────────────────────────────
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              for (final p in LogPeriod.values)
-                _PeriodButton(
-                  label: p.label,
-                  icon: switch (p) {
-                    LogPeriod.all => Icons.all_inclusive_rounded,
-                    LogPeriod.day => Icons.today_rounded,
-                    LogPeriod.range => Icons.date_range_rounded,
-                    LogPeriod.month => Icons.calendar_view_month_rounded,
-                    LogPeriod.year => Icons.calendar_today_rounded,
-                  },
-                  accent: accent,
-                  selected: _period == p,
-                  onTap: () => _pickPeriod(p),
-                ),
-            ],
-          ).animate().fadeIn(duration: 300.ms, delay: 60.ms),
-          const Gap(16),
-
-          // ── Search + filters ──────────────────────────────────
+          // ── Toolbar ───────────────────────────────────────────
           async.maybeWhen(
-            data: (logs) => Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: TextField(
-                    controller: _searchCtrl,
-                    style: TextStyle(color: context.colors.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Search action, user, entity or details…',
-                      prefixIcon:
-                          Icon(Icons.search_rounded, color: accent, size: 20),
-                      suffixIcon: _search.isEmpty
-                          ? null
-                          : IconButton(
-                              icon: Icon(Icons.clear_rounded,
-                                  size: 18, color: context.colors.textMuted),
-                              onPressed: () {
-                                _searchCtrl.clear();
-                                setState(() {
-                                  _search = '';
-                                  _resetPage();
-                                });
-                              },
-                            ),
-                      isDense: true,
-                      filled: true,
-                      fillColor: accent.withOpacity(0.06),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 14),
-                      border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide:
-                              BorderSide(color: accent.withOpacity(0.4))),
-                      enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide:
-                              BorderSide(color: accent.withOpacity(0.4))),
-                      focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: BorderSide(color: accent, width: 1.5)),
-                    ),
-                    onChanged: (v) => setState(() {
-                      _search = v;
+            data: (logs) => IctToolbar(children: [
+              Expanded(
+                flex: 3,
+                child: IctSearchField(
+                  controller: _searchCtrl,
+                  accent: accent,
+                  hintText: 'Search action, user, entity or details',
+                  onChanged: (v) => setState(() {
+                    _search = v;
+                    _resetPage();
+                  }),
+                  onClear: () {
+                    _searchCtrl.clear();
+                    setState(() {
+                      _search = '';
                       _resetPage();
-                    }),
-                  ),
+                    });
+                  },
                 ),
-                const Gap(14),
-                Expanded(
-                  flex: 2,
-                  child: _LogFilter(
-                    label: 'Yard',
-                    icon: Icons.warehouse_rounded,
-                    accent: accent,
-                    value: _selectedYard,
-                    options: [
-                      const StyledDropdownOption('all', 'All Yards'),
-                      for (final o
-                          in ref.watch(yardFilterOptionsProvider).valueOrNull ??
-                              [
-                                for (final y in kYards)
-                                  YardFilterOption(
-                                      value: y.code,
-                                      label: y.name,
-                                      filterYard: y.code)
-                              ])
-                        StyledDropdownOption(o.value, o.label),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _selectedYard = v ?? 'all';
-                      _resetPage();
-                    }),
-                  ),
+              ),
+              Expanded(
+                flex: 2,
+                child: IctSelect(
+                  label: 'Yard',
+                  icon: Icons.warehouse_rounded,
+                  accent: accent,
+                  value: _selectedYard,
+                  options: [
+                    const StyledDropdownOption('all', 'All Yards'),
+                    for (final o
+                        in ref.watch(yardFilterOptionsProvider).valueOrNull ??
+                            [
+                              for (final y in kYards)
+                                YardFilterOption(
+                                    value: y.code,
+                                    label: y.name,
+                                    filterYard: y.code)
+                            ])
+                      StyledDropdownOption(o.value, o.label),
+                  ],
+                  onChanged: (v) => setState(() {
+                    _selectedYard = v ?? 'all';
+                    _resetPage();
+                  }),
                 ),
-                const Gap(14),
-                Expanded(
-                  flex: 2,
-                  child: _LogFilter(
-                    label: 'Directorate / Role',
-                    icon: Icons.badge_rounded,
-                    accent: accent,
-                    value: _selectedRole,
-                    // Every role that writes to the log, so ICT can watch one
-                    // office at a time.
-                    options: const [
-                      StyledDropdownOption('all', 'All Roles'),
-                      StyledDropdownOption('officer', 'Officer'),
-                      StyledDropdownOption('admin', 'DC / SDDC'),
-                      StyledDropdownOption('disposal', 'Central Disposal'),
-                      StyledDropdownOption('valuation', 'Valuation'),
-                      StyledDropdownOption('appeal', 'Appeal'),
-                      StyledDropdownOption('executive', 'Top Management'),
-                      StyledDropdownOption('ict', 'ICT'),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _selectedRole = v ?? 'all';
-                      _resetPage();
-                    }),
-                  ),
+              ),
+              Expanded(
+                flex: 2,
+                child: IctSelect(
+                  label: 'Directorate / Role',
+                  icon: Icons.badge_rounded,
+                  accent: accent,
+                  value: _selectedRole,
+                  // Every role that writes to the log, so ICT can watch one
+                  // office at a time.
+                  options: const [
+                    StyledDropdownOption('all', 'All Roles'),
+                    StyledDropdownOption('officer', 'Officer'),
+                    StyledDropdownOption('admin', 'DC / SDDC'),
+                    StyledDropdownOption('disposal', 'Central Disposal'),
+                    StyledDropdownOption('valuation', 'Valuation'),
+                    StyledDropdownOption('appeal', 'Appeal'),
+                    StyledDropdownOption('executive', 'Top Management'),
+                    StyledDropdownOption('ict', 'ICT'),
+                  ],
+                  onChanged: (v) => setState(() {
+                    _selectedRole = v ?? 'all';
+                    _resetPage();
+                  }),
                 ),
-                const Gap(14),
-                Expanded(
-                  flex: 2,
-                  child: _LogFilter(
-                    label: 'Activity',
-                    icon: Icons.category_rounded,
-                    accent: accent,
-                    value: _selectedEntity,
-                    options: [
-                      const StyledDropdownOption('all', 'All Activity'),
-                      for (final e in _entityTypes(logs))
-                        StyledDropdownOption(e, _prettyEntity(e)),
-                    ],
-                    onChanged: (v) => setState(() {
-                      _selectedEntity = v ?? 'all';
-                      _resetPage();
-                    }),
-                  ),
+              ),
+              Expanded(
+                flex: 2,
+                child: IctSelect(
+                  label: 'Activity',
+                  icon: Icons.category_rounded,
+                  accent: accent,
+                  value: _selectedEntity,
+                  options: [
+                    const StyledDropdownOption('all', 'All Activity'),
+                    for (final e in _entityTypes(logs))
+                      StyledDropdownOption(e, _prettyEntity(e)),
+                  ],
+                  onChanged: (v) => setState(() {
+                    _selectedEntity = v ?? 'all';
+                    _resetPage();
+                  }),
                 ),
-              ],
-            ),
-            orElse: () => const SizedBox(height: 48),
+              ),
+            ]),
+            orElse: () => const SizedBox(height: 66),
           ).animate().fadeIn(duration: 300.ms, delay: 120.ms),
-          const Gap(18),
+          const Gap(16),
 
           // ── Table ─────────────────────────────────────────────
           Expanded(
@@ -426,68 +376,56 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                     rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
                 final page = _page.clamp(0, maxPage);
                 final pageRows = pageSlice(rows, page, _pageSize);
+                final filtered = rows.length != logs.length;
 
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: _CountChip(
-                          count: rows.length, total: logs.length, accent: accent),
-                    ),
+                return IctSectionCard(
+                  icon: Icons.history_rounded,
+                  title: 'Audit Trail',
+                  subtitle: 'Every action across all yards and directorates.',
+                  // Says both what is shown and what the filters took away.
+                  badge: filtered
+                      ? '${rows.length} of ${logs.length} actions'
+                      : '${rows.length} '
+                          '${rows.length == 1 ? 'action' : 'actions'}',
+                  fill: true,
+                  child: Column(children: [
                     Expanded(
-                      child: Container(
-                        width: double.infinity,
-                        decoration: BoxDecoration(
-                          color: context.colors.cardDark,
-                          borderRadius: BorderRadius.circular(14),
-                          border:
-                              Border.all(color: context.colors.borderColor),
-                        ),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(14),
-                          child: DataTable2(
-                            columnSpacing: 16,
-                            horizontalMargin: 20,
-                            fixedTopRows: 1,
-                            minWidth: 1080,
-                            isHorizontalScrollBarVisible: false,
-                            headingRowColor: WidgetStateProperty.all(
-                                context.colors.surfaceDark),
-                            dataRowColor:
-                                WidgetStateProperty.all(Colors.transparent),
-                            empty: const EmptyTableState(
-                              icon: Icons.history_rounded,
-                              message: 'No activity for these filters',
-                              subtitle:
-                                  'Try a wider date window, or clear a filter.',
-                            ),
-                            columns: const [
-                              DataColumn2(
-                                  label: Text('When'),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 150),
-                              DataColumn2(
-                                  label: Text('User'), size: ColumnSize.M),
-                              DataColumn2(
-                                  label: Center(child: Text('Role')),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 130),
-                              DataColumn2(
-                                  label: Text('Yard'),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 120),
-                              DataColumn2(
-                                  label: Text('Action'), size: ColumnSize.L),
-                              DataColumn2(
-                                  label: Text('Activity'),
-                                  size: ColumnSize.S,
-                                  fixedWidth: 130),
-                              DataColumn2(
-                                  label: Text('Details'), size: ColumnSize.L),
-                            ],
-                            rows: pageRows.map((l) {
-                              return DataRow(cells: [
+                      child: IctTableTheme(
+                        child: DataTable2(
+                          columnSpacing: 16,
+                          horizontalMargin: 20,
+                          fixedTopRows: 1,
+                          minWidth: 1080,
+                          headingRowHeight: kIctHeadingHeight,
+                          dataRowHeight: kIctRowHeight,
+                          dividerThickness: 0,
+                          isHorizontalScrollBarVisible: false,
+                          empty: const EmptyTableState(
+                            icon: Icons.history_rounded,
+                            message: 'No activity for these filters',
+                            subtitle:
+                                'Try a wider date window, or clear a filter.',
+                          ),
+                          columns: [
+                            ictCol('When',
+                                size: ColumnSize.S, fixedWidth: 150),
+                            ictCol('User', size: ColumnSize.M),
+                            ictCol('Role',
+                                size: ColumnSize.S,
+                                fixedWidth: 120,
+                                center: true),
+                            ictCol('Yard',
+                                size: ColumnSize.S, fixedWidth: 120),
+                            ictCol('Action', size: ColumnSize.L),
+                            ictCol('Activity',
+                                size: ColumnSize.S, fixedWidth: 130),
+                            ictCol('Details', size: ColumnSize.L),
+                          ],
+                          rows: pageRows.asMap().entries.map((entry) {
+                            final l = entry.value;
+                            return DataRow2(
+                              color: ictRowColor(context, entry.key),
+                              cells: [
                                 DataCell(TooltipText(
                                     DateFormat('dd MMM yyyy, HH:mm')
                                         .format(l.createdAt),
@@ -513,8 +451,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                                 DataCell(TooltipText(l.action,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
-                                        color:
-                                            context.colors.accentLightBlue,
+                                        color: context.colors.accentLightBlue,
                                         fontSize: 12.5))),
                                 DataCell(TooltipText(
                                     _prettyEntity(l.entityType),
@@ -528,75 +465,30 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                                     style: TextStyle(
                                         color: context.colors.textMuted,
                                         fontSize: 12))),
-                              ]);
-                            }).toList(),
-                          ),
+                              ],
+                            );
+                          }).toList(),
                         ),
                       ),
                     ),
+                    // The pager belongs to the table, so it sits on the same
+                    // card rather than floating under it.
+                    Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: context.colors.borderColor),
                     TablePager(
                       total: rows.length,
                       page: page,
                       pageSize: _pageSize,
                       onPageChanged: (p) => setState(() => _page = p),
                     ),
-                  ],
-                )
-                    .animate()
-                    .slideY(begin: 0.05, duration: 400.ms)
-                    .fadeIn();
+                  ]),
+                ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn();
               },
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// One of the five period choices, styled like the app's other filter pills.
-class _PeriodButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color accent;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _PeriodButton({
-    required this.label,
-    required this.icon,
-    required this.accent,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-        decoration: BoxDecoration(
-          color: selected ? accent.withOpacity(0.15) : Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: selected
-                  ? accent.withOpacity(0.6)
-                  : context.colors.borderColor),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon,
-              size: 15,
-              color: selected ? accent : context.colors.textSecondary),
-          const Gap(7),
-          Text(label,
-              style: TextStyle(
-                  color: selected ? accent : context.colors.textSecondary,
-                  fontSize: 13,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500)),
-        ]),
       ),
     );
   }
@@ -648,38 +540,6 @@ class _PeriodChip extends StatelessWidget {
   }
 }
 
-/// "N of M actions" — says both what is shown and what was filtered away.
-class _CountChip extends StatelessWidget {
-  final int count;
-  final int total;
-  final Color accent;
-  const _CountChip(
-      {required this.count, required this.total, required this.accent});
-
-  @override
-  Widget build(BuildContext context) {
-    final filtered = count != total;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-      decoration: BoxDecoration(
-        color: accent.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: accent.withOpacity(0.3)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.history_rounded, size: 15, color: accent),
-        const Gap(8),
-        Text(
-            filtered
-                ? '$count of $total actions'
-                : '$count action${count == 1 ? '' : 's'}',
-            style: TextStyle(
-                color: accent, fontSize: 12.5, fontWeight: FontWeight.w800)),
-      ]),
-    );
-  }
-}
-
 /// The actor's role, coloured per office so one is picked out at a glance.
 class _RoleChip extends StatelessWidget {
   final String? role;
@@ -697,71 +557,9 @@ class _RoleChip extends StatelessWidget {
       'ict' => ('ICT', context.colors.dangerRed),
       _ => (role?.toUpperCase() ?? '—', context.colors.textMuted),
     };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Text(label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-              color: color, fontSize: 10.5, fontWeight: FontWeight.w800)),
-    );
-  }
-}
-
-/// A filter dropdown styled to match the ICT Staff Accounts row.
-class _LogFilter extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color accent;
-  final String value;
-  final List<StyledDropdownOption<String>> options;
-  final ValueChanged<String?> onChanged;
-
-  const _LogFilter({
-    required this.label,
-    required this.icon,
-    required this.accent,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Theme(
-      data: Theme.of(context).copyWith(
-        inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
-              filled: true,
-              fillColor: accent.withOpacity(0.06),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: accent, width: 1.5)),
-            ),
-      ),
-      child: StyledDropdownFormField<String>(
-        value: value,
-        label: label,
-        helperText: null,
-        isDense: true,
-        menuWidth: 240,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        prefixIcon: Icon(icon, color: accent, size: 20),
-        options: options,
-        onChanged: onChanged,
-      ),
-    );
+    // No dot: this is WHO acted, not a state, and a column of coloured dots
+    // beside a column of status dots would read as the same kind of thing.
+    return IctStatusPill(label: label, color: color, dot: false, width: 88);
   }
 }
 

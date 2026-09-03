@@ -1674,3 +1674,15 @@ The six that remain — destroy / government_use / auction / re_export / convert
 ⚠️ **The emblem appears once, on the rail.** The header names the current *section* instead (`_IctSideRail.itemAt`) — an ERP console names the section you are in at the top and the product once, on the rail. Repeating both wasted the width the header needs for its actions.
 
 The login and signup screens needed no change — they are separate screens, not part of the console shell.
+
+**The chrome lives in `lib/screens/ict/ict_ui.dart`, never in `AppTheme` (2026-09-04).** The theme is shared with every other portal, and those must not change — so ICT's look is carried by widgets:
+
+- `IctSectionCard` — the card **names what it holds**: title, explanation, row count and the section's primary action all sit on the card's own header strip. That is the difference between a page with a table on it and an ERP module. It is also why the tabs no longer print their own page heading: the console header already names the section, and a screen that repeats its title twenty pixels below is the surest sign of a page designed on its own.
+- `IctTableTheme` + `ictCol` — the console's table look, applied **locally**. ⚠️ A call site that passes `headingTextStyle` or `headingRowColor` **wins over the theme**, so ICT's tables deliberately pass neither; a test asserts that. `ictCol` uppercases in one place so no table can opt out.
+- `ictRowColor` — zebra banding, **not a rule under every row**. At 50px rows a full-width rule turns a long table into a ladder.
+- `IctStatusPill` — one width (`kIctPillWidth`) for **every** status box in the console, so a status column lines up. The account state's **decision** still lives in `accountStatusOf` in `widgets/account_cells.dart`, shared with the Admin Panel — only the chrome differs.
+- `IctToolbar` / `IctSearchField` / `IctSelect` / `IctSegmented` — one strip, one height (`kIctControlHeight`). ⚠️ `IctSelect` puts a real caption **above** the field: a Material floating label sits on the border and shrinks once a value is chosen, so a row of filters showed four differently-sized half-labels.
+
+⚠️ **`IctSectionCard` only flexes its body when given a `height` or `fill: true`.** The Yards & Directorates tab scrolls its whole page, and any flexed child in an unbounded-height column is a layout assertion, not a smaller card. `test/ict_yards_tab_layout_test.dart` renders that tab for exactly this reason.
+
+⚠️ **Rail hover is ONE index on `_IctSideRailState`, not a bool per row.** With a bool per row, two rows could light at once — and did. The rail rebuilds as the tab controller animates, and a `MouseRegion` rebuilt while the pointer is already inside it never receives the exit that would have cleared the row the pointer left, so a quick pass down the rail left a trail of stuck highlights. A single index cannot represent two rows. The row's `InkWell` also sets `hoverColor: Colors.transparent` — its overlay fades on its own schedule and stayed lit under the painted one.

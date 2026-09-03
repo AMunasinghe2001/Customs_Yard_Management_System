@@ -187,12 +187,15 @@ void main() {
       await tester.pumpWidget(_harness());
       await tester.pumpAndSettle();
 
-      expect(find.text('Activity Logs'), findsOneWidget);
+      // ⚠️ The section name comes from the CONSOLE header now; the tab
+      // names the table it holds.
+      expect(find.text('Audit Trail'), findsOneWidget);
       expect(find.text('Ajantha Deepal'), findsOneWidget);
       expect(find.text('Placed appeal hold'), findsOneWidget);
-      // Each office's role reads as its own chip.
-      expect(find.text('Officer'), findsWidgets);
-      expect(find.text('Appeal'), findsWidgets);
+      // Each office's role reads as its own pill -- uppercase, because
+      // every pill in the console is drawn by IctStatusPill.
+      expect(find.text('OFFICER'), findsWidgets);
+      expect(find.text('APPEAL'), findsWidgets);
       expect(find.text('ICT'), findsWidgets);
     });
 

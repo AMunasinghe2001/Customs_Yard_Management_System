@@ -5,8 +5,9 @@ import 'package:gap/gap.dart';
 import '../../core/directorates.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
+import 'ict_ui.dart';
 import '../../models/models.dart';
-import '../../widgets/empty_state_card.dart';
+import '../../widgets/empty_table_state.dart';
 import '../../widgets/account_cells.dart';
 import '../../widgets/styled_form_dialog.dart';
 
@@ -38,70 +39,91 @@ class YardDirectorateTab extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(
+          // ⚠️ The section title, its explanation and its Add button are ON
+          // the card, not floating above it. That is what makes this read as
+          // an ERP module rather than a page that happens to have a table:
+          // the card is the unit, and its header says what you are looking at
+          // and what you can do to it.
+          IctSectionCard(
             icon: Icons.account_balance_rounded,
             title: 'Directorates',
             subtitle:
-                'Head-office divisions. The SR prefix is what goes in front of '
-                'every SR number registered under the directorate.',
-            accent: accent,
-            actionLabel: 'Add Directorate',
-            onAction: () => _editDirectorate(context, ref),
-          ),
-          const Gap(14),
-          directorates.when(
-            loading: () => const _Loading(),
-            error: (e, _) => _LoadFailed(
-                what: 'directorates',
-                error: e,
-                onRetry: () => ref.invalidate(directoratesProvider)),
-            data: (list) => _DirectorateTable(
-              rows: list,
-              accent: accent,
-              onEdit: (d) => _editDirectorate(context, ref, existing: d),
-              onToggle: (d) async {
-                await ref
-                    .read(directorateServiceProvider)
-                    .setDirectorateActive(d.code, !d.isActive);
-                ref.read(directorateConfigRefreshProvider.notifier).trigger();
-              },
+                'Head-office divisions. The SR prefix goes in front of every '
+                'SR number registered under the directorate.',
+            badge: directorates.valueOrNull == null
+                ? null
+                : '${directorates.valueOrNull!.length}',
+            actions: [
+              IctPrimaryButton(
+                label: 'Add Directorate',
+                icon: Icons.add_rounded,
+                accent: accent,
+                onPressed: () => _editDirectorate(context, ref),
+              ),
+            ],
+            child: directorates.when(
+              loading: () => const _Loading(),
+              error: (e, _) => _LoadFailed(
+                  what: 'directorates',
+                  error: e,
+                  onRetry: () => ref.invalidate(directoratesProvider)),
+              data: (list) => _DirectorateTable(
+                rows: list,
+                accent: accent,
+                onEdit: (d) => _editDirectorate(context, ref, existing: d),
+                onToggle: (d) async {
+                  await ref
+                      .read(directorateServiceProvider)
+                      .setDirectorateActive(d.code, !d.isActive);
+                  ref.read(directorateConfigRefreshProvider.notifier).trigger();
+                },
+              ),
             ),
           ),
-          const Gap(34),
-          _SectionHeader(
+          const Gap(24),
+          IctSectionCard(
             icon: Icons.warehouse_rounded,
             title: 'Yards',
             subtitle:
                 'Physical yards. Tick every directorate a yard belongs to — '
-                'several yards belong to more than one.',
-            accent: accent,
-            actionLabel: 'Add Yard',
-            onAction: () => _editYard(context, ref),
-          ),
-          const Gap(14),
-          yards.when(
-            loading: () => const _Loading(),
-            error: (e, _) => _LoadFailed(
-                what: 'yards',
-                error: e,
-                onRetry: () => ref.invalidate(yardsProvider)),
-            data: (yardList) => links.when(
+                'several belong to more than one.',
+            badge: yards.valueOrNull == null
+                ? null
+                : '${yards.valueOrNull!.length}',
+            actions: [
+              IctPrimaryButton(
+                label: 'Add Yard',
+                icon: Icons.add_rounded,
+                accent: accent,
+                onPressed: () => _editYard(context, ref),
+              ),
+            ],
+            child: yards.when(
               loading: () => const _Loading(),
               error: (e, _) => _LoadFailed(
-                  what: 'yard/directorate links',
+                  what: 'yards',
                   error: e,
-                  onRetry: () => ref.invalidate(yardDirectoratesProvider)),
-              data: (linkMap) => _YardTable(
-                rows: yardList,
-                links: linkMap,
-                accent: accent,
-                onEdit: (y) => _editYard(context, ref, existing: y),
-                onToggle: (y) async {
-                  await ref
-                      .read(directorateServiceProvider)
-                      .setYardActive(y.code, !y.isActive);
-                  ref.read(directorateConfigRefreshProvider.notifier).trigger();
-                },
+                  onRetry: () => ref.invalidate(yardsProvider)),
+              data: (yardList) => links.when(
+                loading: () => const _Loading(),
+                error: (e, _) => _LoadFailed(
+                    what: 'yard/directorate links',
+                    error: e,
+                    onRetry: () => ref.invalidate(yardDirectoratesProvider)),
+                data: (linkMap) => _YardTable(
+                  rows: yardList,
+                  links: linkMap,
+                  accent: accent,
+                  onEdit: (y) => _editYard(context, ref, existing: y),
+                  onToggle: (y) async {
+                    await ref
+                        .read(directorateServiceProvider)
+                        .setYardActive(y.code, !y.isActive);
+                    ref
+                        .read(directorateConfigRefreshProvider.notifier)
+                        .trigger();
+                  },
+                ),
               ),
             ),
           ),
@@ -434,7 +456,10 @@ class _DirectorateTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) {
-      return const EmptyStateCard(
+      // EmptyTableState, not EmptyStateCard: this sits INSIDE the section
+      // card, and EmptyStateCard draws a bordered card of its own -- a card
+      // inside a card, with two borders a few pixels apart.
+      return const EmptyTableState(
         icon: Icons.account_balance_outlined,
         message: 'No directorates yet',
         subtitle: 'Add the first one to start assigning yards to it.',
@@ -445,20 +470,21 @@ class _DirectorateTable extends StatelessWidget {
       columns: const ['SR Prefix', 'Code', 'Name', 'Status', 'Actions'],
       widths: widths,
       children: [
-        for (final d in rows)
+        for (var i = 0; i < rows.length; i++)
           _TableRow(
-            faded: !d.isActive,
+            index: i,
+            faded: !rows[i].isActive,
             widths: widths,
             cells: [
-              _MonoChip(text: d.srPrefix, color: accent),
-              Text(d.code),
-              Text(d.name, overflow: TextOverflow.ellipsis),
-              _StatusPill(active: d.isActive),
+              _MonoChip(text: rows[i].srPrefix, color: accent),
+              Text(rows[i].code),
+              Text(rows[i].name, overflow: TextOverflow.ellipsis),
+              _StatusPill(active: rows[i].isActive),
               _RowActions(
                 accent: accent,
-                onEdit: () => onEdit(d),
-                onToggle: () => onToggle(d),
-                active: d.isActive,
+                onEdit: () => onEdit(rows[i]),
+                onToggle: () => onToggle(rows[i]),
+                active: rows[i].isActive,
               ),
             ],
           ),
@@ -485,7 +511,7 @@ class _YardTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (rows.isEmpty) {
-      return const EmptyStateCard(
+      return const EmptyTableState(
         icon: Icons.warehouse_outlined,
         message: 'No yards yet',
         subtitle: 'Add a yard and tick the directorates it belongs to.',
@@ -498,23 +524,27 @@ class _YardTable extends StatelessWidget {
       ],
       widths: widths,
       children: [
-        for (final y in rows)
+        for (var i = 0; i < rows.length; i++)
           _TableRow(
-            faded: !y.isActive,
+            index: i,
+            faded: !rows[i].isActive,
             widths: widths,
             cells: [
-              Text(y.name, overflow: TextOverflow.ellipsis),
-              Text(y.code),
-              _DirectorateChips(codes: links[y.code] ?? const [], accent: accent),
+              Text(rows[i].name, overflow: TextOverflow.ellipsis),
+              Text(rows[i].code),
+              _DirectorateChips(
+                  codes: links[rows[i].code] ?? const [], accent: accent),
               // Shows the consequence of the mapping in the mapping's own row,
               // which is the fastest way to spot a wrong prefix.
-              _ExampleSr(yard: y, directorates: links[y.code] ?? const []),
-              _StatusPill(active: y.isActive),
+              _ExampleSr(
+                  yard: rows[i],
+                  directorates: links[rows[i].code] ?? const []),
+              _StatusPill(active: rows[i].isActive),
               _RowActions(
                 accent: accent,
-                onEdit: () => onEdit(y),
-                onToggle: () => onToggle(y),
-                active: y.isActive,
+                onEdit: () => onEdit(rows[i]),
+                onToggle: () => onToggle(rows[i]),
+                active: rows[i].isActive,
               ),
             ],
           ),
@@ -585,61 +615,6 @@ class _ExampleSr extends StatelessWidget {
 
 // ── Small shared pieces ─────────────────────────────────────────────────────
 
-class _SectionHeader extends StatelessWidget {
-  const _SectionHeader({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.accent,
-    required this.actionLabel,
-    required this.onAction,
-  });
-
-  final IconData icon;
-  final String title, subtitle, actionLabel;
-  final Color accent;
-  final VoidCallback onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      // ⚠️ Nudged down to sit on the TITLE's line. The column beside it is two
-      // lines (title + subtitle), so CrossAxisAlignment.start put the icon
-      // level with the top of the block — visibly above the title it belongs
-      // to. 3px lines its optical centre up with the 22px title.
-      Padding(
-        padding: const EdgeInsets.only(top: 3),
-        child: Icon(icon, color: accent, size: 24),
-      ),
-      const Gap(10),
-      Expanded(
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          // 22px w700 — the size every other page's section title uses
-          // ("Tender Sales", "Unsold Goods", "Storage Rates & Charges").
-          // These were 16px, which is why the page read as a different app.
-          Text(title,
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700)),
-          const Gap(4),
-          Text(subtitle,
-              style: TextStyle(
-                  color: context.colors.textMuted, fontSize: 12, height: 1.4)),
-        ]),
-      ),
-      const Gap(14),
-      ElevatedButton.icon(
-        onPressed: onAction,
-        icon: const Icon(Icons.add_rounded, size: 18),
-        label: Text(actionLabel),
-        style: ElevatedButton.styleFrom(
-            backgroundColor: accent, foregroundColor: Colors.white),
-      ),
-    ]);
-  }
-}
-
 class _TableShell extends StatelessWidget {
   const _TableShell({
     required this.columns,
@@ -653,59 +628,49 @@ class _TableShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: context.colors.cardDark,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: context.colors.borderColor),
+    // ⚠️ No card of its own any more: this table sits INSIDE an
+    // IctSectionCard, which draws the border, the radius and the title. A
+    // second border here would have shown as a double rule under the header.
+    return Column(children: [
+      Container(
+        height: kIctHeadingHeight,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        color: context.colors.surfaceDark,
+        child: Row(children: [
+          for (var i = 0; i < columns.length; i++)
+            Expanded(
+              flex: widths[i],
+              // The same quiet uppercase rule DataTable2 gets from
+              // IctTableTheme -- these rows are hand-built, so the two would
+              // otherwise be the console's only mismatched headings.
+              child: Text(columns[i].toUpperCase(),
+                  style: TextStyle(
+                      color: context.colors.textMuted,
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.9)),
+            ),
+        ]),
       ),
-      // ⚠️ ClipRRect, as Central Disposal's _listCard does: without it the
-      // rows paint over the container's rounded corners and they read square.
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(13),
-        child: Column(children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          decoration: BoxDecoration(
-            // surfaceDark, matching every other table's heading row
-            // (DataTable2's headingRowColor across the app).
-            color: context.colors.surfaceDark,
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(13)),
-          ),
-          child: Row(children: [
-            for (var i = 0; i < columns.length; i++)
-              Expanded(
-                flex: widths[i],
-                // 12.5px bold, matching DataTable2's headingTextStyle
-                // everywhere else in the app. These were 10.5px and read as
-                // fine print next to every other table.
-                // NOT .toUpperCase(): every other table in the app prints
-                // its headings as written ("SR Number", "Goods Name").
-                child: Text(columns[i],
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.3)),
-              ),
-          ]),
-        ),
-        ...children,
-      ]),
-      ),
-    );
+      ...children,
+    ]);
   }
 }
 
 class _TableRow extends StatelessWidget {
   const _TableRow(
-      {required this.cells, required this.widths, this.faded = false});
+      {required this.cells,
+      required this.widths,
+      required this.index,
+      this.faded = false});
 
   final List<Widget> cells;
 
   /// Must match the header's widths, or the columns will not line up.
   final List<int> widths;
+
+  /// Row number, for the banding — see [ictRowColor].
+  final int index;
   final bool faded;
 
   @override
@@ -715,11 +680,15 @@ class _TableRow extends StatelessWidget {
     final row = Container(
       // 52px, matching DataTable2's dataRowHeight everywhere else. These rows
       // were padding-driven and noticeably tighter than every other table.
-      constraints: const BoxConstraints(minHeight: 52),
+      constraints: const BoxConstraints(minHeight: kIctRowHeight),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(
-        border: Border(top: BorderSide(color: context.colors.borderColor)),
-      ),
+      // ⚠️ A band on every other row, not a rule under every row. At this row
+      // height a full-width rule every 50px turns a long list into a ladder;
+      // the band tracks the eye across a wide row just as well and leaves the
+      // data as the only thing on the card with edges.
+      color: index.isEven
+          ? Colors.transparent
+          : context.colors.surfaceDark.withOpacity(0.45),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
@@ -768,29 +737,19 @@ class _MonoChip extends StatelessWidget {
   }
 }
 
+/// The console's status pill, at the console's one width — so this column
+/// lines up with the status column on every other ICT screen.
 class _StatusPill extends StatelessWidget {
   const _StatusPill({required this.active});
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    // The same bordered chip AccountStatusChip renders in the staff tables —
-    // this was a bare dot + "Active"/"Off" label, so the two tabs disagreed
-    // about what a status looks like.
-    final c = active ? context.colors.successGreen : context.colors.dangerRed;
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: c.withOpacity(0.15),
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: c.withOpacity(0.4)),
-        ),
-        child: Text(active ? 'ACTIVE' : 'INACTIVE',
-            style: TextStyle(
-                color: c, fontSize: 11, fontWeight: FontWeight.w700)),
-      ),
+    return IctStatusPill(
+      label: active ? 'Active' : 'Inactive',
+      color: active
+          ? context.colors.successGreen
+          : context.colors.dangerRed,
     );
   }
 }

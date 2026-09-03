@@ -99,7 +99,10 @@ void main() {
 
     test('the ICT table and filter both work off the post', () {
       final ict = _read('lib/screens/ict/ict_dashboard_screen.dart');
-      expect(ict, contains('staff.postShortTitle.toUpperCase()'));
+      // The POST, not the permission role. Uppercasing moved into
+      // IctStatusPill when the console got one pill for every status, so
+      // the cell now just hands it the post.
+      expect(ict, contains('label: staff.postShortTitle'));
       expect(ict, isNot(contains("staff.isAdmin ? 'DC / SDDC' : 'OFFICER'")));
       // The filter lists posts, and narrows to the exact one client-side
       // because the query only speaks in permission roles.

@@ -11,6 +11,7 @@ import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
+import 'ict_ui.dart';
 
 /// Every directorate account is listed here, so ICT can reissue its sign-in
 /// details when the holder cannot get in.
@@ -139,163 +140,96 @@ class DirectorateAccessTab extends ConsumerWidget {
 
     return Padding(
       padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 3),
-              child: Icon(Icons.vpn_key_rounded, color: accent, size: 24),
-            ),
-            const Gap(10),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Directorate Access',
-                      style: TextStyle(
-                          color: context.colors.textPrimary,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700)),
-                  const Gap(4),
-                  Text(
-                    'Reissue sign-in details for a directorate account. These '
-                    'accounts belong to a post rather than a person, so ICT '
-                    'issues the credentials; yard staff reset their own from '
-                    'the login page.',
-                    style: TextStyle(
-                        color: context.colors.textMuted,
-                        fontSize: 12,
-                        height: 1.4),
-                  ),
-                ],
+      // ⚠️ No page heading. The console's own header already names this
+      // section and says what it is for, and a screen that repeats its title
+      // twenty pixels below the first one is the surest sign of a page that
+      // was designed on its own rather than as part of a console.
+      child: async.when(
+        loading: () => Center(child: CircularProgressIndicator(color: accent)),
+        error: (e, _) => ErrorView(
+            error: e, onRetry: () => ref.refresh(directorateAccountsProvider)),
+        data: (accounts) => IctSectionCard(
+          icon: Icons.vpn_key_rounded,
+          title: 'Directorate Accounts',
+          subtitle:
+              'These belong to a post rather than a person, so ICT issues the '
+              'credentials; yard staff reset their own from the login page.',
+          badge: '${accounts.length} '
+              '${accounts.length == 1 ? 'account' : 'accounts'}',
+          fill: true,
+          child: IctTableTheme(
+            child: DataTable2(
+              columnSpacing: 16,
+              horizontalMargin: 20,
+              fixedTopRows: 1,
+              headingRowHeight: kIctHeadingHeight,
+              dataRowHeight: kIctRowHeight,
+              dividerThickness: 0,
+              isHorizontalScrollBarVisible: false,
+              empty: const EmptyTableState(
+                icon: Icons.vpn_key_outlined,
+                message: 'No directorate accounts',
+                subtitle: 'Directorate accounts appear here once they exist.',
               ),
-            ),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(18),
-          Expanded(
-            child: async.when(
-              loading: () =>
-                  Center(child: CircularProgressIndicator(color: accent)),
-              error: (e, _) => ErrorView(
-                  error: e,
-                  onRetry: () => ref.refresh(directorateAccountsProvider)),
-              data: (accounts) => Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  color: context.colors.cardDark,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: context.colors.borderColor),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(14),
-                  child: DataTable2(
-                    columnSpacing: 16,
-                    horizontalMargin: 20,
-                    fixedTopRows: 1,
-                    isHorizontalScrollBarVisible: false,
-                    headingRowColor:
-                        WidgetStateProperty.all(context.colors.surfaceDark),
-                    dataRowColor:
-                        WidgetStateProperty.all(Colors.transparent),
-                    empty: const EmptyTableState(
-                      icon: Icons.vpn_key_outlined,
-                      message: 'No directorate accounts',
-                      subtitle:
-                          'Directorate accounts appear here once they exist.',
-                    ),
-                    columns: const [
-                      DataColumn2(
-                          label: Text('Directorate'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Account'), size: ColumnSize.L),
-                      DataColumn2(label: Text('Username'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Center(child: Text('Status')),
-                          size: ColumnSize.S,
-                          fixedWidth: 110),
-                      DataColumn2(
-                          label: Center(child: Text('Access')),
-                          size: ColumnSize.S,
-                          fixedWidth: 190),
-                    ],
-                    rows: accounts
-                        .map((a) => DataRow(cells: [
-                              DataCell(TooltipText(
-                                  kDirectorateRoleNames[a.role] ?? a.role,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.colors.textPrimary,
-                                      fontWeight: FontWeight.w600))),
-                              DataCell(TooltipText(a.fullName,
-                                  overflow: TextOverflow.ellipsis)),
-                              DataCell(TooltipText(
-                                  a.username?.isNotEmpty == true
-                                      ? a.username!
-                                      : '—',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                      color: context.colors.accentLightBlue,
-                                      fontWeight: FontWeight.w600))),
-                              DataCell(Center(
-                                child: _StatusPill(active: a.isActive),
-                              )),
-                              DataCell(Center(
-                                child: OutlinedButton.icon(
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: accent,
-                                    backgroundColor: accent.withOpacity(0.08),
-                                    side: BorderSide(
-                                        color: accent.withOpacity(0.5)),
-                                    padding: const EdgeInsets.symmetric(
-                                        horizontal: 12, vertical: 8),
-                                  ),
-                                  icon: const Icon(Icons.key_rounded, size: 15),
-                                  label: const Text('Reset access',
-                                      style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700)),
-                                  // A deactivated account cannot sign in at
-                                  // all, so reissuing its details would only
-                                  // send credentials that do not work.
-                                  onPressed: a.isActive
-                                      ? () => _confirmReset(context, ref, a)
-                                      : null,
-                                ),
-                              )),
-                            ]))
-                        .toList(),
-                  ),
-                ),
-              )
-                  .animate()
-                  .slideY(begin: 0.05, duration: 400.ms)
-                  .fadeIn(),
+              columns: [
+                ictCol('Directorate', size: ColumnSize.M),
+                ictCol('Account', size: ColumnSize.L),
+                ictCol('Username', size: ColumnSize.M),
+                ictCol('Status',
+                    size: ColumnSize.S,
+                    fixedWidth: kIctPillWidth + 24,
+                    center: true),
+                ictCol('Access',
+                    size: ColumnSize.S, fixedWidth: 170, center: true),
+              ],
+              rows: accounts.asMap().entries.map((entry) {
+                final a = entry.value;
+                return DataRow2(
+                  color: ictRowColor(context, entry.key),
+                  cells: [
+                    DataCell(TooltipText(
+                        kDirectorateRoleNames[a.role] ?? a.role,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: context.colors.textPrimary,
+                            fontWeight: FontWeight.w700))),
+                    DataCell(TooltipText(a.fullName,
+                        overflow: TextOverflow.ellipsis)),
+                    DataCell(TooltipText(
+                        a.username?.isNotEmpty == true ? a.username! : '—',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                            color: context.colors.accentLightBlue,
+                            fontWeight: FontWeight.w600))),
+                    DataCell(Center(
+                      child: IctStatusPill(
+                        label: a.isActive ? 'Active' : 'Inactive',
+                        color: a.isActive
+                            ? context.colors.successGreen
+                            : context.colors.dangerRed,
+                      ),
+                    )),
+                    DataCell(Center(
+                      child: IctGhostButton(
+                        label: 'Reset access',
+                        icon: Icons.key_rounded,
+                        accent: accent,
+                        dense: true,
+                        // A deactivated account cannot sign in at all, so
+                        // reissuing its details would only send credentials
+                        // that do not work.
+                        onPressed: a.isActive
+                            ? () => _confirmReset(context, ref, a)
+                            : null,
+                      ),
+                    )),
+                  ],
+                );
+              }).toList(),
             ),
           ),
-        ],
+        ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn(),
       ),
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  final bool active;
-  const _StatusPill({required this.active});
-
-  @override
-  Widget build(BuildContext context) {
-    final color =
-        active ? context.colors.successGreen : context.colors.dangerRed;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Text(active ? 'ACTIVE' : 'INACTIVE',
-          style: TextStyle(
-              color: color, fontSize: 10.5, fontWeight: FontWeight.w800)),
     );
   }
 }

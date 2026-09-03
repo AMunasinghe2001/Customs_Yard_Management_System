@@ -44,33 +44,57 @@ class ExpiresInCell extends StatelessWidget {
   }
 }
 
-/// Read-only account status: ACTIVE (green), EXPIRED or INACTIVE (red).
+/// What state an account is in, said once.
 ///
+/// ⚠️ The DECISION lives here; the chrome does not. The Admin Panel draws a
+/// chip sized to its text and the ICT console draws a pill at one fixed width
+/// (so a status column lines up), and those two may look different — but they
+/// must never DISAGREE about whether an account is active, which is what a
+/// second copy of this if-chain would eventually let happen.
+class AccountStatus {
+  final String label;
+  final Color color;
+  final String tooltip;
+  const AccountStatus(this.label, this.color, this.tooltip);
+}
+
 /// An account is ACTIVE until 8 months after its creation date; the tooltip
 /// gives the exact date either way.
+AccountStatus accountStatusOf(BuildContext context, ProfileModel profile) {
+  final String label;
+  final Color color;
+  if (!profile.isActive) {
+    label = 'INACTIVE';
+    color = context.colors.dangerRed;
+  } else if (profile.isExpired) {
+    label = 'EXPIRED';
+    color = context.colors.dangerRed;
+  } else {
+    label = 'ACTIVE';
+    color = context.colors.successGreen;
+  }
+  final expiresStr = DateFormat('dd MMM yyyy').format(profile.expiresAt);
+  return AccountStatus(
+    label,
+    color,
+    profile.isExpired
+        ? 'Auto-deactivated on $expiresStr (8 months after creation)'
+        : 'Auto-deactivates on $expiresStr (8 months after creation)',
+  );
+}
+
+/// Read-only account status: ACTIVE (green), EXPIRED or INACTIVE (red).
 class AccountStatusChip extends StatelessWidget {
   final ProfileModel profile;
   const AccountStatusChip({super.key, required this.profile});
 
   @override
   Widget build(BuildContext context) {
-    final String label;
-    final Color color;
-    if (!profile.isActive) {
-      label = 'INACTIVE';
-      color = context.colors.dangerRed;
-    } else if (profile.isExpired) {
-      label = 'EXPIRED';
-      color = context.colors.dangerRed;
-    } else {
-      label = 'ACTIVE';
-      color = context.colors.successGreen;
-    }
-    final expiresStr = DateFormat('dd MMM yyyy').format(profile.expiresAt);
+    final status = accountStatusOf(context, profile);
+    final label = status.label;
+    final color = status.color;
     return Tooltip(
-      message: profile.isExpired
-          ? 'Auto-deactivated on $expiresStr (8 months after creation)'
-          : 'Auto-deactivates on $expiresStr (8 months after creation)',
+      message: status.tooltip,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
