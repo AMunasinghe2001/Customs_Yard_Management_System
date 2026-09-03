@@ -279,10 +279,11 @@ class _PerishableGoodsScreenState
                                       label: Text('Yard'),
                                       size: ColumnSize.S,
                                       fixedWidth: 130),
-                                const DataColumn2(
-                                    label: Center(child: Text('Waiting')),
-                                    size: ColumnSize.S,
-                                    fixedWidth: 120),
+                                // ⚠️ No "Waiting" column. A countdown here read
+                                // as an appeal window running down -- and a
+                                // perishable has NO appeal window; that is the
+                                // whole point of the nature. Nothing is being
+                                // waited out, so nothing should be counted.
                                 const DataColumn2(
                                     label: Center(child: Text('Details')),
                                     size: ColumnSize.S,
@@ -314,9 +315,6 @@ class _PerishableGoodsScreenState
                                                   r.package.srNumber)),
                                               overflow:
                                                   TextOverflow.ellipsis)),
-                                        DataCell(Center(
-                                            child: _WaitingChip(
-                                                days: r.daysWaiting))),
                                         DataCell(Center(
                                           child: IconButton(
                                             icon: Icon(
@@ -396,31 +394,3 @@ class _CountChip extends StatelessWidget {
 
 /// How long this item has been waiting. Perishables spoil, so the number
 /// matters more here than on any other page — it reddens as it grows.
-class _WaitingChip extends StatelessWidget {
-  final int days;
-  const _WaitingChip({required this.days});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = days >= 7
-        ? context.colors.dangerRed
-        : (days >= 3
-            ? context.colors.warningAmber
-            : context.colors.successGreen);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(Icons.schedule_rounded, size: 13, color: color),
-        const SizedBox(width: 5),
-        Text(days == 0 ? 'Today' : '$days ${days == 1 ? "day" : "days"}',
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.w700)),
-      ]),
-    );
-  }
-}

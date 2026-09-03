@@ -941,6 +941,7 @@ Future<void> _seedPerishableSales(Connection conn) async {
 
   var sold = 0;
   var pending = 0;
+  var decided = 0;
   var serial = 0;
   String? saleId;
   DateTime? saleAt;
@@ -998,8 +999,9 @@ Future<void> _seedPerishableSales(Connection conn) async {
     }
     saleFill++;
 
-    // Perishables mostly clear -- that is the point of selling them fast.
-    final didSell = _rng.nextInt(100) < 75;
+    // Perishables mostly clear -- that is the point of selling them fast --
+    // but enough must fail to give Top Management's own page a real list.
+    final didSell = _rng.nextInt(100) < 60;
     await conn.execute(
       r'insert into public.tender_sale_items '
       r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
@@ -1028,12 +1030,42 @@ Future<void> _seedPerishableSales(Connection conn) async {
       sold++;
     } else {
       pending++;
+      // ⚠️ A perishable that fails its sale goes STRAIGHT to Top Management --
+      // no committee, no second round. Goods that spoil do not have the months
+      // the normal route takes, so the DG decides at once. Most are decided;
+      // the rest are left pending so the page has both halves.
+      if (_rng.nextInt(100) < 55) {
+        final outcome =
+            _perishableOutcomes[_rng.nextInt(_perishableOutcomes.length)];
+        await conn.execute(
+          r'insert into public.unsold_proposals '
+          r'(forfeited_package_id, proposal, note, yard, decided_at, created_at, updated_at) '
+          r'values ($1,$2,$3,$4,$5,$5,$5)',
+          parameters: [
+            fpId, outcome.$1, outcome.$2, _yard,
+            saleAt!.add(Duration(days: 1 + _rng.nextInt(4))),
+          ],
+        );
+        decided++;
+      }
     }
   }
 
   print('  perishables: $sold sold in $serial special sales, '
-      '$pending unsold');
+      '$pending unsold ($decided decided by Top Management)');
 }
+
+/// What Top Management does with a perishable nothing would buy.
+///
+/// ⚠️ A narrower set than the outcomes for normal goods: these are spoiling,
+/// so re-offering them at auction or holding them for government use is not a
+/// real option. Destruction and removal are what is actually left.
+const _perishableOutcomes = <(String, String)>[
+  ('destroy', 'Unsold and spoiling — destroyed under supervision'),
+  ('destroy', 'Unfit for sale — destroyed'),
+  ('remove_from_premises', 'Removed from the premises at once'),
+  ('convert', 'Converted for departmental use before it spoils'),
+];
 
 /// A SPECIAL tender sale — the only kind a perishable may enter.
 Future<String> _newSpecialSale(

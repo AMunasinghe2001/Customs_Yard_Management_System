@@ -1535,3 +1535,25 @@ Destroyed Goods is still fully populated (21 destroyed · 22 pending), all throu
 **Goods History's year filter was the one dropdown that behaved differently.** It built its own list from a hard-coded "this year back six years" loop, so it offered years with nothing in them (2020–2023) and never offered **next** year. ⚠️ It could not use `srYears()` like every other page because Goods History pages on the **server** — only one page of rows ever reaches the app, so the years cannot be read off loaded data. `packageYearSourceProvider` fetches the SR numbers alone (one small column) so `srYears()` can build the same list everywhere.
 
 **Mark Delivered now renders through the same fixed box as Mark Destroyed.** `DeliveryStatusPill` shares `_statusPill` with `DestructionStatusPill`, so neither column jumps as a row changes state and the two line up beside each other. ⚠️ The Delivery column was `fixedWidth: 120` against a 132px pill — it would have clipped; both now use `kDestructionStatusColumnWidth`.
+
+### Perishables take a different road at every step (2026-09-03)
+
+**SR form.** ⚠️ **Category is a WAREHOUSE routing choice** — it picks the target zone — so a perishable, which never reaches a warehouse, has nothing to decide there. The field and the zone-capacity hint under it are both hidden; the hint would otherwise report space the goods will never occupy.
+
+⚠️ **Post Status Activity now offers EVERY activity, unfiltered.** It used to be filtered by status (Detain → pending activities, everything else → disposal activities). A perishable has *no status at all*, so the filter left it with nothing to choose from — and the filter was wrong anyway: a detained item can still be destined for destruction. `kAllPostStatusActivities` in both the SR form and the edit dialog, which must agree or editing an item would drop an activity the form allowed. The clear-on-status-change is gone with it: every status offers the same list, so a selection can never stop being valid.
+
+**Warehouse confirmation** says **"NO WAREHOUSE NEEDED"** for a perishable-only package. ⚠️ **EVERY item, not any** — a mixed package still has normal goods that need a warehouse, and hiding the step would strand them.
+
+**The Perishable table has no "Waiting" column.** A countdown there read as an appeal window running down, and a perishable has **no appeal window** — that is the whole point of the nature.
+
+**Top Management gets its own "Unsold Perishables" tab.** ⚠️ The two lists reach the DG by entirely different routes and must stay apart:
+- a **normal** package arrives after the Valuation Tender + Tenders 1–3, a committee valuation, the ADG's submission and one more failed round — five chances over months;
+- a **perishable** arrives after **ONE** failed Special Tender Sale, because goods that spoil cannot wait for that.
+
+So `getUnsoldPerishables` deliberately tests **neither** `tenderCount` **nor** a committee. Everything downstream is identical — same table, same decision dialog, same place the decision appears — so a decision means the same thing whichever list it came from.
+
+⚠️ **Filter state is keyed by list** (`StateProvider.family<_, bool>`): both tabs are built from one widget in the same `TabBarView`, so shared state would let a search typed on one filter the other.
+
+⚠️ **`_kTabCount`, the `Tab` widgets and the `TabBarView` children must move together** — a short controller still *paints* every tab, but clicks resolve against the shorter one, so tapping does nothing while swiping still works. A test asserts all three agree.
+
+Seeded: 14 unsold perishables — 6 awaiting a decision, 8 decided. Their outcomes are a **narrower** set than for normal goods (destroy / remove / convert): re-offering spoiling goods at auction is not a real option.

@@ -137,20 +137,34 @@ void main() {
 
   group('Top Management can watch the tender sales', () {
     test('the tab is wired in with room for it', () {
-      expect(exec, contains('static const int _kTabCount = 5;'),
-          reason: 'a fifth tab needs a fifth slot, or the view throws');
       expect(exec, contains("Text('Tender Sales')"));
       expect(exec, contains('TenderSalesViewTab(),'));
     });
 
-    test('the strip and the view stay the same length', () {
+    // ⚠️ The count is asserted against the OTHER TWO, not against a fixed
+    // number. It was pinned at 5, so adding a sixth tab failed this test even
+    // though all three had moved together correctly -- the check was guarding
+    // the number rather than the alignment, which is the thing that matters:
+    // a short controller still PAINTS every tab, but clicks resolve against
+    // the shorter one, so tapping does nothing while swiping still works.
+    test('the strip, the views and the count stay in step', () {
+      final count = int.parse(
+          RegExp(r'_kTabCount = (\d+)').firstMatch(exec)!.group(1)!);
+
       final strip = exec.substring(
           exec.indexOf('tabs: const ['), exec.indexOf('// ── Tab views'));
-      expect('Tab('.allMatches(strip).length, 5);
+      expect('Tab('.allMatches(strip).length, count,
+          reason: 'a Tab was added or removed without the count');
+
       final views = exec.substring(exec.indexOf('// ── Tab views'));
       final children = views.substring(
           views.indexOf('children: const ['), views.indexOf('],'));
-      expect(children.split(',').where((c) => c.trim().isNotEmpty).length, 5);
+      final childCount = children
+          .split('\n')
+          .where((l) => RegExp(r'^\s+[A-Z]\w*\(').hasMatch(l))
+          .length;
+      expect(childCount, count,
+          reason: 'a view was added or removed without the count');
     });
 
     test('it is read-only: Top Management observes, Disposal acts', () {

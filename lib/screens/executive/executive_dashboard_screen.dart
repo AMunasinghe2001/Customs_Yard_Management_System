@@ -32,7 +32,7 @@ class _ExecutiveDashboardScreenState
   /// never drift out of step with the number of Tab widgets — when it does,
   /// the bar still PAINTS every tab but clicks resolve against the shorter
   /// controller, so tapping does nothing while swiping still works.
-  static const int _kTabCount = 5;
+  static const int _kTabCount = 6;
 
   // Not `late final`: a hot reload keeps the old controller alive, so a
   // changed _kTabCount would leave a stale one behind. didUpdateWidget-style
@@ -224,6 +224,16 @@ class _ExecutiveDashboardScreenState
                     child: Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
+                          Icon(Icons.eco_rounded, size: 18),
+                          Gap(8),
+                          Text('Unsold Perishables'),
+                        ]),
+                  ),
+                  Tab(
+                    height: 44,
+                    child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
                           Icon(Icons.storefront_rounded, size: 18),
                           Gap(8),
                           Text('Tender Sales'),
@@ -261,6 +271,10 @@ class _ExecutiveDashboardScreenState
               children: const [
                 TenderCommitteeTab(),
                 UnsoldDecisionTab(),
+                // ⚠️ Perishables never reach a tender committee, and get no
+                // second round -- one failed Special Tender Sale and the DG
+                // decides. Same table and same decision, its own list.
+                UnsoldDecisionTab(perishable: true),
                 TenderSalesViewTab(),
                 FinancialsTab(),
                 ReportsScreen(executiveMode: true),

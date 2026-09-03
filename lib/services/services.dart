@@ -5444,6 +5444,35 @@ class DisposalService {
   ///
   /// Shared by the Top Management Directorate (who decide), Central Disposal and the yards
   /// (who see the decision), so all three lists agree by construction.
+  /// Perishable goods that failed their FIRST Special Tender Sale.
+  ///
+  /// ⚠️ Perishables do NOT go round again, and never reach a tender committee.
+  /// Normal goods run the Valuation Tender plus Tenders 1-3, get a committee
+  /// valuation and one more round -- five chances over months. Goods that
+  /// spoil do not have months: one failed sale is the end of the road, and
+  /// Top Management decides their outcome straight away.
+  ///
+  /// So this deliberately does NOT test `tenderCount`, a committee, or an ADG
+  /// submission the way [getExhaustedUnsoldPackages] does. The single
+  /// condition is: it went to a sale, that sale has ended, and it did not sell.
+  Future<List<ReTenderSaleInfo>> getUnsoldPerishables() async {
+    final unsold = await getUnsoldTenderSales();
+    if (unsold.isEmpty) return [];
+    return unsold.where((i) {
+      final items = i.forfeited.packageDetails?.items ?? const <PackageItem>[];
+      final itemId = i.forfeited.itemId;
+      // The FP row names its item, so judge that item -- not the package,
+      // which may hold normal goods beside the perishable one.
+      final item = itemId == null
+          ? (items.isNotEmpty ? items.first : null)
+          : items.where((x) => x.id == itemId).firstOrNull;
+      if (item == null || item.nature != kNaturePerishable) return false;
+      // `getUnsoldTenderSales` already guarantees "not sold" and "the latest
+      // round's deadline has passed".
+      return i.sales.isNotEmpty;
+    }).toList();
+  }
+
   Future<List<ReTenderSaleInfo>> getExhaustedUnsoldPackages() async {
     final unsold = await getUnsoldTenderSales();
     if (unsold.isEmpty) return [];

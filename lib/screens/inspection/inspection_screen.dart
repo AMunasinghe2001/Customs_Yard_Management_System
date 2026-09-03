@@ -1506,6 +1506,17 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
     }
   }
 
+  /// True when every item on this package is perishable, so there is no
+  /// warehouse allocation to make at all.
+  ///
+  /// ⚠️ EVERY item, not any: a mixed package still has normal goods that need
+  /// a warehouse, and hiding the allocation for those would strand them.
+  bool get _allPerishable {
+    final items = widget.tempPackageItems;
+    if (items == null || items.isEmpty) return false;
+    return items.every((i) => i.nature == kNaturePerishable);
+  }
+
   @override
   Widget build(BuildContext context) {
     final warehousesAsync = ref.watch(warehousesProvider);
@@ -1575,6 +1586,50 @@ class _ResultPanelState extends ConsumerState<_ResultPanel> {
                         ),
                       ],
                     ),
+                ]),
+              )
+            // ⚠️ A package of perishables has no allocation to make. Showing
+            // "Assign each item to its destination warehouse" over goods that
+            // will never see one told the officer to do something impossible;
+            // this says what actually happens to them instead.
+            else if (_allPerishable)
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: context.colors.successGreen.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: context.colors.successGreen.withOpacity(0.5),
+                    width: 2,
+                  ),
+                ),
+                child: Column(children: [
+                  Icon(Icons.eco_rounded,
+                          color: context.colors.successGreen, size: 56)
+                      .animate()
+                      .scale(duration: 400.ms),
+                  const Gap(12),
+                  Text(
+                    'NO WAREHOUSE NEEDED',
+                    style: TextStyle(
+                      color: context.colors.successGreen,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                    textAlign: TextAlign.center,
+                  )
+                      .animate()
+                      .slideY(begin: 0.3, duration: 300.ms, delay: 200.ms),
+                  const Gap(8),
+                  Text(
+                      'These goods spoil, so they are not stored. They go '
+                      'straight to the Perishable Goods list and are sent for '
+                      'a Special Tender Sale without waiting out an appeal '
+                      'window.',
+                      style: TextStyle(
+                          color: context.colors.textSecondary, fontSize: 13),
+                      textAlign: TextAlign.center),
                 ]),
               )
             else
@@ -2392,16 +2447,12 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                     .toList(),
                 onChanged: (v) {
                   setState(() {
-                    final previous = widget.row.status;
                     widget.row.status = v!;
-                    // Detain and the disposal statuses offer different
-                    // activities — drop selections that no longer apply.
-                    if (postStatusActivitiesFor(previous) !=
-                        postStatusActivitiesFor(widget.row.status)) {
-                      widget.row.selectedReasons
-                        ..clear()
-                        ..add(null);
-                    }
+                    // ⚠️ The activity selection is NOT cleared here any more.
+                    // It used to be, because Detain and the disposal statuses
+                    // offered different lists and a selection could stop being
+                    // valid. Every status now offers the same full list, so
+                    // clearing would only throw away what the officer typed.
                   });
                   widget.onChanged();
                 },
@@ -2430,6 +2481,11 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
               ),
             ],
             ],
+            // ⚠️ Category exists to route goods to a WAREHOUSE ZONE. A
+            // perishable never reaches a warehouse, so the field has nothing
+            // to decide -- and the zone-capacity hint below it would report
+            // space the goods will never occupy.
+            if (widget.row.nature != kNaturePerishable) ...[
             const Gap(10),
             Expanded(
               flex: 2,
@@ -2479,6 +2535,7 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 },
               ),
             ),
+            ],
           ],
         ),
         const Gap(12),
@@ -2525,6 +2582,9 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
           ],
         ),
         const Gap(12),
+        // The zone-capacity hint follows the Category field, so it goes with
+        // it: there is no zone to report on for goods that never enter one.
+        if (widget.row.nature != kNaturePerishable)
         Row(children: [
           categories.when(
               data: (list) {
@@ -2644,7 +2704,12 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
           spacing: 12,
           runSpacing: 10,
           children: List.generate(widget.row.selectedReasons.length, (rIdx) {
-            final activities = postStatusActivitiesFor(widget.row.status);
+            // ⚠️ EVERY activity, not the status's own subset. The officer
+            // recording what should happen next is not bound by the status
+            // they just picked -- a detained item can still be destined for
+            // destruction, and a perishable (which has no status at all) was
+            // being offered nothing to choose from.
+            final activities = kAllPostStatusActivities;
             return SizedBox(
               width: 380,
               child: Row(

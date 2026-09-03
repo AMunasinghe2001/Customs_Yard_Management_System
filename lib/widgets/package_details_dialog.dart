@@ -6253,7 +6253,9 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
             spacing: 12,
             runSpacing: 10,
             children: List.generate(widget.row.selectedReasons.length, (rIdx) {
-              final activities = postStatusActivitiesFor(widget.row.status);
+              // The same full list the SR form offers -- the two must agree,
+              // or editing an item would drop an activity the form allowed.
+              final activities = kAllPostStatusActivities;
               return SizedBox(
                 width: 380,
                 child: Row(

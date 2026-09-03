@@ -162,8 +162,11 @@ void main() {
           reason: 'Central Disposal only watches; the yard sends');
     });
 
-    testWidgets('how long it has been waiting is shown', (tester) async {
-      // Perishables spoil, so the wait matters more here than anywhere else.
+    testWidgets('no waiting time is shown — there is nothing to wait for',
+        (tester) async {
+      // ⚠️ A countdown here read as an APPEAL WINDOW running down, and a
+      // perishable has no appeal window at all -- that is the whole point of
+      // the nature. Nothing is being waited out, so nothing is counted.
       tester.view.physicalSize = const Size(1600, 1000);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.reset);
@@ -173,7 +176,10 @@ void main() {
             entry: DateTime.now().subtract(const Duration(days: 5)))
       ]));
       await tester.pumpAndSettle();
-      expect(find.text('5 days'), findsOneWidget);
+      expect(find.text('5 days'), findsNothing);
+      expect(find.text('Waiting'), findsNothing);
+      // The goods themselves are still listed.
+      expect(find.text('Fresh Prawns'), findsOneWidget);
     });
   });
 

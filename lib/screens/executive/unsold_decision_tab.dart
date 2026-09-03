@@ -21,11 +21,18 @@ import 'unsold_shared.dart';
 /// table read-only. See [executivePostIs] for how the post is resolved.
 bool _isDg(ProfileModel? p) => executivePostIs(p, 'DG');
 
-final _uSearchProvider = StateProvider<String>((ref) => '');
-final _uYardProvider = StateProvider<String?>((ref) => null); // null = all
+// ⚠️ Keyed by list. Both the normal and the perishable tab are built from
+// this one widget and live in the same TabBarView, so a single set of
+// StateProviders would let a search typed on one silently filter the other.
+final _uSearchProvider =
+    StateProvider.family<String, bool>((ref, perishable) => '');
+final _uYardProvider =
+    StateProvider.family<String?, bool>((ref, perishable) => null);
 /// null = all · false = still undecided · true = decided
-final _uDecidedProvider = StateProvider<bool?>((ref) => null);
-final _uPageProvider = StateProvider<int>((ref) => 0);
+final _uDecidedProvider =
+    StateProvider.family<bool?, bool>((ref, perishable) => null);
+final _uPageProvider =
+    StateProvider.family<int, bool>((ref, perishable) => 0);
 
 /// Top Management Directorate tab: packages that have exhausted EVERY avenue — the Valuation
 /// Tender plus Tender 1-3 all failed, a committee re-valued them, the ADG
@@ -36,23 +43,38 @@ final _uPageProvider = StateProvider<int>((ref) => 0);
 /// Laid out to match the Tender Committees tab — same header row (title,
 /// subtitle, search, yard dropdown), same table shell and column set.
 class UnsoldDecisionTab extends ConsumerWidget {
-  const UnsoldDecisionTab({super.key});
+  /// Show PERISHABLE goods instead of the exhausted normal ones.
+  ///
+  /// ⚠️ The two lists reach this screen by entirely different routes and must
+  /// stay apart. A normal package arrives after five failed chances, a
+  /// committee valuation and the ADG's submission; a perishable arrives after
+  /// ONE failed Special Tender Sale, because goods that spoil cannot wait for
+  /// the long route. Mixing them would put a package on the DG's desk either
+  /// far too early or far too late.
+  ///
+  /// Everything else -- the table, the filters, the decision dialog, and where
+  /// the decision then appears -- is deliberately identical, so a decision
+  /// means the same thing whichever list it was made from.
+  final bool perishable;
+
+  const UnsoldDecisionTab({super.key, this.perishable = false});
 
   static const int _pageSize = 20;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTheme.executiveTeal;
-    final async = ref.watch(exhaustedUnsoldProvider);
+    final async = ref.watch(
+        perishable ? unsoldPerishablesProvider : exhaustedUnsoldProvider);
     // Top Management tender committees, keyed by forfeited_package_id — their
     // valuation supersedes the original for an unsold package.
     final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
         const <String, TenderCommitteeModel>{};
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
-    final q = ref.watch(_uSearchProvider).trim().toLowerCase();
-    final yardFilter = ref.watch(_uYardProvider);
-    final decidedFilter = ref.watch(_uDecidedProvider);
+    final q = ref.watch(_uSearchProvider(perishable)).trim().toLowerCase();
+    final yardFilter = ref.watch(_uYardProvider(perishable));
+    final decidedFilter = ref.watch(_uDecidedProvider(perishable));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
     // Only the DG may decide; the ADG sees the same table, read-only.
@@ -72,16 +94,20 @@ class UnsoldDecisionTab extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text('Unsold Goods',
+                  Text(perishable ? 'Unsold Perishables' : 'Unsold Goods',
                       style: TextStyle(
                           color: context.colors.textPrimary,
                           fontSize: 22,
                           fontWeight: FontWeight.w700)),
                   const Gap(2),
                   Text(
-                      canDecide
-                          ? 'Every avenue exhausted — decide the final outcome'
-                          : 'Every avenue exhausted — the DG decides the final outcome',
+                      perishable
+                          ? (canDecide
+                              ? 'Failed their Special Tender Sale — goods that spoil get no second round, so decide now'
+                              : 'Failed their Special Tender Sale — the DG decides the outcome')
+                          : (canDecide
+                              ? 'Every avenue exhausted — decide the final outcome'
+                              : 'Every avenue exhausted — the DG decides the final outcome'),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -93,8 +119,8 @@ class UnsoldDecisionTab extends ConsumerWidget {
             ExecutiveSearchField(
               hint: 'Search SR / item / consignee…',
               onChanged: (v) {
-                ref.read(_uSearchProvider.notifier).state = v;
-                ref.read(_uPageProvider.notifier).state = 0;
+                ref.read(_uSearchProvider(perishable).notifier).state = v;
+                ref.read(_uPageProvider(perishable).notifier).state = 0;
               },
             ),
             const Gap(12),
@@ -107,8 +133,8 @@ class UnsoldDecisionTab extends ConsumerWidget {
               child: ExecutiveYardFilter(
                 value: yardFilter,
                 onChanged: (v) {
-                  ref.read(_uYardProvider.notifier).state = v;
-                  ref.read(_uPageProvider.notifier).state = 0;
+                  ref.read(_uYardProvider(perishable).notifier).state = v;
+                  ref.read(_uPageProvider(perishable).notifier).state = 0;
                 },
               ),
             ),
@@ -117,8 +143,8 @@ class UnsoldDecisionTab extends ConsumerWidget {
           Row(children: [
             executiveFilterChip(context,
                 label: 'All', selected: decidedFilter == null, onTap: () {
-              ref.read(_uDecidedProvider.notifier).state = null;
-              ref.read(_uPageProvider.notifier).state = 0;
+              ref.read(_uDecidedProvider(perishable).notifier).state = null;
+              ref.read(_uPageProvider(perishable).notifier).state = 0;
             }),
             const Gap(8),
             executiveFilterChip(context,
@@ -126,8 +152,8 @@ class UnsoldDecisionTab extends ConsumerWidget {
                 icon: Icons.hourglass_bottom_rounded,
                 colour: context.colors.warningAmber,
                 selected: decidedFilter == false, onTap: () {
-              ref.read(_uDecidedProvider.notifier).state = false;
-              ref.read(_uPageProvider.notifier).state = 0;
+              ref.read(_uDecidedProvider(perishable).notifier).state = false;
+              ref.read(_uPageProvider(perishable).notifier).state = 0;
             }),
             const Gap(8),
             executiveFilterChip(context,
@@ -135,8 +161,8 @@ class UnsoldDecisionTab extends ConsumerWidget {
                 icon: Icons.check_circle_rounded,
                 colour: context.colors.successGreen,
                 selected: decidedFilter == true, onTap: () {
-              ref.read(_uDecidedProvider.notifier).state = true;
-              ref.read(_uPageProvider.notifier).state = 0;
+              ref.read(_uDecidedProvider(perishable).notifier).state = true;
+              ref.read(_uPageProvider(perishable).notifier).state = 0;
             }),
           ]),
           const Gap(14),
@@ -147,7 +173,9 @@ class UnsoldDecisionTab extends ConsumerWidget {
                   Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(exhaustedUnsoldProvider)),
+                  onRetry: () => ref.refresh(perishable
+                      ? unsoldPerishablesProvider
+                      : exhaustedUnsoldProvider)),
               data: (list) {
                 var rows = list;
                 if (yardFilter != null) {
@@ -177,7 +205,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
 
                 final maxPage =
                     rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
-                final page = ref.watch(_uPageProvider).clamp(0, maxPage);
+                final page = ref.watch(_uPageProvider(perishable)).clamp(0, maxPage);
                 final pageRows =
                     rows.skip(page * _pageSize).take(_pageSize).toList();
 
@@ -264,7 +292,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
                       page: page,
                       pageSize: _pageSize,
                       onPageChanged: (p) =>
-                          ref.read(_uPageProvider.notifier).state = p,
+                          ref.read(_uPageProvider(perishable).notifier).state = p,
                     ),
                   ],
                 ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);

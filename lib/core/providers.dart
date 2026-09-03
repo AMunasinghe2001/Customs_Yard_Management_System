@@ -824,6 +824,17 @@ final tenderRevaluationsProvider =
 // The packages that exhausted every avenue: past Tender 3, committee valuation
 // submitted by the ADG, tendered again, still unsold. Shared by the Top Management Directorate,
 // Central Disposal and the yards so all three lists agree.
+/// Perishables that failed their one Special Tender Sale, awaiting Top
+/// Management's decision. Separate from [exhaustedUnsoldProvider] because the
+/// route there is entirely different -- no committee, no second chance.
+final unsoldPerishablesProvider =
+    FutureProvider<List<ReTenderSaleInfo>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getUnsoldPerishables();
+});
+
 final exhaustedUnsoldProvider =
     FutureProvider<List<ReTenderSaleInfo>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
