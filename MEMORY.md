@@ -1618,3 +1618,17 @@ Each screen only shows goods at ITS stage, so a stage with nothing in it reads a
 | Ruled on | …and back on the yard's Perishable page | 5 |
 
 ⚠️ **A stage is emptied by the NEXT one.** Valuing and forwarding every perishable emptied the Valuation tab; tendering every forwarded one emptied Disposal Requests; dating every sale in the past emptied Tender Sales. Each fix is the same shape — hold a few back — and each has to be made deliberately, because the natural seeding order runs every item all the way to the end.
+
+### One box for every status pill (2026-09-03)
+
+⚠️ **A pill that sizes to its own text makes a column of them ragged.** "Convert" came out half the width of "Remove from the Premises", so the eye could not scan down the column — and the three tables that show these side by side did not line up with each other.
+
+`statusPill()` in `destruction_status_pill.dart` is now the one builder for all three: **Destroyed**, **Delivered** and **Final Outcome**. `kStatusPillWidth` is the single width. ⚠️ A column holding one must be at least that wide, or the fixed pill clips and paints overflow stripes — a test asserts both.
+
+### Stages that were full of finished work only (2026-09-03)
+
+The same shape as before, three more times — a tab whose *purpose* is to act on something showed only rows already acted on:
+
+- **Tender Committees**: every eligible package already had a committee, so there was nothing left to appoint one for. 4 are now waiting (5 appointed).
+- **Tender Sales · progress**: every open sale was wholly unsold, so the header could only ever read `0 / n sold`. Bidding closes item by item, so a live sale normally has some of both — two sales now read `1 / 4` and `2 / 4`.
+- **Tender Sales · re-tender badge**: every re-tendered round was dated in the past, so the badge existed only on closed sales and never appeared on the tab, which shows open ones. One open sale is now a genuine second round.

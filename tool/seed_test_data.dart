@@ -1363,6 +1363,7 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
   var outcomeIdx = 0;
   var committeeSerial = 0;
   var committeeRounds = 0;
+  var awaitingCommittee = 0;
   final byOutcome = <String, int>{};
 
   for (final r in rows) {
@@ -1383,6 +1384,15 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
     // any earlier can NEVER reach that table however many rounds follow --
     // its count is already short.
     final toCommittee = times > kMaxBidTenderRoundsSeed;
+
+    // ⚠️ Some eligible packages are left with NO committee. The Tender
+    // Committees tab exists to appoint one, so appointing a committee for
+    // every eligible package left that tab with nothing to act on -- only
+    // rows already dealt with. A few must be waiting.
+    if (toCommittee && awaitingCommittee < 4) {
+      awaitingCommittee++;
+      continue;
+    }
 
     if (!toCommittee) {
       // A quarter are left untouched, so "Awaiting value" keeps a population.
@@ -1506,6 +1516,7 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
   print('  unsold pool:');
   print('    $revalued re-valued by Valuation · $committeeValued committee '
       'valuations submitted · $awaitingAdg awaiting the ADG');
+  print('    $awaitingCommittee eligible but awaiting a committee');
   print('    $committeeRounds re-tendered at the committee price and still '
       'unsold');
   print('    $settled given a final outcome${spread.isEmpty ? '' : ' ($spread)'}');
@@ -2092,6 +2103,7 @@ Future<void> _seedTenderPipeline(Connection conn) async {
   final upcoming = pool.where((r) => !usedFp.contains(r[0] as String)).toList();
   var scheduled = 0;
   var scheduledSales = 0;
+  var soldInOpenSales = 0;
   for (var day = 1; day <= 3 && upcoming.isNotEmpty; day++) {
     final saleAt = DateTime.now().add(Duration(days: day));
     final take = upcoming.take(2 + _rng.nextInt(3)).toList();
@@ -2122,18 +2134,76 @@ Future<void> _seedTenderPipeline(Connection conn) async {
         ],
       );
 
+      // ⚠️ Part of an open sale is already SOLD. Every seeded open sale was
+      // wholly unsold, so the header always read "0 / n sold" -- the counter
+      // could never show progress, and an officer could not see a sale being
+      // worked through. Bidding closes item by item, so a live sale normally
+      // has some of both.
+      final alreadySold = soldInOpenSales < 3 && _rng.nextInt(100) < 45;
+      if (alreadySold) soldInOpenSales++;
+
       await conn.execute(
         r'insert into public.tender_sale_items '
         r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
-        r' created_at) '
-        r'values ($1,$2,$3,$4,false,$5)',
+        r' sold_at, sold_price, receipt_number, created_at) '
+        r'values ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
         parameters: [
-          saleId, fpId, itemId, _yard,
+          saleId, fpId, itemId, _yard, alreadySold,
+          alreadySold ? DateTime.now() : null,
+          alreadySold
+              ? (unitValue * qty * (0.9 + _rng.nextDouble() * 0.4))
+                  .roundToDouble()
+              : null,
+          alreadySold
+              ? 'TR/$_yard/${saleAt.year}/${5000 + saleSerial}'
+              : null,
           DateTime.now().subtract(Duration(days: 1 + _rng.nextInt(5))),
         ],
       );
+      if (alreadySold && itemId != null) {
+        await conn.execute(
+          r"update public.package_items set status = 'sold' where id = $1",
+          parameters: [itemId],
+        );
+      }
       scheduled++;
     }
+  }
+
+  // ── A RE-TENDER that is still open ───────────────────────────────────────
+  // ⚠️ The re-tender badge marks a sale that shares a package with an EARLIER
+  // sale. Every re-tendered round above is dated in the past, so the badge
+  // could only ever be seen on a closed sale -- never on the Tender Sales tab,
+  // which shows the open ones. This puts a genuine second round in an open
+  // sale: goods that failed once, being offered again.
+  var reTenderedOpen = 0;
+  final failedOnce = await conn.execute(
+    'select distinct tsi.forfeited_package_id, tsi.package_item_id '
+    'from public.tender_sale_items tsi '
+    'join public.forfeited_packages fp on fp.id = tsi.forfeited_package_id '
+    "where fp.source <> 'perishable' "
+    '  and not exists (select 1 from public.tender_sale_items t2 '
+    '                   where t2.forfeited_package_id = tsi.forfeited_package_id '
+    '                     and t2.sold) '
+    'limit 3',
+  );
+  if (failedOnce.isNotEmpty) {
+    final saleAt = DateTime.now().add(const Duration(days: 2));
+    saleSerial++;
+    final reSaleId = await _newTenderSale(conn, saleAt, saleSerial);
+    for (final r in failedOnce) {
+      await conn.execute(
+        r'insert into public.tender_sale_items '
+        r'(tender_sale_id, forfeited_package_id, package_item_id, yard, sold, '
+        r' created_at) values ($1,$2,$3,$4,false,$5)',
+        parameters: [
+          reSaleId, r[0] as String, r[1] as String?, _yard, DateTime.now(),
+        ],
+      );
+      reTenderedOpen++;
+    }
+    scheduledSales++;
+    print('    $reTenderedOpen goods re-tendered in an open sale');
   }
 
   final laterRounds =

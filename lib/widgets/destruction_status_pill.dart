@@ -133,8 +133,30 @@ class DeliveryStatusPill extends StatelessWidget {
   }
 }
 
-/// The shared box every status pill renders through, so the Destroyed and
-/// Delivered columns match each other exactly.
+/// The width every status pill in a table column takes.
+///
+/// ⚠️ A pill that sizes to its own text makes a column of them ragged --
+/// "Convert" ends up half the width of "Remove from the Premises", and the
+/// eye cannot scan down the column. One box, whatever the label.
+const double kStatusPillWidth = kDestructionPillWidth;
+
+/// The shared box every status pill renders through, so the Destroyed,
+/// Delivered and Final Outcome columns all match each other exactly.
+Widget statusPill(
+  BuildContext context, {
+  required Color color,
+  required IconData icon,
+  required String label,
+  VoidCallback? onTap,
+  bool busy = false,
+  String? tooltip,
+}) {
+  final pill = _statusPill(context,
+      color: color, icon: icon, label: label, onTap: onTap, busy: busy);
+  if (tooltip == null || tooltip.isEmpty) return pill;
+  return Tooltip(message: tooltip, child: pill);
+}
+
 Widget _statusPill(
   BuildContext context, {
   required Color color,

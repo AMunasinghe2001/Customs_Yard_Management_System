@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/destruction_status_pill.dart';
 
 /// ONE definition of the Unsold Packages table, shared by all three portals —
 /// the yard's Unsold page, Central Disposal's Unsold tab and the Top Management Directorate's
@@ -327,57 +328,29 @@ class UnsoldOutcomeChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final p = proposal;
+    // ⚠️ The SAME fixed box the Destroyed and Delivered columns use. Sizing
+    // each pill to its own text made a column of them ragged -- "Convert"
+    // came out half the width of "Remove from the Premises", so the eye
+    // could not scan down the column, and the three tables that show these
+    // side by side did not line up.
     if (p == null) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: context.colors.warningAmber.withOpacity(0.10),
-          borderRadius: BorderRadius.circular(8),
-          border:
-              Border.all(color: context.colors.warningAmber.withOpacity(0.4)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(Icons.hourglass_bottom_rounded,
-              size: 13, color: context.colors.warningAmber),
-          const Gap(5),
-          Flexible(
-            child: Text(pendingLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: context.colors.warningAmber,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700)),
-          ),
-        ]),
+      return statusPill(
+        context,
+        color: context.colors.warningAmber,
+        icon: Icons.hourglass_bottom_rounded,
+        label: pendingLabel,
+        tooltip: pendingLabel,
       );
     }
     final st = unsoldOutcomeStyle(context, p.proposal);
-    return Tooltip(
-      message: p.note?.trim().isNotEmpty == true
+    return statusPill(
+      context,
+      color: st.colour,
+      icon: st.icon,
+      label: p.label,
+      tooltip: p.note?.trim().isNotEmpty == true
           ? p.note!.trim()
           : 'Decided ${DateFormat('yyyy-MM-dd').format(p.decidedAt)}',
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: st.colour.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: st.colour.withOpacity(0.45)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(st.icon, size: 13, color: st.colour),
-          const Gap(5),
-          Flexible(
-            child: Text(p.label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                    color: st.colour,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800)),
-          ),
-        ]),
-      ),
     );
   }
 }
