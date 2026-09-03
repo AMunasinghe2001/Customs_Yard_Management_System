@@ -1565,3 +1565,22 @@ Seeded: 14 unsold perishables — 6 awaiting a decision, 8 decided. Their outcom
 ⚠️ **A decided item STAYS on the page.** It has been sent, so `sentKeys` holds it — but dropping it would mean the two portals never see the ruling at all: the goods would simply vanish from the only page that lists them.
 
 ⚠️ **The outcomes are read with `.valueOrNull`, not awaited.** Awaiting inside `perishableRowsProvider` made the whole list wait on that query, so a slow one left the page **empty** rather than merely un-annotated — the goods matter more than the label. (It also opened a real DB socket under test until the harness overrode it.)
+
+### 'perishable' is a real source now (2026-09-03)
+
+⚠️ It used to be **synthetic** — `getRequestableExpiredPackages` built one on the fly for goods with no `forfeited_packages` row. But the column's CHECK constraint allowed only forfeit / abandoned / other / detain, so the moment a perishable **genuinely reached a sale** and needed a real row, it was filed under `'forfeit'` — and then sat in the appeal list wearing a **Forfeit badge, indistinguishable from goods that really do have 30 days to run**. A perishable has no appeal window at all.
+
+`postgres/07_perishable_source.sql` widens the constraint and re-files the 31 mislabelled rows (self-verifying; ran green). The **item's nature** is the authority — it is what routes goods to a special sale in the first place.
+
+### The perishable label goes in the HEADER (2026-09-03)
+
+⚠️ **Perishables arrive together** — their own request, their own sale. They may only enter a Special Tender Sale, so they are never mixed with normal goods, and a header label therefore describes everything under it with nothing to contradict. Repeating it per row would say one thing many times.
+
+Three places carry `PerishableTag`: the **Valuation** request card, Central Disposal's **Disposal Requests** card, and the **Tender Sale** header.
+
+- Requests test `items.every((i) => i.forfeited?.source == 'perishable')` — ⚠️ **every, not any**: a mixed set must not wear it, or it tells the officer the normal goods beside it are on the perishable clock too.
+- A sale needs no such test: the gate is **two-way** (a perishable may only enter a special sale, and a special sale carries only perishables), so `tenderType == 'special'` is proof by itself.
+
+The seeder now batches **3 perishables per request** — one request per item would make the tag true but pointless.
+
+> The user first asked for this page in the **Appeal** Directorate, then corrected it to **Valuation** ("that is where the value is given"). The Appeal portal was the wrong home anyway: a perishable has no appeal.

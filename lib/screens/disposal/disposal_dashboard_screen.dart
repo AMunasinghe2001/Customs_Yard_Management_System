@@ -29,6 +29,7 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
 import '../executive/unsold_shared.dart';
+import '../../widgets/perishable_tag.dart';
 
 /// The quantity actually forfeited & sent for disposal for a request row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -2086,6 +2087,11 @@ class _RequestCard extends ConsumerWidget {
       final pid = it.forfeited?.packageId;
       if (iid != null && pid != null) perItemKeys.add('$pid:$iid');
     }
+    // The source is the authority: postgres/07_perishable_source.sql made
+    // 'perishable' a real forfeited_packages source, so the row says what the
+    // goods are instead of the screen inferring it through a join.
+    final isPerishableRequest = items.isNotEmpty &&
+        items.every((i) => i.forfeited?.source == 'perishable');
     // Expand package-level FP rows (itemId==null, multiple pkg items) so each
     // item appears as its own table row.
     final expandedRows =
@@ -2161,10 +2167,20 @@ class _RequestCard extends ConsumerWidget {
                       ],
                     ]),
                     const Gap(2),
-                    Text(
-                        '${expandedRows.length} package${expandedRows.length == 1 ? '' : 's'} requested',
-                        style: TextStyle(
-                            color: context.colors.textMuted, fontSize: 11)),
+                    Row(children: [
+                      Text(
+                          '${expandedRows.length} package${expandedRows.length == 1 ? '' : 's'} requested',
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 11)),
+                      // ⚠️ Perishables arrive as their OWN request -- they may
+                      // only enter a Special Tender Sale, so they are never
+                      // mixed with normal goods. The label speaks for the
+                      // whole batch and belongs here, not on every row.
+                      if (isPerishableRequest) ...[
+                        const Gap(10),
+                        const PerishableTag(compact: true),
+                      ],
+                    ]),
                   ],
                 ),
               ),
@@ -3034,6 +3050,14 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                       if (widget.isRetender) ...[
                         const Gap(8),
                         _retenderBadge(context),
+                      ],
+                      // ⚠️ A SPECIAL sale carries ONLY perishables -- the gate
+                      // is two-way, so the sale type alone is proof of what is
+                      // in it. Labelling the sale therefore labels every item
+                      // under it, which is why this belongs in the header.
+                      if (widget.sale.tenderType == 'special') ...[
+                        const Gap(8),
+                        const PerishableTag(compact: true),
                       ],
                     ]),
                     const Gap(2),

@@ -18,6 +18,7 @@ import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/perishable_tag.dart';
 
 /// The quantity actually forfeited & sent for disposal for a valuation row.
 /// Prefers the stored [entryQty]; otherwise derives it from the item's forfeit
@@ -357,6 +358,11 @@ class _ValuationRequestCard extends ConsumerWidget {
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final items = request.items;
+    // The source is the authority: postgres/07_perishable_source.sql made
+    // 'perishable' a real forfeited_packages source, so the row says what the
+    // goods are instead of the screen inferring it through a join.
+    final isPerishableRequest = items.isNotEmpty &&
+        items.every((i) => i.forfeited?.source == 'perishable');
     // Items handled by a per-item (itemId-specific) request row — keyed by
     // "<packageId>:<itemId>". When the same item also appears inside a
     // package-level (itemId==null) row, the package-level row must NOT expand
@@ -448,10 +454,21 @@ class _ValuationRequestCard extends ConsumerWidget {
                       ],
                     ]),
                     const Gap(2),
-                    Text(
-                        '$valuedCount of ${expandedRows.length} item(s) valued',
-                        style: TextStyle(
-                            color: context.colors.textMuted, fontSize: 11)),
+                    Row(children: [
+                      Text(
+                          '$valuedCount of ${expandedRows.length} item(s) valued',
+                          style: TextStyle(
+                              color: context.colors.textMuted, fontSize: 11)),
+                      // ⚠️ Perishables arrive as their OWN request -- they may
+                      // only enter a Special Tender Sale, so they are never
+                      // mixed with normal goods. The label therefore speaks
+                      // for the whole batch, and belongs in the header rather
+                      // than repeated on every row.
+                      if (isPerishableRequest) ...[
+                        const Gap(10),
+                        const PerishableTag(compact: true),
+                      ],
+                    ]),
                   ],
                 ),
               ),

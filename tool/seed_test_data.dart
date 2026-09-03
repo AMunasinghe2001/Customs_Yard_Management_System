@@ -923,11 +923,12 @@ Future<void> _seedAuditLogs(Connection conn) async {
 /// and a special sale carries only perishables. Mixing them into one lot is
 /// exactly what the two types exist to prevent.
 ///
-/// ⚠️ `source` is CHECK-constrained to forfeit / abandoned / other / detain.
-/// The `'perishable'` source the app shows is SYNTHETIC -- built on the fly for
-/// goods that have no forfeited_packages row -- so a perishable that really
-/// reaches a sale needs a real row under a permitted source. What routes it to
-/// a special sale is the ITEM's nature, not the source.
+/// ⚠️ `source` is `'perishable'`, which postgres/07_perishable_source.sql
+/// added to the CHECK constraint. It used to allow only forfeit / abandoned /
+/// other / detain, so a perishable that genuinely reached a sale had to be
+/// filed under 'forfeit' -- and then sat in the Appeal Directorate's list
+/// wearing a Forfeit badge, indistinguishable from goods that really do have
+/// 30 days to run. A perishable has NO appeal window at all.
 Future<void> _seedPerishableSales(Connection conn) async {
   final rows = await conn.execute(
     'select pi.id, pi.package_id, p.sr_number, p.consignee_name, '
@@ -946,6 +947,8 @@ Future<void> _seedPerishableSales(Connection conn) async {
   String? saleId;
   DateTime? saleAt;
   var saleFill = 0;
+  String? reqId;
+  var reqFill = 0;
 
   for (final r in rows) {
     if (_rng.nextInt(100) >= 55) continue;
@@ -973,7 +976,7 @@ Future<void> _seedPerishableSales(Connection conn) async {
       r'(package_id, item_id, sr_number, consignee_name, forfeited_at, '
       r" appeal_deadline, reason, source, yard, entry_qty, created_at, updated_at) "
       r"values ($1,$2,$3,$4,$5,$5,'Perishable goods — immediate disposal',"
-      r"        'forfeit',$6,$7,$5,$5) returning id",
+      r"        'perishable',$6,$7,$5,$5) returning id",
       parameters: [pkgId, itemId, srNumber, consignee, entered, _yard, qty],
     );
     final fpId = fpRes.first.first as String;
@@ -981,8 +984,16 @@ Future<void> _seedPerishableSales(Connection conn) async {
     // Valued and forwarded, as any sale item must be.
     final valuation =
         (unitValue * qty * (0.4 + _rng.nextDouble() * 0.3)).roundToDouble();
-    final reqId = await _newDisposalRequest(
-        conn, entered.add(const Duration(days: 1)), 'forwarded');
+    // ⚠️ Several perishables share ONE request. They are sent together --
+    // that is exactly why a header label works: the whole batch is
+    // perishable, so there is nothing in it the tag could misdescribe. One
+    // request per item would make the tag true but pointless.
+    if (reqId == null || reqFill >= 3) {
+      reqId = await _newDisposalRequest(
+          conn, entered.add(const Duration(days: 1)), 'forwarded');
+      reqFill = 0;
+    }
+    reqFill++;
     await conn.execute(
       r'insert into public.disposal_request_items '
       r'(request_id, forfeited_package_id, disposition, valuation_cost, forwarded) '
