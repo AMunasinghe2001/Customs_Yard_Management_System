@@ -1702,3 +1702,27 @@ The login and signup screens needed no change — they are separate screens, not
 ⚠️ **`StyledFormDialog`/`StyledFormSection`/`StyledDialogPrimaryButton` take an opt-in `erp` flag and an `accentColor`.** It must stay opt-in: that dialog is the form chrome for **every** portal, and only ICT was redesigned. A test asserts no other screen passes it. The flat header is not decoration — a gradient header reads as *an event*; an admin console's forms are opened dozens of times a day to do routine work, so they are drawn as a panel of the console.
 
 ⚠️ **Directorate Access does not show the username.** It is half a working credential for an account a whole office signs in with, and the page is read on an open monitor. The column carries the **password's 90-day rotation** instead — which is the actual reason someone is locked out and asking ICT for a reset.
+
+**The audit trail is paged BY THE DATABASE (2026-09-04).** `getAllLogsAcrossOffices` used to return the whole table and let the screen filter and slice it — fine at a few hundred rows, hopeless at a few hundred thousand.
+
+- ⚠️ **Every narrowing the screen offers is now a WHERE clause**: the date window, yard, role, entity type and the search box. It has to be — paging in SQL while filtering in Dart would page the *unfiltered* table and throw most of each page away, so pages would come back short and the count would disagree with the rows.
+- `AuditLogPage.total` is a **second, count-only query over the same WHERE**, so "Showing 1–25 of N" counts what the filters matched.
+- `IctLogQuery` (in providers) makes every filter part of the provider's identity, so a filter change is a new query, not a re-filter. `_pushQuery()` on the tab is the only path.
+- The Activity filter reads `ictLogEntityTypesProvider` — its **own** query. A list built from the rows on screen would offer only what happened to be on that page. ⚠️ Widget tests must override it or the tab opens a real DB socket.
+- `IctPager` replaces `TablePager` in ICT: numbered pages, first/last always reachable, gaps as an ellipsis, so the bar is the same width at 10 pages and at 3,000. `IctPager.windowFor` is pure and unit-tested.
+
+**Why the rail "lagged", part two.** Beyond the TabController listener: the whole console could also be **dragged** sideways on a trackpad (`TabBarView` default physics), so a two-finger flick slid half of one module beside half of another. `physics: NeverScrollableScrollPhysics` — the rail's `animateTo` still animates, only the drag is gone. `_IctModule` fades and lifts the arriving page; ⚠️ it reads the **controller's animation**, not a one-shot in initState, because a module is built once and shown many times.
+
+⚠️ **Rail hover is a tint of the ACCENT, not `surfaceDark`.** surfaceDark is the light theme's near-white, so hover read as a white gap punched in the panel rather than a row lighting up.
+
+⚠️ **Material's 48px minimum tap target beats a SizedBox.** Every ICT button passes `minimumSize: Size.zero` + `tapTargetSize: shrinkWrap`, or it stands taller than the filters beside it — which is what `kIctControlHeight` exists to prevent. Also: `kIctTopBarHeight` pins the console header AND the rail's brand block, which are two widgets either side of the rail border with nothing else to make them agree.
+
+**ENABLED / DISABLED for yards and directorates; ACTIVE for accounts.** A yard is a configuration row ICT switches on and off and the control beside it *is* a switch. An account is active/expired/deactivated as a fact of its own lifetime. One word for both would say these are the same kind of state.
+
+⚠️ **The enable switch flips FIRST and asks the server after** (`_EnableSwitch`), and the yards page passes `skipLoadingOnReload: true`. Before: the write was awaited, then the providers were invalidated, so the tables were replaced by a spinner, the page collapsed to a fraction of its height and the scroll position went with it — flipping a switch halfway down the list threw you back to the top.
+
+⚠️ **Status and Actions columns are FIXED width** (`kIctStatusColumnWidth`, `kIctActionsColumnWidth`) and `_MonoChip` is one fixed size. Given a flex share, Status/Actions become the narrowest columns in a wide row.
+
+**The profile is a PAGE of the console, not a dialog.** `DisposalProfileDialog` gained an opt-in `embedded` flag: it drops the Dialog wrapper, the gradient header and the Close button, and the caller supplies the surface. ⚠️ Opt-in — every other portal still opens it as a dialog, and the **logic** (what a save writes, what a password change checks) stays one copy.
+
+**"Too white" was white-on-white.** The scaffold takes `accent × 0.035`, `IctSectionCard` headers take a 0.07→0.02 accent gradient, and a metric tile is `Color.alphaBlend(color × 0.05, cardDark)` with the measure's colour on its label. `IctAccent` (an InheritedWidget) publishes the accent once instead of threading it through every constructor.

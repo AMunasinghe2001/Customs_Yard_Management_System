@@ -1,6 +1,7 @@
 // The ICT portal is laid out as an ERP console.
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cus_yard_management/screens/ict/ict_ui.dart';
 
 String _read(String p) => File(p).readAsStringSync();
 
@@ -270,6 +271,91 @@ void main() {
       expect(access.contains("ictCol('Username'"), isFalse);
       expect(access, contains("ictCol('Password'"));
       expect(access, contains('class _PasswordAge'));
+    });
+  });
+
+  group('the console does not lurch or interrupt', () {
+    // ⚠️ On a trackpad a two-finger sideways flick slid the console between
+    // modules, so an officer scrolling a wide table found half of one page
+    // beside half of another. A console is navigated from its rail.
+    test('the modules cannot be dragged between', () {
+      expect(ict, contains('physics: const NeverScrollableScrollPhysics()'));
+      // The rail's animateTo still runs the transition, so choosing a module
+      // is animated -- it is only the DRAG that is gone.
+      expect(ict, contains('controller.animateTo(i)'));
+      expect(ict, contains('class _IctModule'));
+    });
+
+    // ⚠️ The arrival animation reads the CONTROLLER, not a one-shot started
+    // in initState: a module is built once and shown many times, so a
+    // play-on-build animation would run only the first time it was opened.
+    test('the arrival animation is driven by the controller', () {
+      final module = ict.substring(ict.indexOf('class _IctModule'));
+      expect(module, contains('controller.animation'));
+      // The subtree is passed through AnimatedBuilder's `child`, so a page
+      // with a data table is not rebuilt sixty times a second.
+      expect(module, contains('child: child,'));
+    });
+
+    test('your own account is a page, not a dialog over the console', () {
+      expect(ict, contains('class _IctProfilePage'));
+      expect(ict, contains('embedded: true'));
+      // The header pill opens it in place; nothing pushes a route.
+      expect(ict, contains('setState(() => _onProfile = true)'));
+      // ⚠️ The CONTENT is the shared profile widget: what a save writes and
+      // what a password change checks must not exist twice.
+      final profile = _read('lib/widgets/disposal_profile_dialog.dart');
+      expect(profile, contains('this.embedded = false'),
+          reason: 'every other portal still opens it as a dialog');
+    });
+  });
+
+  group('the audit trail is paged by the database', () {
+    test('the pager keeps first, last and a window around the current page',
+        () {
+      // A short run is shown whole.
+      expect(IctPager.windowFor(0, 5), [0, 1, 2, 3, 4]);
+      // ⚠️ Long runs collapse to a fixed width, so the bar is the same size
+      // at 10 pages and at 3,000. First and last are always reachable.
+      final mid = IctPager.windowFor(10, 40);
+      expect(mid.first, 0);
+      expect(mid.last, 39);
+      expect(mid, contains(10));
+      expect(mid, contains(null), reason: 'the gaps collapse to an ellipsis');
+      expect(mid.length, lessThan(10));
+      // At either end the window does not run off the edge.
+      expect(IctPager.windowFor(0, 40).first, 0);
+      expect(IctPager.windowFor(39, 40).last, 39);
+      expect(IctPager.windowFor(0, 0), isEmpty);
+    });
+
+    test('the screen holds one page, not the table', () {
+      final providers = _read('lib/core/providers.dart');
+      expect(providers, contains('FutureProvider<AuditLogPage>'));
+      // Every narrowing is part of the provider's identity, so changing a
+      // filter is a new QUERY rather than a re-filter of rows in hand.
+      expect(providers, contains('class IctLogQuery'));
+      expect(providers, contains('offset: q.page * q.pageSize'));
+    });
+  });
+
+  group('the console has a colour', () {
+    // "Too white": white cards on a white page, separated only by hairlines,
+    // read as one flat sheet.
+    test('the ground and the card headers carry the accent', () {
+      expect(ict, contains('accent.withOpacity(0.035)'),
+          reason: 'the page behind the cards');
+      expect(ui, contains('IctAccent.of(context).withOpacity(0.07)'),
+          reason: 'the section-card header strip');
+      // The accent is published once rather than threaded through every
+      // widget that wants to paint one line with it.
+      expect(ui, contains('class IctAccent extends InheritedWidget'));
+      expect(ict, contains('IctAccent('));
+    });
+
+    test('a metric tile is tinted, not a white box with a coloured square',
+        () {
+      expect(ui, contains('Color.alphaBlend(color.withOpacity(0.05)'));
     });
   });
 }

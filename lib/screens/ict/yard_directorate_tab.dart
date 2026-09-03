@@ -61,6 +61,7 @@ class YardDirectorateTab extends ConsumerWidget {
               ),
             ],
             child: directorates.when(
+              skipLoadingOnReload: true,
               loading: () => const _Loading(),
               error: (e, _) => _LoadFailed(
                   what: 'directorates',
@@ -98,12 +99,14 @@ class YardDirectorateTab extends ConsumerWidget {
               ),
             ],
             child: yards.when(
+              skipLoadingOnReload: true,
               loading: () => const _Loading(),
               error: (e, _) => _LoadFailed(
                   what: 'yards',
                   error: e,
                   onRetry: () => ref.invalidate(yardsProvider)),
               data: (yardList) => links.when(
+                skipLoadingOnReload: true,
                 loading: () => const _Loading(),
                 error: (e, _) => _LoadFailed(
                     what: 'yard/directorate links',
@@ -391,24 +394,43 @@ class YardDirectorateTab extends ConsumerWidget {
                       height: 1.4),
                 ),
                 const Gap(4),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final d in allDirectorates.where((d) => d.isActive))
-                      FilterChip(
-                        label: Text('${d.srPrefix} — ${d.name}'),
-                        selected: selected.contains(d.code),
-                        onSelected: (on) => setS(() {
-                          if (on) {
-                            selected.add(d.code);
-                          } else {
-                            selected.remove(d.code);
-                          }
-                        }),
-                      ),
-                  ],
-                ),
+                // ⚠️ Two even columns, not a Wrap.
+                //
+                // A Wrap packs each row until the next chip will not fit, so
+                // with names of every length ("B/A — Baggage / Airport" beside
+                // "SSD — Social Protection & Security Directorate") the rows
+                // came out one, then two, then one — a ragged block that reads
+                // as a mistake rather than as a list of eight equal choices.
+                // A fixed two-column grid gives every directorate the same
+                // box, and the eye can go straight down a column.
+                LayoutBuilder(builder: (context, box) {
+                  final active =
+                      allDirectorates.where((d) => d.isActive).toList();
+                  const gap = 8.0;
+                  final cellWidth = (box.maxWidth - gap) / 2;
+                  return Wrap(
+                    spacing: gap,
+                    runSpacing: gap,
+                    children: [
+                      for (final d in active)
+                        SizedBox(
+                          width: cellWidth,
+                          child: _DirectorateTick(
+                            accent: accent,
+                            label: '${d.srPrefix} — ${d.name}',
+                            selected: selected.contains(d.code),
+                            onChanged: (on) => setS(() {
+                              if (on) {
+                                selected.add(d.code);
+                              } else {
+                                selected.remove(d.code);
+                              }
+                            }),
+                          ),
+                        ),
+                    ],
+                  );
+                }),
               ],
             ),
           ]),
@@ -462,7 +484,7 @@ class _DirectorateTable extends StatelessWidget {
   final List<DirectorateModel> rows;
   final Color accent;
   final ValueChanged<DirectorateModel> onEdit;
-  final ValueChanged<DirectorateModel> onToggle;
+  final Future<void> Function(DirectorateModel) onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -480,7 +502,9 @@ class _DirectorateTable extends StatelessWidget {
     // the narrowest columns in a wide row: the pill and the buttons ended
     // up touching, and the toggle spilled past the card's edge (the 6px
     // overflow stripe). Fixed widths cannot be squeezed by a long name.
-    const widths = [1, 1, 4];
+    // SR Prefix and Code are short and fixed in shape; the NAME is what
+    // varies, so it gets the room.
+    const widths = [2, 2, 7];
     const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];
     return _TableShell(
       columns: const ['SR Prefix', 'Code', 'Name', 'Status', 'Actions'],
@@ -524,7 +548,7 @@ class _YardTable extends StatelessWidget {
   final Map<String, List<String>> links;
   final Color accent;
   final ValueChanged<YardModel> onEdit;
-  final ValueChanged<YardModel> onToggle;
+  final Future<void> Function(YardModel) onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -535,7 +559,11 @@ class _YardTable extends StatelessWidget {
         subtitle: 'Add a yard and tick the directorates it belongs to.',
       );
     }
-    const widths = [3, 1, 3, 3];
+    // ⚠️ Balanced against what each column actually holds: a yard name and
+    // an example SR are long, a code is four characters, and Directorates
+    // is a row of fixed-width chips. At 3/1/3/3 the codes had as much room
+    // as the SR numbers, and the names ran out of it.
+    const widths = [5, 2, 4, 6];
     const fixed = [kIctStatusColumnWidth, kIctActionsColumnWidth];
     return _TableShell(
       columns: const [
@@ -570,6 +598,69 @@ class _YardTable extends StatelessWidget {
             ],
           ),
       ],
+    );
+  }
+}
+
+/// One directorate in the "Belongs to" grid.
+///
+/// A FilterChip sizes itself to its label and carries the app's global chip
+/// theme, so eight of them could never line up into a grid and none of them
+/// carried the console's accent. This is a plain box that fills the cell it
+/// is given.
+class _DirectorateTick extends StatelessWidget {
+  const _DirectorateTick({
+    required this.accent,
+    required this.label,
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final Color accent;
+  final String label;
+  final bool selected;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(kIctControlRadius),
+        onTap: () => onChanged(!selected),
+        child: Container(
+          height: kIctControlHeight,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color:
+                selected ? accent.withOpacity(0.1) : context.colors.surfaceDark,
+            borderRadius: BorderRadius.circular(kIctControlRadius),
+            border: Border.all(
+                color: selected
+                    ? accent.withOpacity(0.5)
+                    : context.colors.borderColor),
+          ),
+          child: Row(children: [
+            Icon(
+                selected
+                    ? Icons.check_box_rounded
+                    : Icons.check_box_outline_blank_rounded,
+                size: 17,
+                color: selected ? accent : context.colors.textMuted),
+            const Gap(8),
+            Expanded(
+              child: Text(label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      color: selected ? accent : context.colors.textPrimary,
+                      fontSize: 12,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500)),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -769,15 +860,22 @@ class _MonoChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Align(
       alignment: Alignment.centerLeft,
+      // ⚠️ One size for every code. They were padded around their text, so
+      // "BA", "ACD" and "B/A" each came out a different width and a column of
+      // them read as a ragged edge rather than as a set of labels. A code is
+      // at most four characters, so one box fits them all.
       child: Container(
-        padding: EdgeInsets.symmetric(
-            horizontal: small ? 6 : 8, vertical: small ? 2 : 3),
+        width: small ? 42 : 52,
+        height: small ? 19 : 23,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
           color: color.withOpacity(0.12),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(color: color.withOpacity(0.35)),
         ),
         child: Text(text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
                 color: color,
                 fontFamily: 'monospace',
@@ -790,6 +888,14 @@ class _MonoChip extends StatelessWidget {
 
 /// The console's status pill, at the console's one width — so this column
 /// lines up with the status column on every other ICT screen.
+/// ⚠️ ENABLED / DISABLED here, not ACTIVE / INACTIVE.
+///
+/// A yard or a directorate is a configuration row that ICT switches on and
+/// off, and the control beside it IS a switch — "enabled" is what a switch
+/// does. An ACCOUNT is a different thing: it is active, expired or
+/// deactivated as a fact of its own lifetime, not because someone flipped it,
+/// so the Staff and Directorate Access tables keep ACTIVE. One word for both
+/// would have said these two very different states are the same thing.
 class _StatusPill extends StatelessWidget {
   const _StatusPill({required this.active});
   final bool active;
@@ -797,10 +903,10 @@ class _StatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IctStatusPill(
-      label: active ? 'Active' : 'Inactive',
+      label: active ? 'Enabled' : 'Disabled',
       color: active
           ? context.colors.successGreen
-          : context.colors.dangerRed,
+          : context.colors.textMuted,
     );
   }
 }
@@ -813,19 +919,19 @@ class _RowActions extends StatelessWidget {
     required this.accent,
   });
 
-  final VoidCallback onEdit, onToggle;
+  final VoidCallback onEdit;
+  final Future<void> Function() onToggle;
   final bool active;
   final Color accent;
 
   @override
   Widget build(BuildContext context) {
-    // ⚠️ Two IctIconButtons, at the console's one icon size. This was the
-    // shared Edit button (a 27px tinted square) beside a 34px IconButton
-    // holding a toggle glyph — two different sizes for two actions on the
-    // same row, and the oversized one is what pushed this column past the
-    // card's edge.
+    // ⚠️ Two controls at the console's one icon size. This was the shared Edit
+    // button (a 27px tinted square) beside a 34px IconButton holding a toggle
+    // glyph -- two sizes for two actions on the same row, and the oversized
+    // one is what pushed this column past the card's edge.
     //
-    // Deactivating, not deleting: the code is stamped on historical rows.
+    // Disabling, not deleting: the code is stamped on historical rows.
     return Row(mainAxisAlignment: MainAxisAlignment.start, children: [
       IctIconButton(
         icon: Icons.edit_rounded,
@@ -834,16 +940,98 @@ class _RowActions extends StatelessWidget {
         onPressed: onEdit,
       ),
       const Gap(8),
-      IctIconButton(
-        icon: active
-            ? Icons.toggle_on_rounded
-            : Icons.toggle_off_outlined,
-        color:
-            active ? context.colors.successGreen : context.colors.textMuted,
-        tooltip: active ? 'Deactivate (hides it from pickers)' : 'Activate',
-        onPressed: onToggle,
-      ),
+      _EnableSwitch(active: active, onChanged: onToggle),
     ]);
+  }
+}
+
+/// The enable/disable switch on a Yards & Directorates row.
+///
+/// ⚠️ It flips FIRST and asks the server after.
+///
+/// It used to await the write and then invalidate the providers, so the switch
+/// sat still for the length of a round trip and the page then rebuilt from
+/// underneath it. Moving the local state first is what makes it read as a
+/// switch rather than as a form submission — and if the write fails the switch
+/// goes back and says why, which is the only thing waiting ever bought.
+class _EnableSwitch extends StatefulWidget {
+  const _EnableSwitch({required this.active, required this.onChanged});
+
+  final bool active;
+  final Future<void> Function() onChanged;
+
+  @override
+  State<_EnableSwitch> createState() => _EnableSwitchState();
+}
+
+class _EnableSwitchState extends State<_EnableSwitch> {
+  /// What the switch is SHOWING, which runs ahead of what the server holds.
+  bool? _optimistic;
+
+  @override
+  void didUpdateWidget(covariant _EnableSwitch old) {
+    super.didUpdateWidget(old);
+    // Once the refreshed row agrees with us, stop overriding it — otherwise a
+    // change made anywhere else would never show on this row again.
+    if (_optimistic != null && widget.active == _optimistic) _optimistic = null;
+  }
+
+  Future<void> _flip() async {
+    setState(() => _optimistic = !(_optimistic ?? widget.active));
+    try {
+      await widget.onChanged();
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _optimistic = null);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e.toString().replaceAll('Exception: ', '')),
+        backgroundColor: context.colors.dangerRed,
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final on = _optimistic ?? widget.active;
+    final track = on ? context.colors.successGreen : context.colors.textMuted;
+    return Tooltip(
+      message: on ? 'Disable (hides it from pickers)' : 'Enable',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: _flip,
+          child: SizedBox(
+            width: kIctIconButtonSize,
+            height: kIctIconButtonSize,
+            child: Center(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                curve: Curves.easeOut,
+                width: 30,
+                height: 17,
+                decoration: BoxDecoration(
+                  color: track.withOpacity(on ? 0.9 : 0.3),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: AnimatedAlign(
+                  duration: const Duration(milliseconds: 180),
+                  curve: Curves.easeOut,
+                  alignment: on ? Alignment.centerRight : Alignment.centerLeft,
+                  child: Container(
+                    width: 13,
+                    height: 13,
+                    margin: const EdgeInsets.symmetric(horizontal: 2),
+                    decoration: const BoxDecoration(
+                        color: Colors.white, shape: BoxShape.circle),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

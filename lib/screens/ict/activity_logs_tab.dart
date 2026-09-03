@@ -13,7 +13,6 @@ import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
-import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import 'ict_ui.dart';
 
@@ -58,20 +57,46 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
 
   static const int _pageSize = 25;
 
+  /// ⚠️ Pushes the filters into the QUERY rather than applying them to rows.
+  ///
+  /// The screen holds one page now, so filtering here would filter that page —
+  /// hiding rows from the page you are on while leaving the ones behind it
+  /// untouched, and disagreeing with the count. Every narrowing has to reach
+  /// the WHERE clause, so it all goes through here.
+  void _pushQuery() {
+    ref.read(ictLogQueryProvider.notifier).state = IctLogQuery(
+      // The dropdown's value is a YardFilterOption key: a bare yard code, or
+      // "<yard>|<directorate>" for one entry of a multi-directorate yard.
+      // Only the yard half is stamped on a log row.
+      yard: _selectedYard == 'all' ? null : _selectedYard.split('|').first,
+      role: _selectedRole == 'all' ? null : _selectedRole,
+      entityType: _selectedEntity == 'all' ? null : _selectedEntity,
+      search: _search.trim(),
+      page: _page,
+      pageSize: _pageSize,
+    );
+  }
+
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  void _resetPage() => _page = 0;
+  /// Back to the first page, then re-ask the server. A narrowing that
+  /// left the page number alone would land you on page 7 of a 2-page
+  /// result, which comes back empty.
+  void _resetPage() {
+    _page = 0;
+    _pushQuery();
+  }
 
   // ── Date window ─────────────────────────────────────────────────────────
   // Each picker produces a DateTimeRange; the provider turns that into the
   // query's bounds. "All Time" clears it, and retention keeps the table to a
   // year regardless.
 
-  Future<void> _pickPeriod(LogPeriod period) async {
+  Future<void> _pickPeriod(BuildContext anchor, LogPeriod period) async {
     DateTimeRange? range;
     switch (period) {
       case LogPeriod.all:
@@ -93,7 +118,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
         if (picked is! DateTimeRange) return;
         range = picked;
       case LogPeriod.month:
-        final m = await _pickMonth();
+        final m = await _pickMonth(anchor);
         if (m == null) return;
         // The 0th day of the NEXT month is the last day of this one, so the
         // window covers a short February without special-casing it.
@@ -101,7 +126,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
             start: DateTime(m.year, m.month, 1),
             end: DateTime(m.year, m.month + 1, 0));
       case LogPeriod.year:
-        final y = await _pickYear();
+        final y = await _pickYear(anchor);
         if (y == null) return;
         range = DateTimeRange(
             start: DateTime(y, 1, 1), end: DateTime(y, 12, 31));
@@ -114,38 +139,39 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
     });
   }
 
-  Future<DateTime?> _pickMonth() {
+  /// ⚠️ Anchored under the segment that opened it, using the SAME popup every
+  /// other dropdown in the app opens (see showStyledOptionsMenu). Both pickers
+  /// were a centred AlertDialog full of tall white boxes — a control that
+  /// existed nowhere else in the app, for no reason other than that the menu
+  /// helper used to be private.
+  Future<DateTime?> _pickMonth(BuildContext anchor) {
     final now = DateTime.now();
     // A year of months back from today — the retention window, so every
     // option offered can actually return rows.
-    final months = [for (var i = 0; i < 12; i++) DateTime(now.year, now.month - i)];
-    return showDialog<DateTime>(
-      context: context,
-      builder: (ctx) => _PickerDialog<DateTime>(
-        title: 'Select Month',
-        icon: Icons.calendar_view_month_rounded,
-        accent: widget.accent,
-        options: [
-          for (final m in months)
-            (value: m, label: DateFormat('MMMM yyyy').format(m)),
-        ],
-      ),
+    final months = [
+      for (var i = 0; i < 12; i++) DateTime(now.year, now.month - i)
+    ];
+    return showStyledOptionsMenu<DateTime>(
+      anchor,
+      menuWidth: 200,
+      perPage: 12,
+      options: [
+        for (final m in months)
+          StyledDropdownOption(m, DateFormat('MMMM yyyy').format(m)),
+      ],
     );
   }
 
-  Future<int?> _pickYear() {
+  Future<int?> _pickYear(BuildContext anchor) {
     final now = DateTime.now();
-    return showDialog<int>(
-      context: context,
-      builder: (ctx) => _PickerDialog<int>(
-        title: 'Select Year',
-        icon: Icons.calendar_today_rounded,
-        accent: widget.accent,
-        options: [
-          for (var y = now.year; y >= now.year - 4; y--)
-            (value: y, label: '$y'),
-        ],
-      ),
+    return showStyledOptionsMenu<int>(
+      anchor,
+      menuWidth: 160,
+      perPage: 8,
+      options: [
+        for (var y = now.year; y >= now.year - 4; y--)
+          StyledDropdownOption(y, '$y'),
+      ],
     );
   }
 
@@ -167,35 +193,12 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
   }
 
   // ── Filtering ───────────────────────────────────────────────────────────
-
-  List<AuditLogModel> _apply(List<AuditLogModel> logs) {
-    return logs.where((l) {
-      if (_selectedRole != 'all' && l.userRole != _selectedRole) return false;
-      if (_selectedEntity != 'all' && l.entityType != _selectedEntity) {
-        return false;
-      }
-      if (_selectedYard != 'all') {
-        // The dropdown's value is a YardFilterOption key: a bare yard code, or
-        // "<yard>|<directorate>" for one entry of a multi-directorate yard.
-        // Only the yard half is stamped on a log row.
-        final yardCode = _selectedYard.split('|').first;
-        if ((l.yard ?? '') != yardCode) return false;
-      }
-      if (_search.isNotEmpty) {
-        final q = _search.toLowerCase();
-        final hay = '${l.action} ${l.userFullName ?? ''} ${l.entityType} '
-                '${l.entityId} ${l.details ?? ''}'
-            .toLowerCase();
-        if (!hay.contains(q)) return false;
-      }
-      return true;
-    }).toList();
-  }
-
-  /// Entity types actually present, so the dropdown never offers a filter that
-  /// returns nothing.
-  List<String> _entityTypes(List<AuditLogModel> logs) =>
-      (logs.map((l) => l.entityType).toSet().toList()..sort());
+  //
+  // ⚠️ There is none here any more. Narrowing lives in SQL (see
+  // getAllLogsAcrossOffices): with one page in hand, a filter applied here
+  // would hide rows from the page you are on and leave every row behind it,
+  // and the count under the table would be a different number from the rows
+  // above it.
 
   String _prettyEntity(String raw) => raw
       .split('_')
@@ -241,7 +244,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                       LogPeriod.year => Icons.calendar_today_rounded,
                     },
                     selected: _period == p,
-                    onTap: () => _pickPeriod(p),
+                    onTap: (anchor) => _pickPeriod(anchor, p),
                   ),
               ],
             ),
@@ -266,8 +269,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
           const Gap(14),
 
           // ── Toolbar ───────────────────────────────────────────
-          async.maybeWhen(
-            data: (logs) => IctToolbar(children: [
+          IctToolbar(children: [
               Expanded(
                 flex: 3,
                 child: IctSearchField(
@@ -345,9 +347,13 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                   icon: Icons.category_rounded,
                   accent: accent,
                   value: _selectedEntity,
+                  // Its own query, not the page's rows -- see
+                  // ictLogEntityTypesProvider.
                   options: [
                     const StyledDropdownOption('all', 'All Activity'),
-                    for (final e in _entityTypes(logs))
+                    for (final e
+                        in ref.watch(ictLogEntityTypesProvider).valueOrNull ??
+                            const <String>[])
                       StyledDropdownOption(e, _prettyEntity(e)),
                   ],
                   onChanged: (v) => setState(() {
@@ -356,9 +362,7 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                   }),
                 ),
               ),
-            ]),
-            orElse: () => const SizedBox(height: 66),
-          ).animate().fadeIn(duration: 300.ms, delay: 120.ms),
+          ]).animate().fadeIn(duration: 300.ms, delay: 120.ms),
           const Gap(16),
 
           // ── Table ─────────────────────────────────────────────
@@ -370,23 +374,19 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
               error: (e, _) => ErrorView(
                   error: e,
                   onRetry: () => ref.refresh(ictAllOfficeLogsProvider)),
-              data: (logs) {
-                final rows = _apply(logs);
-                final maxPage =
-                    rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
+              data: (result) {
+                final pageRows = result.rows;
+                final total = result.total;
+                final maxPage = total == 0 ? 0 : (total - 1) ~/ _pageSize;
                 final page = _page.clamp(0, maxPage);
-                final pageRows = pageSlice(rows, page, _pageSize);
-                final filtered = rows.length != logs.length;
 
                 return IctSectionCard(
                   icon: Icons.history_rounded,
                   title: 'Audit Trail',
                   subtitle: 'Every action across all yards and directorates.',
-                  // Says both what is shown and what the filters took away.
-                  badge: filtered
-                      ? '${rows.length} of ${logs.length} actions'
-                      : '${rows.length} '
-                          '${rows.length == 1 ? 'action' : 'actions'}',
+                  // The count of everything the filters matched, which is
+                  // what the server counted -- not the length of this page.
+                  badge: '$total ${total == 1 ? 'action' : 'actions'}',
                   fill: true,
                   child: Column(children: [
                     Expanded(
@@ -397,7 +397,15 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                           fixedTopRows: 1,
                           minWidth: 1080,
                           headingRowHeight: kIctHeadingHeight,
-                          dataRowHeight: kIctRowHeight,
+                          // ⚠️ Taller than the other tables on purpose. The
+                          // audit trail is the one ICT page whose card fills
+                          // the window, so at kIctRowHeight its 25 rows ended
+                          // well short of the bottom and left a band of empty
+                          // card under them. Taller rows spend that space on
+                          // the data instead, and a log line — a timestamp, a
+                          // long action and a details string — reads better
+                          // with the room.
+                          dataRowHeight: kIctLogRowHeight,
                           isHorizontalScrollBarVisible: false,
                           empty: const EmptyTableState(
                             icon: Icons.history_rounded,
@@ -476,11 +484,15 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
                         height: 1,
                         thickness: 1,
                         color: context.colors.borderColor),
-                    TablePager(
-                      total: rows.length,
+                    IctPager(
+                      total: total,
                       page: page,
                       pageSize: _pageSize,
-                      onPageChanged: (p) => setState(() => _page = p),
+                      accent: accent,
+                      onPageChanged: (p) => setState(() {
+                        _page = p;
+                        _pushQuery();
+                      }),
                     ),
                   ]),
                 ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn();
@@ -559,77 +571,5 @@ class _RoleChip extends StatelessWidget {
     // No dot: this is WHO acted, not a state, and a column of coloured dots
     // beside a column of status dots would read as the same kind of thing.
     return IctStatusPill(label: label, color: color, dot: false, width: 88);
-  }
-}
-
-/// A small single-choice list, used for the Month and Year pickers.
-///
-/// showDatePicker cannot ask for a month or a year on its own, and a whole
-/// calendar is the wrong shape for the question anyway.
-class _PickerDialog<T> extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color accent;
-  final List<({T value, String label})> options;
-
-  const _PickerDialog({
-    required this.title,
-    required this.icon,
-    required this.accent,
-    required this.options,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      backgroundColor: context.colors.cardDark,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      title: Row(children: [
-        Icon(icon, color: accent, size: 20),
-        const Gap(10),
-        Text(title,
-            style: TextStyle(
-                color: context.colors.textPrimary,
-                fontSize: 17,
-                fontWeight: FontWeight.w700)),
-      ]),
-      contentPadding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      content: SizedBox(
-        width: 300,
-        height: 360,
-        child: ListView.separated(
-          itemCount: options.length,
-          separatorBuilder: (_, __) => const Gap(6),
-          itemBuilder: (context, i) {
-            final o = options[i];
-            return InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => Navigator.pop(context, o.value),
-              child: Container(
-                width: double.infinity,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                decoration: BoxDecoration(
-                  color: context.colors.surfaceDark,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: context.colors.borderColor),
-                ),
-                child: Text(o.label,
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600)),
-              ),
-            );
-          },
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-      ],
-    );
   }
 }

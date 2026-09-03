@@ -82,6 +82,36 @@ Future<_PickResult<T>?> _showStyledMenu<T>(
 /// App-wide filter dropdown styled like the Packages "All Years" picker:
 /// an outlined button that opens an anchored card popup with gold-highlighted
 /// option cells and pagination when there are many options.
+/// Opens the app's own options popup under [anchorContext] and returns what
+/// was picked, or null if it was dismissed.
+///
+/// ⚠️ The same menu [StyledDropdownButton] and [StyledDropdownFormField] open
+/// — exposed so a caller that is not a dropdown can use it too. The ICT
+/// console's Month and Year pickers were a centred AlertDialog full of big
+/// white boxes, which is a different control from every other date choice in
+/// the app for no reason other than that this function was private.
+Future<T?> showStyledOptionsMenu<T>(
+  BuildContext anchorContext, {
+  required List<StyledDropdownOption<T>> options,
+  T? value,
+  double menuWidth = 260,
+  int columns = 1,
+  int perPage = 8,
+}) async {
+  final picked = await _showStyledMenu<T>(
+    anchorContext,
+    value: value,
+    allLabel: '',
+    options: options,
+    includeAll: false,
+    columns: columns,
+    perPage: perPage,
+    menuWidth: menuWidth,
+  );
+  if (picked == null || picked.isAll) return null;
+  return picked.value;
+}
+
 class StyledDropdownButton<T> extends StatelessWidget {
   final T? value;
   final String allLabel;

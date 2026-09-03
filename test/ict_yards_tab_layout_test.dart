@@ -81,13 +81,18 @@ void main() {
     expect(find.text('EXAMPLE SR'), findsOneWidget);
   });
 
-  testWidgets('a deactivated row still says so, at the console pill width',
+  testWidgets('a disabled row still says so, at the console pill width',
       (tester) async {
     await pump(tester, _harness());
 
-    // Two directorates active + two yards active = 4; one directorate off.
-    expect(find.text('ACTIVE'), findsNWidgets(4));
-    expect(find.text('INACTIVE'), findsOneWidget);
+    // ⚠️ ENABLED / DISABLED, not ACTIVE / INACTIVE. A yard or a directorate
+    // is a configuration row that ICT switches on and off, and the control
+    // beside it IS a switch. An ACCOUNT is active, expired or deactivated as
+    // a fact of its own lifetime — a different thing, so the Staff and
+    // Directorate Access tables keep ACTIVE.
+    expect(find.text('ENABLED'), findsNWidgets(4));
+    expect(find.text('DISABLED'), findsOneWidget);
+    expect(find.text('ACTIVE'), findsNothing);
   });
 
   testWidgets('an empty section shows the empty state, not a bare card',

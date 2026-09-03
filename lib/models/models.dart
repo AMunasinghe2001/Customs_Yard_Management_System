@@ -988,6 +988,17 @@ class ProfileModel {
   }
 }
 
+/// One page of the audit log, and how many rows the filters matched in all.
+///
+/// ⚠️ [total] is the count of the WHOLE filtered set, not [rows].length. The
+/// pager needs both: the rows to draw, and the total to say how many pages
+/// there are and where this one sits in them.
+class AuditLogPage {
+  final List<AuditLogModel> rows;
+  final int total;
+  const AuditLogPage({required this.rows, required this.total});
+}
+
 class AuditLogModel {
   final String id;
   final String userId;

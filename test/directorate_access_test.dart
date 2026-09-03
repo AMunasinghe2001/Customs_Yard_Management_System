@@ -203,7 +203,7 @@ void main() {
     final dash = _read('lib/screens/ict/ict_dashboard_screen.dart');
 
     test('the controller has room for it', () {
-      expect(dash, contains('TabController(length: 4, vsync: this)'),
+      expect(dash, allOf(contains('TabController('), contains('length: 4,')),
           reason: 'a fourth tab needs a fourth slot, or the view throws');
       // The label now names a rail entry, not a Tab.
       expect(dash, contains("_IctRailItem('Directorate Access'"));
@@ -229,7 +229,7 @@ void main() {
       ]) {
         expect(views, contains(tab));
       }
-      expect(dash, contains('TabController(length: 4'));
+      expect(dash, allOf(contains('TabController('), contains('length: 4,')));
     });
   });
 }

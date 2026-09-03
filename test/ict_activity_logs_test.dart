@@ -43,9 +43,17 @@ final _logs = [
 Widget _harness({List<AuditLogModel>? logs}) => ProviderScope(
       overrides: [
         ictAllOfficeLogsProvider
-            .overrideWith((ref) => Future.value(logs ?? _logs)),
+            // ⚠️ One PAGE now, with the total the filters matched. The
+            // provider returns what the server sent, not the whole table:
+            // narrowing and paging both happen in SQL.
+            .overrideWith((ref) => Future.value(AuditLogPage(
+                rows: logs ?? _logs, total: (logs ?? _logs).length))),
         yardFilterOptionsProvider
             .overrideWith((ref) => Future.value(const <YardFilterOption>[])),
+        // ⚠️ The Activity filter builds its list from its OWN query now, so
+        // without this the tab opens a real database socket under test.
+        ictLogEntityTypesProvider.overrideWith((ref) => Future.value(
+            {for (final l in logs ?? _logs) l.entityType}.toList()..sort())),
       ],
       child: MaterialApp(
         theme: AppTheme.lightTheme,
@@ -61,7 +69,7 @@ void main() {
 
   group('the tab is wired into the ICT dashboard', () {
     test('the controller has room for it', () {
-      expect(dash, contains('TabController(length: 4, vsync: this)'),
+      expect(dash, allOf(contains('TabController('), contains('length: 4,')),
           reason: 'every tab needs a slot, or the view throws');
       // The label now names a rail entry, not a Tab.
       expect(dash, contains("_IctRailItem('Activity Logs'"));
@@ -87,29 +95,60 @@ void main() {
       ]) {
         expect(views, contains(tab));
       }
-      expect(dash, contains('TabController(length: 4'));
+      expect(dash, allOf(contains('TabController('), contains('length: 4,')));
     });
   });
 
   group('it reads the whole log, not one yard', () {
     final services = _read('lib/services/services.dart');
 
-    test('the cross-office query is scoped to no yard and drops no role', () {
+    final crossOffice = () {
       final fn = services.substring(
-          services.indexOf('Future<List<AuditLogModel>> getAllLogsAcrossOffices'));
-      final body = fn.substring(0, fn.indexOf('Future<void> recordLog'));
-      expect(body, isNot(contains("eq('yard'")),
-          reason: 'ICT oversees every yard');
-      expect(body, isNot(contains('inFilter')),
+          services.indexOf('Future<AuditLogPage> getAllLogsAcrossOffices'));
+      return fn.substring(0, fn.indexOf('Future<void> recordLog'));
+    }();
+
+    test('the cross-office query is scoped to no yard and drops no role', () {
+      // ⚠️ A yard is now an OPTIONAL narrowing ICT can ask for, so what is
+      // tested is that it DEFAULTS to none, not that the clause is absent.
+      // Called without a yard, the query still spans every office.
+      expect(crossOffice, contains('String? yard,'));
+      expect(crossOffice, contains('if (yard != null && yard.isNotEmpty)'));
+      expect(crossOffice, isNot(contains('inFilter')),
           reason: 'ICT oversees every directorate too');
     });
 
     test('the date window is pushed into SQL, not filtered client-side', () {
-      final fn = services.substring(
-          services.indexOf('Future<List<AuditLogModel>> getAllLogsAcrossOffices'));
-      final body = fn.substring(0, fn.indexOf('Future<void> recordLog'));
-      expect(body, contains("gte('created_at'"));
-      expect(body, contains("lte('created_at'"));
+      expect(crossOffice, contains("gte('created_at'"));
+      expect(crossOffice, contains("lte('created_at'"));
+    });
+
+    // ⚠️ The page AND every narrowing are SQL. The screen used to fetch the
+    // whole audit table and slice it — fine at a few hundred rows, hopeless
+    // at a few hundred thousand.
+    test('the page and the filters are pushed into SQL', () {
+      expect(crossOffice, contains('.range(offset, offset + limit - 1)'));
+      // The count runs the SAME narrowing, or "of N" would report a different
+      // set from the rows above it.
+      expect(crossOffice, contains('.count()'));
+      expect('narrow('.allMatches(crossOffice).length,
+          greaterThanOrEqualTo(2));
+      for (final clause in [
+        "eq('yard', yard)",
+        "eq('profiles.role', role)",
+        "eq('entity_type', entityType)",
+        'action.ilike.',
+      ]) {
+        expect(crossOffice, contains(clause));
+      }
+    });
+
+    test('the screen no longer filters the rows itself', () {
+      final tab = _read('lib/screens/ict/activity_logs_tab.dart');
+      expect(tab.contains('List<AuditLogModel> _apply('), isFalse,
+          reason: 'filtering one page would hide rows from that page only');
+      expect(tab.contains('pageSlice('), isFalse);
+      expect(tab, contains('_pushQuery()'));
     });
 
     test('the yard admin view is untouched and still narrow', () {
@@ -173,7 +212,10 @@ void main() {
 
     test('the end of the window includes the whole last day', () {
       final providers = _read('lib/core/providers.dart');
-      expect(providers, contains('23, 59, 59'),
+      // Matched loosely: the formatter may break the arguments across
+      // lines, and that is not what this test is about.
+      expect(providers.replaceAll(RegExp(r'\s+'), ' '),
+          contains('23, 59, 59'),
           reason: 'a date-only bound would drop that day\'s own activity');
     });
   });

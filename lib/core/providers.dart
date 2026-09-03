@@ -626,19 +626,74 @@ final ictLogRangeProvider = StateProvider<DateTimeRange?>((ref) => null);
 /// Re-fetches when the date window changes. Cross-office by design: ICT
 /// provisions all these accounts, so unlike [allLogsProvider] this is scoped
 /// to no yard and drops nobody's role.
-final ictAllOfficeLogsProvider =
-    FutureProvider<List<AuditLogModel>>((ref) async {
+/// What page of the log, narrowed how.
+///
+/// ⚠️ Every field is part of the provider's identity, so changing a filter or
+/// turning a page is a NEW query rather than a re-filter of rows already held.
+/// That is the point: the screen keeps one page, not the table.
+class IctLogQuery {
+  final String? yard;
+  final String? role;
+  final String? entityType;
+  final String search;
+  final int page;
+  final int pageSize;
+
+  const IctLogQuery({
+    this.yard,
+    this.role,
+    this.entityType,
+    this.search = '',
+    this.page = 0,
+    this.pageSize = 25,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is IctLogQuery &&
+      other.yard == yard &&
+      other.role == role &&
+      other.entityType == entityType &&
+      other.search == search &&
+      other.page == page &&
+      other.pageSize == pageSize;
+
+  @override
+  int get hashCode =>
+      Object.hash(yard, role, entityType, search, page, pageSize);
+}
+
+final ictLogQueryProvider =
+    StateProvider<IctLogQuery>((ref) => const IctLogQuery());
+
+final ictAllOfficeLogsProvider = FutureProvider<AuditLogPage>((ref) async {
   ref.watch(auditLogsChangeTriggerProvider);
   final range = ref.watch(ictLogRangeProvider);
+  final q = ref.watch(ictLogQueryProvider);
   return ref.read(auditLogServiceProvider).getAllLogsAcrossOffices(
         from: range?.start,
         // The picker hands back a date, so the end day is inclusive only if
         // we reach the end OF that day.
         to: range == null
             ? null
-            : DateTime(range.end.year, range.end.month, range.end.day,
-                23, 59, 59),
+            : DateTime(range.end.year, range.end.month, range.end.day, 23, 59,
+                59),
+        yard: q.yard,
+        role: q.role,
+        entityType: q.entityType,
+        search: q.search,
+        offset: q.page * q.pageSize,
+        limit: q.pageSize,
       );
+});
+
+/// The entity types the Activity filter offers.
+///
+/// Its own query: the screen holds one page now, so a list built from the
+/// rows on screen would offer whatever happened to be on that page.
+final ictLogEntityTypesProvider = FutureProvider<List<String>>((ref) async {
+  ref.watch(auditLogsChangeTriggerProvider);
+  return ref.read(auditLogServiceProvider).auditEntityTypes();
 });
 
 final packageCategoriesProvider =

@@ -19,7 +19,29 @@ import 'error_view.dart';
 /// colour (defaults to the disposal green).
 class DisposalProfileDialog extends ConsumerStatefulWidget {
   final Color? accent;
-  const DisposalProfileDialog({super.key, this.accent});
+
+  /// Renders the profile as a PANEL rather than a dialog: no Dialog wrapper,
+  /// no gradient header, no Close button — the caller supplies the surface and
+  /// the way back.
+  ///
+  /// ⚠️ Opt-in, and it must stay so. Every portal opens this as a dialog; only
+  /// the ICT console shows it as a page of its own, because in a console a
+  /// profile is somewhere you GO, not something that interrupts you. The
+  /// logic — what a save writes, what a password change checks — is the same
+  /// code either way, which is the whole reason this is a flag rather than a
+  /// second profile screen.
+  final bool embedded;
+
+  /// Called instead of `Navigator.pop` when [embedded]. Null hides the way
+  /// out entirely, for a caller that supplies its own.
+  final VoidCallback? onClose;
+
+  const DisposalProfileDialog({
+    super.key,
+    this.accent,
+    this.embedded = false,
+    this.onClose,
+  });
 
   @override
   ConsumerState<DisposalProfileDialog> createState() =>
@@ -137,22 +159,15 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
     final profile = ref.watch(currentProfileProvider);
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Dialog(
-      backgroundColor: isDark ? context.colors.cardDark : context.colors.scaffoldBg,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-      clipBehavior: Clip.antiAlias,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 520,
-          maxHeight: MediaQuery.of(context).size.height * 0.9,
-        ),
-        child: Column(
+    final body = Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             // ── Green gradient header (matches the dashboard top bar) ──
-            Container(
+            // Skipped when embedded: the page around it already says whose
+            // profile this is, and a second banner inside a card is the
+            // "card inside a card" that makes an embedded dialog look wrong.
+            if (!widget.embedded) Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -194,7 +209,7 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
             // ── Body ──
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(24),
+                padding: EdgeInsets.all(widget.embedded ? 20 : 24),
                 child: Form(
                   key: _formKey,
                   child: _editing
@@ -205,9 +220,13 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
             ),
             // ── Footer ──
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              padding: EdgeInsets.symmetric(
+                  horizontal: widget.embedded ? 20 : 24,
+                  vertical: widget.embedded ? 12 : 16),
               decoration: BoxDecoration(
-                color: isDark ? Colors.black26 : Colors.grey.shade100,
+                color: widget.embedded
+                    ? context.colors.surfaceDark
+                    : (isDark ? Colors.black26 : Colors.grey.shade100),
                 border:
                     Border(top: BorderSide(color: context.colors.borderColor)),
               ),
@@ -241,11 +260,15 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
                         ),
                       ]
                     : [
-                        OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Close'),
-                        ),
-                        const Gap(12),
+                        // Embedded, the way out belongs to the page around
+                        // this — a "Close" that pops the route would take the
+                        // whole console with it.
+                        if (!widget.embedded)
+                          OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            child: const Text('Close'),
+                          ),
+                        if (!widget.embedded) const Gap(12),
                         ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
                               backgroundColor: green,
@@ -261,7 +284,24 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
               ),
             ),
           ],
+        );
+
+    // Embedded, the caller owns the surface: it supplies the card, the border
+    // and the way back, and this contributes only the content.
+    if (widget.embedded) return body;
+
+    return Dialog(
+      backgroundColor:
+          isDark ? context.colors.cardDark : context.colors.scaffoldBg,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 520,
+          maxHeight: MediaQuery.of(context).size.height * 0.9,
         ),
+        child: body,
       ),
     );
   }

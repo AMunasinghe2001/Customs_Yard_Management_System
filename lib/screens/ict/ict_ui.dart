@@ -43,6 +43,23 @@ const double kIctDenseHeight = 30;
 /// and border as every other control; only the width is different.
 const double kIctIconButtonSize = 30;
 
+/// ⚠️ The console header and the rail's brand block are BOTH this tall.
+///
+/// They are two separate widgets either side of the rail's right border, so
+/// nothing makes their heights agree on its own — and when they disagreed the
+/// rail's divider sat a few pixels off the header's, which reads as a notch
+/// in the corner where the two meet.
+const double kIctTopBarHeight = 62;
+
+/// ⚠️ Material gives a button a 48px minimum tap target and its own padding,
+/// both of which beat a SizedBox around it. Without this the Add Officer
+/// button stood taller than the filters it sits beside, which is exactly what
+/// kIctControlHeight exists to prevent.
+const _kIctShrink = (
+  minimumSize: Size.zero,
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+);
+
 /// ⚠️ One width for every status pill in ICT. The widest label any of them
 /// carries is "INACTIVE"; sizing each to its own text left a status column of
 /// ragged boxes, which is a good part of why the tables looked hand-assembled.
@@ -54,6 +71,11 @@ const double kIctPillHeight = 22;
 const double kIctRowHeight = 44;
 const double kIctHeadingHeight = 36;
 
+/// ⚠️ The audit trail alone. Its card fills the window, so at kIctRowHeight
+/// a page of 25 rows stopped well short of the bottom and left a band of bare
+/// card under the table. The rows take that space instead.
+const double kIctLogRowHeight = 52;
+
 /// The gap between two columns of a table row.
 const double kIctCellGap = 12;
 
@@ -64,6 +86,27 @@ const double kIctCellGap = 12;
 /// between them, plus the cell gap on each side.
 const double kIctStatusColumnWidth = kIctPillWidth + 16;
 const double kIctActionsColumnWidth = kIctIconButtonSize * 2 + 8 + 16;
+
+/// The portal accent, carried down the tree.
+///
+/// ⚠️ Every ICT widget needs the accent and almost none of them are given it —
+/// a card header, a pager, a filter. Threading it through every constructor
+/// would mean a required parameter on widgets that only want it to paint one
+/// line, so the console publishes it once at the top instead.
+class IctAccent extends InheritedWidget {
+  const IctAccent({super.key, required this.color, required super.child});
+
+  final Color color;
+
+  /// Falls back to the app's plum, so a widget used outside the console (a
+  /// test pumping one card, say) still paints something sensible.
+  static Color of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<IctAccent>()?.color ??
+      AppTheme.ictCyan;
+
+  @override
+  bool updateShouldNotify(IctAccent old) => old.color != color;
+}
 
 // ── Surfaces ────────────────────────────────────────────────────────────────
 
@@ -164,11 +207,26 @@ class IctSectionCard extends StatelessWidget {
               ? MainAxisSize.min
               : MainAxisSize.max,
           children: [
-            Padding(
+            Container(
+              // ⚠️ A tinted strip. On a white page a white header over a white
+              // table has only its rule to separate them, which is why the
+              // console read as one long sheet of paper: the header is what
+              // says "a new thing starts here", and it needs a surface of its
+              // own to say it.
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    IctAccent.of(context).withOpacity(0.07),
+                    IctAccent.of(context).withOpacity(0.02),
+                  ],
+                ),
+              ),
               padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
               child: Row(children: [
                 if (icon != null) ...[
-                  Icon(icon, size: 18, color: c.textSecondary),
+                  Icon(icon, size: 18, color: IctAccent.of(context)),
                   const Gap(10),
                 ],
                 Flexible(
@@ -261,10 +319,24 @@ class IctMetricCard extends StatelessWidget {
       // Tight: four of these sit above the table, and every pixel they
       // take is a row the officer cannot see without scrolling.
       padding: const EdgeInsets.fromLTRB(14, 11, 14, 11),
+      // ⚠️ The measure's colour reaches the CARD, not just the icon beside it.
+      //
+      // Four white boxes with four small coloured squares is a spreadsheet;
+      // the tinted wash and the top rule are what make a metric tile read as
+      // a metric tile at a glance. Kept to 0.05 so the number stays the
+      // loudest thing on it — the tile is a frame for the figure, not a
+      // block of colour.
       decoration: BoxDecoration(
-        color: c.cardDark,
+        color: Color.alphaBlend(color.withOpacity(0.05), c.cardDark),
         borderRadius: BorderRadius.circular(kIctCardRadius),
-        border: Border.all(color: c.borderColor),
+        border: Border.all(color: color.withOpacity(0.22)),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.06),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(
@@ -276,7 +348,10 @@ class IctMetricCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                      color: c.textMuted,
+                      // The measure's own colour names it, so four tiles in a
+                      // row are told apart by their headings as well as by
+                      // their icons.
+                      color: color,
                       fontSize: 10,
                       letterSpacing: 0.8,
                       fontWeight: FontWeight.w800)),
@@ -532,6 +607,8 @@ class IctPrimaryButton extends StatelessWidget {
           backgroundColor: accent,
           foregroundColor: Colors.white,
           elevation: 0,
+          minimumSize: _kIctShrink.minimumSize,
+          tapTargetSize: _kIctShrink.tapTargetSize,
           padding: const EdgeInsets.symmetric(horizontal: 14),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kIctControlRadius)),
@@ -580,6 +657,8 @@ class IctGhostButton extends StatelessWidget {
           foregroundColor: tint,
           backgroundColor: on ? accent.withOpacity(0.07) : Colors.transparent,
           side: BorderSide(color: tint.withOpacity(on ? 0.45 : 0.3)),
+          minimumSize: _kIctShrink.minimumSize,
+          tapTargetSize: _kIctShrink.tapTargetSize,
           padding: EdgeInsets.symmetric(horizontal: dense ? 9 : 14),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kIctControlRadius)),
@@ -609,6 +688,7 @@ class IctSegmented extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     return Container(
+      height: kIctControlHeight,
       padding: const EdgeInsets.all(3),
       decoration: BoxDecoration(
         color: c.surfaceDark,
@@ -634,7 +714,11 @@ class IctSegment {
   final String label;
   final IconData icon;
   final bool selected;
-  final VoidCallback onTap;
+
+  /// ⚠️ Handed the SEGMENT's own context. A picker opened from here is
+  /// anchored under the segment that opened it, the way every dropdown in the
+  /// app opens — not floated in the middle of the screen as a modal.
+  final void Function(BuildContext) onTap;
 }
 
 class _IctSegmentTile extends StatelessWidget {
@@ -648,12 +732,14 @@ class _IctSegmentTile extends StatelessWidget {
     final on = segment.selected;
     return Material(
       color: Colors.transparent,
-      child: InkWell(
+      child: Builder(builder: (segmentContext) {
+        return InkWell(
         borderRadius: BorderRadius.circular(kIctPillRadius),
-        onTap: segment.onTap,
+        onTap: () => segment.onTap(segmentContext),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: on ? c.cardDark : Colors.transparent,
             borderRadius: BorderRadius.circular(kIctPillRadius),
@@ -671,7 +757,8 @@ class _IctSegmentTile extends StatelessWidget {
                     fontWeight: on ? FontWeight.w700 : FontWeight.w500)),
           ]),
         ),
-      ),
+        );
+      }),
     );
   }
 }
@@ -793,6 +880,191 @@ class IctIconButton extends StatelessWidget {
               border: Border.all(color: color.withOpacity(filled ? 0.3 : 0.25)),
             ),
             child: Icon(icon, size: 15, color: color),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The console's pager: the range on the left, numbered pages on the right.
+///
+/// ⚠️ Numbered, not just Prev/Next. With a single "Page 3" label the only way
+/// to reach page 9 of an audit trail is to press Next six times, and there is
+/// nothing on screen that says how many pages there even are. First and last
+/// are always shown, the current page keeps two neighbours, and the gaps
+/// collapse to an ellipsis — so the bar stays the same width at 3 pages and
+/// at 3,000.
+///
+/// It sits INSIDE the table card, on the card's own footer rule, so the range
+/// text and the numbers belong to the table rather than floating under it.
+class IctPager extends StatelessWidget {
+  const IctPager({
+    super.key,
+    required this.total,
+    required this.page,
+    required this.pageSize,
+    required this.accent,
+    required this.onPageChanged,
+  });
+
+  final int total;
+
+  /// Zero-based.
+  final int page;
+  final int pageSize;
+  final Color accent;
+  final ValueChanged<int> onPageChanged;
+
+  /// The page numbers to draw, with nulls where an ellipsis goes.
+  static List<int?> windowFor(int page, int pageCount) {
+    if (pageCount <= 7) return [for (var i = 0; i < pageCount; i++) i];
+    final out = <int?>[0];
+    var from = page - 1, to = page + 1;
+    if (page <= 2) {
+      from = 1;
+      to = 3;
+    }
+    if (page >= pageCount - 3) {
+      from = pageCount - 4;
+      to = pageCount - 2;
+    }
+    if (from > 1) out.add(null);
+    for (var i = from; i <= to; i++) {
+      if (i > 0 && i < pageCount - 1) out.add(i);
+    }
+    if (to < pageCount - 2) out.add(null);
+    out.add(pageCount - 1);
+    return out;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final pageCount = total == 0 ? 0 : ((total - 1) ~/ pageSize) + 1;
+    final from = total == 0 ? 0 : page * pageSize + 1;
+    final to = ((page + 1) * pageSize).clamp(0, total);
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(children: [
+        Text(
+            total == 0
+                ? 'No records'
+                : 'Showing $from–$to of $total',
+            style: TextStyle(color: c.textSecondary, fontSize: 12)),
+        const Spacer(),
+        _PagerStep(
+          icon: Icons.chevron_left_rounded,
+          tooltip: 'Previous page',
+          onPressed: page > 0 ? () => onPageChanged(page - 1) : null,
+        ),
+        const Gap(6),
+        for (final p in windowFor(page, pageCount)) ...[
+          if (p == null)
+            SizedBox(
+              width: 22,
+              child: Text('…',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: c.textMuted, fontSize: 13)),
+            )
+          else
+            _PagerNumber(
+              number: p + 1,
+              selected: p == page,
+              accent: accent,
+              onPressed: () => onPageChanged(p),
+            ),
+          const Gap(4),
+        ],
+        const Gap(2),
+        _PagerStep(
+          icon: Icons.chevron_right_rounded,
+          tooltip: 'Next page',
+          onPressed: to < total ? () => onPageChanged(page + 1) : null,
+        ),
+      ]),
+    );
+  }
+}
+
+class _PagerNumber extends StatelessWidget {
+  const _PagerNumber({
+    required this.number,
+    required this.selected,
+    required this.accent,
+    required this.onPressed,
+  });
+
+  final int number;
+  final bool selected;
+  final Color accent;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: selected ? null : onPressed,
+        child: Container(
+          constraints: const BoxConstraints(minWidth: 28),
+          height: 28,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 7),
+          decoration: BoxDecoration(
+            color: selected ? accent : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+                color: selected ? accent : c.borderColor),
+          ),
+          child: Text('$number',
+              style: TextStyle(
+                  color: selected ? Colors.white : c.textSecondary,
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600)),
+        ),
+      ),
+    );
+  }
+}
+
+class _PagerStep extends StatelessWidget {
+  const _PagerStep({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+
+  /// Null at the end of the run, which greys the arrow out.
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final on = onPressed != null;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onPressed,
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                  color: on ? c.borderColor : c.borderColor.withOpacity(0.4)),
+            ),
+            child: Icon(icon,
+                size: 17, color: on ? c.textSecondary : c.textMuted),
           ),
         ),
       ),

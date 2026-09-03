@@ -2915,27 +2915,92 @@ class AuditLogService {
   /// needs the whole picture and filters it itself. The actor's role and yard
   /// ride along so it can.
   ///
-  /// [from] / [to] push the date window into SQL rather than filtering a full
-  /// year client-side. Retention still caps the table at 12 months
-  /// (purge_old_audit_logs), so an unbounded call is bounded in practice.
-  Future<List<AuditLogModel>> getAllLogsAcrossOffices({
+  /// ⚠️ Paged and filtered IN SQL, one page at a time.
+  ///
+  /// This used to return the whole table and let the screen filter and slice
+  /// it. That is fine at a few hundred rows and hopeless at a few hundred
+  /// thousand: every visit sent the entire audit history over the wire, held
+  /// all of it in memory, and made the officer wait for rows 25 through
+  /// 250,000 that they were never going to look at.
+  ///
+  /// So EVERY narrowing the screen offers is a WHERE clause here — the date
+  /// window, the yard, the role, the entity type and the search box. They have
+  /// to be: paging in SQL while filtering in Dart would page the unfiltered
+  /// table and then throw most of each page away, so the pages would come back
+  /// short and the count would be a different number from the rows.
+  ///
+  /// [AuditLogPage.total] is a second, count-only query — the row count of the
+  /// same WHERE, so "Showing 1–25 of N" counts what the filters actually
+  /// matched rather than what fitted on the page.
+  Future<AuditLogPage> getAllLogsAcrossOffices({
     DateTime? from,
     DateTime? to,
+    String? yard,
+    String? role,
+    String? entityType,
+    String? search,
+    int offset = 0,
+    int limit = 25,
   }) async {
-    var query = supabase
-        .from('audit_logs')
-        .select('*, profiles!inner(full_name, role)');
-    if (from != null) {
-      query = query.gte('created_at', from.toIso8601String());
+    // The same narrowing, applied to the page query and to the count query.
+    T narrow<T>(T q) {
+      var query = q as dynamic;
+      if (from != null) {
+        query = query.gte('created_at', from.toIso8601String());
+      }
+      if (to != null) {
+        query = query.lte('created_at', to.toIso8601String());
+      }
+      if (yard != null && yard.isNotEmpty) query = query.eq('yard', yard);
+      if (role != null && role.isNotEmpty) {
+        query = query.eq('profiles.role', role);
+      }
+      if (entityType != null && entityType.isNotEmpty) {
+        query = query.eq('entity_type', entityType);
+      }
+      final q2 = search?.trim() ?? '';
+      if (q2.isNotEmpty) {
+        // The same columns the screen's search box used to scan, now as one
+        // OR in SQL. profiles.full_name is deliberately absent: it lives on
+        // the joined table, and PostgREST cannot OR across an embed.
+        final like = '%${q2.replaceAll(',', ' ')}%';
+        query = query.or(
+            'action.ilike.$like,entity_type.ilike.$like,entity_id.ilike.$like');
+      }
+      return query as T;
     }
-    if (to != null) {
-      query = query.lte('created_at', to.toIso8601String());
-    }
-    final data = await query.order('created_at', ascending: false);
-    return [
-      for (final e in (data as List))
-        AuditLogModel.fromJson(e as Map<String, dynamic>)
-    ];
+
+    final rows = await narrow(supabase
+            .from('audit_logs')
+            .select('*, profiles!inner(full_name, role)'))
+        .order('created_at', ascending: false)
+        .range(offset, offset + limit - 1);
+
+    final total = await narrow(supabase
+            .from('audit_logs')
+            .select('id, profiles!inner(role)'))
+        .count();
+
+    return AuditLogPage(
+      rows: [
+        for (final e in (rows as List))
+          AuditLogModel.fromJson(e as Map<String, dynamic>)
+      ],
+      total: total is int ? total : (total as num).toInt(),
+    );
+  }
+
+  /// Every distinct entity type present, for the Activity filter.
+  ///
+  /// ⚠️ A separate query, because the screen can no longer derive the list
+  /// from the rows it holds — it only holds one page. A filter built from one
+  /// page would offer whatever happened to be on it and hide the rest.
+  Future<List<String>> auditEntityTypes() async {
+    final data = await supabase.from('audit_logs').select('entity_type');
+    return {
+      for (final e in (data as List)) (e as Map)['entity_type'] as String
+    }.toList()
+      ..sort();
   }
 
   Future<void> recordLog({

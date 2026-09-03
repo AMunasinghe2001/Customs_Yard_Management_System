@@ -50,7 +50,22 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
   /// Nothing needs it. The two things that follow the controller — the rail
   /// and the header's section name — each listen through their own
   /// AnimatedBuilder, so only those few widgets rebuild as it moves.
-  late final TabController _tabs = TabController(length: 4, vsync: this);
+  late final TabController _tabs = TabController(
+      length: 4,
+      vsync: this,
+      // Slightly quicker than Material's 300ms: the rail is right there, so
+      // a console switches modules many times a minute and the transition
+      // should be over before it is noticed as a wait.
+      animationDuration: const Duration(milliseconds: 240));
+  /// The profile is a PAGE of the console, not a dialog over it.
+  ///
+  /// ⚠️ In a console, your own account is somewhere you GO — one of the
+  /// things the console administers — so it gets the body and a breadcrumb
+  /// back, the same as any module. A dialog is for interrupting; this is not
+  /// an interruption. It is a flag rather than a fifth rail entry because it
+  /// is not one of the four things ICT administers for everyone else.
+  bool _onProfile = false;
+
   String _selectedYard = 'all';
   String _selectedRole = 'all';
   String _selectedStatus = 'all'; // 'all', 'active', 'inactive'
@@ -795,7 +810,13 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
         _staffList.map((s) => s.yard).where((y) => y != null).toSet().length;
 
     return Scaffold(
-      backgroundColor: context.colors.scaffoldBg,
+      // ⚠️ Not the plain scaffold colour. Against a white page the console's
+      // white cards had only their hairline borders to lift them off it, and
+      // the whole portal read as one flat sheet -- which is what "too white"
+      // was. A trace of the portal's own colour in the ground gives every
+      // card an edge without putting any colour on the card itself.
+      backgroundColor: Color.alphaBlend(
+          accent.withOpacity(0.035), context.colors.scaffoldBg),
       // ⚠️ ICT alone is laid out as an ERP console: a permanent left rail and
       // the work to its right. The other portals are single-purpose -- an
       // officer opens one to do one job -- so a top tab strip suits them. ICT
@@ -805,7 +826,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
       //
       // The tab CONTROLLER is unchanged, so swiping still works and the four
       // tab bodies are untouched -- only the chrome around them moved.
-      body: Row(children: [
+      body: IctAccent(
+        color: accent,
+        child: Row(children: [
         _IctSideRail(controller: _tabs, accent: accent),
         Expanded(
           child: Column(
@@ -817,7 +840,13 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
             // wash. A console header sits above four different modules and is
             // read many times a day, so it stays neutral and lets the module
             // below it carry the colour.
-            padding: const EdgeInsets.fromLTRB(24, 12, 24, 12),
+            // ⚠️ kIctTopBarHeight, the same height the rail's brand block is
+            // pinned to. They are two widgets either side of the rail's
+            // border, so nothing makes them agree on their own — and when
+            // they disagreed their two bottom rules sat a few pixels apart,
+            // which reads as a notch in the corner where the two meet.
+            height: kIctTopBarHeight,
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 0),
             decoration: BoxDecoration(
               color: context.colors.cardDark,
               border:
@@ -832,6 +861,10 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 animation: _tabs.animation ?? _tabs,
                 builder: (context, _) {
                   final item = _IctSideRail.itemAt(_tabs.index);
+                  final label = _onProfile ? 'My Profile' : item.label;
+                  final icon = _onProfile
+                      ? Icons.account_circle_rounded
+                      : item.icon;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -848,7 +881,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                 fontWeight: FontWeight.w600)),
                         Icon(Icons.chevron_right_rounded,
                             size: 14, color: context.colors.textMuted),
-                        Text(item.label,
+                        Text(label,
                             style: TextStyle(
                                 color: accent,
                                 fontSize: 11,
@@ -856,9 +889,20 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       ]),
                       const Gap(3),
                       Row(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(item.icon, color: accent, size: 19),
+                        // On the profile page the icon is the way back —
+                        // a console's breadcrumb is where you leave from.
+                        if (_onProfile)
+                          IctIconButton(
+                            icon: Icons.arrow_back_rounded,
+                            color: accent,
+                            tooltip: 'Back to the console',
+                            onPressed: () =>
+                                setState(() => _onProfile = false),
+                          )
+                        else
+                          Icon(icon, color: accent, size: 19),
                         const Gap(9),
-                        Text(item.label,
+                        Text(label,
                             style: TextStyle(
                                 color: context.colors.textPrimary,
                                 fontSize: 17,
@@ -885,13 +929,17 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(kIctControlRadius),
-                      onTap: () => showDialog(
-                        context: context,
-                        builder: (_) => DisposalProfileDialog(accent: accent),
-                      ),
+                      onTap: () => setState(() => _onProfile = true),
                       child: Container(
-                        height: 38,
-                        padding: const EdgeInsets.fromLTRB(6, 0, 10, 0),
+                        height: 40,
+                        // ⚠️ Capped, and padded. The account name is a job
+                        // title — "ICT Directorate (Chief ICT Officer /
+                        // System Admin)" — so at its natural width it filled
+                        // the header and sat hard against its own border with
+                        // no room on either side. It now ellipsises inside a
+                        // box with real padding.
+                        constraints: const BoxConstraints(maxWidth: 340),
+                        padding: const EdgeInsets.fromLTRB(7, 0, 12, 0),
                         decoration: BoxDecoration(
                           color: accent.withOpacity(0.08),
                           borderRadius:
@@ -913,21 +961,28 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                   fontWeight: FontWeight.w800),
                             ),
                           ),
-                          const Gap(9),
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(profile.fullName,
-                                  style: TextStyle(
-                                      color: context.colors.textPrimary,
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 12.5)),
-                              Text('System Administrator',
-                                  style: TextStyle(
-                                      color: context.colors.textMuted,
-                                      fontSize: 10)),
-                            ],
+                          const Gap(10),
+                          Flexible(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(profile.fullName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: context.colors.textPrimary,
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12.5)),
+                                const Gap(1),
+                                Text('System Administrator',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                        color: context.colors.textMuted,
+                                        fontSize: 10)),
+                              ],
+                            ),
                           ),
                           // Amber/red dot while the password is inside its
                           // expiry window — the same quiet nudge the others
@@ -1027,12 +1082,32 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
           // TabBarView so the two pages can be dragged between, not only
           // tapped. The strip above stays in sync through the controller.
           Expanded(
-            child: TabBarView(
+            child: _onProfile
+                ? _IctProfilePage(accent: accent)
+                : TabBarView(
               controller: _tabs,
+              // ⚠️ Not draggable. On a trackpad a two-finger sideways flick
+              // slid the console between modules -- so an officer scrolling a
+              // wide table found half of Directorate Access beside half of
+              // Yards, with no idea what they had done. A console is navigated
+              // from its rail; the pages are not a carousel.
+              //
+              // The rail's animateTo still runs the slide, so choosing a
+              // module is animated -- it is only the DRAG that is gone.
+              physics: const NeverScrollableScrollPhysics(),
+              // ⚠️ Each module is wrapped by _IctModule, so choosing one from
+              // the rail brings the page in rather than snapping it into
+              // place. TabBarView's own slide moves both pages together,
+              // which on a full-width console reads as the whole window
+              // lurching sideways; the arriving page lifting and fading in on
+              // its own is what makes it read as a page LOADING.
               children: [
                 // 24, matching the Yards & Directorates tab and every other
                 // directorate page.
-                SingleChildScrollView(
+                _IctModule(
+                  index: 0,
+                  controller: _tabs,
+                  child: SingleChildScrollView(
                   padding: const EdgeInsets.all(24),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1386,21 +1461,32 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 ],
               ),
             ),
-                YardDirectorateTab(accent: accent),
+                ),
+                _IctModule(
+                    index: 1,
+                    controller: _tabs,
+                    child: YardDirectorateTab(accent: accent)),
                 // Reissues a directorate account's sign-in details. Yard
                 // staff are absent: they reset their own from the login page.
-                DirectorateAccessTab(accent: accent),
+                _IctModule(
+                    index: 2,
+                    controller: _tabs,
+                    child: DirectorateAccessTab(accent: accent)),
                 // Every action across every office. The tab scrolls its own
                 // table, so unlike the two above it is not wrapped in a
                 // SingleChildScrollView.
-                ActivityLogsTab(accent: accent),
+                _IctModule(
+                    index: 3,
+                    controller: _tabs,
+                    child: ActivityLogsTab(accent: accent)),
               ],
-            ),
+                  ),
           ),
         ],
           ),
         ),
       ]),
+      ),
     );
   }
 
@@ -1431,6 +1517,84 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
 //  the login/sign-up screens use the styled variant via DirectorateYardPicker.
 
 /// Picks the head-office directorate an account belongs to.
+/// The signed-in officer's own account, as a page of the console.
+///
+/// ⚠️ The CONTENT is the shared DisposalProfileDialog in embedded mode, not a
+/// second profile screen. What a save writes, what a password change checks
+/// and what an email change triggers are decisions that must not exist twice;
+/// only the surface around them is ICT's.
+class _IctProfilePage extends StatelessWidget {
+  const _IctProfilePage({required this.accent});
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(24),
+      child: Center(
+        child: ConstrainedBox(
+          // A form does not get wider just because the window does — past
+          // about this width a labelled field is harder to read, not easier.
+          constraints: const BoxConstraints(maxWidth: 720),
+          child: IctSectionCard(
+            icon: Icons.account_circle_rounded,
+            title: 'My Profile',
+            subtitle:
+                'Your sign-in details for the console. Changing the email '
+                'sends a confirmation link to the new address.',
+            child: DisposalProfileDialog(accent: accent, embedded: true),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Brings a module in when the rail selects it.
+///
+/// ⚠️ Driven by the controller's ANIMATION, not by a one-shot animation
+/// started in initState: a module is built once and then shown and hidden
+/// many times, so a play-on-build animation would run only the first time
+/// anyone opened it. Reading the controller means every arrival animates,
+/// including the way back to a module already visited.
+class _IctModule extends StatelessWidget {
+  const _IctModule({
+    required this.index,
+    required this.controller,
+    required this.child,
+  });
+
+  final int index;
+  final TabController controller;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final animation = controller.animation;
+    if (animation == null) return child;
+    return AnimatedBuilder(
+      animation: animation,
+      // ⚠️ `child` is passed through, so the module's subtree is NOT rebuilt
+      // on each frame -- only the opacity and offset around it are. Rebuilding
+      // a page with a data table sixty times a second is what made the rail
+      // feel slow in the first place.
+      child: child,
+      builder: (context, built) {
+        // 1 when this module is centred, 0 once it is a full page away.
+        final t = (1 - (animation.value - index).abs()).clamp(0.0, 1.0);
+        final eased = Curves.easeOut.transform(t);
+        return Opacity(
+          opacity: eased,
+          child: Transform.translate(
+            offset: Offset(0, (1 - eased) * 12),
+            child: built,
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// One entry on the ICT console's left rail.
 class _IctRailItem {
   final String label;
@@ -1501,8 +1665,11 @@ class _IctSideRailState extends State<_IctSideRail> {
           // frame of a tab change re-rasterised the SVG emblem -- sixty times
           // a second, for a picture that never changes. That was the lag: the
           // rail was not animating slowly, it was re-drawing the logo.
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+          SizedBox(
+            // Pinned to the header's height on the other side of the border.
+            height: kIctTopBarHeight,
+            child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
             child: Row(children: [
               Container(
                 padding: const EdgeInsets.all(7),
@@ -1536,6 +1703,7 @@ class _IctSideRailState extends State<_IctSideRail> {
                 ),
               ),
             ]),
+            ),
           ),
           Divider(height: 1, color: context.colors.borderColor),
           const Gap(12),
@@ -1633,7 +1801,12 @@ class _IctRailTile extends StatelessWidget {
     if (selected) {
       fill = accent.withOpacity(0.13);
     } else if (hovered) {
-      fill = context.colors.surfaceDark.withOpacity(0.55);
+      // ⚠️ A tint of the ACCENT, not surfaceDark. surfaceDark is the light
+      // theme's near-white, so on this rail the hover state read as a white
+      // gap punched in the panel rather than as a row lighting up. A faint
+      // wash of the portal's own colour is unmistakably a highlight, and at
+      // this strength still clearly below the open page's 0.13.
+      fill = accent.withOpacity(0.06);
     } else {
       fill = Colors.transparent;
     }
