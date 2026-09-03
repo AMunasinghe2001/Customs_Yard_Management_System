@@ -1862,10 +1862,17 @@ class _SaleValuationCell extends ConsumerWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
+            // The amount must be allowed to shrink -- see the same fix in
+            // disposition_category_screen: an unconstrained Text here paints
+            // overflow stripes down the table once the figure is long enough.
             Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('Rs ${fmt.format(total)}',
-                  style: TextStyle(
-                      color: priceColor, fontWeight: FontWeight.w700)),
+              Flexible(
+                child: Text('Rs ${fmt.format(total)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: priceColor, fontWeight: FontWeight.w700)),
+              ),
               if (isRevalued) ...[
                 const Gap(5),
                 Icon(Icons.price_change_rounded,
@@ -2183,12 +2190,11 @@ class _RequestCard extends ConsumerWidget {
                   ],
                 ),
               ),
-              _CountPill(
-                  icon: Icons.delete_forever_rounded,
-                  label: 'Destruction',
-                  count: request.destructionCount,
-                  color: red),
-              const Gap(8),
+              // ⚠️ No Destruction pill. A disposal request is always a SALE
+              // -- in Final Disposition only Sale raises one, and Destroy is
+              // recorded directly. The pill therefore read "0 Destruction" on
+              // every request, which invited the reader to look for a route
+              // that does not exist.
               _CountPill(
                   icon: Icons.sell_rounded,
                   label: 'Sale',

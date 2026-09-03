@@ -3243,13 +3243,17 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           valuationQty: widget.valuationQty ??
                               widget.highlightEntry?.itemCount,
                         ),
+                      // ⚠️ Scoped to the item this popup is ABOUT, not to the
+                      // package. `p.items.any(...)` asked whether ANY item was
+                      // being destroyed, so opening a SOLD item showed it the
+                      // Destruction Status panel because a sibling under the
+                      // same SR number was pending destruction. One number
+                      // covers several goods, and they meet different ends.
                       if (isDestroyedEntry ||
-                          p.items.any((i) {
-                            final st = (i.status ?? '').toLowerCase();
-                            return st == 'destroyed' ||
-                                st == 'supposed to be destroyed' ||
-                                st == 'destroy';
-                          }))
+                          (highlightedItem != null
+                              ? _statusIsDestruction(highlightedItem.status)
+                              : p.items.any(
+                                  (i) => _statusIsDestruction(i.status))))
                         _DestructionFinancialsSection(
                           package: p,
                           srFinancials: widget.srFinancials,
@@ -3725,6 +3729,14 @@ class _DisposalExpensesSection extends StatelessWidget {
 
 /// Destruction financials section shown in the package-details popup for goods
 /// marked for destruction. Displays deposit, expense breakdown and refund/shortfall.
+/// True when a status means the goods are for destruction or destroyed.
+bool _statusIsDestruction(String? status) {
+  final st = (status ?? '').toLowerCase();
+  return st == 'destroyed' ||
+      st == 'supposed to be destroyed' ||
+      st == 'destroy';
+}
+
 class _DestructionFinancialsSection extends StatelessWidget {
   final PackageModel package;
   final SrFinancials? srFinancials;
@@ -4639,39 +4651,11 @@ class _SaleFinancialsSection extends ConsumerStatefulWidget {
 
 class _SaleFinancialsSectionState
     extends ConsumerState<_SaleFinancialsSection> {
-  bool _toggling = false;
-
   String get _saleItemKey =>
       '${widget.package.id}|${widget.packageItemId ?? ''}|${widget.receipt ?? ''}';
 
-  Future<void> _toggleDelivery(TenderSaleItemModel item) async {
-    setState(() => _toggling = true);
-    final newValue = !item.isDelivered;
-    try {
-      await ref
-          .read(disposalServiceProvider)
-          .toggleDeliveryStatus(item.id, newValue);
-      ref.invalidate(saleItemForPackageProvider(widget.package.id));
-      ref.invalidate(saleItemForPackageItemProvider(_saleItemKey));
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              newValue ? 'Marked as Delivered' : 'Marked as Not Delivered'),
-          backgroundColor: newValue
-              ? context.colors.successGreen
-              : context.colors.warningAmber,
-        ));
-        // Close the details popup on success.
-        Navigator.of(context).pop();
-      }
-    } catch (e) {
-      if (mounted) {
-        showErrorSnack(context, e);
-      }
-    } finally {
-      if (mounted) setState(() => _toggling = false);
-    }
-  }
+  // Marking delivery lives in the Sold Goods table now -- see
+  // _DeliveryStatusCell. This section only reports the status.
 
   @override
   Widget build(BuildContext context) {
@@ -4691,13 +4675,7 @@ class _SaleFinancialsSectionState
           taxSum += parseDbNum(t['amount']) ?? 0;
         }
 
-        final profile = ref.watch(currentProfileProvider);
-        // Only a yard (admin/officer) confirms delivery; Central Disposal views.
-        final canEdit = profile != null && !profile.isDisposal;
         final delivered = saleItem.isDelivered;
-        final actionColor = delivered
-            ? context.colors.warningAmber
-            : context.colors.successGreen;
 
         return _DetailSection(
           title: 'Sale & Financial Information',
@@ -4773,30 +4751,11 @@ class _SaleFinancialsSectionState
                         DateFormat('yyyy-MM-dd').format(saleItem.deliveredAt!),
                     valueColor: context.colors.successGreen,
                   ),
-                // Only show the action while the package is still pending —
-                // once delivered there is no "Mark as Not Delivered" revert.
-                if (canEdit && !delivered) ...[
-                  const Gap(10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed:
-                          _toggling ? null : () => _toggleDelivery(saleItem),
-                      icon: _toggling
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2))
-                          : const Icon(Icons.local_shipping_rounded, size: 18),
-                      label: const Text('Mark Delivered'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: actionColor,
-                        side: BorderSide(color: actionColor.withOpacity(0.6)),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                    ),
-                  ),
-                ],
+                // ⚠️ No Mark Delivered button here. Confirming delivery is
+                // the yard's ONE routine action on a sold row, and doing it
+                // from a popup meant open, scroll, press, watch it close. It
+                // now lives in the Sold Goods table beside the status it
+                // changes; this popup only REPORTS that status.
               ],
             ),
           ),

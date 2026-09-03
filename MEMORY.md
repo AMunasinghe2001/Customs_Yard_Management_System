@@ -1506,3 +1506,16 @@ A `disposal_request_items.disposition` is now always `'sale'` in seeded data. Th
 ⚠️ Not every `'destruction'` string in the code is a database row: `disposal_dashboard_screen.dart:6678` and `:7041` build **in-memory view models** for Central Disposal's own Destroyed tab. Those are correct and must not be "fixed".
 
 Destroyed Goods is still fully populated (21 destroyed · 22 pending), all through the direct route.
+
+### Sold Goods: four fixes (2026-09-03)
+
+**1. The "0 Destruction" pill is gone from Disposal Requests.** A request is always a Sale, so the pill read `0 Destruction` on every one — pointing at a route the app does not have.
+
+**2. ⚠️ The Destruction panel was package-scoped, not item-scoped.** `p.items.any(...)` asked whether *any* item was being destroyed, so opening a **SOLD** item showed it "Destruction Status & Financials" because a sibling under the same SR number was pending destruction. One number covers several goods and **they meet different ends** — it now tests `highlightedItem` (the item the popup is about), falling back to the package only when no item is in view.
+
+**3. Mark Delivered moved from the popup into the Sold Goods table.** It is the yard's one routine action on a sold row, and doing it from a popup meant open → scroll → press → watch it close.
+- ⚠️ It invalidates the **shared** providers and fires `tenderSaleItemsRefreshProvider`, which `tenderSaleItemsChangeTriggerProvider` watches — so **Central Disposal's Sold table updates by itself**. Refreshing only the cell would leave the two portals disagreeing about whether goods had been handed over.
+- ⚠️ **No revert.** Once delivered the chip is a plain label: goods that left with their buyer cannot un-leave.
+- Only a yard sees the button (`!profile.isDisposal`); Central Disposal watches.
+
+**4. ⚠️ The red bar down the Sold Goods table was a RenderFlex overflow.** `Row(mainAxisSize: min)` with an **unconstrained** `Text` — a large re-valued figure (`Rs 22,768,380`) plus the price-change icon is wider than the column, and Flutter paints its overflow stripes vertically. `Flexible` + ellipsis lets the number give way. Fixed in **both** copies: the yard's table and Central Disposal's, which had the same latent bug behind wider columns.

@@ -731,24 +731,101 @@ class _CategoryRow {
 
 // Read-only delivery STATUS chip (the action button is in the details dialog,
 // enabled for yards). Uses per-item provider so each row shows its own status.
-class _DeliveryStatusCell extends ConsumerWidget {
+/// Delivery status for a SOLD item, and the action that changes it.
+///
+/// Confirming delivery is the yard's ONE routine action on a sold row, and it
+/// was buried in the details popup: open the row, scroll, press, watch the
+/// popup close. It belongs in the table, next to the status it changes.
+///
+/// ⚠️ There is no revert. Once delivered the chip is a plain label again --
+/// goods that have left with their buyer cannot un-leave.
+class _DeliveryStatusCell extends ConsumerStatefulWidget {
   final PackageModel package;
   final String? packageItemId;
+
   /// Pins the exact TSI row when an item was sold across several partial sales.
   final String? receipt;
   const _DeliveryStatusCell(
       {required this.package, this.packageItemId, this.receipt});
+
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}|${receipt ?? ''}';
-    final async = ref.watch(saleItemForPackageItemProvider(key));
+  ConsumerState<_DeliveryStatusCell> createState() =>
+      _DeliveryStatusCellState();
+}
+
+class _DeliveryStatusCellState extends ConsumerState<_DeliveryStatusCell> {
+  bool _saving = false;
+
+  String get _key =>
+      '${widget.package.id}|${widget.packageItemId ?? ''}|${widget.receipt ?? ''}';
+
+  Future<void> _markDelivered(TenderSaleItemModel item) async {
+    setState(() => _saving = true);
+    try {
+      await ref.read(disposalServiceProvider).toggleDeliveryStatus(item.id, true);
+      // ⚠️ Invalidate the SHARED providers, not just this cell's. Central
+      // Disposal's Sold table reads the same tender_sale_items row through
+      // them, so refreshing only here would leave the two portals disagreeing
+      // about whether the goods had been handed over.
+      ref.invalidate(saleItemForPackageItemProvider(_key));
+      ref.invalidate(saleItemForPackageProvider(widget.package.id));
+      ref.read(tenderSaleItemsRefreshProvider.notifier).trigger();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Marked as Delivered'),
+          backgroundColor: context.colors.successGreen,
+        ));
+      }
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e, action: 'Confirming delivery');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(saleItemForPackageItemProvider(_key));
+    // Only a yard confirms delivery; Central Disposal watches.
+    final profile = ref.watch(currentProfileProvider);
+    final canEdit = profile != null && !profile.isDisposal;
+
     return async.when(
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) => const Text('—'),
-      data: (item) => item == null
-          ? const Text('—')
-          : _DeliveryStatusChip(delivered: item.isDelivered),
+      data: (item) {
+        if (item == null) return const Text('—');
+        if (item.isDelivered || !canEdit) {
+          return _DeliveryStatusChip(delivered: item.isDelivered);
+        }
+        final green = context.colors.successGreen;
+        return Tooltip(
+          message: 'Confirm the buyer has taken the goods',
+          child: TextButton.icon(
+            onPressed: _saving ? null : () => _markDelivered(item),
+            icon: _saving
+                ? const SizedBox(
+                    width: 12,
+                    height: 12,
+                    child: CircularProgressIndicator(strokeWidth: 2))
+                : Icon(Icons.local_shipping_rounded, size: 14, color: green),
+            label: Text('Mark Delivered',
+                style: TextStyle(
+                    fontSize: 11, fontWeight: FontWeight.w600, color: green)),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              minimumSize: const Size(0, 30),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              backgroundColor: green.withOpacity(0.10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+                side: BorderSide(color: green.withOpacity(0.35)),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -835,12 +912,22 @@ class _SaleValuationCell extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
+            // ⚠️ The amount must be allowed to SHRINK. With
+            // MainAxisSize.min and an unconstrained Text, a large re-valued
+            // figure ("Rs 22,768,380" plus the icon) is wider than the column
+            // and Flutter paints its overflow stripes straight down the table
+            // -- the vertical red bar seen on Sold Goods. Flexible + ellipsis
+            // lets the number give way instead.
             Row(mainAxisSize: MainAxisSize.min, children: [
-              Text('Rs ${fmt.format(total)}',
-                  style: TextStyle(
-                      color: priceColor,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12)),
+              Flexible(
+                child: Text('Rs ${fmt.format(total)}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: priceColor,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 12)),
+              ),
               if (isRevalued) ...[
                 const SizedBox(width: 4),
                 Icon(Icons.price_change_rounded,
