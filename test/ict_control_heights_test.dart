@@ -253,4 +253,34 @@ void main() {
     expect(tester.getSize(find.byType(IctSegmented)).height,
         kIctControlHeight);
   });
+
+  // ⚠️ The complaint this answers: "draw a line above and below and nothing
+  // should stick out past it." Heights being equal does not say that — a
+  // control can match on height and still hang below, if it is aligned
+  // differently or its box is not where you think. This asserts CONTAINMENT:
+  // the button's ink never crosses the line the fields draw.
+  testWidgets('nothing sticks out above or below the field line',
+      (tester) async {
+    await pumpToolbar(tester);
+
+    final field = tester.getRect(find.descendant(
+        of: find.byType(TextField), matching: find.byType(InputDecorator)));
+    final select = tester.getRect(find.descendant(
+        of: find.byType(IctSelect), matching: find.byType(InputDecorator)));
+    final ink = tester.getRect(find.byType(ElevatedButton));
+
+    // The two fields are the line, so they must be exactly the same line.
+    expect(select.top, field.top);
+    expect(select.bottom, field.bottom);
+
+    // And the button lives inside it, top and bottom.
+    expect(ink.top, greaterThanOrEqualTo(field.top),
+        reason: 'the button rises above the fields');
+    expect(ink.bottom, lessThanOrEqualTo(field.bottom),
+        reason: 'the button hangs below the fields');
+
+    // Centred, not resting on one edge: the inset is the same top and bottom.
+    expect(ink.top - field.top,
+        moreOrLessEquals(field.bottom - ink.bottom, epsilon: 0.01));
+  });
 }
