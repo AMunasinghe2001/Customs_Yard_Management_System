@@ -618,17 +618,23 @@ void main() {
       expect(dash, contains("if (_saleEndTime == null) return 'Sale End Time is required.';"));
     });
 
-    test('each portal calls the column what its own figure actually is', () {
-      // ⚠️ They used to share the name "Latest Valuation" and did NOT share
-      // the number: the yard's column has always shown the SR item's declared
-      // value, because the Valuation Directorate's reserve price is
-      // Central-Disposal-only. One name over two different figures made the
-      // same row look like it held two valuations that disagreed.
-      expect(dash, contains("? 'Declared Value'"));
-      expect(dash, contains(": 'Latest Valuation'"));
-      // The seal is unchanged — either figure tells a bidder what the reserve
-      // is worth, so both still hide until the sale ends.
+    test('Goods Value and Latest Valuation are two DIFFERENT figures', () {
+      // ⚠️ The bug: `useItemValue` made the valuation column fall back to the
+      // SR item's declared value on the yard, so the row printed the SAME
+      // number twice under two different names. Two figures, two columns, and
+      // the valuation column never substitutes the other one.
+      expect(dash, contains("label: Center(child: Text('Goods Value'))"));
+      expect(dash, contains("label: Center(child: Text('Latest Valuation'))"));
+      expect(dash, isNot(contains('useItemValue:')));
+      // The seal is unchanged for everyone until the sale ends.
       expect(dash, contains('sealedUntilSale: !widget.sale.saleEnded'));
+    });
+
+    test('the yard never sees the reserve price at all', () {
+      // It is Central-Disposal-only, so on the yard the cell SEALS rather than
+      // printing something else in its place.
+      expect(dash, contains('yardSealed: widget.readOnly'));
+      expect(dash, contains('yardSealed: readOnly'));
     });
 
     test('the Tender Sale table shows Goods Value, not Goods Description', () {
@@ -648,27 +654,21 @@ void main() {
       expect(flat, contains("final effQty = (qty != null && qty! > 0) ? qty! : it.quantity;"));
     });
 
-    test('the yard read-only column seals too, not just the directorate one',
-        () {
+    test('both seals go through the one branch', () {
       final flatDash = dash.replaceAll(RegExp(r'\s+'), ' ');
-      expect(flatDash, contains('if (sealedUntilSale) { return const SealedValuation(compact: true); }'));
-      expect(dash, isNot(contains('if (sealedUntilSale && !useItemValue)')));
+      expect(flatDash, contains('if (sealedUntilSale || yardSealed) { return const SealedValuation(compact: true); }'));
     });
   });
 
-  test('the yard declared-value column shows the unit x qty breakdown', () {
-    // Central Disposal's own column already reads "LKR total" over
-    // "@ unit x qty"; the yard's view showed only the bare total, which read
-    // as a less detailed, different kind of figure rather than the same
-    // shape of number.
+  test('the Goods Value column shows the unit x qty breakdown', () {
+    // Both money columns read "LKR total" over "@ unit x qty", so neither
+    // reads as a less detailed, different kind of figure than the other.
     final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
         .readAsStringSync()
         .replaceAll(RegExp(r'\s+'), ' ');
-    expect(
-        dash,
-        contains(r"'@ ${fmt.format(unitValue)} × $effQty',"),
-        reason: 'The item-value branch must show the same breakdown as the '
-            'directorate branch below it.');
+    expect(dash, contains(r"'@ ${fmt.format(it.unitValue)} x $effQty',"),
+        reason: 'Goods Value must show the same breakdown shape as the '
+            'valuation column beside it.');
   });
 
   test('the Tender Sale card popup shows the tender history, sealed', () {

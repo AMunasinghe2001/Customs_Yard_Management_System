@@ -731,6 +731,22 @@ final forfeitedPackagesChangeTriggerProvider =
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
+/// The forfeited row for each item of one package, keyed by item id.
+///
+/// ⚠️ Unfiltered on purpose -- see `getForfeitedByItemForPackage`. The SR popup
+/// uses this to show each item's OWN tender history, so it must still find the
+/// items that have already been sold or destroyed, which every other forfeited
+/// provider deliberately drops.
+final forfeitedByItemProvider =
+    FutureProvider.family<Map<String, ForfeitedPackageModel>, String>(
+        (ref, packageId) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref
+      .read(forfeitedPackageServiceProvider)
+      .getForfeitedByItemForPackage(packageId);
+});
+
 /// The appeal outcome for each item of one package, keyed by item id.
 ///
 /// The Goods Actions sheet watches this so an appeal DECISION unblocks the

@@ -3148,19 +3148,14 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                         label: Center(child: Text('Goods Value')),
                         size: ColumnSize.S,
                         fixedWidth: 140),
-                    // ⚠️ Named for what it actually IS in each portal. The
-                    // yard's column has never shown a valuation -- it shows
-                    // the SR item's declared value, because the Valuation
-                    // Directorate's reserve price is Central-Disposal-only --
-                    // and calling both columns "Latest Valuation" made the
-                    // same row look like it held two different valuations.
-                    // Both are still sealed until the sale ends: either figure
-                    // tells a bidder what the reserve is worth.
+                    // ⚠️ Two DIFFERENT figures, so two columns. Goods Value is
+                    // the SR form's declared value; this is the Valuation
+                    // Directorate's reserve price. Pointing `useItemValue` at
+                    // the yard made this column print the declared value
+                    // again, so the row showed the same number twice under two
+                    // names -- which is what made it look like a bug.
                     DataColumn2(
-                        label: Center(
-                            child: Text(widget.readOnly
-                                ? 'Declared Value'
-                                : 'Latest Valuation')),
+                        label: Center(child: Text('Latest Valuation')),
                         size: ColumnSize.S,
                         fixedWidth: 140),
                     DataColumn2(
@@ -3213,7 +3208,12 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                       DataCell(Center(
                           child: _ValuationCell(
                               f: f,
-                              useItemValue: widget.readOnly,
+                              // ⚠️ NOT useItemValue. The reserve price is
+                              // Central-Disposal-only, so on the yard this
+                              // cell stays sealed rather than falling back to
+                              // the declared value -- the yard reads that in
+                              // the Goods Value column beside it.
+                              yardSealed: widget.readOnly,
                               // Same clock that gates Mark Sold below.
                               sealedUntilSale: !widget.sale.saleEnded,
                               qty: f?.entryQty ?? r.item?.quantity))),
@@ -3360,13 +3360,10 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                     useLegacySummary: true,
                                     highlightItemId: f?.itemId,
                                     yardLabel: yardName(r.saleItem.yard),
-                                    // Shown in BOTH views now: the yard's own
-                                    // column already carries this figure (see
-                                    // _ValuationCell's useItemValue branch),
-                                    // so hiding it here just meant the same
-                                    // number was reachable one way but not the
-                                    // other. Sealing — not hiding — is what
-                                    // actually protects a reserve price.
+                                    // Shown in BOTH views: sealing — not
+                                    // hiding — is what actually protects a
+                                    // reserve price, and the popup seals it
+                                    // on the same clock the table does.
                                     valuationUnitCost: f?.valuationCost,
                                     valuationTotalCost:
                                         f?.valuationCost != null
@@ -6137,9 +6134,15 @@ class DestructionCard extends ConsumerWidget {
                         fixedWidth: 50),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                    // Yard shows the SR item Value; Central shows the valuation.
+                    // The same pair the tender card shows: the declared value
+                    // off the SR form, then the Valuation Directorate's own
+                    // figure (sealed on the yard, which does not see it).
                     DataColumn2(
-                        label: Center(child: const Text('Latest Valuation')),
+                        label: Center(child: Text('Goods Value')),
+                        size: ColumnSize.S,
+                        fixedWidth: 140),
+                    DataColumn2(
+                        label: Center(child: Text('Latest Valuation')),
                         size: ColumnSize.S,
                         fixedWidth: 140),
                     DataColumn2(
@@ -6183,9 +6186,13 @@ class DestructionCard extends ConsumerWidget {
                               color: context.colors.textSecondary,
                               fontSize: 12))),
                       DataCell(Center(
+                          child: _GoodsValueCell(
+                              item: r.item,
+                              qty: f?.entryQty ?? r.item?.quantity))),
+                      DataCell(Center(
                           child: _ValuationCell(
                         f: f,
-                        useItemValue: readOnly,
+                        yardSealed: readOnly,
                         // Hidden until the destruction sale has actually run —
                         // same rule as the tender sale card.
                         sealedUntilSale: !sale.saleEnded,
@@ -7629,10 +7636,15 @@ class _GoodsValueCell extends StatelessWidget {
 
 class _ValuationCell extends StatelessWidget {
   final ForfeitedPackageModel? f;
-  // In the yard (read-only) views the Valuation Directorate price must NOT be
-  // shown — instead this cell shows the SR-form package item's own declared
-  // Value. The valuation price is Central-Disposal-only.
-  final bool useItemValue;
+  /// True in the yard's read-only views, where the Valuation Directorate's
+  /// price must NOT be shown at all.
+  ///
+  /// ⚠️ This used to substitute the SR item's declared value instead. That put
+  /// the SAME number in this column and in Goods Value beside it, under two
+  /// different names, and made every row look like it held two valuations that
+  /// disagreed. The yard reads the declared value in its own column; here it
+  /// gets the seal, which says the figure exists and is not theirs to see.
+  final bool yardSealed;
 
   /// The quantity shown in the row's Qty column — the valuation must multiply
   /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
@@ -7652,7 +7664,7 @@ class _ValuationCell extends StatelessWidget {
   final bool sealedUntilSale;
   const _ValuationCell(
       {required this.f,
-      this.useItemValue = false,
+      this.yardSealed = false,
       this.qty,
       this.overrideUnitCost,
       this.isRevalued = false,
@@ -7665,7 +7677,9 @@ class _ValuationCell extends StatelessWidget {
     // shown here still tells a bidder what the reserve is worth, so it stays
     // hidden until the sale has ended, exactly like every other Valuation
     // column. Checked first so the figure is never even computed.
-    if (sealedUntilSale) {
+    // Sealed either because the sale is still open (everyone) or because this
+    // is the yard, which never sees the reserve price.
+    if (sealedUntilSale || yardSealed) {
       return const SealedValuation(compact: true);
     }
     final fp = f;
@@ -7688,37 +7702,6 @@ class _ValuationCell extends StatelessWidget {
           fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ?? 1;
     }
     final fmt = NumberFormat('#,##0');
-
-    // Yard view → the SR-form item's own declared Value (unit value × qty),
-    // shown as a plain total (no "@ unit × qty" breakdown — that's the valuation
-    // style, which is Central-Disposal-only).
-    if (useItemValue) {
-      final item = fp.itemId != null
-          ? fp.packageDetails?.items.where((i) => i.id == fp.itemId).firstOrNull
-          : fp.packageDetails?.items.firstOrNull;
-      final unitValue = item?.unitValue ?? 0;
-      final total = unitValue * effQty;
-      // Same "@ unit × qty" breakdown Central Disposal's own column uses, so
-      // a bare total here doesn't read as a different, less detailed figure.
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            'LKR ${fmt.format(total)}',
-            style: TextStyle(
-                color: context.colors.textPrimary,
-                fontWeight: FontWeight.w700,
-                fontSize: 12),
-          ),
-          Text(
-            '@ ${fmt.format(unitValue)} × $effQty',
-            style: TextStyle(color: context.colors.textMuted, fontSize: 10),
-          ),
-        ],
-      );
-    }
 
     // Central Disposal view → the LATEST re-valuation if one exists, else the
     // Valuation Directorate's original cost.

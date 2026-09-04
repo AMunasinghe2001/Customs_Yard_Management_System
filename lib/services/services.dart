@@ -3236,6 +3236,37 @@ class ForfeitedPackageService {
         .toList();
   }
 
+  /// Every forfeited row for one package, keyed by the ITEM it covers.
+  ///
+  /// ⚠️ Deliberately UNFILTERED, unlike [getForfeitedPackages], which drops a
+  /// package the moment it is tendered, requested, sold or destroyed. This
+  /// exists for the SR popup, which has to show an item's whole story
+  /// including how it ended -- and the filtered list, by design, no longer
+  /// contains the items whose story is worth telling.
+  ///
+  /// Forfeiture is per item, so one package can produce several rows; rows
+  /// with no item_id are skipped rather than being pinned to an arbitrary
+  /// item.
+  Future<Map<String, ForfeitedPackageModel>> getForfeitedByItemForPackage(
+      String packageId) async {
+    final data = await supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))')
+        .eq('package_id', packageId)
+        .order('forfeited_at', ascending: false);
+    final out = <String, ForfeitedPackageModel>{};
+    for (final e in (data as List)) {
+      final f = ForfeitedPackageModel.fromJson(e);
+      final itemId = f.itemId;
+      if (itemId == null) continue;
+      // Newest first from the query, so the FIRST row for an item wins -- the
+      // most recent forfeiture is the one whose history is current.
+      out.putIfAbsent(itemId, () => f);
+    }
+    return out;
+  }
+
   /// Forfeited package ids that have reached a terminal sale/destruction
   /// outcome (a sold tender-sale item, or a destroyed destruction item) and
   /// should therefore no longer appear in the Forfeited list.

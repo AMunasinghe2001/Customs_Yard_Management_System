@@ -1931,3 +1931,27 @@ The Tender Sale table called its money column **"Latest Valuation" in both porta
 **Goods Description → Goods Value** on the same table: the description repeated the Goods Name on most rows and pushed the money off the visible width. New `_GoodsValueCell` takes the **row's own Qty**, so the breakdown it prints always multiplies by the number in the Qty column beside it.
 
 ⚠️ **The `× 51` vs `× 40` mismatch is fixed at the data layer**, not here — see migrations `13_one_quantity_per_item.sql` and `14_the_item_quantity_is_the_jittered_one.sql`. The **7** rows still disagreeing are the ones migration 14 deliberately left alone (no warehouse entry to arbitrate a real partial forfeit from seed noise); all 7 have **zero warehouse entries and zero tender sales**, so none can reach a Tender Sale table or a valuation popup.
+
+## One SR, several goods, several endings (2026-09-05)
+
+**The popup could show a tender history, but only for ONE forfeited package** — whichever row the caller pinned via `tenderHistoryFor`. Opened from **Goods History**, where an SR carries every item it registered, it showed nothing per item: an officer reading `CED/GL1/OA/07/2025` could not tell that the Truck Tyres had sold while the Steel Sheets were still in Open Area 01.
+
+**`_ItemLifecycleSection`** ([package_details_dialog.dart](lib/widgets/package_details_dialog.dart)) now renders under each item — appeal state first (a hold is *why nothing has happened*), then the **same `TenderHistorySection`** the disposal pages use, so valuations, bids, the committee round and the final outcome have one definition and cannot drift. ⚠️ Rendered only when `tenderHistoryFor == null`: the disposal pages pin the popup to the clicked row on purpose, and per-item histories there would show the same package twice. An item with **no forfeiture and no appeal renders nothing** — "no tender history" on goods never meant for tender is noise.
+
+⚠️ **`forfeitedByItemProvider` / `getForfeitedByItemForPackage` are deliberately UNFILTERED.** `getForfeitedPackages` drops a package the moment it is tendered, requested, sold or destroyed — which is precisely the set of items whose story is worth telling. Keyed by item (forfeiture is per item), newest-first so the current forfeiture wins, rows with no `item_id` skipped rather than pinned to an arbitrary item.
+
+**The Final Outcome tile now says whether the goods actually LEFT** — "Delivered on …" or "Not yet delivered — still held by the yard" — beside the decision. See [[the delivery feature]] above: a decision is not a hand-over.
+
+## Two money columns that printed the same number (2026-09-05)
+
+⚠️ **`_ValuationCell(useItemValue: true)` was the bug.** On the yard it made the *valuation* column fall back to the SR item's **declared value** — so a row printed the identical figure twice, under "Goods Value" and "Latest Valuation", and looked like two valuations that disagreed. Renaming the header (the first attempt) only papered over it.
+
+Now they are genuinely two figures: **Goods Value** = the SR form's declared value (`_GoodsValueCell`, multiplied by the row's own Qty); **Latest Valuation** = the Valuation Directorate's reserve price, which is **Central-Disposal-only**, so on the yard the cell **seals** (`yardSealed`) rather than substituting anything. The `useItemValue` branch is deleted. Both cards — tender sale and destruction — carry the same pair.
+
+**The Disposition Breakdown showed for almost nobody.** Its gate was *detained OR part-released OR disposed*, so an ordinary item **sitting in a warehouse** — the commonest case — got no breakdown at all, and the same popup answered "where are these goods" for one item and stayed silent for the item below it. Now `heldQty > 0 || _releasedQty > 0 || _dispoCounts.isNotEmpty`.
+
+**"Currently Held" now names the place** (`_heldLabel`): "In Open Area 01" on an OA row, "In Warehouse 01" on an SR one. ⚠️ **No hard-coded OA/SR branch** — the warehouse's own name already carries which kind of space it is. Several locations fall back to "Currently Held (N locations)" rather than overflowing the row.
+
+⚠️ **The "× 51 vs × 40" report was a STALE BUILD, not a bug.** Checked against the live DB: that item reads 40 in `package_items`, in `forfeited_packages` and in its warehouse entry, and the popup's Value line and Total Packages line both read the same `highlightedItem.quantity`. Migrations 13/14 had already fixed it; the running binary predated them. **Check the exe timestamp before chasing a reported number.**
+
+Pinned by [goods_lifecycle_in_sr_popup_test.dart](test/goods_lifecycle_in_sr_popup_test.dart).

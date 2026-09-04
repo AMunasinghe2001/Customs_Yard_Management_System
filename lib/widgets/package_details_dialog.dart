@@ -100,6 +100,7 @@ import 'one_tap_date_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/services.dart';
 import 'error_view.dart';
+import 'appeal_state_chip.dart';
 
 /// The valuation row shown in the Sale / Destruction sections.
 ///
@@ -466,6 +467,35 @@ class _FinalOutcomeTile extends StatelessWidget {
                 '${(proposal!.note ?? '').trim().isEmpty ? '' : ' \u00b7 ${proposal!.note!.trim()}'}',
                 style: TextStyle(
                     color: context.colors.textSecondary, fontSize: 11.5)),
+            // ⚠️ A decision is not a hand-over. The goods sit in the yard
+            // until someone comes for them, so the outcome on its own is only
+            // half the answer — this line says whether they have gone.
+            const Gap(6),
+            Row(children: [
+              Icon(
+                  proposal!.delivered
+                      ? Icons.check_circle_rounded
+                      : Icons.schedule_rounded,
+                  size: 13,
+                  color: proposal!.delivered
+                      ? context.colors.successGreen
+                      : context.colors.warningAmber),
+              const Gap(6),
+              Flexible(
+                child: Text(
+                    proposal!.delivered
+                        ? (proposal!.deliveredAt != null
+                            ? 'Delivered on ${DateFormat('dd MMM yyyy').format(proposal!.deliveredAt!)}'
+                            : 'Delivered')
+                        : 'Not yet delivered — still held by the yard',
+                    style: TextStyle(
+                        color: proposal!.delivered
+                            ? context.colors.successGreen
+                            : context.colors.warningAmber,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ]),
           ] else ...[
             const Gap(6),
             Text(
@@ -3247,12 +3277,18 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               value: 'Left the warehouse — '
                                                   '${_leftLabel(item.status)}',
                                             ),
-                                          // Show the Disposition Breakdown whenever
-                                          // the item is still held (detained) OR has
-                                          // any released / disposed portion — so a
-                                          // released item shows "Released x20" even
-                                          // if its status isn't 'detained'.
-                                          if (isItemDetained ||
+                                          // ⚠️ Shown for EVERY item that has
+                                          // warehouse history, not just
+                                          // detained or part-released ones.
+                                          // The old test (detained OR released
+                                          // OR disposed) meant an ordinary
+                                          // item sitting in a warehouse -- the
+                                          // commonest case of all -- got no
+                                          // breakdown at all, so the same
+                                          // popup answered "where are these
+                                          // goods" for one item and stayed
+                                          // silent for the item below it.
+                                          if (heldQty > 0 ||
                                               _releasedQty > 0 ||
                                               _dispoCounts.isNotEmpty) ...[
                                             const Gap(16),
@@ -3283,7 +3319,19 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                   ),
                                                   const Gap(12),
                                                   _DispositionRow(
-                                                    label: 'Currently Held',
+                                                    // ⚠️ "Currently Held" did
+                                                    // not say held WHERE, and
+                                                    // the number is a
+                                                    // warehouse count -- so it
+                                                    // now names the place. An
+                                                    // OA row reads "In Open
+                                                    // Area 01" and an SR row
+                                                    // "In Warehouse 01",
+                                                    // because the warehouse's
+                                                    // own name already carries
+                                                    // which kind it is.
+                                                    label: _heldLabel(
+                                                        currentWarehouses),
                                                     count: heldQty,
                                                     color: context
                                                         .colors.primaryGold,
@@ -3328,6 +3376,26 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               ),
                                             ),
                                           ],
+                                          // ⚠️ Every avenue this ITEM went
+                                          // down, under the item itself.
+                                          //
+                                          // The popup could already show a
+                                          // tender history, but only when a
+                                          // caller passed ONE forfeited
+                                          // package in -- so from Goods
+                                          // History, where an SR holds several
+                                          // items that each met a different
+                                          // end, it showed nothing at all. The
+                                          // valuation, the bids, the
+                                          // committee, the appeal and the
+                                          // final outcome all belong to the
+                                          // item, so they are rendered per
+                                          // item.
+                                          if (widget.tenderHistoryFor == null)
+                                            _ItemLifecycleSection(
+                                              packageId: p.id,
+                                              item: item,
+                                            ),
                                         ],
                                       ),
                                     );
@@ -3773,6 +3841,25 @@ String _leftLabel(String? status) {
   }
 }
 
+/// Where the held portion actually IS, for the Disposition Breakdown.
+///
+/// ⚠️ "Currently Held" named a count but not a place, and the count IS a
+/// warehouse count. The warehouse's own name already says which kind of space
+/// it is -- "Open Area 01", "Warehouse 01" -- so naming it gives the officer
+/// "In Open Area 01" on an OA row and "In Warehouse 01" on an SR one without
+/// the popup having to know the difference.
+///
+/// Falls back to the bare wording when the goods are spread across more than
+/// one place (listing them all would not fit the row) or when no entry names
+/// one.
+String _heldLabel(List<String> currentWarehouses) {
+  if (currentWarehouses.length == 1 && currentWarehouses.first.trim().isNotEmpty) {
+    return 'In ${currentWarehouses.first.trim()}';
+  }
+  if (currentWarehouses.length > 1) return 'Currently Held (${currentWarehouses.length} locations)';
+  return 'Currently Held';
+}
+
 bool _statusIsDestruction(String? status) {
   final st = (status ?? '').toLowerCase();
   return st == 'destroyed' ||
@@ -4116,6 +4203,119 @@ class _StatusBadge extends StatelessWidget {
                   fontWeight: FontWeight.bold,
                   letterSpacing: 0.5)),
         ],
+      ),
+    );
+  }
+}
+
+/// Everything that happened to ONE item, under that item.
+///
+/// ⚠️ The popup could already show a tender history, but only when a caller
+/// handed it a single forfeited package. Opened from Goods History -- where an
+/// SR holds several items that each met a different end -- it showed nothing,
+/// so an officer reading one SR could not tell that the Truck Tyres sold while
+/// the Steel Sheets were still sitting in Open Area 01.
+///
+/// Everything here is per item because forfeiture is per item: the appeal, the
+/// tender rounds with their valuations and bids, the committee, the final
+/// outcome and the hand-over all belong to the item, not to the SR number.
+///
+/// Renders NOTHING for an item that never left the ordinary path -- no
+/// forfeiture, no appeal. A section reading "no tender history" on goods that
+/// were never meant to go to tender is noise.
+class _ItemLifecycleSection extends ConsumerWidget {
+  final String packageId;
+  final PackageItem item;
+
+  const _ItemLifecycleSection({
+    required this.packageId,
+    required this.item,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final forfeited =
+        ref.watch(forfeitedByItemProvider(packageId)).valueOrNull?[item.id];
+    final appeal =
+        ref.watch(itemAppealOutcomesProvider(packageId)).valueOrNull?[item.id];
+    // An appeal HOLD or a ruling is worth showing even with no forfeiture --
+    // it is why the goods are not moving.
+    final hasAppeal = appeal != null && (appeal.isDecided || appeal.onHold);
+    if (forfeited == null && !hasAppeal) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: material.Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: context.colors.cardDark,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: context.colors.borderColor),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Icon(Icons.timeline_rounded,
+                  size: 15, color: context.colors.accentLightBlue),
+              const Gap(8),
+              material.Text(
+                'Goods Lifecycle',
+                style: material.TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: context.colors.textPrimary,
+                ),
+              ),
+            ]),
+            const Gap(12),
+            // ── Appeal ──────────────────────────────────────────────────
+            // Shown FIRST: while an appeal is held nothing below it can
+            // proceed, so it is the answer to "why has nothing happened".
+            if (hasAppeal) ...[
+              Row(children: [
+                Expanded(
+                  child: material.Text(
+                    appeal.onHold ? 'Appeal' : 'Appeal decision',
+                    style: material.TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: context.colors.textMuted),
+                  ),
+                ),
+                AppealStateChip(
+                  entryDate: forfeited?.forfeitedAt,
+                  deadline: forfeited?.appealDeadline,
+                  outcome: appeal,
+                ),
+              ]),
+              if ((forfeited?.appealDecisionNote ?? '').trim().isNotEmpty) ...[
+                const Gap(6),
+                material.Text(
+                  forfeited!.appealDecisionNote!.trim(),
+                  style: material.TextStyle(
+                      fontSize: 11, color: context.colors.textSecondary),
+                ),
+              ],
+              const Gap(12),
+            ],
+            // ── Tender rounds, valuations, bids, committee, outcome ─────
+            // The SAME section the disposal pages use, so a round reads
+            // identically wherever it is opened -- one definition, and no
+            // second story to keep in step with the first.
+            if (forfeited != null)
+              TenderHistorySection(
+                forfeited: forfeited,
+                qty: forfeited.entryQty ?? item.quantity,
+              )
+            else
+              material.Text(
+                'No tender rounds recorded for these goods.',
+                style: material.TextStyle(
+                    fontSize: 11, color: context.colors.textMuted),
+              ),
+          ],
+        ),
       ),
     );
   }
