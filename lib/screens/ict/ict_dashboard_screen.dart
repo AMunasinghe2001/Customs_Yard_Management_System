@@ -13,7 +13,6 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/account_cells.dart';
 import '../../widgets/styled_dropdown.dart';
-import '../../widgets/disposal_profile_dialog.dart';
 import 'ict_ui.dart';
 import 'activity_logs_tab.dart';
 import 'directorate_access_tab.dart';
@@ -57,15 +56,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
       // a console switches modules many times a minute and the transition
       // should be over before it is noticed as a wait.
       animationDuration: const Duration(milliseconds: 240));
-  /// The profile is a PAGE of the console, not a dialog over it.
-  ///
-  /// ⚠️ In a console, your own account is somewhere you GO — one of the
-  /// things the console administers — so it gets the body and a breadcrumb
-  /// back, the same as any module. A dialog is for interrupting; this is not
-  /// an interruption. It is a flag rather than a fifth rail entry because it
-  /// is not one of the four things ICT administers for everyone else.
-  bool _onProfile = false;
-
   String _selectedYard = 'all';
   String _selectedRole = 'all';
   String _selectedStatus = 'all'; // 'all', 'active', 'inactive'
@@ -861,10 +851,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                 animation: _tabs.animation ?? _tabs,
                 builder: (context, _) {
                   final item = _IctSideRail.itemAt(_tabs.index);
-                  final label = _onProfile ? 'My Profile' : item.label;
-                  final icon = _onProfile
-                      ? Icons.account_circle_rounded
-                      : item.icon;
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -881,7 +867,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                 fontWeight: FontWeight.w600)),
                         Icon(Icons.chevron_right_rounded,
                             size: 14, color: context.colors.textMuted),
-                        Text(label,
+                        Text(item.label,
                             style: TextStyle(
                                 color: accent,
                                 fontSize: 11,
@@ -889,20 +875,9 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       ]),
                       const Gap(3),
                       Row(mainAxisSize: MainAxisSize.min, children: [
-                        // On the profile page the icon is the way back —
-                        // a console's breadcrumb is where you leave from.
-                        if (_onProfile)
-                          IctIconButton(
-                            icon: Icons.arrow_back_rounded,
-                            color: accent,
-                            tooltip: 'Back to the console',
-                            onPressed: () =>
-                                setState(() => _onProfile = false),
-                          )
-                        else
-                          Icon(icon, color: accent, size: 19),
+                        Icon(item.icon, color: accent, size: 19),
                         const Gap(9),
-                        Text(label,
+                        Text(item.label,
                             style: TextStyle(
                                 color: context.colors.textPrimary,
                                 fontSize: 17,
@@ -929,7 +904,16 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     color: Colors.transparent,
                     child: InkWell(
                       borderRadius: BorderRadius.circular(kIctControlRadius),
-                      onTap: () => setState(() => _onProfile = true),
+                      // ⚠️ A dialog again, not a page.
+                      //
+                      // The page version broke the console: the rail stayed
+                      // visible and clickable but its taps only moved a tab
+                      // controller nothing was showing any more, so choosing
+                      // another module did nothing and the one back button
+                      // was the only way out. A dialog cannot get into that
+                      // state -- it owns the screen until it is dismissed,
+                      // and dismissing it puts you back where you were.
+                      onTap: () => showIctProfileDialog(context, accent),
                       child: Container(
                         height: 40,
                         // ⚠️ Capped, and padded. The account name is a job
@@ -1082,9 +1066,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
           // TabBarView so the two pages can be dragged between, not only
           // tapped. The strip above stays in sync through the controller.
           Expanded(
-            child: _onProfile
-                ? _IctProfilePage(accent: accent)
-                : TabBarView(
+            child: TabBarView(
               controller: _tabs,
               // ⚠️ Not draggable. On a trackpad a two-finger sideways flick
               // slid the console between modules -- so an officer scrolling a
@@ -1480,7 +1462,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                     controller: _tabs,
                     child: ActivityLogsTab(accent: accent)),
               ],
-                  ),
+            ),
           ),
         ],
           ),
@@ -1517,39 +1499,6 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
 //  the login/sign-up screens use the styled variant via DirectorateYardPicker.
 
 /// Picks the head-office directorate an account belongs to.
-/// The signed-in officer's own account, as a page of the console.
-///
-/// ⚠️ The CONTENT is the shared DisposalProfileDialog in embedded mode, not a
-/// second profile screen. What a save writes, what a password change checks
-/// and what an email change triggers are decisions that must not exist twice;
-/// only the surface around them is ICT's.
-class _IctProfilePage extends StatelessWidget {
-  const _IctProfilePage({required this.accent});
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Center(
-        child: ConstrainedBox(
-          // A form does not get wider just because the window does — past
-          // about this width a labelled field is harder to read, not easier.
-          constraints: const BoxConstraints(maxWidth: 720),
-          child: IctSectionCard(
-            icon: Icons.account_circle_rounded,
-            title: 'My Profile',
-            subtitle:
-                'Your sign-in details for the console. Changing the email '
-                'sends a confirmation link to the new address.',
-            child: DisposalProfileDialog(accent: accent, embedded: true),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 /// Brings a module in when the rail selects it.
 ///
 /// ⚠️ Driven by the controller's ANIMATION, not by a one-shot animation
@@ -1665,9 +1614,20 @@ class _IctSideRailState extends State<_IctSideRail> {
           // frame of a tab change re-rasterised the SVG emblem -- sixty times
           // a second, for a picture that never changes. That was the lag: the
           // rail was not animating slowly, it was re-drawing the logo.
-          SizedBox(
-            // Pinned to the header's height on the other side of the border.
+          Container(
+            // ⚠️ Same height AND same construction as the header on the other
+            // side of the rail's border: a box of kIctTopBarHeight that draws
+            // its own bottom rule INSIDE that height.
+            //
+            // It was a SizedBox followed by a Divider, which puts the rule in
+            // the pixel AFTER the box while the header's border sits in the
+            // last pixel OF it. Equal heights, rules one pixel apart — which
+            // is exactly the step you can see where the two meet.
             height: kIctTopBarHeight,
+            decoration: BoxDecoration(
+              border: Border(
+                  bottom: BorderSide(color: context.colors.borderColor)),
+            ),
             child: Padding(
             padding: const EdgeInsets.fromLTRB(18, 0, 18, 0),
             child: Row(children: [
@@ -1705,7 +1665,6 @@ class _IctSideRailState extends State<_IctSideRail> {
             ]),
             ),
           ),
-          Divider(height: 1, color: context.colors.borderColor),
           const Gap(12),
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 0, 18, 6),

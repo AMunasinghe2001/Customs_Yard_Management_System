@@ -16,11 +16,14 @@
 ///     of the existing palette, not a different palette.
 library;
 
+import 'dart:ui' show ImageFilter;
+
 import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 
 import '../../core/theme.dart';
+import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/styled_dropdown.dart';
 
 /// Cards, controls and pills, so nothing in ICT rounds a corner by a
@@ -32,9 +35,16 @@ const double kIctPillRadius = 6;
 /// ⚠️ ONE height for every control in the console — filters, search boxes,
 /// toolbar buttons, the header's own controls. Nothing in ICT sets its own.
 ///
-/// 36, not 42: a console is a dense screen. The taller controls pushed the
-/// table down the page and made the filter strip read as a second header.
-const double kIctControlHeight = 36;
+/// 34: a console is a dense screen, and this height is multiplied by the
+/// caption above it and the padding around it before it reaches the page.
+const double kIctControlHeight = 34;
+
+/// ⚠️ The whole filter strip, capped. A caption, a control and the padding
+/// around them — and nothing else. The strip sits above the table on every
+/// page, so every pixel it takes is a row the officer cannot see without
+/// scrolling, and it is the first thing to grow when a control starts setting
+/// its own height. A test measures it.
+const double kIctToolbarMaxHeight = 66;
 
 /// A control inside a table row, which has less height to give.
 const double kIctDenseHeight = 30;
@@ -399,18 +409,84 @@ class IctToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(10),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: context.colors.cardDark,
         borderRadius: BorderRadius.circular(kIctCardRadius),
         border: Border.all(color: context.colors.borderColor),
       ),
+      // ⚠️ Aligned on the BOTTOM. Every field carries a caption above it, so
+      // aligning on the top would step the controls down the row by the
+      // height of their own labels.
       child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
         for (var i = 0; i < children.length; i++) ...[
           if (i > 0) const Gap(10),
           children[i],
         ],
       ]),
+    );
+  }
+}
+
+/// Opens the profile over a BLURRED console.
+///
+/// ⚠️ The blur is the point, not decoration. A dialog on a flat grey scrim
+/// still sits on a page of sharp text and tables, and the eye keeps reading
+/// past it; blurring what is behind takes the console out of focus so the
+/// dialog is the only thing left to read. Material's default barrier is a
+/// flat scrim, so the filter has to be supplied here.
+Future<void> showIctProfileDialog(BuildContext context, Color accent) {
+  return showGeneralDialog(
+    context: context,
+    barrierDismissible: true,
+    barrierLabel: 'Profile',
+    // Lighter than the usual scrim: the blur is already doing the separating,
+    // and the two together turn the console black.
+    barrierColor: Colors.black.withOpacity(0.25),
+    transitionDuration: const Duration(milliseconds: 180),
+    pageBuilder: (context, _, __) => DisposalProfileDialog(accent: accent),
+    transitionBuilder: (context, animation, _, child) {
+      final t = Curves.easeOut.transform(animation.value);
+      return BackdropFilter(
+        // Ramped with the animation: a blur that snaps to full strength on
+        // the first frame reads as the window glitching.
+        filter: ImageFilter.blur(sigmaX: 6 * t, sigmaY: 6 * t),
+        child: Opacity(
+          opacity: t,
+          child: Transform.scale(scale: 0.98 + 0.02 * t, child: child),
+        ),
+      );
+    },
+  );
+}
+
+/// The small caption over a toolbar control.
+///
+/// ⚠️ Every field in the strip has one — including the search box, which is
+/// why it exists as its own widget. Without it the search box was a lone
+/// 34px box beside three cells that were a caption AND a box, so although
+/// every control measured the same it read as the small one in the row. The
+/// controls were never different heights; the cells were.
+class IctFieldLabel extends StatelessWidget {
+  const IctFieldLabel(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 2),
+      child: Text(text.toUpperCase(),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          // ⚠️ height: 1 -- the caption is a label, not a line of prose, and
+          // the font's default line spacing added several pixels of air above
+          // and below it that the strip then had to carry on every page.
+          style: TextStyle(
+              color: context.colors.textMuted,
+              fontSize: 9.5,
+              height: 1,
+              letterSpacing: 0.8,
+              fontWeight: FontWeight.w800)),
     );
   }
 }
@@ -428,10 +504,14 @@ class IctSearchField extends StatelessWidget {
     required this.accent,
     required this.onChanged,
     this.onClear,
+    this.label = 'Search',
   });
 
   final TextEditingController controller;
   final String hintText;
+
+  /// The caption above the box, so this cell matches the filters beside it.
+  final String label;
   final Color accent;
   final ValueChanged<String> onChanged;
   final VoidCallback? onClear;
@@ -443,7 +523,12 @@ class IctSearchField extends StatelessWidget {
       borderRadius: BorderRadius.circular(kIctControlRadius),
       borderSide: BorderSide(color: c.borderColor),
     );
-    return SizedBox(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IctFieldLabel(label),
+        SizedBox(
       height: kIctControlHeight,
       child: TextField(
         controller: controller,
@@ -469,7 +554,7 @@ class IctSearchField extends StatelessWidget {
           filled: true,
           fillColor: c.surfaceDark,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           border: border,
           enabledBorder: border,
           focusedBorder: OutlineInputBorder(
@@ -478,6 +563,8 @@ class IctSearchField extends StatelessWidget {
           ),
         ),
       ),
+        ),
+      ],
     );
   }
 }
@@ -525,15 +612,7 @@ class IctSelect extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(label.toUpperCase(),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                color: c.textMuted,
-                fontSize: 9.5,
-                letterSpacing: 0.8,
-                fontWeight: FontWeight.w800)),
-        const Gap(4),
+        IctFieldLabel(label),
         SizedBox(
           height: kIctControlHeight,
           child: Theme(
@@ -559,7 +638,7 @@ class IctSelect extends StatelessWidget {
               menuWidth: menuWidth,
               fillColor: set ? accent.withOpacity(0.07) : c.surfaceDark,
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               prefixIcon: Icon(icon,
                   size: 16, color: set ? accent : c.textMuted),
               valueStyle: TextStyle(

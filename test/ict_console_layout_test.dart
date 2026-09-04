@@ -209,7 +209,10 @@ void main() {
     // same design. These lock the two ways that drifts — a control that sets
     // its own height, and a second kind of icon button.
     test('the control height is named once and nothing overrides it', () {
-      expect(ui, contains('const double kIctControlHeight = 36'));
+      // The number itself is not the invariant -- that it is named ONCE
+      // and that a real measurement holds the controls to it is. See
+      // ict_control_heights_test, which pumps a toolbar and measures.
+      expect(ui, contains('const double kIctControlHeight ='));
       // No ICT screen hard-codes a height for a control of its own.
       for (final src in [logs, access, yards]) {
         expect(src.contains('ElevatedButton.icon('), isFalse,
@@ -297,16 +300,19 @@ void main() {
       expect(module, contains('child: child,'));
     });
 
-    test('your own account is a page, not a dialog over the console', () {
-      expect(ict, contains('class _IctProfilePage'));
-      expect(ict, contains('embedded: true'));
-      // The header pill opens it in place; nothing pushes a route.
-      expect(ict, contains('setState(() => _onProfile = true)'));
-      // ⚠️ The CONTENT is the shared profile widget: what a save writes and
-      // what a password change checks must not exist twice.
-      final profile = _read('lib/widgets/disposal_profile_dialog.dart');
-      expect(profile, contains('this.embedded = false'),
-          reason: 'every other portal still opens it as a dialog');
+    test('the profile is a dialog over a blurred console', () {
+      // ⚠️ It was briefly a PAGE, and that broke the console: the rail stayed
+      // visible and clickable but its taps only moved a tab controller that
+      // nothing was showing, so choosing another module did nothing and one
+      // back button was the only way out. A dialog cannot reach that state —
+      // it owns the screen until dismissed, and dismissing it puts you back.
+      expect(ict.contains('_IctProfilePage'), isFalse);
+      expect(ict.contains('_onProfile'), isFalse);
+      expect(ict, contains('showIctProfileDialog(context, accent)'));
+      // The blur is what separates it from the console; a flat scrim leaves
+      // sharp text behind the dialog and the eye keeps reading past it.
+      expect(ui, contains('BackdropFilter('));
+      expect(ui, contains('ImageFilter.blur(sigmaX: 6 * t, sigmaY: 6 * t)'));
     });
   });
 
@@ -356,6 +362,28 @@ void main() {
     test('a metric tile is tinted, not a white box with a coloured square',
         () {
       expect(ui, contains('Color.alphaBlend(color.withOpacity(0.05)'));
+    });
+  });
+
+  group('one cell shape across the toolbar', () {
+    // ⚠️ Measured for real in ict_control_heights_test — every control is
+    // kIctControlHeight and they share a baseline. What made the search box
+    // look like the small one was that it had no CAPTION: three cells were a
+    // label and a box, and it was a box on its own.
+    test('the search box is labelled like the filters beside it', () {
+      expect(ui, contains('class IctFieldLabel'));
+      final search = ui.substring(ui.indexOf('class IctSearchField'),
+          ui.indexOf('/// One ICT filter'));
+      expect(search, contains('IctFieldLabel(label)'));
+    });
+
+    test('the header and the rail brand are built the same way', () {
+      // ⚠️ Equal heights were not enough. The rail was a SizedBox followed by
+      // a Divider — a rule in the pixel AFTER the box — while the header's
+      // border sits in the last pixel OF it. One pixel apart, and that is
+      // the step you can see where the two meet.
+      expect('height: kIctTopBarHeight'.allMatches(ict).length, 2);
+      expect(ict, contains('its own bottom rule INSIDE that height'));
     });
   });
 }

@@ -177,7 +177,9 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
                 ),
               ),
               child: Row(children: [
-                _avatar(profile, 48),
+                // The one thing on the dialog that says whose account
+                // this is, so it is not the smallest thing on it.
+                _avatar(profile, 64),
                 const Gap(16),
                 Expanded(
                   child: Column(
@@ -361,13 +363,13 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
             child: Stack(
               alignment: Alignment.bottomRight,
               children: [
-                _avatarFromPath(_imageCtrl.text, profile, 92),
+                _avatarFromPath(_imageCtrl.text, profile, 112),
                 Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                      color: green, shape: BoxShape.circle),
+                  padding: const EdgeInsets.all(7),
+                  decoration:
+                      BoxDecoration(color: green, shape: BoxShape.circle),
                   child: const Icon(Icons.camera_alt_rounded,
-                      size: 14, color: Colors.white),
+                      size: 16, color: Colors.white),
                 ),
               ],
             ),
