@@ -410,6 +410,9 @@ class DispositionQuery {
   /// third answer, not the absence of one.
   final bool? delivered;
 
+  /// The Reason dropdown on Released Goods.
+  final String? holdReason;
+
   const DispositionQuery({
     required this.finalTag,
     this.page = 0,
@@ -419,6 +422,7 @@ class DispositionQuery {
     this.dateEnd,
     this.year,
     this.delivered,
+    this.holdReason,
   });
 
   @override
@@ -431,11 +435,13 @@ class DispositionQuery {
       other.dateStart == dateStart &&
       other.dateEnd == dateEnd &&
       other.year == year &&
-      other.delivered == delivered;
+      other.delivered == delivered &&
+      other.holdReason == holdReason;
 
   @override
   int get hashCode => Object.hash(
-      finalTag, page, search, yard, dateStart, dateEnd, year, delivered);
+      finalTag, page, search, yard, dateStart, dateEnd, year, delivered,
+      holdReason);
 }
 
 /// One page of a disposition table, filtered and paged in SQL.
@@ -458,6 +464,7 @@ final dispositionPageProvider =
         dateEnd: q.dateEnd,
         year: q.year,
         delivered: q.delivered,
+        holdReason: q.holdReason,
       );
 });
 

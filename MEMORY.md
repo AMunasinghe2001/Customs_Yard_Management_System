@@ -2027,3 +2027,15 @@ The old wording ("close that window and re-run this") sent the user looking for 
 The note now names **how stale** the shared exe is and **which pids** hold it, with their start times, and `-CloseRunning` closes them (CloseMainWindow, then Kill after 8s) and refreshes the shared build. ⚠️ Never passed automatically — the private slot exists so a rebuild does not disturb what the user is looking at.
 
 **Before believing any "nothing changed" report, check the exe timestamp against the running pids' paths** (`Get-Process cus_yard_management | Select Id, Path, StartTime`).
+
+## Released Goods: the disposition with no tag (2026-09-05)
+
+⚠️ **A RELEASE matches the ABSENCE of a bracket**, which is why it is a fourth *source* in `disposition_rows` ([21](postgres/21_disposition_rows_released.sql)) rather than another entry in the tag list — the other three match a tag. The rule is `_isReleaseEntry`'s, kept exactly: a returned entry whose notes are empty, or do not start with `[`, or are tagged `[FINAL:RELEASED]` / `[RELEASE...]`. 31 of the yard's returned entries are that shape. The verify asserts the two rules are **mutually exclusive** — both run over the same entries, so an overlap would put the same goods on two pages — and that a released row carries **no** delivery state, because the release *is* the hand-over.
+
+Released Goods filters on two things no other page does, so [22](postgres/22_disposition_rows_release_filters.sql) adds them to every source: **`hold_reason`** (its Reason dropdown) and **`receipt_no`**. ⚠️ The receipt number is not a column — it is one field of a pipe-separated note (`Receipt No: 4410 | Date: ...`), and leaving the app to parse it is exactly what forced the fetch-everything, so the view splits it out. `'all'` from the dropdown means *no filter*, not a reason named "all".
+
+⚠️ **`create or replace view` fails when the new columns are not a pure append** — "cannot change name of view column". These land inside the subquery, so `delivered` shifts position. Migration 22 does `drop view if exists` then `create view`; nothing but the app depends on it.
+
+Every migration from 20 onward **slices the previous one's body out of the file** rather than retyping it — two copies drift, and the symptom is a page whose rows depend on which migration ran last.
+
+**Still client-side:** `unsold_packages_screen`, `perishable_goods_screen`, `old_entries_screen`, and the directorate tabs.

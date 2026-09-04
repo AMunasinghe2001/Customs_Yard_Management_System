@@ -38,71 +38,39 @@ class _ReturnedPackagesScreenState
   String? _yearFilter;
   int _page = 0; // current client-side page of the filtered rows
 
-  WarehouseEntryModel? _latestReturnedEntry(PackageModel package) {
-    final entries =
-        package.warehouseEntries.where((e) => e.isReturned).toList();
-    if (entries.isEmpty) return null;
-    entries.sort((a, b) {
-      final aDate = a.returnedAt ?? a.admittedAt;
-      final bDate = b.returnedAt ?? b.admittedAt;
-      return bDate.compareTo(aDate);
-    });
-    return entries.first;
-  }
+  // ⚠️ `_latestReturnedEntry`, `_isReleaseEntry`, `_returnedItemName` and
+  // `_extractReceiptNo` all moved into the `disposition_rows` view (source 4,
+  // postgres/21, plus the receipt split in 22). They are not gone — they are
+  // in SQL, because paging in SQL needs the rows to exist in SQL.
+  //
+  // The release rule in particular is worth finding there: a release is the
+  // one disposition with NO tag, so it matches the ABSENCE of a bracket,
+  // which the other three sources' tag list cannot express.
 
-  /// A returned entry that represents an actual RELEASE — not a forfeit,
-  /// abandonment or other disposition. Plain/untagged returns are releases;
-  /// final releases are tagged "[FINAL:RELEASED]" or "[RELEASE...]".
-  bool _isReleaseEntry(WarehouseEntryModel e) {
-    if (!e.isReturned) return false;
-    final notes = (e.returnNotes ?? '').trim().toUpperCase();
-    if (notes.isEmpty) return true;
-    if (!notes.startsWith('[')) return true; // free-text receipt note
-    return notes.startsWith('[FINAL:RELEASED]') || notes.startsWith('[RELEASE');
-  }
-
-  List<_ReturnedRow> _buildReturnedRows(List<PackageModel> packages) {
-    final rows = <_ReturnedRow>[];
-    for (final package in packages) {
-      for (final entry in package.warehouseEntries) {
-        if (!_isReleaseEntry(entry)) continue;
-        rows.add(_ReturnedRow(
-          package: package,
-          entry: entry,
-          itemName: _returnedItemName(package, entry),
-          receiptNo: _extractReceiptNo(entry.returnNotes),
-          receiptDate: _extractReceiptDate(entry.returnNotes),
-        ));
-      }
+  /// The view's rows, as this page's widgets already expect them.
+  ///
+  /// Only rehydrates the twenty rows that came back — which rows count as a
+  /// release, in what order, and which page are all the view's job now.
+  List<_ReturnedRow> _rowsFrom(DispositionPageWithPackages result) {
+    final out = <_ReturnedRow>[];
+    for (final r in result.rows) {
+      final pkg = result.packages[r.packageId];
+      if (pkg == null) continue;
+      final entry =
+          pkg.warehouseEntries.where((e) => e.id == r.entryId).firstOrNull;
+      // Every released row comes from an entry; one that cannot be resolved
+      // was deleted between the two queries.
+      if (entry == null) continue;
+      out.add(_ReturnedRow(
+        package: pkg,
+        entry: entry,
+        itemName: r.itemName,
+        // Parsed by the view now, so the search box can match it in SQL.
+        receiptNo: r.receiptNo,
+        receiptDate: _extractReceiptDate(entry.returnNotes),
+      ));
     }
-    rows.sort((a, b) {
-      final aDate = a.entry.returnedAt ?? a.entry.admittedAt;
-      final bDate = b.entry.returnedAt ?? b.entry.admittedAt;
-      return bDate.compareTo(aDate);
-    });
-    return rows;
-  }
-
-  String _returnedItemName(PackageModel package, WarehouseEntryModel? entry) {
-    if (entry == null) return '—';
-    final itemId = entry.packageItemId;
-    for (final item in package.items) {
-      if (item.id == itemId) return item.itemName;
-    }
-    if (package.items.isNotEmpty) return package.items.first.itemName;
-    return '—';
-  }
-
-  String? _extractReceiptNo(String? notes) {
-    if (notes == null || notes.trim().isEmpty) return null;
-    for (final part in notes.split('|')) {
-      final text = part.trim();
-      if (text.toLowerCase().startsWith('receipt no:')) {
-        final idx = text.indexOf(':');
-        if (idx != -1) return text.substring(idx + 1).trim();
-      }
-    }
-    return null;
+    return out;
   }
 
   String? _extractReceiptDate(String? notes) {
@@ -147,12 +115,26 @@ class _ReturnedPackagesScreenState
 
   @override
   Widget build(BuildContext context) {
-    final packages = ref.watch(livePackagesProvider);
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final search = ref.watch(returnedPackageSearchProvider);
     final dateRange = ref.watch(returnedPackageDateRangeProvider);
     final rFilter = ref.watch(returnedPackageReasonFilterProvider);
+
+    // ⚠️ Everything this page filters on goes into the key, so every filter
+    // is applied in SQL. A RELEASE is the disposition with NO tag -- see the
+    // view's fourth source -- which is why it has a final_tag of its own
+    // rather than being matched from the tag list.
+    final query = DispositionQuery(
+      finalTag: 'RELEASED',
+      page: _page,
+      search: search,
+      dateStart: dateRange?.start,
+      dateEnd: dateRange?.end,
+      year: _yearFilter,
+      holdReason: rFilter,
+    );
+    final page = ref.watch(dispositionPageWithPackagesProvider(query));
 
     // Any filter change jumps back to the first page.
     ref.listen(returnedPackageSearchProvider, (_, __) => _resetPage());
@@ -190,22 +172,15 @@ class _ReturnedPackagesScreenState
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Consumer(
-                          builder: (context, ref, child) {
-                            final pkgs = ref.watch(livePackagesProvider);
-                            return pkgs.when(
-                              data: (list) {
-                                final count = _buildReturnedRows(list).length;
-                                return Text('$count Released',
-                                    style: TextStyle(
-                                        color: context.colors.textMuted,
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold));
-                              },
-                              loading: () => const SizedBox(),
-                              error: (_, __) => const SizedBox(),
-                            );
-                          },
+                        // The count the DATABASE reports for this filter.
+                        page.when(
+                          data: (p) => Text('${p.total} Released',
+                              style: TextStyle(
+                                  color: context.colors.textMuted,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold)),
+                          loading: () => const SizedBox(),
+                          error: (_, __) => const SizedBox(),
                         ),
                       ],
                     ),
@@ -446,10 +421,13 @@ class _ReturnedPackagesScreenState
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: srYears(_buildReturnedRows(
-                                  packages.valueOrNull ??
-                                      const <PackageModel>[])
-                              .map((r) => r.package.srNumber)),
+                          // ⚠️ Its own query: the page holds twenty rows,
+                          // which would offer only the years visible now.
+                          years: srYears(ref
+                                  .watch(
+                                      dispositionYearSourceProvider('RELEASED'))
+                                  .valueOrNull ??
+                              const <String>[]),
                           onChanged: (v) => setState(() {
                             _yearFilter = v;
                             _page = 0;
@@ -466,57 +444,28 @@ class _ReturnedPackagesScreenState
 
               const Gap(16),
               Expanded(
-                child: packages.when(
+                child: page.when(
                   loading: () => Center(
                       child: CircularProgressIndicator(
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final rows = _buildReturnedRows(list).where((row) {
-                      if (search.isNotEmpty) {
-                        final s = search.toLowerCase();
-                        final receiptNo = row.receiptNo?.toLowerCase() ?? '';
-                        final itemName = row.itemName.toLowerCase();
-                        if (!row.package.srNumber.toLowerCase().contains(s) &&
-                            !row.package.consigneeName
-                                .toLowerCase()
-                                .contains(s) &&
-                            !itemName.contains(s) &&
-                            !receiptNo.contains(s)) {
-                          return false;
-                        }
-                      }
-
-                      if (rFilter != 'all' && row.entry.holdReason != rFilter)
-                        return false;
-
-                      if (dateRange != null) {
-                        final date =
-                            row.entry.returnedAt ?? row.entry.admittedAt;
-                        final startOfDay = DateTime(dateRange.start.year,
-                            dateRange.start.month, dateRange.start.day);
-                        final endOfDay = DateTime(dateRange.end.year,
-                            dateRange.end.month, dateRange.end.day, 23, 59, 59);
-                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
-                          return false;
-                      }
-                      if (!srYearMatches(row.package.srNumber, _yearFilter))
-                        return false;
-                      return true;
-                    }).toList();
-
-                    // Client-side paging: clamp the page if the filtered set
-                    // shrank, then show only the current page's rows.
-                    final maxPage =
-                        rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+                      onRetry: () => ref
+                          .refresh(dispositionPageWithPackagesProvider(query))),
+                  data: (result) {
+                    // Already filtered, sorted and paged by the database --
+                    // including the Reason dropdown and the receipt-number
+                    // search, which are why this page needed two columns on
+                    // the view that no other page uses.
+                    final pageRows = _rowsFrom(result);
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
                     if (_page > maxPage) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted) setState(() => _page = maxPage);
                       });
                     }
-                    final pageRows = pageSlice(rows, _page.clamp(0, maxPage));
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -673,8 +622,10 @@ class _ReturnedPackagesScreenState
                           ),
                         ),
                         TablePager(
-                          total: rows.length,
+                          // The database's count for this filter.
+                          total: result.total,
                           page: _page.clamp(0, maxPage),
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],

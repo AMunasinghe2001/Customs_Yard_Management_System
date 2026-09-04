@@ -772,6 +772,10 @@ class PackageService {
     /// The Delivered / Pending sub-filter on Sold and Destroyed. Null means
     /// "All", which is not the same as either.
     bool? delivered,
+
+    /// The Reason dropdown on Released Goods. 'all' and null both mean no
+    /// filter -- the screen uses the string, so it is accepted here.
+    String? holdReason,
   }) async {
     // ⚠️ ONE closure, applied to the rows query and the count query alike. Two
     // separately-written filters drift, and the symptom is a pager whose total
@@ -781,8 +785,10 @@ class PackageService {
       if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
+        // The receipt number is searched too -- on Released Goods it is
+        // often the only thing an officer has to go on.
         q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
-            'item_name.ilike.%$s%');
+            'item_name.ilike.%$s%,receipt_no.ilike.%$s%');
       }
       if (year != null && year.isNotEmpty) {
         q = q.ilike('sr_number', '%/$year');
@@ -797,6 +803,11 @@ class PackageService {
         q = q.lte('happened_at', end.toIso8601String());
       }
       if (delivered != null) q = q.eq('delivered', delivered);
+      if (holdReason != null &&
+          holdReason.isNotEmpty &&
+          holdReason != 'all') {
+        q = q.eq('hold_reason', holdReason);
+      }
       return q;
     }
 

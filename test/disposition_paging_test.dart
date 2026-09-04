@@ -218,6 +218,74 @@ void main() {
     });
   });
 
+  group('a release is the disposition with NO tag', () {
+    final released =
+        File('postgres/21_disposition_rows_released.sql').readAsStringSync();
+    final filters =
+        File('postgres/22_disposition_rows_release_filters.sql')
+            .readAsStringSync();
+    final screen = File('lib/screens/packages/returned_packages_screen.dart')
+        .readAsStringSync();
+
+    test('it matches the ABSENCE of a bracket, which a tag list cannot', () {
+      // ⚠️ This is why RELEASED is a fourth source rather than another entry
+      // in the tag list: the other three match a tag, this one matches not
+      // having one.
+      expect(released, contains("coalesce(trim(w.return_notes), '') = ''"));
+      expect(released, contains("trim(w.return_notes) not like '[%'"));
+      expect(released, contains("like '[FINAL:RELEASED]%'"));
+      expect(released, contains("like '[RELEASE%'"));
+    });
+
+    test('a released row cannot also be a disposed one', () {
+      // Both rules run over the same entries, so they have to be mutually
+      // exclusive or the same goods show on two pages.
+      expect(released, contains('an entry is both released and disposed'));
+    });
+
+    test('a release has no separate hand-over step', () {
+      // The release IS the hand-over.
+      expect(released,
+          contains('a released row claims a separate delivery state'));
+    });
+
+    test('the receipt number is split out so it can be searched in SQL', () {
+      // ⚠️ It is one field of a pipe-separated note, not a column. Leaving it
+      // for the app to parse is what forced the fetch-everything.
+      expect(filters, contains('as receipt_no'));
+      expect(filters, contains('Receipt No:'));
+      // And the verify proves the split actually happened.
+      expect(filters, contains('still carry the rest of the note'));
+    });
+
+    test('the view is DROPPED, not replaced, when columns move', () {
+      // ⚠️ Postgres refuses `create or replace` when the new column list is
+      // not a pure append, and these land inside the subquery.
+      expect(filters, contains('drop view if exists public.disposition_rows;'));
+    });
+
+    test('the screen reads the paged provider', () {
+      expect(screen, contains("finalTag: 'RELEASED',"));
+      expect(screen, contains('dispositionPageWithPackagesProvider(query)'));
+      expect(screen, isNot(contains('_buildReturnedRows')));
+    });
+
+    test('its two extra filters reach the database', () {
+      // The Reason dropdown and the receipt-number search are the reason this
+      // page needed two columns no other page uses.
+      expect(screen, contains('holdReason: rFilter,'));
+      final services = File('lib/services/services.dart').readAsStringSync();
+      expect(services, contains("q = q.eq('hold_reason', holdReason);"));
+      expect(services, contains('receipt_no.ilike'));
+    });
+
+    test("'all' means no filter, not a reason named all", () {
+      final services = File('lib/services/services.dart').readAsStringSync();
+      final m = services.substring(services.indexOf('getDispositionRowsPaged'));
+      expect(m, contains("holdReason != 'all'"));
+    });
+  });
+
   group('a row of the view', () {
     test('parses into the model the screen reads', () {
       final row = DispositionRow.fromJson({

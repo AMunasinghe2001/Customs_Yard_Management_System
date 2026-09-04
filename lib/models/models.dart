@@ -1030,6 +1030,12 @@ class DispositionRow {
   final String? note;
   final String? officer;
 
+  /// Why the goods were held — the Reason column on Released Goods.
+  final String? holdReason;
+
+  /// Parsed out of the note by the view, so it can be searched in SQL.
+  final String? receiptNo;
+
   /// The one date the page sorts on, whichever source the row came from.
   final DateTime happenedAt;
 
@@ -1049,6 +1055,8 @@ class DispositionRow {
     required this.quantity,
     required this.note,
     required this.officer,
+    this.holdReason,
+    this.receiptNo,
     required this.happenedAt,
   });
 
@@ -1068,6 +1076,8 @@ class DispositionRow {
         quantity: (parseDbNum(json['quantity']) ?? 0).round(),
         note: json['note']?.toString(),
         officer: json['officer']?.toString(),
+        holdReason: json['hold_reason']?.toString(),
+        receiptNo: json['receipt_no']?.toString(),
         happenedAt: parseDbDate(json['happened_at']) ?? DateTime(1970),
       );
 
