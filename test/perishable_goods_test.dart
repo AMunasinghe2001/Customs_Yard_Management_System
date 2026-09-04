@@ -469,6 +469,31 @@ void main() {
       expect(src, contains('YardAllFilter('));
     });
 
+    // ⚠️ Central Disposal builds every cross-yard tab the same way: a plain
+    // 22pt title, the search box and the yard picker on THAT line, then a
+    // StatChip on its own line under it. This page used DisposalPageHeader —
+    // a title with a subtitle and a big trailing count box — and put its
+    // controls on a third row, so beside Sold Goods and Unsold Tenders it was
+    // taller, with the count in the wrong place and in a different shape.
+    test('the Central Disposal copy is built the way its neighbours are', () {
+      final ro = src.substring(src.indexOf('if (widget.readOnly) ...['),
+          src.indexOf('] else'));
+      expect(ro, contains('fontSize: 22'));
+      expect(ro, contains('_searchBox(context)'));
+      expect(ro, contains('YardAllFilter('));
+      expect(ro, contains('StatChip('));
+      // DisposalPageHeader is the YARD's header, and stays on that side.
+      expect(ro.contains('DisposalPageHeader'), isFalse);
+      expect(ro.contains('_CountChip'), isFalse);
+
+      // The same three pieces the neighbours use, in the same order.
+      final disposal =
+          File('lib/screens/disposal/disposal_dashboard_screen.dart')
+              .readAsStringSync();
+      expect(disposal, contains('StatChip('));
+      expect(disposal, contains('YardAllFilter('));
+    });
+
     // ⚠️ Central Disposal tints every one of its dialogs with the portal's
     // green. This page passed none, so it fell back to the default indigo and
     // was the only popup in that portal wearing another colour.

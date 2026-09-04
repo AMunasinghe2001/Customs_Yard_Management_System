@@ -226,19 +226,72 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            DisposalPageHeader(
-              title: 'Perishable Goods',
-              subtitle: widget.readOnly
-                  ? 'Goods that spoil — held at the yard, awaiting a disposal '
-                      'request'
-                  : 'Goods that spoil — no warehouse, no appeal window. Send '
-                      'them for disposal without waiting.',
-              trailing: [
-                async.maybeWhen(
-                  data: (rows) => _CountChip(count: _filter(rows).length),
-                  orElse: () => const SizedBox(),
+            // ⚠️ Central Disposal's copy is built as ITS pages are built,
+            // not as a yard page with a yard picker bolted on.
+            //
+            // Every cross-yard tab there -- Sold Goods, Unsold Tenders,
+            // Committees -- is: a plain 22pt title, then the search box and
+            // the yard picker on that SAME line, then a StatChip on its own
+            // line under it. This page instead used DisposalPageHeader (a
+            // title with a SUBTITLE and a big trailing count box) and put its
+            // controls on a third row, so beside its neighbours it read as a
+            // different product: taller, with the count in the wrong place
+            // and in a different shape.
+            if (widget.readOnly) ...[
+              Row(children: [
+                Text('Perishable Goods',
+                    style: TextStyle(
+                        color: context.colors.textPrimary,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700)),
+                const Spacer(),
+                SizedBox(width: 280, child: _searchBox(context)),
+                const Gap(12),
+                YearFilterButton(
+                  value: _yearFilter,
+                  years: srYears(
+                      async.valueOrNull?.map((r) => r.package.srNumber) ??
+                          const <String>[]),
+                  onChanged: (v) => setState(() {
+                    _yearFilter = v;
+                    _page = 0;
+                  }),
                 ),
-                if (!widget.readOnly)
+                const Gap(12),
+                // This page watches EVERY yard here, so without it an officer
+                // cannot narrow to the one they are dealing with.
+                YardAllFilter(
+                  value: _yardFilter,
+                  onChanged: (v) => setState(() {
+                    _yardFilter = v;
+                    _page = 0;
+                  }),
+                ),
+              ]).animate().fadeIn(duration: 300.ms),
+              const Gap(14),
+              async.maybeWhen(
+                data: (rows) => Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: StatChip(
+                    label: 'Awaiting disposal',
+                    // Counts the rows the TABLE shows, so the number and the
+                    // list can never disagree.
+                    value: '${_filter(rows).length}',
+                    color: context.colors.dangerRed,
+                  ),
+                ),
+                orElse: () => const SizedBox(),
+              ),
+            ] else
+              DisposalPageHeader(
+                title: 'Perishable Goods',
+                subtitle: 'Goods that spoil — no warehouse, no appeal window. '
+                    'Send them for disposal without waiting.',
+                trailing: [
+                  async.maybeWhen(
+                    data: (rows) => _CountChip(count: _filter(rows).length),
+                    orElse: () => const SizedBox(),
+                  ),
                   async.maybeWhen(
                     data: (rows) => ElevatedButton.icon(
                       icon: const Icon(Icons.local_shipping_rounded, size: 16),
@@ -274,51 +327,10 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     ),
                     orElse: () => const SizedBox(),
                   ),
-              ],
-            ).animate().fadeIn(),
-            const Gap(20),
-            // ⚠️ ONE ROW, like every other cross-yard page (Unsold Tenders,
-            // Sold Goods, Committees...). This page used to stack the search
-            // box, the year filter and the yard picker VERTICALLY inside a
-            // gold-bordered card -- a control panel three rows tall that
-            // nothing else in the app has, pushing the table down and making
-            // the tab look like a different product. The controls are the
-            // same ones; only the arrangement is now the house pattern.
-            // ⚠️ Two arrangements of the SAME controls, because this page
-            // is two pages.
-            //
-            // On the yard it is a held-goods page and must read like Other
-            // Goods beside it: a search box, then a row of filters under it.
-            // On Central Disposal it is a cross-yard list and must read like
-            // Sold Goods: search and the yard picker on the header's own
-            // line. It had one arrangement for both, so on whichever portal
-            // you were in it was the odd page out.
-            if (widget.readOnly)
-              Row(children: [
-                Expanded(child: _searchBox(context)),
-                const Gap(12),
-                YearFilterButton(
-                  value: _yearFilter,
-                  years: srYears(
-                      async.valueOrNull?.map((r) => r.package.srNumber) ??
-                          const <String>[]),
-                  onChanged: (v) => setState(() {
-                    _yearFilter = v;
-                    _page = 0;
-                  }),
-                ),
-                const Gap(12),
-                // Central Disposal watches EVERY yard here, so without this
-                // an officer cannot narrow to the one they are dealing with.
-                YardAllFilter(
-                  value: _yardFilter,
-                  onChanged: (v) => setState(() {
-                    _yardFilter = v;
-                    _page = 0;
-                  }),
-                ),
-              ]).animate().fadeIn(duration: 300.ms)
-            else ...[
+                ],
+              ).animate().fadeIn(),
+            if (!widget.readOnly) const Gap(20),
+            if (!widget.readOnly) ...[
               _searchBox(context),
               const Gap(10),
               Wrap(
