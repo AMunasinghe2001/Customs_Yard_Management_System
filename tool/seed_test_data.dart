@@ -1480,6 +1480,20 @@ Future<void> _seedUnsoldOutcomes(Connection conn) async {
             committeeRoundAt,
           ],
         );
+        // ⚠️ The committee's price now BELONGS to the round that ran at it.
+        //
+        // It was written as a PENDING re-valuation (tender_sale_id null),
+        // which means one thing only: a price set for a round not yet placed.
+        // Leaving it pending after the round HAD been placed made the screen
+        // draw a second, sealed "Committee Tender 2" from it -- a round that
+        // can never happen, since a package gets exactly one committee round
+        // and this one is already over. Keying it to the sale says what is
+        // actually true: this was that round's reserve price.
+        await conn.execute(
+          r'update public.tender_revaluations set tender_sale_id = $1 '
+          r'where forfeited_package_id = $2 and tender_sale_id is null',
+          parameters: [saleId, fpId],
+        );
         committeeRounds++;
         ranCommitteeRound = true;
       }

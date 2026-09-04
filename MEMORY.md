@@ -1850,3 +1850,16 @@ The chip is painted **white-on-dark deliberately, not from the theme's text colo
 - `test/dialog_close_button_test.dart` renders it and reads the icon's colour, and asserts no dialog still paints a white cross.
 
 **The yard's perishable search box draws no border or fill of its own** — the gold filter card around it IS the border, and a gold box inside a gold box is what made it look nothing like Forfeited's. Central Disposal's copy has no card, so it keeps its own outline like every search box there.
+
+⚠️ **There is only ever ONE committee round; the "Committee Tender 2" was a phantom (2026-09-04).** A `tender_revaluations` row with `tender_sale_id IS NULL` means exactly one thing: **a price set for a round not yet placed.** The committee price was written **both** onto `tender_committees.submitted_value` (where the UI reads it) **and** as one of those pending rows — so the dialog drew the same price twice, the second as a sealed round that can never happen.
+
+Three fixes, because it was wrong in three places:
+- **UI**: the next-tender tile is suppressed when the package's outcome is **decided** (nothing follows converted / auction / government use / removed) or when the pending figure **equals the committee's** (that is the committee round, already shown).
+- **Seeder**: after the committee round's sale is created it now **keys that re-valuation to the sale** — the price was that round's reserve, not a pending next-tender price.
+- **Data**: `postgres/10_committee_price_not_a_pending_round.sql` deleted the 3 duplicates. Ran green; committee prices intact.
+
+⚠️ **The Valuation card is hidden when Tender History renders.** History opens with the **Valuation Tender** — the first round and the figure it ran at — so the card was the same fact stated twice, and the two **did not agree**: the card showed the ORIGINAL valuation, the first round the re-valuation keyed to it, with nothing on screen saying which was which. The card survives only where there is no history (a package that never went to tender still needs its valuation).
+
+⚠️ Widget tests pumping `TenderHistorySection` must now override **`unsoldProposalsProvider`** too, or they open a real DB socket.
+
+**The yard's perishable search box overrides NOTHING** and takes the app's `inputDecorationTheme` — a grey outline that turns gold on focus — because that is what a bare `InputDecoration` gives, and what Forfeited / Other / Returned all do. It first had its own gold border **inside** the gold filter card (a gold box in a gold box), then `InputBorder.none`, which removed the frame entirely. Neither is right; inheriting is.

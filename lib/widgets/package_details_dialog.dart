@@ -183,6 +183,12 @@ class TenderHistorySection extends ConsumerWidget {
     // otherwise the round would vanish from this list.
     final committeeAsync = ref.watch(tenderCommitteesProvider);
     final committee = committeeAsync.valueOrNull?[forfeited.id];
+    // ⚠️ Whether this package's story has ENDED. Converted, auctioned, taken
+    // into government use, removed -- after any of those there is no next
+    // tender, so nothing below may announce one.
+    final decided = ref.watch(unsoldProposalsProvider).valueOrNull
+            ?.containsKey(forfeited.id) ??
+        false;
     // Members only exist once the DG/ADG appointed the committee. Held in a
     // local so every branch below reads the same list.
     final committeeMembers = committee?.members ?? const <CommitteeMember>[];
@@ -291,7 +297,23 @@ class TenderHistorySection extends ConsumerWidget {
     // history gets it — a caller cannot forget. A PENDING row (no round yet,
     // key '') is a price for a tender that has not been placed; a figure keyed
     // to a round belongs to that round and is already listed above.
-    if (revals[''] != null) {
+    //
+    // ⚠️ TWO reasons a pending row is NOT a next tender:
+    //
+    //   * The package already has a final outcome. Converted, auctioned,
+    //     taken into government use, removed — there is no next tender after
+    //     any of those, so a sealed "coming next" tile on those pages was
+    //     announcing a round that can never happen.
+    //   * The figure IS the committee's. The committee price is written as a
+    //     pending re-valuation as well as onto the committee itself, so the
+    //     same number appeared twice: once as "Committee Tender 1" and again
+    //     as a phantom "Committee Tender 2". There is only ever ONE committee
+    //     round.
+    final pending = revals[''];
+    final isCommitteePrice = pending != null &&
+        committee?.submittedValue != null &&
+        (pending.valuationCost - committee!.submittedValue!).abs() < 0.01;
+    if (pending != null && !decided && !isCommitteePrice) {
       rows.add(_TenderRoundTile(
         sealed: true,
         label: tenderRoundLabel(ordered.length + 1),
@@ -2310,7 +2332,23 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                               ),
                             ),
                           )
-                        else if (widget.valuationUnitCost != null)
+                        // ⚠️ Only when there is NO tender history below.
+                        //
+                        // Tender History opens with the Valuation Tender —
+                        // the first round and the figure it ran at — so this
+                        // card was the same fact stated twice. Worse, the two
+                        // did not agree: this shows the ORIGINAL valuation,
+                        // while the first round shows the re-valuation keyed
+                        // to it, and a reader had no way to tell which was
+                        // which. One place, and it is the one that also shows
+                        // every round after it.
+                        //
+                        // A package that never went to tender has no history
+                        // section at all, and still needs its valuation, so
+                        // this stays for exactly that case.
+                        else if (widget.valuationUnitCost != null &&
+                            !(widget.tenderHistoryFor != null &&
+                                !widget.valuationSealedUntilSale))
                           _DetailSection(
                             title: 'Valuation',
                             icon: Icons.calculate_rounded,

@@ -291,8 +291,15 @@ void main() {
       // was the shifted reading. The caller now states it outright, and the
       // figure itself never reaches the widget — only the fact that one is
       // set — so a sealed row can say so without carrying the reserve price.
-      expect(flat(dialog), contains("if (revals[''] != null) {"));
+      expect(flat(dialog), contains("final pending = revals[''];"));
       expect(flat(dialog), isNot(contains('final pending = revals[lastId]')));
+      // ⚠️ And a pending row is not ALWAYS a next round. Two things make it
+      // something else: the package's outcome is already decided (nothing
+      // follows a final outcome), or the figure is the committee's own, which
+      // is already shown as the committee round. A package gets exactly ONE
+      // committee round, and the second tile was a phantom.
+      expect(flat(dialog),
+          contains('if (pending != null && !decided && !isCommitteePrice) {'));
     });
 
     test('the table seals only while the newest round is still to run', () {
@@ -410,7 +417,7 @@ void main() {
       final dialog = File('lib/widgets/package_details_dialog.dart')
           .readAsStringSync()
           .replaceAll(RegExp(r'\s+'), ' ');
-      expect(dialog, contains("if (revals[''] != null) {"));
+      expect(dialog, contains("final pending = revals[''];"));
       expect(dialog, isNot(contains('nextTenderValued')),
           reason: 'Two sources of truth would drift.');
     });

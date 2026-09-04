@@ -132,11 +132,18 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
 
   /// The search box, built once and placed differently by each portal.
   ///
-  /// ⚠️ On the YARD it has no border and no fill of its own — the gold card
-  /// around it is the border, and drawing a second gold box inside a gold box
-  /// is what made this search bar look nothing like the one on Forfeited or
-  /// Other. On Central Disposal there is no card, so it keeps its own outline
-  /// like every search box in that portal.
+  /// ⚠️ On the YARD it overrides NOTHING and takes the app's own
+  /// inputDecorationTheme: a grey outline that turns gold on focus. That is
+  /// what every held-goods page beside it does — Forfeited, Other, Returned
+  /// all pass a bare InputDecoration — and it is why theirs behaves the same
+  /// when clicked.
+  ///
+  /// It used to paint a gold border and a gold fill of its own, inside the
+  /// gold filter card: a gold box in a gold box, which matched nothing. The
+  /// first fix went too far the other way and removed the frame altogether.
+  ///
+  /// Central Disposal's copy has no card around it, so there it keeps an
+  /// explicit outline like every search box in that portal.
   Widget _searchBox(BuildContext context) => SizedBox(
         height: 44,
         child: TextField(
@@ -167,19 +174,19 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                       _page = 0;
                     }),
                   ),
-            filled: widget.readOnly,
-            fillColor: context.colors.primaryGold.withOpacity(0.06),
+            filled: true,
+            fillColor: widget.readOnly
+                ? context.colors.primaryGold.withOpacity(0.06)
+                : context.colors.surfaceDark,
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            border: widget.readOnly
-                ? _searchBorder(context)
-                : InputBorder.none,
-            enabledBorder: widget.readOnly
-                ? _searchBorder(context)
-                : InputBorder.none,
-            focusedBorder: widget.readOnly
-                ? _searchBorder(context, focused: true)
-                : InputBorder.none,
+            // Null lets the theme's own border through, which is the grey
+            // outline that turns gold on focus. Only Central Disposal's copy
+            // states one.
+            border: widget.readOnly ? _searchBorder(context) : null,
+            enabledBorder: widget.readOnly ? _searchBorder(context) : null,
+            focusedBorder:
+                widget.readOnly ? _searchBorder(context, focused: true) : null,
           ),
           onChanged: (v) => setState(() {
             _search = v;

@@ -69,6 +69,11 @@ void main() {
               }),
           tenderCommitteesProvider.overrideWith(
               (ref) async => const <String, TenderCommitteeModel>{}),
+          // ⚠️ The section reads this to decide whether the package's story
+          // has ENDED — a decided package gets no next-tender tile. Without
+          // the override it opens a real database socket under test.
+          unsoldProposalsProvider.overrideWith(
+              (ref) async => const <String, UnsoldProposalModel>{}),
         ],
         child: MaterialApp(
           theme: AppTheme.lightTheme,
@@ -137,5 +142,68 @@ void main() {
         .replaceAll(RegExp(r'\s+'), ' ');
     expect(src, contains('valuationQty: row.entry?.itemCount ?? row.item?.quantity'),
         reason: 'These rows come from warehouse entries, so item is null.');
+  });
+
+  group('there is only ever ONE committee round', () {
+    final src = File('lib/widgets/package_details_dialog.dart')
+        .readAsStringSync();
+
+    // ⚠️ The committee price was written BOTH onto tender_committees (where
+    // the UI reads it) AND as a PENDING re-valuation — a row whose meaning is
+    // "a price for a round not yet placed". The screen then drew both:
+    //     Committee Tender 1   LKR 26,676,100
+    //     Committee Tender 2   sealed
+    // A package gets exactly one committee round, and on these pages it is
+    // already over — every one carries a decided outcome.
+    test('a pending figure equal to the committee price is not a new round',
+        () {
+      expect(src, contains('final isCommitteePrice = pending != null'));
+      expect(src, contains('committee?.submittedValue != null'));
+      expect(src, contains('!isCommitteePrice'));
+    });
+
+    // ⚠️ And nothing may announce a next tender after a FINAL outcome:
+    // converted, auctioned, government use, removed.
+    test('a decided package shows no next-tender tile', () {
+      expect(src, contains('final decided = ref.watch(unsoldProposalsProvider)'));
+      expect(src, contains('!decided'));
+    });
+
+    test('the seeder keys the committee price to the round that ran at it',
+        () {
+      final seed = File('tool/seed_test_data.dart').readAsStringSync();
+      expect(seed, contains('update public.tender_revaluations set tender_sale_id'));
+      // And the migration that cleaned what it had already written.
+      final sql = File('postgres/10_committee_price_not_a_pending_round.sql')
+          .readAsStringSync();
+      expect(sql, contains('delete from public.tender_revaluations'));
+      expect(sql, contains(r'do $verify$'));
+    });
+  });
+
+  group('the valuation is stated once', () {
+    final src = File('lib/widgets/package_details_dialog.dart')
+        .readAsStringSync();
+
+    // ⚠️ Tender History opens with the Valuation Tender — the first round and
+    // the figure it ran at — so the Valuation card above it was the same fact
+    // twice. And the two did not AGREE: the card showed the original
+    // valuation while the first round showed the re-valuation keyed to it,
+    // with nothing on screen to say which was which.
+    test('the Valuation card yields to the tender history', () {
+      // Matched on the guard's own words with whitespace collapsed, rather
+      // than on its exact wrapping, which the formatter decides.
+      final flat = src.replaceAll(RegExp(r'\s+'), ' ');
+      expect(
+          flat,
+          contains('!(widget.tenderHistoryFor != null && '
+              '!widget.valuationSealedUntilSale)'));
+    });
+
+    // A package that never went to tender has no history section, and still
+    // needs its valuation — so the card is kept for exactly that case.
+    test('the card survives where there is no history', () {
+      expect(src, contains('widget.valuationUnitCost != null &&'));
+    });
   });
 }
