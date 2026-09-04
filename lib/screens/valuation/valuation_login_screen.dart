@@ -225,10 +225,8 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
       _error = null;
     });
     try {
-      final profile = await ref
-          .read(authServiceProvider)
-          .finishOtpLogin(_resolvedEmail, _otpCtrl.text.trim(),
-              _passwordCtrl.text);
+      final profile = await ref.read(authServiceProvider).finishOtpLogin(
+          _resolvedEmail, _otpCtrl.text.trim(), _passwordCtrl.text);
       if (profile == null) {
         setState(() => _error = 'Verification failed. Please try again.');
         return;
@@ -480,36 +478,33 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(children: [
-                          // Flexible: the title sits beside a back
-                          // button in a bare Row, so a longer one
-                          // ('Top Management Sign In') had nowhere
-                          // to give and overflowed the panel.
-                          Flexible(
-                            child:
-                            Text('Valuation Sign In',
+                        Text('Valuation Sign In',
                                 style:
-                                    Theme.of(context).textTheme.headlineMedium),
-                          ),
-                        ]).animate().fadeIn(duration: 400.ms),
+                                    Theme.of(context).textTheme.headlineMedium)
+                            .animate()
+                            .fadeIn(duration: 400.ms),
                         const Gap(8),
                         Text(
-                              _passwordStage
-                                  ? (_passwordExpired
-                                      ? 'Your password has expired'
-                                      : 'Update your password')
-                                  : _otpStage
-                                      ? 'Two-step verification'
-                                      : 'Valuation Directorate access',
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 14)).animate().fadeIn(delay: 100.ms),
+                                _passwordStage
+                                    ? (_passwordExpired
+                                        ? 'Your password has expired'
+                                        : 'Update your password')
+                                    : _otpStage
+                                        ? 'Two-step verification'
+                                        : 'Valuation Directorate access',
+                                style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 14))
+                            .animate()
+                            .fadeIn(delay: 100.ms),
                         const Gap(36),
                         if (_success != null && _otpStage) ...[
                           // Green, not the portal accent: this is a
                           // confirmation that the code went out, and it has to
                           // read as one on every portal alike.
-                          _banner(context, _success!,
+                          _banner(
+                              context,
+                              _success!,
                               context.colors.successGreen,
                               Icons.check_circle_outline),
                           const Gap(16),
@@ -524,7 +519,8 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                             controller: _idCtrl,
                             // Enter submits, so the form can be completed from the
                             // keyboard without reaching for the mouse.
-                            onFieldSubmitted: (_) => _isLoading ? null : _continue(),
+                            onFieldSubmitted: (_) =>
+                                _isLoading ? null : _continue(),
                             decoration: InputDecoration(
                               labelText: 'Username or Email',
                               prefixIcon: Icon(Icons.person_outline,
@@ -536,9 +532,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 200.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
                               .fadeIn(),
                           const Gap(16),
                           TextFormField(
@@ -554,8 +548,8 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                                         ? Icons.visibility_off
                                         : Icons.visibility,
                                     color: context.colors.textMuted),
-                                onPressed: () => setState(() =>
-                                    _obscurePassword = !_obscurePassword),
+                                onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword),
                               ),
                             ),
                             validator: (v) => v == null || v.isEmpty
@@ -565,9 +559,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 300.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 300.ms)
                               .fadeIn(),
                           const Gap(12),
                           Row(children: [
@@ -609,9 +601,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 400.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 400.ms)
                               .fadeIn(),
                           const Gap(20),
                           Divider(
@@ -665,9 +655,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 200.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
                               .fadeIn(),
                           const Gap(14),
                           Row(
@@ -762,8 +750,8 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
             },
           ),
         ),
-              const AuthBackButton(tooltip: 'Back to portals'),
-]),
+        const AuthBackButton(tooltip: 'Back to portals'),
+      ]),
     );
   }
 
@@ -833,8 +821,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
             icon: Icon(
                 _obscureConfirm ? Icons.visibility_off : Icons.visibility,
                 color: context.colors.textMuted),
-            onPressed: () =>
-                setState(() => _obscureConfirm = !_obscureConfirm),
+            onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
           ),
         ),
         onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),

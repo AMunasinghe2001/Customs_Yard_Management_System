@@ -333,8 +333,8 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                           color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
                   const Gap(28),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 28, vertical: 10),
                     decoration: BoxDecoration(
                       border: Border.all(color: accent.withOpacity(0.3)),
                       borderRadius: BorderRadius.circular(24),
@@ -367,16 +367,14 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(children: [
-                          Text('Valuation Sign Up',
-                              style: Theme.of(context).textTheme.headlineMedium),
-                        ]),
+                        Text('Valuation Sign Up',
+                            style: Theme.of(context).textTheme.headlineMedium),
                         const Gap(4),
                         Text(
-                              'Head-office account — one for DC and one for SDDC',
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 14)),
+                            'Head-office account — one for DC and one for SDDC',
+                            style: TextStyle(
+                                color: context.colors.textSecondary,
+                                fontSize: 14)),
                         const Gap(8),
                         Padding(
                           padding: const EdgeInsets.only(left: 40),
@@ -429,7 +427,8 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                             controller: _emailCtrl,
                             // Enter submits, so the form can be completed from the
                             // keyboard without reaching for the mouse.
-                            onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
+                            onFieldSubmitted: (_) =>
+                                _isLoading ? null : _sendOtp(),
                             keyboardType: TextInputType.emailAddress,
                             decoration: const InputDecoration(
                               labelText: 'Branch Email *',
@@ -446,7 +445,8 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                             controller: _passwordCtrl,
                             // Enter submits, so the form can be completed from the
                             // keyboard without reaching for the mouse.
-                            onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
+                            onFieldSubmitted: (_) =>
+                                _isLoading ? null : _sendOtp(),
                             obscureText: _obscurePass,
                             decoration: InputDecoration(
                               labelText: 'Password *',
@@ -456,8 +456,8 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                                         ? Icons.visibility_off
                                         : Icons.visibility,
                                     color: context.colors.textMuted),
-                                onPressed: () =>
-                                    setState(() => _obscurePass = !_obscurePass),
+                                onPressed: () => setState(
+                                    () => _obscurePass = !_obscurePass),
                               ),
                             ),
                             validator: (v) => v == null || v.length < 8
@@ -469,7 +469,8 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                             controller: _confirmCtrl,
                             // Enter submits, so the form can be completed from the
                             // keyboard without reaching for the mouse.
-                            onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
+                            onFieldSubmitted: (_) =>
+                                _isLoading ? null : _sendOtp(),
                             obscureText: _obscureConfirm,
                             decoration: InputDecoration(
                               labelText: 'Confirm Password *',
@@ -501,9 +502,11 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                                       child: CircularProgressIndicator(
                                           strokeWidth: 2, color: Colors.white))
                                   : const Icon(Icons.mark_email_unread_rounded),
-                              label: Text(_isLoading ? 'Sending...' : 'Send OTP',
+                              label: Text(
+                                  _isLoading ? 'Sending...' : 'Send OTP',
                                   style: const TextStyle(
-                                      fontSize: 15, fontWeight: FontWeight.w700)),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700)),
                               onPressed: _isLoading ? null : () => _sendOtp(),
                             ),
                           ),
@@ -595,7 +598,8 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
                                       ? 'Processing...'
                                       : 'Verify OTP & Create Account',
                                   style: const TextStyle(
-                                      fontSize: 15, fontWeight: FontWeight.w700)),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700)),
                               onPressed: _isLoading ? null : _verifyAndCreate,
                             ),
                           ),

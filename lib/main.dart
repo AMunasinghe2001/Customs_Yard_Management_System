@@ -11,6 +11,8 @@ import 'core/router.dart';
 import 'core/providers.dart';
 import 'core/app_updater.dart';
 import 'core/holidays.dart';
+import 'core/idle_lock.dart';
+import 'widgets/idle_lock_overlay.dart';
 import 'services/services.dart';
 
 void main() async {
@@ -388,6 +390,12 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
       themeMode: themeMode,
       routerConfig: router,
       debugShowCheckedModeBanner: false,
+      // Everything the router draws sits inside the idle watcher, so any click,
+      // scroll or key press anywhere in the app resets the countdown — and the
+      // lock screen, when it comes, covers every route including dialogs.
+      builder: (context, child) => IdleActivityDetector(
+        child: IdleLockOverlay(child: child ?? const SizedBox.shrink()),
+      ),
       // Desktop scrolling. Flutter hides the scrollbar and disables
       // drag-to-scroll on desktop, assuming a wheel is always present — but on
       // a machine without one (or where the wheel does not reach a nested

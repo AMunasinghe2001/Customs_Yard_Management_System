@@ -180,15 +180,24 @@ void main() {
         // A sent code is a confirmation; tinting it with the portal colour
         // made it read as chrome.
         final src = _read(p.value);
-        final banner = src.substring(src.indexOf('if (_success != null'));
-        expect(banner.substring(0, 400),
-            contains('context.colors.successGreen'));
+        // Read to the END of the success branch rather than a fixed number of
+        // characters: a fixed window broke the moment the comment above the
+        // banner grew, which says nothing about the colour being right.
+        final start = src.indexOf('if (_success != null');
+        final banner = src.substring(start, src.indexOf('if (_error', start));
+        expect(banner, contains('context.colors.successGreen'));
       });
 
       test('${p.key} animates its heading in, like the ICT portal', () {
         final src = _read(p.value);
-        expect(src, contains(']).animate().fadeIn(duration: 400.ms),'));
-        expect(src, contains(').animate().fadeIn(delay: 100.ms),'));
+        // Asserts the two animations exist, not the punctuation in front of
+        // them. The heading used to sit in a Row (with the back arrow beside
+        // it), so this read `]).animate()`; the arrow has since moved to the
+        // page corner and the heading is a bare Text, which is a layout change
+        // rather than a change to how it animates in.
+        expect(src, contains('.animate()'));
+        expect(src, contains('.fadeIn(duration: 400.ms)'));
+        expect(src, contains('.fadeIn(delay: 100.ms)'));
       });
     }
 

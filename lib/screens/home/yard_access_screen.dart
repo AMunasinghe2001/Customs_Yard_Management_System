@@ -51,21 +51,21 @@ class YardAccessScreen extends ConsumerWidget {
                       .fadeIn(),
                   const Gap(36),
                   Text('Sri Lanka Customs',
-                      style: TextStyle(
-                          color: blue,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2))
+                          style: TextStyle(
+                              color: blue,
+                              fontSize: 30,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.2))
                       .animate()
                       .slideY(begin: 0.3, duration: 500.ms, delay: 200.ms)
                       .fadeIn(),
                   const Gap(6),
                   const Text('SR Management System',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: Color(0xFFB0BEC5),
-                          fontSize: 16,
-                          height: 1.2))
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                              color: Color(0xFFB0BEC5),
+                              fontSize: 16,
+                              height: 1.2))
                       .animate()
                       .slideY(begin: 0.3, duration: 500.ms, delay: 300.ms)
                       .fadeIn(),
@@ -100,25 +100,24 @@ class YardAccessScreen extends ConsumerWidget {
               child: SingleChildScrollView(
                 child: Container(
                   constraints: const BoxConstraints(maxWidth: 460),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 52, vertical: 48),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 52, vertical: 48),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       // Back + heading
-                      Row(children: [
-                        Text('Yard Access',
-                            style: Theme.of(context)
-                                .textTheme
-                                .headlineMedium),
-                      ]).animate().fadeIn(duration: 400.ms),
+                      Text('Yard Access',
+                              style: Theme.of(context).textTheme.headlineMedium)
+                          .animate()
+                          .fadeIn(duration: 400.ms),
                       const Gap(6),
-                      Text(
-                            'Choose how you want to sign in',
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 14)).animate().fadeIn(delay: 100.ms),
+                      Text('Choose how you want to sign in',
+                              style: TextStyle(
+                                  color: context.colors.textSecondary,
+                                  fontSize: 14))
+                          .animate()
+                          .fadeIn(delay: 100.ms),
                       const Gap(36),
 
                       // Officer tile
@@ -130,11 +129,13 @@ class YardAccessScreen extends ConsumerWidget {
                         tag: 'Yard Staff',
                         accent: context.colors.accentLightBlue,
                         onSignIn: () => context.go('/login'),
-                      ).animate().slideY(
-                          begin: 0.12,
-                          duration: 380.ms,
-                          delay: 200.ms,
-                          curve: Curves.easeOutCubic)
+                      )
+                          .animate()
+                          .slideY(
+                              begin: 0.12,
+                              duration: 380.ms,
+                              delay: 200.ms,
+                              curve: Curves.easeOutCubic)
                           .fadeIn(delay: 200.ms),
 
                       const Gap(14),
@@ -148,11 +149,13 @@ class YardAccessScreen extends ConsumerWidget {
                         tag: 'Yard Administration',
                         accent: context.colors.primaryGold,
                         onSignIn: () => context.go('/admin/login'),
-                      ).animate().slideY(
-                          begin: 0.12,
-                          duration: 380.ms,
-                          delay: 300.ms,
-                          curve: Curves.easeOutCubic)
+                      )
+                          .animate()
+                          .slideY(
+                              begin: 0.12,
+                              duration: 380.ms,
+                              delay: 300.ms,
+                              curve: Curves.easeOutCubic)
                           .fadeIn(delay: 300.ms),
 
                       const Gap(28),
@@ -162,8 +165,7 @@ class YardAccessScreen extends ConsumerWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.shield_outlined,
-                              size: 13,
-                              color: context.colors.textMuted),
+                              size: 13, color: context.colors.textMuted),
                           const Gap(6),
                           Text(
                               'Yard accounts are provisioned by the ICT Directorate',
@@ -192,15 +194,14 @@ class YardAccessScreen extends ConsumerWidget {
               color: context.colors.textPrimary,
             ),
             onPressed: () {
-              final isDark =
-                  ref.read(themeModeProvider) == ThemeMode.dark;
+              final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
               ref.read(themeModeProvider.notifier).state =
                   isDark ? ThemeMode.light : ThemeMode.dark;
             },
           ),
         ),
-              const AuthBackButton(tooltip: 'Back to portals'),
-]),
+        const AuthBackButton(tooltip: 'Back to portals'),
+      ]),
     );
   }
 }
@@ -256,7 +257,10 @@ class _RoleTileState extends State<_RoleTile> {
                         blurRadius: 26,
                         spreadRadius: 1)
                   ]
-                : [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10)],
+                : [
+                    BoxShadow(
+                        color: Colors.black.withOpacity(0.04), blurRadius: 10)
+                  ],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
@@ -291,95 +295,95 @@ class _RoleTileState extends State<_RoleTile> {
                   ),
                 ),
                 child: Row(children: [
-            // Icon block
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: _hovered ? accent : accent.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Icon(widget.icon,
-                  color: _hovered ? onAccent : accent, size: 25),
-            ),
-            const Gap(16),
-            // Text
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Text(widget.title,
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700)),
-                    const Gap(8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: accent.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(widget.tag,
-                          style: TextStyle(
-                              color: accent,
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.2)),
+                  // Icon block
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: 52,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: _hovered ? accent : accent.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(14),
                     ),
-                  ]),
-                  const Gap(4),
-                  Text(widget.subtitle,
-                      style: TextStyle(
-                          color: context.colors.textMuted,
-                          fontSize: 12,
-                          height: 1.4)),
-                  if (widget.onCreateAccount != null) ...[
-                    const Gap(10),
-                    GestureDetector(
-                      onTap: widget.onCreateAccount,
-                      behavior: HitTestBehavior.opaque,
-                      child: MouseRegion(
-                        cursor: SystemMouseCursors.click,
-                        child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.person_add_alt_1_rounded,
-                                  size: 13, color: accent),
-                              const Gap(5),
-                              Text('Create Account',
-                                  style: TextStyle(
-                                      color: accent,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      decoration: TextDecoration.underline,
-                                      decorationColor:
-                                          accent.withOpacity(0.5))),
-                            ]),
-                      ),
+                    child: Icon(widget.icon,
+                        color: _hovered ? onAccent : accent, size: 25),
+                  ),
+                  const Gap(16),
+                  // Text
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          Text(widget.title,
+                              style: TextStyle(
+                                  color: context.colors.textPrimary,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700)),
+                          const Gap(8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: accent.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(widget.tag,
+                                style: TextStyle(
+                                    color: accent,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.2)),
+                          ),
+                        ]),
+                        const Gap(4),
+                        Text(widget.subtitle,
+                            style: TextStyle(
+                                color: context.colors.textMuted,
+                                fontSize: 12,
+                                height: 1.4)),
+                        if (widget.onCreateAccount != null) ...[
+                          const Gap(10),
+                          GestureDetector(
+                            onTap: widget.onCreateAccount,
+                            behavior: HitTestBehavior.opaque,
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.person_add_alt_1_rounded,
+                                        size: 13, color: accent),
+                                    const Gap(5),
+                                    Text('Create Account',
+                                        style: TextStyle(
+                                            color: accent,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            decoration:
+                                                TextDecoration.underline,
+                                            decorationColor:
+                                                accent.withOpacity(0.5))),
+                                  ]),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
-                  ],
-                ],
-              ),
-            ),
-            const Gap(10),
-            // Arrow button
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 160),
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: _hovered ? accent : accent.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(Icons.arrow_forward_rounded,
-                  size: 16,
-                  color: _hovered ? onAccent : accent),
-            ),
-          ]),
+                  ),
+                  const Gap(10),
+                  // Arrow button
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: _hovered ? accent : accent.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(Icons.arrow_forward_rounded,
+                        size: 16, color: _hovered ? onAccent : accent),
+                  ),
+                ]),
               ),
             ),
           ),

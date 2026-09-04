@@ -223,10 +223,8 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
       _error = null;
     });
     try {
-      final profile = await ref
-          .read(authServiceProvider)
-          .finishOtpLogin(_resolvedEmail, _otpCtrl.text.trim(),
-              _passwordCtrl.text);
+      final profile = await ref.read(authServiceProvider).finishOtpLogin(
+          _resolvedEmail, _otpCtrl.text.trim(), _passwordCtrl.text);
       if (profile == null) {
         setState(() => _error = 'Verification failed. Please try again.');
         return;
@@ -478,36 +476,33 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Row(children: [
-                          // Flexible: the title sits beside a back
-                          // button in a bare Row, so a longer one
-                          // ('Top Management Sign In') had nowhere
-                          // to give and overflowed the panel.
-                          Flexible(
-                            child:
-                            Text('Appeal Sign In',
+                        Text('Appeal Sign In',
                                 style:
-                                    Theme.of(context).textTheme.headlineMedium),
-                          ),
-                        ]).animate().fadeIn(duration: 400.ms),
+                                    Theme.of(context).textTheme.headlineMedium)
+                            .animate()
+                            .fadeIn(duration: 400.ms),
                         const Gap(8),
                         Text(
-                              _passwordStage
-                                  ? (_passwordExpired
-                                      ? 'Your password has expired'
-                                      : 'Update your password')
-                                  : _otpStage
-                                      ? 'Two-step verification'
-                                      : 'Appeal Directorate access',
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 14)).animate().fadeIn(delay: 100.ms),
+                                _passwordStage
+                                    ? (_passwordExpired
+                                        ? 'Your password has expired'
+                                        : 'Update your password')
+                                    : _otpStage
+                                        ? 'Two-step verification'
+                                        : 'Appeal Directorate access',
+                                style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 14))
+                            .animate()
+                            .fadeIn(delay: 100.ms),
                         const Gap(36),
                         if (_success != null && _otpStage) ...[
                           // Green, not the portal accent: this is a
                           // confirmation that the code went out, and it has to
                           // read as one on every portal alike.
-                          _banner(context, _success!,
+                          _banner(
+                              context,
+                              _success!,
                               context.colors.successGreen,
                               Icons.check_circle_outline),
                           const Gap(16),
@@ -522,7 +517,8 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                             controller: _idCtrl,
                             // Enter submits, so the form can be completed from the
                             // keyboard without reaching for the mouse.
-                            onFieldSubmitted: (_) => _isLoading ? null : _continue(),
+                            onFieldSubmitted: (_) =>
+                                _isLoading ? null : _continue(),
                             decoration: InputDecoration(
                               labelText: 'Username or Email',
                               prefixIcon: Icon(Icons.person_outline,
@@ -534,9 +530,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 200.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
                               .fadeIn(),
                           const Gap(16),
                           TextFormField(
@@ -552,8 +546,8 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                                         ? Icons.visibility_off
                                         : Icons.visibility,
                                     color: context.colors.textMuted),
-                                onPressed: () => setState(() =>
-                                    _obscurePassword = !_obscurePassword),
+                                onPressed: () => setState(
+                                    () => _obscurePassword = !_obscurePassword),
                               ),
                             ),
                             validator: (v) => v == null || v.isEmpty
@@ -563,9 +557,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 300.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 300.ms)
                               .fadeIn(),
                           const Gap(12),
                           Row(children: [
@@ -607,9 +599,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 400.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 400.ms)
                               .fadeIn(),
                           const Gap(20),
                           Divider(
@@ -623,8 +613,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                                         color: context.colors.textMuted,
                                         fontSize: 13)),
                                 TextButton(
-                                  onPressed: () =>
-                                      context.go('/appeal/signup'),
+                                  onPressed: () => context.go('/appeal/signup'),
                                   child: Text('Create Account',
                                       style: TextStyle(
                                           color: accent,
@@ -663,9 +652,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
                           )
                               .animate()
                               .slideX(
-                                  begin: 0.1,
-                                  duration: 400.ms,
-                                  delay: 200.ms)
+                                  begin: 0.1, duration: 400.ms, delay: 200.ms)
                               .fadeIn(),
                           const Gap(14),
                           Row(
@@ -760,8 +747,8 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
             },
           ),
         ),
-              const AuthBackButton(tooltip: 'Back to portals'),
-]),
+        const AuthBackButton(tooltip: 'Back to portals'),
+      ]),
     );
   }
 
@@ -831,8 +818,7 @@ class _AppealLoginScreenState extends ConsumerState<AppealLoginScreen> {
             icon: Icon(
                 _obscureConfirm ? Icons.visibility_off : Icons.visibility,
                 color: context.colors.textMuted),
-            onPressed: () =>
-                setState(() => _obscureConfirm = !_obscureConfirm),
+            onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
           ),
         ),
         onFieldSubmitted: (_) => _isLoading ? null : _submitNewPassword(),
