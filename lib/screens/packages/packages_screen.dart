@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/status_chip.dart';
+import '../../widgets/table_pager.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
@@ -415,12 +416,8 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                     // Rows come pre-filtered + pre-paged from the server.
                     final filteredList = page.rows;
                     final currentPage = ref.watch(packagePageProvider);
-                    final from = page.total == 0
-                        ? 0
-                        : currentPage * kPackagePageSize + 1;
-                    final to = currentPage * kPackagePageSize + filteredList.length;
-                    final hasPrev = currentPage > 0;
-                    final hasNext = to < page.total;
+                    // The from/to/hasPrev/hasNext arithmetic moved into
+                    // TablePager, which every table now shares.
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -514,44 +511,15 @@ class _PackagesScreenState extends ConsumerState<PackagesScreen> {
                           ),
                         ),
                         // ── Pager bar ──
-                        Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: Row(
-                            children: [
-                              Text(
-                                  page.total == 0
-                                      ? 'No packages'
-                                      : 'Showing $from–$to of ${page.total}',
-                                  style: TextStyle(
-                                      color: context.colors.textSecondary,
-                                      fontSize: 13)),
-                              const Spacer(),
-                              IconButton(
-                                tooltip: 'Previous page',
-                                icon: const Icon(Icons.chevron_left_rounded),
-                                color: context.colors.primaryGold,
-                                onPressed: hasPrev
-                                    ? () => ref
-                                        .read(packagePageProvider.notifier)
-                                        .state = currentPage - 1
-                                    : null,
-                              ),
-                              Text('Page ${currentPage + 1}',
-                                  style: TextStyle(
-                                      color: context.colors.textPrimary,
-                                      fontWeight: FontWeight.w600)),
-                              IconButton(
-                                tooltip: 'Next page',
-                                icon: const Icon(Icons.chevron_right_rounded),
-                                color: context.colors.primaryGold,
-                                onPressed: hasNext
-                                    ? () => ref
-                                        .read(packagePageProvider.notifier)
-                                        .state = currentPage + 1
-                                    : null,
-                              ),
-                            ],
-                          ),
+                        // The app's one pager, so this page numbers its
+                        // pages exactly like every other table.
+                        TablePager(
+                          total: page.total,
+                          page: currentPage,
+                          pageSize: kPackagePageSize,
+                          onPageChanged: (p) => ref
+                              .read(packagePageProvider.notifier)
+                              .state = p,
                         ),
                       ],
                     )

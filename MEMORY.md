@@ -1977,3 +1977,19 @@ Four traps, each caught by the verify block rather than by reading the data:
 There is no `tender_sale_items.unsold` column — a round is unsold when `sold = false` and its deadline has passed.
 
 **`tool/apply_sql_whole.dart`** (new) runs a migration as ONE block via `QueryMode.simple`. ⚠️ `apply_sql.dart` splits statements itself and its splitter **silently drops** ones it cannot parse (an apostrophe in a `--` comment, a multi-row VALUES): it reported "completed successfully" having inserted **nothing**. Use the whole-file runner for anything with prose comments or CTE inserts.
+
+## One pager, every table (2026-09-05)
+
+The app had **two**: an arrows-only `‹ Page 3 ›` bar under twenty tables, and the numbered one built for the ICT console. The arrows-only bar could not answer *how far through am I* or *how much is there*, and reaching page 12 meant eleven clicks.
+
+**[table_pager.dart](lib/widgets/table_pager.dart) now carries the ICT design** — first and last page always offered, two neighbours around the current one, gaps collapsed to an ellipsis, so the bar is the same width at 3 pages and at 3,000. Every table in the app goes through this one widget (20 call sites across 16 screens), so the design reached all of them at once. `accent` defaults to the yard's gold; the directorate portals pass their own.
+
+⚠️ **`IctPager` is now a thin wrapper over it**, not a second copy — it only supplies the padding that puts the bar on the table card's own footer rule. Two implementations meant the console and the rest of the app could drift on the very thing that makes a pager readable. `_PagerNumber` / `_PagerStep` were deleted from `ict_ui.dart`.
+
+SR Registration ([packages_screen.dart](lib/screens/packages/packages_screen.dart)) had a hand-rolled bar of its own; it now uses `TablePager` too, and its `from`/`to`/`hasPrev`/`hasNext` arithmetic went with it.
+
+⚠️ A widget test of the pager **must host it with `AppTheme.lightTheme`** — it reads `context.colors`, an `AppColors` ThemeExtension, and a bare `MaterialApp` has none (the failure is a null-check throw inside `build`, not a missing-widget error).
+
+Pinned by [table_pager_test.dart](test/table_pager_test.dart).
+
+**Still to do — server-side paging.** Only **2** of ~16 paged screens actually page in SQL (`getPackagesPaged`, `getAllLogsAcrossOffices`); the rest fetch every row and slice in Dart with `pageSlice`/`.skip().take()`. At today's volumes (largest table 395 rows) that is invisible, but it will not scale. The route is the two existing methods' shape: one filtered `.range(offset, offset + limit - 1)` query for the rows plus a `.count()` for the total, both narrowed by the SAME filter closure.
