@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 
+import '../../core/post_status_activities.dart';
 import '../../core/providers.dart';
 import '../../core/supabase_client.dart';
 import '../../core/theme.dart';
@@ -18,6 +19,8 @@ import '../../widgets/package_details_dialog.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/year_filter.dart';
+import '../../widgets/styled_dropdown.dart';
+import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../forfeited_packages/disposal_request_dialog.dart';
 import '../executive/unsold_shared.dart';
 import '../../widgets/destruction_status_pill.dart';
@@ -104,11 +107,18 @@ class PerishableGoodsScreen extends ConsumerStatefulWidget {
       _PerishableGoodsScreenState();
 }
 
-class _PerishableGoodsScreenState
-    extends ConsumerState<PerishableGoodsScreen> {
+class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
   final _searchCtrl = TextEditingController();
   String _search = '';
   String? _yearFilter;
+
+  /// ⚠️ The same two filters the yard's Other Goods page offers, because this
+  /// is the same kind of page: a yard officer looking through goods it holds.
+  /// It had only a search box and a year, so narrowing to "what came in last
+  /// week" or "what is marked for immediate disposal" — the two questions the
+  /// other held-goods pages answer — could not be asked here at all.
+  DateTimeRange? _dateRange;
+  String _activity = 'all';
 
   /// Central Disposal only: which yard's goods to show. Null = every yard.
   String? _yardFilter;
@@ -120,15 +130,75 @@ class _PerishableGoodsScreenState
     super.dispose();
   }
 
+  /// The search box, built once and placed differently by each portal.
+  Widget _searchBox(BuildContext context) => SizedBox(
+        height: 44,
+        child: TextField(
+          controller: _searchCtrl,
+          style: TextStyle(
+              color: context.colors.textPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600),
+          decoration: InputDecoration(
+            isDense: true,
+            hintText: 'Search SR #, consignee or item...',
+            hintStyle:
+                TextStyle(color: context.colors.textSecondary, fontSize: 13),
+            prefixIcon: Icon(Icons.search_rounded,
+                size: 20, color: context.colors.primaryGold),
+            suffixIcon: _search.isEmpty
+                ? null
+                : IconButton(
+                    splashRadius: 16,
+                    icon: Icon(Icons.close_rounded,
+                        size: 16, color: context.colors.textMuted),
+                    onPressed: () => setState(() {
+                      _searchCtrl.clear();
+                      _search = '';
+                      _page = 0;
+                    }),
+                  ),
+            filled: true,
+            fillColor: context.colors.primaryGold.withOpacity(0.06),
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            border: _searchBorder(context),
+            enabledBorder: _searchBorder(context),
+            focusedBorder: _searchBorder(context, focused: true),
+          ),
+          onChanged: (v) => setState(() {
+            _search = v;
+            _page = 0;
+          }),
+        ),
+      );
+
   List<PerishableRow> _filter(List<PerishableRow> rows) {
     return rows.where((r) {
       if (!srYearMatches(r.package.srNumber, _yearFilter)) return false;
+      if (_dateRange != null) {
+        // Falls back to createdAt, as daysWaiting does: entryDate is
+        // nullable and a row without one must not vanish from a date filter
+        // that its neighbours answer.
+        final d = r.package.entryDate ?? r.package.createdAt;
+        // Whole days at both ends: a range picked as 1st-3rd must include
+        // everything filed ON the 3rd, not stop at its first second.
+        final from = DateTime(_dateRange!.start.year, _dateRange!.start.month,
+            _dateRange!.start.day);
+        final to = DateTime(_dateRange!.end.year, _dateRange!.end.month,
+            _dateRange!.end.day, 23, 59, 59);
+        if (d.isBefore(from) || d.isAfter(to)) return false;
+      }
+      if (_activity != 'all' &&
+          (r.item.reasons ?? '') != _activity) {
+        return false;
+      }
       // Matched on the SR number's own yard segment, like every other
       // cross-yard page -- the package's `yard` column can be the filing
       // directorate rather than the yard holding the goods.
       // The SR number carries the yard, which is what the table itself shows.
-      if (!matchesYardFilter(
-          _yardFilter, yardOfSrNumber(r.package.srNumber), r.package.srNumber)) {
+      if (!matchesYardFilter(_yardFilter, yardOfSrNumber(r.package.srNumber),
+          r.package.srNumber)) {
         return false;
       }
       if (_search.isEmpty) return true;
@@ -207,60 +277,148 @@ class _PerishableGoodsScreenState
               ],
             ).animate().fadeIn(),
             const Gap(20),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: context.colors.cardDark,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                    color: context.colors.primaryGold.withOpacity(0.5)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // ⚠️ ONE ROW, like every other cross-yard page (Unsold Tenders,
+            // Sold Goods, Committees...). This page used to stack the search
+            // box, the year filter and the yard picker VERTICALLY inside a
+            // gold-bordered card -- a control panel three rows tall that
+            // nothing else in the app has, pushing the table down and making
+            // the tab look like a different product. The controls are the
+            // same ones; only the arrangement is now the house pattern.
+            // ⚠️ Two arrangements of the SAME controls, because this page
+            // is two pages.
+            //
+            // On the yard it is a held-goods page and must read like Other
+            // Goods beside it: a search box, then a row of filters under it.
+            // On Central Disposal it is a cross-yard list and must read like
+            // Sold Goods: search and the yard picker on the header's own
+            // line. It had one arrangement for both, so on whichever portal
+            // you were in it was the odd page out.
+            if (widget.readOnly)
+              Row(children: [
+                Expanded(child: _searchBox(context)),
+                const Gap(12),
+                YearFilterButton(
+                  value: _yearFilter,
+                  years: srYears(
+                      async.valueOrNull?.map((r) => r.package.srNumber) ??
+                          const <String>[]),
+                  onChanged: (v) => setState(() {
+                    _yearFilter = v;
+                    _page = 0;
+                  }),
+                ),
+                const Gap(12),
+                // Central Disposal watches EVERY yard here, so without this
+                // an officer cannot narrow to the one they are dealing with.
+                YardAllFilter(
+                  value: _yardFilter,
+                  onChanged: (v) => setState(() {
+                    _yardFilter = v;
+                    _page = 0;
+                  }),
+                ),
+              ]).animate().fadeIn(duration: 300.ms)
+            else ...[
+              _searchBox(context),
+              const Gap(10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  TextField(
-                    controller: _searchCtrl,
-                    style: TextStyle(color: context.colors.textPrimary),
-                    decoration: InputDecoration(
-                      hintText: 'Search SR #, consignee or item...',
-                      prefixIcon: Icon(Icons.search_rounded,
-                          color: context.colors.textMuted),
-                      isDense: true,
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      final picked = await showDialog<dynamic>(
+                        context: context,
+                        builder: (context) => custom.DateRangePickerDialog(
+                            initialRange: _dateRange),
+                      );
+                      if (picked is DateTimeRange) {
+                        setState(() {
+                          _dateRange = picked;
+                          _page = 0;
+                        });
+                      } else if (picked == false) {
+                        setState(() {
+                          _dateRange = null;
+                          _page = 0;
+                        });
+                      }
+                    },
+                    icon: Icon(Icons.date_range_rounded,
+                        size: 16,
+                        color: _dateRange != null
+                            ? context.colors.primaryGold
+                            : context.colors.textSecondary),
+                    label: Text(
+                      _dateRange != null
+                          ? '${DateFormat('MMM d').format(_dateRange!.start)} - '
+                              '${DateFormat('MMM d').format(_dateRange!.end)}'
+                          : 'Date Range',
+                      style: TextStyle(
+                          color: _dateRange != null
+                              ? context.colors.primaryGold
+                              : context.colors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: _dateRange != null
+                              ? FontWeight.bold
+                              : FontWeight.normal),
                     ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                          color: _dateRange != null
+                              ? context.colors.primaryGold
+                              : context.colors.borderColor),
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8)),
+                    ),
+                  ),
+                  if (_dateRange != null)
+                    IconButton(
+                      icon: Icon(Icons.clear_rounded,
+                          size: 16, color: context.colors.dangerRed),
+                      onPressed: () => setState(() {
+                        _dateRange = null;
+                        _page = 0;
+                      }),
+                      tooltip: 'Clear Date Filter',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  const SizedBox(width: 8),
+                  StyledDropdownButton<String>(
+                    value: _activity == 'all' ? null : _activity,
+                    allLabel: 'Post Status Activity',
+                    icon: Icons.label_outline_rounded,
+                    menuWidth: 320,
+                    // ⚠️ EVERY activity, unfiltered. A perishable is
+                    // registered under whatever activity the officer chose,
+                    // and the list is not narrowed for this page -- see the
+                    // SR form, which offers them all here for the same
+                    // reason.
+                    options: kAllPostStatusActivities
+                        .map((a) => StyledDropdownOption(a, a))
+                        .toList(),
                     onChanged: (v) => setState(() {
-                      _search = v;
+                      _activity = v ?? 'all';
                       _page = 0;
                     }),
                   ),
-                  const Gap(8),
+                  const SizedBox(width: 8),
                   YearFilterButton(
                     value: _yearFilter,
-                    years: srYears(async.valueOrNull
-                            ?.map((r) => r.package.srNumber) ??
-                        const <String>[]),
+                    years: srYears(
+                        async.valueOrNull?.map((r) => r.package.srNumber) ??
+                            const <String>[]),
                     onChanged: (v) => setState(() {
                       _yearFilter = v;
                       _page = 0;
                     }),
                   ),
-                  // ⚠️ Only on Central Disposal's copy. This page watches
-                  // EVERY yard there, so without a yard filter the officer
-                  // cannot narrow to the one they are dealing with -- the
-                  // same reason every other cross-yard page has one. The
-                  // yard's own copy shows one yard, so it needs none.
-                  if (widget.readOnly) ...[
-                    const Gap(8),
-                    YardAllFilter(
-                      value: _yardFilter,
-                      onChanged: (v) => setState(() {
-                        _yardFilter = v;
-                        _page = 0;
-                      }),
-                    ),
-                  ],
                 ],
               ),
-            ).animate().slideY(begin: 0.1, duration: 400.ms).fadeIn(),
+            ],
             const Gap(16),
             Expanded(
               child: async.when(
@@ -285,8 +443,8 @@ class _PerishableGoodsScreenState
                           decoration: BoxDecoration(
                             color: context.colors.cardDark,
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: context.colors.borderColor),
+                            border:
+                                Border.all(color: context.colors.borderColor),
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(14),
@@ -349,13 +507,11 @@ class _PerishableGoodsScreenState
                               ],
                               rows: pageRows
                                   .map((r) => DataRow(cells: [
-                                        DataCell(TooltipText(
-                                            r.package.srNumber,
+                                        DataCell(TooltipText(r.package.srNumber,
                                             style: TextStyle(
                                                 color: context
                                                     .colors.accentLightBlue,
-                                                fontWeight:
-                                                    FontWeight.w600))),
+                                                fontWeight: FontWeight.w600))),
                                         DataCell(TooltipText(r.item.itemName,
                                             overflow: TextOverflow.ellipsis)),
                                         DataCell(
@@ -363,16 +519,15 @@ class _PerishableGoodsScreenState
                                         DataCell(TooltipText(
                                             r.package.consigneeName,
                                             overflow: TextOverflow.ellipsis)),
-                                        DataCell(TooltipText(DateFormat(
-                                                'yyyy-MM-dd')
-                                            .format(r.package.entryDate ??
-                                                r.package.createdAt))),
+                                        DataCell(TooltipText(
+                                            DateFormat('yyyy-MM-dd').format(
+                                                r.package.entryDate ??
+                                                    r.package.createdAt))),
                                         if (widget.readOnly)
                                           DataCell(TooltipText(
                                               yardName(yardOfSrNumber(
                                                   r.package.srNumber)),
-                                              overflow:
-                                                  TextOverflow.ellipsis)),
+                                              overflow: TextOverflow.ellipsis)),
                                         DataCell(Center(
                                             child: UnsoldOutcomeChip(
                                                 proposal:
@@ -392,6 +547,23 @@ class _PerishableGoodsScreenState
                                                 storageRate: storageRate,
                                                 highlightItemId: r.item.id,
                                                 useLegacySummary: true,
+                                                // ⚠️ Central Disposal tints
+                                                // every one of its dialogs
+                                                // with the portal's green.
+                                                // This page passed none, so
+                                                // it fell back to the default
+                                                // indigo and was the only
+                                                // popup in that portal
+                                                // wearing another colour.
+                                                headerAccentColor:
+                                                    widget.readOnly
+                                                        ? context.colors
+                                                            .successGreen
+                                                        : null,
+                                                yardLabel: widget.readOnly
+                                                    ? yardName(yardOfSrNumber(
+                                                        r.package.srNumber))
+                                                    : null,
                                               ),
                                             ),
                                           ),
@@ -427,6 +599,20 @@ class _PerishableGoodsScreenState
         : AppShell(currentRoute: '/perishable-goods', child: body);
   }
 }
+
+/// The search field's border, matching `DisposalSearch` on every other
+/// Central Disposal tab (14px radius, gold at 0.4, 1.5px when focused).
+OutlineInputBorder _searchBorder(BuildContext context,
+        {bool focused = false}) =>
+    OutlineInputBorder(
+      borderRadius: BorderRadius.circular(14),
+      borderSide: BorderSide(
+        color: focused
+            ? context.colors.primaryGold
+            : context.colors.primaryGold.withOpacity(0.4),
+        width: focused ? 1.5 : 1,
+      ),
+    );
 
 class _CountChip extends StatelessWidget {
   final int count;

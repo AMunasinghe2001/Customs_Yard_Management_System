@@ -1808,3 +1808,29 @@ The chip is painted **white-on-dark deliberately, not from the theme's text colo
 **Three out-of-phase controllers (24s drift / 7s breathe / 19s orbit), deliberately not multiples of each other**, so the loop never visibly repeats. `pumpAndSettle` will hang on it — the test asserts `hasRunningAnimations` instead.
 
 ⚠️ **google_fonts fetches over the network, so a bare harness renders text with the debug fallback** (yellow, double-underlined). Seen while previewing the lock screen in a throwaway `main()`; it is a *harness* artifact, not a missing theme — the real app was always fine. Don't chase it.
+
+⚠️ **The Perishable tab's toolbar was the odd one out (2026-09-04).** It stacked the search box, the year filter and the yard picker **vertically inside a gold-bordered card** — a three-row control panel no other page has, which pushed the table down and made Central Disposal's Perishable tab look like a different product from the tabs either side of it. Now one `Row` (search `Expanded`, then year, then yard) fading in at 300ms, matching `_unsoldTab`'s header and `DisposalSearch`'s own styling: 14px radius, gold border at 0.4 / 1.5px focused, `primaryGold.withOpacity(0.06)` fill, gold search icon, and a clear button once something is typed.
+
+⚠️ **The table below is still a `cardDark` box — that is correct and must stay.** A test asserting "no cardDark in the file" fails on it; the removed filter card is identified by its **gold** border (`primaryGold.withOpacity(0.5)`), which is what the test now checks.
+
+**`DisposalSearch` was not reused** even though the styling is copied from it: it stores its query in `disposalSearchProvider(tabKey)`, and this screen keeps `_search` in local state alongside `_page`, which the Row's `onChanged` resets. Worth unifying if a third page needs it.
+
+## Perishables have no warehouse, and most packages have no officer
+
+⚠️ **"No warehouse details" on a perishable was CORRECT, and read as a bug.** Perishables never enter a warehouse — the page's own subtitle says "no warehouse, no appeal window" — so the section is legitimately empty (verified: **0 of 47** perishable items have a `warehouse_entries` row). The generic empty state made a by-design blank look like a failed load. `_EmptyState` now takes an optional `reason` (and `icon`), and the warehouse section checks `nature == kNaturePerishable` to say "Not stored in a warehouse" plus why.
+
+⚠️ **"Unknown Officer" was accurate but accusatory — now `_kNoEntrantRecorded = 'Not recorded'`.** Measured: **all 176 packages have `inspected_by` NULL**, and only **60** have a `Created new package%` audit row, so for 116 of them there is genuinely nobody to name. The audit fallback (`getPackageCreator`) works fine for the 60. "Unknown" read as a lookup that had FAILED and sent people hunting for a bug that was not there. The absent case is now set in muted italic (gold-and-bold announces a *person*) with a line saying the entry predates officer tracking.
+
+⚠️ **`audit_logs.entity_id` is TEXT while `packages.id` is UUID** — joining them raises `operator does not exist: text = uuid`. Cast: `a.entity_id = p.id::text`. Another face of the Supabase→local type-cast seam.
+
+⚠️ **`flutter_animate` leaves a pending timer that fails widget tests on teardown** ("A Timer is still pending even after the widget tree was disposed"). A bare `await tester.pump()` is not enough on any screen with an entrance animation — follow it with `await tester.pump(const Duration(seconds: 1))`. `pumpAndSettle` is the alternative, but it hangs on the endless lock-screen animation, so the explicit second pump is the pattern used here.
+
+⚠️ **A `matchesGoldenFile` shot of a screen with entrance animations can capture a BLANK frame** — the image is written before the google_fonts exception, so it looks like it worked. To check a layout, assert `tester.getRect` positions instead: it reports the real geometry and says *which* number is wrong.
+
+**The perishable screen is TWO pages from one file (2026-09-04).** `PerishableGoodsScreen(readOnly:)` serves the yard and Central Disposal, and it had ONE arrangement for both — so on whichever portal you opened it, it was the odd page out.
+
+- **Yard copy** now reads like Other Goods beside it: a search box, then a `Wrap` of Date Range + Post Status Activity + All Years. ⚠️ The activity list is `kAllPostStatusActivities` (every activity, unfiltered) because the SR form offers a perishable all of them — a narrowed filter could not match what was saved.
+- **Central Disposal copy** reads like Sold Goods: search and `YardAllFilter` on the header's line.
+- The details popup passes `headerAccentColor: successGreen` on Central Disposal. It passed none, fell back to the default indigo, and was the only dialog in that portal wearing another colour.
+
+⚠️ **Perishables genuinely have no warehouse rows** — 47 items, 0 warehouse entries, because the perishable flow skips the warehouse by design (the user's own earlier decision). The dialog's "Not stored in a warehouse" panel is therefore correct, not a bug. Showing a real summary there would need perishables to be warehoused first, which contradicts the flow.

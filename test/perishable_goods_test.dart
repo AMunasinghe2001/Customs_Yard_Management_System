@@ -304,6 +304,128 @@ void main() {
     });
   });
 
+  group('its toolbar is laid out like every other cross-yard page', () {
+    // The page used to stack the search box, the year filter and the yard
+    // picker VERTICALLY inside a gold-bordered card -- three rows of controls
+    // no other tab has, which made Central Disposal's Perishable tab look
+    // like a different product from the ones either side of it.
+
+    testWidgets('search, year and yard sit on ONE row', (tester) async {
+      await tester.pumpWidget(_harness(
+        packages: [
+          _pkg([_item('Milk', nature: kNaturePerishable)])
+        ],
+        readOnly: true,
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      final search = tester.getRect(find.byType(TextField).first);
+      final year = tester.getRect(find.text('All Years').first);
+
+      // Same band, side by side -- not one under the other.
+      expect((search.center.dy - year.center.dy).abs(), lessThan(8),
+          reason: 'the year filter must sit beside the search box');
+      expect(year.left, greaterThan(search.right - 1),
+          reason: 'the year filter belongs to the RIGHT of the search box');
+    });
+
+    testWidgets('the controls are not boxed in a bordered card',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        packages: [
+          _pkg([_item('Milk', nature: kNaturePerishable)])
+        ],
+        readOnly: true,
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      final src = _read('lib/screens/packages/perishable_goods_screen.dart');
+      // The wrapper that made the toolbar a three-row panel: a card tinted
+      // cardDark with a GOLD border. The table below is still a cardDark box
+      // (as on every page), so the gold border is what identifies this one.
+      expect(src, isNot(contains('primaryGold.withOpacity(0.5)')),
+          reason: 'the gold-bordered filter card is gone');
+      // The controls now sit in a Row, fading in like the other tabs' headers
+      // rather than sliding up as a panel.
+      expect(src, contains('.animate().fadeIn(duration: 300.ms)'));
+    });
+
+    testWidgets('the search box matches the other tabs', (tester) async {
+      // DisposalSearch elsewhere: 14px radius, gold border, gold search icon,
+      // a clear button once something is typed.
+      final src = _read('lib/screens/packages/perishable_goods_screen.dart');
+      expect(src, contains('BorderRadius.circular(14)'));
+      expect(src, contains('primaryGold.withOpacity(0.06)'));
+
+      await tester.pumpWidget(_harness(
+        packages: [
+          _pkg([_item('Milk', nature: kNaturePerishable)])
+        ],
+        readOnly: true,
+      ));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+
+      expect(find.byIcon(Icons.close_rounded), findsNothing,
+          reason: 'nothing typed yet, so no clear button');
+      await tester.enterText(find.byType(TextField).first, 'Milk');
+      await tester.pump();
+      expect(find.byIcon(Icons.close_rounded), findsOneWidget,
+          reason: 'a typed query is clearable, as on every other tab');
+    });
+
+    testWidgets('the yard picker still only appears for Central Disposal',
+        (tester) async {
+      await tester.pumpWidget(_harness(
+        packages: [
+          _pkg([_item('Milk', nature: kNaturePerishable)])
+        ],
+      ));
+      // pump twice past the entrance animation: a bare pump leaves its timer
+      // running and the binding fails the test on teardown.
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('All Yards'), findsNothing,
+          reason: "the yard's own copy shows one yard and needs no filter");
+    });
+  });
+
+  group('the details popup explains what is absent, rather than looking broken',
+      () {
+    final dialog = _read('lib/widgets/package_details_dialog.dart');
+
+    test('an empty warehouse summary says WHY, for a perishable', () {
+      // Perishables never enter a warehouse -- the page's own subtitle says
+      // "no warehouse, no appeal window". So the blank section is the correct
+      // answer, and it must not show the same "No warehouse details" empty
+      // state that a failed load produces.
+      expect(dialog, contains("'Not stored in a warehouse'"));
+      expect(dialog, contains('go straight '),
+          reason: 'the reason line explains the empty section');
+      expect(dialog, contains('nature == kNaturePerishable'),
+          reason: 'the section has to know the item is perishable');
+    });
+
+    test('a missing officer is "Not recorded", never "Unknown"', () {
+      // 116 of the 176 packages were carried over when the register was
+      // migrated: no inspected_by, no creation audit row, so no name exists.
+      // "Unknown Officer" read as a lookup that had failed and sent people
+      // hunting for a bug that was not there.
+      expect(dialog, isNot(contains("'Unknown Officer'")));
+      expect(dialog, contains("_kNoEntrantRecorded = 'Not recorded'"));
+      expect(dialog, contains('predates officer tracking'),
+          reason: 'the popup must say why the name is absent');
+    });
+
+    test('an absent name is set in muted type, not the gold used for a person',
+        () {
+      expect(dialog, contains('_unrecorded'));
+      expect(dialog, contains('? context.colors.textMuted'));
+    });
+  });
+
   group('the yard reaches the page from its nav rail', () {
     test('both rails list it, and the route exists', () {
       final shell = _read('lib/widgets/app_shell.dart');
@@ -320,6 +442,41 @@ void main() {
       final router = _read('lib/core/router.dart');
       expect(router, contains("path: '/perishable-goods'"));
       expect(router, contains('PerishableGoodsScreen()'));
+    });
+  });
+
+  group('the page reads like the page beside it', () {
+    final src = File('lib/screens/packages/perishable_goods_screen.dart')
+        .readAsStringSync();
+
+    // ⚠️ This screen is TWO pages from one file, and it had one arrangement
+    // for both — so on whichever portal you were looking at, it was the odd
+    // one out. The yard's copy is a held-goods page and must read like Other
+    // Goods; Central Disposal's is a cross-yard list and must read like Sold
+    // Goods.
+    test('the yard copy offers the held-goods filters', () {
+      expect(src, contains('custom.DateRangePickerDialog'));
+      expect(src, contains("allLabel: 'Post Status Activity'"));
+      // Every activity, not a narrowed list -- the SR form offers them all
+      // for a perishable, so the filter has to be able to match them all.
+      expect(src, contains('kAllPostStatusActivities'));
+      expect(src, contains('YearFilterButton('));
+    });
+
+    test('the two arrangements are chosen by which portal it is', () {
+      expect(src, contains('if (widget.readOnly)'));
+      // Central Disposal's copy carries the yard picker; the yard's does not.
+      expect(src, contains('YardAllFilter('));
+    });
+
+    // ⚠️ Central Disposal tints every one of its dialogs with the portal's
+    // green. This page passed none, so it fell back to the default indigo and
+    // was the only popup in that portal wearing another colour.
+    test('the details popup matches the portal it opens in', () {
+      expect(src, contains('headerAccentColor:'));
+      // Matched on the name alone: the formatter breaks the property access
+      // across lines, and where it breaks is not what this test is about.
+      expect(src, contains('successGreen'));
     });
   });
 }

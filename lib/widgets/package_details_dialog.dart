@@ -193,10 +193,9 @@ class TenderHistorySection extends ConsumerWidget {
     // had already cached that on Central Disposal, but the yard's Sold Goods
     // page never loads it, so the popup paid a cold ~120ms fetch and this
     // section appeared visibly later than the rest of the dialog.
-    final mine = ref
-            .watch(tenderRoundsForPackageProvider(forfeited.id))
-            .valueOrNull ??
-        const <({String id, DateTime createdAt, bool hasRun})>[];
+    final mine =
+        ref.watch(tenderRoundsForPackageProvider(forfeited.id)).valueOrNull ??
+            const <({String id, DateTime createdAt, bool hasRun})>[];
 
     // Any round that has a valuation or bids but no matching sale row still
     // deserves a line, so collect those ids too.
@@ -263,10 +262,8 @@ class TenderHistorySection extends ConsumerWidget {
       // that had not opened yet.
       final sealed = !(ranById[id] ?? false);
       // A sealed round still renders — it is the one that says "not yet".
-      if (unit == null &&
-          roundBids.isEmpty &&
-          !isCommitteeRound &&
-          !sealed) continue;
+      if (unit == null && roundBids.isEmpty && !isCommitteeRound && !sealed)
+        continue;
       rows.add(_TenderRoundTile(
         sealed: sealed,
         label: tenderRoundLabel(i + 1),
@@ -576,7 +573,6 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   /// notice — see [valuationSealed].
   final bool valuationSealedUntilSale;
 
-
   // Optional generic footer action (e.g. the Appeal Directorate's "Hold Appeal"
   // / "Release"). When [footerActionLabel] is set, a button is shown in the
   // dialog footer — styled like the Final Disposition footer — that calls
@@ -664,6 +660,13 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   ConsumerState<PackageDetailsDialog> createState() =>
       _PackageDetailsDialogState();
 }
+
+/// Shown where the entering officer is genuinely absent from the record.
+///
+/// Packages carried over when the register was migrated have no `inspected_by`
+/// and no creation audit row, so no name exists to show. This is a statement
+/// about the RECORD, not a failed lookup -- see [_SystemEntrySection].
+const String _kNoEntrantRecorded = 'Not recorded';
 
 class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
     with SingleTickerProviderStateMixin {
@@ -1313,7 +1316,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
   @override
   Widget build(BuildContext context) {
     final p = widget.package;
-    String officerDisplay = 'Unknown Officer';
+    // ⚠️ NOT "Unknown Officer". Most of these entries were bulk-loaded when
+    // the register was migrated, so no officer was ever recorded against them
+    // -- there is nobody to name, and nothing has gone wrong. "Unknown"
+    // read as a lookup that had FAILED and sent people hunting for a bug.
+    // `_recordedEntrant` below marks the difference so the section can say
+    // which of the two it is.
+    String officerDisplay = _kNoEntrantRecorded;
     String? salaryNumber;
 
     if (p.inspectedByName != null) {
@@ -1363,6 +1372,15 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                 (i) => i.id == widget.highlightEntry!.packageItemId,
                 orElse: () => p.items.first)
             : null);
+
+    // Perishables never enter a warehouse -- no storage, no appeal window,
+    // straight to disposal. So an EMPTY warehouse summary is the correct
+    // answer for them, and the section has to say so rather than showing the
+    // same "No warehouse details" blank that a failed load would produce.
+    final isPerishable = highlightedItem != null
+        ? highlightedItem.nature == kNaturePerishable
+        : p.items.isNotEmpty &&
+            p.items.every((i) => i.nature == kNaturePerishable);
 
     // Show ONLY the item this popup is about whenever it's known (via
     // highlightItemId OR a highlightEntry) — a decided/forfeited item may have
@@ -1469,7 +1487,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                 highlightReturnedById == currentProfile?.id
             ? currentProfile?.fullName
             : null) ??
-        'Unknown Officer';
+        _kNoEntrantRecorded;
     final returnedOfficerBadge = widget.highlightEntry?.returnedByBadge ??
         (highlightReturnedById != null &&
                 highlightReturnedById == currentProfile?.id
@@ -2367,8 +2385,21 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                           value: widget.yardLabel!,
                                         ),
                                       )
-                                    : const _EmptyState(
-                                        message: 'No warehouse details'))
+                                    : _EmptyState(
+                                        icon: isPerishable
+                                            ? Icons.ac_unit_rounded
+                                            : Icons.inbox_rounded,
+                                        message: isPerishable
+                                            ? 'Not stored in a warehouse'
+                                            : 'No warehouse details',
+                                        reason: isPerishable
+                                            ? 'Perishable goods go straight '
+                                                'to disposal — they are never '
+                                                'warehoused and serve no '
+                                                'appeal window, so there are '
+                                                'no storage charges to show.'
+                                            : null,
+                                      ))
                                 : material.Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
@@ -3020,9 +3051,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                       count: _releasedQty,
                                                       color: context
                                                           .colors.successGreen,
-                                                      officer:
-                                                          _releasedOfficer ??
-                                                              'Unknown Officer',
+                                                      officer: _releasedOfficer ??
+                                                          _kNoEntrantRecorded,
                                                     ),
                                                   ],
                                                   // Each disposition type parsed from
@@ -3045,7 +3075,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                                             entry.key),
                                                         officer: _dispoOfficers[
                                                                 entry.key] ??
-                                                            'Unknown Officer',
+                                                            _kNoEntrantRecorded,
                                                       ),
                                                     );
                                                   }),
@@ -3252,8 +3282,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       if (isDestroyedEntry ||
                           (highlightedItem != null
                               ? _statusIsDestruction(highlightedItem.status)
-                              : p.items.any(
-                                  (i) => _statusIsDestruction(i.status))))
+                              : p.items
+                                  .any((i) => _statusIsDestruction(i.status))))
                         _DestructionFinancialsSection(
                           package: p,
                           srFinancials: widget.srFinancials,
@@ -4539,6 +4569,9 @@ class _SystemEntrySection extends StatelessWidget {
     this.customIcon,
   });
 
+  /// True when there is no officer to name, rather than one we failed to load.
+  bool get _unrecorded => officerDisplay == _kNoEntrantRecorded;
+
   @override
   Widget build(BuildContext context) {
     return material.Container(
@@ -4585,12 +4618,19 @@ class _SystemEntrySection extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Expanded(
+                // An absent name is set in muted, ordinary type: gold-and-bold
+                // announces a person, and using it for "Not recorded" made a
+                // blank field look like a finding.
                 child: Text(
                   officerDisplay,
                   style: material.TextStyle(
-                    color: context.colors.primaryGold,
+                    color: _unrecorded
+                        ? context.colors.textMuted
+                        : context.colors.primaryGold,
                     fontSize: 14,
-                    fontWeight: FontWeight.bold,
+                    fontWeight: _unrecorded ? FontWeight.w500 : FontWeight.bold,
+                    fontStyle:
+                        _unrecorded ? FontStyle.italic : FontStyle.normal,
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -4616,6 +4656,19 @@ class _SystemEntrySection extends StatelessWidget {
                 ),
             ],
           ),
+          // Says WHY it is blank, so nobody goes looking for a broken lookup.
+          if (_unrecorded) ...[
+            const Gap(4),
+            Text(
+              'This entry predates officer tracking — no officer was saved '
+              'against it.',
+              style: material.TextStyle(
+                color: context.colors.textMuted.withOpacity(0.85),
+                fontSize: 11,
+                height: 1.4,
+              ),
+            ),
+          ],
         ],
       ),
     ).animate().slideY(
@@ -4831,7 +4884,19 @@ class _NoteDisplay extends StatelessWidget {
 class _EmptyState extends StatelessWidget {
   final String message;
 
-  const _EmptyState({required this.message});
+  /// Why the section is empty, when "nothing here" is the CORRECT answer
+  /// rather than missing data. Without it an intentional blank reads as a
+  /// failure to load -- which is exactly how the perishables' (correctly)
+  /// empty warehouse summary read.
+  final String? reason;
+
+  final IconData icon;
+
+  const _EmptyState({
+    required this.message,
+    this.reason,
+    this.icon = Icons.inbox_rounded,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -4841,7 +4906,7 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.inbox_rounded,
+            Icon(icon,
                 size: 32, color: context.colors.textMuted.withOpacity(0.4)),
             const Gap(2),
             Text(
@@ -4851,6 +4916,20 @@ class _EmptyState extends StatelessWidget {
                   fontSize: 12,
                   fontStyle: FontStyle.italic),
             ),
+            if (reason != null) ...[
+              const Gap(6),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Text(
+                  reason!,
+                  textAlign: material.TextAlign.center,
+                  style: material.TextStyle(
+                      color: context.colors.textMuted.withOpacity(0.8),
+                      fontSize: 11,
+                      height: 1.45),
+                ),
+              ),
+            ],
           ],
         ),
       ),
@@ -7519,8 +7598,7 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
       type: 'DESTROYED',
       icon: Icons.delete_forever_rounded,
       label: 'Destroy',
-      description:
-          'Mark goods for destruction. DC / SDDC approval required.',
+      description: 'Mark goods for destruction. DC / SDDC approval required.',
       color: Color(0xFFE64A19),
       adminOnly: true,
     ),
