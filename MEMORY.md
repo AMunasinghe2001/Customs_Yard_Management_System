@@ -1871,3 +1871,12 @@ Three fixes, because it was wrong in three places:
 So `tenderHistoryFor` came out null and the **whole section disappeared** — every round, the committee, and all the bids. Reading the same three-part key the cells watch fixes both: it is already resolved, because the row painted its Valuation cell from it. **Lesson: `ref.read(...).asData` only works on a provider something else is already watching — and a provider family key must match EXACTLY, or you are reading a different instance.**
 
 ⚠️ **"Disposal Expenses & Financials" belongs to DESTRUCTION only.** It sat on an `else`, so everything *not* being destroyed got it — a **sold** item showed a destroying deposit, a cost breakdown and a shortfall for goods that were never destroyed, with every figure either zero or an auction cost re-labelled as a disposal shortfall. Sold goods have their own true money section (Sale & Financial Information). `_DisposalExpensesSection` is deleted; `_DestructionFinancialsSection` already carries those numbers where they mean something. ⚠️ `_statusIsDestruction` lived inside that block — it now sits beside the destruction section it serves.
+
+⚠️ **Three kinds of tender round, three markings (2026-09-04).** They were collapsing into one and the section became unreadable:
+- **Round 1 — "Valuation Tender" — carries NO badge.** It IS the first valuation, the price the package went to tender at, and it cannot be a revision of anything because there is no earlier round. It was badged "re-valued" whenever a `tender_revaluations` row happened to be keyed to it — the one row where that word can never be true.
+- **Rounds 2–4 — "re-valued".**
+- **The last — "committee value"**, not another re-valuation: a different act, by different people.
+
+The rule is `revalued: i > 0 && reval != null && !isCommitteeRound` — written on the **index**, not on whether row data exists.
+
+⚠️ **Open question for the user, not yet decided:** for CED/GL1/SR/13/2025 the ORIGINAL valuation (from `disposal_request_items.valuation_cost`) is **204,288**, but round 1 displays **165,447** — a re-valuation keyed to that round. So "Valuation Tender" shows a figure that is not the original. Either the first round genuinely ran at a re-valued price, or the seeder should not key a re-valuation to round 1. **Do not guess this — it is a domain decision.**

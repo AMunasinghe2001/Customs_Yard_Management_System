@@ -284,7 +284,18 @@ class TenderHistorySection extends ConsumerWidget {
             ? null
             : 'LKR ${money.format(unit * effQty)}'
                 '  (@ ${money.format(unit)} \u00d7 $effQty)',
-        revalued: reval != null && !isCommitteeRound,
+        // ⚠️ The FIRST round is never a re-valuation.
+        //
+        // "Valuation Tender" IS the first valuation — the price the package
+        // went to tender at. Every round AFTER it runs at a fresh figure, and
+        // those are the re-valuations. Badging round one "re-valued" said the
+        // opening price had already been revised, and put the word on the one
+        // row that cannot be a revision of anything.
+        //
+        // (A `tender_revaluations` row keyed to round one still sets its
+        // PRICE — that is what the round ran at — it just is not a revision
+        // of an earlier round, because there is no earlier round.)
+        revalued: i > 0 && reval != null && !isCommitteeRound,
         bids: isCommitteeRound
             ? const []
             : [for (final b in roundBids) 'LKR ${money.format(b)}'],
@@ -463,6 +474,11 @@ class _TenderRoundTile extends StatelessWidget {
                       fontSize: 11.5,
                       fontWeight: FontWeight.w800)),
             ),
+            // ⚠️ Three kinds of round, three markings, and they must not be
+            // confusable: the FIRST carries no badge (it is the valuation
+            // itself), the middle rounds are re-valuations, and the last is
+            // priced by the committee — which is a different act by different
+            // people, not another re-valuation.
             if (revalued) ...[
               const Gap(8),
               Icon(Icons.price_change_rounded,
@@ -471,6 +487,16 @@ class _TenderRoundTile extends StatelessWidget {
               Text('re-valued',
                   style: TextStyle(
                       color: context.colors.accentLightBlue,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
+            ] else if (isCommitteeRound) ...[
+              const Gap(8),
+              Icon(Icons.groups_2_rounded,
+                  size: 14, color: context.colors.primaryGold),
+              const Gap(4),
+              Text('committee value',
+                  style: TextStyle(
+                      color: context.colors.primaryGold,
                       fontSize: 11,
                       fontWeight: FontWeight.w600)),
             ],

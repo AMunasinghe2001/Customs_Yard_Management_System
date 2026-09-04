@@ -253,4 +253,30 @@ void main() {
       expect(src, contains('_statusIsDestruction(highlightedItem.status)'));
     });
   });
+
+  group('three kinds of round, three markings', () {
+    // ⚠️ "Valuation Tender" IS the first valuation — the price the package
+    // went to tender at. It cannot be a revision of anything, because there
+    // is no earlier round. Badging it "re-valued" put the word on the one row
+    // where it can never be true, and that is what made the section unreadable.
+    testWidgets('the first round carries no re-valued badge', (tester) async {
+      await tester.pumpWidget(harness());
+      await tester.pumpAndSettle();
+
+      // Rounds 2, 3 and 4 each have their own re-valuation; round 1 does not.
+      expect(find.text('Valuation Tender'), findsOneWidget);
+      expect(find.text('re-valued'), findsNWidgets(3));
+    });
+
+    test('the rule is written on the index, not on the row data', () {
+      final src = File('lib/widgets/package_details_dialog.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(src,
+          contains('revalued: i > 0 && reval != null && !isCommitteeRound'));
+      // And the committee round says what it is rather than nothing: it is
+      // priced by different people in a different act, not re-valued.
+      expect(src, contains("Text('committee value'"));
+    });
+  });
 }
