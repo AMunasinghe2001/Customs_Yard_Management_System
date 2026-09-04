@@ -3322,9 +3322,20 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                         _DestructionFinancialsSection(
                           package: p,
                           srFinancials: widget.srFinancials,
-                        )
-                      else if (widget.srFinancials != null)
-                        _DisposalExpensesSection(sr: widget.srFinancials!),
+                        ),
+                      // ⚠️ Disposal expenses belong to DESTRUCTION, and the
+                      // `else` that used to be here gave them to everything
+                      // that was NOT being destroyed. So a SOLD item showed
+                      // "Disposal Expenses & Financials" — a destroying
+                      // deposit, a cost breakdown, a shortfall — for goods
+                      // that were never destroyed: every figure in it either
+                      // zero, or an auction cost re-labelled as a disposal
+                      // shortfall, which is worse than blank.
+                      //
+                      // Sold goods have their own money section, Sale &
+                      // Financial Information, and that one is true. This
+                      // panel now appears only where its numbers mean
+                      // something — inside the destruction section above.
                     ],
                   ),
                 ),
@@ -3531,270 +3542,10 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
   }
 }
 
-class _DisposalExpensesSection extends StatelessWidget {
-  final SrFinancials sr;
-  const _DisposalExpensesSection({required this.sr});
-
-  @override
-  Widget build(BuildContext context) {
-    final money = NumberFormat('#,##0.00');
-    final green = context.colors.successGreen;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return _DetailSection(
-      title: 'Disposal Expenses & Financials',
-      icon: Icons.receipt_long_rounded,
-      delay: 350,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.savings_rounded,
-                  label: 'Destroying Deposit',
-                  value: 'LKR ${money.format(sr.destroyingDeposit)}',
-                  valueColor: green,
-                ),
-              ),
-              const Gap(12),
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.payments_rounded,
-                  label: 'Total Expenses',
-                  value: 'LKR ${money.format(sr.depositSpent)}',
-                  valueColor:
-                      sr.depositSpent > 0 ? context.colors.dangerRed : null,
-                ),
-              ),
-            ],
-          ),
-          Row(
-            children: [
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.undo_rounded,
-                  label: sr.deficit > 0 ? 'Shortfall' : 'Refund Amount',
-                  value: sr.deficit > 0
-                      ? '− LKR ${money.format(sr.deficit)}'
-                      : 'LKR ${money.format(sr.refund)}',
-                  valueColor: sr.deficit > 0 ? context.colors.dangerRed : green,
-                ),
-              ),
-              const Gap(12),
-              Expanded(
-                child: _DetailItem(
-                  icon: Icons.info_outline_rounded,
-                  label: 'Expense Status',
-                  value: sr.depositSpent == 0
-                      ? 'Pending'
-                      : (sr.deficit > 0 ? 'Shortfall' : 'Refundable'),
-                  valueColor: sr.depositSpent == 0
-                      ? context.colors.warningAmber
-                      : (sr.deficit > 0 ? context.colors.dangerRed : green),
-                ),
-              ),
-            ],
-          ),
-          const Gap(12),
-          material.Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: isDark ? context.colors.surfaceDark : Colors.grey.shade50,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: context.colors.borderColor),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Cost Breakdown',
-                  style: material.TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const Gap(8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Destruction',
-                        amount: sr.destructionExpense,
-                        color: context.colors.dangerRed,
-                      ),
-                    ),
-                    const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Advertising',
-                        amount: sr.advertisingExpense,
-                        color: context.colors.warningAmber,
-                      ),
-                    ),
-                    const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Labour',
-                        amount: sr.labourExpense,
-                        color: context.colors.accentLightBlue,
-                      ),
-                    ),
-                  ],
-                ),
-                const Gap(8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Transport',
-                        amount: sr.transportExpense,
-                        color: context.colors.customsBlue,
-                      ),
-                    ),
-                    const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Auction',
-                        amount: sr.auctionExpense,
-                        color: context.colors.primaryGold,
-                      ),
-                    ),
-                    const Gap(8),
-                    Expanded(
-                      child: _ExpenseCostBox(
-                        label: 'Deposit',
-                        amount: sr.destroyingDeposit,
-                        color: green,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          if (sr.goods.isNotEmpty) ...[
-            const Gap(14),
-            material.Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color:
-                    isDark ? context.colors.surfaceDark : Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: context.colors.borderColor),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Goods Cost Distribution',
-                    style: material.TextStyle(
-                      color: context.colors.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const Gap(8),
-                  Row(children: [
-                    Expanded(
-                        flex: 4,
-                        child: Text('Goods Name',
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                    Expanded(
-                        child: Text('Qty',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                    Expanded(
-                        flex: 2,
-                        child: Text('Destruction',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                    Expanded(
-                        flex: 2,
-                        child: Text('Advertising',
-                            textAlign: TextAlign.right,
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700))),
-                  ]),
-                  material.Divider(
-                      color: context.colors.borderColor, height: 12),
-                  for (final g in sr.goods)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 3),
-                      child: Row(children: [
-                        Expanded(
-                          flex: 4,
-                          child: Text(g.goodsName,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                  color: context.colors.textPrimary,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                        Expanded(
-                          child: Text('${g.quantity}',
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                  color: context.colors.textSecondary,
-                                  fontSize: 12)),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                              g.destructionExpense == 0
-                                  ? '—'
-                                  : money.format(g.destructionExpense),
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                  color: g.destructionExpense == 0
-                                      ? context.colors.textMuted
-                                      : context.colors.dangerRed,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                        Expanded(
-                          flex: 2,
-                          child: Text(
-                              g.advertisingExpense == 0
-                                  ? '—'
-                                  : money.format(g.advertisingExpense),
-                              textAlign: TextAlign.right,
-                              style: TextStyle(
-                                  color: g.advertisingExpense == 0
-                                      ? context.colors.textMuted
-                                      : context.colors.warningAmber,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600)),
-                        ),
-                      ]),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Destruction financials section shown in the package-details popup for goods
-/// marked for destruction. Displays deposit, expense breakdown and refund/shortfall.
-/// True when a status means the goods are for destruction or destroyed.
+/// The statuses that mean an item is on its way to being destroyed.
+///
+/// Kept beside the destruction section it serves. It previously sat inside
+/// the disposal-expenses block, and went with it when that block was removed.
 bool _statusIsDestruction(String? status) {
   final st = (status ?? '').toLowerCase();
   return st == 'destroyed' ||

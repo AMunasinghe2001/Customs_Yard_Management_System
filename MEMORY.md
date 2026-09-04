@@ -1863,3 +1863,11 @@ Three fixes, because it was wrong in three places:
 ⚠️ Widget tests pumping `TenderHistorySection` must now override **`unsoldProposalsProvider`** too, or they open a real DB socket.
 
 **The yard's perishable search box overrides NOTHING** and takes the app's `inputDecorationTheme` — a grey outline that turns gold on focus — because that is what a bare `InputDecoration` gives, and what Forfeited / Other / Returned all do. It first had its own gold border **inside** the gold filter card (a gold box in a gold box), then `InputBorder.none`, which removed the frame entirely. Neither is right; inheriting is.
+
+⚠️ **The Sold popup's Tender History was vanishing — two bugs in one expression (2026-09-04).** The details button did `ref.read(saleItemForPackageItemProvider('$pkg|$item')).asData?.value`:
+1. **The key was wrong.** Every cell in the row watches `package|item|receipt`; this read `package|item` — a **different provider instance**, which nothing had ever watched.
+2. **`.asData` on an unwatched FutureProvider is null**, silently, because it is still `AsyncLoading`.
+
+So `tenderHistoryFor` came out null and the **whole section disappeared** — every round, the committee, and all the bids. Reading the same three-part key the cells watch fixes both: it is already resolved, because the row painted its Valuation cell from it. **Lesson: `ref.read(...).asData` only works on a provider something else is already watching — and a provider family key must match EXACTLY, or you are reading a different instance.**
+
+⚠️ **"Disposal Expenses & Financials" belongs to DESTRUCTION only.** It sat on an `else`, so everything *not* being destroyed got it — a **sold** item showed a destroying deposit, a cost breakdown and a shortfall for goods that were never destroyed, with every figure either zero or an auction cost re-labelled as a disposal shortfall. Sold goods have their own true money section (Sale & Financial Information). `_DisposalExpensesSection` is deleted; `_DestructionFinancialsSection` already carries those numbers where they mean something. ⚠️ `_statusIsDestruction` lived inside that block — it now sits beside the destruction section it serves.

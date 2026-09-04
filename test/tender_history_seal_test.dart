@@ -206,4 +206,51 @@ void main() {
       expect(src, contains('widget.valuationUnitCost != null &&'));
     });
   });
+
+  group('the Sold popup shows the whole tender story', () {
+    // ⚠️ TWO bugs in one expression, and they hid each other.
+    //
+    //   1. The KEY was wrong. Every cell in the row watches
+    //      'package|item|receipt'; the details button read 'package|item'
+    //      with no receipt — a DIFFERENT provider instance, which nothing had
+    //      ever watched.
+    //   2. `ref.read(...).asData?.value` on a provider nobody has watched is
+    //      AsyncLoading, so asData is null. Silently.
+    //
+    // tenderHistoryFor came out null and the entire Tender History section
+    // vanished from the popup: every round, the committee and all the bids.
+    test('the details button reads the key the row already resolved', () {
+      final src = File('lib/screens/packages/disposition_category_screen.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      // The cells' key shape, three parts.
+      expect(src, contains(r"'${package.id}|${packageItemId ?? ''}|${receipt ?? ''}'"));
+      // And the button now builds the same three parts.
+      expect(src, contains(r"_parseSaleReceipt(row.entry?.returnNotes) ?? ''"));
+    });
+  });
+
+  group('disposal expenses belong to destruction', () {
+    final src = File('lib/widgets/package_details_dialog.dart')
+        .readAsStringSync();
+
+    // ⚠️ The panel was on an `else`: everything NOT being destroyed got it. So
+    // a SOLD item showed a destroying deposit, a cost breakdown and a
+    // shortfall for goods that were never destroyed — every figure either
+    // zero, or an auction cost re-labelled as a disposal shortfall.
+    test('a sold item gets no disposal-expenses panel', () {
+      expect(src.contains('_DisposalExpensesSection'), isFalse,
+          reason: 'the section is gone; destruction carries its own money');
+      // Destruction still has its own, which is where those numbers are real.
+      expect(src, contains('_DestructionFinancialsSection('));
+      expect(src, contains("title: 'Destruction Status & Financials'"));
+    });
+
+    test('the destruction test still decides who sees it', () {
+      // Scoped to the item the popup is ABOUT, not to the package: one SR
+      // number covers several goods and they meet different ends.
+      expect(src, contains('bool _statusIsDestruction(String? status)'));
+      expect(src, contains('_statusIsDestruction(highlightedItem.status)'));
+    });
+  });
 }

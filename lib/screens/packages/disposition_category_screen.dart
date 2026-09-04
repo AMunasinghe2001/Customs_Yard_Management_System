@@ -634,10 +634,25 @@ class _DispositionCategoryScreenState
                                         // been re-valued several times before
                                         // it sold, and that chain was
                                         // invisible here.
+                                        // ⚠️ The SAME key the row's own cells
+                                        // watch: package|item|receipt. This
+                                        // read package|item, which is a
+                                        // different provider instance that
+                                        // nothing had ever watched — so it
+                                        // was still AsyncLoading, asData was
+                                        // null, and the whole Tender History
+                                        // section silently disappeared from
+                                        // the popup: every round, the
+                                        // committee and all the bids with it.
+                                        //
+                                        // With the right key it is already
+                                        // resolved, because the row painted
+                                        // its Valuation cell from it.
                                         final saleItem = ref
                                             .read(saleItemForPackageItemProvider(
                                                 '${row.package.id}|'
-                                                '${row.entry?.packageItemId ?? row.item?.id ?? ''}'))
+                                                '${row.entry?.packageItemId ?? row.item?.id ?? ''}|'
+                                                '${_parseSaleReceipt(row.entry?.returnNotes) ?? ''}'))
                                             .asData
                                             ?.value;
                                         showDialog(
