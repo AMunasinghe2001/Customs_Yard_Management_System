@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:gap/gap.dart';
 import '../core/theme.dart';
+import 'dialog_close_button.dart';
 import '../core/providers.dart';
 import '../core/supabase_client.dart';
 import '../models/models.dart';
@@ -209,15 +210,9 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
                     ],
                   ),
                 ),
-                IconButton(
-                  onPressed: () => Navigator.pop(context),
-                  icon: Icon(Icons.close_rounded,
-                      size: widget.erp ? 20 : 24,
-                      color: widget.erp
-                          ? context.colors.textMuted
-                          : Colors.white.withOpacity(0.9)),
-                  splashRadius: widget.erp ? 18 : 22,
-                ),
+                // ICT's flat dialog keeps the plain shape; every directorate's
+                // gradient header needs the disc to be seen at all.
+                DialogCloseButton(prominent: !widget.erp),
               ]),
             ),
             // ── Body ──

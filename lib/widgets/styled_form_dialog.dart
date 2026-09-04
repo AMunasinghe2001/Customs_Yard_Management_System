@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import '../core/theme.dart';
+import 'dialog_close_button.dart';
 
 /// A polished modal dialog matching the "Update SR Register Entry" form:
 /// a gradient header (gold icon box + small label + big title + close button),
@@ -144,15 +145,13 @@ class StyledFormDialog extends StatelessWidget {
                       ],
                     ),
                   ),
-                  IconButton(
-                    onPressed: () => Navigator.pop(context),
-                    icon: Icon(Icons.close_rounded,
-                        size: erp ? 20 : 24,
-                        color: erp
-                            ? context.colors.textMuted
-                            : Colors.white.withOpacity(0.7)),
-                    splashRadius: erp ? 18 : 24,
-                  ),
+                  // ⚠️ Prominent only where the header is PALE: a directorate
+                  // passes headerAccentColor and gets a tinted wash, and a
+                  // bare cross on that is nearly invisible. ICT's flat dialog
+                  // and the yard's dark one keep the plain shape and change
+                  // only the colour.
+                  DialogCloseButton(
+                      prominent: !erp && headerAccentColor != null),
                 ],
               ),
             ),

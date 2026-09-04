@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import '../core/theme.dart';
+import 'dialog_close_button.dart';
 
 // ── Public date-range dialog ──────────────────────────────────────────────────
 
@@ -89,13 +90,7 @@ class _DateRangePickerDialogState extends State<DateRangePickerDialog> {
                       color: context.colors.textPrimary,
                       fontSize: 18,
                       fontWeight: FontWeight.bold)),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: Icon(Icons.close_rounded,
-                    color: context.colors.textMuted, size: 20),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-              ),
+              const DialogCloseButton(),
             ],
           ),
           const Gap(4),

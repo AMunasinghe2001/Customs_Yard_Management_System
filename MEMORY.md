@@ -1842,3 +1842,11 @@ The chip is painted **white-on-dark deliberately, not from the theme's text colo
 - Both perishable pages filter against `kAllPostStatusActivities`, so what the form can save is exactly what the filters can match.
 
 **The perishable page's two copies, finished:** the yard's wears the **gold-bordered filter card** every held-goods page there wears (Forfeited, Other, Abandoned); Central Disposal's has **no year filter** (no cross-yard tab there has one), pads at **24** not 28, and lets the StatChip's own bottom padding be the gap — exactly as Unsold Tenders does.
+
+⚠️ **Every dialog's close button is `DialogCloseButton`, and it is RED (2026-09-04).** They were all `Colors.white.withOpacity(0.7)` — fine on the yard's and ICT's solid dark headers, and **very nearly invisible** on every other directorate, whose dialogs wear a **pale tinted** header. The only way out of those dialogs was a control you had to already know was there.
+
+- `prominent: true` → the cross inside a soft red disc, **for a pale header only**. On a dark one a bare red cross reads fine and a disc would be a second box in the corner.
+- ⚠️ **`prominent` is decided by `headerAccentColor != null`** (and `!erp`), which is exactly the signal: only the directorate portals pass one, and passing one is what makes the header pale. **The yard and ICT keep the shape they always had and change only the colour** — as asked.
+- `test/dialog_close_button_test.dart` renders it and reads the icon's colour, and asserts no dialog still paints a white cross.
+
+**The yard's perishable search box draws no border or fill of its own** — the gold filter card around it IS the border, and a gold box inside a gold box is what made it look nothing like Forfeited's. Central Disposal's copy has no card, so it keeps its own outline like every search box there.

@@ -90,6 +90,7 @@ import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import '../core/theme.dart';
+import 'dialog_close_button.dart';
 import '../models/models.dart';
 import '../core/providers.dart';
 import '../core/post_status_activities.dart';
@@ -1713,12 +1714,8 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                       ),
                     ),
                     const Gap(12),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded,
-                          color: Colors.white.withOpacity(0.7)),
-                      splashRadius: 24,
-                    ),
+                    DialogCloseButton(
+                        prominent: widget.headerAccentColor != null),
                   ],
                 ),
               ),
@@ -5635,12 +5632,8 @@ class _PackageUpdateDialogState extends ConsumerState<PackageUpdateDialog>
                         ],
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: Icon(Icons.close_rounded,
-                          color: Colors.white.withOpacity(0.7)),
-                      splashRadius: 24,
-                    ),
+                    DialogCloseButton(
+                        prominent: false),
                   ],
                 ),
               ),
@@ -6797,12 +6790,8 @@ class _PackageActionsDialogState extends ConsumerState<_PackageActionsDialog> {
                           ),
                         ),
                         const Gap(12),
-                        IconButton(
-                          icon: Icon(Icons.close_rounded,
-                              color: Colors.white.withOpacity(0.7)),
-                          splashRadius: 24,
-                          onPressed: () => Navigator.pop(context),
-                        ),
+                        DialogCloseButton(
+                            prominent: false),
                       ],
                     ),
                   ),
@@ -7794,12 +7783,8 @@ class _FinalDispositionDialogState extends State<_FinalDispositionDialog> {
                       ),
                     ),
                     const Gap(12),
-                    IconButton(
-                      icon: Icon(Icons.close_rounded,
-                          color: Colors.white.withOpacity(0.7)),
-                      splashRadius: 24,
-                      onPressed: () => Navigator.pop(context),
-                    ),
+                    DialogCloseButton(
+                        prominent: false),
                   ],
                 ),
               ),

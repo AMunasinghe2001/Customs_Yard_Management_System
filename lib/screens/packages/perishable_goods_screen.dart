@@ -131,6 +131,12 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
   }
 
   /// The search box, built once and placed differently by each portal.
+  ///
+  /// ⚠️ On the YARD it has no border and no fill of its own — the gold card
+  /// around it is the border, and drawing a second gold box inside a gold box
+  /// is what made this search bar look nothing like the one on Forfeited or
+  /// Other. On Central Disposal there is no card, so it keeps its own outline
+  /// like every search box in that portal.
   Widget _searchBox(BuildContext context) => SizedBox(
         height: 44,
         child: TextField(
@@ -145,7 +151,10 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
             hintStyle:
                 TextStyle(color: context.colors.textSecondary, fontSize: 13),
             prefixIcon: Icon(Icons.search_rounded,
-                size: 20, color: context.colors.primaryGold),
+                size: 20,
+                color: widget.readOnly
+                    ? context.colors.primaryGold
+                    : context.colors.textMuted),
             suffixIcon: _search.isEmpty
                 ? null
                 : IconButton(
@@ -158,13 +167,19 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                       _page = 0;
                     }),
                   ),
-            filled: true,
+            filled: widget.readOnly,
             fillColor: context.colors.primaryGold.withOpacity(0.06),
             contentPadding:
                 const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            border: _searchBorder(context),
-            enabledBorder: _searchBorder(context),
-            focusedBorder: _searchBorder(context, focused: true),
+            border: widget.readOnly
+                ? _searchBorder(context)
+                : InputBorder.none,
+            enabledBorder: widget.readOnly
+                ? _searchBorder(context)
+                : InputBorder.none,
+            focusedBorder: widget.readOnly
+                ? _searchBorder(context, focused: true)
+                : InputBorder.none,
           ),
           onChanged: (v) => setState(() {
             _search = v;
