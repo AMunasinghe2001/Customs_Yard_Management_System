@@ -651,6 +651,15 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                         )
                                       : unsoldDecidedOnCell(
                                           context, proposals[f.id]),
+                                  // Read-only here — the cell itself refuses
+                                  // the button to this directorate. It is
+                                  // still shown so Central Disposal can SEE
+                                  // whether the yard has handed the goods
+                                  // over, which is the point of the column.
+                                  delivery: proposalFilter == null
+                                      ? null
+                                      : UnsoldDeliveryCell(
+                                          proposal: proposals[f.id]),
                                   onDetails: pkg == null
                                       ? null
                                       : () => showDialog(
@@ -3131,13 +3140,27 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                         fixedWidth: 50),
                     DataColumn2(label: Text('Reason'), size: ColumnSize.M),
                     DataColumn2(label: Text('Location'), size: ColumnSize.M),
+                    // The DECLARED value off the SR form -- what the goods
+                    // were entered as being worth. Replaces Goods Description,
+                    // which repeated the Goods Name for most rows and pushed
+                    // the money off the visible width.
                     DataColumn2(
-                        label: Text('Goods Description'), size: ColumnSize.L),
-                    // Both the yard's own view (SR item declared value) and
-                    // Central's (the reserve price) are commercially sensitive
-                    // to a bidder, so both are named and sealed the same way.
+                        label: Center(child: Text('Goods Value')),
+                        size: ColumnSize.S,
+                        fixedWidth: 140),
+                    // ⚠️ Named for what it actually IS in each portal. The
+                    // yard's column has never shown a valuation -- it shows
+                    // the SR item's declared value, because the Valuation
+                    // Directorate's reserve price is Central-Disposal-only --
+                    // and calling both columns "Latest Valuation" made the
+                    // same row look like it held two different valuations.
+                    // Both are still sealed until the sale ends: either figure
+                    // tells a bidder what the reserve is worth.
                     DataColumn2(
-                        label: Center(child: const Text('Latest Valuation')),
+                        label: Center(
+                            child: Text(widget.readOnly
+                                ? 'Declared Value'
+                                : 'Latest Valuation')),
                         size: ColumnSize.S,
                         fixedWidth: 140),
                     DataColumn2(
@@ -3180,17 +3203,13 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                           style: TextStyle(
                               color: context.colors.textSecondary,
                               fontSize: 12))),
-                      DataCell(Tooltip(
-                        message: r.item?.goodsDescription ?? '',
-                        child: Text(
-                            r.item?.goodsDescription?.isNotEmpty == true
-                                ? r.item!.goodsDescription!
-                                : '—',
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 12)),
-                      )),
+                      // Not sealed: the declared value is on the SR form and
+                      // is not the reserve price, so it carries none of the
+                      // bidding secrecy the valuation columns do.
+                      DataCell(Center(
+                          child: _GoodsValueCell(
+                              item: r.item,
+                              qty: f?.entryQty ?? r.item?.quantity))),
                       DataCell(Center(
                           child: _ValuationCell(
                               f: f,
@@ -7566,6 +7585,47 @@ class _OneTapTimeField extends StatelessWidget {
 }
 
 // ── Valuation Cell shared by Tender Sales, Destructions, Unsold, Undestroyed ──
+
+/// The SR form's own DECLARED value for this item -- unit value x quantity.
+///
+/// ⚠️ Not a valuation. The Valuation Directorate's figure is a reserve price
+/// set later and is sealed until the sale ends; this is what the importer
+/// declared the goods were worth when they were entered, and it is on the SR
+/// form from day one. Kept as its own cell so the two can never be confused
+/// again.
+///
+/// [qty] is the row's own Qty, so the breakdown printed here always multiplies
+/// by the number in the Qty column beside it.
+class _GoodsValueCell extends StatelessWidget {
+  final PackageItem? item;
+  final int? qty;
+  const _GoodsValueCell({required this.item, this.qty});
+
+  @override
+  Widget build(BuildContext context) {
+    final it = item;
+    if (it == null) {
+      return Text('-', style: TextStyle(color: context.colors.textMuted));
+    }
+    final effQty = (qty != null && qty! > 0) ? qty! : it.quantity;
+    final fmt = NumberFormat('#,##0');
+    final total = it.unitValue * effQty;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text('LKR ${fmt.format(total)}',
+            style: TextStyle(
+                color: context.colors.textPrimary,
+                fontWeight: FontWeight.w700,
+                fontSize: 12)),
+        Text('@ ${fmt.format(it.unitValue)} x $effQty',
+            style: TextStyle(color: context.colors.textMuted, fontSize: 10)),
+      ],
+    );
+  }
+}
 
 class _ValuationCell extends StatelessWidget {
   final ForfeitedPackageModel? f;

@@ -82,9 +82,16 @@ class _DetainedPackagesScreenState
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _tableSearchCtrl.text = ref.read(detainedPackageSearchProvider);
-    });
+    // ⚠️ SYNCHRONOUS, not in a post-frame callback.
+    //
+    // The search box is an Autocomplete, which builds its own controller. The
+    // fieldViewBuilder copies _tableSearchCtrl into it, but a post-frame
+    // callback runs AFTER that first build and calls no setState -- so leaving
+    // the page and coming back left the table filtered by the remembered query
+    // while the box showed nothing. The filter was on and invisible.
+    //
+    // Assigning here means the first build already has the text.
+    _tableSearchCtrl.text = ref.read(detainedPackageSearchProvider);
   }
 
   @override

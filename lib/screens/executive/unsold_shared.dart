@@ -1,11 +1,14 @@
 import '../../widgets/sealed_valuation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
 import 'package:intl/intl.dart';
+import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
+import '../../widgets/error_view.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
 
@@ -157,6 +160,13 @@ const List<DataColumn2> kUnsoldDecidedColumns = [
       label: Center(child: Text('Decided On')),
       size: ColumnSize.M,
       fixedWidth: 235),
+  // ⚠️ A decision is not a hand-over. These goods are still in the yard until
+  // someone comes for them, and this column is what says so — the same
+  // Pending/Mark Delivered/Delivered pill the Sold table uses.
+  DataColumn2(
+      label: Center(child: Text('Delivery')),
+      size: ColumnSize.M,
+      fixedWidth: kStatusPillWidth + 24),
   DataColumn2(
       label: Center(child: Text('Details')),
       size: ColumnSize.S,
@@ -200,6 +210,11 @@ List<DataCell> unsoldCells(
   required Color srColor,
   required Widget outcome,
   required VoidCallback? onDetails,
+
+  /// The hand-over cell, for the decided tables. Null on the undecided table,
+  /// where the column does not exist — pass one exactly when the columns are
+  /// [kUnsoldDecidedColumns], or the cells and columns will not line up.
+  Widget? delivery,
 
   /// The price this package was LAST TENDERED AT by the committee round —
   /// the ADG's **submitted** value, not the committee's bare recommendation.
@@ -290,6 +305,7 @@ List<DataCell> unsoldCells(
         ],
       )),
     DataCell(outcome),
+    if (delivery != null) DataCell(Center(child: delivery)),
     DataCell(Center(
       child: IconButton(
         icon: Icon(Icons.info_outline_rounded,
@@ -298,6 +314,85 @@ List<DataCell> unsoldCells(
       ),
     )),
   ];
+}
+
+/// Hand-over for a package whose final outcome is already decided.
+///
+/// The mirror of the Sold table's delivery cell, and deliberately the same
+/// pill: an officer reading the two tables side by side is reading one
+/// question -- have these goods actually left the yard -- and it should not
+/// look like two.
+///
+/// ⚠️ Marking delivered CLOSES THE WAREHOUSE ENTRY, inside the same statement
+/// (see `disposal_toggle_outcome_delivery`). Goods that have gone must stop
+/// counting against zone capacity and stop accruing storage, so this is not a
+/// display flag -- it is the moment the yard stops holding them.
+class UnsoldDeliveryCell extends ConsumerStatefulWidget {
+  /// Null while the DG has not decided: nothing to hand over yet.
+  final UnsoldProposalModel? proposal;
+
+  const UnsoldDeliveryCell({super.key, required this.proposal});
+
+  @override
+  ConsumerState<UnsoldDeliveryCell> createState() => _UnsoldDeliveryCellState();
+}
+
+class _UnsoldDeliveryCellState extends ConsumerState<UnsoldDeliveryCell> {
+  bool _saving = false;
+
+  Future<void> _markDelivered(UnsoldProposalModel p) async {
+    setState(() => _saving = true);
+    try {
+      await ref.read(disposalServiceProvider).toggleOutcomeDelivery(p.id, true);
+      // ⚠️ Both proposal providers, not just the one this page reads. Central
+      // Disposal's outcome tabs read the SAME row through the by-item map, so
+      // refreshing one would leave the two portals disagreeing about whether
+      // the goods had been handed over -- which is the exact bug the sold
+      // flow's comment warns about.
+      ref.invalidate(unsoldProposalsProvider);
+      ref.invalidate(unsoldProposalsByItemProvider);
+      // The hand-over closed the warehouse entry, so every page that asks
+      // "where is this now" has to be told.
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text('Marked as Delivered'),
+          backgroundColor: context.colors.successGreen,
+        ));
+      }
+    } catch (e) {
+      if (mounted) showErrorSnack(context, e, action: 'Confirming delivery');
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = widget.proposal;
+    if (p == null) {
+      return Text('—', style: TextStyle(color: context.colors.textMuted));
+    }
+    // Only a yard hands goods over; Central Disposal and the DG watch.
+    final profile = ref.watch(currentProfileProvider);
+    final canEdit = profile != null && !profile.isDisposal && !profile.isExecutive;
+
+    return Tooltip(
+      message: p.delivered
+          ? (p.deliveredAt != null
+              ? 'Handed over on '
+                  '${DateFormat('yyyy-MM-dd').format(p.deliveredAt!)}'
+              : 'The goods have left the yard')
+          : (canEdit
+              ? 'Confirm the goods have left the yard'
+              : 'Awaiting the yard to confirm hand-over'),
+      child: DeliveryStatusPill(
+        delivered: p.delivered,
+        busy: _saving,
+        onMark: canEdit ? () => _markDelivered(p) : null,
+      ),
+    );
+  }
 }
 
 /// The DG's decision, read-only. Shown on the yard page, on Central Disposal's

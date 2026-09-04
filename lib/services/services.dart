@@ -5982,6 +5982,23 @@ class DisposalService {
         ));
   }
 
+  /// Flip a FINAL OUTCOME's hand-over flag (yard OR Central Disposal).
+  ///
+  /// ⚠️ Delivering also CLOSES THE WAREHOUSE ENTRY, inside the same statement
+  /// — see disposal_toggle_outcome_delivery. Doing it here in Dart would leave
+  /// a window where the goods are marked gone but still counted in zone
+  /// capacity and still accruing storage, and a failure between the two writes
+  /// would leave them that way for good.
+  Future<void> toggleOutcomeDelivery(String proposalId, bool delivered) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'disposal_toggle_outcome_delivery',
+          params: {
+            'p_proposal_id': proposalId,
+            'p_delivered': delivered,
+          },
+        ));
+  }
+
   /// Flip a destroyed package's delivery flag (yard OR Central Disposal).
   Future<void> toggleDestructionDelivery(
       String destructionItemId, bool delivered) async {

@@ -432,6 +432,14 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                             )
                                           : unsoldDecidedOnCell(
                                               context, proposals[f.id]),
+                                      // Only the decided tables carry the
+                                      // column, so only they may pass a cell
+                                      // — the undecided table has nothing to
+                                      // hand over yet.
+                                      delivery: widget.proposalFilter == null
+                                          ? null
+                                          : UnsoldDeliveryCell(
+                                              proposal: proposals[f.id]),
                                       onDetails: pkg == null
                                           ? null
                                           : () => showDialog(

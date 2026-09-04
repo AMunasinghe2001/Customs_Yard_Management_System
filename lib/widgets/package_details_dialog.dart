@@ -2731,11 +2731,35 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                         .fold<int>(
                                             0, (sum, e) => sum + e.itemCount);
 
-                                    final currentWarehouses = relatedEntries
-                                        .where((e) => !e.isReturned)
-                                        .map((e) => e.warehouseName)
-                                        .toSet()
-                                        .toList();
+                                    // ⚠️ An item that has LEFT has no current
+                                    // warehouse, whatever its entries say.
+                                    //
+                                    // The test was `!e.isReturned` alone, so a
+                                    // straggling entry — one the sale never
+                                    // closed out — kept printing "Current
+                                    // Warehouse: Open Area 01" for goods that
+                                    // had already been sold and delivered. The
+                                    // item's own STATUS is the authority here:
+                                    // sold, destroyed, re-exported or released
+                                    // all mean the goods are gone, and a
+                                    // warehouse row that disagrees is a
+                                    // bookkeeping leftover, not a location.
+                                    const gone = {
+                                      'sold',
+                                      'destroyed',
+                                      're-exported',
+                                      'returned',
+                                      'released',
+                                    };
+                                    final hasLeft = gone.contains(
+                                        (item.status ?? '').toLowerCase());
+                                    final currentWarehouses = hasLeft
+                                        ? const <String>[]
+                                        : relatedEntries
+                                            .where((e) => !e.isReturned)
+                                            .map((e) => e.warehouseName)
+                                            .toSet()
+                                            .toList();
 
                                     // ── Categorize returned entries by disposition ──
                                     // Releases carry no [STATUS] prefix in returnNotes;
@@ -3207,6 +3231,21 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                                               icon: Icons.warehouse_rounded,
                                               label: 'Current Warehouse',
                                               value: currentWarehouses.first,
+                                            )
+                                          // ⚠️ Say WHERE IT WENT rather than
+                                          // nothing. A row that simply
+                                          // disappears reads as missing data;
+                                          // this says the goods left the
+                                          // warehouse and by which outcome,
+                                          // which is the answer the question
+                                          // was asking for.
+                                          else if (hasLeft)
+                                            _DetailItem(
+                                              icon: Icons
+                                                  .assignment_turned_in_rounded,
+                                              label: 'Warehouse',
+                                              value: 'Left the warehouse — '
+                                                  '${_leftLabel(item.status)}',
                                             ),
                                           // Show the Disposition Breakdown whenever
                                           // the item is still held (detained) OR has
@@ -3717,6 +3756,23 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
 ///
 /// Kept beside the destruction section it serves. It previously sat inside
 /// the disposal-expenses block, and went with it when that block was removed.
+/// How an item left, in the words the pages use for it.
+String _leftLabel(String? status) {
+  switch ((status ?? '').toLowerCase()) {
+    case 'sold':
+      return 'sold and released to the buyer';
+    case 'destroyed':
+      return 'destroyed';
+    case 're-exported':
+      return 're-exported';
+    case 'returned':
+    case 'released':
+      return 'released to the owner';
+    default:
+      return 'disposed';
+  }
+}
+
 bool _statusIsDestruction(String? status) {
   final st = (status ?? '').toLowerCase();
   return st == 'destroyed' ||

@@ -1910,3 +1910,24 @@ Seeder cause: `final bidCount = _rng.nextInt(4)` — **can return 0**. Now `1 + 
 - The **Officer** column is gone from this page: it reads `returnedByName ?? returnedByBadge ?? '—'` and a re-export sets neither, so every row printed a dash.
 
 ⚠️ **Re-exported stays under "Disposed", not "Final Outcomes."** That group answers *where did the goods go* — re-exported goods left the country whichever route decided it. Final Outcomes answers *what did Top Management rule*, and each of its four pages has exactly one origin. The split is between ROWS on that page, which is what the Decided By column is for. (Noted in the source: **Unsold Goods** sitting under "Disposed" reads oddly — the goods have not left, they are waiting on Top Management — but moving it is the officers' call.)
+
+## A decision is not a hand-over: delivering final-outcome goods (2026-09-05)
+
+**Sold goods already worked this way** — `tender_sale_items.is_delivered`, a **Mark Delivered** button on the yard's table, and the warehouse entry closed when it is pressed. Top Management's four outcomes had **no equivalent**: a package ruled *Government Use* on 3 July was decided, but the goods sat in Warehouse 01 until somebody came for them and nothing recorded that anybody had. The yard could not say "these have gone", Central Disposal could not see whether they had, and **zone capacity + the storage charge went on counting goods that were no longer there**.
+
+`postgres/16_final_outcome_goods_can_be_handed_over.sql`: `unsold_proposals` gains `delivered` / `delivered_at`, a CHECK keeping the pair consistent (a delivery means a moment and a moment means a delivery), and **`disposal_toggle_outcome_delivery(uuid, boolean)`** — which **closes the warehouse entry inside the same statement**, tagged `[FINAL:<OUTCOME>]`, exactly as a sale does. ⚠️ Not a display flag: a second statement that could fail on its own would leave the goods counted forever. Only on the way **out** (`if p_delivered then`) — un-marking must not resurrect a closed entry. Defaulted **false**: backfilling `true` would assert a hand-over nobody recorded, and the yard would lose the list of what it still holds.
+
+- **`UnsoldDeliveryCell`** ([unsold_shared.dart](lib/screens/executive/unsold_shared.dart)) reuses the Sold table's own `DeliveryStatusPill` — an officer reading the two tables is asking one question and it should not look like two.
+- ⚠️ **Only the yard hands goods over**: `!profile.isDisposal && !profile.isExecutive`. Central Disposal carries the decision out *through* the yard and the DG made it; neither is standing at the gate. They still **see** the column, which is the point of it.
+- ⚠️ **Invalidate BOTH proposal maps.** Central Disposal's outcome tabs read the same row through `unsoldProposalsByItemProvider`; refreshing only `unsoldProposalsProvider` leaves the two portals disagreeing about whether the goods left. Plus `warehouseRefreshTriggerProvider` — the entry just closed.
+- **The column is on `kUnsoldDecidedColumns` only.** The undecided table's rows are still waiting on the DG, so it would be a column of dashes. `unsoldCells`'s `delivery` param is **nullable and emitted only when supplied**, and both callers gate it on the same `proposalFilter == null` test as their columns — cells out of step with columns throw in `data_table_2`.
+
+Pinned by [final_outcome_delivery_test.dart](test/final_outcome_delivery_test.dart).
+
+## Two portals, one column name, two different numbers (2026-09-05)
+
+The Tender Sale table called its money column **"Latest Valuation" in both portals** — but the yard's view has never shown a valuation. `_ValuationCell(useItemValue: true)` shows the **SR item's declared value**, because the Valuation Directorate's reserve price is Central-Disposal-only. One name over two different figures made the same row look like it held two valuations that disagreed. The yard's header now reads **Declared Value**; Central Disposal's stays **Latest Valuation**. The seal is unchanged — either figure tells a bidder what the reserve is worth.
+
+**Goods Description → Goods Value** on the same table: the description repeated the Goods Name on most rows and pushed the money off the visible width. New `_GoodsValueCell` takes the **row's own Qty**, so the breakdown it prints always multiplies by the number in the Qty column beside it.
+
+⚠️ **The `× 51` vs `× 40` mismatch is fixed at the data layer**, not here — see migrations `13_one_quantity_per_item.sql` and `14_the_item_quantity_is_the_jittered_one.sql`. The **7** rows still disagreeing are the ones migration 14 deliberately left alone (no warehouse entry to arbitrate a real partial forfeit from seed noise); all 7 have **zero warehouse entries and zero tender sales**, so none can reach a Tender Sale table or a valuation popup.

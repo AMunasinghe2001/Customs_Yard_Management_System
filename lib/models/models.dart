@@ -1896,6 +1896,17 @@ class UnsoldProposalModel {
   final String? yard;
   final DateTime decidedAt;
 
+  /// ⚠️ Whether anyone has actually TAKEN the goods.
+  ///
+  /// A final outcome is a decision, not a hand-over. A package ruled
+  /// "Government Use" on 3 July is decided — but it sits in Warehouse 01,
+  /// accruing storage, until somebody comes for it. Sold goods have carried
+  /// this distinction all along (`tender_sale_items.is_delivered`); the four
+  /// outcome pages had no way to record it, so the yard could not say what it
+  /// still held and Central Disposal could not see whether it had gone.
+  final bool delivered;
+  final DateTime? deliveredAt;
+
   const UnsoldProposalModel({
     required this.id,
     required this.forfeitedPackageId,
@@ -1903,6 +1914,8 @@ class UnsoldProposalModel {
     required this.note,
     required this.yard,
     required this.decidedAt,
+    this.delivered = false,
+    this.deliveredAt,
   });
 
   String get label => unsoldProposalLabel(proposal);
@@ -1915,6 +1928,8 @@ class UnsoldProposalModel {
         note: json['note'] as String?,
         yard: json['yard'] as String?,
         decidedAt: parseDbDateRequired(json['decided_at']),
+        delivered: json['delivered'] as bool? ?? false,
+        deliveredAt: parseDbDate(json['delivered_at']),
       );
 }
 

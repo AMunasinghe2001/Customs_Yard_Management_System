@@ -618,12 +618,34 @@ void main() {
       expect(dash, contains("if (_saleEndTime == null) return 'Sale End Time is required.';"));
     });
 
-    test('the sale pages call the column Latest Valuation', () {
-      // Both the directorate card AND the yard's read-only view now share the
-      // one name and the one seal — the yard's figure is a different number
-      // (the SR item's declared value) but it is still commercially sensitive
-      // to a bidder, so it is sealed on the same clock.
-      expect("Center(child: const Text('Latest Valuation'))".allMatches(dash).length, 2);
+    test('each portal calls the column what its own figure actually is', () {
+      // ⚠️ They used to share the name "Latest Valuation" and did NOT share
+      // the number: the yard's column has always shown the SR item's declared
+      // value, because the Valuation Directorate's reserve price is
+      // Central-Disposal-only. One name over two different figures made the
+      // same row look like it held two valuations that disagreed.
+      expect(dash, contains("? 'Declared Value'"));
+      expect(dash, contains(": 'Latest Valuation'"));
+      // The seal is unchanged — either figure tells a bidder what the reserve
+      // is worth, so both still hide until the sale ends.
+      expect(dash, contains('sealedUntilSale: !widget.sale.saleEnded'));
+    });
+
+    test('the Tender Sale table shows Goods Value, not Goods Description', () {
+      // The description repeated the Goods Name on most rows and pushed the
+      // money off the visible width.
+      expect(dash, contains("label: Center(child: Text('Goods Value'))"));
+      expect(dash, isNot(contains("label: Text('Goods Description')")));
+      expect(dash, contains('_GoodsValueCell('));
+    });
+
+    test('the declared value multiplies by the row own Qty', () {
+      // ⚠️ The bug that started this: a value printed against one quantity
+      // beside a valuation printed against another. Both cells take the SAME
+      // qty the Qty column shows.
+      final flat = dash.replaceAll(RegExp(r'\s+'), ' ');
+      expect(flat, contains('_GoodsValueCell( item: r.item, qty: f?.entryQty ?? r.item?.quantity)'));
+      expect(flat, contains("final effQty = (qty != null && qty! > 0) ? qty! : it.quantity;"));
     });
 
     test('the yard read-only column seals too, not just the directorate one',

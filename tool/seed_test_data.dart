@@ -458,7 +458,17 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
         final pool = isPerishable
             ? _perishableGoods
             : (register == 'OA' ? _openAreaGoods : _normalGoods);
-        final (name, desc, hs, value, qty) = pool[_rng.nextInt(pool.length)];
+        final (name, desc, hs, value, baseQty) = pool[_rng.nextInt(pool.length)];
+        // ⚠️ ONE quantity per item, decided here.
+        //
+        // The row was inserted with `baseQty + rng(30) - 15` while everything
+        // downstream -- the forfeited row's entry_qty, the warehouse
+        // placement -- was given the UN-jittered figure. So an item read 51 in
+        // its own record and 40 in its tender history, and the popup showed
+        // both: "Value @ 34,000 x 51" above "@ 1,444,978 x 40". 241 of 318
+        // forfeited rows disagreed with their item, and 120 of them claimed
+        // MORE than the item had.
+        final qty = (baseQty + _rng.nextInt(30) - 15).clamp(1, 1 << 30);
 
         final status = isPerishable
             ? 'Perishable'
@@ -475,7 +485,7 @@ Future<void> _seedPackages(Connection conn, Map<String, String> warehouses,
             pkgId,
             name,
             desc,
-            qty + _rng.nextInt(30) - 15,
+            qty,
             'Pieces',
             value.toDouble(),
             hs,
