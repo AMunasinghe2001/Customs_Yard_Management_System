@@ -83,7 +83,13 @@ void main() {
 
     expect(search, kIctControlHeight, reason: 'search box');
     expect(dropdown, kIctControlHeight, reason: 'filter dropdown');
-    expect(button, kIctControlHeight, reason: 'primary action');
+    // ⚠️ The button is deliberately two pixels shorter — see
+    // kIctPrimaryButtonHeight. A solid filled block reads larger than an
+    // outlined box of the same size, so matching the numbers exactly is what
+    // made it LOOK taller than the fields beside it.
+    expect(button, kIctPrimaryButtonHeight, reason: 'primary action');
+    expect(kIctControlHeight - kIctPrimaryButtonHeight, 2,
+        reason: 'the optical correction is 2px, not a free number');
   });
 
   testWidgets('they also sit on the same baseline', (tester) async {
@@ -99,7 +105,9 @@ void main() {
     // it, so the toolbar aligns on the BOTTOM edge. If that changed, three
     // controls of identical height would still step down the row.
     expect(dropdown, moreOrLessEquals(search, epsilon: 0.5));
-    expect(button, moreOrLessEquals(search, epsilon: 0.5));
+    // The button is centred in the field's row, so it shares their vertical
+    // centre rather than sitting on their baseline two pixels short.
+    expect(button, moreOrLessEquals(search - 1, epsilon: 0.5));
   });
 
   testWidgets('the toolbar itself is no taller than it has to be',
@@ -112,6 +120,11 @@ void main() {
     final bar = tester.getSize(find.byType(IctToolbar)).height;
     expect(bar, lessThanOrEqualTo(kIctToolbarMaxHeight),
         reason: 'the filter strip has grown a second row of padding');
+    // ⚠️ And the cap tracks the control, so raising one without the other
+    // cannot quietly pass. The strip is a caption, a control and its padding:
+    // anything more than that is the strip becoming a second header.
+    expect(kIctToolbarMaxHeight - kIctControlHeight, lessThanOrEqualTo(34),
+        reason: 'the cap was raised further than the control it holds');
   });
 
   // ⚠️ The synthetic toolbar above can agree with itself and still be wrong
@@ -208,5 +221,36 @@ void main() {
     expect(boxes.first, boxes.last,
         reason: 'one of them wants to be taller than the box it is given, '
             'and paints its border outside it');
+  });
+
+  testWidgets('the period segments stand at the control height too',
+      (tester) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.lightTheme,
+      home: Scaffold(
+        body: IctSegmented(accent: _accent, children: [
+          IctSegment(
+              label: 'All Time',
+              icon: Icons.all_inclusive_rounded,
+              selected: true,
+              onTap: (_) {}),
+          IctSegment(
+              label: 'By Year',
+              icon: Icons.calendar_today_rounded,
+              selected: false,
+              onTap: (_) {}),
+        ]),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    // It sits in the same row of the page as the filters below it, so it is
+    // held to the same number rather than to whatever its padding adds up to.
+    expect(tester.getSize(find.byType(IctSegmented)).height,
+        kIctControlHeight);
   });
 }

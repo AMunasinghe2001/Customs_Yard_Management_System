@@ -35,21 +35,36 @@ const double kIctPillRadius = 6;
 /// ⚠️ ONE height for every control in the console — filters, search boxes,
 /// toolbar buttons, the header's own controls. Nothing in ICT sets its own.
 ///
-/// ⚠️ 42 — the height the FILTERS have always looked, not the smaller one the
-/// search box happened to have.
+/// The height of a FIELD — a search box, a filter, a segment.
 ///
-/// Both were equalised at 34 first, which fixed the mismatch by shrinking the
-/// dropdowns to the wrong one of the two. A filter is a control someone reads
-/// a value out of and clicks; 34 left its text sitting tight against its own
-/// border. The right move was to raise the search box, not lower the filters.
-const double kIctControlHeight = 42;
+/// ⚠️ It took four tries to land here, which is the useful part. 34 equalised
+/// the two by shrinking the dropdowns to the smaller of them; 42 took the
+/// larger and the strip grew with it into a second header; 38 was right for
+/// the fields but the Add button still looked taller than them.
+///
+/// It was not. Measured in a real toolbar, the search box, the filter and the
+/// button all came back at exactly 38, same top, same bottom. The difference
+/// is OPTICAL: a solid filled block reads larger than an outlined box of the
+/// same size, because its whole area is ink and theirs is an edge. So the
+/// fields go up and the button comes down to meet them — see
+/// [kIctPrimaryButtonHeight].
+const double kIctControlHeight = 40;
+
+/// ⚠️ Two less than a field, ON PURPOSE, and centred in the field's row.
+///
+/// The one place in the console where two controls are deliberately different
+/// numbers. Matching them exactly is what made the button look bigger than
+/// everything beside it; taking two pixels off the ink brings it back to
+/// looking like the same size, which is the thing that was actually asked
+/// for. Geometry equal and appearance unequal is not "same size".
+const double kIctPrimaryButtonHeight = kIctControlHeight - 2;
 
 /// ⚠️ The whole filter strip, capped. A caption, a control and the padding
 /// around them — and nothing else. The strip sits above the table on every
 /// page, so every pixel it takes is a row the officer cannot see without
 /// scrolling, and it is the first thing to grow when a control starts setting
 /// its own height. A test measures it.
-const double kIctToolbarMaxHeight = 74;
+const double kIctToolbarMaxHeight = 72;
 
 /// A control inside a table row, which has less height to give.
 const double kIctDenseHeight = 30;
@@ -570,7 +585,7 @@ class IctSearchField extends StatelessWidget {
           filled: true,
           fillColor: c.surfaceDark,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           border: border,
           enabledBorder: border,
           focusedBorder: OutlineInputBorder(
@@ -654,7 +669,7 @@ class IctSelect extends StatelessWidget {
               menuWidth: menuWidth,
               fillColor: set ? accent.withOpacity(0.07) : c.surfaceDark,
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               prefixIcon: Icon(icon,
                   size: 16, color: set ? accent : c.textMuted),
               // ⚠️ Constrained, exactly as IctSearchField constrains its own.
@@ -702,7 +717,13 @@ class IctPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
+      // The field's row height, with the smaller button centred in it — so it
+      // shares the fields' vertical centre rather than sitting on their
+      // baseline two pixels short.
       height: kIctControlHeight,
+      child: Center(
+        child: SizedBox(
+      height: kIctPrimaryButtonHeight,
       child: ElevatedButton.icon(
         onPressed: onPressed,
         icon: Icon(icon, size: 16, color: Colors.white),
@@ -720,6 +741,8 @@ class IctPrimaryButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kIctControlRadius)),
+        ),
+      ),
         ),
       ),
     );
