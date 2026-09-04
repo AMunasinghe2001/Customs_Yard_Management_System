@@ -56,164 +56,96 @@ class _DispositionCategoryScreenState
   bool get _hasDelivery =>
       widget.finalTag == 'SOLD' || widget.finalTag == 'DESTROYED';
 
+  /// Everything this page is asking the database for.
+  ///
+  /// ⚠️ Every filter is in here, so every filter is applied in SQL. The page
+  /// used to fetch every package in the yard and narrow it in Dart; now a
+  /// filter change is a new query key and the database does the narrowing.
+  DispositionQuery get _query => DispositionQuery(
+        finalTag: widget.finalTag,
+        page: _page,
+        search: _search,
+        dateStart: _dateRange?.start,
+        dateEnd: _dateRange?.end,
+        year: _yearFilter,
+        delivered: _hasDelivery ? _deliveryFilter : null,
+      );
+
   @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  // A disposition can be recorded two ways, each tagging return_notes
-  // differently:
-  //   • recordFinalDisposition → "[FINAL:RE-EXPORTED]" / "[FINAL:DESTROYED]" …
-  //   • disposeWarehouseItem    → "[RE-EXPORT]" / "[DESTROY]" …  (present tense)
-  // Both must surface in the matching category table. This maps each category's
-  // finalTag to every bracket tag that belongs to it.
-  static const Map<String, Set<String>> _acceptedTags = {
-    'RE-EXPORTED': {'FINAL:RE-EXPORTED', 'RE-EXPORTED', 'RE-EXPORT'},
-    // ⚠️ 'FINAL:DESTROY' (no ED) is the PENDING tag disposeWarehouseItem
-    // writes -- it upper-cases the action name, and the action is
-    // "Destroy". Without it here a package marked for destruction never
-    // reached this page at all, so it could never be confirmed.
-    'DESTROYED': {
-      'FINAL:DESTROYED',
-      'FINAL:DESTROY',
-      'DESTROYED',
-      'DESTROY',
-      'SUPPOSED TO BE DESTROYED'
-    },
-    'SOLD': {'FINAL:SOLD', 'SOLD'},
-    'OTHER': {'FINAL:OTHER', 'OTHER'},
-  };
+  // ⚠️ The tag sets, the status sets, the note parsing and the row building
+  // all moved to the `disposition_rows` VIEW (postgres/18, and 20 for the
+  // delivery column). They are not gone — they are in SQL, verbatim, because
+  // paging in SQL needs the rows to exist in SQL.
+  //
+  // That includes 'FINAL:DESTROY' with no ED: the PENDING tag
+  // disposeWarehouseItem writes, since it upper-cases the action name and the
+  // action is "Destroy". Without it a package marked for destruction reaches
+  // no page at all and can never be confirmed. The view keeps it, and
+  // disposition_paging_test.dart holds it there.
 
-  bool _matchesTag(WarehouseEntryModel e) {
-    final notes = (e.returnNotes ?? '').trim().toUpperCase();
-    final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
-    if (m == null) return false;
-    final tag = m.group(1)!.trim();
-    final accepted =
-        _acceptedTags[widget.finalTag] ?? {'FINAL:${widget.finalTag}'};
-    return accepted.contains(tag);
-  }
-
-  String _extractNote(String? returnNotes) {
-    if (returnNotes == null) return '';
-    final idx = returnNotes.indexOf('—');
-    if (idx == -1) return '';
-    return returnNotes.substring(idx + 1).trim();
-  }
-
-  // Maps finalTag → the item statuses that correspond to it.
-  static const Map<String, Set<String>> _statusForTag = {
-    'RE-EXPORTED': {'re-exported'},
-    'DESTROYED': {'destroyed', 'supposed to be destroyed', 'destroy'},
-    'SOLD': {'sold'},
-    'OTHER': {'other'},
-  };
-
-  /// Goods Top Management ruled "Re-export" after every tender failed.
+  /// The view's rows, as the widgets on this page already expect them.
   ///
-  /// ⚠️ The SECOND way into this page, and it had no way in at all. The
-  /// decision dialog offers `re_export`, but nothing listed the result — so
-  /// those goods left Unsold Goods and appeared on no page in the app. The
-  /// yard's own route (Final Disposition -> item status 're-exported') was
-  /// the only one this screen ever looked for.
+  /// ⚠️ This REPLACES the two builders that used to live here — one walking
+  /// every package's warehouse entries and items, the other merging in Top
+  /// Management's re-export rulings, both then sorted and sliced in Dart. All
+  /// three of those jobs (which rows, in what order, which page) now happen in
+  /// SQL; this only rehydrates the twenty rows that came back.
   ///
-  /// Reads the same pair of providers the Government Use page reads, which is
-  /// the model every Top Management outcome follows.
-  List<_CategoryRow> _topManagementRows() {
-    if (widget.finalTag != 'RE-EXPORTED') return const [];
-    final exhausted = ref.watch(exhaustedUnsoldProvider).valueOrNull ??
-        const <ReTenderSaleInfo>[];
-    final proposals =
-        ref.watch(unsoldProposalsProvider).valueOrNull ??
-            const <String, UnsoldProposalModel>{};
-
+  /// A package can be missing from [DispositionPageWithPackages.packages] only
+  /// if it was deleted between the two queries, so such a row is skipped
+  /// rather than rendered half-built.
+  List<_CategoryRow> _rowsFrom(DispositionPageWithPackages result) {
     final out = <_CategoryRow>[];
-    for (final info in exhausted) {
-      final proposal = proposals[info.forfeited.id];
-      if (proposal?.proposal != 're_export') continue;
-      final pkg = info.forfeited.packageDetails;
+    for (final r in result.rows) {
+      final pkg = result.packages[r.packageId];
       if (pkg == null) continue;
-      final item = info.forfeited.itemId == null
+      // The entry and the item, when this row came from one of them. Both are
+      // already loaded on the package.
+      final entry = r.entryId == null
           ? null
-          : pkg.items.where((i) => i.id == info.forfeited.itemId).firstOrNull;
+          : pkg.warehouseEntries.where((e) => e.id == r.entryId).firstOrNull;
+      final item = r.itemId == null
+          ? null
+          : pkg.items.where((i) => i.id == r.itemId).firstOrNull;
       out.add(_CategoryRow(
         package: pkg,
-        // The forfeited row names one item; fall back to the package's
-        // first, as the Unsold pages do.
-        itemName: item?.itemName ??
-            (pkg.items.isEmpty ? '—' : pkg.items.first.itemName),
-        note: (proposal!.note ?? '').trim(),
-        officer: '—',
+        entry: entry,
         item: item,
-        proposal: proposal,
-        forfeited: info.forfeited,
+        itemName: r.itemName,
+        note: r.note ?? '',
+        officer: r.officer ?? '—',
+        // ⚠️ Only a Top Management row carries these, and the popup keys its
+        // whole Tender History off them — see _CategoryRow.proposal.
+        proposal: r.isTopManagement ? _proposalFor(r) : null,
+        forfeited: r.isTopManagement ? _forfeitedFor(r) : null,
+        fromTopManagement: r.isTopManagement,
       ));
     }
     return out;
   }
 
-  List<_CategoryRow> _buildRows(List<PackageModel> packages) {
-    final rows = <_CategoryRow>[];
-    for (final package in packages) {
-      // Track which items already have a tagged warehouse entry row so we
-      // don't double-count them in the status fallback pass below.
-      final coveredItemIds = <String>{};
+  /// The DG's decision behind a Top Management row.
+  ///
+  /// Read from the map every portal shares, so the note and date shown here
+  /// are the same ones the Unsold page shows.
+  UnsoldProposalModel? _proposalFor(DispositionRow r) {
+    final byItem =
+        ref.watch(unsoldProposalsByItemProvider).valueOrNull ?? const {};
+    return r.itemId == null ? null : byItem[r.itemId!];
+  }
 
-      for (final entry in package.warehouseEntries) {
-        if (!_matchesTag(entry)) continue;
-        final item = package.items
-            .where((i) => i.id == entry.packageItemId)
-            .firstOrNull;
-        if (entry.packageItemId != null) coveredItemIds.add(entry.packageItemId!);
-        rows.add(_CategoryRow(
-          package: package,
-          entry: entry,
-          itemName: item?.itemName ??
-              (package.items.isNotEmpty
-                  ? package.items.first.itemName
-                  : '—'),
-          note: _extractNote(entry.returnNotes),
-          officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
-        ));
-      }
-
-      // Fallback: items whose status matches this category but have no
-      // tagged warehouse entry (e.g. items that were never warehouse-admitted
-      // and whose Final Disposition was recorded via status-only update).
-      final matchingStatuses = _statusForTag[widget.finalTag] ?? {};
-      for (final item in package.items) {
-        if (coveredItemIds.contains(item.id)) continue;
-        if (!matchingStatuses.contains(item.status?.toLowerCase())) continue;
-        rows.add(_CategoryRow(
-          package: package,
-          entry: null,
-          item: item,
-          itemName: item.itemName,
-          note: '',
-          officer: '—',
-        ));
-      }
-    }
-    // Both routes, one list — the page is "goods that were re-exported", not
-    // "goods the YARD re-exported". Added before the sort so the two
-    // interleave by date instead of the newer route sitting in a block at the
-    // bottom.
-    rows.addAll(_topManagementRows());
-    rows.sort((a, b) {
-      // A Top Management row is dated by its DECISION; a yard row by the
-      // warehouse movement that recorded it.
-      final aDate = a.proposal?.decidedAt ??
-          a.entry?.returnedAt ??
-          a.entry?.admittedAt ??
-          a.package.updatedAt;
-      final bDate = b.proposal?.decidedAt ??
-          b.entry?.returnedAt ??
-          b.entry?.admittedAt ??
-          b.package.updatedAt;
-      return bDate.compareTo(aDate);
-    });
-    return rows;
+  /// The forfeited row behind a Top Management decision, for the popup's
+  /// Tender History.
+  ForfeitedPackageModel? _forfeitedFor(DispositionRow r) {
+    if (r.itemId == null) return null;
+    return ref
+        .watch(forfeitedByItemProvider(r.packageId))
+        .valueOrNull?[r.itemId!];
   }
 
   /// A compact pill for the Delivered / Pending / All delivery sub-filter,
@@ -245,18 +177,13 @@ class _DispositionCategoryScreenState
 
   @override
   Widget build(BuildContext context) {
-    final packages = ref.watch(livePackagesProvider);
+    // ⚠️ ONE page of rows, already filtered and sorted by the database — not
+    // every package in the yard. The delivery maps that used to be fetched
+    // here went with it: the view answers that per SALE now, which the
+    // package-keyed maps could not do.
+    final page = ref.watch(dispositionPageWithPackagesProvider(_query));
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    // Delivery map for filtering (Sold uses tender-sale items; Destroyed uses
-    // destruction items). Empty until loaded — rows then treated as Pending.
-    final deliveredMap = !_hasDelivery
-        ? const <String, bool>{}
-        : (widget.finalTag == 'SOLD'
-                ? ref.watch(packageDeliveredMapProvider)
-                : ref.watch(packageDestroyedDeliveredMapProvider))
-            .valueOrNull ??
-            const <String, bool>{};
 
     return AppShell(
       currentRoute: widget.route,
@@ -285,15 +212,14 @@ class _DispositionCategoryScreenState
                                 color: context.colors.textSecondary)),
                       ],
                     ),
-                    packages.when(
-                      data: (list) {
-                        final count = _buildRows(list).length;
-                        return Text('$count ${widget.countLabel}',
-                            style: TextStyle(
-                                color: context.colors.textMuted,
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold));
-                      },
+                    // The count the DATABASE reports for this filter, not the
+                    // length of a list held in memory.
+                    page.when(
+                      data: (p) => Text('${p.total} ${widget.countLabel}',
+                          style: TextStyle(
+                              color: context.colors.textMuted,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold)),
                       loading: () => const SizedBox(),
                       error: (_, __) => const SizedBox(),
                     ),
@@ -410,10 +336,14 @@ class _DispositionCategoryScreenState
                           ),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: srYears(packages.valueOrNull == null
-                              ? const <String>[]
-                              : _buildRows(packages.valueOrNull!)
-                                  .map((r) => r.package.srNumber)),
+                          // ⚠️ From its own query, not from the loaded rows —
+                          // the page holds twenty of them, which would offer
+                          // only the years visible right now.
+                          years: srYears(ref
+                                  .watch(dispositionYearSourceProvider(
+                                      widget.finalTag))
+                                  .valueOrNull ??
+                              const <String>[]),
                           onChanged: (v) => setState(() {
                             _yearFilter = v;
                             _page = 0;
@@ -442,73 +372,28 @@ class _DispositionCategoryScreenState
 
               const Gap(16),
               Expanded(
-                child: packages.when(
+                child: page.when(
                   loading: () => Center(
                       child: CircularProgressIndicator(
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final rows = _buildRows(list).where((row) {
-                      if (_search.isNotEmpty) {
-                        final s = _search.toLowerCase();
-                        if (!row.package.srNumber.toLowerCase().contains(s) &&
-                            !row.package.consigneeName
-                                .toLowerCase()
-                                .contains(s) &&
-                            !row.itemName.toLowerCase().contains(s)) {
-                          return false;
-                        }
-                      }
-                      if (_dateRange != null) {
-                        final date = row.entry?.returnedAt ??
-                            row.entry?.admittedAt ??
-                            row.package.updatedAt;
-                        final startOfDay = DateTime(_dateRange!.start.year,
-                            _dateRange!.start.month, _dateRange!.start.day);
-                        final endOfDay = DateTime(
-                            _dateRange!.end.year,
-                            _dateRange!.end.month,
-                            _dateRange!.end.day,
-                            23,
-                            59,
-                            59);
-                        if (date.isBefore(startOfDay) ||
-                            date.isAfter(endOfDay)) return false;
-                      }
-                      if (!srYearMatches(row.package.srNumber, _yearFilter)) {
-                        return false;
-                      }
-                      if (_hasDelivery && _deliveryFilter != null) {
-                        if (widget.finalTag == 'DESTROYED') {
-                          if (row.isDestroyed != _deliveryFilter) return false;
-                        } else {
-                          // Match the per-SALE delivery state (receipt-pinned),
-                          // falling back to the per-item / package-level value.
-                          final itemId = row.entry?.packageItemId ?? '';
-                          final receipt =
-                              _parseSaleReceipt(row.entry?.returnNotes) ?? '';
-                          final delivered = deliveredMap[
-                                  '${row.package.id}|$itemId|$receipt'] ??
-                              deliveredMap['${row.package.id}|$itemId'] ??
-                              deliveredMap[row.package.id] ??
-                              false;
-                          if (delivered != _deliveryFilter) return false;
-                        }
-                      }
-                      return true;
-                    }).toList();
-
-                    // Client-side paging over the filtered rows.
-                    final maxPage =
-                        rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+                      onRetry: () => ref.refresh(
+                          dispositionPageWithPackagesProvider(_query))),
+                  data: (result) {
+                    // The rows for THIS page, in the order the database sorted
+                    // them. No filtering left to do here — it all happened in
+                    // SQL, which is what makes the page cost the page rather
+                    // than the table.
+                    final pageRows = _rowsFrom(result);
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
                     if (_page > maxPage) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
                         if (mounted) setState(() => _page = maxPage);
                       });
                     }
-                    final pageRows = pageSlice(rows, _page.clamp(0, maxPage));
 
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -792,8 +677,12 @@ class _DispositionCategoryScreenState
                           ),
                         ),
                         TablePager(
-                          total: rows.length,
+                          // The DATABASE's count for this filter. A pager
+                          // whose total is the length of the loaded list can
+                          // only ever say "20 of 20".
+                          total: result.total,
                           page: _page.clamp(0, maxPage),
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],
@@ -884,6 +773,14 @@ class _CategoryRow {
   /// Tender History.
   final ForfeitedPackageModel? forfeited;
 
+  /// Which route recorded this, straight from the view.
+  ///
+  /// ⚠️ NOT derived from [proposal] being non-null. The proposal is fetched by
+  /// a second provider that may still be loading, and a row that briefly
+  /// reported itself as a yard row would flip its Decided By pill under the
+  /// reader's eyes. The view answered this question when it built the row.
+  final bool fromTopManagement;
+
   const _CategoryRow({
     required this.package,
     this.entry,
@@ -893,10 +790,8 @@ class _CategoryRow {
     this.item,
     this.proposal,
     this.forfeited,
+    this.fromTopManagement = false,
   });
-
-  /// True when Top Management ruled on this, rather than the yard.
-  bool get fromTopManagement => proposal != null;
 
   bool get isDestroyed {
     final notes = (entry?.returnNotes ?? '').trim().toUpperCase();

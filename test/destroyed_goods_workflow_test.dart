@@ -104,8 +104,59 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            livePackagesProvider.overrideWith(
-              (ref) => Future.value([pkgPending, pkgDestroyed]),
+            // ⚠️ The page pages on the SERVER now, so it no longer reads
+            // livePackagesProvider -- it asks the disposition_rows view for
+            // one page and then fetches the packages behind it. These two
+            // rows are the view's two yard sources: an item whose STATUS says
+            // it is for destruction (pkgPending, no warehouse entry) and a
+            // warehouse entry carrying a [FINAL:DESTROYED] tag (pkgDestroyed).
+            dispositionPageWithPackagesProvider.overrideWith(
+              (ref, q) => Future.value((
+                rows: [
+                  DispositionRow(
+                    rowKey: 'I:item-1',
+                    source: 'item',
+                    packageId: 'pkg-1',
+                    srNumber: 'CED/GL1/SR/01/2025',
+                    consigneeName: 'Test Importer',
+                    yard: 'GL1',
+                    itemId: 'item-1',
+                    entryId: null,
+                    proposalId: null,
+                    finalTag: 'DESTROYED',
+                    itemName: 'Perishable Chemical Goods',
+                    hsCode: null,
+                    quantity: 10,
+                    note: null,
+                    officer: null,
+                    happenedAt: DateTime(2025, 1, 2),
+                  ),
+                  DispositionRow(
+                    rowKey: 'E:entry-2',
+                    source: 'entry',
+                    packageId: 'pkg-2',
+                    srNumber: 'CED/GL1/SR/02/2025',
+                    consigneeName: 'Test Importer 2',
+                    yard: 'GL1',
+                    itemId: 'item-2',
+                    entryId: 'entry-2',
+                    proposalId: null,
+                    finalTag: 'DESTROYED',
+                    itemName: 'Damaged Food Packets',
+                    hsCode: null,
+                    quantity: 5,
+                    note: 'Certificate #4410',
+                    officer: null,
+                    happenedAt: DateTime(2025, 1, 3),
+                  ),
+                ],
+                packages: {'pkg-1': pkgPending, 'pkg-2': pkgDestroyed},
+                total: 2,
+              )),
+            ),
+            // The year filter runs its own small query.
+            dispositionYearSourceProvider.overrideWith(
+              (ref, tag) => Future.value(const <String>[]),
             ),
             storageRateProvider.overrideWith(
               (ref) => Future.value({DateTime(2020, 1, 1): 50.0}),

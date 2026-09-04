@@ -461,6 +461,38 @@ final dispositionPageProvider =
       );
 });
 
+/// One page of disposition rows WITH the packages behind them.
+///
+/// The rows come from the view; the packages are then fetched for that page
+/// alone. ⚠️ Two round trips, both bounded by the page size -- the details
+/// popup and the per-sale cells need the whole package, and the old path got
+/// it by holding every package in the yard in memory.
+typedef DispositionPageWithPackages = ({
+  List<DispositionRow> rows,
+  Map<String, PackageModel> packages,
+  int total,
+});
+
+final dispositionPageWithPackagesProvider = FutureProvider.family<
+    DispositionPageWithPackages, DispositionQuery>((ref, q) async {
+  final page = await ref.watch(dispositionPageProvider(q).future);
+  final packages = await ref
+      .read(packageServiceProvider)
+      .getPackagesByIds([for (final r in page.rows) r.packageId]);
+  return (rows: page.rows, packages: packages, total: page.total);
+});
+
+/// Every SR number on one disposition page, for its year filter.
+///
+/// Keyed by the page's tag. The table pages on the server now, so the loaded
+/// rows are one page -- not enough to know which years exist.
+final dispositionYearSourceProvider =
+    FutureProvider.family<List<String>, String>((ref, finalTag) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getDispositionYears(finalTag);
+});
+
 /// Every SR number in Goods History, for its year filter.
 ///
 /// Goods History pages on the server, so the loaded rows are only ever one

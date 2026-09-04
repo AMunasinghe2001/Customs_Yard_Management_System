@@ -662,6 +662,27 @@ class PackageService {
     return PackageModel.fromJson(data);
   }
 
+  /// The full packages behind a page of rows, keyed by id.
+  ///
+  /// ⚠️ A page's worth, never the table. The disposition pages need the whole
+  /// package for the details popup and for the per-sale cells, but only for
+  /// the twenty rows actually on screen -- which is the entire point of paging
+  /// in SQL. An empty list asks for nothing rather than fetching everything.
+  Future<Map<String, PackageModel>> getPackagesByIds(List<String> ids) async {
+    if (ids.isEmpty) return const {};
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('packages')
+        .select(
+            '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)')
+        .inFilter('id', ids.toSet().toList()));
+    final out = <String, PackageModel>{};
+    for (final e in (data as List)) {
+      final m = PackageModel.fromJson(e as Map<String, dynamic>);
+      out[m.id] = m;
+    }
+    return out;
+  }
+
   Future<List<PackageModel>> getAllPackages(
       {String? status, String? search, DateTime? since, String? yard}) async {
     var query = supabase.from('packages').select(
@@ -701,6 +722,26 @@ class PackageService {
   /// elsewhere.
   Future<List<String>> getPackageYears({String? yard}) async {
     var q = supabase.from('packages').select('sr_number');
+    if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+    final data = await AuthService._withNetworkRetry(() => q);
+    return [
+      for (final row in (data as List))
+        (row as Map<String, dynamic>)['sr_number']?.toString() ?? '',
+    ];
+  }
+
+  /// The SR numbers on one disposition page, for its year filter.
+  ///
+  /// ⚠️ The page now holds only twenty rows, which is nowhere near enough to
+  /// know which years the table covers -- the filter would offer only the
+  /// years visible on the current page. This asks for the numbers alone (one
+  /// small column, no joins) so `srYears()` builds the same list it always did.
+  Future<List<String>> getDispositionYears(String finalTag,
+      {String? yard}) async {
+    var q = supabase
+        .from('disposition_rows')
+        .select('sr_number')
+        .eq('final_tag', finalTag);
     if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
     final data = await AuthService._withNetworkRetry(() => q);
     return [

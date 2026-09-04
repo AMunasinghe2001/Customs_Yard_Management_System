@@ -16,6 +16,10 @@ String _flat(String p) =>
 
 void main() {
   final page = _flat('lib/screens/packages/disposition_category_screen.dart');
+  // The row-building rules live in the view now; the page renders what it
+  // returns. Read unflattened -- the assertions below match its own layout.
+  final view = File('postgres/18_disposition_rows_view.sql').readAsStringSync();
+  final services = File('lib/services/services.dart').readAsStringSync();
 
   group('both routes reach the page', () {
     test("re_export is a decision Top Management can actually make", () {
@@ -25,24 +29,28 @@ void main() {
       expect(unsoldProposalLabel('re_export'), 'Re-export');
     });
 
-    test('the page reads the unsold decisions as well as the yard rows', () {
-      expect(page, contains('List<_CategoryRow> _topManagementRows()'));
-      // The same pair of providers the Government Use page reads — that page
-      // is the model every Top Management outcome follows.
-      expect(page, contains('ref.watch(exhaustedUnsoldProvider)'));
-      expect(page, contains('ref.watch(unsoldProposalsProvider)'));
-      expect(page, contains("proposal?.proposal != 're_export'"));
-      // Only on this page: the other categories have one route each.
-      expect(page, contains("if (widget.finalTag != 'RE-EXPORTED') return const []"));
+    test('the view carries the unsold decisions as well as the yard rows', () {
+      // ⚠️ The merge moved from Dart into SQL when this page started paging on
+      // the server -- paging in SQL needs the rows to exist in SQL. The
+      // BEHAVIOUR is unchanged and is asserted here against the view.
+      expect(view, contains("'proposal'::text"));
+      expect(view, contains("where up.proposal = 're_export'"));
+      expect(view, contains("'RE-EXPORTED'::text                        as final_tag"));
+      // Only this page has two routes; the other categories have one each.
+      expect(view, contains('public.unsold_proposals up'));
     });
 
     test('the two are merged BEFORE the sort, and dated by their own event',
         () {
-      expect(page, contains('rows.addAll(_topManagementRows());'));
-      // A Top Management row is dated by its DECISION; a yard row by the
-      // warehouse movement. Sorting on one field only would bunch the newer
-      // route at the bottom.
-      expect(page, contains('a.proposal?.decidedAt ?? a.entry?.returnedAt'));
+      // One union, so both routes are in the same result set before the ORDER
+      // BY -- a Top Management row is dated by its DECISION and a yard row by
+      // the warehouse movement, and sorting on one field only would bunch the
+      // newer route at the bottom.
+      expect('union all'.allMatches(view).length, 2);
+      expect(view, contains('up.decided_at                              as happened_at'));
+      expect(view, contains('coalesce(w.returned_at, w.admitted_at, p.updated_at)'));
+      // And the query asks for them in that one order, newest first.
+      expect(services, contains(".order('happened_at', ascending: false)"));
     });
   });
 

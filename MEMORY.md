@@ -1993,3 +1993,27 @@ SR Registration ([packages_screen.dart](lib/screens/packages/packages_screen.dar
 Pinned by [table_pager_test.dart](test/table_pager_test.dart).
 
 **Still to do — server-side paging.** Only **2** of ~16 paged screens actually page in SQL (`getPackagesPaged`, `getAllLogsAcrossOffices`); the rest fetch every row and slice in Dart with `pageSlice`/`.skip().take()`. At today's volumes (largest table 395 rows) that is invisible, but it will not scale. The route is the two existing methods' shape: one filtered `.range(offset, offset + limit - 1)` query for the rows plus a `.count()` for the total, both narrowed by the SAME filter closure.
+
+## Paging in SQL needs the rows to exist in SQL (2026-09-05)
+
+The disposition pages (Sold / Destroyed / Re-exported, one screen driven by `finalTag`) **do not list packages — they list ITEMS**, and one package produces several rows from **three** sources: a warehouse entry carrying a `[FINAL:]` tag, an item whose status says so with no tagged entry, and a Top Management `re_export` ruling. The screen merged those in Dart, sorted by date, then `.skip().take()` — so drawing page 1 cost the whole yard, and the cost grew with the yard rather than with the page.
+
+**`disposition_rows` is a VIEW** ([18](postgres/18_disposition_rows_view.sql), delivery column in [20](postgres/20_disposition_rows_delivery.sql)) — not a table. These rows are a *question asked of existing data*, not a new fact; a table would need a trigger per source and would be wrong in between. ⚠️ Migration 20 **reuses migration 18's body verbatim** (the Python that wrote it slices it out of the file) rather than retyping it — two copies drift, and the symptom is a page whose rows depend on which migration ran last.
+
+⚠️ The tag sets moved into SQL **verbatim**, including `FINAL:DESTROY` with no ED — the pending tag `disposeWarehouseItem` writes, since it upper-cases the action name. Drop it and every package awaiting destruction reaches no page and can never be confirmed.
+
+**Delivery moved too**, and was wrong before: it came from two *package-keyed* maps, but an item sold across two partial tenders has two receipts and two delivery states, which a package key flattens. The view resolves it **per sale**, and leaves it **NULL** where a page has no hand-over step — "not applicable" is not "still waiting", and false would sweep every OTHER row under the Pending filter.
+
+⚠️ **Index the EXPRESSION.** The tag filter is `upper(substring(upper(trim(...)), '^\[([^\]]+)\]'))`, so an ordinary index on `return_notes` cannot serve it — `warehouse_entries_disposition_tag_idx` matches the view's predicate character for character. If the view's expression is ever edited the index silently stops being used. SOLD page plan: **35.7ms → 4.2ms**, and no longer quadratic in items × entries.
+
+**Screen wiring** ([disposition_category_screen.dart](lib/screens/packages/disposition_category_screen.dart)):
+- `_buildRows` + `_topManagementRows` deleted, replaced by `_rowsFrom` which only rehydrates the twenty rows that came back.
+- `dispositionPageWithPackagesProvider` does two bounded round trips: the view's page, then `getPackagesByIds` for **that page's** packages (the popup and per-sale cells need the whole package).
+- ⚠️ `fromTopManagement` is now a **field carried from the view**, not `proposal != null` — derived from a second provider, a row reports itself as a yard row while that provider loads and the Decided By pill flips under the reader's eyes.
+- The header count and the pager total both come from the **server's** count; a count taken from the loaded list can only ever say "20 of 20".
+- ⚠️ The year filter needs **its own small query** (`dispositionYearSourceProvider`) — one page of twenty rows would offer only the years visible right now. Same problem Goods History already solved.
+- `DispositionQuery` is a value type with `==`/`hashCode`: a family key without value equality opens a fresh request on every rebuild and the page flickers through loading forever.
+
+⚠️ A widget test of these screens must override `dispositionPageWithPackagesProvider` (and `dispositionYearSourceProvider`), **not** `livePackagesProvider` — the screen no longer reads it, and the old override silently yields an empty table.
+
+**Still client-side:** `unsold_packages_screen`, `perishable_goods_screen`, `returned_packages_screen`, `old_entries_screen`, and the directorate tabs.

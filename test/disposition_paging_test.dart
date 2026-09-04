@@ -164,6 +164,60 @@ void main() {
     });
   });
 
+  group('the screen actually uses it', () {
+    final screen =
+        File('lib/screens/packages/disposition_category_screen.dart')
+            .readAsStringSync();
+    final flat = screen.replaceAll(RegExp(r'\s+'), ' ');
+
+    test('it reads the paged provider, not every package in the yard', () {
+      expect(screen, contains('dispositionPageWithPackagesProvider(_query)'));
+      expect(screen, isNot(contains('ref.watch(livePackagesProvider)')));
+    });
+
+    test('every filter is in the query key, so every filter runs in SQL', () {
+      final q = screen.substring(screen.indexOf('DispositionQuery get _query'));
+      for (final field in ['finalTag:', 'page:', 'search:', 'dateStart:',
+                           'dateEnd:', 'year:', 'delivered:']) {
+        expect(q, contains(field), reason: '$field must reach the database');
+      }
+    });
+
+    test('the row builders are gone, not duplicated', () {
+      // ⚠️ Keeping a Dart copy beside the view is how the two drift: the page
+      // would show one set of rows and the pager count another.
+      expect(screen, isNot(contains('List<_CategoryRow> _buildRows(')));
+      expect(screen, isNot(contains('List<_CategoryRow> _topManagementRows()')));
+      expect(screen, contains('List<_CategoryRow> _rowsFrom('));
+    });
+
+    test('the count and the pager both come from the server total', () {
+      // A count taken from the loaded list can only ever say "20 of 20".
+      expect(flat, contains(r"Text('${p.total} ${widget.countLabel}'"));
+      expect(flat, contains('total: result.total,'));
+      expect(flat, contains('pageSize: kDispositionPageSize,'));
+    });
+
+    test('the year filter runs its own query', () {
+      // ⚠️ One page holds twenty rows, which would offer only the years
+      // visible right now.
+      expect(screen, contains('dispositionYearSourceProvider('));
+    });
+
+    test('which route a row took comes from the view, not from a lookup', () {
+      // ⚠️ Deriving it from a second provider means a row reports itself as a
+      // yard row while that provider is still loading, and the Decided By
+      // pill flips under the reader's eyes.
+      expect(screen, contains('fromTopManagement: r.isTopManagement,'));
+      expect(screen, isNot(contains('bool get fromTopManagement => proposal != null')));
+    });
+
+    test('a package missing between the two queries is skipped, not half-built',
+        () {
+      expect(screen, contains('if (pkg == null) continue;'));
+    });
+  });
+
   group('a row of the view', () {
     test('parses into the model the screen reads', () {
       final row = DispositionRow.fromJson({
