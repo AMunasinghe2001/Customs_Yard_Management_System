@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../widgets/directorate_yard_picker.dart';
 import '../../services/services.dart';
 import '../../core/providers.dart';
+import '../../widgets/auth_back_button.dart';
 
 class OfficerSignupScreen extends ConsumerStatefulWidget {
   const OfficerSignupScreen({super.key});
@@ -102,247 +103,242 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
-      body: Row(children: [
-        // Left branding
-        Expanded(flex: 5, child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft, end: Alignment.bottomRight,
-              colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.accentLightBlue],
-            ),
-          ),
-          child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-            SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 200, height: 200,
-              colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-            ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
-            const Gap(36),
-            const Text('Sri Lanka Customs',
-              style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
-            const Text('SR Management System',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
-            const Gap(28),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
-              decoration: BoxDecoration(
-                border: Border.all(color: context.colors.accentLightBlue.withOpacity(0.4)),
-                borderRadius: BorderRadius.circular(24),
-                color: context.colors.accentLightBlue.withOpacity(0.08),
+      body: Stack(children: [
+        Row(children: [
+          // Left branding
+          Expanded(flex: 5, child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft, end: Alignment.bottomRight,
+                colors: [const Color(0xFF050411), context.colors.primaryNavy, context.colors.accentLightBlue],
               ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.person_add_rounded, color: context.colors.accentLightBlue, size: 16),
-                const Gap(8),
-                Text('Officer • Create Account',
-                    style: TextStyle(color: context.colors.accentLightBlue, fontSize: 14, fontWeight: FontWeight.w600)),
-              ]),
             ),
-          ]),
-        )),
-
-        // Right form
-        Expanded(flex: 4, child: Center(child: SingleChildScrollView(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 480),
-            padding: const EdgeInsets.all(48),
-            child: Form(key: _formKey, child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(children: [
-                  IconButton(
-                    icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
-                    onPressed: () => context.go('/'),
-                  ),
+            child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+              SvgPicture.asset('Sri_Lanka_Customs_logo.svg', width: 200, height: 200,
+                colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
+              ).animate().scale(duration: 700.ms, curve: Curves.easeOutBack).fadeIn(),
+              const Gap(36),
+              const Text('Sri Lanka Customs',
+                style: TextStyle(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w800, letterSpacing: 1.2)),
+              const Text('SR Management System',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
+              const Gap(28),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                decoration: BoxDecoration(
+                  border: Border.all(color: context.colors.accentLightBlue.withOpacity(0.4)),
+                  borderRadius: BorderRadius.circular(24),
+                  color: context.colors.accentLightBlue.withOpacity(0.08),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.person_add_rounded, color: context.colors.accentLightBlue, size: 16),
                   const Gap(8),
-                  Text('Officer Sign Up', style: Theme.of(context).textTheme.headlineMedium),
-                ]).animate().fadeIn(duration: 400.ms),
-                const Gap(4),
-                Padding(
-                  padding: const EdgeInsets.only(left: 48),
-                  child: Text('Create your officer account',
-                      style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
-                ).animate().fadeIn(delay: 100.ms),
-                const Gap(8),
-                // "Already have account" link
-                Padding(
-                  padding: const EdgeInsets.only(left: 40),
-                  child: Row(children: [
-                    Text('Already have an account?', style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
-                    TextButton(
-                      onPressed: () => context.go('/login'),
-                      child: Text('Sign In',
-                          style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600, fontSize: 13)),
-                    ),
-                  ]),
-                ).animate().fadeIn(delay: 150.ms),
-                const Gap(20),
+                  Text('Officer • Create Account',
+                      style: TextStyle(color: context.colors.accentLightBlue, fontSize: 14, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+            ]),
+          )),
 
-                if (_success != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.colors.successGreen.withOpacity(0.12), borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: context.colors.successGreen.withOpacity(0.4)),
-                    ),
+          // Right form
+          Expanded(flex: 4, child: Center(child: SingleChildScrollView(
+            child: Container(
+              constraints: const BoxConstraints(maxWidth: 480),
+              padding: const EdgeInsets.all(48),
+              child: Form(key: _formKey, child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(children: [
+                    Text('Officer Sign Up', style: Theme.of(context).textTheme.headlineMedium),
+                  ]).animate().fadeIn(duration: 400.ms),
+                  const Gap(4),
+                  Text('Create your officer account',
+                        style: TextStyle(color: context.colors.textSecondary, fontSize: 14)).animate().fadeIn(delay: 100.ms),
+                  const Gap(8),
+                  // "Already have account" link
+                  Padding(
+                    padding: const EdgeInsets.only(left: 40),
                     child: Row(children: [
-                      Icon(Icons.check_circle_outline, color: context.colors.successGreen, size: 18),
-                      const Gap(10),
-                      Expanded(child: Text(_success!, style: TextStyle(color: context.colors.successGreen, fontSize: 13))),
+                      Text('Already have an account?', style: TextStyle(color: context.colors.textMuted, fontSize: 13)),
+                      TextButton(
+                        onPressed: () => context.go('/login'),
+                        child: Text('Sign In',
+                            style: TextStyle(color: context.colors.accentLightBlue, fontWeight: FontWeight.w600, fontSize: 13)),
+                      ),
                     ]),
-                  ),
-                  const Gap(16),
-                ],
-                if (_error != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: context.colors.dangerRed.withOpacity(0.1), borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
-                    ),
-                    child: Row(children: [
-                      Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
-                      const Gap(10),
-                      Expanded(child: Text(_error!, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
-                    ]),
-                  ),
+                  ).animate().fadeIn(delay: 150.ms),
                   const Gap(20),
-                ],
 
-                // First & Last Name
-                Row(children: [
-                  Expanded(child: TextFormField(
-                    controller: _firstNameCtrl,
-                    // Enter submits, so the form can be completed from the
-                    // keyboard without reaching for the mouse.
-                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
-                    decoration: InputDecoration(
-                      labelText: 'First Name *',
-                      prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),
+                  if (_success != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: context.colors.successGreen.withOpacity(0.12), borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: context.colors.successGreen.withOpacity(0.4)),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.check_circle_outline, color: context.colors.successGreen, size: 18),
+                        const Gap(10),
+                        Expanded(child: Text(_success!, style: TextStyle(color: context.colors.successGreen, fontSize: 13))),
+                      ]),
                     ),
-                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                  )),
-                  const Gap(12),
-                  Expanded(child: TextFormField(
-                    controller: _lastNameCtrl,
-                    // Enter submits, so the form can be completed from the
-                    // keyboard without reaching for the mouse.
-                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
-                    decoration: const InputDecoration(labelText: 'Last Name *'),
-                    validator: (v) => v == null || v.isEmpty ? 'Required' : null,
-                  )),
-                ]).animate().slideX(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
-                const Gap(14),
-
-                // Salary Number (full width, below names)
-                TextFormField(
-                  controller: _salaryCtrl,
-                  // Enter submits, so the form can be completed from the
-                  // keyboard without reaching for the mouse.
-                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
-                  decoration: InputDecoration(
-                    labelText: 'Salary Number',
-                    prefixIcon: Icon(Icons.badge_outlined, color: context.colors.textMuted),
-                  ),
-                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 240.ms).fadeIn(),
-                const Gap(14),
-
-                // Which directorate, then which of ITS yards. The pair decides
-                // this account's SR-number prefix for good, so it is asked at
-                // registration rather than inferred later.
-                DirectorateYardPicker(
-                  directorate: _selectedDirectorate,
-                  yard: _selectedYard,
-                  onDirectorateChanged: (v) => setState(() {
-                    _selectedDirectorate = v;
-                    // The old yard may not belong to the new directorate;
-                    // clearing it forces a deliberate re-pick.
-                    _selectedYard = null;
-                  }),
-                  onYardChanged: (v) => setState(() => _selectedYard = v),
-                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 260.ms).fadeIn(),
-                const Gap(14),
-
-                TextFormField(
-                  controller: _emailCtrl,
-                  // Enter submits, so the form can be completed from the
-                  // keyboard without reaching for the mouse.
-                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
-                  decoration: InputDecoration(
-                    labelText: 'Email *',
-                    prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
-                  ),
-                  keyboardType: TextInputType.emailAddress,
-                  validator: (v) => v == null || v.isEmpty ? 'Email required' : !v.contains('@') ? 'Invalid email' : null,
-                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 280.ms).fadeIn(),
-                const Gap(14),
-
-                TextFormField(
-                  controller: _passwordCtrl,
-                  // Enter submits, so the form can be completed from the
-                  // keyboard without reaching for the mouse.
-                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
-                  decoration: InputDecoration(
-                    labelText: 'Password *',
-                    prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, color: context.colors.textMuted),
-                      onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                    const Gap(16),
+                  ],
+                  if (_error != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: context.colors.dangerRed.withOpacity(0.1), borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: context.colors.dangerRed.withOpacity(0.4)),
+                      ),
+                      child: Row(children: [
+                        Icon(Icons.error_outline, color: context.colors.dangerRed, size: 18),
+                        const Gap(10),
+                        Expanded(child: Text(_error!, style: TextStyle(color: context.colors.dangerRed, fontSize: 13))),
+                      ]),
                     ),
-                  ),
-                  obscureText: _obscurePass,
-                  validator: (v) => v == null || v.length < 8 ? 'Min 8 characters' : null,
-                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 320.ms).fadeIn(),
-                const Gap(14),
+                    const Gap(20),
+                  ],
 
-                TextFormField(
-                  controller: _confirmCtrl,
-                  // Enter submits, so the form can be completed from the
-                  // keyboard without reaching for the mouse.
-                  onFieldSubmitted: (_) => _isLoading ? null : _register(),
-                  decoration: InputDecoration(
-                    labelText: 'Confirm Password *',
-                    prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility, color: context.colors.textMuted),
-                      onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
-                    ),
-                  ),
-                  obscureText: _obscureConfirm,
-                  validator: (v) => v != _passwordCtrl.text ? 'Passwords do not match' : null,
-                ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 360.ms).fadeIn(),
-                const Gap(28),
+                  // First & Last Name
+                  Row(children: [
+                    Expanded(child: TextFormField(
+                      controller: _firstNameCtrl,
+                      // Enter submits, so the form can be completed from the
+                      // keyboard without reaching for the mouse.
+                      onFieldSubmitted: (_) => _isLoading ? null : _register(),
+                      decoration: InputDecoration(
+                        labelText: 'First Name *',
+                        prefixIcon: Icon(Icons.person_outline, color: context.colors.textMuted),
+                      ),
+                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                    )),
+                    const Gap(12),
+                    Expanded(child: TextFormField(
+                      controller: _lastNameCtrl,
+                      // Enter submits, so the form can be completed from the
+                      // keyboard without reaching for the mouse.
+                      onFieldSubmitted: (_) => _isLoading ? null : _register(),
+                      decoration: const InputDecoration(labelText: 'Last Name *'),
+                      validator: (v) => v == null || v.isEmpty ? 'Required' : null,
+                    )),
+                  ]).animate().slideX(begin: 0.1, duration: 400.ms, delay: 200.ms).fadeIn(),
+                  const Gap(14),
 
-                if (_otpSent) ...[
+                  // Salary Number (full width, below names)
                   TextFormField(
-                    controller: _otpCtrl,
+                    controller: _salaryCtrl,
                     // Enter submits, so the form can be completed from the
                     // keyboard without reaching for the mouse.
                     onFieldSubmitted: (_) => _isLoading ? null : _register(),
                     decoration: InputDecoration(
-                      labelText: 'OTP Code *',
-                      prefixIcon: Icon(Icons.verified_user_rounded, color: context.colors.textMuted),
+                      labelText: 'Salary Number',
+                      prefixIcon: Icon(Icons.badge_outlined, color: context.colors.textMuted),
                     ),
-                    keyboardType: TextInputType.number,
-                    validator: (v) => v == null || v.isEmpty ? 'OTP required' : null,
-                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 380.ms).fadeIn(),
-                  const Gap(18),
-                ],
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 240.ms).fadeIn(),
+                  const Gap(14),
 
-                SizedBox(height: 52, child: ElevatedButton.icon(
-                  icon: _isLoading
-                      ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
-                      : const Icon(Icons.how_to_reg_rounded),
-                  label: Text(
-                      _isLoading
-                          ? 'Processing...'
-                          : (_otpSent ? 'Verify OTP & Create Account' : 'Send OTP'),
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-                  onPressed: _isLoading ? null : _register,
-                )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
-              ],
-            )),
-          ),
-        ))),
+                  // Which directorate, then which of ITS yards. The pair decides
+                  // this account's SR-number prefix for good, so it is asked at
+                  // registration rather than inferred later.
+                  DirectorateYardPicker(
+                    directorate: _selectedDirectorate,
+                    yard: _selectedYard,
+                    onDirectorateChanged: (v) => setState(() {
+                      _selectedDirectorate = v;
+                      // The old yard may not belong to the new directorate;
+                      // clearing it forces a deliberate re-pick.
+                      _selectedYard = null;
+                    }),
+                    onYardChanged: (v) => setState(() => _selectedYard = v),
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 260.ms).fadeIn(),
+                  const Gap(14),
+
+                  TextFormField(
+                    controller: _emailCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
+                    decoration: InputDecoration(
+                      labelText: 'Email *',
+                      prefixIcon: Icon(Icons.email_outlined, color: context.colors.textMuted),
+                    ),
+                    keyboardType: TextInputType.emailAddress,
+                    validator: (v) => v == null || v.isEmpty ? 'Email required' : !v.contains('@') ? 'Invalid email' : null,
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 280.ms).fadeIn(),
+                  const Gap(14),
+
+                  TextFormField(
+                    controller: _passwordCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
+                    decoration: InputDecoration(
+                      labelText: 'Password *',
+                      prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscurePass ? Icons.visibility_off : Icons.visibility, color: context.colors.textMuted),
+                        onPressed: () => setState(() => _obscurePass = !_obscurePass),
+                      ),
+                    ),
+                    obscureText: _obscurePass,
+                    validator: (v) => v == null || v.length < 8 ? 'Min 8 characters' : null,
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 320.ms).fadeIn(),
+                  const Gap(14),
+
+                  TextFormField(
+                    controller: _confirmCtrl,
+                    // Enter submits, so the form can be completed from the
+                    // keyboard without reaching for the mouse.
+                    onFieldSubmitted: (_) => _isLoading ? null : _register(),
+                    decoration: InputDecoration(
+                      labelText: 'Confirm Password *',
+                      prefixIcon: Icon(Icons.lock_outline, color: context.colors.textMuted),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureConfirm ? Icons.visibility_off : Icons.visibility, color: context.colors.textMuted),
+                        onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                      ),
+                    ),
+                    obscureText: _obscureConfirm,
+                    validator: (v) => v != _passwordCtrl.text ? 'Passwords do not match' : null,
+                  ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 360.ms).fadeIn(),
+                  const Gap(28),
+
+                  if (_otpSent) ...[
+                    TextFormField(
+                      controller: _otpCtrl,
+                      // Enter submits, so the form can be completed from the
+                      // keyboard without reaching for the mouse.
+                      onFieldSubmitted: (_) => _isLoading ? null : _register(),
+                      decoration: InputDecoration(
+                        labelText: 'OTP Code *',
+                        prefixIcon: Icon(Icons.verified_user_rounded, color: context.colors.textMuted),
+                      ),
+                      keyboardType: TextInputType.number,
+                      validator: (v) => v == null || v.isEmpty ? 'OTP required' : null,
+                    ).animate().slideX(begin: 0.1, duration: 400.ms, delay: 380.ms).fadeIn(),
+                    const Gap(18),
+                  ],
+
+                  SizedBox(height: 52, child: ElevatedButton.icon(
+                    icon: _isLoading
+                        ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: context.colors.primaryNavy))
+                        : const Icon(Icons.how_to_reg_rounded),
+                    label: Text(
+                        _isLoading
+                            ? 'Processing...'
+                            : (_otpSent ? 'Verify OTP & Create Account' : 'Send OTP'),
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
+                    onPressed: _isLoading ? null : _register,
+                  )).animate().slideY(begin: 0.3, duration: 400.ms, delay: 400.ms).fadeIn(),
+                ],
+              )),
+            ),
+          ))),
+        ]),
+        const AuthBackButton(tooltip: 'Back to portals'),
       ]),
     );
   }

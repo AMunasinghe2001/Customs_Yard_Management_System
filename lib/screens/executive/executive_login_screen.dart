@@ -12,6 +12,7 @@ import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/auth_back_button.dart';
 
 /// Two-step login for the Executive Office: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -480,12 +481,6 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(children: [
-                          IconButton(
-                            icon: Icon(Icons.arrow_back_rounded,
-                                color: context.colors.textSecondary),
-                            onPressed: () => context.go('/'),
-                          ),
-                          const Gap(8),
                           // Named for the DIRECTORATE, like every other
                           // portal (Appeal / Disposal / Valuation Sign In).
                           // 'Executive' named an office nothing else calls it.
@@ -501,9 +496,7 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                           ),
                         ]).animate().fadeIn(duration: 400.ms),
                         const Gap(8),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 48),
-                          child: Text(
+                        Text(
                               _passwordStage
                                   ? (_passwordExpired
                                       ? 'Your password has expired'
@@ -513,8 +506,7 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
                                       : 'Top Management Directorate access',
                               style: TextStyle(
                                   color: context.colors.textSecondary,
-                                  fontSize: 14)),
-                        ).animate().fadeIn(delay: 100.ms),
+                                  fontSize: 14)).animate().fadeIn(delay: 100.ms),
                         const Gap(36),
                         if (_success != null && _otpStage) ...[
                           // Green, not the portal accent: this is a
@@ -773,7 +765,8 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
             },
           ),
         ),
-      ]),
+              const AuthBackButton(tooltip: 'Back to portals'),
+]),
     );
   }
 

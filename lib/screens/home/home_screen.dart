@@ -221,6 +221,7 @@ class _RoleCardState extends State<_RoleCard> {
         ? const Color(0xFF1A1A24)
         : Colors.white;
     return MouseRegion(
+      cursor: SystemMouseCursors.click,
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
       child: AnimatedContainer(
@@ -239,7 +240,6 @@ class _RoleCardState extends State<_RoleCard> {
             filter: ui.ImageFilter.blur(
                 sigmaX: _hovered ? 18 : 0, sigmaY: _hovered ? 18 : 0),
             child: Container(
-              padding: const EdgeInsets.all(28),
               decoration: BoxDecoration(
                 // Hover: a soft accent glow behind the icon that dissolves into
                 // translucent white on both sides (liquid-glass). Idle: neutral.
@@ -270,7 +270,18 @@ class _RoleCardState extends State<_RoleCard> {
                   width: _hovered ? 1.6 : 1,
                 ),
               ),
-              child: Column(mainAxisSize: MainAxisSize.max, children: [
+              // The whole card is a target: clicking anywhere that is not one
+              // of the two buttons goes to this portal's sign-in page.
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => widget.onLogin(context),
+                  borderRadius: BorderRadius.circular(20),
+                  splashColor: widget.accentColor.withOpacity(0.12),
+                  highlightColor: widget.accentColor.withOpacity(0.06),
+                  child: Padding(
+                    padding: const EdgeInsets.all(28),
+                    child: Column(mainAxisSize: MainAxisSize.max, children: [
           AnimatedScale(
             scale: _hovered ? 1.08 : 1.0,
             duration: const Duration(milliseconds: 200),
@@ -382,6 +393,9 @@ class _RoleCardState extends State<_RoleCard> {
             ),
           ],
         ]),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

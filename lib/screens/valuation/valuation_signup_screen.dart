@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../core/providers.dart';
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/auth_back_button.dart';
 
 /// Creates one of the two institutional Valuation Directorate accounts
 /// (DC / SDDC). Position-based, head-office accounts (not personal) — only one
@@ -293,326 +294,323 @@ class _ValuationSignupScreenState extends ConsumerState<ValuationSignupScreen> {
     final accent = context.colors.primaryGold;
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
-      body: Row(children: [
-        Expanded(
-          flex: 5,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  const Color(0xFF0A0F2C),
-                  context.colors.primaryNavy,
-                  context.colors.primaryGold
+      body: Stack(children: [
+        Row(children: [
+          Expanded(
+            flex: 5,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF0A0F2C),
+                    context.colors.primaryNavy,
+                    context.colors.primaryGold
+                  ],
+                ),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
+                          width: 200,
+                          height: 200,
+                          theme: SvgTheme(currentColor: accent))
+                      .animate()
+                      .scale(duration: 700.ms, curve: Curves.easeOutBack)
+                      .fadeIn(),
+                  const Gap(36),
+                  Text('Sri Lanka Customs',
+                      style: TextStyle(
+                          color: accent,
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2)),
+                  const Text('SR Management System',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                          color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
+                  const Gap(28),
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: accent.withOpacity(0.3)),
+                      borderRadius: BorderRadius.circular(24),
+                      color: accent.withOpacity(0.06),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      Icon(Icons.calculate_rounded, color: accent, size: 16),
+                      const Gap(8),
+                      Text('Valuation • Create Account',
+                          style: TextStyle(
+                              color: accent,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600)),
+                    ]),
+                  ),
                 ],
               ),
             ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                        width: 200,
-                        height: 200,
-                        theme: SvgTheme(currentColor: accent))
-                    .animate()
-                    .scale(duration: 700.ms, curve: Curves.easeOutBack)
-                    .fadeIn(),
-                const Gap(36),
-                Text('Sri Lanka Customs',
-                    style: TextStyle(
-                        color: accent,
-                        fontSize: 30,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2)),
-                const Text('SR Management System',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                        color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
-                const Gap(28),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: accent.withOpacity(0.3)),
-                    borderRadius: BorderRadius.circular(24),
-                    color: accent.withOpacity(0.06),
-                  ),
-                  child: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(Icons.calculate_rounded, color: accent, size: 16),
-                    const Gap(8),
-                    Text('Valuation • Create Account',
-                        style: TextStyle(
-                            color: accent,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600)),
-                  ]),
-                ),
-              ],
-            ),
           ),
-        ),
-        Expanded(
-          flex: 4,
-          child: Center(
-            child: SingleChildScrollView(
-              child: Container(
-                constraints: const BoxConstraints(maxWidth: 460),
-                padding: const EdgeInsets.all(48),
-                child: Form(
-                  key: _formKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Row(children: [
-                        IconButton(
-                          icon: Icon(Icons.arrow_back_rounded,
-                              color: context.colors.textSecondary),
-                          onPressed: () => context.go('/valuation/login'),
-                        ),
-                        const Gap(8),
-                        Text('Valuation Sign Up',
-                            style: Theme.of(context).textTheme.headlineMedium),
-                      ]),
-                      const Gap(4),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 48),
-                        child: Text(
-                            'Head-office account — one for DC and one for SDDC',
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 14)),
-                      ),
-                      const Gap(8),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 40),
-                        child: Row(children: [
-                          Text('Already have an account?',
-                              style: TextStyle(
-                                  color: context.colors.textMuted,
-                                  fontSize: 13)),
-                          TextButton(
-                            onPressed: () => context.go('/valuation/login'),
-                            child: Text('Sign In',
-                                style: TextStyle(
-                                    color: accent,
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13)),
-                          ),
-                        ]),
-                      ),
-                      const Gap(20),
-                      if (_success != null) ...[
-                        _banner(context, _success!, accent,
-                            Icons.check_circle_outline),
-                        const Gap(16),
-                      ],
-                      if (_error != null) ...[
-                        _banner(context, _error!, context.colors.dangerRed,
-                            Icons.error_outline),
-                        const Gap(20),
-                      ],
-                      if (!_otpSent) ...[
-                        StyledDropdownFormField<String>(
-                          value: _position,
-                          label: 'Position *',
-                          helperText:
-                              'Only one DC and one SDDC account can exist',
-                          menuWidth: 364,
-                          prefixIcon: Icon(Icons.badge_outlined,
-                              color: context.colors.textMuted),
-                          options: [
-                            for (final e in kValuationPositions.entries)
-                              StyledDropdownOption(e.key, e.value),
-                          ],
-                          onChanged: (v) => setState(() => _position = v),
-                          validator: (v) => v == null || v.isEmpty
-                              ? 'Select a position'
-                              : null,
-                        ),
-                        const Gap(14),
-                        TextFormField(
-                          controller: _emailCtrl,
-                          // Enter submits, so the form can be completed from the
-                          // keyboard without reaching for the mouse.
-                          onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
-                          keyboardType: TextInputType.emailAddress,
-                          decoration: const InputDecoration(
-                            labelText: 'Branch Email *',
-                            helperText: 'OTP is sent here on every login',
-                          ),
-                          validator: (v) => v == null || v.isEmpty
-                              ? 'Email required'
-                              : !v.contains('@')
-                                  ? 'Invalid email'
-                                  : null,
-                        ),
-                        const Gap(14),
-                        TextFormField(
-                          controller: _passwordCtrl,
-                          // Enter submits, so the form can be completed from the
-                          // keyboard without reaching for the mouse.
-                          onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
-                          obscureText: _obscurePass,
-                          decoration: InputDecoration(
-                            labelText: 'Password *',
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                  _obscurePass
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                  color: context.colors.textMuted),
-                              onPressed: () =>
-                                  setState(() => _obscurePass = !_obscurePass),
-                            ),
-                          ),
-                          validator: (v) => v == null || v.length < 8
-                              ? 'Min 8 characters'
-                              : null,
-                        ),
-                        const Gap(14),
-                        TextFormField(
-                          controller: _confirmCtrl,
-                          // Enter submits, so the form can be completed from the
-                          // keyboard without reaching for the mouse.
-                          onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
-                          obscureText: _obscureConfirm,
-                          decoration: InputDecoration(
-                            labelText: 'Confirm Password *',
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                  _obscureConfirm
-                                      ? Icons.visibility_off
-                                      : Icons.visibility,
-                                  color: context.colors.textMuted),
-                              onPressed: () => setState(
-                                  () => _obscureConfirm = !_obscureConfirm),
-                            ),
-                          ),
-                          validator: (v) => v != _passwordCtrl.text
-                              ? 'Passwords do not match'
-                              : null,
-                        ),
-                        const Gap(28),
-                        SizedBox(
-                          height: 52,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: accent,
-                                foregroundColor: Colors.white),
-                            icon: _isLoading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.white))
-                                : const Icon(Icons.mark_email_unread_rounded),
-                            label: Text(_isLoading ? 'Sending...' : 'Send OTP',
-                                style: const TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w700)),
-                            onPressed: _isLoading ? null : () => _sendOtp(),
-                          ),
-                        ),
-                      ],
-                      if (_otpSent) ...[
+          Expanded(
+            flex: 4,
+            child: Center(
+              child: SingleChildScrollView(
+                child: Container(
+                  constraints: const BoxConstraints(maxWidth: 460),
+                  padding: const EdgeInsets.all(48),
+                  child: Form(
+                    key: _formKey,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
                         Row(children: [
-                          Icon(Icons.mark_email_read_rounded,
-                              color: accent, size: 22),
-                          const Gap(10),
-                          Expanded(
-                            child: Text(
-                              'Enter the 6-digit code sent to\n${_emailCtrl.text.trim()}',
+                          Text('Valuation Sign Up',
+                              style: Theme.of(context).textTheme.headlineMedium),
+                        ]),
+                        const Gap(4),
+                        Text(
+                              'Head-office account — one for DC and one for SDDC',
                               style: TextStyle(
                                   color: context.colors.textSecondary,
-                                  fontSize: 13),
-                            ),
-                          ),
-                        ]),
-                        const Gap(20),
-                        TextFormField(
-                          controller: _otpCtrl,
-                          autofocus: true,
-                          keyboardType: TextInputType.number,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                              fontSize: 22,
-                              letterSpacing: 8,
-                              fontWeight: FontWeight.w700),
-                          decoration:
-                              const InputDecoration(labelText: 'OTP Code *'),
-                          onFieldSubmitted: (_) =>
-                              _isLoading ? null : _verifyAndCreate(),
-                        ),
-                        const Gap(14),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(Icons.timer_outlined,
-                                  size: 16,
-                                  color: _secondsLeft > 0
-                                      ? context.colors.textMuted
-                                      : context.colors.dangerRed),
-                              const Gap(6),
-                              Text(
-                                _secondsLeft > 0
-                                    ? 'Code expires in $_countdownText'
-                                    : 'Code expired',
-                                style: TextStyle(
-                                  color: _secondsLeft > 0
-                                      ? context.colors.textSecondary
-                                      : context.colors.dangerRed,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ]),
-                            _buildResendControl(context, accent),
-                          ],
-                        ),
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: TextButton.icon(
-                            onPressed: _isLoading ? null : _editDetails,
-                            icon: Icon(Icons.edit_outlined,
-                                size: 15, color: context.colors.textMuted),
-                            label: Text('Change details',
+                                  fontSize: 14)),
+                        const Gap(8),
+                        Padding(
+                          padding: const EdgeInsets.only(left: 40),
+                          child: Row(children: [
+                            Text('Already have an account?',
                                 style: TextStyle(
                                     color: context.colors.textMuted,
                                     fontSize: 13)),
-                          ),
+                            TextButton(
+                              onPressed: () => context.go('/valuation/login'),
+                              child: Text('Sign In',
+                                  style: TextStyle(
+                                      color: accent,
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 13)),
+                            ),
+                          ]),
                         ),
-                        const Gap(10),
-                        SizedBox(
-                          height: 52,
-                          child: ElevatedButton.icon(
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: accent,
-                                foregroundColor: Colors.white),
-                            icon: _isLoading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2, color: Colors.white))
-                                : const Icon(Icons.how_to_reg_rounded),
-                            label: Text(
-                                _isLoading
-                                    ? 'Processing...'
-                                    : 'Verify OTP & Create Account',
-                                style: const TextStyle(
-                                    fontSize: 15, fontWeight: FontWeight.w700)),
-                            onPressed: _isLoading ? null : _verifyAndCreate,
+                        const Gap(20),
+                        if (_success != null) ...[
+                          _banner(context, _success!, accent,
+                              Icons.check_circle_outline),
+                          const Gap(16),
+                        ],
+                        if (_error != null) ...[
+                          _banner(context, _error!, context.colors.dangerRed,
+                              Icons.error_outline),
+                          const Gap(20),
+                        ],
+                        if (!_otpSent) ...[
+                          StyledDropdownFormField<String>(
+                            value: _position,
+                            label: 'Position *',
+                            helperText:
+                                'Only one DC and one SDDC account can exist',
+                            menuWidth: 364,
+                            prefixIcon: Icon(Icons.badge_outlined,
+                                color: context.colors.textMuted),
+                            options: [
+                              for (final e in kValuationPositions.entries)
+                                StyledDropdownOption(e.key, e.value),
+                            ],
+                            onChanged: (v) => setState(() => _position = v),
+                            validator: (v) => v == null || v.isEmpty
+                                ? 'Select a position'
+                                : null,
                           ),
-                        ),
+                          const Gap(14),
+                          TextFormField(
+                            controller: _emailCtrl,
+                            // Enter submits, so the form can be completed from the
+                            // keyboard without reaching for the mouse.
+                            onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
+                            keyboardType: TextInputType.emailAddress,
+                            decoration: const InputDecoration(
+                              labelText: 'Branch Email *',
+                              helperText: 'OTP is sent here on every login',
+                            ),
+                            validator: (v) => v == null || v.isEmpty
+                                ? 'Email required'
+                                : !v.contains('@')
+                                    ? 'Invalid email'
+                                    : null,
+                          ),
+                          const Gap(14),
+                          TextFormField(
+                            controller: _passwordCtrl,
+                            // Enter submits, so the form can be completed from the
+                            // keyboard without reaching for the mouse.
+                            onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
+                            obscureText: _obscurePass,
+                            decoration: InputDecoration(
+                              labelText: 'Password *',
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                    _obscurePass
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    color: context.colors.textMuted),
+                                onPressed: () =>
+                                    setState(() => _obscurePass = !_obscurePass),
+                              ),
+                            ),
+                            validator: (v) => v == null || v.length < 8
+                                ? 'Min 8 characters'
+                                : null,
+                          ),
+                          const Gap(14),
+                          TextFormField(
+                            controller: _confirmCtrl,
+                            // Enter submits, so the form can be completed from the
+                            // keyboard without reaching for the mouse.
+                            onFieldSubmitted: (_) => _isLoading ? null : _sendOtp(),
+                            obscureText: _obscureConfirm,
+                            decoration: InputDecoration(
+                              labelText: 'Confirm Password *',
+                              suffixIcon: IconButton(
+                                icon: Icon(
+                                    _obscureConfirm
+                                        ? Icons.visibility_off
+                                        : Icons.visibility,
+                                    color: context.colors.textMuted),
+                                onPressed: () => setState(
+                                    () => _obscureConfirm = !_obscureConfirm),
+                              ),
+                            ),
+                            validator: (v) => v != _passwordCtrl.text
+                                ? 'Passwords do not match'
+                                : null,
+                          ),
+                          const Gap(28),
+                          SizedBox(
+                            height: 52,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: Colors.white),
+                              icon: _isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.mark_email_unread_rounded),
+                              label: Text(_isLoading ? 'Sending...' : 'Send OTP',
+                                  style: const TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.w700)),
+                              onPressed: _isLoading ? null : () => _sendOtp(),
+                            ),
+                          ),
+                        ],
+                        if (_otpSent) ...[
+                          Row(children: [
+                            Icon(Icons.mark_email_read_rounded,
+                                color: accent, size: 22),
+                            const Gap(10),
+                            Expanded(
+                              child: Text(
+                                'Enter the 6-digit code sent to\n${_emailCtrl.text.trim()}',
+                                style: TextStyle(
+                                    color: context.colors.textSecondary,
+                                    fontSize: 13),
+                              ),
+                            ),
+                          ]),
+                          const Gap(20),
+                          TextFormField(
+                            controller: _otpCtrl,
+                            autofocus: true,
+                            keyboardType: TextInputType.number,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                                fontSize: 22,
+                                letterSpacing: 8,
+                                fontWeight: FontWeight.w700),
+                            decoration:
+                                const InputDecoration(labelText: 'OTP Code *'),
+                            onFieldSubmitted: (_) =>
+                                _isLoading ? null : _verifyAndCreate(),
+                          ),
+                          const Gap(14),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.timer_outlined,
+                                    size: 16,
+                                    color: _secondsLeft > 0
+                                        ? context.colors.textMuted
+                                        : context.colors.dangerRed),
+                                const Gap(6),
+                                Text(
+                                  _secondsLeft > 0
+                                      ? 'Code expires in $_countdownText'
+                                      : 'Code expired',
+                                  style: TextStyle(
+                                    color: _secondsLeft > 0
+                                        ? context.colors.textSecondary
+                                        : context.colors.dangerRed,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ]),
+                              _buildResendControl(context, accent),
+                            ],
+                          ),
+                          Align(
+                            alignment: Alignment.centerLeft,
+                            child: TextButton.icon(
+                              onPressed: _isLoading ? null : _editDetails,
+                              icon: Icon(Icons.edit_outlined,
+                                  size: 15, color: context.colors.textMuted),
+                              label: Text('Change details',
+                                  style: TextStyle(
+                                      color: context.colors.textMuted,
+                                      fontSize: 13)),
+                            ),
+                          ),
+                          const Gap(10),
+                          SizedBox(
+                            height: 52,
+                            child: ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                  backgroundColor: accent,
+                                  foregroundColor: Colors.white),
+                              icon: _isLoading
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.how_to_reg_rounded),
+                              label: Text(
+                                  _isLoading
+                                      ? 'Processing...'
+                                      : 'Verify OTP & Create Account',
+                                  style: const TextStyle(
+                                      fontSize: 15, fontWeight: FontWeight.w700)),
+                              onPressed: _isLoading ? null : _verifyAndCreate,
+                            ),
+                          ),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               ),
             ),
           ),
+        ]),
+        AuthBackButton(
+          tooltip: 'Back to sign in',
+          onPressed: () => context.go('/valuation/login'),
         ),
       ]),
     );

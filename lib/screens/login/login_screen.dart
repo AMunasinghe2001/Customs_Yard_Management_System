@@ -10,6 +10,7 @@ import '../../widgets/forgot_password_panel.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
+import '../../widgets/auth_back_button.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
@@ -228,21 +229,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(children: [
-                    IconButton(
-                      icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
-                      // Back to the Yard Access page (Officer / DC-SDDC tiles),
-                      // not the portal home.
-                      onPressed: () => context.go('/yard-access'),
-                    ),
-                    const Gap(8),
                     Text('Officer Sign In', style: Theme.of(context).textTheme.headlineMedium),
                   ]).animate().fadeIn(duration: 400.ms),
                   const Gap(8),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 48),
-                    child: Text('Enter your credentials to access the system',
-                        style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
-                  ).animate().fadeIn(delay: 100.ms),
+                  Text('Enter your credentials to access the system',
+                        style: TextStyle(color: context.colors.textSecondary, fontSize: 14)).animate().fadeIn(delay: 100.ms),
                   const Gap(40),
                   if (error != null) ...[
                     Container(
@@ -350,7 +341,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             },
           ),
         ),
-      ]),
+              AuthBackButton(
+          tooltip: 'Back to yard access',
+          onPressed: () => context.go('/yard-access'),
+        ),
+]),
     );
   }
 }

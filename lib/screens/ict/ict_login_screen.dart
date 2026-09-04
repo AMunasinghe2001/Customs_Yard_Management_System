@@ -11,6 +11,7 @@ import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
+import '../../widgets/auth_back_button.dart';
 
 /// Two-step login for the ICT Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -402,27 +403,19 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Row(children: [
-                    IconButton(
-                      icon: Icon(Icons.arrow_back_rounded, color: context.colors.textSecondary),
-                      onPressed: () => context.go('/'),
-                    ),
-                    const Gap(8),
                     Text(
                       _passwordStage ? 'Change Password' : (_otpStage ? 'Verify OTP' : 'ICT Directorate Sign In'),
                       style: Theme.of(context).textTheme.headlineMedium,
                     ),
                   ]).animate().fadeIn(duration: 400.ms),
                   const Gap(8),
-                  Padding(
-                    padding: const EdgeInsets.only(left: 48),
-                    child: Text(
+                  Text(
                       _passwordStage
                           ? 'Change your password to continue'
                           : (_otpStage
                               ? 'Enter verification code sent to your email'
                               : 'Restricted to ICT Officers only'),
-                      style: TextStyle(color: context.colors.textSecondary, fontSize: 14)),
-                  ).animate().fadeIn(delay: 100.ms),
+                      style: TextStyle(color: context.colors.textSecondary, fontSize: 14)).animate().fadeIn(delay: 100.ms),
                   const Gap(40),
                   if (_error != null) ...[
                     Container(
@@ -676,7 +669,8 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
           },
         ),
       ),
-    ]),
+            const AuthBackButton(tooltip: 'Back to portals'),
+]),
     );
   }
 }

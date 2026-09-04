@@ -7,6 +7,7 @@ import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../widgets/auth_back_button.dart';
 
 /// Split-screen yard-access chooser: left branding, right Officer / Admin tiles.
 /// Replaces the old dialog approach to match the Disposal / Appeal login style.
@@ -107,26 +108,17 @@ class YardAccessScreen extends ConsumerWidget {
                     children: [
                       // Back + heading
                       Row(children: [
-                        IconButton(
-                          icon: Icon(Icons.arrow_back_rounded,
-                              color: context.colors.textSecondary),
-                          onPressed: () => context.go('/'),
-                        ),
-                        const Gap(8),
                         Text('Yard Access',
                             style: Theme.of(context)
                                 .textTheme
                                 .headlineMedium),
                       ]).animate().fadeIn(duration: 400.ms),
                       const Gap(6),
-                      Padding(
-                        padding: const EdgeInsets.only(left: 48),
-                        child: Text(
+                      Text(
                             'Choose how you want to sign in',
                             style: TextStyle(
                                 color: context.colors.textSecondary,
-                                fontSize: 14)),
-                      ).animate().fadeIn(delay: 100.ms),
+                                fontSize: 14)).animate().fadeIn(delay: 100.ms),
                       const Gap(36),
 
                       // Officer tile
@@ -207,7 +199,8 @@ class YardAccessScreen extends ConsumerWidget {
             },
           ),
         ),
-      ]),
+              const AuthBackButton(tooltip: 'Back to portals'),
+]),
     );
   }
 }

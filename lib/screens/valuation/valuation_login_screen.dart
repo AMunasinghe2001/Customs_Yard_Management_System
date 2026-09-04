@@ -12,6 +12,7 @@ import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/auth_back_button.dart';
 
 /// Two-step login for the Valuation Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -480,12 +481,6 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Row(children: [
-                          IconButton(
-                            icon: Icon(Icons.arrow_back_rounded,
-                                color: context.colors.textSecondary),
-                            onPressed: () => context.go('/'),
-                          ),
-                          const Gap(8),
                           // Flexible: the title sits beside a back
                           // button in a bare Row, so a longer one
                           // ('Top Management Sign In') had nowhere
@@ -498,9 +493,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                           ),
                         ]).animate().fadeIn(duration: 400.ms),
                         const Gap(8),
-                        Padding(
-                          padding: const EdgeInsets.only(left: 48),
-                          child: Text(
+                        Text(
                               _passwordStage
                                   ? (_passwordExpired
                                       ? 'Your password has expired'
@@ -510,8 +503,7 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
                                       : 'Valuation Directorate access',
                               style: TextStyle(
                                   color: context.colors.textSecondary,
-                                  fontSize: 14)),
-                        ).animate().fadeIn(delay: 100.ms),
+                                  fontSize: 14)).animate().fadeIn(delay: 100.ms),
                         const Gap(36),
                         if (_success != null && _otpStage) ...[
                           // Green, not the portal accent: this is a
@@ -770,7 +762,8 @@ class _ValuationLoginScreenState extends ConsumerState<ValuationLoginScreen> {
             },
           ),
         ),
-      ]),
+              const AuthBackButton(tooltip: 'Back to portals'),
+]),
     );
   }
 
