@@ -1955,3 +1955,25 @@ Now they are genuinely two figures: **Goods Value** = the SR form's declared val
 ⚠️ **The "× 51 vs × 40" report was a STALE BUILD, not a bug.** Checked against the live DB: that item reads 40 in `package_items`, in `forfeited_packages` and in its warehouse entry, and the popup's Value line and Total Packages line both read the same `highlightedItem.quantity`. Migrations 13/14 had already fixed it; the running binary predated them. **Check the exe timestamp before chasing a reported number.**
 
 Pinned by [goods_lifecycle_in_sr_popup_test.dart](test/goods_lifecycle_in_sr_popup_test.dart).
+
+## The seal is a clock, not a permission (2026-09-05)
+
+⚠️ **Two wrong answers were tried before the right one.** The valuation column showed the same number as Goods Value on the yard (`useItemValue`), so the first fix renamed the header and the second **sealed the yard permanently** (`yardSealed`). That was worse: a **closed** tender's valuation could then never be read on the yard at all, and the yard's own popup meanwhile used `!readOnly && !sale.saleEnded` — showing the reserve price while bidding was **open**, the exact leak the seal exists to stop.
+
+**The rule is one line and it is the same for everyone: `sealedUntilSale: !sale.saleEnded`.** The valuation is the reserve price — secret while bidding is open, ordinary information the moment the tender closes. No portal check anywhere near it. Both `useItemValue` and `yardSealed` are deleted.
+
+## Seeding a final outcome means walking the whole route (2026-09-05)
+
+`postgres/17_final_outcomes_for_every_route.sql`. The DB had **5** outcomes (auction 1, convert 2, destroy 1, government_use 1), **no** re-exports and **nothing delivered** — so Re-exported Goods showed only yard-decided rows (its Decided By column could only ever print one value), Removed from the Premises was empty, and the new Delivery pill had no delivered state to show. Now all six outcomes have rows and two are handed over.
+
+⚠️ **A proposal row alone is invisible.** `getExhaustedUnsoldPackages` requires the full route — 4 tenders → committee appointed → **ADG submits** its figure → one more tender at that price → still unsold. The migration walks all of it, including a step **1b** for committees that were *appointed but never valued* (several existed, with null `submitted_at`, which dated the extra round nowhere).
+
+Four traps, each caught by the verify block rather than by reading the data:
+- ⚠️ **Key by `forfeited_packages.id`, never by SR number** — forfeiture is per item, so one SR has several forfeited rows (SR/47/2026 has three) and only one went to tender.
+- ⚠️ **Four rounds is not enough: none of them may have SOLD.** Latex Gloves and Industrial Bearings looked like ideal candidates and each already had a sold round — an outcome there would have put the same goods on a Final Outcome page *and* on Sold Goods.
+- ⚠️ **Perishables are exempt from the route** (no warehouse, no appeal window, decided at once), so the verify must not demand tenders of them — two correct existing outcomes failed until it did.
+- ⚠️ **Nothing may be dated in the future.** Dates derived from each package's own committee timeline landed after today for the recent ones.
+
+There is no `tender_sale_items.unsold` column — a round is unsold when `sold = false` and its deadline has passed.
+
+**`tool/apply_sql_whole.dart`** (new) runs a migration as ONE block via `QueryMode.simple`. ⚠️ `apply_sql.dart` splits statements itself and its splitter **silently drops** ones it cannot parse (an apostrophe in a `--` comment, a multi-row VALUES): it reported "completed successfully" having inserted **nothing**. Use the whole-file runner for anything with prose comments or CTE inserts.

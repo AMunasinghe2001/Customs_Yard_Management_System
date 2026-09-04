@@ -630,11 +630,20 @@ void main() {
       expect(dash, contains('sealedUntilSale: !widget.sale.saleEnded'));
     });
 
-    test('the yard never sees the reserve price at all', () {
-      // It is Central-Disposal-only, so on the yard the cell SEALS rather than
-      // printing something else in its place.
-      expect(dash, contains('yardSealed: widget.readOnly'));
-      expect(dash, contains('yardSealed: readOnly'));
+    test('the CLOCK is the whole rule, for every portal', () {
+      // ⚠️ Two wrong answers were tried before this one. Substituting the
+      // declared value on the yard made a row print the same number twice;
+      // sealing the yard permanently meant a CLOSED tender's valuation could
+      // never be read there at all. The valuation is the reserve price:
+      // secret while bidding is open, ordinary information the moment the
+      // tender closes -- and that is the same for everyone.
+      // The PARAMETERS are gone. The comment explaining why useItemValue was
+      // wrong deliberately stays -- it is the record of the bug.
+      expect(dash, isNot(contains('yardSealed')));
+      expect(dash, isNot(contains('useItemValue:')));
+      expect(dash, isNot(contains('final bool useItemValue')));
+      // No portal check anywhere near the seal.
+      expect(dash, isNot(contains('!readOnly && !sale.saleEnded')));
     });
 
     test('the Tender Sale table shows Goods Value, not Goods Description', () {
@@ -654,9 +663,19 @@ void main() {
       expect(flat, contains("final effQty = (qty != null && qty! > 0) ? qty! : it.quantity;"));
     });
 
-    test('both seals go through the one branch', () {
+    test('the seal is one branch, on the clock alone', () {
       final flatDash = dash.replaceAll(RegExp(r'\s+'), ' ');
-      expect(flatDash, contains('if (sealedUntilSale || yardSealed) { return const SealedValuation(compact: true); }'));
+      expect(flatDash, contains('if (sealedUntilSale) { return const SealedValuation(compact: true); }'));
+    });
+
+    test('the popup seals on the same clock the table does', () {
+      // It used to read `!readOnly && !sale.saleEnded`, which showed the
+      // reserve price in the yard's popup while bidding was still OPEN -- the
+      // exact leak the seal exists to stop -- while the table beside it
+      // sealed the same figure permanently.
+      expect(dash, contains('valuationSealedUntilSale: !sale.saleEnded'));
+      final flat = dash.replaceAll(RegExp(r'\s+'), ' ');
+      expect(flat, contains('valuationSealedUntilSale: !widget.sale.saleEnded'));
     });
   });
 

@@ -3208,12 +3208,6 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                       DataCell(Center(
                           child: _ValuationCell(
                               f: f,
-                              // ⚠️ NOT useItemValue. The reserve price is
-                              // Central-Disposal-only, so on the yard this
-                              // cell stays sealed rather than falling back to
-                              // the declared value -- the yard reads that in
-                              // the Goods Value column beside it.
-                              yardSealed: widget.readOnly,
                               // Same clock that gates Mark Sold below.
                               sealedUntilSale: !widget.sale.saleEnded,
                               qty: f?.entryQty ?? r.item?.quantity))),
@@ -6192,7 +6186,6 @@ class DestructionCard extends ConsumerWidget {
                       DataCell(Center(
                           child: _ValuationCell(
                         f: f,
-                        yardSealed: readOnly,
                         // Hidden until the destruction sale has actually run —
                         // same rule as the tender sale card.
                         sealedUntilSale: !sale.saleEnded,
@@ -6328,8 +6321,15 @@ class DestructionCard extends ConsumerWidget {
                                         ? null
                                         : (f?.entryQty ?? r.item?.quantity),
                                     // Sealed until the destruction sale runs.
-                                    valuationSealedUntilSale:
-                                        !readOnly && !sale.saleEnded,
+                                    // ⚠️ The clock alone, for everyone. The
+                                    // `!readOnly &&` that used to be here
+                                    // meant the yard's popup showed the
+                                    // reserve price while bidding was still
+                                    // OPEN -- the exact leak the seal exists
+                                    // to stop -- while the table beside it
+                                    // sealed it permanently. One rule: secret
+                                    // until the sale closes, ordinary after.
+                                    valuationSealedUntilSale: !sale.saleEnded,
                                   ),
                                 ),
                               )
@@ -7636,15 +7636,6 @@ class _GoodsValueCell extends StatelessWidget {
 
 class _ValuationCell extends StatelessWidget {
   final ForfeitedPackageModel? f;
-  /// True in the yard's read-only views, where the Valuation Directorate's
-  /// price must NOT be shown at all.
-  ///
-  /// ⚠️ This used to substitute the SR item's declared value instead. That put
-  /// the SAME number in this column and in Goods Value beside it, under two
-  /// different names, and made every row look like it held two valuations that
-  /// disagreed. The yard reads the declared value in its own column; here it
-  /// gets the seal, which says the figure exists and is not theirs to see.
-  final bool yardSealed;
 
   /// The quantity shown in the row's Qty column — the valuation must multiply
   /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
@@ -7664,7 +7655,6 @@ class _ValuationCell extends StatelessWidget {
   final bool sealedUntilSale;
   const _ValuationCell(
       {required this.f,
-      this.yardSealed = false,
       this.qty,
       this.overrideUnitCost,
       this.isRevalued = false,
@@ -7677,9 +7667,13 @@ class _ValuationCell extends StatelessWidget {
     // shown here still tells a bidder what the reserve is worth, so it stays
     // hidden until the sale has ended, exactly like every other Valuation
     // column. Checked first so the figure is never even computed.
-    // Sealed either because the sale is still open (everyone) or because this
-    // is the yard, which never sees the reserve price.
-    if (sealedUntilSale || yardSealed) {
+    // ⚠️ The CLOCK is the whole rule, and it is the same rule for everyone.
+    // The valuation is the reserve price: secret while bidding is open,
+    // ordinary information the moment the tender closes. Sealing it on the
+    // yard permanently -- which an earlier pass did, to keep the column from
+    // duplicating Goods Value -- meant a closed tender's figure could never be
+    // read there at all, which is not what a seal is for.
+    if (sealedUntilSale) {
       return const SealedValuation(compact: true);
     }
     final fp = f;
