@@ -20,7 +20,7 @@ const _accent = Color(0xFF8E3A5F);
 
 void main() {
   testWidgets('the toolbar, as painted', (tester) async {
-    tester.view.physicalSize = const Size(1200, 200);
+    tester.view.physicalSize = const Size(860, 200);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 

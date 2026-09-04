@@ -71,7 +71,8 @@ if ($Stop) {
 New-Item -ItemType Directory -Force -Path $slot | Out-Null
 
 # Private %APPDATA% for this process only, so the build-dir below applies here
-# and nowhere else.
+# and nowhere else. The real one is kept, to build the shared copy afterwards.
+$realAppData = $env:APPDATA
 $env:APPDATA = $slot
 $buildDir = ".flutter-instances/$slotName/out"   # relative: Flutter requires it
 @{ 'build-dir' = $buildDir } | ConvertTo-Json |
@@ -91,4 +92,32 @@ Write-Host "  built: $exe" -ForegroundColor DarkGray
 if (-not $NoLaunch) {
     $p = Start-Process -FilePath $exe -PassThru
     Write-Host "  launched pid $($p.Id) -- your own windows were not touched." -ForegroundColor Cyan
+}
+
+# ── Also refresh the SHARED build, if nothing is holding it ─────────────────
+# ⚠️ Isolating the build fixed one problem and created a worse one: fixes
+# stopped reaching build\windows\..., which is the exe you launch. So a build
+# in this slot is followed by a build of the shared one -- but ONLY when no app
+# is holding its lock. If one is, this says so and changes nothing, because
+# closing your window to relink is the thing the slot exists to avoid.
+$sharedExe = Join-Path $root (Join-Path 'build' (Join-Path 'windows' (Join-Path 'x64' (Join-Path 'runner' (Join-Path $mode 'cus_yard_management.exe')))))
+$locked = $false
+if (Test-Path $sharedExe) {
+    try { [IO.File]::Open($sharedExe, 'Open', 'Write', 'None').Close() }
+    catch { $locked = $true }
+}
+
+if ($locked) {
+    Write-Host ''
+    Write-Host '  NOTE: build\windows\... is locked by a running app, so it was' -ForegroundColor Yellow
+    Write-Host '        NOT refreshed. Close that window and re-run this, or run' -ForegroundColor Yellow
+    Write-Host '        `flutter run -d windows` yourself, to see these changes.' -ForegroundColor Yellow
+} else {
+    $env:APPDATA = $realAppData          # back to the default build directory
+    & flutter build windows $modeFlag | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '  shared build refreshed: your usual launch is up to date.' -ForegroundColor DarkGray
+    } else {
+        Write-Host '  shared build FAILED -- your usual launch is stale.' -ForegroundColor Red
+    }
 }
