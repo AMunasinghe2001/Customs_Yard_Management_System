@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
@@ -1094,6 +1095,16 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ⚠️ The same staged entrance Activity Logs plays: the
+                  // measures, then the filters, then the rows. Two modules of
+                  // one console must not arrive differently — a page that
+                  // simply appears, next to one that unfolds, reads as the
+                  // one that failed.
+                  //
+                  // On the SUBTREES rather than on the module, because the
+                  // stagger is the point: one fade over the whole page would
+                  // put the toolbar and the table on the same beat.
+                  // _IctModule still carries the module itself in.
                   // KPI Overview Cards
                   Row(children: [
                     Expanded(
@@ -1135,7 +1146,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                         color: accent,
                       ),
                     ),
-                  ]),
+                  ]).animate().fadeIn(duration: 300.ms),
                   const Gap(28),
 
                   // ── Toolbar ───────────────────────────────────
@@ -1232,7 +1243,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                       accent: accent,
                       onPressed: _showAddStaffDialog,
                     ),
-                  ]),
+                  ]).animate().fadeIn(duration: 300.ms, delay: 120.ms),
                   const Gap(20),
 
                   // ── Staff table ─────────────────────────
@@ -1439,7 +1450,7 @@ class _IctDashboardScreenState extends ConsumerState<IctDashboardScreen>
                                   );
                                 }).toList(),
                               )),
-                  ),
+                  ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn(),
                 ],
               ),
             ),

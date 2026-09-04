@@ -403,6 +403,27 @@ void main() {
     // both "show me different rows", so they must not arrive differently.
     // The table card plays .slideY(begin: 0.05).fadeIn(); the rail used to
     // nudge the page in by a flat 12px, and only one of them looked meant.
+    // ⚠️ And every module stages its own arrival the same way: the measures
+    // or the first card, then the filters, then the rows. Staff Accounts and
+    // Yards & Directorates had none of this, so switching to them from
+    // Activity Logs looked like the animation had failed rather than like a
+    // different page.
+    test('all four modules play the same entrance', () {
+      for (final entry in {
+        'ict_dashboard_screen.dart': ict,
+        'activity_logs_tab.dart': logs,
+        'directorate_access_tab.dart': access,
+        'yard_directorate_tab.dart': yards,
+      }.entries) {
+        expect(entry.value, contains('slideY(begin: 0.05, duration: 400.ms)'),
+            reason: '${entry.key} does not bring its table card in');
+      }
+      // The two that also carry a toolbar fade it in first.
+      for (final src in [ict, logs]) {
+        expect(src, contains('fadeIn(duration: 300.ms, delay: 120.ms)'));
+      }
+    });
+
     test('the rail lifts a module by the same fraction the card does', () {
       final module = ict.substring(ict.indexOf('class _IctModule'));
       expect(module, contains('Curves.easeOutCubic'));

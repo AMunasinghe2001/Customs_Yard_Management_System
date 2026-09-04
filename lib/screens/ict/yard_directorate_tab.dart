@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:gap/gap.dart';
 
 import '../../core/directorates.dart';
@@ -79,7 +80,7 @@ class YardDirectorateTab extends ConsumerWidget {
                 },
               ),
             ),
-          ),
+          ).animate().slideY(begin: 0.05, duration: 400.ms).fadeIn(),
           const Gap(24),
           IctSectionCard(
             icon: Icons.warehouse_rounded,
@@ -128,9 +129,12 @@ class YardDirectorateTab extends ConsumerWidget {
                 ),
               ),
             ),
-          ),
+          )
+              .animate()
+              .slideY(begin: 0.05, duration: 400.ms, delay: 80.ms)
+              .fadeIn(delay: 80.ms),
           const Gap(28),
-          _SrNumberNote(accent: accent),
+          _SrNumberNote(accent: accent).animate().fadeIn(delay: 200.ms),
         ],
       ),
     );

@@ -35,16 +35,21 @@ const double kIctPillRadius = 6;
 /// ⚠️ ONE height for every control in the console — filters, search boxes,
 /// toolbar buttons, the header's own controls. Nothing in ICT sets its own.
 ///
-/// 34: a console is a dense screen, and this height is multiplied by the
-/// caption above it and the padding around it before it reaches the page.
-const double kIctControlHeight = 34;
+/// ⚠️ 42 — the height the FILTERS have always looked, not the smaller one the
+/// search box happened to have.
+///
+/// Both were equalised at 34 first, which fixed the mismatch by shrinking the
+/// dropdowns to the wrong one of the two. A filter is a control someone reads
+/// a value out of and clicks; 34 left its text sitting tight against its own
+/// border. The right move was to raise the search box, not lower the filters.
+const double kIctControlHeight = 42;
 
 /// ⚠️ The whole filter strip, capped. A caption, a control and the padding
 /// around them — and nothing else. The strip sits above the table on every
 /// page, so every pixel it takes is a row the officer cannot see without
 /// scrolling, and it is the first thing to grow when a control starts setting
 /// its own height. A test measures it.
-const double kIctToolbarMaxHeight = 66;
+const double kIctToolbarMaxHeight = 74;
 
 /// A control inside a table row, which has less height to give.
 const double kIctDenseHeight = 30;
@@ -565,7 +570,7 @@ class IctSearchField extends StatelessWidget {
           filled: true,
           fillColor: c.surfaceDark,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
           border: border,
           enabledBorder: border,
           focusedBorder: OutlineInputBorder(
@@ -649,7 +654,7 @@ class IctSelect extends StatelessWidget {
               menuWidth: menuWidth,
               fillColor: set ? accent.withOpacity(0.07) : c.surfaceDark,
               contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               prefixIcon: Icon(icon,
                   size: 16, color: set ? accent : c.textMuted),
               // ⚠️ Constrained, exactly as IctSearchField constrains its own.
