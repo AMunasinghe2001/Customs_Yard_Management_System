@@ -999,6 +999,91 @@ class AuditLogPage {
   const AuditLogPage({required this.rows, required this.total});
 }
 
+/// One row of a disposition page, as the `disposition_rows` view returns it.
+///
+/// ⚠️ A row here is an ITEM or a warehouse ENTRY, never a package: one SR can
+/// produce several rows, from three different sources, and the page shows them
+/// interleaved by date. The screens used to build this shape in Dart from
+/// every package in the yard; the view builds it in SQL so a page can be asked
+/// for by number.
+class DispositionRow {
+  /// Unique across all three sources ('E:<id>' / 'I:<id>' / 'P:<id>'), so a
+  /// list of these can be keyed without colliding.
+  final String rowKey;
+
+  /// 'entry' | 'item' | 'proposal' — which route recorded this disposition.
+  /// The Re-exported page shows it as a Decided By pill (Yard vs Top
+  /// Management), since the two carry quite different histories.
+  final String source;
+
+  final String packageId;
+  final String srNumber;
+  final String consigneeName;
+  final String? yard;
+  final String? itemId;
+  final String? entryId;
+  final String? proposalId;
+  final String finalTag;
+  final String itemName;
+  final String? hsCode;
+  final int quantity;
+  final String? note;
+  final String? officer;
+
+  /// The one date the page sorts on, whichever source the row came from.
+  final DateTime happenedAt;
+
+  const DispositionRow({
+    required this.rowKey,
+    required this.source,
+    required this.packageId,
+    required this.srNumber,
+    required this.consigneeName,
+    required this.yard,
+    required this.itemId,
+    required this.entryId,
+    required this.proposalId,
+    required this.finalTag,
+    required this.itemName,
+    required this.hsCode,
+    required this.quantity,
+    required this.note,
+    required this.officer,
+    required this.happenedAt,
+  });
+
+  factory DispositionRow.fromJson(Map<String, dynamic> json) => DispositionRow(
+        rowKey: json['row_key'].toString(),
+        source: json['source']?.toString() ?? 'entry',
+        packageId: json['package_id'].toString(),
+        srNumber: json['sr_number']?.toString() ?? '',
+        consigneeName: json['consignee_name']?.toString() ?? '',
+        yard: json['yard']?.toString(),
+        itemId: json['item_id']?.toString(),
+        entryId: json['entry_id']?.toString(),
+        proposalId: json['proposal_id']?.toString(),
+        finalTag: json['final_tag']?.toString() ?? '',
+        itemName: json['item_name']?.toString() ?? '—',
+        hsCode: json['hs_code']?.toString(),
+        quantity: (parseDbNum(json['quantity']) ?? 0).round(),
+        note: json['note']?.toString(),
+        officer: json['officer']?.toString(),
+        happenedAt: parseDbDate(json['happened_at']) ?? DateTime(1970),
+      );
+
+  /// True when Top Management ruled this, rather than the yard recording it.
+  bool get isTopManagement => source == 'proposal';
+}
+
+/// One page of [DispositionRow], with the total the pager needs.
+class DispositionPage {
+  final List<DispositionRow> rows;
+  final int total;
+  const DispositionPage({required this.rows, required this.total});
+
+  static const empty = DispositionPage(rows: [], total: 0);
+}
+
 class AuditLogModel {
   final String id;
   final String userId;

@@ -381,6 +381,86 @@ final livePackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
 /// Rows per page on the Package History table.
 const int kPackagePageSize = 20;
 
+// ── Disposition pages: server-side ─────────────────────────────────────────
+/// Rows per page on the disposition tables.
+///
+/// Deliberately equal to `kClientPageSize` in the widgets layer -- the pager
+/// under the table has to agree with the query above it or the page numbers
+/// mean nothing. It is redeclared rather than imported because the core layer
+/// does not depend on widgets.
+const int kDispositionPageSize = 20;
+
+/// What one disposition page is asking for.
+///
+/// ⚠️ A value type with `==` and `hashCode`, because it is a provider FAMILY
+/// key: two identical queries must be the SAME key or every rebuild opens a
+/// fresh request and the page flickers through loading forever.
+@immutable
+class DispositionQuery {
+  /// 'SOLD' | 'DESTROYED' | 'RE-EXPORTED' | 'OTHER'.
+  final String finalTag;
+  final int page;
+  final String? search;
+  final String? yard;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
+  /// Delivered / Pending on Sold and Destroyed. Null is "All" — which is a
+  /// third answer, not the absence of one.
+  final bool? delivered;
+
+  const DispositionQuery({
+    required this.finalTag,
+    this.page = 0,
+    this.search,
+    this.yard,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+    this.delivered,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is DispositionQuery &&
+      other.finalTag == finalTag &&
+      other.page == page &&
+      other.search == search &&
+      other.yard == yard &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year &&
+      other.delivered == delivered;
+
+  @override
+  int get hashCode => Object.hash(
+      finalTag, page, search, yard, dateStart, dateEnd, year, delivered);
+}
+
+/// One page of a disposition table, filtered and paged in SQL.
+///
+/// Watches the same change triggers the old client-side path did, so an
+/// officer recording a disposition still sees the table update -- the work
+/// moved to the database, the liveness did not.
+final dispositionPageProvider =
+    FutureProvider.family<DispositionPage, DispositionQuery>((ref, q) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getDispositionRowsPaged(
+        finalTag: q.finalTag,
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yard: q.yard,
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+        delivered: q.delivered,
+      );
+});
+
 /// Every SR number in Goods History, for its year filter.
 ///
 /// Goods History pages on the server, so the loaded rows are only ever one

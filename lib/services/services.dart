@@ -709,6 +709,73 @@ class PackageService {
     ];
   }
 
+  /// One page of a disposition table (Sold / Destroyed / Re-exported / Other),
+  /// straight out of the `disposition_rows` view.
+  ///
+  /// ⚠️ Filtering and paging both happen in SQL. The screens used to fetch
+  /// EVERY package in the yard, expand each into item rows in Dart, sort the
+  /// lot and then `.skip().take()` -- so drawing page 1 cost the whole table,
+  /// and the cost grew with the yard rather than with the page.
+  ///
+  /// [finalTag] is the page: 'SOLD', 'DESTROYED', 'RE-EXPORTED', 'OTHER'.
+  Future<DispositionPage> getDispositionRowsPaged({
+    required String finalTag,
+    required int offset,
+    required int limit,
+    String? search,
+    String? yard,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+
+    /// The Delivered / Pending sub-filter on Sold and Destroyed. Null means
+    /// "All", which is not the same as either.
+    bool? delivered,
+  }) async {
+    // ⚠️ ONE closure, applied to the rows query and the count query alike. Two
+    // separately-written filters drift, and the symptom is a pager whose total
+    // disagrees with the rows under it.
+    PgQuery narrow(PgQuery q) {
+      q = q.eq('final_tag', finalTag);
+      if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'item_name.ilike.%$s%');
+      }
+      if (year != null && year.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$year');
+      }
+      if (dateStart != null) {
+        final start = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('happened_at', start.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final end =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('happened_at', end.toIso8601String());
+      }
+      if (delivered != null) q = q.eq('delivered', delivered);
+      return q;
+    }
+
+    final rowsData = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('disposition_rows').select('*'))
+            .order('happened_at', ascending: false)
+            .range(offset, offset + limit - 1));
+
+    // Count only -- no rows cross the wire for the pager's total.
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('disposition_rows')).count());
+
+    return DispositionPage(
+      rows: (rowsData as List)
+          .map((e) => DispositionRow.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      total: total as int,
+    );
+  }
+
   /// (for the pager). [year] matches the SR-number suffix '/YYYY'.
   Future<({List<PackageModel> rows, int total})> getPackagesPaged({
     required int offset,
