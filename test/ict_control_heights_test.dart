@@ -5,6 +5,8 @@
 // kIctControlHeight — and is still wrong on screen, because Material gives
 // buttons a minimum tap target and an InputDecorator its own intrinsic
 // height, and either can beat the box around it.
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/theme.dart';
@@ -283,5 +285,60 @@ void main() {
     // fill theirs.
     expect(ink.top, field.top);
     expect(ink.bottom, field.bottom);
+  });
+
+  // ⚠️ A card header is not a toolbar. In a toolbar the primary button stands
+  // in a row of fields and matches them; in a header it stands beside a title
+  // and a subtitle — about 36pt of text — and at the field height it was the
+  // TALLEST thing in the strip, so it decided how tall the header was and
+  // pushed the rule under it down. A header's height should be set by its
+  // words.
+  testWidgets('a card header does not grow to fit its button', (tester) async {
+    tester.view.physicalSize = const Size(1400, 400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    Widget card({List<Widget> actions = const []}) => MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: IctSectionCard(
+              icon: Icons.account_balance_rounded,
+              title: 'Directorates',
+              subtitle: 'Head-office divisions. The SR prefix goes in front.',
+              badge: '8',
+              actions: actions,
+              child: const SizedBox(height: 80),
+            ),
+          ),
+        );
+
+    await tester.pumpWidget(card());
+    await tester.pumpAndSettle();
+    final bare = tester.getSize(find.byType(IctSectionCard)).height;
+
+    await tester.pumpWidget(card(actions: [
+      IctPrimaryButton(
+        dense: true,
+        label: 'Add Directorate',
+        icon: Icons.add_rounded,
+        accent: _accent,
+        onPressed: () {},
+      ),
+    ]));
+    await tester.pumpAndSettle();
+
+    expect(tester.getSize(find.byType(IctSectionCard)).height, bare,
+        reason: 'the Add button is stretching the card header');
+    expect(tester.getSize(find.byType(ElevatedButton)).height,
+        kIctHeaderButtonHeight);
+  });
+
+  test('every card-header action is the dense one', () {
+    // The toolbar's button keeps the field height; a header's must not.
+    final yards = File('lib/screens/ict/yard_directorate_tab.dart')
+        .readAsStringSync();
+    expect('IctPrimaryButton('.allMatches(yards).length,
+        'dense: true'.allMatches(yards).length,
+        reason: 'a card-header button was added without dense: true');
   });
 }

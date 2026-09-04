@@ -53,6 +53,15 @@ const double kIctControlHeight = 40;
 /// The same as a field. See [kIctFieldPadY] for what makes that true.
 const double kIctPrimaryButtonHeight = kIctControlHeight;
 
+/// ⚠️ A primary action in a CARD HEADER, which is a different job.
+///
+/// In a toolbar the button stands in a row of fields, so it matches them. In a
+/// card header it stands beside a title and a subtitle — about 36pt of text —
+/// and at the field height it was the TALLEST thing in the strip, so it set
+/// the header's height and pushed the rule under it down. A header's height
+/// should be decided by its words.
+const double kIctHeaderButtonHeight = 32;
+
 /// ⚠️ The vertical padding that makes a field PAINT its full height.
 ///
 /// This is the number the whole "the button is taller" argument came down to.
@@ -717,6 +726,7 @@ class IctPrimaryButton extends StatelessWidget {
     required this.icon,
     required this.accent,
     required this.onPressed,
+    this.dense = false,
   });
 
   final String label;
@@ -724,17 +734,21 @@ class IctPrimaryButton extends StatelessWidget {
   final Color accent;
   final VoidCallback onPressed;
 
+  /// For a card header, where the button must not be the thing that decides
+  /// how tall the header is. See [kIctHeaderButtonHeight].
+  final bool dense;
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: kIctPrimaryButtonHeight,
+      height: dense ? kIctHeaderButtonHeight : kIctPrimaryButtonHeight,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: Icon(icon, size: 16, color: Colors.white),
+        icon: Icon(icon, size: dense ? 15 : 16, color: Colors.white),
         label: Text(label,
-            style: const TextStyle(
+            style: TextStyle(
                 color: Colors.white,
-                fontSize: 12,
+                fontSize: dense ? 11.5 : 12,
                 fontWeight: FontWeight.w700)),
         style: ElevatedButton.styleFrom(
           backgroundColor: accent,
@@ -742,7 +756,7 @@ class IctPrimaryButton extends StatelessWidget {
           elevation: 0,
           minimumSize: _kIctShrink.minimumSize,
           tapTargetSize: _kIctShrink.tapTargetSize,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          padding: EdgeInsets.symmetric(horizontal: dense ? 12 : 14),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kIctControlRadius)),
         ),

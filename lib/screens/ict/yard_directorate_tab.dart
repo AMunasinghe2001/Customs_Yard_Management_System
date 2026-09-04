@@ -55,6 +55,7 @@ class YardDirectorateTab extends ConsumerWidget {
                 : '${directorates.valueOrNull!.length}',
             actions: [
               IctPrimaryButton(
+                dense: true,
                 label: 'Add Directorate',
                 icon: Icons.add_rounded,
                 accent: accent,
@@ -93,6 +94,7 @@ class YardDirectorateTab extends ConsumerWidget {
                 : '${yards.valueOrNull!.length}',
             actions: [
               IctPrimaryButton(
+                dense: true,
                 label: 'Add Yard',
                 icon: Icons.add_rounded,
                 accent: accent,
