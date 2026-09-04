@@ -1761,3 +1761,16 @@ Local psql lives at `C:\pgsql-extract\pgsqlin\psql.exe` (not under Program File
 ⚠️ **The Add button looking taller than the filters was OPTICAL, not geometric (2026-09-04).** Measured in a real toolbar, the search box, the filter and the button all came back at exactly the same height with the same top and bottom — and it still looked wrong, because **a solid filled block reads larger than an outlined box of the same size**: its whole area is ink, theirs is an edge. So `kIctPrimaryButtonHeight = kIctControlHeight - 2`, centred in the field's row. It is the one place in the console where two controls are deliberately different numbers, and the comment says why. **Geometry equal and appearance unequal is not "same size".**
 
 The height itself took four tries: 34 (shrank the dropdowns to the smaller of the two — a filter's text sat tight against its border), 42 (took the larger, and the strip grew into a second header), 38 (right for the fields, button still looked taller), **40 fields / 38 button**. `kIctToolbarMaxHeight` is measured against `kIctControlHeight` so raising one without the other cannot quietly pass.
+
+⚠️ **An `InputDecorator` does NOT stretch its border to the box you give it (2026-09-04).** With `isDense`, it sizes its own container to the content plus `contentPadding` and **centres that inside the box**. So a field in a `SizedBox(40)` with 8px padding **laid out at 40 and painted at 34**, while the button's fill ran the whole 40 — and `tester.getRect` reported 40 for both, because 40 is what the layout said. Four rounds of "but they measure the same" followed, against someone looking straight at the screen.
+
+**`kIctFieldPadY = 11`** is what makes a field paint its full `kIctControlHeight`: content (~16) + 2×11 + the 1px stroke each side. Change a control height and re-derive it.
+
+**The instrument:** `test/ict_toolbar_golden_test.dart` (⚠️ `skip: true` — google_fonts fetches over the network, so it always ends in an exception *after* writing the image) plus `tool/measure_toolbar.py`, which reads the PAINTED pixels:
+```
+flutter test test/ict_toolbar_golden_test.dart --update-goldens
+python tool/measure_toolbar.py     # search/filter/button: top, bottom, height
+```
+**Lesson: when the screen and the layout tests disagree, the layout tests are measuring the wrong thing.** Go to the pixels.
+
+⚠️ **`tool/agent_build.ps1` — build without closing the app the USER is running.** Both were building into `build\windows\...`; Windows locks a running exe, so every rebuild had to kill whoever held the lock, which was usually the user's window. This is `run_instance.ps1`'s private-`%APPDATA%` + `build-dir` trick applied to a build plus a detached launch. It stops **only** the exe under its own slot path, matched by `ExecutablePath` — never by process name.

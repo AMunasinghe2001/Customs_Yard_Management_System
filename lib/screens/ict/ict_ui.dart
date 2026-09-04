@@ -50,14 +50,24 @@ const double kIctPillRadius = 6;
 /// [kIctPrimaryButtonHeight].
 const double kIctControlHeight = 40;
 
-/// ⚠️ Two less than a field, ON PURPOSE, and centred in the field's row.
+/// The same as a field. See [kIctFieldPadY] for what makes that true.
+const double kIctPrimaryButtonHeight = kIctControlHeight;
+
+/// ⚠️ The vertical padding that makes a field PAINT its full height.
 ///
-/// The one place in the console where two controls are deliberately different
-/// numbers. Matching them exactly is what made the button look bigger than
-/// everything beside it; taking two pixels off the ink brings it back to
-/// looking like the same size, which is the thing that was actually asked
-/// for. Geometry equal and appearance unequal is not "same size".
-const double kIctPrimaryButtonHeight = kIctControlHeight - 2;
+/// This is the number the whole "the button is taller" argument came down to.
+/// An InputDecorator does not stretch its border to the box you give it: with
+/// `isDense`, it sizes its own container to the content plus this padding and
+/// CENTRES that inside the box. So a field in a SizedBox(40) with 8px padding
+/// laid out at 40 and painted at 34, while the button's fill ran the whole 40
+/// — and every `getRect` in the test suite reported 40 for both, because 40 is
+/// what the layout said.
+///
+/// 11 makes the painted border exactly kIctControlHeight: content (~16) +
+/// 2 x 11 + the 1px stroke top and bottom. Change one and re-run
+/// tool/measure_toolbar.py, which reads the PAINTED pixels out of a golden
+/// rather than asking the widget tree what it meant to do.
+const double kIctFieldPadY = 11;
 
 /// ⚠️ The whole filter strip, capped. A caption, a control and the padding
 /// around them — and nothing else. The strip sits above the table on every
@@ -584,8 +594,8 @@ class IctSearchField extends StatelessWidget {
                 ),
           filled: true,
           fillColor: c.surfaceDark,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          contentPadding: const EdgeInsets.symmetric(
+              horizontal: 10, vertical: kIctFieldPadY),
           border: border,
           enabledBorder: border,
           focusedBorder: OutlineInputBorder(
@@ -668,8 +678,8 @@ class IctSelect extends StatelessWidget {
               isDense: true,
               menuWidth: menuWidth,
               fillColor: set ? accent.withOpacity(0.07) : c.surfaceDark,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10, vertical: kIctFieldPadY),
               prefixIcon: Icon(icon,
                   size: 16, color: set ? accent : c.textMuted),
               // ⚠️ Constrained, exactly as IctSearchField constrains its own.
@@ -717,12 +727,6 @@ class IctPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      // The field's row height, with the smaller button centred in it — so it
-      // shares the fields' vertical centre rather than sitting on their
-      // baseline two pixels short.
-      height: kIctControlHeight,
-      child: Center(
-        child: SizedBox(
       height: kIctPrimaryButtonHeight,
       child: ElevatedButton.icon(
         onPressed: onPressed,
@@ -741,8 +745,6 @@ class IctPrimaryButton extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14),
           shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(kIctControlRadius)),
-        ),
-      ),
         ),
       ),
     );

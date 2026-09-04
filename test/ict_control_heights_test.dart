@@ -83,13 +83,15 @@ void main() {
 
     expect(search, kIctControlHeight, reason: 'search box');
     expect(dropdown, kIctControlHeight, reason: 'filter dropdown');
-    // ⚠️ The button is deliberately two pixels shorter — see
-    // kIctPrimaryButtonHeight. A solid filled block reads larger than an
-    // outlined box of the same size, so matching the numbers exactly is what
-    // made it LOOK taller than the fields beside it.
     expect(button, kIctPrimaryButtonHeight, reason: 'primary action');
-    expect(kIctControlHeight - kIctPrimaryButtonHeight, 2,
-        reason: 'the optical correction is 2px, not a free number');
+    // ⚠️ These three assertions were all TRUE while the fields were visibly
+    // shorter than the button on screen. A layout rect is not where the ink
+    // is: an InputDecorator sizes its own container to the content plus
+    // kIctFieldPadY and centres it, so a field laid out at 40 painted at 34.
+    // What actually holds the line is tool/measure_toolbar.py, which reads
+    // the pixels out of a golden.
+    expect(kIctPrimaryButtonHeight, kIctControlHeight,
+        reason: 'the button fills its box, so it must be the field height');
   });
 
   testWidgets('they also sit on the same baseline', (tester) async {
@@ -105,9 +107,7 @@ void main() {
     // it, so the toolbar aligns on the BOTTOM edge. If that changed, three
     // controls of identical height would still step down the row.
     expect(dropdown, moreOrLessEquals(search, epsilon: 0.5));
-    // The button is centred in the field's row, so it shares their vertical
-    // centre rather than sitting on their baseline two pixels short.
-    expect(button, moreOrLessEquals(search - 1, epsilon: 0.5));
+    expect(button, moreOrLessEquals(search, epsilon: 0.5));
   });
 
   testWidgets('the toolbar itself is no taller than it has to be',
@@ -279,8 +279,9 @@ void main() {
     expect(ink.bottom, lessThanOrEqualTo(field.bottom),
         reason: 'the button hangs below the fields');
 
-    // Centred, not resting on one edge: the inset is the same top and bottom.
-    expect(ink.top - field.top,
-        moreOrLessEquals(field.bottom - ink.bottom, epsilon: 0.01));
+    // Same box, top and bottom — the button fills its cell as the fields
+    // fill theirs.
+    expect(ink.top, field.top);
+    expect(ink.bottom, field.bottom);
   });
 }
