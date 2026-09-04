@@ -27,18 +27,34 @@ void main() {
 
     // ⚠️ Every activity, not the status's own subset. A perishable has NO
     // status, so the filtered list left it with nothing to choose from.
-    test('every post-status activity is offered', () {
-      expect(form, contains('final activities = kAllPostStatusActivities;'));
+    // ⚠️ A PERISHABLE gets every activity; nothing else does.
+    //
+    // This once read "every status offers everything", which is how the
+    // status filter came to be removed for all goods — and an officer could
+    // then record "Pending Licence" against goods already forfeited. The
+    // exception is real, but it is an exception: a perishable's status is
+    // 'Perishable', in neither group, so a filtered list offers it nothing.
+    test('a perishable is offered every post-status activity', () {
+      expect(form, contains('widget.row.nature == kNaturePerishable'));
+      expect(form, contains('kAllPostStatusActivities'));
       expect(kAllPostStatusActivities, contains('Supposed to be Sold / Auction'));
       expect(kAllPostStatusActivities, contains('Supposed to be Destroyed'));
       expect(kAllPostStatusActivities, contains('Pending Inquiry'));
       expect(kAllPostStatusActivities, contains('Pending Licence'));
     });
 
-    test('the two forms offer the same activities', () {
-      // The edit dialog must not drop an activity the SR form allowed.
+    test('every other status is still narrowed to its own list', () {
+      expect(form, contains('postStatusActivitiesFor(widget.row.status)'));
+    });
+
+    test('the two forms apply the same rule', () {
+      // ⚠️ The same RULE, not the same list: the edit dialog must not offer
+      // something the SR form would refuse, nor drop something it allowed.
+      // It has no `nature` field, so it identifies a perishable by its
+      // status — which is 'Perishable', and in neither group.
       final dialog = _read('lib/widgets/package_details_dialog.dart');
-      expect(dialog, contains('final activities = kAllPostStatusActivities;'));
+      expect(dialog, contains("widget.row.status == 'Perishable'"));
+      expect(dialog, contains('postStatusActivitiesFor(widget.row.status)'));
     });
   });
 

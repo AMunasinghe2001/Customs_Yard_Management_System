@@ -222,7 +222,10 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
     final body = Scaffold(
       backgroundColor: context.colors.scaffoldBg,
       body: Padding(
-        padding: const EdgeInsets.all(28),
+        // ⚠️ 24 in Central Disposal, 28 on the yard. Every tab in that
+        // portal pads at 24, so 28 sat this page's title and its table
+        // lower than the tab you switched from.
+        padding: EdgeInsets.all(widget.readOnly ? 24 : 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -247,17 +250,11 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                 const Spacer(),
                 SizedBox(width: 280, child: _searchBox(context)),
                 const Gap(12),
-                YearFilterButton(
-                  value: _yearFilter,
-                  years: srYears(
-                      async.valueOrNull?.map((r) => r.package.srNumber) ??
-                          const <String>[]),
-                  onChanged: (v) => setState(() {
-                    _yearFilter = v;
-                    _page = 0;
-                  }),
-                ),
-                const Gap(12),
+                // ⚠️ No year filter here. Not one cross-yard tab in this
+                // portal carries one -- they narrow by yard and by search --
+                // and it was the extra control that made this header a
+                // different shape from the tab beside it. The yard's own copy
+                // keeps it, where the held-goods pages all have one.
                 // This page watches EVERY yard here, so without it an officer
                 // cannot narrow to the one they are dealing with.
                 YardAllFilter(
@@ -271,6 +268,8 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
               const Gap(14),
               async.maybeWhen(
                 data: (rows) => Padding(
+                  // The chip carries the gap under it, as it does on Unsold
+                  // Tenders -- a Gap() as well would double it.
                   padding: const EdgeInsets.only(bottom: 14),
                   child: StatChip(
                     label: 'Awaiting disposal',
@@ -279,8 +278,8 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     value: '${_filter(rows).length}',
                     color: context.colors.dangerRed,
                   ),
-                ),
-                orElse: () => const SizedBox(),
+                ).animate().fadeIn(duration: 300.ms),
+                orElse: () => const SizedBox.shrink(),
               ),
             ] else
               DisposalPageHeader(
@@ -330,9 +329,26 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                 ],
               ).animate().fadeIn(),
             if (!widget.readOnly) const Gap(20),
-            if (!widget.readOnly) ...[
+            // ⚠️ Boxed, like Forfeited and Other beside it. Every held-goods
+            // page on the yard puts its search box and its filters INSIDE one
+            // gold-bordered card, so the controls read as one panel and the
+            // table below it starts at a clear edge. This page left them bare
+            // on the page, which is why it looked like a different screen
+            // however closely the individual controls matched.
+            if (!widget.readOnly)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: context.colors.cardDark,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: context.colors.primaryGold.withOpacity(0.5)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
               _searchBox(context),
-              const Gap(10),
+              const Gap(8),
               Wrap(
                 spacing: 8,
                 runSpacing: 8,
@@ -430,8 +446,13 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                   ),
                 ],
               ),
-            ],
-            const Gap(16),
+                  ],
+                ),
+              )
+                  .animate()
+                  .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
+                  .fadeIn(),
+            if (!widget.readOnly) const Gap(16),
             Expanded(
               child: async.when(
                 loading: () => Center(

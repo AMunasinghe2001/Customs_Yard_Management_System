@@ -321,13 +321,19 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       final search = tester.getRect(find.byType(TextField).first);
-      final year = tester.getRect(find.text('All Years').first);
+      // ⚠️ The YARD picker, not a year filter. Central Disposal's copy has no
+      // year filter any more: not one cross-yard tab in that portal carries
+      // one, and it was the extra control that made this header a different
+      // shape from the tab beside it.
+      expect(find.text('All Years'), findsNothing,
+          reason: 'no cross-yard tab in this portal has a year filter');
+      final yard = tester.getRect(find.text('All Yards').first);
 
       // Same band, side by side -- not one under the other.
-      expect((search.center.dy - year.center.dy).abs(), lessThan(8),
-          reason: 'the year filter must sit beside the search box');
-      expect(year.left, greaterThan(search.right - 1),
-          reason: 'the year filter belongs to the RIGHT of the search box');
+      expect((search.center.dy - yard.center.dy).abs(), lessThan(8),
+          reason: 'the yard picker must sit beside the search box');
+      expect(yard.left, greaterThan(search.right - 1),
+          reason: 'the yard picker belongs to the RIGHT of the search box');
     });
 
     testWidgets('the controls are not boxed in a bordered card',
@@ -342,14 +348,17 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
 
       final src = _read('lib/screens/packages/perishable_goods_screen.dart');
-      // The wrapper that made the toolbar a three-row panel: a card tinted
-      // cardDark with a GOLD border. The table below is still a cardDark box
-      // (as on every page), so the gold border is what identifies this one.
-      expect(src, isNot(contains('primaryGold.withOpacity(0.5)')),
-          reason: 'the gold-bordered filter card is gone');
-      // The controls now sit in a Row, fading in like the other tabs' headers
+      // ⚠️ Scoped to CENTRAL DISPOSAL's branch. The gold-bordered filter card
+      // is right on the YARD — every held-goods page there wears one — and
+      // wrong here, where no cross-yard tab does. So this asserts the card is
+      // absent from the readOnly branch, not from the file.
+      final central = src.substring(src.indexOf('if (widget.readOnly) ...['),
+          src.indexOf('] else'));
+      expect(central, isNot(contains('primaryGold.withOpacity(0.5)')),
+          reason: 'the gold filter card belongs to the yard, not here');
+      // The controls sit in a Row, fading in like the other tabs' headers
       // rather than sliding up as a panel.
-      expect(src, contains('.animate().fadeIn(duration: 300.ms)'));
+      expect(central, contains('.animate().fadeIn(duration: 300.ms)'));
     });
 
     testWidgets('the search box matches the other tabs', (tester) async {
@@ -454,6 +463,23 @@ void main() {
     // one out. The yard's copy is a held-goods page and must read like Other
     // Goods; Central Disposal's is a cross-yard list and must read like Sold
     // Goods.
+    // ⚠️ Every held-goods page on the yard — Forfeited, Other, Abandoned —
+    // puts its search box and filters INSIDE one gold-bordered card, so they
+    // read as a panel and the table starts at a clear edge. This page left
+    // them bare on the page, which is why it looked like a different screen
+    // however closely the individual controls matched.
+    test('the yard copy boxes its filters like its neighbours', () {
+      final yardBranch =
+          src.substring(src.indexOf('Boxed, like Forfeited and Other beside it'));
+      expect(yardBranch, contains('primaryGold.withOpacity(0.5)'));
+      expect(yardBranch, contains('BorderRadius.circular(12)'));
+
+      // The same card the page beside it draws.
+      final other = File('lib/screens/packages/other_packages_screen.dart')
+          .readAsStringSync();
+      expect(other, contains('primaryGold.withOpacity(0.5)'));
+    });
+
     test('the yard copy offers the held-goods filters', () {
       expect(src, contains('custom.DateRangePickerDialog'));
       expect(src, contains("allLabel: 'Post Status Activity'"));
@@ -486,6 +512,14 @@ void main() {
       expect(ro.contains('DisposalPageHeader'), isFalse);
       expect(ro.contains('_CountChip'), isFalse);
 
+      // ⚠️ And NO year filter. Not one cross-yard tab in that portal has one
+      // — they narrow by yard and by search — so it was the extra control
+      // that made this header a different shape from the tab beside it. The
+      // yard's copy keeps it, where every held-goods page has one.
+      expect(ro.contains('YearFilterButton'), isFalse);
+      expect(src, contains('YearFilterButton('),
+          reason: "the yard's copy still needs it");
+
       // The same three pieces the neighbours use, in the same order.
       final disposal =
           File('lib/screens/disposal/disposal_dashboard_screen.dart')
@@ -497,6 +531,21 @@ void main() {
     // ⚠️ Central Disposal tints every one of its dialogs with the portal's
     // green. This page passed none, so it fell back to the default indigo and
     // was the only popup in that portal wearing another colour.
+    // ⚠️ Every tab in Central Disposal pads at 24. At 28 this page's title
+    // and its table both sat lower than the tab you had just switched from,
+    // which is what "why is the table so far down" was.
+    test('it pads like the portal it sits in', () {
+      expect(src, contains('EdgeInsets.all(widget.readOnly ? 24 : 28)'));
+      final disposal =
+          File('lib/screens/disposal/disposal_dashboard_screen.dart')
+              .readAsStringSync();
+      expect(disposal, contains('padding: const EdgeInsets.all(24)'));
+      // The StatChip carries the gap under it, as it does there — a Gap()
+      // as well would double it.
+      expect(src, contains('padding: const EdgeInsets.only(bottom: 14)'));
+      expect(src, contains('if (!widget.readOnly) const Gap(16)'));
+    });
+
     test('the details popup matches the portal it opens in', () {
       expect(src, contains('headerAccentColor:'));
       // Matched on the name alone: the formatter breaks the property access

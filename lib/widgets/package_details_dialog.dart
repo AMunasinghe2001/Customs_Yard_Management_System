@@ -6332,9 +6332,20 @@ class _UpdateItemRowWidgetState extends ConsumerState<_UpdateItemRowWidget> {
             spacing: 12,
             runSpacing: 10,
             children: List.generate(widget.row.selectedReasons.length, (rIdx) {
-              // The same full list the SR form offers -- the two must agree,
-              // or editing an item would drop an activity the form allowed.
-              final activities = kAllPostStatusActivities;
+              // ⚠️ The same rule the SR form applies, not the same LIST.
+              //
+              // The two must agree, or editing an item would offer something
+              // the form would not — or drop something it allowed. The rule
+              // is: the status decides, except a perishable, whose status is
+              // in neither group and which therefore gets everything.
+              //
+              // This row has no `nature` field, but it does not need one: a
+              // perishable's STATUS is 'Perishable', which is what identifies
+              // it here and is exactly why a filtered list would leave it
+              // with nothing to choose.
+              final activities = widget.row.status == 'Perishable'
+                  ? kAllPostStatusActivities
+                  : postStatusActivitiesFor(widget.row.status);
               return SizedBox(
                 width: 380,
                 child: Row(

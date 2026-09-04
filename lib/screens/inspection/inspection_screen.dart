@@ -2448,11 +2448,24 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
                 onChanged: (v) {
                   setState(() {
                     widget.row.status = v!;
-                    // ⚠️ The activity selection is NOT cleared here any more.
-                    // It used to be, because Detain and the disposal statuses
-                    // offered different lists and a selection could stop being
-                    // valid. Every status now offers the same full list, so
-                    // clearing would only throw away what the officer typed.
+                    // ⚠️ Drop any activity the NEW status does not offer.
+                    //
+                    // Detain and the disposal statuses have different lists,
+                    // so a choice made under one can be invalid under the
+                    // other. Left in place it would stay on screen but not be
+                    // in the dropdown's options -- the field renders empty
+                    // while the row still holds the old value, and that value
+                    // is what gets saved. Anything the new list DOES contain
+                    // is kept, so switching Forfeit to Abandoned costs the
+                    // officer nothing.
+                    final allowed = postStatusActivitiesFor(widget.row.status);
+                    for (var i = 0;
+                        i < widget.row.selectedReasons.length;
+                        i++) {
+                      if (!allowed.contains(widget.row.selectedReasons[i])) {
+                        widget.row.selectedReasons[i] = null;
+                      }
+                    }
                   });
                   widget.onChanged();
                 },
@@ -2704,12 +2717,24 @@ class _ItemRowWidgetState extends ConsumerState<_ItemRowWidget> {
           spacing: 12,
           runSpacing: 10,
           children: List.generate(widget.row.selectedReasons.length, (rIdx) {
-            // ⚠️ EVERY activity, not the status's own subset. The officer
-            // recording what should happen next is not bound by the status
-            // they just picked -- a detained item can still be destined for
-            // destruction, and a perishable (which has no status at all) was
-            // being offered nothing to choose from.
-            final activities = kAllPostStatusActivities;
+            // ⚠️ The status decides the list — EXCEPT for a perishable.
+            //
+            // A Detain item is waiting on something (a licence, a valuation,
+            // an inquiry); a Forfeit / Abandoned / Other item is on its way to
+            // being disposed of. Those are different questions with different
+            // answers, and offering all of them under every status is how an
+            // officer ends up recording "Pending Licence" against goods that
+            // have already been forfeited.
+            //
+            // A PERISHABLE is the exception, and the reason the filter was
+            // removed wholesale in the first place: it has no status of its
+            // own to choose from ('Perishable' is not in either group), so a
+            // filtered list left it with nothing to pick. It gets the whole
+            // list instead — which is also what the perishable pages filter
+            // against, see kAllPostStatusActivities there.
+            final activities = widget.row.nature == kNaturePerishable
+                ? kAllPostStatusActivities
+                : postStatusActivitiesFor(widget.row.status);
             return SizedBox(
               width: 380,
               child: Row(

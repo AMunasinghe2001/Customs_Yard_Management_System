@@ -1834,3 +1834,11 @@ The chip is painted **white-on-dark deliberately, not from the theme's text colo
 - The details popup passes `headerAccentColor: successGreen` on Central Disposal. It passed none, fell back to the default indigo, and was the only dialog in that portal wearing another colour.
 
 ⚠️ **Perishables genuinely have no warehouse rows** — 47 items, 0 warehouse entries, because the perishable flow skips the warehouse by design (the user's own earlier decision). The dialog's "Not stored in a warehouse" panel is therefore correct, not a bug. Showing a real summary there would need perishables to be warehoused first, which contradicts the flow.
+
+⚠️ **Post Status Activity is filtered BY STATUS — except for a perishable (2026-09-04).** Detain items are waiting on something (licence, valuation, inquiry); Forfeit/Abandoned/Other are on their way to disposal. Those are different questions. The filter had been removed **for all goods** because a perishable's status is `'Perishable'` — in neither group — so a filtered list offered it nothing; the cure was applied to everything, and an officer could then record "Pending Licence" against already-forfeited goods. Now: `postStatusActivitiesFor(status)`, with the perishable exception getting `kAllPostStatusActivities`.
+
+- ⚠️ **Changing the status clears activities the new status does not offer.** Without it the field renders **empty while the row still holds the old value** — and the old value is what gets saved.
+- The **edit dialog** (`package_details_dialog.dart`) applies the same rule. Its `_ItemRow` has no `nature`, so it identifies a perishable by `status == 'Perishable'`.
+- Both perishable pages filter against `kAllPostStatusActivities`, so what the form can save is exactly what the filters can match.
+
+**The perishable page's two copies, finished:** the yard's wears the **gold-bordered filter card** every held-goods page there wears (Forfeited, Other, Abandoned); Central Disposal's has **no year filter** (no cross-yard tab there has one), pads at **24** not 28, and lets the StatChip's own bottom padding be the gap — exactly as Unsold Tenders does.
