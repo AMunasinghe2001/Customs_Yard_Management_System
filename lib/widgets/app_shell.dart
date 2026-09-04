@@ -54,7 +54,20 @@ const _navHolding = [
   NavItem('Perishable Goods', Icons.eco_rounded, '/perishable-goods'),
 ];
 
-/// How they LEFT: the four ordinary endings.
+/// How they LEFT.
+///
+/// ⚠️ Re-exported belongs HERE, not in Final Outcomes, even though Top
+/// Management can now send goods to it. This group answers "where did the
+/// goods go", and re-exported goods left the country whichever route decided
+/// it; Final Outcomes answers "what did Top Management rule about goods
+/// nothing could sell", and its four pages have exactly one origin each. The
+/// Re-exported table carries a Decided By column instead, because the split
+/// is between ROWS on that page, not between pages.
+///
+/// (Unsold Goods sits here too, though the goods have not left: they are out
+/// of the tender process and waiting on Top Management. It reads oddly under
+/// "Disposed" -- worth a decision, but moving it is the officers' call, not
+/// one to make from here.)
 const _navDisposed = [
   NavItem(
       'Released Goods', Icons.keyboard_return_rounded, '/returned-packages'),

@@ -103,18 +103,24 @@ void main() {
       expect(central, isNot(contains('class _DisposalExpensesCell')));
     });
 
-    test('the yard drops HS Code, Officer and Notes on the Destroyed table',
+    test('the yard drops the columns that have no answer on each table',
         () {
       // Whitespace/line-endings vary, so compare on a normalised copy rather
       // than the file's exact bytes.
       final flat = yard.replaceAll(RegExp(r'\s+'), ' ');
-      for (final column in ['HS Code', 'Officer']) {
-        expect(
-            flat,
-            contains("widget.finalTag != 'DESTROYED') const DataColumn2( "
-                "label: Text('$column')"),
-            reason: '$column is not gated off the Destroyed table');
-      }
+      expect(
+          flat,
+          contains("widget.finalTag != 'DESTROYED') const DataColumn2( "
+              "label: Text('HS Code')"),
+          reason: 'HS Code is not gated off the Destroyed table');
+      // ⚠️ Officer is now gated off RE-EXPORTED as well: it reads
+      // `returnedByName ?? returnedByBadge ?? '—'`, and a re-export sets
+      // neither, so every row on that page printed a dash.
+      expect(
+          flat,
+          contains("widget.finalTag != 'DESTROYED' && widget.finalTag != "
+              "'RE-EXPORTED') const DataColumn2( label: Text('Officer')"),
+          reason: 'Officer is not gated off Destroyed and Re-exported');
       // The Notes / Receipt No column is gated off for DESTROYED too.
       expect(
           flat,

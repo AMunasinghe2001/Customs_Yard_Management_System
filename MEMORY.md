@@ -1898,3 +1898,15 @@ Seeder cause: `final bidCount = _rng.nextInt(4)` — **can return 0**. Now `1 + 
 **Tender History ends with a FINAL OUTCOME tile** (`_FinalOutcomeTile`): the decided outcome with its date and note, or "Awaiting Top Management" with why. ⚠️ Both states are drawn — "still waiting" is an answer, and a blank space is indistinguishable from a failed load. ⚠️ Suppressed when `soldById.isEmpty` is false: a **sold** package ended by selling and never reaches Top Management.
 
 ⚠️ **A destruction date cannot be in the future.** The Mark-as-Destroyed picker had `lastDate: now + 365 days`; it records when goods **were** destroyed, so it now stops at today. (The tender-placement pickers are deliberately future-dated — a sale is scheduled ahead.)
+
+⚠️ **Goods reach Re-exported by TWO routes, and one of them led nowhere (2026-09-04).** The user was right:
+1. **The yard's Final Disposition** → item status `'re-exported'` (17 rows). This is all the page ever looked for.
+2. **Top Management ruling `re_export`** on goods that failed every tender. The outcome is offered in the decision dialog and stored as an `unsold_proposal` — but **no page listed it**, so those goods would leave Unsold Goods and appear nowhere in the app. (0 rows so far, which is why nobody had hit it.)
+
+`_topManagementRows()` on `disposition_category_screen` now reads `exhaustedUnsoldProvider` + `unsoldProposalsProvider` — the same pair the **Government Use** page reads, which is the model every Top Management outcome follows. Merged **before** the sort, and each row dated by its own event (`proposal.decidedAt` vs `entry.returnedAt`).
+
+- A **Decided By** column (`_OriginPill`) says Yard or Top Management: two different events, one carrying a whole tender history and the other none.
+- ⚠️ The popup takes `row.forfeited ?? saleItem?.forfeited` — the sale-item lookup only knows goods that went through a sale on the **yard's** route, so a Top Management row would have shown no tender history at all.
+- The **Officer** column is gone from this page: it reads `returnedByName ?? returnedByBadge ?? '—'` and a re-export sets neither, so every row printed a dash.
+
+⚠️ **Re-exported stays under "Disposed", not "Final Outcomes."** That group answers *where did the goods go* — re-exported goods left the country whichever route decided it. Final Outcomes answers *what did Top Management rule*, and each of its four pages has exactly one origin. The split is between ROWS on that page, which is what the Decided By column is for. (Noted in the source: **Unsold Goods** sitting under "Disposed" reads oddly — the goods have not left, they are waiting on Top Management — but moving it is the officers' call.)

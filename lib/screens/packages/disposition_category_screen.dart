@@ -110,6 +110,49 @@ class _DispositionCategoryScreenState
     'OTHER': {'other'},
   };
 
+  /// Goods Top Management ruled "Re-export" after every tender failed.
+  ///
+  /// ⚠️ The SECOND way into this page, and it had no way in at all. The
+  /// decision dialog offers `re_export`, but nothing listed the result — so
+  /// those goods left Unsold Goods and appeared on no page in the app. The
+  /// yard's own route (Final Disposition -> item status 're-exported') was
+  /// the only one this screen ever looked for.
+  ///
+  /// Reads the same pair of providers the Government Use page reads, which is
+  /// the model every Top Management outcome follows.
+  List<_CategoryRow> _topManagementRows() {
+    if (widget.finalTag != 'RE-EXPORTED') return const [];
+    final exhausted = ref.watch(exhaustedUnsoldProvider).valueOrNull ??
+        const <ReTenderSaleInfo>[];
+    final proposals =
+        ref.watch(unsoldProposalsProvider).valueOrNull ??
+            const <String, UnsoldProposalModel>{};
+
+    final out = <_CategoryRow>[];
+    for (final info in exhausted) {
+      final proposal = proposals[info.forfeited.id];
+      if (proposal?.proposal != 're_export') continue;
+      final pkg = info.forfeited.packageDetails;
+      if (pkg == null) continue;
+      final item = info.forfeited.itemId == null
+          ? null
+          : pkg.items.where((i) => i.id == info.forfeited.itemId).firstOrNull;
+      out.add(_CategoryRow(
+        package: pkg,
+        // The forfeited row names one item; fall back to the package's
+        // first, as the Unsold pages do.
+        itemName: item?.itemName ??
+            (pkg.items.isEmpty ? '—' : pkg.items.first.itemName),
+        note: (proposal!.note ?? '').trim(),
+        officer: '—',
+        item: item,
+        proposal: proposal,
+        forfeited: info.forfeited,
+      ));
+    }
+    return out;
+  }
+
   List<_CategoryRow> _buildRows(List<PackageModel> packages) {
     final rows = <_CategoryRow>[];
     for (final package in packages) {
@@ -152,9 +195,22 @@ class _DispositionCategoryScreenState
         ));
       }
     }
+    // Both routes, one list — the page is "goods that were re-exported", not
+    // "goods the YARD re-exported". Added before the sort so the two
+    // interleave by date instead of the newer route sitting in a block at the
+    // bottom.
+    rows.addAll(_topManagementRows());
     rows.sort((a, b) {
-      final aDate = a.entry?.returnedAt ?? a.entry?.admittedAt ?? a.package.updatedAt;
-      final bDate = b.entry?.returnedAt ?? b.entry?.admittedAt ?? b.package.updatedAt;
+      // A Top Management row is dated by its DECISION; a yard row by the
+      // warehouse movement that recorded it.
+      final aDate = a.proposal?.decidedAt ??
+          a.entry?.returnedAt ??
+          a.entry?.admittedAt ??
+          a.package.updatedAt;
+      final bDate = b.proposal?.decidedAt ??
+          b.entry?.returnedAt ??
+          b.entry?.admittedAt ??
+          b.package.updatedAt;
       return bDate.compareTo(aDate);
     });
     return rows;
@@ -492,10 +548,28 @@ class _DispositionCategoryScreenState
                                 fixedWidth: 70),
                             const DataColumn2(
                                 label: Text('Date'), size: ColumnSize.M),
+                            // ⚠️ No Officer column on RE-EXPORTED. It reads
+                            // `returnedByName ?? returnedByBadge ?? '—'`, and
+                            // a re-export sets neither — the act is recorded
+                            // against the package, not against a person — so
+                            // every row printed a dash. A column of dashes is
+                            // not data waiting to arrive; it is a question
+                            // this page has no answer to.
                             if (widget.finalTag != 'SOLD' &&
-                                widget.finalTag != 'DESTROYED')
+                                widget.finalTag != 'DESTROYED' &&
+                                widget.finalTag != 'RE-EXPORTED')
                               const DataColumn2(
                                   label: Text('Officer'), size: ColumnSize.M),
+                            // ⚠️ WHO sent them back. The two routes are not
+                            // the same event and an officer reading this page
+                            // needs to tell them apart: the yard's own Final
+                            // Disposition, or Top Management ruling on goods
+                            // that failed every tender.
+                            if (widget.finalTag == 'RE-EXPORTED')
+                              const DataColumn2(
+                                  label: Text('Decided By'),
+                                  size: ColumnSize.S,
+                                  fixedWidth: 170),
                             // Destroyed rows carry no receipt and no useful
                             // note -- the column only ever printed the DSR
                             // number already shown elsewhere, so it is dropped
@@ -568,9 +642,14 @@ class _DispositionCategoryScreenState
                                             .format(row.entry!.returnedAt!)
                                         : '—')),
                                     if (widget.finalTag != 'SOLD' &&
-                                        widget.finalTag != 'DESTROYED')
+                                        widget.finalTag != 'DESTROYED' &&
+                                        widget.finalTag != 'RE-EXPORTED')
                                       DataCell(TooltipText(row.officer,
                                           overflow: TextOverflow.ellipsis)),
+                                    if (widget.finalTag == 'RE-EXPORTED')
+                                      DataCell(_OriginPill(
+                                          fromTopManagement:
+                                              row.fromTopManagement)),
                                     if (widget.finalTag != 'DESTROYED')
                                       DataCell(TooltipText(
                                           (() {
@@ -664,7 +743,17 @@ class _DispositionCategoryScreenState
                                             highlightEntry: row.entry,
                                             highlightItemId: row.entry?.packageItemId ?? row.item?.id,
                                             useLegacySummary: true,
-                                            tenderHistoryFor:
+                                            // ⚠️ A Top Management row already
+                                            // HAS its forfeited row — it came
+                                            // from the unsold list — so use
+                                            // it directly. The sale-item
+                                            // lookup only knows about goods
+                                            // that went through a sale on
+                                            // this page's own route, and
+                                            // would return nothing here,
+                                            // leaving a package with a full
+                                            // tender history showing none.
+                                            tenderHistoryFor: row.forfeited ??
                                                 saleItem?.forfeited,
                                             // The SAME quantity the row's
                                             // Valuation cell uses. These rows
@@ -723,6 +812,49 @@ class _DispositionCategoryScreenState
   }
 }
 
+/// Which route sent these goods back.
+///
+/// ⚠️ Two very different events end on this page, and only the label tells
+/// them apart: the yard's own Final Disposition, taken before the goods ever
+/// went to tender; or Top Management ruling "Re-export" after every tender
+/// round failed. The second carries a whole tender history behind it and the
+/// first carries none, so an officer reading a row needs to know which they
+/// are looking at before they open it.
+class _OriginPill extends StatelessWidget {
+  const _OriginPill({required this.fromTopManagement});
+  final bool fromTopManagement;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = fromTopManagement
+        ? context.colors.primaryGold
+        : context.colors.accentLightBlue;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: tint.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: tint.withOpacity(0.35)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(
+              fromTopManagement
+                  ? Icons.account_balance_rounded
+                  : Icons.warehouse_rounded,
+              size: 13,
+              color: tint),
+          const Gap(6),
+          Text(fromTopManagement ? 'Top Management' : 'Yard',
+              style: TextStyle(
+                  color: tint, fontSize: 11, fontWeight: FontWeight.w700)),
+        ]),
+      ),
+    );
+  }
+}
+
 class _CategoryRow {
   final PackageModel package;
   final WarehouseEntryModel? entry;
@@ -732,6 +864,26 @@ class _CategoryRow {
   // For status-only rows (no warehouse entry): the package item itself.
   final PackageItem? item;
 
+  /// ⚠️ Set only when the row arrived by the TOP MANAGEMENT route.
+  ///
+  /// Goods reach Re-exported two ways, and they are not the same event:
+  ///
+  ///   * The yard's Final Disposition sends them straight back — the goods
+  ///     were never going to be sold, so there is no tender behind them.
+  ///   * A package that went to tender, failed every round, and was then
+  ///     ruled "Re-export" by the DG. That one HAS a tender history, a
+  ///     valuation and a decision date, and none of it was visible because
+  ///     the page only ever looked at warehouse entries and item statuses.
+  ///
+  /// A DG decision on `re_export` had nowhere to land at all: the outcome is
+  /// offered in the decision dialog, but no page listed it, so those goods
+  /// would simply have disappeared.
+  final UnsoldProposalModel? proposal;
+
+  /// The forfeited row behind a Top Management decision, for the popup's
+  /// Tender History.
+  final ForfeitedPackageModel? forfeited;
+
   const _CategoryRow({
     required this.package,
     this.entry,
@@ -739,7 +891,12 @@ class _CategoryRow {
     required this.note,
     required this.officer,
     this.item,
+    this.proposal,
+    this.forfeited,
   });
+
+  /// True when Top Management ruled on this, rather than the yard.
+  bool get fromTopManagement => proposal != null;
 
   bool get isDestroyed {
     final notes = (entry?.returnNotes ?? '').trim().toUpperCase();
