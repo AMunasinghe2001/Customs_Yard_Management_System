@@ -186,9 +186,9 @@ class TenderHistorySection extends ConsumerWidget {
     // ⚠️ Whether this package's story has ENDED. Converted, auctioned, taken
     // into government use, removed -- after any of those there is no next
     // tender, so nothing below may announce one.
-    final decided = ref.watch(unsoldProposalsProvider).valueOrNull
-            ?.containsKey(forfeited.id) ??
-        false;
+    final proposal =
+        ref.watch(unsoldProposalsProvider).valueOrNull?[forfeited.id];
+    final decided = proposal != null;
     // Members only exist once the DG/ADG appointed the committee. Held in a
     // local so every branch below reads the same list.
     final committeeMembers = committee?.members ?? const <CommitteeMember>[];
@@ -371,6 +371,22 @@ class TenderHistorySection extends ConsumerWidget {
       ));
     }
 
+    // ⚠️ How the story ENDS, at the end of the story.
+    //
+    // Every round above says what was tried; none of them says what was
+    // finally decided. On the Unsold pages that is the one thing the officer
+    // is looking for, and it was only in the table behind the popup. Two
+    // states, and the difference matters: Top Management may have ruled, or
+    // the package may still be waiting for them — "no decision yet" is an
+    // answer, and a blank space is not.
+    // ⚠️ Only for a package that has run out of tenders. A SOLD package ended
+    // by selling — it never reaches Top Management, so "Awaiting Top
+    // Management" there would be false. `soldById` is empty exactly when
+    // nothing sold, which is the same test the Unsold pages apply.
+    if (soldById.isEmpty) {
+      rows.add(_FinalOutcomeTile(proposal: proposal));
+    }
+
     if (rows.isEmpty) return const SizedBox.shrink();
 
     return _DetailSection(
@@ -380,6 +396,85 @@ class TenderHistorySection extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: rows,
+      ),
+    );
+  }
+}
+
+/// What Top Management finally decided — or that they have not yet.
+///
+/// ⚠️ Both states are drawn, because "still waiting" is an answer. A package
+/// that has run out of tenders sits with the DG until they rule, and a popup
+/// that showed nothing there could not be told apart from one whose outcome
+/// had simply failed to load.
+class _FinalOutcomeTile extends StatelessWidget {
+  const _FinalOutcomeTile({required this.proposal});
+
+  final UnsoldProposalModel? proposal;
+
+  IconData get _icon => switch (proposal?.proposal) {
+        'destroy' => Icons.local_fire_department_rounded,
+        'government_use' => Icons.account_balance_rounded,
+        'auction' => Icons.gavel_rounded,
+        're_export' => Icons.flight_takeoff_rounded,
+        'convert' => Icons.autorenew_rounded,
+        'remove_from_premises' => Icons.logout_rounded,
+        _ => Icons.hourglass_top_rounded,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final decided = proposal != null;
+    final tint =
+        decided ? context.colors.successGreen : context.colors.warningAmber;
+
+    return material.Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tint.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(_icon, size: 16, color: tint),
+            const Gap(8),
+            Text('FINAL OUTCOME',
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 10,
+                    letterSpacing: 0.9,
+                    fontWeight: FontWeight.w800)),
+            const Spacer(),
+            Text(
+                decided
+                    ? unsoldProposalLabel(proposal!.proposal)
+                    : 'Awaiting Top Management',
+                style: TextStyle(
+                    color: tint,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800)),
+          ]),
+          if (decided) ...[
+            const Gap(6),
+            Text(
+                'Decided on '
+                '${DateFormat('dd MMM yyyy').format(proposal!.decidedAt)}'
+                '${(proposal!.note ?? '').trim().isEmpty ? '' : ' \u00b7 ${proposal!.note!.trim()}'}',
+                style: TextStyle(
+                    color: context.colors.textSecondary, fontSize: 11.5)),
+          ] else ...[
+            const Gap(6),
+            Text(
+                'Every tender has been exhausted. The package is with Top '
+                'Management for a final decision.',
+                style: TextStyle(
+                    color: context.colors.textMuted, fontSize: 11.5)),
+          ],
+        ],
       ),
     );
   }

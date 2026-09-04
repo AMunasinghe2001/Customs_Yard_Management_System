@@ -1886,3 +1886,15 @@ The rule is `revalued: i > 0 && reval != null && !isCommitteeRound` — written 
 - `getTenderRoundsForPackage` now selects `sold, sold_price` and the record carries `sold` / `soldPrice`. ⚠️ Changing that record type breaks `tenderRoundsForPackageProvider` and every widget-test harness that builds one — they must all list the new fields.
 - The skip rule spares a sold round, and the tile shows **"Sold for LKR …"** in green.
 - **The data was already right**: `select count(*) ... where sold and exists(bids)` → **0**. Nothing sells with bids recorded against it. Only the display was wrong. **CED/GL1/SR/13/2025 has 4 rounds** — three unsold with bids, and a 4th that sold for 147,314 with no bids — which is exactly what the user deduced from the screen before anyone looked at the table.
+
+⚠️ **The seeded tender chain had real holes — 49 unsold rounds with no bids, 21 later rounds with no valuation (2026-09-04).** Both break rules the officers stated:
+- **"A tender only records bids when the goods DON'T sell."** So an unsold round with no bids is not a round nobody bid on — it is a round whose bids were never written. And the bids are what **justify** the next round: Valuation reads them, then sets a lower reserve. Without them the screen showed Tender 3 gold, "Awaiting Valuation Directorate", with nothing for Valuation to read.
+- **Round 1 runs at the original valuation; every round after it runs at a fresh one.** A later round with no `tender_revaluations` row has no reserve of its own.
+
+Repaired by `postgres/11_…` (18 valuations + 94 bids, derived from each row: valuations step **down**, bids sit **below** that round's reserve) and `postgres/12_…` (16 rounds were left priced **at or above** their predecessor — a re-tender always **lowers** the reserve). ⚠️ **Sold rounds and committee rounds are never touched**: bidding stops when goods sell, and the committee prices rather than bids.
+
+Seeder cause: `final bidCount = _rng.nextInt(4)` — **can return 0**. Now `1 + _rng.nextInt(3)`.
+
+**Tender History ends with a FINAL OUTCOME tile** (`_FinalOutcomeTile`): the decided outcome with its date and note, or "Awaiting Top Management" with why. ⚠️ Both states are drawn — "still waiting" is an answer, and a blank space is indistinguishable from a failed load. ⚠️ Suppressed when `soldById.isEmpty` is false: a **sold** package ended by selling and never reaches Top Management.
+
+⚠️ **A destruction date cannot be in the future.** The Mark-as-Destroyed picker had `lastDate: now + 365 days`; it records when goods **were** destroyed, so it now stops at today. (The tender-placement pickers are deliberately future-dated — a sale is scheduled ahead.)

@@ -169,7 +169,11 @@ void main() {
     // ⚠️ And nothing may announce a next tender after a FINAL outcome:
     // converted, auctioned, government use, removed.
     test('a decided package shows no next-tender tile', () {
-      expect(src, contains('final decided = ref.watch(unsoldProposalsProvider)'));
+      // The proposal itself is kept now, so the outcome can also be SHOWN;
+      // `decided` is derived from it.
+      expect(src,
+          contains("ref.watch(unsoldProposalsProvider).valueOrNull?[forfeited.id]"));
+      expect(src, contains('final decided = proposal != null;'));
       expect(src, contains('!decided'));
     });
 
@@ -339,6 +343,82 @@ void main() {
           .readAsStringSync()
           .replaceAll(RegExp(r'\s+'), ' ');
       expect(svc, contains("'tender_sale_id, sold, sold_price, '"));
+    });
+  });
+
+  group('the history says how it ended', () {
+    // ⚠️ Every round says what was TRIED; none says what was finally decided.
+    // On the Unsold pages that is the one thing the officer opened the popup
+    // for, and it lived only in the table behind it.
+    testWidgets('an undecided package says it is with Top Management',
+        (tester) async {
+      await tester.pumpWidget(harness());
+      await tester.pumpAndSettle();
+      expect(find.text('FINAL OUTCOME'), findsOneWidget);
+      expect(find.text('Awaiting Top Management'), findsOneWidget);
+    });
+
+    testWidgets('a decided package names the outcome', (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          tenderRoundsForPackageProvider('fp-1').overrideWith((ref) async => [
+                (id: 'S116', createdAt: ago(126), hasRun: true,
+                    sold: false, soldPrice: null),
+              ]),
+          tenderRevaluationsProvider('fp-1')
+              .overrideWith((ref) async => <String, TenderRevaluationModel>{}),
+          tenderBidsProvider('fp-1').overrideWith((ref) async => {
+                'S116': [110700],
+              }),
+          tenderCommitteesProvider.overrideWith(
+              (ref) async => const <String, TenderCommitteeModel>{}),
+          unsoldProposalsProvider.overrideWith((ref) async => {
+                'fp-1': UnsoldProposalModel(
+                  id: 'up-1',
+                  forfeitedPackageId: 'fp-1',
+                  proposal: 'government_use',
+                  note: 'Taken into service',
+                  yard: 'GL1',
+                  decidedAt: DateTime(2026, 7, 3),
+                ),
+              }),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: TenderHistorySection(forfeited: fp(), qty: 180),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Government Use'), findsOneWidget);
+      expect(find.textContaining('Decided on 03 Jul 2026'), findsOneWidget);
+      expect(find.text('Awaiting Top Management'), findsNothing);
+    });
+
+    // ⚠️ A SOLD package ended by selling — it never reaches Top Management,
+    // so "Awaiting" there would be a plain falsehood.
+    test('a sold package gets no outcome tile', () {
+      final src = File('lib/widgets/package_details_dialog.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(src, contains('if (soldById.isEmpty) { rows.add(_FinalOutcomeTile'));
+    });
+  });
+
+  group('a destruction date cannot be in the future', () {
+    // It records when goods WERE destroyed. The picker offered 365 days ahead
+    // and accepted any of them.
+    test('the picker stops at today', () {
+      final src = File('lib/screens/packages/disposition_category_screen.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(src, contains('lastDate: DateTime.now(),'));
+      expect(src.contains('DateTime.now().add(const Duration(days: 365))'),
+          isFalse);
     });
   });
 }

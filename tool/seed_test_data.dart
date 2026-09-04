@@ -2021,7 +2021,13 @@ Future<void> _seedTenderPipeline(Connection conn) async {
       } else {
         // A failed round: the bids that came in, all under the reserve, and
         // the re-valuation that follows from them.
-        final bidCount = _rng.nextInt(4);
+        // ⚠️ At LEAST one. `_rng.nextInt(4)` can return 0, and a failed round
+        // with no bids is not a round nobody bid on -- it is a round with a
+        // hole in its story. The bids are what justify the next one: Valuation
+        // reads them, then sets a lower reserve. Without them the screen shows
+        // a round sitting on "Awaiting Valuation Directorate" with nothing for
+        // Valuation to read, and no reason for the re-tender that follows.
+        final bidCount = 1 + _rng.nextInt(3);
         for (var b = 0; b < bidCount; b++) {
           await conn.execute(
             r'insert into public.tender_bids '

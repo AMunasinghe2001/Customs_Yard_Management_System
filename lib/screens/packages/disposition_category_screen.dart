@@ -1020,8 +1020,12 @@ Future<void> _confirmMarkDestroyed(
                         context: ctx,
                         initialDate: pickedDate,
                         firstDate: DateTime(2020),
-                        lastDate:
-                            DateTime.now().add(const Duration(days: 365)),
+                        // ⚠️ TODAY, not a year out. This records when goods
+                        // WERE destroyed — an act that has already happened —
+                        // so a future date is not a date the officer might
+                        // mean, it is one they cannot mean. The picker used to
+                        // offer 365 days ahead and accept any of them.
+                        lastDate: DateTime.now(),
                       );
                       if (d != null) {
                         setDlgState(() => pickedDate = d);
