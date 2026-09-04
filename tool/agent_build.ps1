@@ -32,11 +32,19 @@
   .\tool\agent_build.ps1              # build, then launch it detached
   .\tool\agent_build.ps1 -NoLaunch    # build only
   .\tool\agent_build.ps1 -Stop        # close the agent's app, leaving yours
+  .\tool\agent_build.ps1 -CloseRunning  # also close YOUR windows, then refresh
+                                        # the shared build they were holding
 #>
 param(
     [switch] $Release,
     [switch] $NoLaunch,
-    [switch] $Stop
+    [switch] $Stop,
+
+    # ⚠️ Closes the user's OWN app windows. Never passed automatically: the
+    # whole point of the private slot is that a rebuild does not disturb what
+    # they are looking at. It exists so that when they DO want the shared build
+    # refreshed, it is one flag instead of hunting down windows by hand.
+    [switch] $CloseRunning
 )
 
 $ErrorActionPreference = 'Stop'
@@ -107,11 +115,58 @@ if (Test-Path $sharedExe) {
     catch { $locked = $true }
 }
 
+# Asked for explicitly: close the windows holding the shared build so it can be
+# relinked. Matched by PATH, so the agent's own copy is left alone.
+if ($locked -and $CloseRunning) {
+    $holders = @(Get-Process cus_yard_management -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Path -eq $sharedExe })
+    foreach ($h in $holders) {
+        Write-Host ("  closing pid {0} (holding the shared build)" -f $h.Id) -ForegroundColor DarkGray
+        try { $h.CloseMainWindow() | Out-Null } catch {}
+    }
+    # A moment to exit cleanly before falling back to a stop.
+    $deadline = (Get-Date).AddSeconds(8)
+    while ((Get-Date) -lt $deadline) {
+        $still = @(Get-Process cus_yard_management -ErrorAction SilentlyContinue |
+                   Where-Object { $_.Path -eq $sharedExe })
+        if ($still.Count -eq 0) { break }
+        Start-Sleep -Milliseconds 300
+    }
+    Get-Process cus_yard_management -ErrorAction SilentlyContinue |
+        Where-Object { $_.Path -eq $sharedExe } |
+        ForEach-Object { try { $_.Kill() } catch {} }
+
+    $locked = $false
+    if (Test-Path $sharedExe) {
+        try { [IO.File]::Open($sharedExe, 'Open', 'Write', 'None').Close() }
+        catch { $locked = $true }
+    }
+}
+
 if ($locked) {
+    # ⚠️ Say WHICH windows and HOW STALE. "It is locked" sent the user looking
+    # for a problem in the code three separate times while they read a binary
+    # that was days old -- the report has to name the thing to close and the
+    # age of what they are actually looking at, or it is not actionable.
+    $holders = @(Get-Process cus_yard_management -ErrorAction SilentlyContinue |
+                 Where-Object { $_.Path -eq $sharedExe })
+    $ageText = 'unknown age'
+    if (Test-Path $sharedExe) {
+        $built = (Get-Item $sharedExe).LastWriteTime
+        $hrs = [int]((Get-Date) - $built).TotalHours
+        $ageText = "built $($built.ToString('ddd d MMM HH:mm'))"
+        if ($hrs -ge 1) { $ageText += " -- $hrs hour(s) old" }
+    }
     Write-Host ''
-    Write-Host '  NOTE: build\windows\... is locked by a running app, so it was' -ForegroundColor Yellow
-    Write-Host '        NOT refreshed. Close that window and re-run this, or run' -ForegroundColor Yellow
-    Write-Host '        `flutter run -d windows` yourself, to see these changes.' -ForegroundColor Yellow
+    Write-Host "  NOTE: build\windows\... was NOT refreshed ($ageText)." -ForegroundColor Yellow
+    Write-Host "        $($holders.Count) running window(s) hold its lock:" -ForegroundColor Yellow
+    foreach ($h in $holders) {
+        $started = try { $h.StartTime.ToString('ddd d MMM HH:mm') } catch { 'unknown' }
+        Write-Host ("          pid {0}  (started {1})" -f $h.Id, $started) -ForegroundColor Yellow
+    }
+    Write-Host '        Those windows are showing OLD code. To pick up these' -ForegroundColor Yellow
+    Write-Host '        changes, close them and re-run this script -- or run it' -ForegroundColor Yellow
+    Write-Host '        with -CloseRunning to close them for you.' -ForegroundColor Yellow
 } else {
     $env:APPDATA = $realAppData          # back to the default build directory
     & flutter build windows $modeFlag | Out-Null

@@ -2017,3 +2017,13 @@ The disposition pages (Sold / Destroyed / Re-exported, one screen driven by `fin
 ⚠️ A widget test of these screens must override `dispositionPageWithPackagesProvider` (and `dispositionYearSourceProvider`), **not** `livePackagesProvider` — the screen no longer reads it, and the old override silently yields an empty table.
 
 **Still client-side:** `unsold_packages_screen`, `perishable_goods_screen`, `returned_packages_screen`, `old_entries_screen`, and the directorate tabs.
+
+## "It is locked" was not an actionable message (2026-09-05)
+
+⚠️ **The user's running app is WHY the shared build is locked — that is not a complaint, it is the mechanism.** Windows will not let a build relink an .exe while a process is running it, so `agent_build.ps1` refreshes only its own private slot and reports the shared one as skipped.
+
+The old wording ("close that window and re-run this") sent the user looking for problems in the code **three separate times** while they read a binary that was **88 hours old** — the ×51/×40 report was exactly this. Three windows were holding it, two open for 12 hours.
+
+The note now names **how stale** the shared exe is and **which pids** hold it, with their start times, and `-CloseRunning` closes them (CloseMainWindow, then Kill after 8s) and refreshes the shared build. ⚠️ Never passed automatically — the private slot exists so a rebuild does not disturb what the user is looking at.
+
+**Before believing any "nothing changed" report, check the exe timestamp against the running pids' paths** (`Get-Process cus_yard_management | Select Id, Path, StartTime`).
