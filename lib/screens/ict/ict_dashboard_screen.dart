@@ -1531,11 +1531,16 @@ class _IctModule extends StatelessWidget {
       builder: (context, built) {
         // 1 when this module is centred, 0 once it is a full page away.
         final t = (1 - (animation.value - index).abs()).clamp(0.0, 1.0);
-        final eased = Curves.easeOut.transform(t);
+        // ⚠️ easeOutCubic and a 5% lift, matching the .slideY(begin: 0.05)
+        // every table card in the console plays when its data arrives. The
+        // rail used to move a page in with a flat 12px nudge, so choosing a
+        // module and turning a page — two ways of asking for new rows —
+        // arrived differently, and only one of them looked deliberate.
+        final eased = Curves.easeOutCubic.transform(t);
         return Opacity(
           opacity: eased,
-          child: Transform.translate(
-            offset: Offset(0, (1 - eased) * 12),
+          child: FractionalTranslation(
+            translation: Offset(0, (1 - eased) * 0.05),
             child: built,
           ),
         );

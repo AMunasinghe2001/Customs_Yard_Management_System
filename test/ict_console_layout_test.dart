@@ -313,6 +313,17 @@ void main() {
       // sharp text behind the dialog and the eye keeps reading past it.
       expect(ui, contains('BackdropFilter('));
       expect(ui, contains('ImageFilter.blur(sigmaX: 6 * t, sigmaY: 6 * t)'));
+      // ⚠️ And a real scrim with it. Blur alone still reads as the console,
+      // slightly smudged — the dialog has to look like it is in FRONT of
+      // something, and darkness is what does that.
+      expect(ui, contains('barrierColor: Colors.black.withOpacity(0.45)'));
+      // The dialog takes the console's flat shape, opt-in as ever.
+      expect(ui, contains('DisposalProfileDialog(accent: accent, erp: true)'));
+      final profile = _read('lib/widgets/disposal_profile_dialog.dart');
+      expect(profile, contains('this.erp = false'),
+          reason: 'every other portal keeps the gradient dialog');
+      expect(profile.contains('embedded'), isFalse,
+          reason: 'the reverted page left its flag behind');
     });
   });
 
@@ -384,6 +395,36 @@ void main() {
       // the step you can see where the two meet.
       expect('height: kIctTopBarHeight'.allMatches(ict).length, 2);
       expect(ict, contains('its own bottom rule INSIDE that height'));
+    });
+  });
+
+  group('a module arrives the way a page of rows does', () {
+    // ⚠️ Choosing a module from the rail and turning a page in the pager are
+    // both "show me different rows", so they must not arrive differently.
+    // The table card plays .slideY(begin: 0.05).fadeIn(); the rail used to
+    // nudge the page in by a flat 12px, and only one of them looked meant.
+    test('the rail lifts a module by the same fraction the card does', () {
+      final module = ict.substring(ict.indexOf('class _IctModule'));
+      expect(module, contains('Curves.easeOutCubic'));
+      expect(module, contains('(1 - eased) * 0.05'));
+      expect(logs, contains('slideY(begin: 0.05'));
+    });
+  });
+
+  group('the toolbar controls agree before anything forces them', () {
+    // ⚠️ The bug this locks out was invisible to every layout assertion: both
+    // controls measured kIctControlHeight because a SizedBox said so, while
+    // the dropdown's INTRINSIC height was 48 (a Material prefix icon is a
+    // 48x48 tap target) and its border painted outside the box it was given.
+    test('the dropdown constrains its prefix icon, as the search box does',
+        () {
+      expect(ui, contains('prefixIconConstraints:'));
+      expect('prefixIconConstraints:'.allMatches(ui).length, 2,
+          reason: 'both the search box and the filter must constrain it');
+      // The shared dropdown accepts it but does not default to it: every
+      // other portal's dropdowns keep Material's 48px target.
+      final dd = _read('lib/widgets/styled_dropdown.dart');
+      expect(dd, contains('final BoxConstraints? prefixIconConstraints;'));
     });
   });
 }

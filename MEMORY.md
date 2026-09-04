@@ -1743,3 +1743,13 @@ The login and signup screens needed no change — they are separate screens, not
 - `ictLogYearsProvider` is its own query for the same reason `ictLogEntityTypesProvider` is. ⚠️ Widget tests must override **both** or the tab opens real DB sockets.
 
 Local psql lives at `C:\pgsql-extract\pgsqlin\psql.exe` (not under Program Files) — the service `postgresql-18` runs from `C:\pgsql-extract`.
+
+⚠️ **The search box really WAS shorter than the filters, and every layout measurement said otherwise (2026-09-04).** Both sat in a `SizedBox(height: kIctControlHeight)`, so `getSize` on either returned 34 and three separate tests passed. What differed was the **intrinsic** height: a Material `prefixIcon` is a 48x48 tap target, so the dropdown's `InputDecorator` wanted **48** against the search field's **36** (which constrains its own prefix). Forced into 34, the search box fitted and the dropdown **painted its border outside the box**. Fix: `StyledDropdownFormField` gained an optional `prefixIconConstraints` (⚠️ null keeps Material's default — every other portal's dropdowns rely on it), and `IctSelect` passes the same constraints `IctSearchField` does.
+
+**The lesson, kept:** measuring after a `SizedBox` has forced a height only proves the SizedBox works. `test/ict_control_heights_test.dart` now also renders both controls **unconstrained** and asserts they *want* the same height — that is the test that would have caught it.
+
+⚠️ **`IctSectionCard` header actions use `Expanded`, never `Flexible` + `Spacer`.** Flexible takes only what it needs and the Spacer took the rest, so the Add button landed wherever the SUBTITLE stopped — two cards on one page with different-length subtitles put their buttons at two different x positions.
+
+**`DisposalProfileDialog` has an opt-in `erp` flag** (the dead `embedded` flag from the reverted page is gone): flat header, 12px radius, 440px, the account name on **one line** (a directorate name is a job title and wrapped to two, pushing the close button onto its own row), and a 44px header photo — at 64 it took over a header with no gradient behind it. The profile's scrim is `black 0.45`: blur alone still reads as the console, slightly smudged.
+
+**`_IctModule` lifts an arriving module by `0.05` with `easeOutCubic`** — the same `slideY(begin: 0.05)` a table card plays when its rows arrive. Choosing a module from the rail and turning a page are both "show me different rows"; they must not arrive differently.

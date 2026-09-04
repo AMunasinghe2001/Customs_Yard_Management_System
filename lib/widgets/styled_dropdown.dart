@@ -210,6 +210,14 @@ class StyledDropdownFormField<T> extends StatelessWidget {
   final double menuWidth;
   final Color? fillColor;
   final Widget? prefixIcon;
+
+  /// ⚠️ Optional, and null keeps Material's default 48x48 tap target — which
+  /// is what every other portal's dropdowns have always had, so the default
+  /// must not change. A caller that puts this field in a row of short
+  /// controls has to pass it: a 48px prefix box sets the decorator's
+  /// INTRINSIC height to 48, and forcing that into a shorter box makes the
+  /// border paint outside the box rather than shrink to it.
+  final BoxConstraints? prefixIconConstraints;
   final EdgeInsetsGeometry? contentPadding;
   final TextStyle? valueStyle;
   final TextStyle? labelStyle;
@@ -238,6 +246,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
     this.menuWidth = 260,
     this.fillColor,
     this.prefixIcon,
+    this.prefixIconConstraints,
     this.contentPadding,
     this.valueStyle,
     this.labelStyle,
@@ -298,6 +307,7 @@ class StyledDropdownFormField<T> extends StatelessWidget {
                 fillColor: fillColor,
                 errorText: field.errorText,
                 prefixIcon: prefixIcon,
+                prefixIconConstraints: prefixIconConstraints,
                 contentPadding: contentPadding ??
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 suffixIcon: Icon(Icons.arrow_drop_down_rounded,

@@ -239,7 +239,16 @@ class IctSectionCard extends StatelessWidget {
                   Icon(icon, size: 18, color: IctAccent.of(context)),
                   const Gap(10),
                 ],
-                Flexible(
+                // ⚠️ Expanded, not Flexible-plus-Spacer.
+                //
+                // Flexible takes only what it needs, and the Spacer took the
+                // rest — so the actions ended up wherever the SUBTITLE
+                // happened to stop. Two cards on one page with subtitles of
+                // different lengths put their Add buttons at two different
+                // x positions, which is what made them look scattered.
+                // Expanded gives the title exactly the leftover, so the
+                // actions are always against the card's right edge.
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -265,8 +274,7 @@ class IctSectionCard extends StatelessWidget {
                   const Gap(10),
                   IctCountBadge(text: badge!),
                 ],
-                const Spacer(),
-                for (final a in actions) ...[const Gap(8), a],
+                for (final a in actions) ...[const Gap(12), a],
               ]),
             ),
             Divider(height: 1, thickness: 1, color: c.borderColor),
@@ -440,11 +448,14 @@ Future<void> showIctProfileDialog(BuildContext context, Color accent) {
     context: context,
     barrierDismissible: true,
     barrierLabel: 'Profile',
-    // Lighter than the usual scrim: the blur is already doing the separating,
-    // and the two together turn the console black.
-    barrierColor: Colors.black.withOpacity(0.25),
+    // ⚠️ The blur alone was not enough. A light scrim over a blurred page
+    // still reads as the console, slightly smudged — the dialog has to look
+    // like it is IN FRONT of something, and darkness is what does that. This
+    // matches the scrim every other dialog in the app drops.
+    barrierColor: Colors.black.withOpacity(0.45),
     transitionDuration: const Duration(milliseconds: 180),
-    pageBuilder: (context, _, __) => DisposalProfileDialog(accent: accent),
+    pageBuilder: (context, _, __) =>
+        DisposalProfileDialog(accent: accent, erp: true),
     transitionBuilder: (context, animation, _, child) {
       final t = Curves.easeOut.transform(animation.value);
       return BackdropFilter(
@@ -641,6 +652,19 @@ class IctSelect extends StatelessWidget {
                   const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               prefixIcon: Icon(icon,
                   size: 16, color: set ? accent : c.textMuted),
+              // ⚠️ Constrained, exactly as IctSearchField constrains its own.
+              //
+              // A Material prefix icon is a 48x48 tap target by default, so
+              // the decorator's INTRINSIC height was 48 against the search
+              // box's 36. Both were then forced into a 34px SizedBox: the
+              // search box fitted and the dropdown overflowed, painting its
+              // border taller than the box it was given. Every measurement of
+              // the LAYOUT agreed the two were 34 -- and they were; what
+              // differed was what got painted. Measured now by the probe in
+              // ict_control_heights_test, which asserts the INTRINSIC heights
+              // match before anything is forced.
+              prefixIconConstraints:
+                  const BoxConstraints(minWidth: 38, maxHeight: 20),
               valueStyle: TextStyle(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,

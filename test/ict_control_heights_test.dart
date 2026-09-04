@@ -10,6 +10,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/theme.dart';
 import 'package:cus_yard_management/screens/ict/ict_ui.dart';
 import 'package:cus_yard_management/widgets/styled_dropdown.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cus_yard_management/core/providers.dart';
+import 'package:cus_yard_management/models/models.dart';
+import 'package:cus_yard_management/screens/ict/activity_logs_tab.dart';
 
 const _accent = Color(0xFF8E3A5F);
 
@@ -108,5 +112,101 @@ void main() {
     final bar = tester.getSize(find.byType(IctToolbar)).height;
     expect(bar, lessThanOrEqualTo(kIctToolbarMaxHeight),
         reason: 'the filter strip has grown a second row of padding');
+  });
+
+  // ⚠️ The synthetic toolbar above can agree with itself and still be wrong
+  // about the app. This measures a REAL ICT toolbar — the one on Activity
+  // Logs — and compares the rectangles a person actually sees.
+  testWidgets('on a real screen the boxes line up top and bottom',
+      (tester) async {
+    tester.view.physicalSize = const Size(1600, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        ictAllOfficeLogsProvider.overrideWith(
+            (ref) => Future.value(const AuditLogPage(rows: [], total: 0))),
+        yardFilterOptionsProvider
+            .overrideWith((ref) => Future.value(const <YardFilterOption>[])),
+        ictLogEntityTypesProvider
+            .overrideWith((ref) => Future.value(const <String>[])),
+        ictLogYearsProvider.overrideWith((ref) => Future.value(const [2026])),
+      ],
+      child: MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(body: ActivityLogsTab(accent: _accent)),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final searchBox = tester.getRect(find.descendant(
+        of: find.byType(TextField), matching: find.byType(InputDecorator)));
+    final firstSelect = tester.getRect(find.descendant(
+        of: find.byType(IctSelect).first,
+        matching: find.byType(InputDecorator)));
+
+    // Both cells are a caption over a box, so the boxes share BOTH edges.
+    // Comparing only the bottoms would pass while the search box floated up
+    // with its own height, which is exactly what it did.
+    expect(searchBox.top, moreOrLessEquals(firstSelect.top, epsilon: 0.5),
+        reason: 'the search box sits higher than the filters beside it');
+    expect(searchBox.bottom, moreOrLessEquals(firstSelect.bottom, epsilon: 0.5),
+        reason: 'the search box is shorter than the filters beside it');
+    expect(searchBox.height, kIctControlHeight);
+  });
+
+  // ⚠️ THE test. Every other one here measures the layout after a SizedBox
+  // has forced a height, and they all passed while the dropdown was visibly
+  // taller than the search box on screen — because the box was 34 and what
+  // OVERFLOWED it was the border being painted.
+  //
+  // A Material prefix icon is a 48x48 tap target, so the dropdown's intrinsic
+  // height was 48 against the search field's 36. Given unbounded height, the
+  // two must want the same size; only then does forcing them to one produce
+  // one.
+  testWidgets('unforced, the two want the same height', (tester) async {
+    tester.view.physicalSize = const Size(1200, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.lightTheme,
+      home: Scaffold(
+        body: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
+          // Deliberately NOT inside IctToolbar: no SizedBox, nothing forcing
+          // a height, so each control reports what it actually wants.
+          Expanded(
+            child: IctSearchField(
+              controller: TextEditingController(),
+              accent: _accent,
+              hintText: 'Search',
+              onChanged: (_) {},
+            ),
+          ),
+          Expanded(
+            child: IctSelect(
+              label: 'Yard',
+              icon: Icons.warehouse_rounded,
+              accent: _accent,
+              value: 'all',
+              options: const [StyledDropdownOption('all', 'All Yards')],
+              onChanged: (_) {},
+            ),
+          ),
+        ]),
+      ),
+    ));
+    await tester.pumpAndSettle();
+
+    final boxes = find
+        .byType(InputDecorator)
+        .evaluate()
+        .map((e) => (e.renderObject as RenderBox).size.height)
+        .toList();
+    expect(boxes.length, 2);
+    expect(boxes.first, boxes.last,
+        reason: 'one of them wants to be taller than the box it is given, '
+            'and paints its border outside it');
   });
 }
