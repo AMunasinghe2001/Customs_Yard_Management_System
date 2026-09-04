@@ -139,43 +139,65 @@ class _ActivityLogsTabState extends ConsumerState<ActivityLogsTab> {
     });
   }
 
+  /// The years the log has rows in, plus the current one and the next.
+  ///
+  /// ⚠️ Read from the database, not counted back from today. It used to offer
+  /// "this year and the four before it", so on a system installed this year
+  /// four of the five returned nothing, and on one running longer the sixth
+  /// year back was missing from the very filter meant to find it.
+  List<int> _years() {
+    final years = ref.read(ictLogYearsProvider).valueOrNull;
+    if (years != null && years.isNotEmpty) return years;
+    // Only while the list is still loading.
+    final y = DateTime.now().year;
+    return [y + 1, y];
+  }
+
   /// ⚠️ Anchored under the segment that opened it, using the SAME popup every
   /// other dropdown in the app opens (see showStyledOptionsMenu). Both pickers
   /// were a centred AlertDialog full of tall white boxes — a control that
   /// existed nowhere else in the app, for no reason other than that the menu
   /// helper used to be private.
-  Future<DateTime?> _pickMonth(BuildContext anchor) {
+  ///
+  /// A month is picked in TWO steps: the year, then the month in it. One flat
+  /// list of "September 2026, August 2026, …" can only ever reach back as far
+  /// as someone decided to build it — twelve months, here — so the month
+  /// before that was unreachable no matter how much log there was. Two steps
+  /// reach every month the log holds, and the first step is the same year list
+  /// the Year picker uses.
+  Future<DateTime?> _pickMonth(BuildContext anchor) async {
+    final year = await _pickYear(anchor);
+    if (year == null || !mounted) return null;
+
     final now = DateTime.now();
-    // A year of months back from today — the retention window, so every
-    // option offered can actually return rows.
-    final months = [
-      for (var i = 0; i < 12; i++) DateTime(now.year, now.month - i)
-    ];
+    // Not months that have not happened yet: in the current year the list
+    // stops at this month, because a window over a future month is empty by
+    // definition.
+    final lastMonth = year == now.year ? now.month : 12;
+    if (!anchor.mounted) return null;
     return showStyledOptionsMenu<DateTime>(
       anchor,
-      menuWidth: 200,
+      menuWidth: 170,
       perPage: 12,
       options: [
-        for (final m in months)
-          StyledDropdownOption(m, DateFormat('MMMM yyyy').format(m)),
+        for (var m = lastMonth; m >= 1; m--)
+          StyledDropdownOption(
+              DateTime(year, m), DateFormat('MMMM').format(DateTime(year, m))),
       ],
     );
   }
 
   Future<int?> _pickYear(BuildContext anchor) {
-    final now = DateTime.now();
     return showStyledOptionsMenu<int>(
       anchor,
-      menuWidth: 160,
+      menuWidth: 150,
       perPage: 8,
       options: [
-        for (var y = now.year; y >= now.year - 4; y--)
-          StyledDropdownOption(y, '$y'),
+        for (final y in _years()) StyledDropdownOption(y, '$y'),
       ],
     );
   }
 
-  /// What the period chip reads once a window is chosen.
   String _periodLabel(DateTimeRange? range) {
     if (range == null) return 'All Time';
     switch (_period) {

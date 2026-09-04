@@ -54,6 +54,8 @@ Widget _harness({List<AuditLogModel>? logs}) => ProviderScope(
         // without this the tab opens a real database socket under test.
         ictLogEntityTypesProvider.overrideWith((ref) => Future.value(
             {for (final l in logs ?? _logs) l.entityType}.toList()..sort())),
+        // Same reason: the year list is its own query too.
+        ictLogYearsProvider.overrideWith((ref) => Future.value(const [2026])),
       ],
       child: MaterialApp(
         theme: AppTheme.lightTheme,
@@ -262,6 +264,45 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('4 actions'), findsOneWidget);
+    });
+  });
+
+  group('the date pickers offer the years the log has', () {
+    // ⚠️ Read from the database, not counted back from today. The picker
+    // offered "this year and the four before it": on a system installed this
+    // year four of the five returned nothing, and on one running longer the
+    // sixth year back was missing from the very filter meant to find it.
+    test('the years come from a DISTINCT in SQL, not from the rows', () {
+      final services = _read('lib/services/services.dart');
+      expect(services, contains("supabase.rpc('audit_log_years')"));
+      // The current year and the next are added on top, for the same reason
+      // srYears adds them to the yard's SR filter: on 1 January nothing has
+      // been logged yet.
+      final fn = services.substring(
+          services.indexOf('Future<List<int>> auditLogYears()'));
+      final body = fn.substring(0, fn.indexOf('  }'));
+      expect(body, contains('DateTime.now().year'));
+      expect(body, contains('DateTime.now().year + 1'));
+
+      final sql = _read('postgres/09_audit_log_years.sql');
+      expect(sql, contains('create or replace function public.audit_log_years'));
+      expect(sql, contains('select distinct extract(year from created_at)'));
+      // Self-verifying, like every other migration in this repo.
+      expect(sql, contains(r'do $verify$'));
+    });
+
+    test('a month is picked in two steps, year then month', () {
+      // ⚠️ One flat list of "September 2026, August 2026, …" only reaches as
+      // far back as someone decided to build it — twelve months — so the
+      // month before that was unreachable however much log there was.
+      final month = tab.substring(tab.indexOf('Future<DateTime?> _pickMonth'));
+      final body = month.substring(0, month.indexOf('  }'));
+      expect(body, contains('await _pickYear(anchor)'));
+      // The month list is months alone; the year is already chosen.
+      expect(body, contains("DateFormat('MMMM')"));
+      expect(body, isNot(contains("DateFormat('MMMM yyyy')")));
+      // And it does not offer months that have not happened yet.
+      expect(body, contains('year == now.year ? now.month : 12'));
     });
   });
 }

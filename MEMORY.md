@@ -1734,3 +1734,12 @@ The login and signup screens needed no change — they are separate screens, not
 ⚠️ **The header and the rail's brand block must be built the SAME WAY, not merely the same height.** The rail was a `SizedBox` followed by a `Divider` — a rule in the pixel *after* the box — while the header's `Container` border sits in the last pixel *of* it. Equal heights, rules one pixel apart, and that is the step you can see where they meet. Both are now a `Container(height: kIctTopBarHeight)` drawing its own bottom border.
 
 `kIctToolbarMaxHeight` caps the filter strip and is asserted by measurement — it is the first thing to grow when a control starts setting its own height.
+
+**The Activity Logs year picker reads the DATA (2026-09-04).** It offered a hard-coded "this year and the four before it" — on a system installed this year four of those five returned nothing, and on one running longer the sixth year back was missing from the very filter meant to find it.
+
+- `postgres/09_audit_log_years.sql` adds `audit_log_years()`, a `setof int` of the distinct years in `audit_logs`. ⚠️ **A SQL function, not a query the screen builds**: the honest version of "which years have rows" is a DISTINCT over the whole table, and doing that in Dart means fetching every timestamp to throw all but a handful away — the same mistake the page itself was making before it was paged. Ran green: 2 years over 292 rows.
+- `auditLogYears()` adds **the current year and the next** on top, exactly as `srYears` does for the yard's SR filter, and for the same reason: on 1 January nothing has been logged yet.
+- ⚠️ **A month is picked in TWO steps — year, then month** (`_pickMonth` calls `_pickYear` first). One flat list of "September 2026, August 2026, …" only reaches as far back as someone decided to build it (it was twelve months), so the month before that was unreachable however much log there was. The month list is months alone (`MMMM`, not `MMMM yyyy`) since the year is already chosen, and in the current year it stops at this month — a window over a future month is empty by definition.
+- `ictLogYearsProvider` is its own query for the same reason `ictLogEntityTypesProvider` is. ⚠️ Widget tests must override **both** or the tab opens real DB sockets.
+
+Local psql lives at `C:\pgsql-extract\pgsqlin\psql.exe` (not under Program Files) — the service `postgresql-18` runs from `C:\pgsql-extract`.

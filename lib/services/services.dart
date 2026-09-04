@@ -2990,6 +2990,32 @@ class AuditLogService {
     );
   }
 
+  /// The years the log actually has rows in, newest first, plus the current
+  /// year and the next one.
+  ///
+  /// ⚠️ The DISTINCT runs in Postgres (audit_log_years), not here. Working it
+  /// out in Dart means fetching every timestamp in the table to throw all but
+  /// a handful away — the same mistake this screen was making before it was
+  /// paged in SQL.
+  ///
+  /// The current year and the next are added whether or not they have rows,
+  /// for the same reason [srYears] adds them to the yard's SR filter: on 1
+  /// January nothing has been logged yet, and the year an officer is working
+  /// in must be in the filter meant to find it.
+  Future<List<int>> auditLogYears() async {
+    final data = await supabase.rpc('audit_log_years');
+    final years = <int>{
+      for (final row in (data is List ? data : const []))
+        if (row is Map)
+          (row.values.first as num).toInt()
+        else
+          (row as num).toInt(),
+      DateTime.now().year,
+      DateTime.now().year + 1,
+    };
+    return years.toList()..sort((a, b) => b.compareTo(a));
+  }
+
   /// Every distinct entity type present, for the Activity filter.
   ///
   /// ⚠️ A separate query, because the screen can no longer derive the list

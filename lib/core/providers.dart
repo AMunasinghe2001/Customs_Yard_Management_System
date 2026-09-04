@@ -687,6 +687,16 @@ final ictAllOfficeLogsProvider = FutureProvider<AuditLogPage>((ref) async {
       );
 });
 
+/// The years the Activity Logs date pickers offer.
+///
+/// Its own query for the same reason the entity list is: the screen holds one
+/// page, so a list built from the rows on screen would name the years that
+/// happened to be on that page.
+final ictLogYearsProvider = FutureProvider<List<int>>((ref) async {
+  ref.watch(auditLogsChangeTriggerProvider);
+  return ref.read(auditLogServiceProvider).auditLogYears();
+});
+
 /// The entity types the Activity filter offers.
 ///
 /// Its own query: the screen holds one page now, so a list built from the
