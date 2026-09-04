@@ -51,10 +51,14 @@ void main() {
   Widget harness({bool lastRan = true}) => ProviderScope(
         overrides: [
           tenderRoundsForPackageProvider('fp-1').overrideWith((ref) async => [
-                (id: 'S116', createdAt: ago(126), hasRun: true),
-                (id: 'S084', createdAt: ago(94), hasRun: true),
-                (id: 'S052', createdAt: ago(62), hasRun: true),
-                (id: 'S020', createdAt: ago(30), hasRun: lastRan),
+                (id: 'S116', createdAt: ago(126), hasRun: true,
+                    sold: false, soldPrice: null),
+                (id: 'S084', createdAt: ago(94), hasRun: true,
+                    sold: false, soldPrice: null),
+                (id: 'S052', createdAt: ago(62), hasRun: true,
+                    sold: false, soldPrice: null),
+                (id: 'S020', createdAt: ago(30), hasRun: lastRan,
+                    sold: false, soldPrice: null),
               ]),
           tenderRevaluationsProvider('fp-1').overrideWith((ref) async => {
                 'S084': rv('S084', 738, 94),
@@ -277,6 +281,64 @@ void main() {
       // And the committee round says what it is rather than nothing: it is
       // priced by different people in a different act, not re-valued.
       expect(src, contains("Text('committee value'"));
+    });
+  });
+
+  group('the round that SOLD is part of the history', () {
+    // ⚠️ Bids are only recorded when goods FAIL to sell. So the winning round
+    // has no bids — and no re-valuation either, because nothing needed
+    // re-pricing after it. Every test in the skip rule was therefore true of
+    // it, and the history stopped at the last FAILURE and never said the
+    // package had sold. On a Sold Goods popup that is the one round that
+    // matters.
+    testWidgets('a round with no bids and no re-valuation still shows',
+        (tester) async {
+      await tester.pumpWidget(ProviderScope(
+        overrides: [
+          tenderRoundsForPackageProvider('fp-1').overrideWith((ref) async => [
+                (id: 'S116', createdAt: ago(126), hasRun: true,
+                    sold: false, soldPrice: null),
+                // Sold: no bids, no re-valuation, nothing but the result.
+                (id: 'S050', createdAt: ago(50), hasRun: true,
+                    sold: true, soldPrice: 147314),
+              ]),
+          tenderRevaluationsProvider('fp-1')
+              .overrideWith((ref) async => <String, TenderRevaluationModel>{}),
+          tenderBidsProvider('fp-1').overrideWith((ref) async => {
+                'S116': [110700],
+              }),
+          tenderCommitteesProvider.overrideWith(
+              (ref) async => const <String, TenderCommitteeModel>{}),
+          unsoldProposalsProvider.overrideWith(
+              (ref) async => const <String, UnsoldProposalModel>{}),
+        ],
+        child: MaterialApp(
+          theme: AppTheme.lightTheme,
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: TenderHistorySection(forfeited: fp(), qty: 180),
+            ),
+          ),
+        ),
+      ));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tender 1'), findsOneWidget,
+          reason: 'the round that sold must appear at all');
+      // And it says what it fetched — the number the Sold page is about.
+      expect(find.textContaining('Sold for LKR 147,314'), findsOneWidget);
+    });
+
+    test('the skip rule spares a sold round', () {
+      final src = File('lib/widgets/package_details_dialog.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(src, contains('!sealed && !soldHere'));
+      // The result is carried from the query, not inferred on the screen.
+      final svc = File('lib/services/services.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(svc, contains("'tender_sale_id, sold, sold_price, '"));
     });
   });
 }

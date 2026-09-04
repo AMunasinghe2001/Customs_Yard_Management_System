@@ -1880,3 +1880,9 @@ So `tenderHistoryFor` came out null and the **whole section disappeared** — ev
 The rule is `revalued: i > 0 && reval != null && !isCommitteeRound` — written on the **index**, not on whether row data exists.
 
 ⚠️ **Open question for the user, not yet decided:** for CED/GL1/SR/13/2025 the ORIGINAL valuation (from `disposal_request_items.valuation_cost`) is **204,288**, but round 1 displays **165,447** — a re-valuation keyed to that round. So "Valuation Tender" shows a figure that is not the original. Either the first round genuinely ran at a re-valued price, or the seeder should not key a re-valuation to round 1. **Do not guess this — it is a domain decision.**
+
+⚠️ **Bids are only recorded when goods FAIL to sell — so the winning round has none, and Tender History was dropping it (2026-09-04).** The skip rule was `unit == null && bids.isEmpty && !isCommitteeRound && !sealed → continue`, and every one of those is true of a round that **sold**: no bids (nothing to bid against once it went), and no re-valuation of its own (nothing needed re-pricing afterwards). So the history stopped at the last **failure** and never said the package had sold — on a **Sold Goods** popup, the one round that matters.
+
+- `getTenderRoundsForPackage` now selects `sold, sold_price` and the record carries `sold` / `soldPrice`. ⚠️ Changing that record type breaks `tenderRoundsForPackageProvider` and every widget-test harness that builds one — they must all list the new fields.
+- The skip rule spares a sold round, and the tile shows **"Sold for LKR …"** in green.
+- **The data was already right**: `select count(*) ... where sold and exists(bids)` → **0**. Nothing sells with bids recorded against it. Only the display was wrong. **CED/GL1/SR/13/2025 has 4 rounds** — three unsold with bids, and a 4th that sold for 147,314 with no bids — which is exactly what the user deduced from the screen before anyone looked at the table.

@@ -4984,14 +4984,28 @@ class DisposalService {
   /// had already cached it, but on the yard's Sold Goods page nothing warms it,
   /// so opening a popup paid for the whole nested fetch and the section
   /// appeared noticeably late.
-  Future<List<({String id, DateTime createdAt, bool hasRun})>>
+  Future<
+          List<
+              ({
+                String id,
+                DateTime createdAt,
+                bool hasRun,
+                bool sold,
+                double? soldPrice
+              })>>
       getTenderRoundsForPackage(String forfeitedPackageId) async {
     final rows = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')
-        .select('tender_sale_id, '
+        .select('tender_sale_id, sold, sold_price, '
             'tender_sales(id, created_at, sale_date, sale_time, sale_end_time)')
         .eq('forfeited_package_id', forfeitedPackageId));
-    final out = <String, ({DateTime createdAt, bool hasRun})>{};
+    // ⚠️ `sold` and `soldPrice` ride along because a round that SOLD has
+    // nothing else to show: bids are only recorded when goods fail to sell,
+    // so the winning round has no bids and no re-valuation of its own. Tender
+    // History was dropping it for exactly that reason -- the last thing that
+    // happened to the package was the one thing missing from its history.
+    final out = <String,
+        ({DateTime createdAt, bool hasRun, bool sold, double? soldPrice})>{};
     for (final e in (rows as List)) {
       final sale = e['tender_sales'];
       if (sale is! Map) continue;
@@ -5012,11 +5026,18 @@ class DisposalService {
       out[id] = (
         createdAt: parseDbDateRequired(sale['created_at']),
         hasRun: moment != null && DateTime.now().isAfter(moment),
+        sold: e['sold'] == true,
+        soldPrice: parseDbNum(e['sold_price']),
       );
     }
     final list = out.entries
-        .map((e) =>
-            (id: e.key, createdAt: e.value.createdAt, hasRun: e.value.hasRun))
+        .map((e) => (
+              id: e.key,
+              createdAt: e.value.createdAt,
+              hasRun: e.value.hasRun,
+              sold: e.value.sold,
+              soldPrice: e.value.soldPrice,
+            ))
         .toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return list;

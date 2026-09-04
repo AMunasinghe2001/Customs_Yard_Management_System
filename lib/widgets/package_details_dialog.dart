@@ -202,7 +202,14 @@ class TenderHistorySection extends ConsumerWidget {
     // section appeared visibly later than the rest of the dialog.
     final mine =
         ref.watch(tenderRoundsForPackageProvider(forfeited.id)).valueOrNull ??
-            const <({String id, DateTime createdAt, bool hasRun})>[];
+            const <
+                ({
+                  String id,
+                  DateTime createdAt,
+                  bool hasRun,
+                  bool sold,
+                  double? soldPrice
+                })>[];
 
     // Any round that has a valuation or bids but no matching sale row still
     // deserves a line, so collect those ids too.
@@ -210,6 +217,17 @@ class TenderHistorySection extends ConsumerWidget {
     // Whether each round has actually RUN. A round still to be tendered must
     // not show its price: that is the reserve price for live bidding.
     final ranById = <String, bool>{for (final s in mine) s.id: s.hasRun};
+    // ⚠️ Which round SOLD, and for how much.
+    //
+    // Bids are only recorded when goods FAIL to sell — a round that sold has
+    // none, and it has no re-valuation of its own either, because nothing
+    // needed re-pricing afterwards. The skip rule below therefore threw away
+    // the one round that mattered most: the package's history stopped at the
+    // last failure and never said it had sold.
+    final soldById = <String, double?>{
+      for (final s in mine)
+        if (s.sold) s.id: s.soldPrice
+    };
     for (final id in {...revals.keys, ...bids.keys}) {
       if (id.isNotEmpty && !ordered.contains(id)) ordered.add(id);
     }
@@ -268,9 +286,19 @@ class TenderHistorySection extends ConsumerWidget {
       // afterwards, so showing it here leaked the reserve price of a tender
       // that had not opened yet.
       final sealed = !(ranById[id] ?? false);
+      final soldHere = soldById.containsKey(id);
       // A sealed round still renders — it is the one that says "not yet".
-      if (unit == null && roundBids.isEmpty && !isCommitteeRound && !sealed)
+      // ⚠️ And a round that SOLD always renders, whatever else it lacks: it
+      // has no bids (bidding only happens when goods do not sell) and no
+      // re-valuation (nothing was re-priced after it), so every other test
+      // here would drop it.
+      if (unit == null &&
+          roundBids.isEmpty &&
+          !isCommitteeRound &&
+          !sealed &&
+          !soldHere) {
         continue;
+      }
       rows.add(_TenderRoundTile(
         sealed: sealed,
         label: tenderRoundLabel(i + 1),
@@ -280,6 +308,12 @@ class TenderHistorySection extends ConsumerWidget {
         // Separates "still loading" from "nobody was appointed", so the tile
         // can say which instead of silently listing none.
         committeeLoading: isCommitteeRound && committeeAsync.isLoading,
+        // The round that sold shows what it FETCHED. On a Sold Goods popup
+        // that is the number the whole page is about, and it belongs at the
+        // end of the story rather than only in the table behind it.
+        soldLabel: soldHere && soldById[id] != null
+            ? 'Sold for LKR ${money.format(soldById[id])}'
+            : (soldHere ? 'Sold' : null),
         priceLabel: (unit == null || sealed)
             ? null
             : 'LKR ${money.format(unit * effQty)}'
@@ -420,6 +454,10 @@ class _TenderRoundTile extends StatelessWidget {
   /// tile says so instead of showing a figure.
   final bool sealed;
   final bool revalued;
+
+  /// What this round FETCHED, when it is the one that sold. Null on every
+  /// other round.
+  final String? soldLabel;
   final List<String> bids;
 
   /// The committee-priced round. It takes no bids, so the bid line is replaced
@@ -439,6 +477,7 @@ class _TenderRoundTile extends StatelessWidget {
     required this.priceLabel,
     this.sealed = false,
     required this.revalued,
+    this.soldLabel,
     required this.bids,
     this.isCommitteeRound = false,
     this.committeeMembers = const [],
@@ -499,6 +538,17 @@ class _TenderRoundTile extends StatelessWidget {
                       color: context.colors.primaryGold,
                       fontSize: 11,
                       fontWeight: FontWeight.w600)),
+            ],
+            if (soldLabel != null) ...[
+              const Gap(8),
+              Icon(Icons.check_circle_rounded,
+                  size: 14, color: context.colors.successGreen),
+              const Gap(4),
+              Text(soldLabel!,
+                  style: TextStyle(
+                      color: context.colors.successGreen,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
             ],
             const Spacer(),
             // A sealed round says WHY the figure is missing, in place of it.
