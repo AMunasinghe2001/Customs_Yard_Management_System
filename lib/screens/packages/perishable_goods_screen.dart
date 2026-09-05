@@ -38,41 +38,16 @@ class PerishableRow {
       DateTime.now().difference(package.entryDate ?? package.createdAt).inDays;
 }
 
-/// Every perishable item still awaiting disposal, newest first.
-///
-/// Perishable goods never reach a warehouse and never sit out the appeal
-/// window, so they cannot be found on any of the disposition pages — this is
-/// the only place they appear before they are sent.
-final perishableRowsProvider = FutureProvider<List<PerishableRow>>((ref) async {
-  final packages = await ref.watch(livePackagesProvider.future);
-  final sentKeys = await ref.watch(sentPerishableKeysProvider.future);
-  // ⚠️ An item the DG has ruled on STAYS on this page. It has been sent, so
-  // `sentKeys` holds it -- but dropping it would mean the yard and Central
-  // Disposal never see the decision at all: the goods would simply vanish
-  // from the only page that lists them. The row stays, carrying its outcome.
-  //
-  // ⚠️ NOT awaited. Awaiting it would make the whole list wait on the
-  // outcomes query, so a slow or unavailable one leaves the page empty rather
-  // than merely un-annotated -- and the goods matter more than the label.
-  final decided =
-      ref.watch(unsoldProposalsByItemProvider).valueOrNull ?? const {};
-
-  final rows = <PerishableRow>[];
-  for (final p in packages) {
-    for (final i in p.items) {
-      if (i.nature != kNaturePerishable) continue;
-      // Once sent it belongs to the disposal request, not here -- unless a
-      // final outcome has come back for it.
-      if (sentKeys.contains('${p.id}:${i.id}') && !decided.containsKey(i.id)) {
-        continue;
-      }
-      rows.add(PerishableRow(package: p, item: i));
-    }
-  }
-  rows.sort((a, b) => (b.package.entryDate ?? b.package.createdAt)
-      .compareTo(a.package.entryDate ?? a.package.createdAt));
-  return rows;
-});
+// ⚠️ `perishableRowsProvider` lived here and awaited EVERY package in the
+// yard to find the 47 items registered as perishable. Both of its membership
+// rules moved into the `perishable_rows` view (postgres/24) — nature is
+// perishable, and a SENT item drops off UNLESS a final outcome came back for
+// it.
+//
+// That exception is the important half. Perishable goods never reach a
+// warehouse and never sit out the appeal window, so no disposition page can
+// show them; this is the ONLY page they appear on. Dropping a sent-and-decided
+// item would mean the yard and Central Disposal never see the decision at all.
 
 /// "pkgId:itemId" for every perishable item already in a disposal request.
 final sentPerishableKeysProvider = FutureProvider<Set<String>>((ref) async {
@@ -195,45 +170,43 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
         ),
       );
 
-  List<PerishableRow> _filter(List<PerishableRow> rows) {
-    return rows.where((r) {
-      if (!srYearMatches(r.package.srNumber, _yearFilter)) return false;
-      if (_dateRange != null) {
-        // Falls back to createdAt, as daysWaiting does: entryDate is
-        // nullable and a row without one must not vanish from a date filter
-        // that its neighbours answer.
-        final d = r.package.entryDate ?? r.package.createdAt;
-        // Whole days at both ends: a range picked as 1st-3rd must include
-        // everything filed ON the 3rd, not stop at its first second.
-        final from = DateTime(_dateRange!.start.year, _dateRange!.start.month,
-            _dateRange!.start.day);
-        final to = DateTime(_dateRange!.end.year, _dateRange!.end.month,
-            _dateRange!.end.day, 23, 59, 59);
-        if (d.isBefore(from) || d.isAfter(to)) return false;
-      }
-      if (_activity != 'all' &&
-          (r.item.reasons ?? '') != _activity) {
-        return false;
-      }
-      // Matched on the SR number's own yard segment, like every other
-      // cross-yard page -- the package's `yard` column can be the filing
-      // directorate rather than the yard holding the goods.
-      // The SR number carries the yard, which is what the table itself shows.
-      if (!matchesYardFilter(_yardFilter, yardOfSrNumber(r.package.srNumber),
-          r.package.srNumber)) {
-        return false;
-      }
-      if (_search.isEmpty) return true;
-      final q = _search.toLowerCase();
-      return r.package.srNumber.toLowerCase().contains(q) ||
-          r.package.consigneeName.toLowerCase().contains(q) ||
-          r.item.itemName.toLowerCase().contains(q);
-    }).toList();
+  /// The view's rows, as this page's widgets already expect them.
+  ///
+  /// ⚠️ Replaces `_filter`, which narrowed a list of every perishable item in
+  /// the yard. Which items are listed, in what order, and which page are all
+  /// the view's job now — including the rule that a SENT item stays only if a
+  /// final outcome came back for it, which is why this is the one page those
+  /// goods can still be seen on.
+  List<PerishableRow> _rowsFrom(PerishablePage result) {
+    final out = <PerishableRow>[];
+    for (final k in result.keys) {
+      final pkg = result.packages[k.packageId];
+      if (pkg == null) continue;
+      final item = pkg.items.where((i) => i.id == k.itemId).firstOrNull;
+      if (item == null) continue;
+      out.add(PerishableRow(package: pkg, item: item));
+    }
+    return out;
   }
 
   @override
   Widget build(BuildContext context) {
-    final async = ref.watch(perishableRowsProvider);
+    // ⚠️ Every filter is in the key, so the DATABASE decides which perishable
+    // items are still listed (see postgres/24 for the two membership rules)
+    // and which page of them to return. Awaiting every package in the yard to
+    // find 47 items is what this replaces.
+    final query = PerishableQuery(
+      page: _page,
+      search: _search,
+      // The SR number's own yard segment, not the package's yard column.
+      yardSrPrefix:
+          (_yardFilter == null || _yardFilter == 'all') ? null : _yardFilter,
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+      activity: _activity,
+    );
+    final async = ref.watch(perishablePageProvider(query));
     // The DG's rulings, keyed by item. Both portals read the same map, so the
     // yard and Central Disposal cannot describe one outcome differently.
     final outcomes = ref.watch(unsoldProposalsByItemProvider).valueOrNull ??
@@ -297,7 +270,9 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     label: 'Awaiting disposal',
                     // Counts the rows the TABLE shows, so the number and the
                     // list can never disagree.
-                    value: '${_filter(rows).length}',
+                    // The DATABASE's count for this filter, so the number
+                    // and the list can never disagree.
+                    value: '${rows.total}',
                     color: context.colors.dangerRed,
                   ),
                 ).animate().fadeIn(duration: 300.ms),
@@ -310,7 +285,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     'Send them for disposal without waiting.',
                 trailing: [
                   async.maybeWhen(
-                    data: (rows) => _CountChip(count: _filter(rows).length),
+                    data: (rows) => _CountChip(count: rows.total),
                     orElse: () => const SizedBox(),
                   ),
                   async.maybeWhen(
@@ -318,27 +293,28 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                       icon: const Icon(Icons.local_shipping_rounded, size: 16),
                       label: const Text('Send Disposal Request'),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: rows.isNotEmpty
+                        backgroundColor: rows.total > 0
                             ? context.colors.primaryGold
                             : context.colors.textMuted.withOpacity(0.2),
-                        foregroundColor: rows.isNotEmpty
+                        foregroundColor: rows.total > 0
                             ? Colors.white
                             : context.colors.textMuted,
                         padding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 14),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8)),
-                        elevation: rows.isNotEmpty ? 2 : 0,
+                        elevation: rows.total > 0 ? 2 : 0,
                       ),
                       // The same dialog every other page sends through, so a
                       // perishable request is an ordinary request from here on.
-                      onPressed: rows.isEmpty
+                      onPressed: rows.total == 0
                           ? null
                           : () => showDialog(
                                 context: context,
                                 builder: (_) => DisposalRequestDialog(
                                   onSubmitted: () {
                                     ref.invalidate(livePackagesProvider);
+                                    ref.invalidate(perishablePageProvider);
                                     ref.invalidate(sentPerishableKeysProvider);
                                     ref.invalidate(
                                         requestableForfeitedPackagesProvider);
@@ -459,7 +435,9 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                   YearFilterButton(
                     value: _yearFilter,
                     years: srYears(
-                        async.valueOrNull?.map((r) => r.package.srNumber) ??
+                        // ⚠️ Its own query: one page cannot know which years
+                        // the table covers.
+                        ref.watch(perishableYearsProvider).valueOrNull ??
                             const <String>[]),
                     onChanged: (v) => setState(() {
                       _yearFilter = v;
@@ -482,13 +460,21 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                         color: context.colors.primaryGold)),
                 error: (e, _) => ErrorView(
                     error: e,
-                    onRetry: () => ref.refresh(perishableRowsProvider)),
-                data: (all) {
-                  final rows = _filter(all);
-                  final maxPage =
-                      rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+                    onRetry: () =>
+                        ref.refresh(perishablePageProvider(query))),
+                data: (result) {
+                  // Filtered, sorted and paged by the database. Nothing left
+                  // to narrow here.
+                  final pageRows = _rowsFrom(result);
+                  final maxPage = result.total == 0
+                      ? 0
+                      : (result.total - 1) ~/ kDispositionPageSize;
                   final page = _page.clamp(0, maxPage);
-                  final pageRows = pageSlice(rows, page);
+                  if (_page > maxPage) {
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      if (mounted) setState(() => _page = maxPage);
+                    });
+                  }
 
                   return Column(
                     children: [
@@ -630,8 +616,10 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                         ),
                       ),
                       TablePager(
-                        total: rows.length,
+                        // The database's count for this filter.
+                        total: result.total,
                         page: page,
+                        pageSize: kDispositionPageSize,
                         onPageChanged: (p) => setState(() => _page = p),
                       ),
                     ],

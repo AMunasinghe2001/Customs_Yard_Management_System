@@ -2055,3 +2055,17 @@ Every migration from 20 onward **slices the previous one's body out of the file*
 ⚠️ **`create or replace view` refuses a column list that is not a pure append** — hit twice now (22 and 23). Drop and recreate; nothing but the app reads these views.
 
 **Still client-side:** `perishable_goods_screen`, `old_entries_screen`, and the directorate tabs.
+
+## Perishable Goods: the sent-but-decided exception (2026-09-05)
+
+`perishableRowsProvider` awaited **every package in the yard** and walked it looking for the 47 items registered as perishable. **`perishable_rows`** ([24](postgres/24_perishable_rows_view.sql)) answers both membership rules in SQL. Verified against the live DB: **21 rows, 19 awaiting, 2 decided** — exactly what the page showed before.
+
+⚠️ **The second rule is the subtle one: a SENT item stays if a final outcome came back for it.** Perishables never reach a warehouse and never sit out the appeal window, so **no disposition page can show them** — this is the only page they appear on. Dropping a sent-and-decided item would mean the yard and Central Disposal never see the ruling at all. The verify block asserts it (`sent row(s) remain with no decision to show`).
+
+⚠️ **The yard filter matches the SR NUMBER's own segment, never `packages.yard`** — that column can be the filing directorate rather than the yard holding the goods. Same rule every cross-yard page uses.
+
+`effective_date` is `coalesce(entry_date, created_at)`, mirroring the app's own fallback: `entryDate` is nullable and a row without one must not vanish from a date filter its neighbours answer.
+
+⚠️ **A widget test of this screen overrides `perishablePageProvider` (+ `perishableYearsProvider`), not `livePackagesProvider`.** The harness supplies the *page the view would have returned*, applying the same two rules; the rules themselves are asserted against the SQL in a separate group, so neither half can drift unnoticed.
+
+**Still client-side:** `old_entries_screen` and the directorate tabs.

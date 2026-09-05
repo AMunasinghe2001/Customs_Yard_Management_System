@@ -730,6 +730,86 @@ class PackageService {
     ];
   }
 
+  /// One page of Perishable Goods, filtered and paged in SQL.
+  ///
+  /// ⚠️ `perishableRowsProvider` awaited every package in the yard and walked
+  /// it looking for the 47 items registered as perishable. The
+  /// `perishable_rows` view (postgres/24) answers both membership rules --
+  /// nature is perishable, and it has not been sent unless a decision came
+  /// back -- so only a page's worth ever leaves the database.
+  Future<({List<String> packageIds, List<String> itemIds, int total})>
+      getPerishableRowsPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardSrPrefix,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+    String? activity,
+  }) async {
+    // ⚠️ ONE closure for the rows and the count.
+    PgQuery narrow(PgQuery q) {
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'item_name.ilike.%$s%');
+      }
+      if (year != null && year.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$year');
+      }
+      // ⚠️ Matched on the SR NUMBER's own yard segment, like every other
+      // cross-yard page -- the package's `yard` column can be the filing
+      // directorate rather than the yard actually holding the goods.
+      if (yardSrPrefix != null && yardSrPrefix.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$yardSrPrefix/%');
+      }
+      if (activity != null && activity.isNotEmpty && activity != 'all') {
+        q = q.eq('reasons', activity);
+      }
+      if (dateStart != null) {
+        final from =
+            DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('effective_date', from.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final to =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('effective_date', to.toIso8601String());
+      }
+      return q;
+    }
+
+    final rows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('perishable_rows').select('package_id, item_id'))
+            .order('effective_date', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('perishable_rows')).count());
+
+    return (
+      packageIds: [
+        for (final e in (rows as List))
+          (e as Map<String, dynamic>)['package_id'].toString()
+      ],
+      itemIds: [
+        for (final e in (rows as List))
+          (e as Map<String, dynamic>)['item_id'].toString()
+      ],
+      total: total as int,
+    );
+  }
+
+  /// The SR numbers on Perishable Goods, for its year filter.
+  Future<List<String>> getPerishableYears() async {
+    final data = await AuthService._withNetworkRetry(
+        () => supabase.from('perishable_rows').select('sr_number'));
+    return [
+      for (final row in (data as List))
+        (row as Map<String, dynamic>)['sr_number']?.toString() ?? '',
+    ];
+  }
+
   /// The SR numbers on one disposition page, for its year filter.
   ///
   /// ⚠️ The page now holds only twenty rows, which is nowhere near enough to

@@ -489,6 +489,95 @@ final dispositionPageWithPackagesProvider = FutureProvider.family<
   return (rows: page.rows, packages: packages, total: page.total);
 });
 
+/// What one page of Perishable Goods is asking for.
+@immutable
+class PerishableQuery {
+  final int page;
+  final String? search;
+
+  /// The yard SEGMENT of the SR number, not the package's yard column — the
+  /// latter can be the filing directorate rather than the yard holding the
+  /// goods.
+  final String? yardSrPrefix;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
+  /// The Post Status Activity filter; 'all' and null both mean no filter.
+  final String? activity;
+
+  const PerishableQuery({
+    this.page = 0,
+    this.search,
+    this.yardSrPrefix,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+    this.activity,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is PerishableQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardSrPrefix == yardSrPrefix &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year &&
+      other.activity == activity;
+
+  @override
+  int get hashCode => Object.hash(
+      page, search, yardSrPrefix, dateStart, dateEnd, year, activity);
+}
+
+/// One page of Perishable Goods, with the packages behind it.
+///
+/// ⚠️ The rows name a package and an item; the page needs the whole package
+/// for the details popup and the Send Disposal Request flow, so those are
+/// fetched for the page's ids alone.
+typedef PerishablePage = ({
+  List<({String packageId, String itemId})> keys,
+  Map<String, PackageModel> packages,
+  int total,
+});
+
+final perishablePageProvider =
+    FutureProvider.family<PerishablePage, PerishableQuery>((ref, q) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  ref.watch(disposalRequestsRefreshProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  final page = await ref.read(packageServiceProvider).getPerishableRowsPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardSrPrefix: q.yardSrPrefix,
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+        activity: q.activity,
+      );
+  final packages = await ref
+      .read(packageServiceProvider)
+      .getPackagesByIds(page.packageIds);
+  return (
+    keys: [
+      for (var i = 0; i < page.itemIds.length; i++)
+        (packageId: page.packageIds[i], itemId: page.itemIds[i])
+    ],
+    packages: packages,
+    total: page.total,
+  );
+});
+
+/// Every SR number on Perishable Goods, for its year filter.
+final perishableYearsProvider = FutureProvider<List<String>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getPerishableYears();
+});
+
 /// Every SR number on one disposition page, for its year filter.
 ///
 /// Keyed by the page's tag. The table pages on the server now, so the loaded

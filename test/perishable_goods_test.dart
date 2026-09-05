@@ -38,6 +38,33 @@ Widget _harness({
 }) =>
     ProviderScope(
       overrides: [
+        // ⚠️ The page pages on the SERVER now: which items are listed is the
+        // `perishable_rows` view's job (postgres/24), not a Dart walk over
+        // every package. So the harness supplies the PAGE the view would have
+        // returned, applying the same two membership rules the view applies —
+        // nature is perishable, and a SENT item stays only if a decision came
+        // back for it. The rules themselves are asserted against the SQL in
+        // the "membership lives in SQL" group below.
+        perishablePageProvider.overrideWith((ref, q) {
+          final keys = <({String packageId, String itemId})>[];
+          for (final p in packages) {
+            for (final i in p.items) {
+              if (i.nature != kNaturePerishable) continue;
+              if (sent.contains('${p.id}:${i.id}') &&
+                  !outcomes.containsKey(i.id)) {
+                continue;
+              }
+              keys.add((packageId: p.id, itemId: i.id));
+            }
+          }
+          return Future.value((
+            keys: keys,
+            packages: {for (final p in packages) p.id: p},
+            total: keys.length,
+          ));
+        }),
+        perishableYearsProvider.overrideWith(
+            (ref) => Future.value([for (final p in packages) p.srNumber])),
         livePackagesProvider.overrideWith((ref) => Future.value(packages)),
         sentPerishableKeysProvider.overrideWith((ref) => Future.value(sent)),
         // The DG's rulings, shown on this page so the yard and Central
@@ -551,6 +578,65 @@ void main() {
       // Matched on the name alone: the formatter breaks the property access
       // across lines, and where it breaks is not what this test is about.
       expect(src, contains('successGreen'));
+    });
+  });
+
+  group('membership lives in SQL', () {
+    final view =
+        File('postgres/24_perishable_rows_view.sql').readAsStringSync();
+    final services = File('lib/services/services.dart').readAsStringSync();
+    final src = _read('lib/screens/packages/perishable_goods_screen.dart');
+
+    test('only perishable goods are listed', () {
+      expect(view, contains("where pi.nature = 'perishable'"));
+      expect(view, contains('non-perishable row(s) leaked in'));
+    });
+
+    test('a SENT item stays only if a decision came back', () {
+      // ⚠️ The important half. Perishables never reach a warehouse and never
+      // sit out the appeal window, so no disposition page can show them --
+      // this is the ONLY page they appear on. Dropping a sent-and-decided item
+      // would mean the yard and Central Disposal never see the ruling at all.
+      expect(view, contains(
+          'and (dri.forfeited_package_id is null or up.id is not null)'));
+      expect(view, contains('sent row(s) remain with no decision to show'));
+    });
+
+    test('one row per item, so nothing shows twice', () {
+      expect(view, contains('item(s) appear more than once'));
+    });
+
+    test('the date the page sorts on falls back like the app does', () {
+      // entryDate is nullable; a row without one must not vanish from a date
+      // filter its neighbours answer.
+      expect(view, contains('coalesce(p.entry_date, p.created_at)'));
+      expect(view, contains('as effective_date'));
+    });
+
+    test('the yard filter matches the SR NUMBER, not the yard column', () {
+      // ⚠️ The package's yard column can be the filing directorate rather
+      // than the yard actually holding the goods -- every cross-yard page
+      // matches on the SR number's own segment.
+      final m = services.substring(services.indexOf('getPerishableRowsPaged'));
+      expect(m, contains(r"q.ilike('sr_number', '%/$yardSrPrefix/%')"));
+    });
+
+    test('one filter closure serves the rows and the count', () {
+      final m = services.substring(services.indexOf('getPerishableRowsPaged'));
+      expect(m, contains('PgQuery narrow(PgQuery q)'));
+      expect(m, contains("narrow(supabase.from('perishable_rows')).count()"));
+      expect(m, contains('.range(offset, offset + limit - 1)'));
+    });
+
+    test('the screen reads the paged provider and the server count', () {
+      expect(src, contains('perishablePageProvider(query)'));
+      expect(src, contains('total: result.total,'));
+      expect(src, isNot(contains('final perishableRowsProvider')));
+      expect(src, isNot(contains('List<PerishableRow> _filter(')));
+    });
+
+    test('the year filter runs its own query', () {
+      expect(src, contains('perishableYearsProvider'));
     });
   });
 }
