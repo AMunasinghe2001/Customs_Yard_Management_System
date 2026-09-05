@@ -2240,4 +2240,16 @@ Live: **16 confirmed, 23 awaiting** — exactly the status split in the data.
 
 ⚠️ Three unused declarations the analyzer flags here (`_YardFilter`, `_parseDestroyReceipt`, `_DestructionValuationCell`) were **already unused before this change** — checked against a copy of the file rather than assumed.
 
-**Remaining tabs:** Unsold Tenders, Committees, Perishable, Unsold, Government Use, Auction, Converted, Removed, Taxes, Expenses.
+## Central Disposal paging, 5-9 of N: the five outcome tabs (2026-09-06)
+
+Government Use, Auction, Converted, Removed **and Unsold Goods** all share `UnsoldProposalsTab`, so one change paged all five. They read `exhausted_unsold` ([23](postgres/23_exhausted_unsold_view.sql)) — the view already built for the yard side.
+
+⚠️ **`proposalFilter` belongs in the query KEY, not a Dart filter.** Each tab asks for its own outcome; Unsold Goods (null) asks for all of them. Filtering afterwards would mean every tab fetched every outcome.
+
+⚠️ **The page index is keyed by tab** (`_unsoldPageProvider(tabKey)`) — five tabs share one widget, and a single provider would carry one tab's page number into the next.
+
+⚠️ **Central Disposal's copy searches the CASE NUMBER**; the yard's does not. That one term would have kept the whole list in Dart, so `case_number` was joined onto the view (with a verify that it is actually there).
+
+⚠️ **`exhaustedUnsoldProvider` is still read elsewhere and rightly so** — the Unsold Tenders tab uses it as an *exclusion set*, dropping packages that have run out of rounds from its re-tender pool. That is a different question and genuinely wants all of them. The test scopes its "no longer reads it" assertion to the outcome widget alone.
+
+**Remaining tabs:** Unsold Tenders, Committees, Perishable, Taxes, Expenses.

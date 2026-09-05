@@ -495,7 +495,6 @@ class UnsoldProposalsTab extends ConsumerWidget {
     final blue = context.colors.accentLightBlue;
     // The shared "every avenue exhausted" list, so this tab, the yard page and
     // the Top Management Directorate all show exactly the same packages.
-    final async = ref.watch(exhaustedUnsoldProvider);
     // Top Management tender committees, keyed by forfeited_package_id — their
     // valuation supersedes the original for an unsold package.
     final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
@@ -507,42 +506,31 @@ class UnsoldProposalsTab extends ConsumerWidget {
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
 
-    final rows = async.when(
-      skipLoadingOnReload: true,
-      loading: () => const <ReTenderSaleInfo>[],
-      error: (_, __) => const <ReTenderSaleInfo>[],
-      data: (list) {
-        var filtered = list;
-        // The outcome this tab is for. Applied FIRST so the count pill, the
-        // table and the pager all describe the same set.
-        if (proposalFilter != null) {
-          filtered = filtered
-              .where((info) =>
-                  proposals[info.forfeited.id]?.proposal == proposalFilter)
-              .toList();
-        }
-        if (yardFilter != null) {
-          filtered = filtered
-              .where((info) => matchesYardFilter(
-                  yardFilter, info.forfeited.yard, info.forfeited.srNumber))
-              .toList();
-        }
-        if (q.isNotEmpty) {
-          filtered = filtered.where((info) {
-            final f = info.forfeited;
-            return f.srNumber.toLowerCase().contains(q) ||
-                f.consigneeName.toLowerCase().contains(q) ||
-                unsoldItemName(f).toLowerCase().contains(q) ||
-                (f.packageDetails?.caseNumber ?? '').toLowerCase().contains(q);
-          }).toList();
-        }
-        return filtered;
-      },
+    // ⚠️ One PAGE, chosen in SQL. `exhaustedUnsoldProvider` answers the same
+    // membership question by loading EVERY tender sale in the yard with every
+    // item and join, then narrowing to the handful that have run out of road
+    // -- and this tab shows all twenty-eight yards. The `exhausted_unsold`
+    // view (postgres/23) applies those four conditions in the database.
+    //
+    // The five outcome tabs share this widget, so `proposalFilter` is part of
+    // the key: Government Use, Auction, Converted and Removed each ask for
+    // their own outcome, and Unsold Goods (null) asks for all of them.
+    final query = ExhaustedUnsoldQuery(
+      page: ref.watch(_unsoldPageProvider(tabKey)),
+      search: q,
+      yard: yardFilter,
+      proposal: proposalFilter,
     );
+    final async = ref.watch(exhaustedUnsoldPageProvider(query));
+    final result = async.valueOrNull ??
+        (rows: const <ReTenderSaleInfo>[], total: 0);
+    final rows = result.rows;
 
-    final maxPage = rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
+    final total = result.total;
+    final maxPage = total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
     final page = ref.watch(_unsoldPageProvider(tabKey)).clamp(0, maxPage);
-    final pageRows = rows.skip(page * _pageSize).take(_pageSize).toList();
+    // Already filtered and paged by the database -- nothing left to narrow.
+    final pageRows = rows;
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -595,7 +583,9 @@ class UnsoldProposalsTab extends ConsumerWidget {
             child: StatChip(
                 label:
                     '$countNoun in ${yardFilter == null ? 'all yards' : yardName(yardFilter)}',
-                value: '${rows.length}',
+                // ⚠️ The DATABASE's count for this filter. `rows.length` is
+                // one page, so the pill would read 20 whatever the yards hold.
+                value: '$total',
                 color: amber),
           ),
           Expanded(
@@ -698,11 +688,11 @@ class UnsoldProposalsTab extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      if (rows.isNotEmpty)
+                      if (total > 0)
                         TablePager(
-                          total: rows.length,
+                          total: total,
                           page: page,
-                          pageSize: _pageSize,
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => ref
                               .read(_unsoldPageProvider(tabKey).notifier)
                               .state = p,

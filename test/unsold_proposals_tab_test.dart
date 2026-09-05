@@ -45,13 +45,14 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          // The tab reads exhaustedUnsoldProvider ("every avenue exhausted"),
-          // not unsoldTenderSalesProvider. Overriding the latter left the real
-          // provider live, so the widget queried a database that isn't there
-          // and rendered an empty table.
-          exhaustedUnsoldProvider.overrideWith((ref) => Future.value([
-                ReTenderSaleInfo(forfeited: forfeited, sales: const []),
-              ])),
+          // ⚠️ The tab pages on the SERVER now: which packages have run out
+          // of tenders is the `exhausted_unsold` view's job (postgres/23), so
+          // the harness supplies the PAGE that view would have returned rather
+          // than a list for the widget to narrow.
+          exhaustedUnsoldPageProvider.overrideWith((ref, q) => Future.value((
+                rows: [ReTenderSaleInfo(forfeited: forfeited, sales: const [])],
+                total: 1,
+              ))),
           // Also stubbed, for the same reason: both are read during build.
           unsoldProposalsProvider.overrideWith(
               (ref) => Future.value(const <String, UnsoldProposalModel>{})),
@@ -145,9 +146,10 @@ void main() {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
-          exhaustedUnsoldProvider.overrideWith((ref) => Future.value([
-                ReTenderSaleInfo(forfeited: forfeited, sales: const []),
-              ])),
+          exhaustedUnsoldPageProvider.overrideWith((ref, q) => Future.value((
+                rows: [ReTenderSaleInfo(forfeited: forfeited, sales: const [])],
+                total: 1,
+              ))),
           unsoldProposalsProvider.overrideWith((ref) => Future.value({
                 'fp-1': UnsoldProposalModel(
                   id: 'prop-1',

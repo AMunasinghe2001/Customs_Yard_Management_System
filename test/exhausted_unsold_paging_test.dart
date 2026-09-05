@@ -158,4 +158,54 @@ void main() {
       expect(screen, contains('exhaustedUnsoldYearsProvider'));
     });
   });
+
+  group("Central Disposal's five outcome tabs share this view", () {
+    final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync();
+
+    test('the outcome is part of the query key, not a Dart filter', () {
+      // ⚠️ Government Use, Auction, Converted and Removed each ask for their
+      // own outcome; Unsold Goods (null) asks for all of them. Filtering in
+      // Dart would mean every tab fetched every outcome.
+      expect(dash, contains('proposal: proposalFilter,'));
+      expect(dash, contains('exhaustedUnsoldPageProvider(query)'));
+      // ⚠️ Scoped to THIS widget. `exhaustedUnsoldProvider` is still read
+      // elsewhere in the file as an EXCLUSION set -- the Unsold Tenders tab
+      // uses it to drop packages that have run out of rounds from its
+      // re-tender pool, which is a different question and rightly still asks
+      // for all of them.
+      final tab = dash.substring(dash.indexOf('class UnsoldProposalsTab'),
+          dash.indexOf('class _SoldPackagesTab'));
+      expect(tab, isNot(contains('ref.watch(exhaustedUnsoldProvider)')));
+    });
+
+    test('the page index is keyed by tab', () {
+      // ⚠️ The five tabs share one widget, so a single provider would carry
+      // one tab's page number into the next.
+      expect(dash, contains('_unsoldPageProvider(tabKey)'));
+      expect(dash, contains('page: ref.watch(_unsoldPageProvider(tabKey)),'));
+    });
+
+    test('the count pill and the pager both read the server total', () {
+      // `rows.length` is one page: the pill would read 20 whatever the
+      // twenty-eight yards hold.
+      expect(dash, contains("value: '\$total',"));
+      expect(dash, contains('if (total > 0)'));
+      expect(dash, contains('pageSize: kDispositionPageSize,'));
+    });
+
+    test('nothing is narrowed in Dart afterwards', () {
+      expect(dash,
+          contains('// Already filtered and paged by the database'));
+    });
+
+    test('the case number is searchable, which needed a column', () {
+      // ⚠️ Central Disposal's copy searches it and the yard's does not.
+      // Leaving it out would have kept the whole list in Dart for that one
+      // term -- exactly the cost this view removes.
+      expect(view, contains('p.case_number'));
+      expect(view, contains('case_number is missing from the view'));
+      expect(services, contains(r'case_number.ilike.%$s%'));
+    });
+  });
 }

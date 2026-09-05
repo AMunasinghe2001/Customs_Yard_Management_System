@@ -118,7 +118,10 @@ void main() {
     });
 
     test('the pager is hidden when there is nothing to page', () {
-      expect(dash, contains('if (rows.isNotEmpty)\n'
+      // ⚠️ Against the DATABASE's total, not the loaded rows. The tab pages on
+      // the server now, so `rows` holds one page — a count taken from it would
+      // be wrong on every page, and empty-looking on none.
+      expect(dash, contains('if (total > 0)\n'
           '                        TablePager('));
     });
   });

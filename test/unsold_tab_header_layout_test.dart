@@ -16,8 +16,10 @@ import 'package:cus_yard_management/screens/disposal/disposal_dashboard_screen.d
 void main() {
   Widget harness(String title) => ProviderScope(
         overrides: [
-          exhaustedUnsoldProvider
-              .overrideWith((ref) => Future.value(const <ReTenderSaleInfo>[])),
+          // The tab pages on the server; an empty page is what this layout
+          // test wants anyway.
+          exhaustedUnsoldPageProvider.overrideWith((ref, q) => Future.value(
+              (rows: const <ReTenderSaleInfo>[], total: 0))),
           unsoldProposalsProvider.overrideWith(
               (ref) => Future.value(const <String, UnsoldProposalModel>{})),
           storageRateProvider.overrideWith(

@@ -6170,10 +6170,10 @@ class DisposalService {
       if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
-        // The item name too — the view resolves it per item, the way
-        // unsoldItemName() does.
+        // The item name and the CASE NUMBER too — Central Disposal's copy of
+        // this table searches both, and the view carries them.
         q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
-            'item_name.ilike.%$s%');
+            'item_name.ilike.%$s%,case_number.ilike.%$s%');
       }
       if (year != null && year.isNotEmpty) {
         q = q.ilike('sr_number', '%/$year');

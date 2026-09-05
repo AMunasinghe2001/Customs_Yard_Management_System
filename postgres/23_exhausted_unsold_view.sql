@@ -75,6 +75,10 @@ select fp.id                              as forfeited_package_id,
                 (select i2.item_name from public.package_items i2
                   where i2.package_id = fp.package_id
                   order by i2.created_at limit 1))  as item_name,
+       -- ⚠️ Central Disposal's copy of this table searches the CASE NUMBER as
+       -- well. Without it that one term would have kept the whole list in
+       -- Dart, which is the cost this view exists to remove.
+       p.case_number,
        a.tender_count,
        tc.submitted_value,
        tc.submitted_at,
@@ -85,6 +89,7 @@ select fp.id                              as forfeited_package_id,
   from public.forfeited_packages fp
   join agg a                        on a.fp_id = fp.id
   left join public.package_items pi  on pi.id = fp.item_id
+  left join public.packages p        on p.id = fp.package_id
   join public.tender_committees tc   on tc.forfeited_package_id = fp.id
   left join public.unsold_proposals up on up.forfeited_package_id = fp.id
  where not a.ever_sold                               -- 1
@@ -147,6 +152,14 @@ begin
     from public.exhausted_unsold where item_name is null;
   if bad <> 0 then
     raise exception '% row(s) have no item name to search on', bad;
+  end if;
+
+  -- ⚠️ And the case number must actually be joined, or Central Disposal's
+  -- search silently stops finding goods by it.
+  if not exists (select 1 from information_schema.columns
+                  where table_name = 'exhausted_unsold'
+                    and column_name = 'case_number') then
+    raise exception 'case_number is missing from the view';
   end if;
 
   raise notice '% package(s) have run out of tenders; % already decided',
