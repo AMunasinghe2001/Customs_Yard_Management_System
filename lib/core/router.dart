@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../screens/home/home_screen.dart';
+import '../screens/home/splash_gate.dart';
 import '../screens/home/yard_access_screen.dart';
 import '../screens/login/login_screen.dart';
 import '../screens/admin/admin_login_screen.dart';
@@ -101,7 +102,14 @@ final routerProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
-      GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
+      // ⚠️ The splash runs ONCE per launch, not on every visit to '/'. Signing
+      // out returns here, and a seal that reappeared then would read as the
+      // app restarting — see `SplashGate.consume`.
+      GoRoute(
+          path: '/',
+          builder: (_, __) => SplashGate.consume()
+              ? const SplashGate(child: HomeScreen())
+              : const HomeScreen()),
       GoRoute(
           path: '/yard-access', builder: (_, __) => const YardAccessScreen()),
       GoRoute(path: '/login', builder: (_, __) => const LoginScreen()),

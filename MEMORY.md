@@ -2120,3 +2120,21 @@ Six sources, each with its own `row_key` prefix: `D:` detained · `AE:`/`AS:` ab
 **Sent items are excluded by the QUERY** (`sent = false`), not by a set held in the widget.
 
 **Every page in the app now pages in SQL.**
+
+## The launch splash (2026-09-05)
+
+[splash_gate.dart](lib/screens/home/splash_gate.dart) — the Customs seal, then the portal page, dissolving through a blur.
+
+⚠️ **Not decoration over an idle app.** `main()` shows the window **before** it connects to PostgreSQL, caches the query layer's foreign keys and starts the change listener — so a cold start has always shown a portal page not yet backed by a database. The splash covers exactly that gap.
+
+⚠️ **The home screen is built BEHIND the splash the whole time**, never swapped in at the end. Building it afterwards would run its own entrance animations after the splash's, and the reader would watch the app assemble itself twice.
+
+⚠️ **`SplashGate.consume()` — once per launch, not once per visit to `/`.** Signing out lands on the portal page and the route rebuilds; a seal reappearing there reads as the whole app restarting.
+
+⚠️ **The splash is removed from the tree when done** (`_done`), not left transparent — a stacked overlay keeps eating pointer events and repainting a blur nobody sees. `IgnorePointer` must wrap **everything** it paints: the layer's background `Container` is opaque to hit testing.
+
+⚠️ **A zero-sigma `ImageFilter.blur` can render as a black rectangle** on some backends, so the filter is only applied once the lift starts.
+
+⚠️ Timers are held and **cancelled in `dispose()`** — a bare `Future.delayed` leaves "A Timer is still pending" in widget tests.
+
+⚠️ **Test trap found the hard way**: a `GestureDetector` wrapping a bare `SizedBox` is **not hit-testable**, so a tap misses whether a splash covers it or not — the test passed for the wrong reason until `behavior: HitTestBehavior.opaque` was added. A baseline with the widget removed entirely is what exposed it.

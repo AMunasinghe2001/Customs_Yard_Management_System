@@ -1,0 +1,157 @@
+// The seal, then the portals.
+//
+// The window is shown BEFORE main() connects to PostgreSQL, caches the query
+// layer's foreign keys and starts the change listener -- so on a cold start
+// the first thing on screen has always been a portal page not yet backed by a
+// database. The splash covers exactly that gap.
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:cus_yard_management/core/theme.dart';
+import 'package:cus_yard_management/screens/home/splash_gate.dart';
+
+void main() {
+  setUp(SplashGate.resetForTest);
+
+  Widget host(Widget child) => MaterialApp(
+        theme: AppTheme.lightTheme,
+        home: child,
+      );
+
+  group('it runs once per launch, not once per visit', () {
+    test('the first ask gets the splash', () {
+      expect(SplashGate.consume(), isTrue);
+    });
+
+    test('every ask after that does not', () {
+      // ⚠️ '/' is also where SIGNING OUT lands, and the route rebuilds every
+      // time. A seal that reappeared then would read as the whole app
+      // restarting, which is alarming rather than welcoming.
+      expect(SplashGate.consume(), isTrue);
+      expect(SplashGate.consume(), isFalse);
+      expect(SplashGate.consume(), isFalse);
+    });
+
+    test('the router asks exactly once, and uses the answer', () {
+      final router = File('lib/core/router.dart').readAsStringSync();
+      expect('SplashGate.consume()'.allMatches(router).length, 1);
+      expect(router, contains('SplashGate(child: HomeScreen())'));
+      // And the bare page when the splash is spent.
+      expect(router, contains(': const HomeScreen()'));
+    });
+  });
+
+  group('the page underneath is built the whole time', () {
+    testWidgets('the child is in the tree from the first frame', (t) async {
+      // ⚠️ Not swapped in at the end. Building the portal only after the
+      // splash would run its own entrance animations afterwards, and the
+      // reader would watch the app assemble itself twice.
+      await t.pumpWidget(host(const SplashGate(
+          child: Center(child: Text('portal', key: Key('portal'))))));
+      await t.pump();
+      expect(find.byKey(const Key('portal')), findsOneWidget);
+      // Run the splash out so no timer outlives the tree.
+      await t.pump(SplashGate.hold);
+      await t.pumpAndSettle();
+    });
+
+    testWidgets('the seal is over it while it holds', (t) async {
+      await t.pumpWidget(host(const SplashGate(child: SizedBox())));
+      await t.pump();
+      expect(find.text('Sri Lanka Customs'), findsOneWidget);
+      expect(find.text('SR Management System'), findsOneWidget);
+      await t.pump(SplashGate.hold);
+      await t.pumpAndSettle();
+    });
+  });
+
+  group('it gets out of the way', () {
+    testWidgets('the splash is gone from the tree once it has lifted',
+        (t) async {
+      await t.pumpWidget(host(const SplashGate(child: SizedBox())));
+      await t.pump();
+      expect(find.text('Sri Lanka Customs'), findsOneWidget);
+
+      // Hold, then dissolve.
+      await t.pump(SplashGate.hold);
+      await t.pump(SplashGate.fade);
+      await t.pumpAndSettle();
+
+      // ⚠️ Removed entirely, not merely transparent: a stacked overlay left
+      // behind keeps eating pointer events and repainting a blur nobody sees.
+      expect(find.text('Sri Lanka Customs'), findsNothing);
+    });
+
+    testWidgets('the page below becomes clickable as soon as it starts showing',
+        (t) async {
+      var taps = 0;
+      await t.pumpWidget(host(SplashGate(
+        child: Center(
+          child: GestureDetector(
+            // ⚠️ behavior: opaque. A bare SizedBox has no background and is
+            // not hit-testable, so the tap misses whether a splash is over it
+            // or not -- which would make this test pass for the wrong reason.
+            behavior: HitTestBehavior.opaque,
+            onTap: () => taps++,
+            child: const SizedBox(width: 200, height: 80, key: Key('card')),
+          ),
+        ),
+      )));
+      await t.pump();
+
+      // While the seal is up the tap is caught by the curtain.
+      await t.tap(find.byKey(const Key('card')), warnIfMissed: false);
+      expect(taps, 0, reason: 'the seal should absorb taps while it holds');
+
+      // Once it lifts the page takes them, even mid-fade.
+      await t.pump(SplashGate.hold);
+      await t.pump(const Duration(milliseconds: 50));
+      await t.tap(find.byKey(const Key('card')));
+      expect(taps, 1);
+
+      await t.pumpAndSettle();
+    });
+  });
+
+  group('the timings stay honest', () {
+    test('the hold is short', () {
+      // ⚠️ A splash that outstays the work it covers is just a delay, and this
+      // one runs on every launch.
+      expect(SplashGate.hold.inMilliseconds, lessThanOrEqualTo(1500));
+      expect(SplashGate.fade.inMilliseconds, lessThanOrEqualTo(800));
+    });
+  });
+
+  group('the blur', () {
+    final src =
+        File('lib/screens/home/splash_gate.dart').readAsStringSync();
+
+    test('is never applied at exactly zero sigma', () {
+      // ⚠️ A zero-sigma blur renders as a black rectangle on some backends
+      // rather than as no blur at all.
+      expect(src, contains('t <= 0.001'));
+      expect(src, contains('sigmaX: 0.01, sigmaY: 0.01'));
+    });
+
+    test('the layer recedes as one thing', () {
+      // Blur and scale share the same tween, so it does not fade in parts.
+      expect(src, contains('Transform.scale(scale: 1 + t * 0.06'));
+    });
+  });
+
+  group('the background does not jump when the seal lifts', () {
+    test('the splash carries the same two glows the portal page does', () {
+      final splash =
+          File('lib/screens/home/splash_gate.dart').readAsStringSync();
+      final home =
+          File('lib/screens/home/home_screen.dart').readAsStringSync();
+      for (final src in [splash, home]) {
+        expect(src, contains('customsBlue.withOpacity(0.35)'));
+        expect(src, contains('primaryGold.withOpacity(0.12)'));
+        expect(src, contains('top: -80'));
+        expect(src, contains('bottom: -80'));
+      }
+    });
+  });
+}
