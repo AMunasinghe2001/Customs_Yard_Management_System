@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
-import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
@@ -361,7 +360,19 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],
-                    );
+                    )
+                        // ⚠️ The table has to arrive like every other page's.
+                        // The header and the filter bar above it were already
+                        // animated and this was not, so the two slid in and
+                        // the rows simply appeared underneath them — which
+                        // read as the table snapping into place.
+                        //
+                        // Same 400ms slide and the same 300ms delay the other
+                        // tables use, so it lands just after the filter bar
+                        // rather than racing it.
+                        .animate()
+                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
+                        .fadeIn();
                   },
                 ),
               ),

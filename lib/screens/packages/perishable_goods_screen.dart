@@ -624,8 +624,12 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                       ),
                     ],
                   )
+                      // ⚠️ 300ms, not 200 — the filter bar above it already
+                      // uses 200, so the two were sliding in together and the
+                      // page arrived as one block instead of settling top to
+                      // bottom. Every other table waits 300.
                       .animate()
-                      .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
+                      .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
                       .fadeIn();
                 },
               ),

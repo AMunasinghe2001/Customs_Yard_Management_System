@@ -2165,3 +2165,11 @@ The splash's `LinearProgressIndicator` was removed: it read as a gold **underlin
 Timings rebalanced with it: **hold 750ms** (the splash no longer has to stall until the page is ready) and **fade 900ms** — ⚠️ deliberately *longer than the hold*, because the page's entrance runs underneath it and a 620ms curtain vanished while half the cards were still moving. It does **not** need to cover the full 1.85s; the last cards arriving in clear view is the page waking up, not a glitch.
 
 **Verified by pumping the timeline and printing each frame** rather than by reasoning about it: 0–750ms seal only and portal unmounted · 751ms portal mounts as the curtain starts to go · 751–1651ms both present · 1651ms curtain out of the tree.
+
+## Every paged table animates in, on the same three-step clock (2026-09-05)
+
+Old Entries animated its header and its filter bar but **not its table**, so the two slid in and the rows simply appeared underneath them — the table read as snapping into place while the rest of the page settled. Perishable Goods had a subtler version of the same fault: its table used the filter bar's own **200ms** delay, so the two moved together and the page arrived as one block.
+
+**The sequence, top to bottom:** header (no delay) → filter bar (**200ms**) → table (**300ms**), each a 400ms `slideY(begin: 0.1)` + `fadeIn`.
+
+⚠️ Adding a paged screen means ending its table's `Column` with `.animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn()`. [table_entrance_animation_test.dart](test/table_entrance_animation_test.dart) holds all nine screens to it, and its first assertion (that each file still renders a `DataTable2`) fails loudly if a screen is renamed rather than quietly dropping out of the check.
