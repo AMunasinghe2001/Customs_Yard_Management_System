@@ -1541,6 +1541,62 @@ final tenderSalesProvider = FutureProvider<List<TenderSaleModel>>((ref) async {
   return ref.read(disposalServiceProvider).getTenderSales();
 });
 
+/// What one page of Tender Sales is asking for.
+@immutable
+class TenderSaleQuery {
+  final int page;
+  final String? search;
+  final String? yardFilter;
+
+  /// Hide sales with nothing left to act on. Central Disposal's own tab does;
+  /// the read-only views show everything.
+  final bool onlyPending;
+
+  const TenderSaleQuery({
+    this.page = 0,
+    this.search,
+    this.yardFilter,
+    this.onlyPending = false,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is TenderSaleQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardFilter == yardFilter &&
+      other.onlyPending == onlyPending;
+
+  @override
+  int get hashCode => Object.hash(page, search, yardFilter, onlyPending);
+}
+
+typedef TenderSalePage = ({List<TenderSaleModel> rows, int total});
+
+/// One page of Tender Sales, chosen in SQL and then loaded in full.
+final tenderSalesPageProvider =
+    FutureProvider.family<TenderSalePage, TenderSaleQuery>((ref, q) async {
+  ref.watch(tenderSalesRefreshProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getTenderSalesPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+        onlyPending: q.onlyPending,
+      );
+});
+
+/// The sales that RE-TENDER goods from an earlier one.
+///
+/// ⚠️ Its own query over ALL sales. Derived from one page, a sale would be
+/// marked as new simply because its predecessor sat on the page before.
+final retenderSaleIdsProvider = FutureProvider<Set<String>>((ref) async {
+  ref.watch(tenderSalesRefreshProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getRetenderSaleIds();
+});
+
 final destructionsRefreshProvider =
     StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
 

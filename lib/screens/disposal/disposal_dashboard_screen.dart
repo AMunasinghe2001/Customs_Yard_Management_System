@@ -2697,13 +2697,45 @@ class _UnsoldReTenderTab extends ConsumerWidget {
 
 // ── Tender Sales ──────────────────────────────────────────────────
 
-class _TenderSalesTab extends ConsumerWidget {
+class _TenderSalesTab extends ConsumerStatefulWidget {
   const _TenderSalesTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_TenderSalesTab> createState() => _TenderSalesTabState();
+}
+
+class _TenderSalesTabState extends ConsumerState<_TenderSalesTab> {
+  /// ⚠️ Stateful only for this: the tab had no pager, and the page index is
+  /// per-tab state that must survive a rebuild but not a tab change.
+  int _tenderSalePage = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final green = context.colors.successGreen;
-    final sales = ref.watch(tenderSalesProvider);
+    // ⚠️ One PAGE of sales. `tenderSalesProvider` is the heaviest query in
+    // the app -- every sale with its items, their forfeited rows, packages,
+    // package items and warehouse entries -- and this tab shows all 28 yards.
+    // The `tender_sale_summary` view (postgres/26) chooses the page; the full
+    // objects are loaded only for it.
+    final query = TenderSaleQuery(
+      page: _tenderSalePage,
+      search: ref.watch(disposalSearchProvider('tendersales')),
+      yardFilter: ref.watch(disposalYardFilterProvider('tendersales')),
+      // This tab hides sales with nothing left to act on.
+      onlyPending: true,
+    );
+    final sales = ref.watch(tenderSalesPageProvider(query));
+    // ⚠️ Over ALL sales, not this page: a sale would otherwise be marked new
+    // simply because its predecessor sat on the page before.
+    final retenderIds =
+        ref.watch(retenderSaleIdsProvider).valueOrNull ?? const <String>{};
+
+    // A filter change starts at the top rather than on page 4 of the old set.
+    ref.listen(disposalSearchProvider('tendersales'),
+        (_, __) => setState(() => _tenderSalePage = 0));
+    ref.listen(disposalYardFilterProvider('tendersales'),
+        (_, __) => setState(() => _tenderSalePage = 0));
+
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -2744,47 +2776,20 @@ class _TenderSalesTab extends ConsumerWidget {
               loading: () =>
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(tenderSalesProvider)),
-              data: (list) {
-                final q = ref
-                    .watch(disposalSearchProvider('tendersales'))
-                    .toLowerCase();
-                // Hide sales with no actionable rows left: every item sold
-                // (fully consumed), OR the sell window has closed (un-sold items
-                // have dropped to the Unsold Tenders pool).
-                var visible = list.where((s) {
-                  final hasPending = s.items.any((i) => !i.sold);
-                  if (!hasPending) return false;
+                  error: e,
+                  onRetry: () => ref.refresh(tenderSalesPageProvider(query))),
+              data: (result) {
+                // Filtered and paged by the database. The one test left here
+                // is the SELL WINDOW, which cannot move to SQL: it depends on
+                // `workingDeadline`, rolling past weekends and Sri Lankan
+                // public holidays fetched at runtime. Applied to this page.
+                final visible = result.rows.where((s) {
                   final windowClosed = s.unsoldDeadline != null &&
                       DateTime.now().isAfter(s.unsoldDeadline!);
                   return !windowClosed;
                 }).toList();
-                final yf = ref.watch(disposalYardFilterProvider('tendersales'));
-                if (yf != null) {
-                  // Match on any item's own yard + SR number, not the sale's
-                  // yard alone — a tender sale can mix items from a
-                  // multi-directorate yard (NNR items filed under CED sitting
-                  // beside ones filed under PSD), so the sale-level yard code
-                  // cannot tell them apart.
-                  visible = visible
-                      .where((s) => s.items.any((i) => matchesYardFilter(
-                          yf, i.yard, i.forfeited?.srNumber ?? '')))
-                      .toList();
-                }
-                if (q.isNotEmpty) {
-                  visible = visible
-                      .where((s) =>
-                          (s.saleNumber ?? '').toLowerCase().contains(q) ||
-                          s.items.any((i) =>
-                              (i.forfeited?.srNumber ?? '')
-                                  .toLowerCase()
-                                  .contains(q) ||
-                              (i.forfeited?.consigneeName ?? '')
-                                  .toLowerCase()
-                                  .contains(q)))
-                      .toList();
-                }
-                if (visible.isEmpty) {
+
+                if (result.total == 0) {
                   return _listCard(
                     context,
                     const EmptyTableState(
@@ -2794,16 +2799,36 @@ class _TenderSalesTab extends ConsumerWidget {
                             'Create a tender sale, or check the Unsold Tenders tab for items whose window has closed.'),
                   );
                 }
-                // Detect re-tenders against ALL sales (the earlier tender's
-                // window may have closed and dropped out of `visible`).
-                final retenderIds = retenderTenderSaleIds(list);
-                return ListView.separated(
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) => TenderSaleCard(
-                      sale: visible[i],
-                      isRetender: retenderIds.contains(visible[i].id)),
-                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
+
+                final maxPage = result.total == 0
+                    ? 0
+                    : (result.total - 1) ~/ kDispositionPageSize;
+                if (_tenderSalePage > maxPage) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _tenderSalePage = maxPage);
+                  });
+                }
+
+                return Column(children: [
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: visible.length,
+                      separatorBuilder: (_, __) => const Gap(16),
+                      itemBuilder: (context, i) => TenderSaleCard(
+                          sale: visible[i],
+                          isRetender: retenderIds.contains(visible[i].id)),
+                    ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05),
+                  ),
+                  TablePager(
+                    // The database's count for this filter.
+                    total: result.total,
+                    page: _tenderSalePage.clamp(0, maxPage),
+                    pageSize: kDispositionPageSize,
+                    accent: green,
+                    onPageChanged: (p) =>
+                        setState(() => _tenderSalePage = p),
+                  ),
+                ]);
               },
             ),
           ),

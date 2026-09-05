@@ -5331,6 +5331,98 @@ class DisposalService {
     return (data as List).map((e) => TenderSaleModel.fromJson(e)).toList();
   }
 
+  /// One page of Tender Sales, chosen and filtered in SQL.
+  ///
+  /// ⚠️ [getTenderSales] is the heaviest query in the app — every sale with its
+  /// items, their forfeited rows, those rows' packages, and every package item
+  /// and warehouse entry underneath. Fine for one yard; Central Disposal shows
+  /// all twenty-eight.
+  ///
+  /// The `tender_sale_summary` view (postgres/26) decides WHICH sales and in
+  /// what order, then the full objects are loaded for that page alone.
+  ///
+  /// ⚠️ [onlyPending] hides sales with nothing left to act on. The other half
+  /// of that rule — whether the SELL WINDOW has closed — cannot come from SQL:
+  /// it depends on `workingDeadline`, which rolls past weekends and Sri Lankan
+  /// public holidays fetched at runtime. The caller applies it to the page.
+  Future<({List<TenderSaleModel> rows, int total})> getTenderSalesPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+    bool onlyPending = false,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      if (onlyPending) q = q.eq('has_pending', true);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        // The SR numbers and consignees a sale TOUCHES, joined into one text
+        // column each by the view — see its header.
+        q = q.or('sale_number.ilike.%$s%,sr_numbers.ilike.%$s%,'
+            'consignees.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        // ⚠️ Any ITEM's yard, not the sale's own: a sale can mix items from a
+        // multi-directorate yard, and the sale-level code cannot tell them
+        // apart. The view pipe-wraps each value so this cannot match across
+        // two neighbouring yards.
+        q = q.or('item_yards.ilike.%|$yardFilter|%,'
+            'sr_numbers.ilike.%/$yardFilter/%');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('tender_sale_summary').select('id'))
+            .order('created_at', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('tender_sale_summary')).count());
+
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <TenderSaleModel>[], total: total as int);
+    }
+
+    // The heavy fetch, for this page's sales only.
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sales')
+        .select(
+            '*, profiles!created_by(full_name), tender_sale_items(*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+        .inFilter('id', ids)
+        .order('created_at', ascending: false));
+    final byId = {
+      for (final e in (data as List))
+        (e as Map<String, dynamic>)['id'].toString(): TenderSaleModel.fromJson(e)
+    };
+    // Keep the view's order — re-sorting here would disagree with the page
+    // boundaries the query used.
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
+  /// The ids of sales that RE-TENDER goods from an earlier sale.
+  ///
+  /// ⚠️ Its own query, over ALL sales. The app used to derive this by scanning
+  /// the full list in memory, which a paged list no longer has — and deriving
+  /// it from one page would mark a sale as new simply because its predecessor
+  /// was on the page before.
+  Future<Set<String>> getRetenderSaleIds() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_summary')
+        .select('id')
+        .eq('is_retender', true));
+    return {
+      for (final e in (data as List))
+        (e as Map<String, dynamic>)['id'].toString()
+    };
+  }
+
   /// [includePerishable] is false everywhere except the DG's own perishable
   /// list: goods that spoil never re-enter the tender pool.
   Future<List<ReTenderSaleInfo>> getUnsoldTenderSales(

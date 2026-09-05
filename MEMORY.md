@@ -2193,3 +2193,19 @@ The yard's Tender Sale page reuses the same `TenderSaleCard`, so it was fixed by
 ⚠️ **[table_height_test.dart](test/table_height_test.dart) renders a real `DataTable2` at seven row counts and asserts `maxScrollExtent == 0`.** Verified it catches the regression: putting the old `* 48.0` arithmetic back makes it fail. That is the check that was missing the first time — I had reasoned about the height instead of measuring it.
 
 ⚠️ `Scrollable.of(element)` looks **up** the tree and throws when there is nothing above it; read positions with `tester.stateList<ScrollableState>()` instead. My first version of this test failed on every case for that reason and said nothing about the heights.
+
+## Central Disposal paging, 1 of N: Tender Sales (2026-09-05)
+
+⚠️ **The Central Disposal tabs show ALL 28 YARDS**, so the row counts that made client-side paging acceptable on a yard page (81 sales, 188 items) are a per-yard figure. The earlier decision to leave these alone was measured on one yard and does not hold here.
+
+**`getTenderSales` is the heaviest query in the app**: every sale → items → forfeited rows → packages → package items → warehouse entries, read by three screens.
+
+**`tender_sale_summary`** ([26](postgres/26_tender_sale_summary_view.sql)) carries the sale-level facts needed to *choose and order* a page; the heavy join tree then runs for **that page's ids only** (`inFilter('id', ids)`). Verified live: 81 sales, 76 pending, 49 re-tenders — and `TS/GL1/2026/068` flags as a re-tender, matching its badge on screen.
+
+⚠️ **The view deliberately does NOT decide whether the sell window has closed.** That is `unsoldDeadline` → `workingDeadline`, which rolls past weekends **and Sri Lankan public holidays fetched from an API at runtime**. With no holiday table, a SQL version would disagree with the app on exactly the days that matter — so the screen keeps that one test, applied to its page.
+
+⚠️ **Searchable aggregates are TEXT, not `text[]`** — `ilike` cannot serve an array, and the Dart driver returns array columns as `UndecodedBytes` (the row arrives unreadable). Pipe-wrapped (`|GL1|`) so a filter cannot match across two neighbouring values.
+
+⚠️ **Re-tender ids need their own query over ALL sales** (`retenderSaleIdsProvider`). Derived from one page, a sale would be marked new simply because its predecessor sat on the page before.
+
+**Remaining tabs:** Disposal Requests, Unsold Tenders, Committees, Perishable, Sold, Unsold, Destroyed, Government Use, Auction, Converted, Removed, Taxes, Expenses.
