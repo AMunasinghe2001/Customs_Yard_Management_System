@@ -2218,4 +2218,14 @@ The yard's Tender Sale page reuses the same `TenderSaleCard`, so it was fixed by
 
 ⚠️ **The page still filters its own item lists.** The view decides which *requests* survive; each card's item list must still exclude consumed rows, or a card would show goods that have already moved on.
 
-**Remaining tabs:** Unsold Tenders, Committees, Perishable, Sold, Unsold, Destroyed, Government Use, Auction, Converted, Removed, Taxes, Expenses.
+## Central Disposal paging, 3 of N: Sold Goods (2026-09-05)
+
+⚠️ **No new view.** `disposition_rows` ([18](postgres/18_disposition_rows_view.sql), delivery in [20](postgres/20_disposition_rows_delivery.sql)) already carries exactly this row shape — an entry tagged `FINAL:SOLD` or `SOLD`, with the officer and the delivery flag — so the tab reads it with `finalTag: 'SOLD'`. A second view would have been a second definition of the same rule, free to drift.
+
+The tab was calling `getSoldPackages` → `getAllPackages()`: **every package in every yard**, with items and warehouse entries, then kept the sold entries in Dart. All three of its filters (search including the **officer**, yard, Delivered/Pending) now reach SQL. Verified live: 74 SOLD rows, 39 delivered.
+
+`_isSoldEntry` and `_rows(List<PackageModel>)` are gone from the screen.
+
+⚠️ **Two tabs shared the same `TablePager(total: total, page: _page, pageSize: _pageSize)` text** — an Edit matched both. Destroyed keeps its own until that tab is paged; the Sold one now uses `kDispositionPageSize` so the pager and the query cannot drift.
+
+**Remaining tabs:** Unsold Tenders, Committees, Perishable, Unsold, Destroyed, Government Use, Auction, Converted, Removed, Taxes, Expenses.

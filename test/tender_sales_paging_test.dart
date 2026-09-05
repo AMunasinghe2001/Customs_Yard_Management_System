@@ -195,4 +195,41 @@ void main() {
       expect(screen, contains('DisposalRequestQuery('));
     });
   });
+
+  group('Sold Goods reuses the disposition view', () {
+    test('it gained no view of its own', () {
+      // ⚠️ `disposition_rows` already carries exactly this row shape -- an
+      // entry tagged FINAL:SOLD or SOLD, with the officer and the delivery
+      // flag -- so a second view would have been a second definition of the
+      // same thing, free to drift.
+      expect(screen, contains("finalTag: 'SOLD',"));
+      expect(screen, contains('dispositionPageWithPackagesProvider(query)'));
+    });
+
+    test('the sold-entry rule moved with it', () {
+      final view =
+          File('postgres/18_disposition_rows_view.sql').readAsStringSync();
+      expect(view, contains("'FINAL:SOLD', 'SOLD'"));
+      // And is gone from the screen.
+      expect(screen, isNot(contains('bool _isSoldEntry(')));
+      expect(screen, isNot(contains('List<_SoldRow> _rows(List<PackageModel>')));
+      expect(screen, contains('List<_SoldRow> _rowsFrom('));
+    });
+
+    test('all three of its filters reach SQL', () {
+      // The search scans the officer too, which the view carries.
+      final view =
+          File('postgres/18_disposition_rows_view.sql').readAsStringSync();
+      expect(view, contains('as officer'));
+      expect(screen, contains("search: ref.watch(disposalSearchProvider('sold'))"));
+      expect(screen, contains('yard: yardFilter,'));
+      expect(screen, contains('delivered: deliveryFilter,'));
+    });
+
+    test('the pager uses the server total and the query page size', () {
+      final tab = screen.substring(screen.indexOf('Sold Goods'));
+      expect(tab, contains('total: total,'));
+      expect(tab, contains('pageSize: kDispositionPageSize,'));
+    });
+  });
 }

@@ -817,13 +817,9 @@ WidgetStateProperty<Color?> _headingColor(BuildContext context) =>
 
 // ── Sold Packages (cross-yard, yard dropdown) ─────────────────────
 
-bool _isSoldEntry(WarehouseEntryModel e) {
-  final notes = (e.returnNotes ?? '').trim().toUpperCase();
-  final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
-  if (m == null) return false;
-  final tag = m.group(1)!.trim();
-  return tag == 'FINAL:SOLD' || tag == 'SOLD';
-}
+// ⚠️ `_isSoldEntry` moved into the `disposition_rows` view (postgres/18) as
+// its SOLD source — the same two tags, FINAL:SOLD and SOLD. This tab reads
+// that view now instead of scanning every package in every yard for them.
 
 /// Format a [TimeOfDay] as a locale-independent 24-hour "HH:mm" string for the
 /// DB. (TimeOfDay.format() yields a localized 12-hour string like "3:30 PM"
@@ -1028,42 +1024,52 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
   static const int _pageSize = 20;
   int _page = 0;
 
-  List<_SoldRow> _rows(List<PackageModel> packages) {
-    final rows = <_SoldRow>[];
-    for (final p in packages) {
-      for (final e in p.warehouseEntries) {
-        if (!_isSoldEntry(e)) continue;
-        final item = p.items.where((i) => i.id == e.packageItemId).firstOrNull;
-        // Resolve the item name from the entry's own package_item_id. NEVER fall
-        // back to items.first for a multi-item package — that mislabels an
-        // un-linked (legacy NULL-item) entry as the wrong product (the old
-        // "Palm Oil" bug). Only a single-item package can safely use its sole
-        // item's name.
-        final itemName = item?.itemName ??
-            (p.items.length == 1 ? p.items.first.itemName : '—');
-        rows.add(_SoldRow(
-          p,
-          e,
-          itemName,
-          e.returnedByName ?? e.returnedByBadge ?? '—',
-        ));
-      }
+  /// The view's rows, as this tab's widgets already expect them.
+  ///
+  /// ⚠️ Replaces `_rows`, which walked every package in every yard looking for
+  /// [FINAL:SOLD] entries. Which entries count as sold now lives in the view
+  /// (`FINAL:SOLD` or `SOLD`, exactly as `_isSoldEntry` had it).
+  List<_SoldRow> _rowsFrom(DispositionPageWithPackages result) {
+    final out = <_SoldRow>[];
+    for (final r in result.rows) {
+      final pkg = result.packages[r.packageId];
+      if (pkg == null) continue;
+      final entry =
+          pkg.warehouseEntries.where((e) => e.id == r.entryId).firstOrNull;
+      // Every sold row comes from an entry; one that cannot be resolved was
+      // deleted between the two queries.
+      if (entry == null) continue;
+      out.add(_SoldRow(pkg, entry, r.itemName, r.officer ?? '—'));
     }
-    rows.sort((a, b) => (b.entry.returnedAt ?? b.entry.admittedAt)
-        .compareTo(a.entry.returnedAt ?? a.entry.admittedAt));
-    return rows;
+    return out;
   }
 
   @override
   Widget build(BuildContext context) {
     final green = context.colors.successGreen;
     final yardFilter = ref.watch(disposalSoldYardFilterProvider);
-    final sold = ref.watch(disposalSoldPackagesProvider);
     final deliveryFilter = ref.watch(_soldDeliveryFilterProvider);
-    final deliveredMap =
-        ref.watch(packageDeliveredMapProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
+
+    // ⚠️ One PAGE. `disposalSoldPackagesProvider` calls getAllPackages() --
+    // every package in every yard, with its items and warehouse entries --
+    // and the tab then kept the [FINAL:SOLD] entries in Dart. The
+    // `disposition_rows` view (postgres/18, 20) already carries exactly this
+    // row shape, delivery flag included, so the tab reuses it rather than
+    // gaining a view of its own.
+    final query = DispositionQuery(
+      finalTag: 'SOLD',
+      page: _page,
+      search: ref.watch(disposalSearchProvider('sold')),
+      yard: yardFilter,
+      delivered: deliveryFilter,
+    );
+    final sold = ref.watch(dispositionPageWithPackagesProvider(query));
+
+    // A filter change starts at the top rather than on page 4 of the old set.
+    ref.listen(disposalSearchProvider('sold'),
+        (_, __) => setState(() => _page = 0));
     final yardLabel = yardFilter == null ? 'all yards' : yardName(yardFilter);
 
     return Padding(
@@ -1106,31 +1112,20 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(disposalSoldPackagesProvider)),
-              data: (packages) {
-                final q =
-                    ref.watch(disposalSearchProvider('sold')).toLowerCase();
-                var rows = _rows(packages);
-                if (q.isNotEmpty) {
-                  rows = rows
-                      .where((r) =>
-                          r.package.srNumber.toLowerCase().contains(q) ||
-                          r.itemName.toLowerCase().contains(q) ||
-                          r.officer.toLowerCase().contains(q))
-                      .toList();
+                  onRetry: () => ref
+                      .refresh(dispositionPageWithPackagesProvider(query))),
+              data: (result) {
+                // Filtered and paged by the database: the search, the yard and
+                // the Delivered/Pending filter all reached SQL.
+                final pageRows = _rowsFrom(result);
+                final total = result.total;
+                final maxPage =
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                if (_page > maxPage) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _page = maxPage);
+                  });
                 }
-                if (deliveryFilter != null) {
-                  rows = rows
-                      .where((r) =>
-                          (deliveredMap[r.saleItemKey] ??
-                              deliveredMap[r.package.id] ??
-                              false) ==
-                          deliveryFilter)
-                      .toList();
-                }
-                final total = rows.length;
-                if (_page * _pageSize >= total && _page > 0) _page = 0;
-                final pageRows = pageSlice(rows, _page, _pageSize);
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1236,9 +1231,13 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                       ),
                     ),
                     TablePager(
+                      // ⚠️ The database's count, and the SAME page size the
+                      // query used — if these drift the page numbers mean
+                      // nothing.
                       total: total,
-                      page: _page,
-                      pageSize: _pageSize,
+                      page: _page.clamp(0, maxPage),
+                      pageSize: kDispositionPageSize,
+                      accent: green,
                       onPageChanged: (p) => setState(() => _page = p),
                     ),
                   ],
