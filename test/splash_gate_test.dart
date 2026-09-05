@@ -42,17 +42,28 @@ void main() {
     });
   });
 
-  group('the page underneath is built the whole time', () {
-    testWidgets('the child is in the tree from the first frame', (t) async {
-      // ⚠️ Not swapped in at the end. Building the portal only after the
-      // splash would run its own entrance animations afterwards, and the
-      // reader would watch the app assemble itself twice.
+  group('the page arrives as the seal lifts, not before it', () {
+    testWidgets('it is NOT in the tree while the seal holds', (t) async {
+      // ⚠️ Building it underneath from the first frame spends its entrance
+      // where nobody can see it: the logo scales in and the cards land while
+      // the curtain is opaque, so the dissolve then cross-fades the splash's
+      // logo into a SECOND, already-settled one. That read as a reload.
       await t.pumpWidget(host(const SplashGate(
           child: Center(child: Text('portal', key: Key('portal'))))));
       await t.pump();
-      expect(find.byKey(const Key('portal')), findsOneWidget);
-      // Run the splash out so no timer outlives the tree.
+      expect(find.byKey(const Key('portal')), findsNothing);
+
       await t.pump(SplashGate.hold);
+      await t.pumpAndSettle();
+    });
+
+    testWidgets('it appears the moment the lift starts', (t) async {
+      await t.pumpWidget(host(const SplashGate(
+          child: Center(child: Text('portal', key: Key('portal'))))));
+      await t.pump();
+      await t.pump(SplashGate.hold + const Duration(milliseconds: 1));
+      // Its entrance now runs IN VIEW, under a curtain going transparent.
+      expect(find.byKey(const Key('portal')), findsOneWidget);
       await t.pumpAndSettle();
     });
 
@@ -100,12 +111,11 @@ void main() {
       )));
       await t.pump();
 
-      // While the seal is up the tap is caught by the curtain.
-      await t.tap(find.byKey(const Key('card')), warnIfMissed: false);
-      expect(taps, 0, reason: 'the seal should absorb taps while it holds');
+      // The card is not even mounted while the seal holds.
+      expect(find.byKey(const Key('card')), findsNothing);
 
-      // Once it lifts the page takes them, even mid-fade.
-      await t.pump(SplashGate.hold);
+      // Once it lifts the page takes taps, even mid-fade.
+      await t.pump(SplashGate.hold + const Duration(milliseconds: 1));
       await t.pump(const Duration(milliseconds: 50));
       await t.tap(find.byKey(const Key('card')));
       expect(taps, 1);
@@ -118,8 +128,16 @@ void main() {
     test('the hold is short', () {
       // ⚠️ A splash that outstays the work it covers is just a delay, and this
       // one runs on every launch.
-      expect(SplashGate.hold.inMilliseconds, lessThanOrEqualTo(1500));
-      expect(SplashGate.fade.inMilliseconds, lessThanOrEqualTo(800));
+      expect(SplashGate.hold.inMilliseconds, lessThanOrEqualTo(1000));
+      // ⚠️ The fade is deliberately LONGER than the hold now: the portal's own
+      // entrance runs underneath it, and a curtain that vanished first left
+      // half the cards still visibly moving.
+      expect(SplashGate.fade.inMilliseconds,
+          greaterThan(SplashGate.hold.inMilliseconds ~/ 2));
+      // Together they still have to stay out of the way quickly.
+      expect(
+          (SplashGate.hold + SplashGate.fade).inMilliseconds,
+          lessThanOrEqualTo(2000));
     });
   });
 

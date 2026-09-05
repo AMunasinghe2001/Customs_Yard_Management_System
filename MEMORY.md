@@ -2148,3 +2148,13 @@ The portal page's two corner glows now **travel the whole screen** on a slow 24-
 ⚠️ Wrapped in `IgnorePointer` and `Positioned.fill` **behind** everything — it must never intercept a click meant for a portal card.
 
 The splash's `LinearProgressIndicator` was removed: it read as a gold **underline on the name** rather than as a loading bar, and it was the only gold on an otherwise blue-and-white mark. The dissolve already says the app is working.
+
+## Why the splash handoff looked like a reload (2026-09-05)
+
+⚠️ **Building the portal page underneath the splash from the first frame was the bug**, not the fix. The page runs its own entrance — the logo scaling in over 500ms, cards landing on delays out to 1350ms — so mounting it at t=0 spent all of that **where nobody could see it**. When the seal dissolved at 1100ms the reader saw the splash's logo cross-fading into a **second, already-settled** logo, with the last cards still arriving. That is what read as the home page reloading.
+
+**The fix: mount the child when the lift STARTS** (`if (_lifting) widget.child`). Its entrance then plays *in view*, under a curtain going transparent over it — one continuous motion.
+
+Timings rebalanced with it: **hold 750ms** (the splash no longer has to stall until the page is ready) and **fade 900ms** — ⚠️ deliberately *longer than the hold*, because the page's entrance runs underneath it and a 620ms curtain vanished while half the cards were still moving. It does **not** need to cover the full 1.85s; the last cards arriving in clear view is the page waking up, not a glitch.
+
+**Verified by pumping the timeline and printing each frame** rather than by reasoning about it: 0–750ms seal only and portal unmounted · 751ms portal mounts as the curtain starts to go · 751–1651ms both present · 1651ms curtain out of the tree.

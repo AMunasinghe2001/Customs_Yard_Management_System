@@ -18,11 +18,18 @@ import 'home_screen.dart' show DriftingGlows;
 /// This covers exactly that gap with something that reads as "starting up"
 /// rather than as "ready".
 ///
-/// ⚠️ The home screen is built and laid out BEHIND the splash the whole time,
-/// never after it. Swapping one screen for another at the end would put the
-/// portal's own entrance animations after the splash's, and the reader would
-/// watch the app assemble itself twice. Here the seal simply dissolves and the
-/// page it uncovers is already there.
+/// ⚠️ The portal page is built as the seal STARTS TO LIFT, not before it.
+///
+/// Building it underneath from the first frame was the obvious thing and it
+/// looked wrong: the page runs its own entrance -- logo scaling in, cards
+/// landing one by one over 1.85s -- entirely hidden, so by the time the seal
+/// dissolved the reader saw the splash's logo cross-fading into a SECOND,
+/// already-settled logo while the last cards were still arriving. It read as
+/// the home page reloading.
+///
+/// Mounting it at the lift means that entrance plays IN VIEW, underneath a
+/// curtain that is going transparent over it. One continuous motion: the seal
+/// recedes and the page arrives through it.
 class SplashGate extends StatefulWidget {
   const SplashGate({super.key, required this.child});
 
@@ -32,11 +39,20 @@ class SplashGate extends StatefulWidget {
   /// How long the seal holds before it begins to dissolve.
   ///
   /// ⚠️ Short on purpose. A splash that outstays the work it covers is just a
-  /// delay, and this one runs on every launch.
-  static const Duration hold = Duration(milliseconds: 1100);
+  /// delay, and this one runs on every launch. Shortened from 1100ms once the
+  /// page started arriving DURING the dissolve rather than before it — the
+  /// splash no longer has to stall long enough for the page to be ready.
+  static const Duration hold = Duration(milliseconds: 750);
 
   /// The dissolve itself.
-  static const Duration fade = Duration(milliseconds: 620);
+  ///
+  /// ⚠️ Long enough to still be going while the portal's own entrance runs
+  /// underneath it. The page's logo scales in over ~500ms and its cards land
+  /// on delays out to 1350ms; a 620ms curtain vanished while half of that was
+  /// still moving, which is the flicker this is tuned against. It does NOT
+  /// need to cover the whole 1.85s — the last cards arriving in clear view is
+  /// the page waking up, not a glitch.
+  static const Duration fade = Duration(milliseconds: 900);
 
   /// Whether this launch still owes the user a splash — true exactly once.
   ///
@@ -102,8 +118,10 @@ class _SplashGateState extends State<SplashGate> {
     if (_done) return widget.child;
 
     return Stack(children: [
-      // The portal page, laying itself out while the seal is still up.
-      widget.child,
+      // ⚠️ Only once the lift starts — see the class comment. Before that the
+      // slot is empty, so the page's entrance has not begun and cannot be
+      // spent behind a curtain nobody can see through.
+      if (_lifting) widget.child,
       // ⚠️ IgnorePointer wraps everything the splash paints, and must keep
       // doing so: the layer's own background Container is opaque to hit
       // testing, so anything drawn outside this would swallow a tap through a
