@@ -16,18 +16,14 @@ class HomeScreen extends ConsumerWidget {
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
       body: Stack(children: [
-        Positioned(
-            top: -80,
-            left: -60,
-            child: _GlowBlob(
-                color: context.colors.customsBlue.withOpacity(0.35),
-                size: 360)),
-        Positioned(
-            bottom: -80,
-            right: -60,
-            child: _GlowBlob(
-                color: context.colors.primaryGold.withOpacity(0.12),
-                size: 320)),
+        // ⚠️ The two glows DRIFT across the whole screen rather than sitting in
+        // their corners. They are the only movement on a page that otherwise
+        // stands still once its cards have landed, and a slow travel reads as
+        // the app being alive without asking to be looked at.
+        //
+        // Behind everything and pointer-transparent: this must never intercept
+        // a click meant for a portal card.
+        const Positioned.fill(child: DriftingGlows()),
         Positioned(
           top: 24,
           right: 24,
@@ -225,6 +221,70 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
       ]),
+    );
+  }
+}
+
+/// The two corner glows, travelling the width and height of the screen.
+///
+/// ⚠️ One controller for both, looped and reversing, so they never drift out
+/// of step with each other or restart with a jump. The blue crosses from the
+/// top-left to the bottom-right and the gold the other way, which keeps the
+/// centre of the page — where the seal and the cards are — from ever being
+/// washed out by both at once.
+class DriftingGlows extends StatefulWidget {
+  const DriftingGlows({super.key});
+
+  @override
+  State<DriftingGlows> createState() => _DriftingGlowsState();
+}
+
+class _DriftingGlowsState extends State<DriftingGlows>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    // ⚠️ Slow on purpose. Fast enough to notice and far too slow to distract:
+    // this page is where an officer chooses a portal, not something to watch.
+    duration: const Duration(seconds: 24),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return IgnorePointer(
+      child: AnimatedBuilder(
+        animation: _c,
+        builder: (context, _) {
+          // Eased rather than linear, so each pass slows at the turn instead
+          // of snapping back the other way.
+          final t = Curves.easeInOutSine.transform(_c.value);
+          return LayoutBuilder(builder: (context, box) {
+            final w = box.maxWidth, h = box.maxHeight;
+            return Stack(children: [
+              // Blue: top-left → bottom-right.
+              Positioned(
+                left: -160 + t * (w * 0.55),
+                top: -140 + t * (h * 0.75),
+                child: _GlowBlob(
+                    color: c.customsBlue.withOpacity(0.35), size: 420),
+              ),
+              // Gold: bottom-right → top-left, the opposite way.
+              Positioned(
+                right: -140 + t * (w * 0.5),
+                bottom: -120 + t * (h * 0.7),
+                child: _GlowBlob(
+                    color: c.primaryGold.withOpacity(0.12), size: 360),
+              ),
+            ]);
+          });
+        },
+      ),
     );
   }
 }

@@ -2138,3 +2138,13 @@ Six sources, each with its own `row_key` prefix: `D:` detained · `AE:`/`AS:` ab
 ⚠️ Timers are held and **cancelled in `dispose()`** — a bare `Future.delayed` leaves "A Timer is still pending" in widget tests.
 
 ⚠️ **Test trap found the hard way**: a `GestureDetector` wrapping a bare `SizedBox` is **not hit-testable**, so a tap misses whether a splash covers it or not — the test passed for the wrong reason until `behavior: HitTestBehavior.opaque` was added. A baseline with the widget removed entirely is what exposed it.
+
+## The drifting glows (2026-09-05)
+
+The portal page's two corner glows now **travel the whole screen** on a slow 24-second loop — blue from top-left to bottom-right, gold the opposite way, so the centre (where the seal and the cards are) is never washed out by both at once. `repeat(reverse: true)` with `Curves.easeInOutSine`, so each pass slows at the turn instead of snapping back.
+
+⚠️ **The splash imports the SAME `DriftingGlows` widget** rather than keeping a copy. The glows are mid-travel when the seal lifts; two independent copies would be at different points on their paths, so the background would visibly jump at the one moment the reader is looking straight at it.
+
+⚠️ Wrapped in `IgnorePointer` and `Positioned.fill` **behind** everything — it must never intercept a click meant for a portal card.
+
+The splash's `LinearProgressIndicator` was removed: it read as a gold **underline on the name** rather than as a loading bar, and it was the only gold on an otherwise blue-and-white mark. The dissolve already says the app is working.

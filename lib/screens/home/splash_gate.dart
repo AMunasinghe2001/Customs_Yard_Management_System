@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 
 import '../../core/theme.dart';
+import 'home_screen.dart' show DriftingGlows;
 
 /// The seal, then the portals.
 ///
@@ -150,16 +151,12 @@ class _SplashLayer extends StatelessWidget {
       child: Container(
         color: c.scaffoldBg,
         child: Stack(children: [
-          // The same two glows the portal page carries, so the background does
-          // not change underneath the reader when the splash lifts.
-          Positioned(
-              top: -80,
-              left: -60,
-              child: _Glow(color: c.customsBlue.withOpacity(0.35), size: 360)),
-          Positioned(
-              bottom: -80,
-              right: -60,
-              child: _Glow(color: c.primaryGold.withOpacity(0.12), size: 320)),
+          // ⚠️ The SAME drifting glows the portal page carries — the very
+          // widget, not a copy of it. They are mid-travel when the seal lifts,
+          // and two independent copies would be at different points on their
+          // paths, so the background would visibly jump at the one moment the
+          // reader is looking straight at it.
+          const Positioned.fill(child: DriftingGlows()),
           Center(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -193,48 +190,14 @@ class _SplashLayer extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       letterSpacing: 0.6),
                 ).animate().fadeIn(delay: 300.ms, duration: 480.ms),
-                const Gap(30),
-                // A thin determinate-looking sweep. Deliberately NOT a
-                // percentage: the work behind it has no measurable progress,
-                // and a bar that claims one would be lying.
-                SizedBox(
-                  width: 132,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      minHeight: 3,
-                      backgroundColor: c.customsBlue.withOpacity(0.12),
-                      valueColor:
-                          AlwaysStoppedAnimation(c.customsBlue.withOpacity(0.7)),
-                    ),
-                  ),
-                ).animate().fadeIn(delay: 420.ms, duration: 400.ms),
+                // ⚠️ No progress bar. A gold line under the seal read as an
+                // underline on the name rather than as a loading indicator,
+                // and it was the only gold on an otherwise blue-and-white
+                // mark. The dissolve itself already says the app is working.
               ],
             ),
           ),
         ]),
-      ),
-    );
-  }
-}
-
-/// The soft corner glow, matching the portal page's own.
-class _Glow extends StatelessWidget {
-  const _Glow({required this.color, required this.size});
-
-  final Color color;
-  final double size;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(colors: [color, color.withOpacity(0)]),
-        ),
       ),
     );
   }

@@ -141,17 +141,51 @@ void main() {
   });
 
   group('the background does not jump when the seal lifts', () {
-    test('the splash carries the same two glows the portal page does', () {
+    final splash =
+        File('lib/screens/home/splash_gate.dart').readAsStringSync();
+    final home = File('lib/screens/home/home_screen.dart').readAsStringSync();
+
+    test('both use the SAME widget, not two copies of it', () {
+      // ⚠️ The glows are mid-travel when the seal lifts. Two independent
+      // copies would be at different points on their paths, so the background
+      // would jump at the one moment the reader is looking straight at it.
+      expect(home, contains('class DriftingGlows extends StatefulWidget'));
+      expect(splash, contains("import 'home_screen.dart' show DriftingGlows;"));
+      for (final src in [splash, home]) {
+        expect(src, contains('Positioned.fill(child: DriftingGlows())'));
+      }
+      // And the splash keeps no glow of its own to drift out of step.
+      expect(splash, isNot(contains('class _Glow ')));
+    });
+
+    test('the drift never intercepts a click meant for a portal card', () {
+      final layer = home.substring(home.indexOf('class DriftingGlows'));
+      expect(layer, contains('IgnorePointer('));
+    });
+
+    test('it loops without a jump, and slowly', () {
+      // Reversing rather than restarting, so it never snaps back; eased, so
+      // each pass slows at the turn.
+      expect(home, contains('..repeat(reverse: true)'));
+      expect(home, contains('Curves.easeInOutSine.transform'));
+      // Slow enough not to distract from choosing a portal.
+      expect(home, contains('duration: const Duration(seconds: 24)'));
+    });
+
+    test('the controller is disposed', () {
+      final layer = home.substring(home.indexOf('class _DriftingGlowsState'));
+      expect(layer, contains('_c.dispose();'));
+    });
+  });
+
+  group('the seal carries no gold line', () {
+    test('the progress bar is gone', () {
+      // ⚠️ It read as an underline on the name rather than as a loading
+      // indicator, and it was the only gold on an otherwise blue-and-white
+      // mark. The dissolve already says the app is working.
       final splash =
           File('lib/screens/home/splash_gate.dart').readAsStringSync();
-      final home =
-          File('lib/screens/home/home_screen.dart').readAsStringSync();
-      for (final src in [splash, home]) {
-        expect(src, contains('customsBlue.withOpacity(0.35)'));
-        expect(src, contains('primaryGold.withOpacity(0.12)'));
-        expect(src, contains('top: -80'));
-        expect(src, contains('bottom: -80'));
-      }
+      expect(splash, isNot(contains('LinearProgressIndicator')));
     });
   });
 }
