@@ -49,36 +49,29 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
     super.dispose();
   }
 
-  List<String> _extractYears(List<PackageModel> packages) {
-    final yearRegex = RegExp(r'\b(19\d\d|20\d\d)\b');
-    final years = <String>{};
-    for (final p in packages) {
-      if (p.oldSrNumber != null) {
-        for (final m in yearRegex.allMatches(p.oldSrNumber!)) {
-          if (m.group(1) != null) years.add(m.group(1)!);
-        }
-      }
-      for (final m in yearRegex.allMatches(p.srNumber)) {
-        if (m.group(1) != null) years.add(m.group(1)!);
-      }
-      if (p.entryDate != null) {
-        years.add(p.entryDate!.year.toString());
-      }
-      if (p.cusdecDate != null) {
-        for (final m in yearRegex.allMatches(p.cusdecDate!)) {
-          if (m.group(1) != null) years.add(m.group(1)!);
-        }
-      }
-    }
-    return years.toList()..sort((a, b) => b.compareTo(a));
-  }
+  // ⚠️ `_extractYears` moved into `getOldEntryYears`. It scanned FOUR places
+  // a year can appear -- the old SR number, the new one, the entry date and
+  // the CusDec date -- because a legacy entry filed under one numbering and
+  // re-registered under another has to be findable by either year. That rule
+  // is unchanged; it just runs over the whole table now instead of over
+  // whatever twenty rows happen to be on screen.
 
   @override
   Widget build(BuildContext context) {
-    final packagesAsync = ref.watch(livePackagesProvider);
+    // ⚠️ Every filter is in the key. "Has a legacy SR number" is not one of
+    // them -- it is the list's DEFINITION, applied in the query itself.
+    final query = OldEntryQuery(
+      page: _page,
+      search: ref.watch(oldEntrySearchProvider),
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+    );
+    final packagesAsync = ref.watch(oldEntriesPageProvider(query));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
-    final search = ref.watch(oldEntrySearchProvider);
+    // Read through the query above; the listener still resets the page so a
+    // new search starts at the top rather than on page 4 of the old result.
     ref.listen(oldEntrySearchProvider, (_, __) => setState(() => _page = 0));
 
     return AppShell(
@@ -106,13 +99,13 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
 
               // ── Search & Filter Bar ──────────────────────────────
               packagesAsync.maybeWhen(
-                data: (packages) {
-                  final oldPackages = packages
-                      .where((p) =>
-                          p.oldSrNumber != null &&
-                          p.oldSrNumber!.trim().isNotEmpty)
-                      .toList();
-                  final availableYears = _extractYears(oldPackages);
+                data: (result) {
+                  // ⚠️ From its own query, over all four places a year can
+                  // appear -- not from the twenty rows on screen, which would
+                  // offer only the years currently visible.
+                  final availableYears =
+                      ref.watch(oldEntryYearsProvider).valueOrNull ??
+                          const <String>[];
 
                   return Container(
                     padding: const EdgeInsets.all(12),
@@ -241,64 +234,20 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (packages) {
-                    // Only packages that carry a legacy SR number.
-                    var rows = packages
-                        .where((p) =>
-                            p.oldSrNumber != null &&
-                            p.oldSrNumber!.trim().isNotEmpty)
-                        .toList();
-
-                    // Apply Year filter
-                    if (_yearFilter != null) {
-                      final y = _yearFilter!;
-                      rows = rows.where((p) {
-                        final oldHas = (p.oldSrNumber ?? '').contains(y);
-                        final newHas = p.srNumber.contains(y);
-                        final entryHas = p.entryDate?.year.toString() == y;
-                        final cusdecDateHas = (p.cusdecDate ?? '').contains(y);
-                        return oldHas || newHas || entryHas || cusdecDateHas;
-                      }).toList();
+                      onRetry: () =>
+                          ref.refresh(oldEntriesPageProvider(query))),
+                  data: (result) {
+                    // Filtered, sorted and paged by the database — including
+                    // the "has a legacy SR number" definition of this list.
+                    final pageRows = result.rows;
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
                     }
-
-                    // Apply Date Range filter
-                    if (_dateRange != null) {
-                      final start = DateTime(_dateRange!.start.year,
-                          _dateRange!.start.month, _dateRange!.start.day);
-                      final end = DateTime(
-                          _dateRange!.end.year,
-                          _dateRange!.end.month,
-                          _dateRange!.end.day,
-                          23,
-                          59,
-                          59);
-                      rows = rows.where((p) {
-                        final date = p.entryDate ?? p.createdAt;
-                        return (date.isAfter(start) ||
-                                date.isAtSameMomentAs(start)) &&
-                            (date.isBefore(end) || date.isAtSameMomentAs(end));
-                      }).toList();
-                    }
-
-                    final q = search.trim().toLowerCase();
-                    if (q.isNotEmpty) {
-                      rows = rows
-                          .where((p) =>
-                              (p.oldSrNumber ?? '')
-                                  .toLowerCase()
-                                  .contains(q) ||
-                              p.srNumber.toLowerCase().contains(q) ||
-                              p.consigneeName.toLowerCase().contains(q) ||
-                              (p.cusdecNo ?? '').toLowerCase().contains(q))
-                          .toList();
-                    }
-                    rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-
-                    final pageRows = rows
-                        .skip(_page * kClientPageSize)
-                        .take(kClientPageSize)
-                        .toList();
 
                     return Column(
                       children: [
@@ -405,9 +354,10 @@ class _OldEntriesScreenState extends ConsumerState<OldEntriesScreen> {
                           ),
                         ),
                         TablePager(
-                          total: rows.length,
-                          page: _page,
-                          pageSize: kClientPageSize,
+                          // The database's count for this filter.
+                          total: result.total,
+                          page: _page.clamp(0, maxPage),
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],

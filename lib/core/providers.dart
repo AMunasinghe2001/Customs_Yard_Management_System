@@ -489,6 +489,57 @@ final dispositionPageWithPackagesProvider = FutureProvider.family<
   return (rows: page.rows, packages: packages, total: page.total);
 });
 
+/// What one page of Old Entries is asking for.
+@immutable
+class OldEntryQuery {
+  final int page;
+  final String? search;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
+  const OldEntryQuery({
+    this.page = 0,
+    this.search,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is OldEntryQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year;
+
+  @override
+  int get hashCode => Object.hash(page, search, dateStart, dateEnd, year);
+}
+
+/// One page of Old Entries — packages carrying a legacy SR number.
+final oldEntriesPageProvider =
+    FutureProvider.family<PackagePage, OldEntryQuery>((ref, q) async {
+  ref.watch(packagesChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getOldEntriesPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+      );
+});
+
+/// The years Old Entries offers — from all four places a year can appear, not
+/// from the twenty rows currently on screen.
+final oldEntryYearsProvider = FutureProvider<List<String>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getOldEntryYears();
+});
+
 /// What one page of Perishable Goods is asking for.
 @immutable
 class PerishableQuery {

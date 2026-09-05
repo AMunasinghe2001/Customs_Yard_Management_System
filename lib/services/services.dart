@@ -957,6 +957,93 @@ class PackageService {
     return (rows: rows, total: total as int);
   }
 
+  /// One page of Old Entries: packages carrying a LEGACY SR number.
+  ///
+  /// ⚠️ Its own method rather than a flag on [getPackagesPaged], because both
+  /// the search set and the year rule differ. This page searches the OLD SR
+  /// number and the CusDec number, and its year filter matches any of four
+  /// places a year can appear -- neither of which the main history page does.
+  Future<({List<PackageModel> rows, int total})> getOldEntriesPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+    String? yard,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      // ⚠️ The page IS "packages with a legacy number", so this is not a
+      // filter the user can clear -- it is the list's definition.
+      q = q.not('old_sr_number', 'is', null);
+      q = q.neq('old_sr_number', '');
+      if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('old_sr_number.ilike.%$s%,sr_number.ilike.%$s%,'
+            'consignee_name.ilike.%$s%,cusdec_no.ilike.%$s%');
+      }
+      if (year != null && year.isNotEmpty) {
+        // ⚠️ FOUR places a year can appear, matching the screen exactly: the
+        // old number, the new one, the entry date, or the CusDec date. A
+        // legacy entry filed under one numbering and re-registered under
+        // another has to be findable by either year.
+        q = q.or('old_sr_number.ilike.%$year%,sr_number.ilike.%$year%,'
+            'cusdec_date.ilike.%$year%');
+      }
+      if (dateStart != null) {
+        final start = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('created_at', start.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final end =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('created_at', end.toIso8601String());
+      }
+      return q;
+    }
+
+    final rowsData = await AuthService._withNetworkRetry(() => narrow(
+            supabase.from('packages').select(
+                '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)'))
+        .order('created_at', ascending: false)
+        .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('packages')).count());
+
+    return (
+      rows: (rowsData as List)
+          .map((e) => PackageModel.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      total: total as int,
+    );
+  }
+
+  /// The years Old Entries can be filtered by — every year appearing in any of
+  /// the four places the page looks.
+  Future<List<String>> getOldEntryYears() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('packages')
+        .select('old_sr_number, sr_number, entry_date, cusdec_date')
+        .not('old_sr_number', 'is', null)
+        .neq('old_sr_number', ''));
+    final years = <String>{};
+    final re = RegExp(r'(19|20)\d{2}');
+    for (final row in (data as List)) {
+      final m = row as Map<String, dynamic>;
+      for (final key in ['old_sr_number', 'sr_number', 'cusdec_date']) {
+        for (final match in re.allMatches(m[key]?.toString() ?? '')) {
+          years.add(match.group(0)!);
+        }
+      }
+      final entry = parseDbDate(m['entry_date']);
+      if (entry != null) years.add(entry.year.toString());
+    }
+    // Newest first, as every other year filter reads.
+    final out = years.toList()..sort((a, b) => b.compareTo(a));
+    return out;
+  }
+
   Future<PackageModel> createPackage(PackageModel pkg, List<PackageItem> items,
       {String? yard}) async {
     final user = supabase.auth.currentUser;

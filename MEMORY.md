@@ -2069,3 +2069,15 @@ Every migration from 20 onward **slices the previous one's body out of the file*
 ⚠️ **A widget test of this screen overrides `perishablePageProvider` (+ `perishableYearsProvider`), not `livePackagesProvider`.** The harness supplies the *page the view would have returned*, applying the same two rules; the rules themselves are asserted against the SQL in a separate group, so neither half can drift unnoticed.
 
 **Still client-side:** `old_entries_screen` and the directorate tabs.
+
+## Old Entries: no view needed, but its own query (2026-09-05)
+
+This page lists **packages**, not items, so no view was required — but it does need `getOldEntriesPaged` rather than a flag on `getPackagesPaged`, because **both the search set and the year rule differ**.
+
+⚠️ **"Has a legacy SR number" is the list's DEFINITION, not a clearable filter** — so it lives in the query (`not('old_sr_number','is',null)` **and** `neq('old_sr_number','')`; null is not the only empty).
+
+⚠️ **The year matches FOUR places**: the old number, the new one, the entry date, the CusDec date. Real data shows why — `SR/1290/2021` became `CED/GL1/OA/05/2024`, and an officer must find it by **either** year. `getOldEntryYears` scans the same four over the whole table, since twenty rows would offer only the years currently visible.
+
+Search covers the **old** number and the **CusDec** number as well as the new number and consignee — finding goods by what they were called *before* is the entire point of the page.
+
+**Still client-side:** the directorate tabs (disposal dashboard, executive, appeal).
