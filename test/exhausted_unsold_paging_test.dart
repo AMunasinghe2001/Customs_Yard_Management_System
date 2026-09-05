@@ -208,4 +208,73 @@ void main() {
       expect(services, contains(r'case_number.ilike.%$s%'));
     });
   });
+
+  group('Unsold Tenders: three whole-table passes become one query', () {
+    final pool =
+        File('postgres/29_unsold_retender_pool_view.sql').readAsStringSync();
+    final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync();
+
+    test('nothing sold is offered again', () {
+      expect(pool, contains('not a.ever_sold'));
+      expect(pool, contains('sold package(s) are in the re-tender pool'));
+    });
+
+    test('a PERISHABLE never joins the pool', () {
+      // ⚠️ Goods that spoil get no second round: one failed Special Tender
+      // Sale and they go straight to Top Management. Offering them again would
+      // offer goods that will not last the wait, and would hide them from the
+      // only person who can act.
+      expect(pool, contains("coalesce(fp.source, '') <> 'perishable'"));
+      expect(pool, contains('perishable package(s) are in the re-tender pool'));
+    });
+
+    test('a package cannot be in the pool AND exhausted', () {
+      // ⚠️ It would be offered for re-tender and decided on at the same time.
+      expect(pool, contains('from public.exhausted_unsold e'));
+      expect(pool,
+          contains('exhausted package(s) are also in the re-tender pool'));
+    });
+
+    test('the current round is the newest by created_at', () {
+      expect(pool, contains('distinct on (r.fp_id)'));
+      expect(pool, contains('order by r.fp_id, r.round_created desc'));
+      expect(pool, contains('a pool row has no current round to judge'));
+    });
+
+    test('the deadline half stays in Dart, and the view says why', () {
+      // Same split as Tender Sales: workingDeadline needs the holiday calendar
+      // the app fetches at runtime.
+      expect(pool, contains('as round_moment_passed'));
+      expect(pool, contains('no holiday table here'));
+      // ⚠️ And there is no `unsold` COLUMN to read either -- the model has the
+      // field and it is always false.
+      expect(pool, contains('There is also no "unsold" COLUMN'));
+    });
+
+    test('the tab reads one provider where it read three', () {
+      expect(dash, contains('unsoldRetenderPageProvider(query)'));
+      final tab = dash.substring(dash.indexOf('class _UnsoldReTenderTabState'),
+          dash.indexOf('class _TenderSalesTab'));
+      expect(tab, isNot(contains('ref.watch(unsoldTenderSalesProvider)')));
+      expect(tab, isNot(contains('ref.watch(exhaustedUnsoldProvider)')));
+    });
+
+    test('it finally has a pager, on the server total', () {
+      final tab = dash.substring(dash.indexOf('class _UnsoldReTenderTabState'),
+          dash.indexOf('class _TenderSalesTab'));
+      expect(tab, contains('TablePager('));
+      expect(tab, contains('total: total,'));
+      expect(tab, contains('pageSize: kDispositionPageSize,'));
+    });
+
+    test('the count pill needs no subtraction of its own', () {
+      // ⚠️ It used to count `list.where(not exhausted)`. The view excludes
+      // them, so the pill and the table now agree by construction.
+      final tab = dash.substring(dash.indexOf('class _UnsoldReTenderTabState'),
+          dash.indexOf('class _TenderSalesTab'));
+      expect(tab, contains(r"value: '${result.total}',"));
+      expect(tab, isNot(contains('!exhausted.contains')));
+    });
+  });
 }

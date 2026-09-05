@@ -2426,8 +2426,16 @@ class _CountPill extends StatelessWidget {
 
 // ── Unsold packages → Re-tender (separate page/tab) ───────────────
 
-class _UnsoldReTenderTab extends ConsumerWidget {
+class _UnsoldReTenderTab extends ConsumerStatefulWidget {
   const _UnsoldReTenderTab();
+
+  @override
+  ConsumerState<_UnsoldReTenderTab> createState() => _UnsoldReTenderTabState();
+}
+
+class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
+  /// ⚠️ New: the tab had no pager at all.
+  int _page = 0;
 
   String _itemName(ForfeitedPackageModel f) {
     final items = f.packageDetails?.items ?? const [];
@@ -2441,21 +2449,35 @@ class _UnsoldReTenderTab extends ConsumerWidget {
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
-    final async = ref.watch(unsoldTenderSalesProvider);
     final eligible =
         ref.watch(reTenderEligibleProvider).valueOrNull ?? const <String>{};
-    // Packages whose committee-priced tender ALSO failed have run out of
-    // tender rounds — they belong to the Unsold Packages tab (where the DG
-    // rules on them), not to this re-tender pool.
-    final exhausted = {
-      for (final i in ref.watch(exhaustedUnsoldProvider).valueOrNull ??
-          const <ReTenderSaleInfo>[])
-        i.forfeited.id
-    };
+
+    // ⚠️ One PAGE, and one query. The tab used to read THREE providers --
+    // unsoldTenderSalesProvider, reTenderEligibleProvider and
+    // exhaustedUnsoldProvider -- each of which begins by fetching every tender
+    // sale in the yard with its items, forfeited rows, packages, package items
+    // and warehouse entries. Three passes over the whole yard to draw twenty
+    // cards, across twenty-eight yards.
+    //
+    // `unsold_retender_pool` (postgres/29) settles membership once, the
+    // exclusion of exhausted packages included -- so the `exhausted` set that
+    // used to be built here is gone with it.
+    final query = UnsoldRetenderQuery(
+      page: _page,
+      search: ref.watch(disposalSearchProvider('unsold')),
+      yardFilter: ref.watch(disposalYardFilterProvider('unsold')),
+    );
+    final async = ref.watch(unsoldRetenderPageProvider(query));
+
+    // A filter change starts at the top rather than on page 4 of the old set.
+    ref.listen(disposalSearchProvider('unsold'),
+        (_, __) => setState(() => _page = 0));
+    ref.listen(disposalYardFilterProvider('unsold'),
+        (_, __) => setState(() => _page = 0));
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -2480,19 +2502,22 @@ class _UnsoldReTenderTab extends ConsumerWidget {
             ),
             const Gap(12),
             async.maybeWhen(
-              data: (list) => ElevatedButton.icon(
+              data: (result) => ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                     backgroundColor: green, foregroundColor: Colors.white),
                 icon: const Icon(Icons.gavel_rounded, size: 18),
                 label: const Text('Re-tender',
                     style: TextStyle(fontWeight: FontWeight.w600)),
-                onPressed: list.isEmpty
+                // ⚠️ The DATABASE's count. `rows` is one page, so an empty
+                // page 4 would grey the button out with work still to do.
+                onPressed: result.total == 0
                     ? null
                     : () => showDialog(
                           context: context,
                           builder: (_) =>
                               const _TenderSaleFormDialog(reTender: true),
                         ).then((_) {
+                          ref.invalidate(unsoldRetenderPageProvider);
                           ref.invalidate(unsoldTenderSalesProvider);
                           ref.invalidate(tenderSalesProvider);
                         }),
@@ -2502,14 +2527,15 @@ class _UnsoldReTenderTab extends ConsumerWidget {
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           async.maybeWhen(
-            data: (list) => Padding(
+            data: (result) => Padding(
               padding: const EdgeInsets.only(bottom: 14),
               child: StatChip(
                   label: 'Unsold — re-tenderable',
-                  // Counts the SAME rows the table shows — exhausted packages
-                  // are excluded there, so they must not be counted here.
-                  value:
-                      '${list.where((i) => !exhausted.contains(i.forfeited.id)).length}',
+                  // ⚠️ The DATABASE's count for this filter, and it already
+                  // excludes packages that have run out of rounds — the view
+                  // does that. So the pill and the table agree by
+                  // construction rather than by both remembering to subtract.
+                  value: '${result.total}',
                   color: amber),
             ).animate().fadeIn(duration: 300.ms),
             orElse: () => const SizedBox.shrink(),
@@ -2522,31 +2548,20 @@ class _UnsoldReTenderTab extends ConsumerWidget {
               error: (e, _) => ErrorView(
                   error: e,
                   onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
-              data: (list) {
-                // Every avenue exhausted → handled on Unsold Packages.
-                list = list
-                    .where((info) => !exhausted.contains(info.forfeited.id))
-                    .toList();
-                final q =
-                    ref.watch(disposalSearchProvider('unsold')).toLowerCase();
-                final yf = ref.watch(disposalYardFilterProvider('unsold'));
-                if (yf != null) {
-                  list = list
-                      .where((info) => matchesYardFilter(
-                          yf, info.forfeited.yard, info.forfeited.srNumber))
-                      .toList();
+              data: (result) {
+                // Filtered and paged by the database -- including the
+                // exclusion of packages that have run out of rounds.
+                final list = result.rows;
+                final total = result.total;
+                final maxPage =
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                if (_page > maxPage) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _page = maxPage);
+                  });
                 }
-                if (q.isNotEmpty) {
-                  list = list
-                      .where((info) =>
-                          info.forfeited.srNumber.toLowerCase().contains(q) ||
-                          info.forfeited.consigneeName
-                              .toLowerCase()
-                              .contains(q) ||
-                          _itemName(info.forfeited).toLowerCase().contains(q))
-                      .toList();
-                }
-                if (list.isEmpty) {
+
+                if (total == 0) {
                   return _listCard(
                     context,
                     const EmptyTableState(
@@ -2556,7 +2571,9 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                             'Everything tendered is sold or still in an active sale window.'),
                   );
                 }
-                return _listCard(
+                return Column(children: [
+                  Expanded(
+                      child: _listCard(
                   context,
                   DataTable2(
                     columnSpacing: 12,
@@ -2688,7 +2705,17 @@ class _UnsoldReTenderTab extends ConsumerWidget {
                       ]);
                     }).toList(),
                   ),
-                );
+                )),
+                  // ⚠️ New: this tab had no pager, so it rendered every
+                  // re-tenderable package across twenty-eight yards at once.
+                  TablePager(
+                    total: total,
+                    page: _page.clamp(0, maxPage),
+                    pageSize: kDispositionPageSize,
+                    accent: green,
+                    onPageChanged: (p) => setState(() => _page = p),
+                  ),
+                ]);
               },
             ),
           ),

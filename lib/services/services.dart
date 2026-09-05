@@ -5497,6 +5497,59 @@ class DisposalService {
     return result;
   }
 
+  /// One page of the re-tender pool, chosen in SQL.
+  ///
+  /// ⚠️ The tab used to read THREE providers, each of which begins by fetching
+  /// every tender sale in the yard with its items, forfeited rows, packages,
+  /// package items and warehouse entries — three passes over the whole yard to
+  /// draw twenty cards. `unsold_retender_pool` (postgres/29) answers the
+  /// membership question once.
+  Future<({List<ReTenderSaleInfo> rows, int total})> getUnsoldRetenderPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'item_name.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase
+                .from('unsold_retender_pool')
+                .select('forfeited_package_id'))
+            // Most-tendered first, then by SR number — the app's own order.
+            .order('round_count', ascending: false)
+            .order('sr_number', ascending: true)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('unsold_retender_pool')).count());
+
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['forfeited_package_id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <ReTenderSaleInfo>[], total: total as int);
+    }
+
+    final infos = await _reTenderInfoForIds(ids);
+    final byId = {for (final i in infos) i.forfeited.id: i};
+    // Keep the view's order.
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
   // ── Tender bids (recorded per tender ROUND on unsold packages) ────────────
 
   /// Bids recorded for an unsold tender package, grouped by tender round

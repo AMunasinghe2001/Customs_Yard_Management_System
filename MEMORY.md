@@ -2252,4 +2252,16 @@ Government Use, Auction, Converted, Removed **and Unsold Goods** all share `Unso
 
 ⚠️ **`exhaustedUnsoldProvider` is still read elsewhere and rightly so** — the Unsold Tenders tab uses it as an *exclusion set*, dropping packages that have run out of rounds from its re-tender pool. That is a different question and genuinely wants all of them. The test scopes its "no longer reads it" assertion to the outcome widget alone.
 
-**Remaining tabs:** Unsold Tenders, Committees, Perishable, Taxes, Expenses.
+## Central Disposal paging, 10 of N: Unsold Tenders (2026-09-06)
+
+⚠️ **The worst one: it read THREE providers**, each of which begins by fetching every tender sale in the yard with its items, forfeited rows, packages, package items and warehouse entries — `unsoldTenderSalesProvider`, `reTenderEligibleProvider`, `exhaustedUnsoldProvider`. **Three passes over the whole yard to draw twenty cards**, across 28 yards. And it had **no pager at all**.
+
+**`unsold_retender_pool`** ([29](postgres/29_unsold_retender_pool_view.sql)) settles membership once: in a sale, never sold, current round is the newest by `created_at`, **not perishable**, and **not already exhausted**. Live: 14 in the pool, 0 overlapping `exhausted_unsold`, 0 perishable.
+
+⚠️ **A perishable never joins the pool.** Goods that spoil get no second round — one failed Special Tender Sale and they go to Top Management. Offering them again would offer goods that will not last the wait *and* hide them from the only person who can act.
+
+⚠️ **A package must never be in the pool AND exhausted** — it would be offered for re-tender and ruled on at the same time. The view excludes them, so the count pill needs no `where(!exhausted)` of its own: pill and table now agree **by construction**.
+
+⚠️ **There is no `unsold` COLUMN on `tender_sale_items`.** The model has the field and it is always false — a round is unsold when it is *not sold* and its deadline has passed. That is why condition 3 needs the holiday calendar, and why the deadline half stays in Dart (same split as Tender Sales).
+
+**Remaining tabs:** Committees, Perishable, Taxes, Expenses.

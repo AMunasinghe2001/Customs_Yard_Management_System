@@ -1374,6 +1374,40 @@ final exhaustedUnsoldPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
       );
 });
 
+/// What one page of the re-tender pool is asking for.
+@immutable
+class UnsoldRetenderQuery {
+  final int page;
+  final String? search;
+  final String? yardFilter;
+
+  const UnsoldRetenderQuery({this.page = 0, this.search, this.yardFilter});
+
+  @override
+  bool operator ==(Object other) =>
+      other is UnsoldRetenderQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardFilter == yardFilter;
+
+  @override
+  int get hashCode => Object.hash(page, search, yardFilter);
+}
+
+/// One page of the re-tender pool, chosen in SQL.
+final unsoldRetenderPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
+    UnsoldRetenderQuery>((ref, q) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getUnsoldRetenderPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+      );
+});
+
 /// Every SR number on Unsold Goods, for its year filter — one small column,
 /// because a page of twenty cannot know which years the table covers.
 final exhaustedUnsoldYearsProvider =
