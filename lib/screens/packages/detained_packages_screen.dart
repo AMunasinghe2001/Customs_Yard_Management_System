@@ -17,6 +17,7 @@ import '../../widgets/appeal_state_chip.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
+import '../../widgets/table_pager.dart';
 import '../../widgets/status_chip.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/disposal_page_header.dart';
@@ -79,6 +80,11 @@ class _DetainedPackagesScreenState
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
 
+  /// ⚠️ New: this page had no pager at all. Every filter change resets it, or
+  /// a narrowed result leaves the reader stranded on a page that no longer
+  /// exists.
+  int _page = 0;
+
   @override
   void initState() {
     super.initState();
@@ -137,50 +143,66 @@ class _DetainedPackagesScreenState
   ///
   /// [sentKeys] — "pkgId:itemId" keys already sent in a disposal request;
   /// those rows drop off, the same way they do on the other status pages.
-  List<_DetainRow> _buildRows(List<PackageModel> packages,
-      {Set<String> sentKeys = const {}}) {
-    final rows = <_DetainRow>[];
-    for (final package in packages) {
-      for (final item in package.items) {
-        if (sentKeys.contains('${package.id}:${item.id}')) continue;
-        if (!_itemIsDetained(package, item)) continue;
+  /// The view's rows, as this page's widgets already expect them.
+  ///
+  /// ⚠️ Replaces `_buildRows`, which walked every package in the yard. Which
+  /// items count as detained now lives in the view (postgres/25): the status
+  /// is detain/detained/held, and NO warehouse entry carries a settled note.
+  /// Detention is a holding status with no [DETAIN] event of its own, so what
+  /// ends it is the arrival of some other disposition.
+  List<_DetainRow> _rowsFrom(HeldGoodsPage result) {
+    final out = <_DetainRow>[];
+    for (final k in result.keys) {
+      final pkg = result.packages[k.packageId];
+      if (pkg == null) continue;
+      final item = pkg.items.where((i) => i.id == k.itemId).firstOrNull;
+      if (item == null) continue;
 
-        final itemEntries = package.warehouseEntries
-            .where((e) => e.packageItemId == item.id)
-            .toList();
-        // The live holding entry carries the qty, the hold reason and the
-        // officer; fall back to the item itself when there is none.
-        final held = itemEntries.where((e) => !e.isReturned).firstOrNull ??
-            (itemEntries.isNotEmpty ? itemEntries.first : null);
+      final itemEntries =
+          pkg.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+      // The live holding entry carries the qty, the hold reason and the
+      // officer; fall back to the item itself when there is none.
+      final held = itemEntries.where((e) => !e.isReturned).firstOrNull ??
+          (itemEntries.isNotEmpty ? itemEntries.first : null);
 
-        rows.add(_DetainRow(
-          package: package,
-          item: item,
-          entry: held,
-          qty: held?.itemCount ?? item.quantity,
-          date: held?.admittedAt ?? package.entryDate ?? package.createdAt,
-          // The Post Status Activity, which is what `hold_reason` stores —
-          // the filter matches on it, so the fallback must be spelled exactly
-          // as `kDetainActivities` does or it could never be selected.
-          reason: (held?.holdReason.trim().isNotEmpty ?? false)
-              ? held!.holdReason.trim()
-              : ((item.reasons?.trim().isNotEmpty ?? false)
-                  ? item.reasons!.trim()
-                  : 'Pending Inquiry'),
-          officer: held?.admittedByName ?? held?.admittedByBadge ?? '—',
-        ));
-      }
+      out.add(_DetainRow(
+        package: pkg,
+        item: item,
+        entry: held,
+        qty: held?.itemCount ?? item.quantity,
+        date: held?.admittedAt ?? pkg.entryDate ?? pkg.createdAt,
+        // ⚠️ The Post Status Activity, which is what `hold_reason` stores --
+        // the filter matches on it, so the fallback must be spelled exactly
+        // as kDetainActivities does or it could never be selected.
+        reason: (held?.holdReason.trim().isNotEmpty ?? false)
+            ? held!.holdReason.trim()
+            : ((item.reasons?.trim().isNotEmpty ?? false)
+                ? item.reasons!.trim()
+                : 'Pending Inquiry'),
+        officer: held?.admittedByName ?? held?.admittedByBadge ?? '—',
+      ));
     }
-    rows.sort((a, b) => b.date.compareTo(a.date));
-    return rows;
+    return out;
   }
 
   @override
   Widget build(BuildContext context) {
-    final packages = ref.watch(livePackagesProvider);
+    // ⚠️ This page had NO pager at all: it fetched every package in the yard
+    // and handed the whole list to DataTable2. Every row-selection rule now
+    // lives in the `held_goods_rows` view (postgres/25, kind DETAINED), so a
+    // page can be asked for by number.
+    final query = HeldGoodsQuery(
+      kind: 'DETAINED',
+      page: _page,
+      search: ref.watch(detainedPackageSearchProvider),
+      dateStart: ref.watch(detainedPackageDateRangeProvider)?.start,
+      dateEnd: ref.watch(detainedPackageDateRangeProvider)?.end,
+      year: _yearFilter,
+      activity: ref.watch(detainedPackageActivityProvider),
+    );
+    final packages = ref.watch(heldGoodsPageProvider(query));
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    final search = ref.watch(detainedPackageSearchProvider);
     // Appeal rulings, keyed by item id. A decision releases the goods early;
     // a hold keeps them frozen past the deadline.
     final appealOutcomes =
@@ -188,8 +210,8 @@ class _DetainedPackagesScreenState
             const <String, ItemAppealOutcome>{};
     final dateRange = ref.watch(detainedPackageDateRangeProvider);
     final activity = ref.watch(detainedPackageActivityProvider);
-    final sentKeys =
-        ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
+    // ⚠️ Items already sent to Central Disposal are excluded by the QUERY
+    // now (`sent = false` on the view), not by a set held here.
 
     return AppShell(
       currentRoute: '/detained-packages',
@@ -203,21 +225,13 @@ class _DetainedPackagesScreenState
               // ── Header ──
               Consumer(
                 builder: (context, ref, child) {
-                  final pkgs = ref.watch(livePackagesProvider);
-                  final sk =
-                      ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ??
-                          {};
-                  final outcomes =
-                      ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
-                          const <String, ItemAppealOutcome>{};
-                  // Count the SAME rows the table renders, so the header
-                  // always agrees with the list below.
-                  final rows = pkgs.valueOrNull == null
-                      ? const <_DetainRow>[]
-                      : _buildRows(pkgs.valueOrNull!, sentKeys: sk);
-                  final actionable = rows
-                      .where((r) => _isActionable(r, outcomes[r.item.id]))
-                      .length;
+                  // ⚠️ Counted in SQL, by their own query. Derived from one
+                  // page they would contradict the header they sit in;
+                  // derived from the whole list they would undo the paging.
+                  final counts =
+                      ref.watch(heldGoodsCountsProvider('DETAINED')).valueOrNull ??
+                          (total: 0, inAppeal: 0, actionable: 0);
+                  final actionable = counts.actionable;
                   return DisposalPageHeader(
                     title: 'Detained Goods',
                     subtitle: 'Goods held under inquiry — decide their outcome '
@@ -225,11 +239,11 @@ class _DetainedPackagesScreenState
                     trailing: [
                       _DetainStatChip(
                           label: 'Total',
-                          value: '${rows.length}',
+                          value: '${counts.total}',
                           color: context.colors.accentLightBlue),
                       _DetainStatChip(
                           label: 'In Appeal',
-                          value: '${rows.length - actionable}',
+                          value: '${counts.inAppeal}',
                           color: context.colors.warningAmber),
                       _DetainStatChip(
                           label: 'Actionable',
@@ -500,12 +514,16 @@ class _DetainedPackagesScreenState
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: srYears(_buildRows(
-                                  packages.valueOrNull ??
-                                      const <PackageModel>[],
-                                  sentKeys: sentKeys)
-                              .map((r) => r.package.srNumber)),
-                          onChanged: (v) => setState(() => _yearFilter = v),
+                          // ⚠️ Its own query: one page of twenty rows would
+                          // offer only the years currently visible.
+                          years: srYears(ref
+                                  .watch(heldGoodsYearsProvider('DETAINED'))
+                                  .valueOrNull ??
+                              const <String>[]),
+                          onChanged: (v) => setState(() {
+                            _yearFilter = v;
+                            _page = 0;
+                          }),
                         ),
                       ],
                     ),
@@ -524,40 +542,24 @@ class _DetainedPackagesScreenState
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final rows =
-                        _buildRows(list, sentKeys: sentKeys).where((row) {
-                      if (search.isNotEmpty) {
-                        final s = search.toLowerCase();
-                        if (!row.package.srNumber.toLowerCase().contains(s) &&
-                            !row.package.consigneeName
-                                .toLowerCase()
-                                .contains(s) &&
-                            !row.itemName.toLowerCase().contains(s)) {
-                          return false;
-                        }
-                      }
-                      if (dateRange != null) {
-                        final startOfDay = DateTime(dateRange.start.year,
-                            dateRange.start.month, dateRange.start.day);
-                        final endOfDay = DateTime(dateRange.end.year,
-                            dateRange.end.month, dateRange.end.day, 23, 59, 59);
-                        if (row.date.isBefore(startOfDay) ||
-                            row.date.isAfter(endOfDay)) {
-                          return false;
-                        }
-                      }
-                      if (activity != 'all' && row.reason != activity) {
-                        return false;
-                      }
-                      if (!srYearMatches(row.package.srNumber, _yearFilter)) {
-                        return false;
-                      }
-                      return true;
-                    }).toList();
+                      onRetry: () =>
+                          ref.refresh(heldGoodsPageProvider(query))),
+                  data: (result) {
+                    // Filtered, sorted and paged by the database. Nothing left
+                    // to narrow here.
+                    final rows = _rowsFrom(result);
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
 
-                    return Container(
+                    return Column(children: [
+                      Expanded(
+                        child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
                           color: context.colors.cardDark,
@@ -684,9 +686,19 @@ class _DetainedPackagesScreenState
                         ),
                       ),
                     )
-                        .animate()
-                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
-                        .fadeIn();
+                            .animate()
+                            .slideY(
+                                begin: 0.1, duration: 400.ms, delay: 300.ms)
+                            .fadeIn(),
+                      ),
+                      TablePager(
+                        // The database's count for this filter.
+                        total: result.total,
+                        page: _page.clamp(0, maxPage),
+                        pageSize: kDispositionPageSize,
+                        onPageChanged: (p) => setState(() => _page = p),
+                      ),
+                    ]);
                   },
                 ),
               ),

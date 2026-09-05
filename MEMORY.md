@@ -2098,3 +2098,25 @@ Every page whose cost grew with the **yard** is now server-paged: Goods History,
 ⚠️ **`srFinancialsProvider` is the one genuinely heavy leftover**: it calls `getAllPackages()` **and** `getTenderSales()` and aggregates the whole yard in Dart, feeding both the Central Disposal Expenses tab and the Executive Financials tab. It was left alone because `SrFinancials` is a deep nested shape (per-item, per-tax-name breakdowns, with a fallback keyed by SR number when a sale names no item) — moving that to SQL is a large change with real correctness risk, and measured today the underlying queries run in **3.6ms** and **0.2ms**. Worth doing when SR volume justifies it; not worth doing blind.
 
 **Measured before deciding** (`pg_stat_user_tables`, 2026-09-05): the largest table in the system is `package_items` at 395 rows. The paging work matters for what these tables become, not for what they are.
+
+## Held Goods: the three pages that had no pager at all (2026-09-05)
+
+Detained, Abandoned and Other fetched **every package in the yard** and handed the whole list to `DataTable2`. ⚠️ **Worse than the paged screens ever were** — there the cost was at least bounded by what came back.
+
+**`held_goods_rows`** ([25](postgres/25_held_goods_view.sql)) serves all three, keyed by `kind`. Verified against the running app: **DETAINED 43 total** and **OTHER 76 unsent** — exactly what those screens report.
+
+⚠️ **A row is an ITEM.** `CED/GL1/SR/67/2026` is two rows (Ceramic Floor Tiles, Copper Wire Coils) because detention is decided per item.
+
+Six sources, each with its own `row_key` prefix: `D:` detained · `AE:`/`AS:` abandoned event and status · `OE:`/`OS:`/`OF:` other event, status and **completed** final.
+
+⚠️ **Detention is a holding STATUS with no `[DETAIN]` event**, so what *ends* it is the arrival of some other disposition — a `[FINAL:`, `[ABANDONED]`, `[OTHER]` or `[FORFEIT` note. A detained item is exactly one row; an abandonment can be several partial events, so the uniqueness check is on **`row_key`**, not `item_id`.
+
+⚠️ **Nothing finalised may be offered for action** — otherwise the same goods can be disposed of twice. The one exception is `[FINAL:OTHER]`, which is a read-only record like Released and Sold; those rows carry `completed`, and the verify asserts no other kind ever does.
+
+⚠️ **The legacy free-text "Other" status keeps its guard**: it qualifies only while the item is *actually held in a warehouse*, so a typo in the status field cannot masquerade as an Other package.
+
+**Header counts (Total / In Appeal / Actionable) get their own query** (`getHeldGoodsCounts`). ⚠️ Derived from one page they would contradict the header they sit in — a page of twenty would report twenty whatever the yard holds. `_isRowActionable` was deleted from two screens for exactly that reason; the rule (a hold always blocks, a decision releases early, otherwise the 30-day window) now lives in one place.
+
+**Sent items are excluded by the QUERY** (`sent = false`), not by a set held in the widget.
+
+**Every page in the app now pages in SQL.**

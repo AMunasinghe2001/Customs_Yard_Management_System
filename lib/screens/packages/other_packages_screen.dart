@@ -16,6 +16,7 @@ import '../../widgets/appeal_state_chip.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/year_filter.dart';
+import '../../widgets/table_pager.dart';
 import '../forfeited_packages/disposal_request_dialog.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/disposal_page_header.dart';
@@ -76,7 +77,10 @@ bool _isLegacyOtherStatus(String? s) {
 /// True if an item's status is an "Other" disposition. Recognises the explicit
 /// "Other"/"Other: <text>" marker (current) and, for backward compatibility,
 /// legacy free-text statuses.
-bool _statusIsOther(String? s) => _isOtherMarker(s) || _isLegacyOtherStatus(s);
+// ⚠️ `_statusIsOther` moved into the view: the explicit 'Other' / 'Other: …'
+// marker always qualifies, and a LEGACY free-text status only while the item
+// is actually held in a warehouse — so a typo in the status field cannot
+// masquerade as an Other package.
 
 /// True if a warehouse entry is an "Other" disposition event — a custom
 /// disposition recorded from the warehouse Actions dialog. A PARTIAL "Other"
@@ -95,11 +99,10 @@ bool _isOtherEntry(WarehouseEntryModel e) {
 /// True if a warehouse entry is a FINAL "Other" disposition ("[FINAL:OTHER]"),
 /// i.e. the terminal custom outcome recorded from the Final Disposition dialog.
 /// These are completed records (read-only) shown in this page's list.
-bool _isFinalOtherEntry(WarehouseEntryModel e) {
-  if (!e.isReturned) return false;
-  final notes = (e.returnNotes ?? '').trim().toUpperCase();
-  return notes.startsWith('[FINAL:OTHER]');
-}
+// ⚠️ `_isFinalOtherEntry` moved into the view as the OTHER (3) source. Those
+// rows carry `completed`, because a [FINAL:OTHER] outcome is a finished
+// record shown read-only — the one exception to "nothing finalised may be
+// listed as actionable".
 
 /// The custom outcome label from a "[FINAL:OTHER] — <text>" entry (the text
 /// after the marker, falls back to 'Other').
@@ -191,6 +194,10 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
   final _tableSearchCtrl = TextEditingController();
   String? _yearFilter;
 
+  /// ⚠️ New: this page had no pager at all. Reset on every filter change, or
+  /// a narrowed result strands the reader on a page that no longer exists.
+  int _page = 0;
+
   /// Submits a single-package disposal request (Sale / Destruction) for an
   /// "Other" package — used by the details popup's Sale/Destroy buttons.
   /// createDisposalRequest creates the synthetic source='other' forfeited_packages
@@ -240,96 +247,62 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
 
   /// Whether these goods can be sent for disposal yet.
   ///
-  /// Computed from data ALREADY on screen — the row and the appeal outcomes —
-  /// so the header and the Send Disposal Request button settle as soon as the
-  /// table does. Reading it from `requestableForfeitedPackagesProvider` meant
-  /// waiting on that provider's heavy cross-table query, which is why the
-  /// button took a moment to light up.
+  // ⚠️ `_isRowActionable` moved into `getHeldGoodsCounts`, which applies the
+  // rule once for the header: a HOLD always blocks, an Appeal Directorate
+  // decision releases early, and otherwise the 30-day window decides.
+  //
+  // It used to be computed from data already on screen so the Send Disposal
+  // Request button lit up as soon as the table did. That reasoning no longer
+  // holds now the table is ONE PAGE: counting the visible rows would report
+  // twenty, whatever the yard is holding.
+
+  /// The view's rows, as this page's widgets already expect them.
   ///
-  /// The 30-day appeal window blocks it, EXCEPT once the Appeal Directorate
-  /// has ruled. A hold blocks it either way — that appeal is still open.
-  static bool _isRowActionable(_OtherRow row, ItemAppealOutcome? outcome) {
-    if (outcome?.onHold ?? false) return false;
-    if (outcome?.unblocksAction ?? false) return true;
-    return !isWithinAppealWindow(
-        row.package.entryDate ?? row.package.createdAt);
-  }
+  /// ⚠️ Replaces `_buildRows`. All three sources live in the view now, and the
+  /// row key says which one a row came from:
+  ///   OE: an [OTHER] disposition EVENT (repeatable per item)
+  ///   OS: a form-level "Other" status with no event of its own
+  ///   OF: the COMPLETED [FINAL:OTHER] outcome — read-only, like Released and
+  ///       Sold on their own pages, which is what `completed` carries
+  List<_OtherRow> _rowsFrom(HeldGoodsPage result) {
+    final out = <_OtherRow>[];
+    for (final k in result.keys) {
+      final pkg = result.packages[k.packageId];
+      if (pkg == null) continue;
+      final item = pkg.items.where((i) => i.id == k.itemId).firstOrNull;
+      if (item == null) continue;
 
-  List<_OtherRow> _buildRows(List<PackageModel> packages,
-      {Set<String> sentKeys = const {}}) {
-    final rows = <_OtherRow>[];
-    for (final package in packages) {
-      for (final item in package.items) {
-        // Skip items already sent in a disposal request.
-        if (sentKeys.contains('${package.id}:${item.id}')) continue;
+      final itemEntries =
+          pkg.warehouseEntries.where((e) => e.packageItemId == item.id).toList();
+      final isEvent = k.rowKey.startsWith('OE:');
+      final isFinal = k.rowKey.startsWith('OF:');
+      final entry = (isEvent || isFinal)
+          ? itemEntries
+              .where((e) => k.rowKey.endsWith(e.id))
+              .firstOrNull
+          : (itemEntries.isNotEmpty ? itemEntries.first : null);
 
-        final itemEntries = package.warehouseEntries
-            .where((e) => e.packageItemId == item.id)
-            .toList();
-
-        // 1. Partial/full "[OTHER]" disposition events — each is its own row
-        //    (repeatable per item). Skipped for finalised items.
-        final otherEntries = _itemHasFinalDisposition(package, item.id)
-            ? const <WarehouseEntryModel>[]
-            : itemEntries.where(_isOtherEntry).toList();
-        for (final entry in otherEntries) {
-          rows.add(_OtherRow(
-            package: package,
-            item: item,
-            entry: entry,
-            qty: entry.itemCount,
-            date: entry.returnedAt ?? entry.admittedAt,
-            disposition: _otherEntryLabel(entry),
-            reason: entry.holdReason,
-            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
-          ));
-        }
-
-        // 2. Form-level "Other" status (item.status == 'Other: …') with no
-        //    "[OTHER]" disposition event — use the held entry for context.
-        if (_itemIsManageableOther(package, item) && otherEntries.isEmpty) {
-          final ctx = itemEntries.isNotEmpty ? itemEntries.first : null;
-          rows.add(_OtherRow(
-            package: package,
-            item: item,
-            entry: ctx,
-            qty: ctx?.itemCount ?? item.quantity,
-            date: ctx?.admittedAt,
-            // The custom "Other Status" label is the most descriptive label.
-            disposition: _otherLabel(item.status),
-            reason: ctx?.holdReason ??
-                (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
-            officer: ctx?.admittedByName ?? '—',
-          ));
-        }
-
-        // 3. FINAL "Other" outcomes ([FINAL:OTHER]) — the terminal custom
-        //    disposition recorded from the Final Disposition dialog. Shown as
-        //    completed, read-only records (like Released/Sold on their pages).
-        final finalOtherEntries =
-            itemEntries.where(_isFinalOtherEntry).toList();
-        for (final entry in finalOtherEntries) {
-          rows.add(_OtherRow(
-            package: package,
-            item: item,
-            entry: entry,
-            qty: entry.itemCount,
-            date: entry.returnedAt ?? entry.admittedAt,
-            disposition: _finalOtherLabel(entry),
-            reason: entry.holdReason ??
-                (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
-            officer: entry.returnedByName ?? entry.returnedByBadge ?? '—',
-            completed: true,
-          ));
-        }
-      }
+      out.add(_OtherRow(
+        package: pkg,
+        item: item,
+        entry: entry,
+        qty: entry?.itemCount ?? item.quantity,
+        date: (isEvent || isFinal)
+            ? (entry?.returnedAt ?? entry?.admittedAt)
+            : entry?.admittedAt,
+        // The most descriptive label available for each kind of row.
+        disposition: isFinal
+            ? _finalOtherLabel(entry!)
+            : (isEvent ? _otherEntryLabel(entry!) : _otherLabel(item.status)),
+        reason: entry?.holdReason ??
+            (item.reasons?.isNotEmpty == true ? item.reasons! : '—'),
+        officer: (isEvent || isFinal)
+            ? (entry?.returnedByName ?? entry?.returnedByBadge ?? '—')
+            : (entry?.admittedByName ?? '—'),
+        completed: isFinal,
+      ));
     }
-    rows.sort((a, b) {
-      final aDate = a.date ?? DateTime(2000);
-      final bDate = b.date ?? DateTime(2000);
-      return bDate.compareTo(aDate);
-    });
-    return rows;
+    return out;
   }
 
   @override
@@ -355,10 +328,23 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final packages = ref.watch(livePackagesProvider);
+    // ⚠️ This page had NO pager: it fetched every package in the yard and
+    // handed the whole list to DataTable2. All THREE row sources now live in
+    // the `held_goods_rows` view (postgres/25, kind OTHER) -- the [OTHER]
+    // disposition event, the form-level status, and the completed
+    // [FINAL:OTHER] outcome, which is the one read-only kind.
+    final query = HeldGoodsQuery(
+      kind: 'OTHER',
+      page: _page,
+      search: ref.watch(otherPackageSearchProvider),
+      dateStart: ref.watch(otherPackageDateRangeProvider)?.start,
+      dateEnd: ref.watch(otherPackageDateRangeProvider)?.end,
+      year: _yearFilter,
+      activity: ref.watch(otherPackageActivityProvider),
+    );
+    final packages = ref.watch(heldGoodsPageProvider(query));
     final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    final search = ref.watch(otherPackageSearchProvider);
     // Appeal rulings, keyed by item id. A decision releases the goods early;
     // a hold keeps them frozen past the deadline.
     final appealOutcomes =
@@ -366,8 +352,8 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
             const <String, ItemAppealOutcome>{};
     final dateRange = ref.watch(otherPackageDateRangeProvider);
     final activity = ref.watch(otherPackageActivityProvider);
-    final sentKeys =
-        ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ?? {};
+    // ⚠️ Items already sent to Central Disposal are excluded by the QUERY
+    // now (`sent = false` on the view), not by a set held here.
 
     return AppShell(
       currentRoute: '/other-packages',
@@ -381,21 +367,14 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
               // ── Header ──
               Consumer(
                 builder: (context, ref, child) {
-                  final sk =
-                      ref.watch(sentAbandonedOtherFpKeysProvider).valueOrNull ??
-                          {};
-                  final outcomes =
-                      ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
-                          const <String, ItemAppealOutcome>{};
-                  // Counts the SAME rows the table renders, so the header
-                  // always agrees with the list below.
-                  final rows = ref.watch(livePackagesProvider).maybeWhen(
-                      data: (list) => _buildRows(list, sentKeys: sk),
-                      orElse: () => const <_OtherRow>[]);
-                  final total = rows.length;
-                  final actionable = rows
-                      .where((r) => _isRowActionable(r, outcomes[r.item.id]))
-                      .length;
+                  // ⚠️ Counted in SQL, by their own query. Derived from one
+                  // page they would contradict the header they sit in;
+                  // derived from the whole list they would undo the paging.
+                  final counts =
+                      ref.watch(heldGoodsCountsProvider('OTHER')).valueOrNull ??
+                          (total: 0, inAppeal: 0, actionable: 0);
+                  final total = counts.total;
+                  final actionable = counts.actionable;
                   return DisposalPageHeader(
                     title: 'Other Goods',
                     subtitle: 'Manage packages with an "Other" status — '
@@ -674,12 +653,16 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: srYears(_buildRows(
-                                  packages.valueOrNull ??
-                                      const <PackageModel>[],
-                                  sentKeys: sentKeys)
-                              .map((r) => r.package.srNumber)),
-                          onChanged: (v) => setState(() => _yearFilter = v),
+                          // ⚠️ Its own query: one page of twenty rows would
+                          // offer only the years currently visible.
+                          years: srYears(ref
+                                  .watch(heldGoodsYearsProvider('OTHER'))
+                                  .valueOrNull ??
+                              const <String>[]),
+                          onChanged: (v) => setState(() {
+                            _yearFilter = v;
+                            _page = 0;
+                          }),
                         ),
                       ],
                     ),
@@ -698,39 +681,23 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(livePackagesProvider)),
-                  data: (list) {
-                    final rows =
-                        _buildRows(list, sentKeys: sentKeys).where((row) {
-                      if (search.isNotEmpty) {
-                        final s = search.toLowerCase();
-                        final itemName = row.itemName.toLowerCase();
-                        if (!row.package.srNumber.toLowerCase().contains(s) &&
-                            !row.package.consigneeName
-                                .toLowerCase()
-                                .contains(s) &&
-                            !itemName.contains(s)) {
-                          return false;
-                        }
-                      }
-                      if (dateRange != null && row.date != null) {
-                        final date = row.date!;
-                        final startOfDay = DateTime(dateRange.start.year,
-                            dateRange.start.month, dateRange.start.day);
-                        final endOfDay = DateTime(dateRange.end.year,
-                            dateRange.end.month, dateRange.end.day, 23, 59, 59);
-                        if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
-                          return false;
-                      }
-                      if (activity != 'all' && row.reason != activity) {
-                        return false;
-                      }
-                      if (!srYearMatches(row.package.srNumber, _yearFilter))
-                        return false;
-                      return true;
-                    }).toList();
+                      onRetry: () =>
+                          ref.refresh(heldGoodsPageProvider(query))),
+                  data: (result) {
+                    // Filtered, sorted and paged by the database.
+                    final rows = _rowsFrom(result);
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
 
-                    return Container(
+                    return Column(children: [
+                      Expanded(
+                        child: Container(
                       width: double.infinity,
                       decoration: BoxDecoration(
                           color: context.colors.cardDark,
@@ -874,9 +841,19 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                         ),
                       ),
                     )
-                        .animate()
-                        .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
-                        .fadeIn();
+                            .animate()
+                            .slideY(
+                                begin: 0.1, duration: 400.ms, delay: 300.ms)
+                            .fadeIn(),
+                      ),
+                      TablePager(
+                        // The database's count for this filter.
+                        total: result.total,
+                        page: _page.clamp(0, maxPage),
+                        pageSize: kDispositionPageSize,
+                        onPageChanged: (p) => setState(() => _page = p),
+                      ),
+                    ]);
                   },
                 ),
               ),
