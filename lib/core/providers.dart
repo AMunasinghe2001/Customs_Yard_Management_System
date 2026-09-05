@@ -1742,6 +1742,44 @@ final disposalRequestsChangeTriggerProvider = StreamProvider<int>((ref) async* {
   ref.onDispose(() => supabase.removeChannel(channel));
 });
 
+/// What one page of Disposal Requests is asking for.
+@immutable
+class DisposalRequestQuery {
+  final int page;
+  final String? search;
+  final String? yardFilter;
+
+  const DisposalRequestQuery({this.page = 0, this.search, this.yardFilter});
+
+  @override
+  bool operator ==(Object other) =>
+      other is DisposalRequestQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardFilter == yardFilter;
+
+  @override
+  int get hashCode => Object.hash(page, search, yardFilter);
+}
+
+typedef DisposalRequestPage = ({List<DisposalRequestModel> rows, int total});
+
+/// One page of Disposal Requests, chosen in SQL and then loaded in full.
+final disposalRequestsPageProvider = FutureProvider.family<DisposalRequestPage,
+    DisposalRequestQuery>((ref, q) async {
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  // A new tender / destruction sale consumes request items, so they must drop
+  // off this feed immediately — watch those refresh signals too.
+  ref.watch(tenderSalesRefreshProvider);
+  ref.watch(destructionsRefreshProvider);
+  return ref.read(disposalServiceProvider).getDisposalRequestsPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+      );
+});
+
 final disposalRequestsProvider =
     FutureProvider<List<DisposalRequestModel>>((ref) async {
   ref.watch(disposalRequestsChangeTriggerProvider);

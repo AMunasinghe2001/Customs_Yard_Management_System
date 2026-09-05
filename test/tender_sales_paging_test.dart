@@ -138,4 +138,61 @@ void main() {
       expect(screen, contains('_tenderSalePage = 0'));
     });
   });
+
+  group('Disposal Requests pages the same way', () {
+    final drView =
+        File('postgres/27_disposal_request_summary_view.sql').readAsStringSync();
+    final method =
+        services.substring(services.indexOf('getDisposalRequestsPaged'));
+
+    test('a request with nothing live is not listed at all', () {
+      // ⚠️ This is the rule that forced the old code to fetch everything: a
+      // request is visible only through its items, so it had to load them all
+      // to discover which requests to throw away.
+      expect(drView, contains('agg.live_count > 0'));
+      expect(drView, contains('request(s) are listed with no live items'));
+    });
+
+    test('both gates are kept, exactly as the app had them', () {
+      // The request must be forwarded by the Valuation Directorate...
+      expect(drView, contains("dr.valuation_status = 'forwarded'"));
+      // ...and the ITEM's own flag must be set: a request can be forwarded
+      // with only some of its items released.
+      expect(drView, contains('where dri.forwarded'));
+      expect(drView, contains('request(s) are not forwarded but are listed'));
+    });
+
+    test('all three consumed sources are excluded', () {
+      // A tender's id array, a tender sale's items, a destruction's items.
+      expect(drView, contains('unnest(t.forfeited_package_ids)'));
+      expect(drView, contains('from public.tender_sale_items ti'));
+      expect(drView, contains('from public.destruction_items di'));
+      expect(drView,
+          contains('request(s) count goods that have already moved on'));
+    });
+
+    test('the searchable columns are text, pipe-wrapped', () {
+      expect(drView, contains("'|' || coalesce(string_agg"));
+      expect(drView, contains('request(s) have no SR numbers to search'));
+    });
+
+    test('the heavy fetch runs for one page of ids', () {
+      expect(method, contains(".inFilter('id', ids)"));
+      expect(method, contains('.range(offset, offset + limit - 1)'));
+      expect(method,
+          contains("narrow(supabase.from('disposal_request_summary')).count()"));
+    });
+
+    test('the page still drops consumed items from the rows it got', () {
+      // ⚠️ The view decides which REQUESTS survive; the item list on each card
+      // still has to exclude the consumed ones or a card would show goods that
+      // have already moved on.
+      expect(method, contains('!consumed.contains(i.forfeitedPackageId)'));
+    });
+
+    test('the tab reads it, with a pager and the server total', () {
+      expect(screen, contains('disposalRequestsPageProvider(query)'));
+      expect(screen, contains('DisposalRequestQuery('));
+    });
+  });
 }

@@ -2208,4 +2208,14 @@ The yard's Tender Sale page reuses the same `TenderSaleCard`, so it was fixed by
 
 ⚠️ **Re-tender ids need their own query over ALL sales** (`retenderSaleIdsProvider`). Derived from one page, a sale would be marked new simply because its predecessor sat on the page before.
 
-**Remaining tabs:** Disposal Requests, Unsold Tenders, Committees, Perishable, Sold, Unsold, Destroyed, Government Use, Auction, Converted, Removed, Taxes, Expenses.
+## Central Disposal paging, 2 of N: Disposal Requests (2026-09-05)
+
+⚠️ **A request is visible only through its ITEMS**, which is what forced the old code to fetch everything: it ran **three** lookups to build the "already consumed" set (a tender's `forfeited_package_ids` array, every `tender_sale_item`, every `destruction_item`), fetched every forwarded request with its items → forfeited rows → packages → package items → warehouse entries, and only *then* discarded the items that failed a gate — and any request left holding nothing.
+
+**`disposal_request_summary`** ([27](postgres/27_disposal_request_summary_view.sql)) answers that per request. Verified against the screen: 2026-08-29 → **5 packages**, 08-27 → **4**, 08-26 → **5**, matching the cards exactly.
+
+**Both gates kept as the app has them:** the request's `valuation_status = 'forwarded'` *and* the item's own `forwarded` flag — a request can be forwarded with only some of its items released.
+
+⚠️ **The page still filters its own item lists.** The view decides which *requests* survive; each card's item list must still exclude consumed rows, or a card would show goods that have already moved on.
+
+**Remaining tabs:** Unsold Tenders, Committees, Perishable, Sold, Unsold, Destroyed, Government Use, Auction, Converted, Removed, Taxes, Expenses.

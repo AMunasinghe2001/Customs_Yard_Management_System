@@ -1956,14 +1956,41 @@ class _DeliveryStatusCell extends ConsumerWidget {
 // null = all yards.
 final _requestYardFilterProvider = StateProvider<String?>((ref) => null);
 
-class _DisposalRequestsTab extends ConsumerWidget {
+class _DisposalRequestsTab extends ConsumerStatefulWidget {
   const _DisposalRequestsTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_DisposalRequestsTab> createState() =>
+      _DisposalRequestsTabState();
+}
+
+class _DisposalRequestsTabState extends ConsumerState<_DisposalRequestsTab> {
+  /// ⚠️ Stateful only for this: the tab had no pager, and the page index is
+  /// per-tab state that must survive a rebuild.
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final green = context.colors.successGreen;
-    final requests = ref.watch(disposalRequestsProvider);
     final yardFilter = ref.watch(_requestYardFilterProvider);
+
+    // ⚠️ One PAGE. The old feed ran three lookups to build the "consumed" set,
+    // then fetched EVERY forwarded request with its items, forfeited rows,
+    // packages, package items and warehouse entries -- because a request is
+    // visible only through its items, so it had to fetch everything to
+    // discover what to throw away. The `disposal_request_summary` view
+    // (postgres/27) answers that per request.
+    final query = DisposalRequestQuery(
+      page: _page,
+      search: ref.watch(disposalSearchProvider('requests')),
+      yardFilter: yardFilter,
+    );
+    final requests = ref.watch(disposalRequestsPageProvider(query));
+
+    // A filter change starts at the top rather than on page 4 of the old set.
+    ref.listen(disposalSearchProvider('requests'),
+        (_, __) => setState(() => _page = 0));
+    ref.listen(_requestYardFilterProvider, (_, __) => setState(() => _page = 0));
 
     return Padding(
       padding: const EdgeInsets.all(24),
@@ -1994,31 +2021,13 @@ class _DisposalRequestsTab extends ConsumerWidget {
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(disposalRequestsProvider)),
-              data: (list) {
-                final q =
-                    ref.watch(disposalSearchProvider('requests')).toLowerCase();
-                var filtered = yardFilter == null
-                    ? list
-                    // Per item, not the request's own yard: a request filed
-                    // at a multi-directorate yard can list items whose SR
-                    // numbers carry different directorate prefixes.
-                    : list
-                        .where((r) => r.items.any((i) => matchesYardFilter(
-                            yardFilter, r.yard, i.forfeited?.srNumber ?? '')))
-                        .toList();
-                if (q.isNotEmpty) {
-                  filtered = filtered
-                      .where((r) => r.items.any((i) =>
-                          (i.forfeited?.srNumber ?? '')
-                              .toLowerCase()
-                              .contains(q) ||
-                          (i.forfeited?.consigneeName ?? '')
-                              .toLowerCase()
-                              .contains(q)))
-                      .toList();
-                }
-                if (filtered.isEmpty) {
+                  onRetry: () =>
+                      ref.refresh(disposalRequestsPageProvider(query))),
+              data: (result) {
+                // Filtered and paged by the database. Nothing left to narrow.
+                final filtered = result.rows;
+
+                if (result.total == 0) {
                   return _listCard(
                     context,
                     const EmptyTableState(
@@ -2028,12 +2037,34 @@ class _DisposalRequestsTab extends ConsumerWidget {
                             'Forwarded requests from the Valuation Directorate will appear here.'),
                   );
                 }
-                return ListView.separated(
-                  itemCount: filtered.length,
-                  separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) =>
-                      _RequestCard(request: filtered[i]),
-                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
+
+                final maxPage = result.total == 0
+                    ? 0
+                    : (result.total - 1) ~/ kDispositionPageSize;
+                if (_page > maxPage) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _page = maxPage);
+                  });
+                }
+
+                return Column(children: [
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: filtered.length,
+                      separatorBuilder: (_, __) => const Gap(16),
+                      itemBuilder: (context, i) =>
+                          _RequestCard(request: filtered[i]),
+                    ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05),
+                  ),
+                  TablePager(
+                    // The database's count for this filter.
+                    total: result.total,
+                    page: _page.clamp(0, maxPage),
+                    pageSize: kDispositionPageSize,
+                    accent: green,
+                    onPageChanged: (p) => setState(() => _page = p),
+                  ),
+                ]);
               },
             ),
           ),

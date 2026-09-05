@@ -6467,6 +6467,113 @@ class DisposalService {
     return result;
   }
 
+  /// One page of Disposal Requests, chosen and filtered in SQL.
+  ///
+  /// ⚠️ [getDisposalRequests] runs three lookups to build the "already
+  /// consumed" set, fetches EVERY forwarded request with its items, forfeited
+  /// rows, packages, package items and warehouse entries, and only then throws
+  /// away the items that are consumed or unforwarded — and any request left
+  /// with nothing. A request is visible only because of its items, so it had
+  /// to fetch everything to discover what to discard.
+  ///
+  /// `disposal_request_summary` (postgres/27) answers that per request, so the
+  /// heavy fetch runs for one page.
+  Future<({List<DisposalRequestModel> rows, int total})>
+      getDisposalRequestsPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_numbers.ilike.%$s%,consignees.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        // Any ITEM's yard, pipe-wrapped by the view so this cannot match
+        // across two neighbouring values.
+        q = q.or('item_yards.ilike.%|$yardFilter|%,'
+            'sr_numbers.ilike.%/$yardFilter/%');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('disposal_request_summary').select('id'))
+            .order('created_at', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('disposal_request_summary')).count());
+
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <DisposalRequestModel>[], total: total as int);
+    }
+
+    // ⚠️ The consumed set is still needed, but only to filter THIS page's
+    // items — the view already decided which requests survive.
+    final consumed = await _consumedForfeitedIds();
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_requests')
+        .select(
+            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+        .inFilter('id', ids)
+        .order('created_at', ascending: false));
+
+    final byId = <String, DisposalRequestModel>{};
+    for (final e in (data as List)) {
+      final r = DisposalRequestModel.fromJson(e as Map<String, dynamic>);
+      final items = r.items
+          .where((i) => i.forwarded && !consumed.contains(i.forfeitedPackageId))
+          .toList();
+      if (items.isEmpty) continue;
+      byId[r.id] = DisposalRequestModel(
+        id: r.id,
+        yard: r.yard,
+        requestDate: r.requestDate,
+        status: r.status,
+        createdAt: r.createdAt,
+        createdByName: r.createdByName,
+        items: items,
+        valuationStatus: r.valuationStatus,
+        valuedAt: r.valuedAt,
+        valuedByName: r.valuedByName,
+      );
+    }
+    // Keep the view's order.
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
+  /// Forfeited rows that have already moved on to a tender, a tender sale or a
+  /// destruction — the three sources the requests view excludes.
+  Future<Set<String>> _consumedForfeitedIds() async {
+    final tendersData = await AuthService._withNetworkRetry(
+        () => supabase.from('tenders').select('forfeited_package_ids'));
+    final out = (tendersData as List)
+        .expand((t) => (t['forfeited_package_ids'] as List? ?? const []))
+        .map((e) => e.toString())
+        .toSet();
+    final saleItems = await AuthService._withNetworkRetry(() =>
+        supabase.from('tender_sale_items').select('forfeited_package_id'));
+    for (final e in (saleItems as List)) {
+      out.add(e['forfeited_package_id'].toString());
+    }
+    final destItems = await AuthService._withNetworkRetry(() =>
+        supabase.from('destruction_items').select('forfeited_package_id'));
+    for (final e in (destItems as List)) {
+      out.add(e['forfeited_package_id'].toString());
+    }
+    return out;
+  }
+
   /// Get the next serial number for tender sales in a given year.
   /// Next tender-sale serial for a [year], scoped to a [yard] when given so each
   /// yard keeps its own running sequence (GL1's 6th sale is serial 6 even if
