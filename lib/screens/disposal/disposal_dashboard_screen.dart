@@ -1310,19 +1310,12 @@ class _DeliverySegmentedFilter extends StatelessWidget {
 // writes a "[FINAL:DESTROYED]" warehouse entry (see disposal_mark_destruction_
 // item_destroyed), which this tab surfaces — auto-updating via realtime.
 
-bool _isDestroyedEntry(WarehouseEntryModel e) {
-  final notes = (e.returnNotes ?? '').trim().toUpperCase();
-  final m = RegExp(r'^\[([^\]]+)\]').firstMatch(notes);
-  if (m == null) return false;
-  final tag = m.group(1)!.trim();
-  // 'FINAL:DESTROY' (no ED) is the PENDING tag disposeWarehouseItem writes.
-  // It belongs on this tab too -- the row shows a Pending status until the
-  // yard confirms the destruction, which rewrites it as FINAL:DESTROYED.
-  return tag == 'FINAL:DESTROYED' ||
-      tag == 'FINAL:DESTROY' ||
-      tag == 'DESTROYED' ||
-      tag == 'DESTROY';
-}
+// ⚠️ `_isDestroyedEntry` moved into the `disposition_rows` view (postgres/18)
+// as its DESTROYED tag list — including 'FINAL:DESTROY' with no ED, the
+// PENDING tag disposeWarehouseItem writes. That one matters: the row shows a
+// Pending status until the yard confirms, which rewrites it as
+// FINAL:DESTROYED, and dropping it would hide every package awaiting
+// destruction from the tab that confirms them.
 
 class _DestroyedPackagesTab extends ConsumerStatefulWidget {
   const _DestroyedPackagesTab();
@@ -1353,54 +1346,36 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
   static const int _pageSize = 20;
   int _page = 0;
 
-  List<_DestroyedRow> _rows(List<PackageModel> packages) {
-    final rows = <_DestroyedRow>[];
-    for (final p in packages) {
-      final coveredItemIds = <String>{};
-      for (final e in p.warehouseEntries) {
-        if (!_isDestroyedEntry(e)) continue;
-        final item = p.items.where((i) => i.id == e.packageItemId).firstOrNull;
-        if (e.packageItemId != null) coveredItemIds.add(e.packageItemId!);
-        final itemName = item?.itemName ??
-            (p.items.length == 1 ? p.items.first.itemName : '—');
-        final isDest = (e.returnNotes ?? '')
-                .toUpperCase()
-                .contains('FINAL:DESTROYED') ||
-            (e.returnNotes ?? '').toUpperCase().contains('DESTROYED');
-        rows.add(_DestroyedRow(
-          package: p,
-          entry: e,
-          item: item,
-          itemName: itemName,
-          officer: e.returnedByName ?? e.returnedByBadge ?? '—',
-          isDestroyed: isDest,
-        ));
-      }
-      for (final item in p.items) {
-        if (coveredItemIds.contains(item.id)) continue;
-        final st = (item.status ?? '').toLowerCase();
-        if (st == 'destroyed' ||
-            st == 'supposed to be destroyed' ||
-            st == 'destroy') {
-          rows.add(_DestroyedRow(
-            package: p,
-            entry: null,
-            item: item,
-            itemName: item.itemName,
-            officer: '—',
-            isDestroyed: st == 'destroyed',
-          ));
-        }
-      }
+  /// The view's rows, as this tab's widgets already expect them.
+  ///
+  /// ⚠️ Replaces `_rows`, which walked every package in every yard. Both
+  /// sources live in the view now — an entry tagged FINAL:DESTROYED /
+  /// FINAL:DESTROY / DESTROYED / DESTROY / SUPPOSED TO BE DESTROYED, and an
+  /// item whose STATUS says so with no tagged entry — as does the
+  /// Pending/Destroyed distinction the tab is built around.
+  List<_DestroyedRow> _rowsFrom(DispositionPageWithPackages result) {
+    final out = <_DestroyedRow>[];
+    for (final r in result.rows) {
+      final pkg = result.packages[r.packageId];
+      if (pkg == null) continue;
+      final item = r.itemId == null
+          ? null
+          : pkg.items.where((i) => i.id == r.itemId).firstOrNull;
+      final entry = r.entryId == null
+          ? null
+          : pkg.warehouseEntries.where((e) => e.id == r.entryId).firstOrNull;
+      out.add(_DestroyedRow(
+        package: pkg,
+        entry: entry,
+        item: item,
+        itemName: r.itemName,
+        officer: r.officer ?? '—',
+        // ⚠️ From the view. `supposed to be destroyed` is PENDING; collapsing
+        // the two would present goods awaiting destruction as already gone.
+        isDestroyed: r.isDestroyed ?? false,
+      ));
     }
-    rows.sort((a, b) {
-      final aDate =
-          a.entry?.returnedAt ?? a.entry?.admittedAt ?? a.package.updatedAt;
-      final bDate =
-          b.entry?.returnedAt ?? b.entry?.admittedAt ?? b.package.updatedAt;
-      return bDate.compareTo(aDate);
-    });
-    return rows;
+    return out;
   }
 
   @override
@@ -1409,8 +1384,25 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
     // (loading spinner, stat chip, popup header) rather than danger-red.
     final green = context.colors.successGreen;
     final yardFilter = ref.watch(disposalDestroyedYardFilterProvider);
-    final destroyed = ref.watch(disposalDestroyedPackagesProvider);
     final deliveryFilter = ref.watch(_destroyedDeliveryFilterProvider);
+
+    // ⚠️ One PAGE. `disposalDestroyedPackagesProvider` calls getAllPackages()
+    // -- every package in every yard -- and the tab kept the destruction rows
+    // in Dart. The `disposition_rows` view carries both of its sources (a
+    // tagged entry, and an item whose status says so) plus `is_destroyed`,
+    // which is the Pending/Destroyed distinction this tab is built around.
+    final query = DispositionQuery(
+      finalTag: 'DESTROYED',
+      page: _page,
+      search: ref.watch(disposalSearchProvider('destroyed')),
+      yard: yardFilter,
+      isDestroyed: deliveryFilter,
+    );
+    final destroyed = ref.watch(dispositionPageWithPackagesProvider(query));
+
+    // A filter change starts at the top rather than on page 4 of the old set.
+    ref.listen(disposalSearchProvider('destroyed'),
+        (_, __) => setState(() => _page = 0));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
     final yardLabel = yardFilter == null ? 'all yards' : yardName(yardFilter);
@@ -1456,29 +1448,20 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () =>
-                      ref.refresh(disposalDestroyedPackagesProvider)),
-              data: (packages) {
-                final q = ref
-                    .watch(disposalSearchProvider('destroyed'))
-                    .toLowerCase();
-                var rows = _rows(packages);
-                if (q.isNotEmpty) {
-                  rows = rows
-                      .where((r) =>
-                          r.package.srNumber.toLowerCase().contains(q) ||
-                          r.itemName.toLowerCase().contains(q) ||
-                          r.officer.toLowerCase().contains(q))
-                      .toList();
+                  onRetry: () => ref
+                      .refresh(dispositionPageWithPackagesProvider(query))),
+              data: (result) {
+                // Filtered and paged by the database: the search, the yard and
+                // the Pending/Destroyed filter all reached SQL.
+                final pageRows = _rowsFrom(result);
+                final total = result.total;
+                final maxPage =
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                if (_page > maxPage) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _page = maxPage);
+                  });
                 }
-                if (deliveryFilter != null) {
-                  rows = rows
-                      .where((r) => r.isDestroyed == deliveryFilter)
-                      .toList();
-                }
-                final total = rows.length;
-                if (_page * _pageSize >= total && _page > 0) _page = 0;
-                final pageRows = pageSlice(rows, _page, _pageSize);
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [

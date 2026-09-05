@@ -1036,6 +1036,13 @@ class DispositionRow {
   /// Parsed out of the note by the view, so it can be searched in SQL.
   final String? receiptNo;
 
+  /// Destruction has a MIDDLE state, and only Destroyed Goods has it.
+  ///
+  /// ⚠️ Null on every other page. False there would read as "awaiting
+  /// destruction" on goods that were sold or released. True means the yard
+  /// confirmed it; false means it is marked for destruction and waiting.
+  final bool? isDestroyed;
+
   /// The one date the page sorts on, whichever source the row came from.
   final DateTime happenedAt;
 
@@ -1057,6 +1064,7 @@ class DispositionRow {
     required this.officer,
     this.holdReason,
     this.receiptNo,
+    this.isDestroyed,
     required this.happenedAt,
   });
 
@@ -1078,6 +1086,7 @@ class DispositionRow {
         officer: json['officer']?.toString(),
         holdReason: json['hold_reason']?.toString(),
         receiptNo: json['receipt_no']?.toString(),
+        isDestroyed: json['is_destroyed'] as bool?,
         happenedAt: parseDbDate(json['happened_at']) ?? DateTime(1970),
       );
 

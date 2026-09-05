@@ -2228,4 +2228,16 @@ The tab was calling `getSoldPackages` → `getAllPackages()`: **every package in
 
 ⚠️ **Two tabs shared the same `TablePager(total: total, page: _page, pageSize: _pageSize)` text** — an Edit matched both. Destroyed keeps its own until that tab is paged; the Sold one now uses `kDispositionPageSize` so the pager and the query cannot drift.
 
-**Remaining tabs:** Unsold Tenders, Committees, Perishable, Unsold, Destroyed, Government Use, Auction, Converted, Removed, Taxes, Expenses.
+## Central Disposal paging, 4 of N: Destroyed Goods (2026-09-05)
+
+Reuses `disposition_rows` with `finalTag: 'DESTROYED'` — both its sources (a tagged entry, and an item whose status says so) were already there. It needed **one** new column.
+
+⚠️ **Destruction is the one disposition with a MIDDLE state.** `[FINAL:DESTROY]` (no ED) is what `disposeWarehouseItem` writes when goods are marked for destruction, and the item's status becomes `supposed to be destroyed`; only when the yard **confirms** does either become past tense. Both belong on the tab — one awaiting action, one a finished record — so `final_tag` alone cannot tell them apart. [28](postgres/28_disposition_rows_destroyed_state.sql) adds **`is_destroyed`**.
+
+⚠️ **NULL on every other page.** False on a sold row would read as "awaiting destruction" on goods that are already gone. The verify asserts both directions, plus that a `supposed to be destroyed` item is never reported as destroyed — collapsing those two would present goods awaiting destruction as gone, **on the very tab an officer uses to confirm them**.
+
+Live: **16 confirmed, 23 awaiting** — exactly the status split in the data.
+
+⚠️ Three unused declarations the analyzer flags here (`_YardFilter`, `_parseDestroyReceipt`, `_DestructionValuationCell`) were **already unused before this change** — checked against a copy of the file rather than assumed.
+
+**Remaining tabs:** Unsold Tenders, Committees, Perishable, Unsold, Government Use, Auction, Converted, Removed, Taxes, Expenses.

@@ -413,6 +413,10 @@ class DispositionQuery {
   /// The Reason dropdown on Released Goods.
   final String? holdReason;
 
+  /// Destroyed Goods' Pending / Destroyed filter — the one page with a middle
+  /// state. Null is "All".
+  final bool? isDestroyed;
+
   const DispositionQuery({
     required this.finalTag,
     this.page = 0,
@@ -423,6 +427,7 @@ class DispositionQuery {
     this.year,
     this.delivered,
     this.holdReason,
+    this.isDestroyed,
   });
 
   @override
@@ -436,12 +441,13 @@ class DispositionQuery {
       other.dateEnd == dateEnd &&
       other.year == year &&
       other.delivered == delivered &&
-      other.holdReason == holdReason;
+      other.holdReason == holdReason &&
+      other.isDestroyed == isDestroyed;
 
   @override
   int get hashCode => Object.hash(
       finalTag, page, search, yard, dateStart, dateEnd, year, delivered,
-      holdReason);
+      holdReason, isDestroyed);
 }
 
 /// One page of a disposition table, filtered and paged in SQL.
@@ -465,6 +471,7 @@ final dispositionPageProvider =
         year: q.year,
         delivered: q.delivered,
         holdReason: q.holdReason,
+        isDestroyed: q.isDestroyed,
       );
 });
 

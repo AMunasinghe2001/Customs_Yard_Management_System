@@ -232,4 +232,52 @@ void main() {
       expect(tab, contains('pageSize: kDispositionPageSize,'));
     });
   });
+
+  group('Destroyed Goods: the disposition with a middle state', () {
+    final destView =
+        File('postgres/28_disposition_rows_destroyed_state.sql')
+            .readAsStringSync();
+
+    test('only DESTROYED rows carry a destruction state', () {
+      // ⚠️ Null elsewhere. False on a sold row would read as "awaiting
+      // destruction" on goods that are already gone.
+      expect(destView, contains("when r.final_tag <> 'DESTROYED' then null"));
+      expect(destView,
+          contains('non-destroyed row(s) claim a destruction state'));
+    });
+
+    test('every DESTROYED row has an answer', () {
+      // Otherwise the tab cannot decide whether to offer Mark Destroyed.
+      expect(destView,
+          contains('destroyed row(s) have no Pending/Destroyed state'));
+    });
+
+    test('"supposed to be destroyed" is PENDING, not destroyed', () {
+      // ⚠️ Collapsing the two would present goods awaiting destruction as
+      // already gone -- on the very tab an officer uses to confirm them.
+      expect(destView,
+          contains('package(s) awaiting destruction are shown as destroyed'));
+      expect(destView, contains("= 'destroyed')"));
+    });
+
+    test('the pending tag survives in the view', () {
+      final view =
+          File('postgres/18_disposition_rows_view.sql').readAsStringSync();
+      // FINAL:DESTROY with no ED -- what disposeWarehouseItem writes.
+      expect(view, contains("'FINAL:DESTROY'"));
+      expect(view, contains("'SUPPOSED TO BE DESTROYED'"));
+    });
+
+    test('the tab reads the view, and its filter reaches SQL', () {
+      expect(screen, contains("finalTag: 'DESTROYED',"));
+      expect(screen, contains('isDestroyed: deliveryFilter,'));
+      expect(screen, isNot(contains('bool _isDestroyedEntry(')));
+      expect(screen,
+          isNot(contains('List<_DestroyedRow> _rows(List<PackageModel>')));
+    });
+
+    test("the row keeps the view answer, not a guess", () {
+      expect(screen, contains('isDestroyed: r.isDestroyed ?? false,'));
+    });
+  });
 }

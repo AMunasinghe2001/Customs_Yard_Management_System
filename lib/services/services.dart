@@ -970,6 +970,10 @@ class PackageService {
     /// The Reason dropdown on Released Goods. 'all' and null both mean no
     /// filter -- the screen uses the string, so it is accepted here.
     String? holdReason,
+
+    /// Destroyed Goods' Pending / Destroyed filter. ⚠️ Only that page has a
+    /// middle state; null means "All", which is a third answer.
+    bool? isDestroyed,
   }) async {
     // ⚠️ ONE closure, applied to the rows query and the count query alike. Two
     // separately-written filters drift, and the symptom is a pager whose total
@@ -1002,6 +1006,7 @@ class PackageService {
           holdReason != 'all') {
         q = q.eq('hold_reason', holdReason);
       }
+      if (isDestroyed != null) q = q.eq('is_destroyed', isDestroyed);
       return q;
     }
 
