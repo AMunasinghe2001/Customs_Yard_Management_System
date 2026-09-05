@@ -5761,6 +5761,141 @@ class DisposalService {
         .toList();
   }
 
+  /// One page of Unsold Goods, decided in SQL.
+  ///
+  /// ⚠️ [getExhaustedUnsoldPackages] answers the same question by loading
+  /// EVERY tender sale with every item and join, then narrowing to the handful
+  /// that have run out of road -- so the page costs the entire tender history
+  /// of the yard, forever, to show twenty rows. The `exhausted_unsold` view
+  /// applies the identical four conditions in the database (see postgres/23),
+  /// and only the named page's rounds are loaded afterwards.
+  ///
+  /// [decided] is the page's Decided / Awaiting filter; null means both.
+  Future<({List<ReTenderSaleInfo> rows, int total})> getExhaustedUnsoldPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yard,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+    bool? decided,
+
+    /// One of the four Final Outcome pages: 'government_use', 'auction',
+    /// 'convert', 'remove_from_premises'. Null is the Unsold Goods page
+    /// itself, which shows every package whatever its outcome.
+    String? proposal,
+  }) async {
+    // ⚠️ ONE closure for the rows and the count, or the pager's total and the
+    // rows under it disagree.
+    PgQuery narrow(PgQuery q) {
+      if (yard != null && yard.isNotEmpty) q = q.eq('yard', yard);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        // The item name too — the view resolves it per item, the way
+        // unsoldItemName() does.
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'item_name.ilike.%$s%');
+      }
+      if (year != null && year.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$year');
+      }
+      if (dateStart != null) {
+        final start = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('forfeited_at', start.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final end =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('forfeited_at', end.toIso8601String());
+      }
+      // Decided means an outcome EXISTS, which is a null test on the join.
+      if (decided == true) q = q.not('proposal', 'is', null);
+      if (decided == false) q = q.isNull('proposal');
+      if (proposal != null && proposal.isNotEmpty) {
+        q = q.eq('proposal', proposal);
+      }
+      return q;
+    }
+
+    final rows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('exhausted_unsold').select('forfeited_package_id'))
+            .order('forfeited_at', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('exhausted_unsold')).count());
+
+    final ids = [
+      for (final e in (rows as List))
+        (e as Map<String, dynamic>)['forfeited_package_id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <ReTenderSaleInfo>[], total: total as int);
+    }
+
+    // The rounds, for THIS page's packages only. The table shows the round
+    // count and the popup the whole history, so they are genuinely needed --
+    // but twenty packages' worth, not the yard's.
+    final infos = await _reTenderInfoForIds(ids);
+    // Keep the database's order: the query sorted it, and re-sorting here
+    // would quietly disagree with the page boundaries.
+    final byId = {for (final i in infos) i.forfeited.id: i};
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
+  /// The SR numbers on Unsold Goods, for its year filter.
+  Future<List<String>> getExhaustedUnsoldYears() async {
+    final data = await AuthService._withNetworkRetry(
+        () => supabase.from('exhausted_unsold').select('sr_number'));
+    return [
+      for (final row in (data as List))
+        (row as Map<String, dynamic>)['sr_number']?.toString() ?? '',
+    ];
+  }
+
+  /// [ReTenderSaleInfo] for a specific set of forfeited packages.
+  ///
+  /// The per-page counterpart of `getUnsoldTenderSales`, which builds the same
+  /// shape for every package in the yard.
+  Future<List<ReTenderSaleInfo>> _reTenderInfoForIds(List<String> ids) async {
+    if (ids.isEmpty) return const [];
+    final fps = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*))))')
+        .inFilter('id', ids));
+    final items = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_items')
+        .select('*, tender_sales(*)')
+        .inFilter('forfeited_package_id', ids));
+
+    final salesByFp = <String, List<TenderSaleModel>>{};
+    for (final e in (items as List)) {
+      final row = e as Map<String, dynamic>;
+      final fpId = row['forfeited_package_id']?.toString();
+      final sale = row['tender_sales'];
+      if (fpId == null || sale is! Map) continue;
+      salesByFp
+          .putIfAbsent(fpId, () => [])
+          .add(TenderSaleModel.fromJson(Map<String, dynamic>.from(sale)));
+    }
+    // Newest first, matching ReTenderSaleInfo's contract.
+    for (final list in salesByFp.values) {
+      list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    }
+
+    return [
+      for (final e in (fps as List))
+        ReTenderSaleInfo(
+          forfeited: ForfeitedPackageModel.fromJson(e as Map<String, dynamic>),
+          sales: salesByFp[e['id'].toString()] ?? const [],
+        )
+    ];
+  }
+
   Future<List<ReTenderSaleInfo>> getExhaustedUnsoldPackages() async {
     final unsold = await getUnsoldTenderSales();
     if (unsold.isEmpty) return [];

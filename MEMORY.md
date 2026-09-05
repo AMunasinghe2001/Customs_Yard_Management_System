@@ -2039,3 +2039,19 @@ Released Goods filters on two things no other page does, so [22](postgres/22_dis
 Every migration from 20 onward **slices the previous one's body out of the file** rather than retyping it — two copies drift, and the symptom is a page whose rows depend on which migration ran last.
 
 **Still client-side:** `unsold_packages_screen`, `perishable_goods_screen`, `old_entries_screen`, and the directorate tabs.
+
+## Unsold Goods: the membership question moves to SQL (2026-09-05)
+
+`getExhaustedUnsoldPackages` → `getUnsoldTenderSales` → `getTenderSales`: **every sale, every item, every join**, and only *then* narrowed to the 8 packages that have run out of road. The page's cost was the entire tender history of the yard, forever, to show twenty rows.
+
+**`exhausted_unsold`** ([23](postgres/23_exhausted_unsold_view.sql)) applies the same four conditions in the database: not sold · `tender_count > 3` · the committee valued it **and the ADG submitted** that figure · **and a round ran after that submission and still did not sell**. The app then loads full `ReTenderSaleInfo` for **that page's** ids only (`_reTenderInfoForIds`).
+
+⚠️ **Condition 4 is judged by the round's SCHEDULED MOMENT, never `created_at`.** This is a bug the codebase already hit live: Central Disposal schedules a round before the ADG submits, and two packages can share one sale row — keying on `created_at` stranded Toilet Seat Covers (submitted 18:31, row created 04:25) on 5 rounds forever while Wash Basins in the *same row* moved on. The test pins that the `rounds` CTE never mentions `created_at`.
+
+⚠️ **The item name needed a column of its own.** The search box scans it, forfeiture is per item, so the view resolves it the way `unsoldItemName()` does (the forfeited row's item, then the package's first). Without it that one filter would have kept the whole list in Dart.
+
+⚠️ **`_yardRows` and `_visibleRows` are gone.** The yard scope and the outcome filter are view columns now, so the header count and the table read the same narrowed set **by construction** rather than by both remembering to call one helper. This screen drives Unsold Goods *and* the four Final Outcome pages via `proposalFilter` → `ExhaustedUnsoldQuery.proposal`.
+
+⚠️ **`create or replace view` refuses a column list that is not a pure append** — hit twice now (22 and 23). Drop and recreate; nothing but the app reads these views.
+
+**Still client-side:** `perishable_goods_screen`, `old_entries_screen`, and the directorate tabs.

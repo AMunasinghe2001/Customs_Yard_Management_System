@@ -1051,6 +1051,83 @@ final exhaustedUnsoldProvider =
   return ref.read(disposalServiceProvider).getExhaustedUnsoldPackages();
 });
 
+/// What one page of Unsold Goods is asking for.
+///
+/// ⚠️ A value type, like [DispositionQuery] and for the same reason: a family
+/// key without value equality opens a fresh request on every rebuild.
+@immutable
+class ExhaustedUnsoldQuery {
+  final int page;
+  final String? search;
+  final String? yard;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
+  /// The Decided / Awaiting filter. Null is "All" — a third answer.
+  final bool? decided;
+
+  /// One of the four Final Outcome pages; null is Unsold Goods itself.
+  final String? proposal;
+
+  const ExhaustedUnsoldQuery({
+    this.page = 0,
+    this.search,
+    this.yard,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+    this.decided,
+    this.proposal,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is ExhaustedUnsoldQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yard == yard &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year &&
+      other.decided == decided &&
+      other.proposal == proposal;
+
+  @override
+  int get hashCode =>
+      Object.hash(page, search, yard, dateStart, dateEnd, year, decided,
+          proposal);
+}
+
+/// One page of Unsold Goods, chosen and filtered by the database.
+typedef ExhaustedUnsoldPage = ({List<ReTenderSaleInfo> rows, int total});
+
+final exhaustedUnsoldPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
+    ExhaustedUnsoldQuery>((ref, q) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getExhaustedUnsoldPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yard: q.yard,
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+        decided: q.decided,
+        proposal: q.proposal,
+      );
+});
+
+/// Every SR number on Unsold Goods, for its year filter — one small column,
+/// because a page of twenty cannot know which years the table covers.
+final exhaustedUnsoldYearsProvider =
+    FutureProvider<List<String>>((ref) async {
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getExhaustedUnsoldYears();
+});
+
 // The recorded final outcomes, keyed by forfeited_package_id.
 /// The DG's final outcomes keyed by package_item_id, for pages that list
 /// items rather than forfeited packages (Perishable Goods).

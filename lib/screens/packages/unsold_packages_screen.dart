@@ -62,8 +62,6 @@ class UnsoldPackagesScreen extends ConsumerStatefulWidget {
 }
 
 class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
-  static const int _pageSize = 20;
-
   final _searchCtrl = TextEditingController();
   String _search = '';
   DateTimeRange? _dateRange;
@@ -103,37 +101,34 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
     );
   }
 
-  /// The rows for this yard, before search/date/year/status filtering.
-  List<ReTenderSaleInfo> _yardRows(List<ReTenderSaleInfo> all, String? myYard) {
-    // RLS already scopes reads, but the shared provider is cross-yard.
-    if (myYard == null) return all;
-    return all.where((i) => i.forfeited.yard == myYard).toList();
-  }
-
-  /// This yard's rows, narrowed to the outcome this page is for.
-  ///
-  /// The header count and the table must agree, so both go through here — an
-  /// outcome page that counted every unsold package would contradict its own
-  /// list.
-  List<ReTenderSaleInfo> _visibleRows(List<ReTenderSaleInfo> all,
-      String? myYard, Map<String, UnsoldProposalModel> proposals) {
-    final mine = _yardRows(all, myYard);
-    final want = widget.proposalFilter;
-    if (want == null) return mine;
-    return mine
-        .where((i) => proposals[i.forfeited.id]?.proposal == want)
-        .toList();
-  }
+  // ⚠️ `_yardRows` and `_visibleRows` moved into the query. The yard scope and
+  // the outcome filter are both columns on the `exhausted_unsold` view now
+  // (postgres/23), so the header count and the table read the SAME narrowed
+  // set by construction rather than by both remembering to call one helper.
 
   @override
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
-    final async = ref.watch(exhaustedUnsoldProvider);
+    final myYardForQuery = ref.watch(currentProfileProvider)?.yard;
+    // ⚠️ Everything this page narrows on is in the key, so the DATABASE
+    // decides which packages have run out of tenders (see postgres/23) and
+    // which page of them to return. Loading every tender sale in the yard to
+    // find eight packages is what this replaces.
+    final query = ExhaustedUnsoldQuery(
+      page: _page,
+      search: _search,
+      yard: myYardForQuery,
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+      decided: _decidedFilter,
+      proposal: widget.proposalFilter,
+    );
+    final async = ref.watch(exhaustedUnsoldPageProvider(query));
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
-    final myYard = ref.watch(currentProfileProvider)?.yard;
     // The Top Management tender committees, keyed by forfeited_package_id.
     // Their valuation supersedes the original for an unsold package.
     final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
@@ -166,10 +161,10 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                                 TextStyle(color: context.colors.textSecondary)),
                       ],
                     ),
+                    // The database's count for this filter.
                     async.when(
-                      data: (list) => Text(
-                          '${_visibleRows(list, myYard, proposals).length} '
-                          '${widget.countLabel}',
+                      data: (p) => Text(
+                          '${p.total} ${widget.countLabel}',
                           style: TextStyle(
                               color: context.colors.textMuted,
                               fontSize: 13,
@@ -288,10 +283,12 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                           ),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: srYears(async.valueOrNull == null
-                              ? const <String>[]
-                              : _yardRows(async.valueOrNull!, myYard)
-                                  .map((r) => r.forfeited.srNumber)),
+                          // ⚠️ Its own query: one page of twenty rows would
+                          // offer only the years visible right now.
+                          years: srYears(
+                              ref.watch(exhaustedUnsoldYearsProvider)
+                                      .valueOrNull ??
+                                  const <String>[]),
                           onChanged: (v) => setState(() {
                             _yearFilter = v;
                             _page = 0;
@@ -324,50 +321,22 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                       Center(child: CircularProgressIndicator(color: gold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(exhaustedUnsoldProvider)),
-                  data: (list) {
-                    // Same narrowing the header count uses, so the two can
-                    // never disagree.
-                    final rows =
-                        _visibleRows(list, myYard, proposals).where((info) {
-                      final f = info.forfeited;
-                      if (_search.isNotEmpty) {
-                        final s = _search.toLowerCase();
-                        if (!f.srNumber.toLowerCase().contains(s) &&
-                            !f.consigneeName.toLowerCase().contains(s) &&
-                            !unsoldItemName(f).toLowerCase().contains(s)) {
-                          return false;
-                        }
-                      }
-                      if (_dateRange != null) {
-                        final d = f.forfeitedAt;
-                        final start = DateTime(_dateRange!.start.year,
-                            _dateRange!.start.month, _dateRange!.start.day);
-                        final end = DateTime(
-                            _dateRange!.end.year,
-                            _dateRange!.end.month,
-                            _dateRange!.end.day,
-                            23,
-                            59,
-                            59);
-                        if (d.isBefore(start) || d.isAfter(end)) return false;
-                      }
-                      if (_yearFilter != null &&
-                          !f.srNumber.endsWith('/$_yearFilter')) {
-                        return false;
-                      }
-                      if (_decidedFilter != null &&
-                          proposals.containsKey(f.id) != _decidedFilter) {
-                        return false;
-                      }
-                      return true;
-                    }).toList();
-
-                    final maxPage =
-                        rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
+                      onRetry: () =>
+                          ref.refresh(exhaustedUnsoldPageProvider(query))),
+                  data: (result) {
+                    // Which packages have run out of tenders, which of them
+                    // match the filters, and which page of them — all decided
+                    // by the database. Nothing left to narrow here.
+                    final pageRows = result.rows;
+                    final maxPage = result.total == 0
+                        ? 0
+                        : (result.total - 1) ~/ kDispositionPageSize;
                     final page = _page.clamp(0, maxPage);
-                    final pageRows =
-                        rows.skip(page * _pageSize).take(_pageSize);
+                    if (_page > maxPage) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) setState(() => _page = maxPage);
+                      });
+                    }
 
                     return Column(
                       children: [
@@ -480,9 +449,10 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                           ),
                         ),
                         TablePager(
-                          total: rows.length,
+                          // The database's count for this filter.
+                          total: result.total,
                           page: page,
-                          pageSize: _pageSize,
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],

@@ -1,0 +1,161 @@
+// Unsold Goods asked a question that cost the whole tender history to answer.
+//
+// getExhaustedUnsoldPackages calls getUnsoldTenderSales, which calls
+// getTenderSales -- every sale, every item, every join -- and only THEN
+// narrows to the handful of packages that have run out of road. Eight rows,
+// bought with the entire tender history of the yard.
+import 'dart:io';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:cus_yard_management/core/providers.dart';
+
+void main() {
+  final view =
+      File('postgres/23_exhausted_unsold_view.sql').readAsStringSync();
+  final services = File('lib/services/services.dart').readAsStringSync();
+  final screen = File('lib/screens/packages/unsold_packages_screen.dart')
+      .readAsStringSync();
+
+  group('the four conditions, condition for condition', () {
+    test('a sold package is finished, whatever else is true', () {
+      expect(view, contains('not a.ever_sold'));
+      expect(view, contains('exhausted row(s) actually sold'));
+    });
+
+    test('the Valuation Tender and Tenders 1-3 must all have failed', () {
+      expect(view, contains('a.tender_count > 3'));
+      expect(view, contains('have not exhausted the tender route'));
+    });
+
+    test('a committee value with no submission is not a tendered price', () {
+      // ⚠️ submitted_value, never committee_value on its own -- the figure has
+      // to have been SUBMITTED by the ADG to count.
+      expect(view, contains('tc.submitted_value is not null'));
+      expect(view, contains('tc.submitted_at is not null'));
+    });
+
+    test('a round must have RUN after the submission and still not sold', () {
+      // ⚠️ Without this the package reached the DG the moment the ADG
+      // submitted -- so the DG decided the final outcome of goods that still
+      // had a live chance of selling.
+      expect(view, contains('r.sale_moment > tc.submitted_at'));
+      expect(view, contains('r.end_moment < now()'));
+      expect(view, contains('reached the DG before their committee round ran'));
+    });
+  });
+
+  group('the moment, not the row', () {
+    test('rounds are judged by their SCHEDULED time', () {
+      // ⚠️ A live bug this codebase already hit: Central Disposal schedules a
+      // round before the ADG submits, and two packages can share one sale row.
+      // Keying on created_at stranded Toilet Seat Covers on 5 rounds forever
+      // while Wash Basins in the SAME row moved on.
+      expect(view, contains('ts.sale_date::date'));
+      expect(view, contains("coalesce(ts.sale_time, '00:00')::time"));
+      // ⚠️ The ROUNDS cte is what condition 4 tests against, and it must
+      // derive both moments from the schedule alone. (created_at appears
+      // elsewhere in the view, ordering the item-name fallback, which is a
+      // different question entirely.)
+      final rounds = view.substring(
+          view.indexOf('with rounds as'), view.indexOf('), agg as ('));
+      expect(rounds, isNot(contains('created_at')));
+      expect(rounds, contains('as sale_moment'));
+    });
+
+    test('a round that has not ended yet cannot have failed', () {
+      expect(view, contains('as end_moment'));
+      expect(view, contains("coalesce(ts.sale_end_time, ts.sale_time, '00:00')"));
+    });
+  });
+
+  group('the page costs the page', () {
+    test('the query asks for ids, then rounds for those ids only', () {
+      final m = services.substring(services.indexOf('getExhaustedUnsoldPaged'));
+      expect(m, contains(".select('forfeited_package_id')"));
+      expect(m, contains('.range(offset, offset + limit - 1)'));
+      expect(m, contains('_reTenderInfoForIds(ids)'));
+    });
+
+    test('one filter closure serves the rows and the count', () {
+      final m = services.substring(services.indexOf('getExhaustedUnsoldPaged'));
+      expect(m, contains('PgQuery narrow(PgQuery q)'));
+      expect(m, contains("narrow(supabase.from('exhausted_unsold')).count()"));
+    });
+
+    test("the database's order is kept, not re-sorted in Dart", () {
+      // ⚠️ Re-sorting after the fact would quietly disagree with the page
+      // boundaries the query used.
+      final m = services.substring(services.indexOf('getExhaustedUnsoldPaged'));
+      expect(m, contains('for (final id in ids) if (byId[id] != null)'));
+    });
+
+    test('an empty page asks for no rounds at all', () {
+      final m = services.substring(services.indexOf('getExhaustedUnsoldPaged'));
+      expect(m, contains('if (ids.isEmpty)'));
+    });
+  });
+
+  group('every filter reaches SQL', () {
+    test('including the item name, which needed a column of its own', () {
+      // Forfeiture is per item, so the view resolves the name the way
+      // unsoldItemName() does: the forfeited row's own item, then the
+      // package's first.
+      expect(view, contains('as item_name'));
+      expect(view, contains('have no item name to search on'));
+      expect(services, contains("item_name.ilike.%\$s%"));
+    });
+
+    test('the yard scope and the outcome page are columns, not helpers', () {
+      // ⚠️ _yardRows and _visibleRows are gone: the header count and the table
+      // now read the same narrowed set by construction, rather than by both
+      // remembering to call one helper.
+      expect(screen, isNot(contains('List<ReTenderSaleInfo> _yardRows(')));
+      expect(screen, isNot(contains('List<ReTenderSaleInfo> _visibleRows(')));
+      expect(screen, contains('yard: myYardForQuery,'));
+      expect(screen, contains('proposal: widget.proposalFilter,'));
+    });
+
+    test('Decided / Awaiting is a null test on the outcome join', () {
+      final m = services.substring(services.indexOf('getExhaustedUnsoldPaged'));
+      expect(m, contains("q.not('proposal', 'is', null)"));
+      expect(m, contains("q.isNull('proposal')"));
+    });
+  });
+
+  group('the query key', () {
+    test('two identical queries are the same key', () {
+      const a = ExhaustedUnsoldQuery(page: 1, search: 'tyre');
+      const b = ExhaustedUnsoldQuery(page: 1, search: 'tyre');
+      expect(a, b);
+      expect(a.hashCode, b.hashCode);
+    });
+
+    test('every filter takes part in it', () {
+      const base = ExhaustedUnsoldQuery();
+      expect(base, isNot(const ExhaustedUnsoldQuery(page: 1)));
+      expect(base, isNot(const ExhaustedUnsoldQuery(search: 'x')));
+      expect(base, isNot(const ExhaustedUnsoldQuery(yard: 'GL1')));
+      expect(base, isNot(const ExhaustedUnsoldQuery(year: '2026')));
+      expect(base, isNot(const ExhaustedUnsoldQuery(decided: true)));
+      expect(base, isNot(const ExhaustedUnsoldQuery(proposal: 'auction')));
+    });
+
+    test('All is a third answer for Decided / Awaiting', () {
+      const all = ExhaustedUnsoldQuery();
+      const yes = ExhaustedUnsoldQuery(decided: true);
+      const no = ExhaustedUnsoldQuery(decided: false);
+      expect({all, yes, no}.length, 3);
+    });
+  });
+
+  group('the screen reads it', () {
+    test('the paged provider, and the count from the server', () {
+      expect(screen, contains('exhaustedUnsoldPageProvider(query)'));
+      expect(screen, contains('total: result.total,'));
+      expect(screen, isNot(contains('total: rows.length')));
+    });
+
+    test('the year filter runs its own query', () {
+      expect(screen, contains('exhaustedUnsoldYearsProvider'));
+    });
+  });
+}
