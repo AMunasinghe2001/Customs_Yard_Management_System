@@ -195,6 +195,22 @@ class _PagerStep extends StatelessWidget {
   }
 }
 
+/// The exact height a `DataTable2` needs for [rowCount] rows, so the card
+/// wrapping it never scrolls separately from the page.
+///
+/// ⚠️ Getting this a few pixels SHORT is the whole bug. A table that overflows
+/// its box by even one pixel keeps its own scroll view alive, and that view
+/// swallows the mouse wheel — so with the pointer over a table the page will
+/// not move, and there is no way past a long card but to find a gap beside it.
+///
+/// The arithmetic, against the app's own DataTableThemeData:
+///   heading   56  (DataTable2._headingRowHeight)
+///   row       48  (kMinInteractiveDimension — no dataRowHeight is set)
+///   divider    1  per row (theme sets dividerThickness: 1)
+/// plus a few pixels of slack, because being slightly TALLER than needed costs
+/// nothing and being slightly shorter costs the whole page's scrolling.
+double dataTable2Height(int rowCount) => 56 + rowCount * 49.0 + 6;
+
 /// Returns the slice of [all] for [page] (zero-based), [pageSize] per page.
 List<T> pageSlice<T>(List<T> all, int page, [int pageSize = kClientPageSize]) {
   final start = page * pageSize;

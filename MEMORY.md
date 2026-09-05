@@ -2183,3 +2183,13 @@ The tender-sale, disposal-request and valuation cards **capped their inner table
 The yard's Tender Sale page reuses the same `TenderSaleCard`, so it was fixed by the same change.
 
 ⚠️ [nested_scroll_test.dart](test/nested_scroll_test.dart) pins both halves: an inner view sized to content lets the wheel reach the page, **and** one with surplus height keeps it — the second test *reproduces the old bug*, so the diagnosis is proven rather than assumed. Adding a new card with a fixed inner table height will fail it.
+
+## The scroll fix was a pixel short (2026-09-05)
+
+⚠️ **First attempt failed and I reported it as fixed.** Removing the height cap was right, but the replacement `rows.length * 48.0 + 56` **ignored the theme's `dividerThickness: 1`** — so every table was still short by one pixel per row, still overflowed, and still kept the mouse wheel. Nothing changed on screen.
+
+**`dataTable2Height(rowCount)`** in [table_pager.dart](lib/widgets/table_pager.dart) is now the one definition: `56 + rowCount * 49.0 + 6` — heading 56, row 48 **+ 1px divider**, plus slack. ⚠️ Being slightly *taller* than needed costs nothing; being slightly shorter costs the whole page's scrolling.
+
+⚠️ **[table_height_test.dart](test/table_height_test.dart) renders a real `DataTable2` at seven row counts and asserts `maxScrollExtent == 0`.** Verified it catches the regression: putting the old `* 48.0` arithmetic back makes it fail. That is the check that was missing the first time — I had reasoned about the height instead of measuring it.
+
+⚠️ `Scrollable.of(element)` looks **up** the tree and throws when there is nothing above it; read positions with `tester.stateList<ScrollableState>()` instead. My first version of this test failed on every case for that reason and said nothing about the heights.

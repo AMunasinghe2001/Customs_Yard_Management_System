@@ -31,10 +31,13 @@ void main() {
             reason: '$path still caps an inner table');
       });
 
-      test('$name still sizes to its row count', () {
-        // Sized to content, so the card is exactly as tall as it needs to be
-        // and its scroll view has nothing to consume.
-        expect(src, contains('* 48.0 +'));
+      test('$name sizes to its row count through the shared helper', () {
+        // ⚠️ Through `dataTable2Height`, not hand-rolled arithmetic. The first
+        // attempt at this used `rows * 48 + 56` inline at each call site,
+        // which ignored the theme's 1px row divider and so came up a pixel per
+        // row SHORT — the tables still overflowed and still kept the wheel.
+        // One helper, measured against a real table in table_height_test.
+        expect(src, contains('dataTable2Height('));
       });
     }
   });

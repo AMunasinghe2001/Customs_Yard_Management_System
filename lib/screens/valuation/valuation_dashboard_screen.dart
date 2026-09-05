@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
+import '../../widgets/table_pager.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
@@ -538,7 +539,7 @@ class _ValuationRequestCard extends ConsumerWidget {
               // no way to scroll past a long sale without hunting for a gap
               // between the cards. The page is already scrollable; the cards
               // do not need to be.
-              height: expandedRows.length * 48.0 + 52,
+              height: dataTable2Height(expandedRows.length),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),

@@ -2200,7 +2200,7 @@ class _RequestCard extends ConsumerWidget {
               // no way to scroll past a long sale without hunting for a gap
               // between the cards. The page is already scrollable; the cards
               // do not need to be.
-              height: expandedRows.length * 48.0 + 52,
+              height: dataTable2Height(expandedRows.length),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
@@ -3131,7 +3131,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
               // no way to scroll past a long sale without hunting for a gap
               // between the cards. The page is already scrollable; the cards
               // do not need to be.
-              height: rows.length * 48.0 + 56,
+              height: dataTable2Height(rows.length),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
@@ -6129,7 +6129,7 @@ class DestructionCard extends ConsumerWidget {
               // no way to scroll past a long sale without hunting for a gap
               // between the cards. The page is already scrollable; the cards
               // do not need to be.
-              height: rows.length * 48.0 + 56,
+              height: dataTable2Height(rows.length),
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),
