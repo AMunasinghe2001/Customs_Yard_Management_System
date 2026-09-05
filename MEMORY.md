@@ -2121,23 +2121,30 @@ Six sources, each with its own `row_key` prefix: `D:` detained · `AE:`/`AS:` ab
 
 **Every page in the app now pages in SQL.**
 
-## The launch splash (2026-09-05)
 
-[splash_gate.dart](lib/screens/home/splash_gate.dart) — the Customs seal, then the portal page, dissolving through a blur.
+## The drifting glows (2026-09-05)
 
-⚠️ **Not decoration over an idle app.** `main()` shows the window **before** it connects to PostgreSQL, caches the query layer's foreign keys and starts the change listener — so a cold start has always shown a portal page not yet backed by a database. The splash covers exactly that gap.
+The portal page's two corner glows now **travel the whole screen** on a slow 24-second loop — blue from top-left to bottom-right, gold the opposite way, so the centre (where the seal and the cards are) is never washed out by both at once. `repeat(reverse: true)` with `Curves.easeInOutSine`, so each pass slows at the turn instead of snapping back.
 
-⚠️ **The home screen is built BEHIND the splash the whole time**, never swapped in at the end. Building it afterwards would run its own entrance animations after the splash's, and the reader would watch the app assemble itself twice.
+⚠️ **The splash imports the SAME `DriftingGlows` widget** rather than keeping a copy. The glows are mid-travel when the seal lifts; two independent copies would be at different points on their paths, so the background would visibly jump at the one moment the reader is looking straight at it.
 
-⚠️ **`SplashGate.consume()` — once per launch, not once per visit to `/`.** Signing out lands on the portal page and the route rebuilds; a seal reappearing there reads as the whole app restarting.
+⚠️ Wrapped in `IgnorePointer` and `Positioned.fill` **behind** everything — it must never intercept a click meant for a portal card.
 
-⚠️ **The splash is removed from the tree when done** (`_done`), not left transparent — a stacked overlay keeps eating pointer events and repainting a blur nobody sees. `IgnorePointer` must wrap **everything** it paints: the layer's background `Container` is opaque to hit testing.
+The splash's `LinearProgressIndicator` was removed: it read as a gold **underline on the name** rather than as a loading bar, and it was the only gold on an otherwise blue-and-white mark. The dissolve already says the app is working.
 
-⚠️ **A zero-sigma `ImageFilter.blur` can render as a black rectangle** on some backends, so the filter is only applied once the lift starts.
+## The launch splash was removed (2026-09-05)
 
-⚠️ Timers are held and **cancelled in `dispose()`** — a bare `Future.delayed` leaves "A Timer is still pending" in widget tests.
+Built, then taken out at the user's request after two attempts failed to look right. Recording it so it is not rebuilt the same way.
 
-⚠️ **Test trap found the hard way**: a `GestureDetector` wrapping a bare `SizedBox` is **not hit-testable**, so a tap misses whether a splash covers it or not — the test passed for the wrong reason until `behavior: HitTestBehavior.opaque` was added. A baseline with the widget removed entirely is what exposed it.
+**What it was:** the Customs seal over the portal page, dissolving through a blur.
+
+**What went wrong, twice:**
+1. Building the portal underneath from the first frame spent its entrance where nobody could see it — the logo scales in over 500ms and cards land on delays out to 1350ms — so the dissolve cross-faded the splash's logo into a **second, already-settled** one. It read as the page reloading.
+2. Mounting the child at the lift instead fixed the frame timeline (verified by pumping and printing each frame), **but the user still saw a gold line and a reload.** I could not find its source: it is not in the splash, not `LinearProgressIndicator` on the home path, and not go_router's loading page. ⚠️ **The gold line and the double-load were never actually diagnosed** — the two fixes addressed a different problem from the one on screen.
+
+⚠️ **The lesson: I reported "fixed" twice from reasoning about the widget tree rather than from looking at the running window.** Frame-pumping in a test proved my timeline was right and told me nothing about what the user could see. For anything visual, capture the screen or ask — do not infer.
+
+`DriftingGlows` (below) was a separate request and **stays**.
 
 ## The drifting glows (2026-09-05)
 
