@@ -2081,3 +2081,20 @@ This page lists **packages**, not items, so no view was required — but it does
 Search covers the **old** number and the **CusDec** number as well as the new number and consignee — finding goods by what they were called *before* is the entire point of the page.
 
 **Still client-side:** the directorate tabs (disposal dashboard, executive, appeal).
+
+## What is left client-side, and why it is not all worth moving (2026-09-05)
+
+Every page whose cost grew with the **yard** is now server-paged: Goods History, ICT Activity Logs, the disposition pages (Sold / Destroyed / Re-exported / Released), Unsold Goods + the four Final Outcome pages, Perishable Goods, Old Entries. Those all read `packages`/`package_items`/`warehouse_entries` — the tables that actually grow.
+
+**Still slicing in Dart, deliberately:**
+
+| Page | Source | Live rows |
+|---|---|---|
+| Admin (officers, warehouses, zones) | own yard's profiles / warehouses | tens |
+| Warehouses | `warehouses` | 4 |
+| Tender / Destruction Disposal | `forfeited_packages` awaiting a request | bounded by workflow |
+| Central Disposal tabs, Executive tabs, Appeal | `tender_sales` 81, `financial_expenses` 71, `tender_committees` 8, `disposal_requests` 53 | tens |
+
+⚠️ **`srFinancialsProvider` is the one genuinely heavy leftover**: it calls `getAllPackages()` **and** `getTenderSales()` and aggregates the whole yard in Dart, feeding both the Central Disposal Expenses tab and the Executive Financials tab. It was left alone because `SrFinancials` is a deep nested shape (per-item, per-tax-name breakdowns, with a fallback keyed by SR number when a sale names no item) — moving that to SQL is a large change with real correctness risk, and measured today the underlying queries run in **3.6ms** and **0.2ms**. Worth doing when SR volume justifies it; not worth doing blind.
+
+**Measured before deciding** (`pg_stat_user_tables`, 2026-09-05): the largest table in the system is `package_items` at 395 rows. The paging work matters for what these tables become, not for what they are.
