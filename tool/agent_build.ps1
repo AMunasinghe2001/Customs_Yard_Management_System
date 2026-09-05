@@ -150,11 +150,20 @@ if ($locked) {
     # age of what they are actually looking at, or it is not actionable.
     $holders = @(Get-Process cus_yard_management -ErrorAction SilentlyContinue |
                  Where-Object { $_.Path -eq $sharedExe })
+    # ⚠️ Age the DART CODE, not the .exe. In Debug the .exe is only the runner
+    # shell -- CMake will not relink it when no C++ changed, so its timestamp
+    # can read days old while the app is perfectly current. The code actually
+    # executed is data\flutter_assets\kernel_blob.bin, and that is what tells
+    # you whether a window is showing your changes. Reporting the .exe date
+    # once had me telling the user their build was 88 hours stale when the
+    # Dart in it was minutes old.
     $ageText = 'unknown age'
-    if (Test-Path $sharedExe) {
-        $built = (Get-Item $sharedExe).LastWriteTime
+    $blob = Join-Path (Split-Path $sharedExe) 'data\flutter_assets\kernel_blob.bin'
+    $stamp = if (Test-Path $blob) { $blob } elseif (Test-Path $sharedExe) { $sharedExe } else { $null }
+    if ($stamp) {
+        $built = (Get-Item $stamp).LastWriteTime
         $hrs = [int]((Get-Date) - $built).TotalHours
-        $ageText = "built $($built.ToString('ddd d MMM HH:mm'))"
+        $ageText = "code built $($built.ToString('ddd d MMM HH:mm'))"
         if ($hrs -ge 1) { $ageText += " -- $hrs hour(s) old" }
     }
     Write-Host ''
