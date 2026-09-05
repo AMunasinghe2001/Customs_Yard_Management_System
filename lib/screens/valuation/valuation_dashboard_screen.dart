@@ -528,7 +528,17 @@ class _ValuationRequestCard extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(12),
             child: Container(
-              height: (expandedRows.length * 48.0 + 52).clamp(100, 320),
+              // ⚠️ Sized to its ROWS, with no upper cap — one scrollable
+              // per page.
+              //
+              // This used to clamp, so a card with more rows than the cap
+              // scrolled INSIDE itself. Two scrollables then overlapped: with
+              // the pointer over a table the wheel moved the table, and once
+              // it hit the bottom the page still would not move, so there was
+              // no way to scroll past a long sale without hunting for a gap
+              // between the cards. The page is already scrollable; the cards
+              // do not need to be.
+              height: expandedRows.length * 48.0 + 52,
               decoration: BoxDecoration(
                 border: Border.all(color: context.colors.borderColor),
                 borderRadius: BorderRadius.circular(10),

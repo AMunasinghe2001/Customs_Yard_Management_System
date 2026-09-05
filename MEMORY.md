@@ -2173,3 +2173,13 @@ Old Entries animated its header and its filter bar but **not its table**, so the
 **The sequence, top to bottom:** header (no delay) → filter bar (**200ms**) → table (**300ms**), each a 400ms `slideY(begin: 0.1)` + `fadeIn`.
 
 ⚠️ Adding a paged screen means ending its table's `Column` with `.animate().slideY(begin: 0.1, duration: 400.ms, delay: 300.ms).fadeIn()`. [table_entrance_animation_test.dart](test/table_entrance_animation_test.dart) holds all nine screens to it, and its first assertion (that each file still renders a `DataTable2`) fails loudly if a screen is renamed rather than quietly dropping out of the check.
+
+## One scrollable per page (2026-09-05)
+
+The tender-sale, disposal-request and valuation cards **capped their inner table's height** (`.clamp(115, 380)` / `.clamp(100, 320)`), so a card with more rows than the cap scrolled inside itself. ⚠️ **Two scrollables then overlapped**: with the pointer over a table the wheel moved the *table*, and once that reached its bottom the page still would not move — so there was no way to scroll past a long sale without hunting for a gap between the cards.
+
+**Fix: size to the rows, no cap** (`rows.length * 48.0 + 56`). `DataTable2` still wraps its rows in a `SingleChildScrollView`, but one with **nothing to scroll does not consume the wheel** — Flutter bubbles it to the parent. Four call sites: two in `disposal_dashboard_screen`, one in `valuation_dashboard_screen`, and `financials_tab` already did it correctly.
+
+The yard's Tender Sale page reuses the same `TenderSaleCard`, so it was fixed by the same change.
+
+⚠️ [nested_scroll_test.dart](test/nested_scroll_test.dart) pins both halves: an inner view sized to content lets the wheel reach the page, **and** one with surplus height keeps it — the second test *reproduces the old bug*, so the diagnosis is proven rather than assumed. Adding a new card with a fixed inner table height will fail it.
