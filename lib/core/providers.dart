@@ -489,6 +489,113 @@ final dispositionPageWithPackagesProvider = FutureProvider.family<
   return (rows: page.rows, packages: packages, total: page.total);
 });
 
+/// What one page of a Held Goods table is asking for.
+@immutable
+class HeldGoodsQuery {
+  /// 'DETAINED' | 'ABANDONED' | 'OTHER'.
+  final String kind;
+  final int page;
+  final String? search;
+
+  /// The SR number's own yard segment, not the package's yard column.
+  final String? yardSrPrefix;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
+  /// The Post Status Activity filter; 'all' and null both mean no filter.
+  final String? activity;
+
+  const HeldGoodsQuery({
+    required this.kind,
+    this.page = 0,
+    this.search,
+    this.yardSrPrefix,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+    this.activity,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is HeldGoodsQuery &&
+      other.kind == kind &&
+      other.page == page &&
+      other.search == search &&
+      other.yardSrPrefix == yardSrPrefix &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year &&
+      other.activity == activity;
+
+  @override
+  int get hashCode => Object.hash(
+      kind, page, search, yardSrPrefix, dateStart, dateEnd, year, activity);
+}
+
+/// One page of a Held Goods table, with the packages behind it.
+typedef HeldGoodsPage = ({
+  List<({String rowKey, String packageId, String itemId})> keys,
+  Map<String, PackageModel> packages,
+  int total,
+});
+
+final heldGoodsPageProvider =
+    FutureProvider.family<HeldGoodsPage, HeldGoodsQuery>((ref, q) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  ref.watch(disposalRequestsRefreshProvider);
+  final page = await ref.read(packageServiceProvider).getHeldGoodsPaged(
+        kind: q.kind,
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardSrPrefix: q.yardSrPrefix,
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+        activity: q.activity,
+      );
+  final packages =
+      await ref.read(packageServiceProvider).getPackagesByIds(page.packageIds);
+  return (
+    keys: [
+      for (var i = 0; i < page.rowKeys.length; i++)
+        (
+          rowKey: page.rowKeys[i],
+          packageId: page.packageIds[i],
+          itemId: page.itemIds[i],
+        )
+    ],
+    packages: packages,
+    total: page.total,
+  );
+});
+
+/// The header counts a Held Goods page shows — Total / In Appeal / Actionable.
+///
+/// ⚠️ Its own query. Derived from one page they would contradict the header
+/// they sit in, and derived from the whole list they would undo the paging.
+typedef HeldGoodsCounts = ({int total, int inAppeal, int actionable});
+
+final heldGoodsCountsProvider =
+    FutureProvider.family<HeldGoodsCounts, String>((ref, kind) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsRefreshProvider);
+  return ref.read(packageServiceProvider).getHeldGoodsCounts(kind);
+});
+
+/// The SR numbers on a Held Goods page, for its year filter.
+final heldGoodsYearsProvider =
+    FutureProvider.family<List<String>, String>((ref, kind) async {
+  ref.watch(packagesChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getHeldGoodsYears(kind);
+});
+
 /// What one page of Old Entries is asking for.
 @immutable
 class OldEntryQuery {

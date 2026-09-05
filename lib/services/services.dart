@@ -800,6 +800,120 @@ class PackageService {
     );
   }
 
+  /// One page of a HELD GOODS table (Detained / Abandoned / Other).
+  ///
+  /// ⚠️ These three pages had NO pager at all -- they rendered the whole yard.
+  /// Every row-selection rule now lives in the `held_goods_rows` view
+  /// (postgres/25), which is what lets a page be asked for by number.
+  ///
+  /// [kind] is the page: 'DETAINED', 'ABANDONED', 'OTHER'.
+  Future<({List<String> packageIds, List<String> itemIds,
+           List<String> rowKeys, int total})> getHeldGoodsPaged({
+    required String kind,
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardSrPrefix,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+    String? activity,
+
+    /// Items already in a disposal request. The pages hide them; the view
+    /// keeps them so the flag can be filtered on rather than the row dropped.
+    bool includeSent = false,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      q = q.eq('kind', kind);
+      if (!includeSent) q = q.eq('sent', false);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'item_name.ilike.%$s%');
+      }
+      if (year != null && year.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$year');
+      }
+      // The SR number's own yard segment, as every cross-yard page matches.
+      if (yardSrPrefix != null && yardSrPrefix.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$yardSrPrefix/%');
+      }
+      if (activity != null && activity.isNotEmpty && activity != 'all') {
+        q = q.eq('reason', activity);
+      }
+      if (dateStart != null) {
+        final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('held_at', from.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final to =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('held_at', to.toIso8601String());
+      }
+      return q;
+    }
+
+    final rows = await AuthService._withNetworkRetry(() => narrow(supabase
+            .from('held_goods_rows')
+            .select('row_key, package_id, item_id'))
+        .order('held_at', ascending: false)
+        .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('held_goods_rows')).count());
+
+    final list = (rows as List).cast<Map<String, dynamic>>();
+    return (
+      packageIds: [for (final e in list) e['package_id'].toString()],
+      itemIds: [for (final e in list) e['item_id'].toString()],
+      rowKeys: [for (final e in list) e['row_key'].toString()],
+      total: total as int,
+    );
+  }
+
+  /// The header counts a Held Goods page shows: total, and how many are
+  /// actionable rather than waiting on an appeal.
+  ///
+  /// ⚠️ Counted in SQL. The pages derived these by walking the whole list,
+  /// which is exactly the cost the paging removed -- computing them from one
+  /// page would have made the header disagree with itself.
+  Future<({int total, int inAppeal, int actionable})> getHeldGoodsCounts(
+      String kind) async {
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('held_goods_rows')
+        .select('appeal_deadline, appeal_hold, appeal_decision')
+        .eq('kind', kind)
+        .eq('sent', false));
+    var inAppeal = 0;
+    final now = DateTime.now();
+    final list = (rows as List).cast<Map<String, dynamic>>();
+    for (final r in list) {
+      final hold = r['appeal_hold'] as bool? ?? false;
+      final decided = (r['appeal_decision']?.toString() ?? '').trim().isNotEmpty;
+      final deadline = parseDbDate(r['appeal_deadline']);
+      // A HOLD always blocks; a decision releases early; otherwise the window.
+      if (hold || (!decided && deadline != null && now.isBefore(deadline))) {
+        inAppeal++;
+      }
+    }
+    return (
+      total: list.length,
+      inAppeal: inAppeal,
+      actionable: list.length - inAppeal,
+    );
+  }
+
+  /// The SR numbers on a Held Goods page, for its year filter.
+  Future<List<String>> getHeldGoodsYears(String kind) async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('held_goods_rows')
+        .select('sr_number')
+        .eq('kind', kind));
+    return [
+      for (final row in (data as List))
+        (row as Map<String, dynamic>)['sr_number']?.toString() ?? '',
+    ];
+  }
+
   /// The SR numbers on Perishable Goods, for its year filter.
   Future<List<String>> getPerishableYears() async {
     final data = await AuthService._withNetworkRetry(
