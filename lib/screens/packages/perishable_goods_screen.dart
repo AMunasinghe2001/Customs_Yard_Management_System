@@ -220,7 +220,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
         // ⚠️ 24 in Central Disposal, 28 on the yard. Every tab in that
         // portal pads at 24, so 28 sat this page's title and its table
         // lower than the tab you switched from.
-        padding: EdgeInsets.all(widget.readOnly ? 24 : 28),
+        padding: EdgeInsets.all(widget.readOnly ? 16 : 28),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -280,7 +280,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
               ),
             ] else
               DisposalPageHeader(
-                title: 'Perishable Goods',
+                title: '🍎  Perishable Goods',
                 subtitle: 'Goods that spoil — no warehouse, no appeal window. '
                     'Send them for disposal without waiting.',
                 trailing: [

@@ -87,7 +87,13 @@ void main() {
     // "Unresolved / Unsold Packages" when the outcome tabs were split out, and
     // this assertion was left behind pointing at a string the app no longer
     // renders anywhere.
-    expect(find.text('Unsold Goods'), findsOneWidget);
+    // ⚠️ Matched on the WORDS, not the exact string: the Central Disposal
+    // titles carry a leading emoji, and pinning the whole label here would
+    // break every time one is chosen differently.
+    expect(
+        find.byWidgetPredicate((w) =>
+            w is Text && (w.data ?? '').contains('Unsold Goods')),
+        findsOneWidget);
 
     // The package itself renders.
     expect(find.text('SR-100'), findsWidgets);

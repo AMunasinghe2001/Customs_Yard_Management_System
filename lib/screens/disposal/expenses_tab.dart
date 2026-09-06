@@ -70,13 +70,15 @@ class ExpensesTab extends ConsumerWidget {
     final dateLabel = _getExpenseDateFilterLabel(dateFilterType, dateRange);
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24 — see the dashboard's own tab bodies. Vertical chrome
+      // on a table page is rows the officer cannot see.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Title · search · yard · date — the standard filter header.
           Row(children: [
-            Text('Disposal Expenses',
+            Text('💰  Disposal Expenses',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,

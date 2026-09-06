@@ -32,7 +32,7 @@ class TaxesTab extends ConsumerWidget {
           Row(
             children: [
               Text(
-                'Tax Configuration',
+                '📊  Tax Configuration',
                 style: Theme.of(context).textTheme.headlineSmall,
               ),
               const Spacer(),

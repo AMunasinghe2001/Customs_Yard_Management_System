@@ -63,8 +63,11 @@ class DisposalDashboardScreen extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── Top bar ──────────────────────────────────────────
+            // ⚠️ Tightened from 16 to 10 top and bottom. Every one of these
+            // pages is a TABLE, and vertical chrome is rows the officer
+            // cannot see -- the whole point of the page is how much data fits.
             Container(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+              padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.centerLeft,
@@ -191,7 +194,9 @@ class DisposalDashboardScreen extends ConsumerWidget {
             // ── Tabs ─────────────────────────────────────────────
             Container(
               color: context.colors.cardDark,
-              padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+              // ⚠️ 6 instead of 10: the tab pills already carry their own
+              // height, so this padding was doubling the gap on both sides.
+              padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
               child: Container(
                 decoration: BoxDecoration(
                   color: context.colors.surfaceDark,
@@ -387,7 +392,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 UnsoldProposalsTab(),
                 _DestroyedPackagesTab(),
                 UnsoldProposalsTab(
-                    title: 'Government Use Goods',
+                    title: '🏛️  Government Use Goods',
                     countNoun: 'For government use',
                     proposalFilter: 'government_use',
                     tabKey: 'outcome-government-use',
@@ -397,7 +402,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'Unsold goods the Top Management Directorate assigns '
                         'to a government department will appear here.'),
                 UnsoldProposalsTab(
-                    title: 'Auction Goods',
+                    title: '🔨  Auction Goods',
                     countNoun: 'For auction',
                     proposalFilter: 'auction',
                     tabKey: 'outcome-auction',
@@ -407,7 +412,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'Unsold goods the Top Management Directorate sends to '
                         'public auction will appear here.'),
                 UnsoldProposalsTab(
-                    title: 'Converted Goods',
+                    title: '♻️  Converted Goods',
                     countNoun: 'Converted',
                     proposalFilter: 'convert',
                     tabKey: 'outcome-convert',
@@ -417,7 +422,7 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'Unsold goods converted to another use or form will '
                         'appear here.'),
                 UnsoldProposalsTab(
-                    title: 'Removed from the Premises',
+                    title: '🚪  Removed from the Premises',
                     countNoun: 'Removed',
                     proposalFilter: 'remove_from_premises',
                     tabKey: 'outcome-removed',
@@ -478,7 +483,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
 
   const UnsoldProposalsTab({
     super.key,
-    this.title = 'Unsold Goods',
+    this.title = '📋  Unsold Goods',
     this.countNoun = 'Unsold',
     this.proposalFilter,
     this.tabKey = 'unsold-proposals',
@@ -533,7 +538,9 @@ class UnsoldProposalsTab extends ConsumerWidget {
     final pageRows = rows;
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1063,12 +1070,14 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
     final yardLabel = yardFilter == null ? 'all yards' : yardName(yardFilter);
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Sold Goods',
+            Text('🏷️  Sold Goods',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -1398,12 +1407,14 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
     final yardLabel = yardFilter == null ? 'all yards' : yardName(yardFilter);
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Destroyed Goods',
+            Text('🔥  Destroyed Goods',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -1882,12 +1893,14 @@ class _DisposalRequestsTabState extends ConsumerState<_DisposalRequestsTab> {
     ref.listen(_requestYardFilterProvider, (_, __) => setState(() => _page = 0));
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Disposal Requests',
+            Text('📥  Disposal Requests',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -2397,12 +2410,14 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
         (_, __) => setState(() => _page = 0));
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Unsold Goods — Re-tender',
+            Text('🔁  Unsold Goods — Re-tender',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -2684,12 +2699,14 @@ class _TenderSalesTabState extends ConsumerState<_TenderSalesTab> {
         (_, __) => setState(() => _tenderSalePage = 0));
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Tender Sales',
+            Text('🏪  Tender Sales',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -4339,12 +4356,14 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
         {DateTime(2020, 1, 1): 50.0};
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Tender Committees',
+            Text('👥  Tender Committees',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -5820,12 +5839,14 @@ class _DestructionsTab extends ConsumerWidget {
     final green = context.colors.successGreen;
     final sales = ref.watch(destructionsProvider);
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Destruction Sales',
+            Text('🗑️  Destruction Sales',
                 style: TextStyle(
                     color: context.colors.textPrimary,
                     fontSize: 22,
@@ -7274,7 +7295,9 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
     final async = ref.watch(undestroyedDestructionsProvider);
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
+      // roughly a whole extra row of the table on every one of them.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

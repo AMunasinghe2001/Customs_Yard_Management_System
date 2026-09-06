@@ -562,11 +562,15 @@ void main() {
     // and its table both sat lower than the tab you had just switched from,
     // which is what "why is the table so far down" was.
     test('it pads like the portal it sits in', () {
-      expect(src, contains('EdgeInsets.all(widget.readOnly ? 24 : 28)'));
+      // ⚠️ 16 in the portal, 28 on the yard — and the number has to track
+      // whatever Central Disposal uses, or this page sits at a different
+      // inset from every tab beside it. The portal tightened to 16 to give
+      // its tables more rows; this followed.
+      expect(src, contains('EdgeInsets.all(widget.readOnly ? 16 : 28)'));
       final disposal =
           File('lib/screens/disposal/disposal_dashboard_screen.dart')
               .readAsStringSync();
-      expect(disposal, contains('padding: const EdgeInsets.all(24)'));
+      expect(disposal, contains('padding: const EdgeInsets.all(16)'));
       // The StatChip carries the gap under it, as it does there — a Gap()
       // as well would double it.
       expect(src, contains('padding: const EdgeInsets.only(bottom: 14)'));
