@@ -6,6 +6,7 @@ import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
@@ -31,10 +32,7 @@ class TaxesTab extends ConsumerWidget {
         children: [
           Row(
             children: [
-              Text(
-                '📊  Tax Configuration',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
+              const PageTitle('Tax Configuration', Icons.receipt_long_rounded),
               const Spacer(),
               _TaxSearchField(
                 onChanged: (v) =>

@@ -273,7 +273,13 @@ void main() {
       // them, so the pill and the table now agree by construction.
       final tab = dash.substring(dash.indexOf('class _UnsoldReTenderTabState'),
           dash.indexOf('class _TenderSalesTab'));
-      expect(tab, contains(r"value: '${result.total}',"));
+      // ⚠️ Asserted on `.total` -- the DATABASE's count -- not on the name
+      // of the variable holding it. The pill moved onto the control line and
+      // now reads the async value directly, which is the same number by a
+      // different name; pinning the old name failed on a move that changed
+      // nothing about what is counted.
+      expect(tab, contains('.total}'));
+      expect(tab, isNot(contains('rows.length')));
       expect(tab, isNot(contains('!exhausted.contains')));
     });
   });

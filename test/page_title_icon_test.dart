@@ -24,7 +24,16 @@ final _emoji = RegExp(r'[\u{1F300}-\u{1FAFF}]', unicode: true);
 
 void main() {
   group('no emoji is left in anything the user reads', () {
-    test('not in a title, a label or a Text', () {
+    test('not in ANY string, however the call is wrapped', () {
+      // ⚠️ This test used to require the emoji and the `Text(` on the SAME
+      // line, and Taxes wrapped its call across two:
+      //
+      //     Text(
+      //       '📊  Tax Configuration',
+      //
+      // So the one page that still had a colour emoji was the one page the
+      // test could not see. Now it looks at every string literal, whatever
+      // encloses it -- a formatting choice can no longer hide a finding.
       final offenders = <String>[];
       for (final f in _screens) {
         final lines = f.readAsLinesSync();
@@ -34,11 +43,18 @@ void main() {
           // The ⚠️ marks in comments are wanted; only strings count.
           if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
           if (!_emoji.hasMatch(line)) continue;
-          if (line.contains('Text(') ||
-              line.contains('title:') ||
-              line.contains('label:')) {
-            offenders.add('${f.path}:${i + 1}');
+          // A quote anywhere on the line means the emoji is in a literal
+          // rather than in a trailing comment.
+          if (!line.contains("'") && !line.contains('"')) continue;
+          // ⚠️ Two known emoji are NOT headings and stay: a 🔴 inside a
+          // dropdown option string (a plain String, with no widget to hang an
+          // Icon on) and a 🛑 in a Supabase error message that no longer runs.
+          // Narrow exceptions, listed here so a THIRD one cannot slip in
+          // quietly under the same excuse.
+          if (line.contains('FULL 🔴') || line.contains('Email Limit')) {
+            continue;
           }
+          offenders.add('${f.path}:${i + 1}  ${trimmed.trim()}');
         }
       }
       expect(offenders, isEmpty,

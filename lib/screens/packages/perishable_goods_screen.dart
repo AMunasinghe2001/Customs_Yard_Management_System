@@ -239,15 +239,18 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
             if (widget.readOnly) ...[
               Row(children: [
                 const PageTitle('Perishable Goods', Icons.eco_rounded),
-                const Gap(12),
-                // ⚠️ The count sits on the TITLE line, not a row of its own.
+                const Spacer(),
+                // ⚠️ The count goes on the RIGHT, beside the controls -- the
+                // side every other page in this portal puts it on.
                 //
-                // This page has no segmented filter to pair it with, so a
-                // second row would be a whole line of chrome carrying one
-                // pill. Beside the title it costs nothing and the table starts
-                // higher. Absent while loading rather than showing a stale or
-                // zero count.
-                if (async.valueOrNull != null)
+                // It was next to the title at first, which read as part of the
+                // heading rather than as a filter result. Sold, Destroyed and
+                // the outcome pages all put theirs at the right end of the
+                // control line, so this now matches them.
+                //
+                // Absent while loading rather than showing a stale or zero
+                // count.
+                if (async.valueOrNull != null) ...[
                   StatChip(
                     label: 'Awaiting disposal',
                     // The DATABASE's count for this filter, so the number and
@@ -255,7 +258,8 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     value: '${async.valueOrNull!.total}',
                     color: context.colors.dangerRed,
                   ),
-                const Spacer(),
+                  const Gap(12),
+                ],
                 SizedBox(width: 280, child: _searchBox(context)),
                 const Gap(12),
                 // ⚠️ No year filter here. Not one cross-yard tab in this

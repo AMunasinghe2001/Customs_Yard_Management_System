@@ -14,6 +14,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/providers.dart';
 import 'package:cus_yard_management/models/models.dart';
 
+/// True when [src] still stacks a count pill under a header.
+///
+/// The shape is a `Padding(padding: EdgeInsets.only(bottom: 14), child:
+/// StatChip(...))` -- a pill on a row of its own, with its own gap under it,
+/// above a table whose whole job is showing rows.
+bool stackedPill(String src) {
+  const pad = 'EdgeInsets.only(bottom: 14),';
+  var i = src.indexOf(pad);
+  while (i != -1) {
+    // Whatever whitespace and line ending separates them.
+    final after = src.substring(i + pad.length).trimLeft();
+    if (after.startsWith('child: StatChip(')) return true;
+    i = src.indexOf(pad, i + 1);
+  }
+  return false;
+}
+
 void main() {
   final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
       .readAsStringSync();
@@ -172,6 +189,47 @@ void main() {
           dash,
           isNot(contains("padding: const EdgeInsets.only(bottom: 14),\n"
               "                      child: StatChip(")));
+    });
+
+    test('no tab is left with a pill on a row of its own', () {
+      // ⚠️ The first pass missed four pages, because each builds its
+      // header itself rather than through a shared widget: Unsold Tenders and
+      // Re-destruction stacked the pill under the title, and Perishable put it
+      // beside the TITLE instead of at the right end with the controls.
+      //
+      // The stacked shape is a Padding(bottom: 14) wrapping a StatChip. Not
+      // one should remain in this file.
+      expect(
+          stackedPill(dash),
+          isFalse,
+          reason: 'a count pill is still stacked under a header');
+
+      final per = File('lib/screens/packages/perishable_goods_screen.dart')
+          .readAsStringSync();
+      expect(
+          stackedPill(per),
+          isFalse);
+    });
+
+    test('the pill sits to the RIGHT, after the Spacer', () {
+      // Every page in the portal puts its count at the right end of the
+      // control line. Perishable had it next to the title, where it read as
+      // part of the heading rather than as a filter result.
+      final per = File('lib/screens/packages/perishable_goods_screen.dart')
+          .readAsStringSync();
+      final ro = per.substring(per.indexOf('if (widget.readOnly) ...['),
+          per.indexOf('] else'));
+      expect(ro.indexOf('const Spacer()'), lessThan(ro.indexOf('StatChip(')),
+          reason: 'the count belongs after the Spacer, not beside the title');
+    });
+
+    test('Committees carries no subtitle of its own', () {
+      // ⚠️ It was the ONLY tab of sixteen with one, and it ellipsised
+      // mid-sentence at any real width -- so it read as a broken line, not as
+      // help. The empty state says the same thing in full.
+      expect(dash, isNot(contains('Committees appointed by the Top')));
+      expect(dash, contains('The Top Management Directorate appoints a '
+          'committee for packages still unsold after Tender 3.'));
     });
 
     test('the outcome pages put their pill on the filter line too', () {

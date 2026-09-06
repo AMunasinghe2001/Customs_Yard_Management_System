@@ -2501,6 +2501,20 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                   .state = v,
             ),
             const Gap(12),
+            // ⚠️ The count on the control line, not a row of its own -- see
+            // the Sold tab. It sits ahead of the action button because a count
+            // is a filter RESULT and the button is a thing you do to it.
+            if (async.valueOrNull != null) ...[
+              StatChip(
+                  label: 'Unsold — re-tenderable',
+                  // ⚠️ The DATABASE's count for this filter, and it already
+                  // excludes packages that have run out of rounds -- the view
+                  // does that. So the pill and the table agree by
+                  // construction rather than by both remembering to subtract.
+                  value: '${async.valueOrNull!.total}',
+                  color: amber),
+              const Gap(12),
+            ],
             async.maybeWhen(
               data: (result) => ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -2526,20 +2540,6 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
-          async.maybeWhen(
-            data: (result) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: StatChip(
-                  label: 'Unsold — re-tenderable',
-                  // ⚠️ The DATABASE's count for this filter, and it already
-                  // excludes packages that have run out of rounds — the view
-                  // does that. So the pill and the table agree by
-                  // construction rather than by both remembering to subtract.
-                  value: '${result.total}',
-                  color: amber),
-            ).animate().fadeIn(duration: 300.ms),
-            orElse: () => const SizedBox.shrink(),
-          ),
           Expanded(
             child: async.when(
               skipLoadingOnReload: true,
@@ -4428,16 +4428,13 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
         children: [
           Row(children: [
             PageTitle('Tender Committees', Icons.groups_rounded),
-            const Gap(10),
-            Expanded(
-              child: Text(
-                  'Committees appointed by the Top Management Directorate for packages still unsold after Tender 3',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 13)),
-            ),
-            const Gap(12),
+            // ⚠️ No subtitle. This was the ONLY tab of sixteen carrying one,
+            // and at any real window width it ellipsised mid-sentence -- so it
+            // read as a broken line rather than as help. The empty state below
+            // already says the same thing in full, where someone actually
+            // needs it: "The Top Management Directorate appoints a committee
+            // for packages still unsold after Tender 3."
+            const Spacer(),
             const DisposalSearch(
                 tabKey: 'committees', hint: 'Search SR / item / consignee…'),
             const Gap(12),
@@ -7370,6 +7367,15 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                   .state = v,
             ),
             const Gap(12),
+            // ⚠️ On the control line, ahead of the action button -- the same
+            // shape as Unsold Tenders, which also pairs a count with a button.
+            if (async.valueOrNull != null) ...[
+              StatChip(
+                  label: 'Undestroyed — re-destructionable',
+                  value: '${async.valueOrNull!.length}',
+                  color: amber),
+              const Gap(12),
+            ],
             async.maybeWhen(
               data: (list) => ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -7392,16 +7398,6 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
-          async.maybeWhen(
-            data: (list) => Padding(
-              padding: const EdgeInsets.only(bottom: 14),
-              child: StatChip(
-                  label: 'Undestroyed — re-destructionable',
-                  value: '${list.length}',
-                  color: amber),
-            ).animate().fadeIn(duration: 300.ms),
-            orElse: () => const SizedBox.shrink(),
-          ),
           Expanded(
             child: async.when(
               skipLoadingOnReload: true,
