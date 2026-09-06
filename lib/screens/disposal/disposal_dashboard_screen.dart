@@ -4380,23 +4380,44 @@ String _committeeItemName(ForfeitedPackageModel f) {
 
 /// Central Disposal read-only tab: packages the ADG has appointed a committee for
 /// (unsold >3 times). Each row expands to show the 5 committee members.
-class _CommitteesTab extends ConsumerWidget {
+class _CommitteesTab extends ConsumerStatefulWidget {
   const _CommitteesTab();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_CommitteesTab> createState() => _CommitteesTabState();
+}
+
+class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
+  /// ⚠️ New: the tab had no pager.
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) {
     final accent = context.colors.accentLightBlue;
-    final eligible = ref.watch(committeeEligibleProvider);
     final committees =
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
-    // Packages that have moved on to the Unsold Packages table: the
-    // committee-priced tender ran and failed too, so the committee's work is
-    // finished and its card leaves this tab.
-    final movedOn = {
-      for (final i in ref.watch(exhaustedUnsoldProvider).valueOrNull ??
-          const <ReTenderSaleInfo>[])
-        i.forfeited.id
-    };
+
+    // ⚠️ One PAGE, one query. This tab used to read THREE providers and
+    // intersect them in Dart: committeeEligibleProvider (itself a filter over
+    // every tender sale in the yard), tenderCommitteesProvider, and
+    // exhaustedUnsoldProvider as a "moved on" exclusion set.
+    //
+    // `unsold_retender_pool` (postgres/29) settles all of it: fourth round,
+    // committee appointed, and not exhausted -- a card leaves this tab exactly
+    // when the committee-priced tender fails, which is when the package
+    // becomes exhausted, and the view already excludes those. So the `movedOn`
+    // set is gone with them.
+    final query = UnsoldRetenderQuery(
+      page: _page,
+      search: ref.watch(disposalSearchProvider('committees')),
+      yardFilter: ref.watch(_committeesYardProvider),
+    );
+    final eligible = ref.watch(committeesPageProvider(query));
+
+    // A filter change starts at the top rather than on page 4 of the old set.
+    ref.listen(disposalSearchProvider('committees'),
+        (_, __) => setState(() => _page = 0));
+    ref.listen(_committeesYardProvider, (_, __) => setState(() => _page = 0));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
@@ -4438,34 +4459,22 @@ class _CommitteesTab extends ConsumerWidget {
                   Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(committeeEligibleProvider)),
-              data: (list) {
-                // Only packages that actually have a committee appointed AND
-                // have not yet moved on to the Unsold Packages table.
-                var rows = list
-                    .where((i) =>
-                        committees.containsKey(i.forfeited.id) &&
-                        !movedOn.contains(i.forfeited.id))
-                    .toList();
-                final yf = ref.watch(_committeesYardProvider);
-                if (yf != null) {
-                  rows = rows
-                      .where((i) => matchesYardFilter(
-                          yf, i.forfeited.yard, i.forfeited.srNumber))
-                      .toList();
+                  onRetry: () =>
+                      ref.refresh(committeesPageProvider(query))),
+              data: (result) {
+                // Filtered and paged by the database -- the fourth-round test,
+                // the committee, the yard and the search all reached SQL.
+                final rows = result.rows;
+                final total = result.total;
+                final maxPage =
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                if (_page > maxPage) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _page = maxPage);
+                  });
                 }
-                final qq = ref
-                    .watch(disposalSearchProvider('committees'))
-                    .toLowerCase();
-                if (qq.isNotEmpty) {
-                  rows = rows.where((info) {
-                    final f = info.forfeited;
-                    return f.srNumber.toLowerCase().contains(qq) ||
-                        f.consigneeName.toLowerCase().contains(qq) ||
-                        _committeeItemName(f).toLowerCase().contains(qq);
-                  }).toList();
-                }
-                if (rows.isEmpty) {
+
+                if (total == 0) {
                   return _listCard(
                     context,
                     const EmptyTableState(
@@ -4475,14 +4484,32 @@ class _CommitteesTab extends ConsumerWidget {
                             'The Top Management Directorate appoints a committee for packages still unsold after Tender 3.'),
                   );
                 }
-                return ListView.separated(
-                  itemCount: rows.length,
-                  separatorBuilder: (_, __) => const Gap(14),
-                  itemBuilder: (context, i) => _CommitteeCard(
-                      info: rows[i],
-                      committee: committees[rows[i].forfeited.id]!,
-                      storageRate: storageRate),
-                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
+                return Column(children: [
+                  Expanded(
+                    child: ListView.separated(
+                      itemCount: rows.length,
+                      separatorBuilder: (_, __) => const Gap(14),
+                      itemBuilder: (context, i) {
+                        final c = committees[rows[i].forfeited.id];
+                        // ⚠️ The view says a committee exists; this map is a
+                        // separate fetch that may not have landed yet. A `!`
+                        // here would crash the tab on a slow frame.
+                        if (c == null) return const SizedBox.shrink();
+                        return _CommitteeCard(
+                            info: rows[i],
+                            committee: c,
+                            storageRate: storageRate);
+                      },
+                    ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05),
+                  ),
+                  TablePager(
+                    total: total,
+                    page: _page.clamp(0, maxPage),
+                    pageSize: kDispositionPageSize,
+                    accent: accent,
+                    onPageChanged: (p) => setState(() => _page = p),
+                  ),
+                ]);
               },
             ),
           ),

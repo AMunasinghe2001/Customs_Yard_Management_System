@@ -277,4 +277,56 @@ void main() {
       expect(tab, isNot(contains('!exhausted.contains')));
     });
   });
+
+  group('Committees is the same pool, narrowed twice', () {
+    final pool =
+        File('postgres/29_unsold_retender_pool_view.sql').readAsStringSync();
+    final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync();
+    final method = services.substring(services.indexOf('getCommitteesPaged'));
+
+    test('the fourth round and the committee are both SQL', () {
+      // The Valuation Tender plus Tenders 1-3 all failed.
+      expect(method, contains("q.eq('round_count', kMaxBidTenderRounds + 1)"));
+      expect(method, contains("q.eq('has_committee', true)"));
+      expect(pool, contains('as has_committee'));
+    });
+
+    test('the flag agrees with the table it comes from', () {
+      // ⚠️ Otherwise the tab shows a card it cannot render.
+      expect(pool, contains('row(s) disagree about having a committee'));
+    });
+
+    test("the 'moved on' set is gone, because the view excludes it", () {
+      // ⚠️ A card leaves this tab exactly when the committee-priced tender
+      // also fails -- which is when the package becomes exhausted. The pool
+      // already excludes those, so no second set is needed.
+      final tab = dash.substring(dash.indexOf('class _CommitteesTabState'),
+          dash.indexOf('class _CommitteeCard'));
+      // ⚠️ The comments still NAME the old providers, explaining what they
+      // did and why they are gone — that is the record, not a leftover. What
+      // must not survive is a read of them.
+      expect(tab, isNot(contains('ref.watch(exhaustedUnsoldProvider)')));
+      expect(tab, isNot(contains('ref.watch(committeeEligibleProvider)')));
+      expect(tab, isNot(contains('ref.refresh(committeeEligibleProvider)')));
+      expect(tab, isNot(contains('movedOn.contains')));
+    });
+
+    test('it reads one provider, and has a pager', () {
+      final tab = dash.substring(dash.indexOf('class _CommitteesTabState'),
+          dash.indexOf('class _CommitteeCard'));
+      expect(tab, contains('committeesPageProvider(query)'));
+      expect(tab, contains('TablePager('));
+      expect(tab, contains('total: total,'));
+    });
+
+    test('a card whose committee has not loaded is skipped, not crashed', () {
+      // ⚠️ The view says a committee exists; the map is a separate fetch that
+      // may not have landed. A `!` there would crash the tab on a slow frame.
+      final tab = dash.substring(dash.indexOf('class _CommitteesTabState'),
+          dash.indexOf('class _CommitteeCard'));
+      expect(tab, contains('if (c == null) return const SizedBox.shrink();'));
+      expect(tab, isNot(contains('committees[rows[i].forfeited.id]!')));
+    });
+  });
 }

@@ -91,7 +91,17 @@ select
   -- (sale date + the following working day, past weekends and Sri Lankan
   -- public holidays) needs the calendar the app fetches at runtime, and the
   -- page applies it.
-  (l.sale_moment < now())                  as round_moment_passed
+  (l.sale_moment < now())                  as round_moment_passed,
+  -- ⚠️ The Committees tab is this same pool narrowed twice: to packages on
+  -- their FOURTH round (Valuation Tender + Tenders 1-3 all failed), and to
+  -- those that actually have a committee appointed. Both are settled here so
+  -- the tab is one query rather than three providers intersected in Dart.
+  --
+  -- A card leaves that tab when the committee-priced tender ALSO fails, which
+  -- is when the package becomes exhausted -- and this view already excludes
+  -- exhausted packages, so no separate `movedOn` set is needed.
+  exists (select 1 from public.tender_committees tc
+           where tc.forfeited_package_id = fp.id)  as has_committee
 from public.forfeited_packages fp
 join agg a                        on a.fp_id = fp.id
 join latest l                     on l.fp_id = fp.id
@@ -148,6 +158,17 @@ begin
   if exists (select 1 from public.unsold_retender_pool
               where latest_sale_moment is null) then
     raise exception 'a pool row has no current round to judge';
+  end if;
+
+  -- ⚠️ A committee card must have a committee. The flag has to agree with the
+  -- table it is derived from, or the tab shows a card it cannot render.
+  select count(*) into bad
+    from public.unsold_retender_pool u
+   where u.has_committee <> exists (select 1 from public.tender_committees tc
+                                     where tc.forfeited_package_id
+                                           = u.forfeited_package_id);
+  if bad <> 0 then
+    raise exception '% row(s) disagree about having a committee', bad;
   end if;
 
   select count(*) into n from public.unsold_retender_pool;

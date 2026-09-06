@@ -5550,6 +5550,60 @@ class DisposalService {
     );
   }
 
+  /// One page of the Committees tab, chosen in SQL.
+  ///
+  /// ⚠️ The same pool as [getUnsoldRetenderPaged], narrowed twice: to packages
+  /// on their FOURTH round (the Valuation Tender and Tenders 1-3 all failed)
+  /// and to those with a committee actually appointed.
+  ///
+  /// A card LEAVES this tab when the committee-priced tender also fails —
+  /// which is when the package becomes exhausted, and the view already
+  /// excludes those. So the `movedOn` set the tab used to build is gone.
+  Future<({List<ReTenderSaleInfo> rows, int total})> getCommitteesPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      q = q.eq('round_count', kMaxBidTenderRounds + 1);
+      q = q.eq('has_committee', true);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'item_name.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase
+                .from('unsold_retender_pool')
+                .select('forfeited_package_id'))
+            .order('sr_number', ascending: true)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('unsold_retender_pool')).count());
+
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['forfeited_package_id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <ReTenderSaleInfo>[], total: total as int);
+    }
+
+    final infos = await _reTenderInfoForIds(ids);
+    final byId = {for (final i in infos) i.forfeited.id: i};
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
   // ── Tender bids (recorded per tender ROUND on unsold packages) ────────────
 
   /// Bids recorded for an unsold tender package, grouped by tender round

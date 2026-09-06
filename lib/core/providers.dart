@@ -1408,6 +1408,21 @@ final unsoldRetenderPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
       );
 });
 
+/// One page of the Committees tab — the re-tender pool narrowed to packages
+/// on their fourth round that have a committee appointed.
+final committeesPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
+    UnsoldRetenderQuery>((ref, q) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getCommitteesPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+      );
+});
+
 /// Every SR number on Unsold Goods, for its year filter — one small column,
 /// because a page of twenty cannot know which years the table covers.
 final exhaustedUnsoldYearsProvider =

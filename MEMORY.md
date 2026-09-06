@@ -2264,4 +2264,18 @@ Government Use, Auction, Converted, Removed **and Unsold Goods** all share `Unso
 
 ⚠️ **There is no `unsold` COLUMN on `tender_sale_items`.** The model has the field and it is always false — a round is unsold when it is *not sold* and its deadline has passed. That is why condition 3 needs the holiday calendar, and why the deadline half stays in Dart (same split as Tender Sales).
 
-**Remaining tabs:** Committees, Perishable, Taxes, Expenses.
+## Central Disposal paging, 11 of N: Committees (2026-09-06)
+
+The **same** `unsold_retender_pool` ([29](postgres/29_unsold_retender_pool_view.sql)), narrowed twice: `round_count = kMaxBidTenderRounds + 1` (the Valuation Tender and Tenders 1–3 all failed) and `has_committee`. No new view.
+
+⚠️ **The "moved on" set is gone.** A card leaves this tab exactly when the committee-priced tender *also* fails — which is when the package becomes **exhausted** — and the pool already excludes those. The tab used to intersect three providers in Dart to reach the same answer.
+
+⚠️ **A card whose committee has not loaded is skipped, not crashed.** The view says a committee exists; `tenderCommitteesProvider` is a separate fetch that may not have landed on a given frame, and the old `committees[id]!` would have thrown there.
+
+⚠️ **Taxes is deliberately NOT paged.** `disposal_taxes` holds **4 rows** — VAT, PAL, Cess, Stamp Duty. It is a rate table, not transaction data: it grows only when the government adds a tax. Paging it would be pure overhead.
+
+⚠️ **Perishable was already done** — Central Disposal renders the same `PerishableGoodsScreen(readOnly: true)` that was paged on the yard side.
+
+**Remaining:** Expenses.
+
+⚠️ **Two `flutter test` runs racing showed 6 phantom failures.** A backgrounded run overlapping a foreground one produces failures that do not reproduce. Re-run alone before chasing them.
