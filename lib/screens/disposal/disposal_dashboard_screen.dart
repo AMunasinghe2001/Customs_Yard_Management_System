@@ -1400,6 +1400,47 @@ class _DestroyedPackagesTab extends ConsumerStatefulWidget {
       _DestroyedPackagesTabState();
 }
 
+/// Opens the details popup for one Destroyed row, loading the SR's financials
+/// FIRST rather than while the table builds.
+///
+/// ⚠️ The popup wants a [SrFinancials], and the only source is
+/// `srFinancialsProvider` -- every package in every yard plus every tender
+/// sale, ~216ms measured. Watching it from the cell meant every page of the
+/// table paid that whether or not anyone opened a popup. Reading it on the tap
+/// moves the cost to the one row that actually needs it, and awaiting it means
+/// the figure is THERE when the popup opens instead of reading "not
+/// available" until the ledger caught up.
+Future<void> _showDestroyedDetails(
+  BuildContext context,
+  WidgetRef ref,
+  _DestroyedRow r, {
+  required Map<DateTime, double> storageRate,
+  required Color accent,
+}) async {
+  SrFinancials? sr;
+  try {
+    sr = (await ref.read(srFinancialsProvider.future))
+        .where((f) => f.srNumber.trim() == r.package.srNumber.trim())
+        .firstOrNull;
+  } catch (_) {
+    // The costs section degrades to "not available"; the rest of the popup --
+    // the package, its items, its warehouse history -- does not need this and
+    // should still open.
+  }
+  if (!context.mounted) return;
+  await showDialog(
+    context: context,
+    builder: (_) => PackageDetailsDialog(
+      package: r.package,
+      storageRate: storageRate,
+      headerAccentColor: accent,
+      highlightEntry: r.entry,
+      useLegacySummary: true,
+      srFinancials: sr,
+    ),
+  );
+}
+
 class _DestroyedRow {
   final PackageModel package;
   final WarehouseEntryModel? entry;
@@ -1632,29 +1673,23 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                                             color:
                                                 context.colors.accentLightBlue,
                                             size: 18),
-                                        onPressed: () => showDialog(
-                                          context: context,
-                                          builder: (_) => PackageDetailsDialog(
-                                            package: r.package,
-                                            storageRate: storageRate,
-                                            headerAccentColor: green,
-                                            highlightEntry: r.entry,
-                                            useLegacySummary: true,
-                                            // Same lookup the "Destruction
-                                            // Expenses" column beside this
-                                            // uses -- without it the popup
-                                            // showed "not available" while the
-                                            // table it opened from showed a
-                                            // real figure.
-                                            srFinancials: ref
-                                                .watch(srFinancialsProvider)
-                                                .valueOrNull
-                                                ?.where((f) =>
-                                                    f.srNumber.trim() ==
-                                                    r.package.srNumber.trim())
-                                                .firstOrNull,
-                                          ),
-                                        ),
+                                        // ⚠️ The ledger is READ here, on the
+                                        // tap, not watched while the table
+                                        // builds. `.watch` inside the builder
+                                        // still subscribed this row to
+                                        // srFinancialsProvider, so twenty rows
+                                        // held the heaviest query in the app
+                                        // open to fill a field only the popup
+                                        // reads. Awaiting it here also fixes
+                                        // the case the old comment described:
+                                        // the popup no longer shows "not
+                                        // available" merely because the ledger
+                                        // had not finished loading.
+                                        onPressed: () =>
+                                            _showDestroyedDetails(
+                                                context, ref, r,
+                                                storageRate: storageRate,
+                                                accent: green),
                                       ),
                                     )),
                                   ]))
@@ -1688,28 +1723,67 @@ final _destroyedDeliveryFilterProvider = StateProvider<bool?>((ref) => null);
 /// Opens the same cost form the Expenses tab uses, in its destruction shape:
 /// what is saved here is the SAME `financial_expenses` data that tab reads, so
 /// a figure entered on either screen shows on the other.
+/// ⚠️ This is why the tab was slow, and it is the SECOND time the same
+/// mistake has been made on this page.
+///
+/// It watched `srFinancialsProvider` -- `getAllPackages()` across all
+/// twenty-eight yards plus `getTenderSales()`, which the service's own comment
+/// calls "the heaviest query in the app", rolled up per item and per tax name
+/// -- and then scanned the whole list for ONE SR. Measured against the live
+/// database:
+///
+///     the tab's own page query        24ms
+///     getAllPackages() it dragged in  148ms
+///     getTenderSales() it dragged in   68ms
+///
+/// So a page of twenty rows waited an order of magnitude longer for a button
+/// than for its own data. `DestructionExpenseCell` in the column beside this
+/// one had exactly this bug and was fixed; this one was left behind.
+///
+/// The fix is not a lighter query -- it is not fetching until the officer
+/// clicks. The ledger is only needed to BUILD the dialog, so it is read in the
+/// tap handler.
 class _RecordCostsButton extends ConsumerWidget {
   final String srNumber;
   const _RecordCostsButton({required this.srNumber});
 
+  Future<void> _open(BuildContext context, WidgetRef ref) async {
+    // Loading state on the button itself, because this may now be the first
+    // time anything has asked for the ledger.
+    final messenger = ScaffoldMessenger.of(context);
+    late final List<SrFinancials> all;
+    try {
+      all = await ref.read(srFinancialsProvider.future);
+    } catch (e) {
+      if (context.mounted) showErrorSnack(context, e, action: 'Loading costs');
+      return;
+    }
+    final sr = all
+        .where((f) => f.srNumber.trim() == srNumber.trim())
+        .firstOrNull;
+    if (!context.mounted) return;
+    if (sr == null) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('No cost record found for $srNumber')));
+      return;
+    }
+    await showDialog(
+      context: context,
+      builder: (_) => RecordExpenseDialog(sr: sr, forDestruction: true),
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sr = ref
-        .watch(srFinancialsProvider)
-        .valueOrNull
-        ?.where((f) => f.srNumber.trim() == srNumber.trim())
-        .firstOrNull;
     return IconButton(
       tooltip: 'Record / edit destruction costs',
       icon: Icon(Icons.edit_note_rounded,
           size: 20, color: context.colors.successGreen),
-      onPressed: sr == null
-          ? null
-          : () => showDialog(
-                context: context,
-                builder: (_) =>
-                    RecordExpenseDialog(sr: sr, forDestruction: true),
-              ),
+      // ⚠️ Always enabled. It used to be disabled until the ledger loaded,
+      // which is what forced every row to wait for it -- and an SR on this
+      // table always has a financials row, so the check never actually said
+      // no.
+      onPressed: () => _open(context, ref),
     );
   }
 }

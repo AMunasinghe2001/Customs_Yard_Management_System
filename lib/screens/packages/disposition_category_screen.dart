@@ -596,7 +596,7 @@ class _DispositionCategoryScreenState
                                           color:
                                               context.colors.accentLightBlue,
                                           size: 18),
-                                      onPressed: () {
+                                      onPressed: () async {
                                         // The forfeited row behind this sale,
                                         // so the popup can show the same
                                         // per-round Tender History the Unsold
@@ -625,6 +625,34 @@ class _DispositionCategoryScreenState
                                                 '${_parseSaleReceipt(row.entry?.returnNotes) ?? ''}'))
                                             .asData
                                             ?.value;
+                                        // ⚠️ READ on the tap, not watched
+                                        // while the table builds.
+                                        // `srFinancialsProvider` is
+                                        // getAllPackages() across every yard
+                                        // plus getTenderSales() (~216ms
+                                        // measured), and watching it from
+                                        // this cell made every page of the
+                                        // table wait for it -- to fill one
+                                        // field only the popup reads.
+                                        // Awaiting it here also means the
+                                        // costs are THERE when the popup
+                                        // opens, rather than reading "not
+                                        // available" until the ledger caught
+                                        // up.
+                                        SrFinancials? srFin;
+                                        try {
+                                          srFin = (await ref.read(
+                                                  srFinancialsProvider.future))
+                                              .where((f) =>
+                                                  f.srNumber.trim() ==
+                                                  row.package.srNumber.trim())
+                                              .firstOrNull;
+                                        } catch (_) {
+                                          // The costs section degrades; the
+                                          // rest of the popup does not need
+                                          // this and should still open.
+                                        }
+                                        if (!context.mounted) return;
                                         showDialog(
                                           context: context,
                                           builder: (_) =>
@@ -664,14 +692,7 @@ class _DispositionCategoryScreenState
                                             // available" even once Central
                                             // Disposal had recorded the
                                             // destruction expenses.
-                                            srFinancials: ref
-                                                .watch(srFinancialsProvider)
-                                                .valueOrNull
-                                                ?.where((f) =>
-                                                    f.srNumber.trim() ==
-                                                    row.package.srNumber
-                                                        .trim())
-                                                .firstOrNull,
+                                            srFinancials: srFin,
                                           ),
                                         );
                                       },

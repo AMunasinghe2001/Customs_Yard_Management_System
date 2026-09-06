@@ -31,9 +31,19 @@ void main() {
       'lib/screens/disposal/disposal_dashboard_screen.dart',
       'lib/screens/packages/disposition_category_screen.dart',
     ]) {
+      // ⚠️ Asserted on the RESULT -- the popup is handed a figure -- not on
+      // how it is obtained. This used to require `.watch(srFinancialsProvider)`
+      // in the cell, which turned out to be why the Destroyed tab was slow:
+      // every row held the app's heaviest query open to fill a field only the
+      // popup reads. The lookup now happens on the tap and is AWAITED, so the
+      // figure is there when the popup opens instead of arriving late --
+      // strictly better for the bug this test was written for.
+      // See ledger_not_watched_from_rows_test.dart.
       final flat = File(path).readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');
-      expect(flat, contains('srFinancials: ref .watch(srFinancialsProvider)'),
+      expect(flat, contains('srFinancialsProvider'),
           reason: '$path never looks up the SR\'s financials for the popup.');
+      expect(RegExp(r'srFinancials: (sr|srFin),').hasMatch(flat), isTrue,
+          reason: '$path opens the popup without passing the figure.');
     }
   });
 
