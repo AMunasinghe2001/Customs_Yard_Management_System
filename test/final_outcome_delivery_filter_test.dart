@@ -211,16 +211,57 @@ void main() {
           isFalse);
     });
 
-    test('the pill sits to the RIGHT, after the Spacer', () {
-      // Every page in the portal puts its count at the right end of the
-      // control line. Perishable had it next to the title, where it read as
-      // part of the heading rather than as a filter result.
+    test('the pill is on its OWN line under the title, pushed right', () {
+      // ⚠️ Destroyed Goods and Government Use set the shape, and it is
+      // three lines, not two:
+      //
+      //     Title                      search   yard
+      //     [All][Delivered][Pending]  ·······  [39 Destroyed]
+      //     Table
+      //
+      // The first attempt at "save a line" put the count up on the TITLE row
+      // instead. That is a THIRD layout: an officer moving between tabs would
+      // find the count in a different place on each. The pill belongs on the
+      // line under the title, at its right end, whether or not that line also
+      // carries a filter.
+      //
+      // So: the title Row -- the one holding PageTitle -- must not contain a
+      // StatChip, and a later Row must.
+      void checkPage(String src, String label) {
+        final i = src.indexOf('PageTitle(');
+        expect(i, greaterThan(-1), reason: '$label has no PageTitle');
+        // The title Row ends at its entrance animation.
+        final titleRowEnd = src.indexOf('.animate().fadeIn(', i);
+        expect(titleRowEnd, greaterThan(-1), reason: '$label title row');
+        final titleRow = src.substring(i, titleRowEnd);
+        expect(titleRow.contains('StatChip('), isFalse,
+            reason: '$label: the count is up on the title line');
+
+        final after = src.substring(titleRowEnd);
+        final chip = after.indexOf('StatChip(');
+        expect(chip, greaterThan(-1), reason: '$label has no count at all');
+        final spacer = after.indexOf('const Spacer()');
+        expect(spacer, greaterThan(-1), reason: '$label: nothing pushes it');
+        expect(spacer, lessThan(chip),
+            reason: '$label: the count belongs at the RIGHT of that line');
+      }
+
       final per = File('lib/screens/packages/perishable_goods_screen.dart')
           .readAsStringSync();
-      final ro = per.substring(per.indexOf('if (widget.readOnly) ...['),
-          per.indexOf('] else'));
-      expect(ro.indexOf('const Spacer()'), lessThan(ro.indexOf('StatChip(')),
-          reason: 'the count belongs after the Spacer, not beside the title');
+      checkPage(per.substring(per.indexOf('if (widget.readOnly) ...['),
+          per.indexOf('] else')), 'Perishable');
+      checkPage(
+          dash.substring(dash.indexOf("PageTitle('Unsold Goods — Re-tender'"),
+              dash.indexOf('class _TenderSalesTab')),
+          'Unsold Tenders');
+      checkPage(
+          dash.substring(
+              dash.indexOf("PageTitle('Undestroyed Packages — Re-destruction'")),
+          'Re-destruction');
+      checkPage(
+          dash.substring(dash.indexOf("PageTitle('Destroyed Goods'"),
+              dash.indexOf('class _UnsoldReTenderTab')),
+          'Destroyed (the shape everything copies)');
     });
 
     test('Committees carries no subtitle of its own', () {

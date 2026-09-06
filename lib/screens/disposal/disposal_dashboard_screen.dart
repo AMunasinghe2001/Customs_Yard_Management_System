@@ -2501,20 +2501,6 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
                   .state = v,
             ),
             const Gap(12),
-            // ⚠️ The count on the control line, not a row of its own -- see
-            // the Sold tab. It sits ahead of the action button because a count
-            // is a filter RESULT and the button is a thing you do to it.
-            if (async.valueOrNull != null) ...[
-              StatChip(
-                  label: 'Unsold — re-tenderable',
-                  // ⚠️ The DATABASE's count for this filter, and it already
-                  // excludes packages that have run out of rounds -- the view
-                  // does that. So the pill and the table agree by
-                  // construction rather than by both remembering to subtract.
-                  value: '${async.valueOrNull!.total}',
-                  color: amber),
-              const Gap(12),
-            ],
             async.maybeWhen(
               data: (result) => ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -2538,6 +2524,26 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
               ),
               orElse: () => const SizedBox(),
             ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(12),
+          // ⚠️ The SAME shape Destroyed Goods and Government Use use: the
+          // count on its own line under the title, pushed to the RIGHT. Those
+          // pages have a segmented filter on the left of this line; this one
+          // has nothing to filter by, so the left is simply empty and the
+          // Spacer does the work. Matching their layout matters more than
+          // saving the line -- an officer moving between tabs should find the
+          // count in the same place every time.
+          Row(children: [
+            const Spacer(),
+            if (async.valueOrNull != null)
+              StatChip(
+                  label: 'Unsold — re-tenderable',
+                  // ⚠️ The DATABASE's count for this filter, and it already
+                  // excludes packages that have run out of rounds -- the view
+                  // does that. So the pill and the table agree by construction
+                  // rather than by both remembering to subtract.
+                  value: '${async.valueOrNull!.total}',
+                  color: amber),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           Expanded(
@@ -7367,15 +7373,6 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
                   .state = v,
             ),
             const Gap(12),
-            // ⚠️ On the control line, ahead of the action button -- the same
-            // shape as Unsold Tenders, which also pairs a count with a button.
-            if (async.valueOrNull != null) ...[
-              StatChip(
-                  label: 'Undestroyed — re-destructionable',
-                  value: '${async.valueOrNull!.length}',
-                  color: amber),
-              const Gap(12),
-            ],
             async.maybeWhen(
               data: (list) => ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
@@ -7396,6 +7393,16 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
               ),
               orElse: () => const SizedBox(),
             ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(12),
+          // ⚠️ Same shape again: the count on its own line, to the RIGHT.
+          Row(children: [
+            const Spacer(),
+            if (async.valueOrNull != null)
+              StatChip(
+                  label: 'Undestroyed — re-destructionable',
+                  value: '${async.valueOrNull!.length}',
+                  color: amber),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           Expanded(

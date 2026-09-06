@@ -240,26 +240,6 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
               Row(children: [
                 const PageTitle('Perishable Goods', Icons.eco_rounded),
                 const Spacer(),
-                // ⚠️ The count goes on the RIGHT, beside the controls -- the
-                // side every other page in this portal puts it on.
-                //
-                // It was next to the title at first, which read as part of the
-                // heading rather than as a filter result. Sold, Destroyed and
-                // the outcome pages all put theirs at the right end of the
-                // control line, so this now matches them.
-                //
-                // Absent while loading rather than showing a stale or zero
-                // count.
-                if (async.valueOrNull != null) ...[
-                  StatChip(
-                    label: 'Awaiting disposal',
-                    // The DATABASE's count for this filter, so the number and
-                    // the list can never disagree.
-                    value: '${async.valueOrNull!.total}',
-                    color: context.colors.dangerRed,
-                  ),
-                  const Gap(12),
-                ],
                 SizedBox(width: 280, child: _searchBox(context)),
                 const Gap(12),
                 // ⚠️ No year filter here. Not one cross-yard tab in this
@@ -276,6 +256,29 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     _page = 0;
                   }),
                 ),
+              ]).animate().fadeIn(duration: 300.ms),
+              const Gap(12),
+              // ⚠️ The SAME shape Destroyed Goods and Government Use use:
+              // the count on its own line under the title, pushed to the RIGHT.
+              //
+              // Those pages have a segmented filter on the left of this line;
+              // this one has nothing to filter by, so the left is simply
+              // empty and the Spacer does the work. Matching their layout
+              // matters more than saving the line -- an officer moving between
+              // tabs should find the count in the same place every time.
+              //
+              // Absent while loading rather than showing a stale or zero
+              // count.
+              Row(children: [
+                const Spacer(),
+                if (async.valueOrNull != null)
+                  StatChip(
+                    label: 'Awaiting disposal',
+                    // The DATABASE's count for this filter, so the number and
+                    // the list can never disagree.
+                    value: '${async.valueOrNull!.total}',
+                    color: context.colors.dangerRed,
+                  ),
               ]).animate().fadeIn(duration: 300.ms),
               const Gap(14),
             ] else
