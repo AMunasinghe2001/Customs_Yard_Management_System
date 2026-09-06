@@ -180,7 +180,12 @@ void main() {
           svc.indexOf('Future<String> resetDirectorateCredentials('));
       final body = fn.substring(0, fn.indexOf('\n  }'));
       expect(body, contains("from('auth.users').select('email')"));
-      expect(body, contains('sendCredentials(email, fullName, username, password)'));
+      // ⚠️ Asserted on the recipient, not the full argument list: the call now
+      // also says this is a REISSUE rather than a welcome, and the address on
+      // record is the part this test exists to protect.
+      expect(body, contains('sendCredentials(email, fullName, username, password'));
+      expect(body, contains('isReissue: true'),
+          reason: 'a reset must not arrive as a welcome to a new account');
     });
 
     test('both halves are generated, not chosen', () {

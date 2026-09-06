@@ -90,7 +90,10 @@ void main() {
     final fn = svc.substring(svc.indexOf('Future<String> startOtpLogin'));
     final body = fn.substring(0, fn.indexOf('\n  }'));
     final gate = body.indexOf("throw Exception('wrong_portal')");
-    final send = body.indexOf('GmailOtpService.instance.sendCode');
+    // ⚠️ Matched on '.sendCode(' alone. Pinning the whole receiver chain made
+    // this test fail the moment the call wrapped across two lines -- a
+    // formatting change, with the ordering it guards untouched.
+    final send = body.indexOf('.sendCode(');
     expect(gate, greaterThan(-1));
     expect(send, greaterThan(-1));
     expect(gate, lessThan(send),

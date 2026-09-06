@@ -200,7 +200,12 @@ void main() {
       final fn = svc.substring(svc.indexOf('Future<String?> startPasswordReset('));
       final body = fn.substring(0, fn.indexOf('\n  }'));
       expect(body, contains("rpc('reset_email_for_identifier'"));
-      expect(body, contains('sendCode(email)'));
+      // ⚠️ The recipient is what matters here, not the rest of the call --
+      // the e-mail now also carries a purpose, and pinning the whole argument
+      // list would make this fail on wording changes it is not guarding.
+      expect(body, contains('sendCode(email'));
+      expect(body, contains('purpose: OtpPurpose.passwordReset'),
+          reason: 'a reset must not send a sign-in e-mail');
     });
   });
 }

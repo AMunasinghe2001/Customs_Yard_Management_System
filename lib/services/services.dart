@@ -268,7 +268,8 @@ class AuthService {
     );
     final email = resolved is String ? resolved.trim() : '';
     if (email.isEmpty) return null;
-    await GmailOtpService.instance.sendCode(email);
+    await GmailOtpService.instance
+        .sendCode(email, purpose: OtpPurpose.passwordReset);
     return email;
   }
 
@@ -374,7 +375,8 @@ class AuthService {
       throw Exception('wrong_portal');
     }
     // Issue our own 6-digit code and e-mail it via Gmail (not Supabase).
-    await GmailOtpService.instance.sendCode(email);
+    await GmailOtpService.instance.sendCode(email,
+        purpose: OtpPurpose.signIn);
     return email;
   }
 
@@ -2627,7 +2629,8 @@ class AdminService {
     // E-mail a self-issued code via Gmail (not Supabase). The account itself is
     // created only after the code is verified, in [verifySignupOtp].
     await GmailOtpService.instance
-        .sendCode(email.trim(), recipientName: fullName);
+        .sendCode(email.trim(),
+            recipientName: fullName, purpose: OtpPurpose.createAccount);
   }
 
   Future<void> verifySignupOtp({
@@ -2875,6 +2878,8 @@ class AdminService {
   }
 
   /// Step 1: e-mail an OTP (via Gmail) to the prospective officer.
+  /// The e-mail says it is an officer account being set up by an
+  /// administrator, which is not something the reader asked for themselves.
   Future<void> requestOfficerOtp({
     required String email,
     required String fullName,
@@ -2882,7 +2887,9 @@ class AdminService {
     String? badgeNumber,
   }) async {
     await GmailOtpService.instance
-        .sendCode(email.trim(), recipientName: fullName.trim());
+        .sendCode(email.trim(),
+            recipientName: fullName.trim(),
+            purpose: OtpPurpose.officerAccount);
   }
 
   /// Step 2: verify the Gmail OTP, create the officer account (keeping the
@@ -3054,7 +3061,9 @@ class IctService {
     required String yard,
   }) async {
     await GmailOtpService.instance
-        .sendCode(email.trim(), recipientName: fullName.trim());
+        .sendCode(email.trim(),
+            recipientName: fullName.trim(),
+            purpose: OtpPurpose.officerAccount);
   }
 
   /// Verify OTP, create account (Admin / DC/SDDC or Officer) with generated credentials,
@@ -3224,7 +3233,12 @@ class IctService {
         .update({'username': username}).eq('id', profileId));
 
     await GmailOtpService.instance
-        .sendCredentials(email, fullName, username, password);
+        .sendCredentials(email, fullName, username, password,
+            // ⚠️ A REISSUE, not a welcome. The previous password has
+            // just stopped working, and this arrives unannounced -- so it
+            // has to say so, and say what to do if it was not the reader
+            // who asked.
+            isReissue: true, roleLabel: role);
 
     await AuditLogService().recordLog(
       userId: supabase.auth.currentUser?.id,
