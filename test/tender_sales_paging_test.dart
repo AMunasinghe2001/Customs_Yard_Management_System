@@ -74,7 +74,10 @@ void main() {
     });
 
     test('an item leaves the page when it is MARKED, not when time passes', () {
-      expect(screen, contains('.where((s) => !s.sold)'));
+      // ⚠️ Both outcomes. An item marked UNSOLD is finished too -- it has
+      // gone to the Unsold Tenders pool -- so Central Disposal's worklist
+      // should not keep offering an action that has been taken.
+      expect(screen, contains('.where((s) => !s.sold && !s.unsold)'));
     });
   });
 

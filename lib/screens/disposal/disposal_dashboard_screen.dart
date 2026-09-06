@@ -58,8 +58,10 @@ int? _disposalForfeitedQty(DisposalRequestItemModel it, PackageItem? pkgItem) {
 /// landing on Re-export. An officer who marked an item Unsold was thrown to a
 /// page about goods leaving the country, with a red bar over it.
 ///
-/// Name the tab and look the index up. A wrong name is a compile error; a
-/// wrong number is a page nobody asked for.
+/// Nothing navigates by index any more -- an officer marking items works
+/// THROUGH a sale and should not be thrown to another tab after each one --
+/// but the controller's length still reads `DisposalTab.values.length`, which
+/// is what stops that number drifting from the strip.
 enum DisposalTab {
   disposalRequests,
   tenderSales,
@@ -78,10 +80,6 @@ enum DisposalTab {
   expenses,
   reports,
 }
-
-/// Move to [tab], by name.
-void goToDisposalTab(BuildContext context, DisposalTab tab) =>
-    DefaultTabController.of(context).animateTo(tab.index);
 
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
@@ -1304,6 +1302,18 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                 fixedWidth: 132),
                             DataColumn2(
                                 label: Text('Sold Price'), size: ColumnSize.M),
+                            // %s Tax and total in their OWN columns.
+                            //
+                            // The tax was a grey second line under the sold
+                            // price, which made it decoration rather than a
+                            // figure -- it could not be scanned down the
+                            // column, and the total the buyer actually paid
+                            // was nowhere at all.
+                            DataColumn2(
+                                label: Text('Total Tax'), size: ColumnSize.S),
+                            DataColumn2(
+                                label: Text('Total Amount'),
+                                size: ColumnSize.M),
                             // Fits the shared status pill, like the yard's.
                             DataColumn2(
                                 label: Center(child: Text('Delivery')),
@@ -1336,6 +1346,12 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                         qty: r.entry.itemCount)),
                                     DataCell(_SaleFinancialsCell(
                                         saleItemKey: r.saleItemKey)),
+                                    DataCell(_SaleFinancialsCell(
+                                        saleItemKey: r.saleItemKey,
+                                        field: _SaleField.tax)),
+                                    DataCell(_SaleFinancialsCell(
+                                        saleItemKey: r.saleItemKey,
+                                        field: _SaleField.total)),
                                     DataCell(Center(
                                         child: _DeliveryStatusCell(
                                             package: r.package,
@@ -1996,9 +2012,28 @@ class _SaleValuationCell extends ConsumerWidget {
   }
 }
 
+/// Which of the three money columns a [_SaleFinancialsCell] is drawing.
+enum _SaleField { price, tax, total }
+
+/// Every tax charged on one sold item, added up.
+///
+/// ⚠️ Reads the taxes STORED on the item, never the tax table. The stored
+/// list is what was active at the moment of sale; enabling a tax later must
+/// not change what a past sale was charged, and disabling one must not make
+/// the charge disappear.
+double saleItemTaxTotal(TenderSaleItemModel item) {
+  var sum = 0.0;
+  for (final t in item.appliedTaxes) {
+    if (t is Map) sum += parseDbNum(t['amount']) ?? 0;
+  }
+  return sum;
+}
+
 class _SaleFinancialsCell extends ConsumerWidget {
   final String saleItemKey;
-  const _SaleFinancialsCell({required this.saleItemKey});
+  final _SaleField field;
+  const _SaleFinancialsCell(
+      {required this.saleItemKey, this.field = _SaleField.price});
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(saleItemForPackageItemProvider(saleItemKey));
@@ -2014,21 +2049,30 @@ class _SaleFinancialsCell extends ConsumerWidget {
       error: (_, __) => const Text('—'),
       data: (item) {
         if (item == null) return const Text('—');
-        double taxSum = 0;
-        for (final t in item.appliedTaxes) {
-          taxSum += parseDbNum(t['amount']) ?? 0;
+        switch (field) {
+          case _SaleField.price:
+            return Text('Rs ${item.soldPrice.toStringAsFixed(2)}',
+                style: const TextStyle(fontWeight: FontWeight.bold));
+          case _SaleField.tax:
+            final tax = saleItemTaxTotal(item);
+            return Text(
+              tax == 0 ? '—' : 'Rs ${tax.toStringAsFixed(2)}',
+              style: TextStyle(
+                  color: tax == 0
+                      ? context.colors.textMuted
+                      : context.colors.textSecondary),
+            );
+          case _SaleField.total:
+            // %s Price PLUS tax -- what the buyer actually paid, and the
+            // figure the popup calls "Total Sale Value (Inc. Taxes)". It was
+            // on neither the table nor any column, so the two could not be
+            // checked against each other.
+            final total = item.soldPrice + saleItemTaxTotal(item);
+            return Text('Rs ${total.toStringAsFixed(2)}',
+                style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: context.colors.successGreen));
         }
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Rs ${item.soldPrice.toStringAsFixed(2)}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
-            Text('Tax: Rs ${taxSum.toStringAsFixed(2)}',
-                style:
-                    TextStyle(fontSize: 11, color: context.colors.textMuted)),
-          ],
-        );
       },
     );
   }
@@ -3133,16 +3177,20 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
   }
 
   List<_TsRow> _rows() {
-    // Central Disposal hides sold items (they move to Sold Packages); the
-    // yard view-only page keeps them so the yard can see the full outcome.
-    // Once the sell window has CLOSED, the un-sold items have moved to the
-    // Unsold Tenders pool — drop them here too (Central Disposal view only).
-    // ⚠️ Unmarked items stay here to BE marked, however long that takes.
-    // They used to vanish when a deadline passed, which left an officer no way
-    // to record the outcome of a sale they had simply not got to yet.
+    // ⚠️ Central Disposal's page is a WORKLIST; the yard's is a RECORD.
+    //
+    // An item with an outcome has left this directorate's hands -- sold goods
+    // are on Sold Goods, unsold ones in the Unsold Tenders pool -- so showing
+    // it here again offers an action that has already been taken. The yard's
+    // read-only view (widget.readOnly) keeps every item, because that page
+    // exists to show what became of the sale.
+    //
+    // Unmarked items stay, however long that takes: they used to vanish when a
+    // working-day deadline passed, which left an officer no way to record the
+    // outcome of a sale they had simply not got to yet.
     final Iterable<TenderSaleItemModel> source = widget.readOnly
         ? widget.sale.items
-        : widget.sale.items.where((s) => !s.sold);
+        : widget.sale.items.where((s) => !s.sold && !s.unsold);
 
     // De-duplicate: same (forfeitedPackageId, packageItemId) may appear as
     // multiple TSI rows when the per-item RPC created extra entries. Keep the
@@ -3729,7 +3777,11 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
       ref.invalidate(unsoldTenderSalesProvider);
       ref.invalidate(reTenderEligibleProvider);
       if (context.mounted) {
-        goToDisposalTab(context, DisposalTab.unsoldTenders);
+        // ⚠️ No jump. The officer is working THROUGH a sale, marking its
+        // items one after another -- throwing them to another tab after each
+        // one means navigating back before they can mark the next. The row
+        // disappears from this page on its own (it has an outcome now), and
+        // the message says where it went.
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               '${srNumber ?? 'Package'} marked as Unsold — moved to Unsold Tenders'),

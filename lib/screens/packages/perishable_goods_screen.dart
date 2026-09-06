@@ -575,8 +575,17 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                               overflow: TextOverflow.ellipsis)),
                                         DataCell(Center(
                                             child: UnsoldOutcomeChip(
-                                                proposal:
-                                                    outcomes[r.item.id]))),
+                                                proposal: outcomes[r.item.id],
+                                                // ⚠️ A perishable that SOLD
+                                                // at tender has its outcome
+                                                // already -- it never reaches
+                                                // the DG, so there is no
+                                                // proposal to read and the
+                                                // row used to sit on
+                                                // "Awaiting Top Management"
+                                                // for ever.
+                                                soldPrice: result
+                                                    .soldPriceByItem[r.item.id]))),
                                         DataCell(Center(
                                           child: IconButton(
                                             icon: Icon(

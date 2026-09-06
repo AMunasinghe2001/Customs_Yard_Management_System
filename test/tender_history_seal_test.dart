@@ -401,11 +401,22 @@ void main() {
 
     // ⚠️ A SOLD package ended by selling — it never reaches Top Management,
     // so "Awaiting" there would be a plain falsehood.
-    test('a sold package gets no outcome tile', () {
+    test('a sold package never reads "Awaiting Top Management"', () {
+      // ⚠️ The rule is unchanged -- a sold package ends by selling and
+      // never reaches the DG -- but the tile is no longer HIDDEN for it. That
+      // left the popup with no answer at all for goods that had plainly
+      // ended: a perishable sold for Rs 5,533,000 showed nothing here while
+      // the table behind it still said it was waiting. Selling is an outcome,
+      // so it is drawn as one.
       final src = File('lib/widgets/package_details_dialog.dart')
           .readAsStringSync()
           .replaceAll(RegExp(r'\s+'), ' ');
-      expect(src, contains('if (soldById.isEmpty) { rows.add(_FinalOutcomeTile'));
+      expect(src.contains('if (soldById.isEmpty) { rows.add(_FinalOutcomeTile'),
+          isFalse);
+      expect(src, contains('final soldPrice = mine.where((s) => s.sold)'));
+      // Sold is tested BEFORE the pending label can be reached.
+      expect(src.indexOf('final sold = soldPrice;'),
+          lessThan(src.indexOf("'Awaiting Top Management'")));
     });
   });
 

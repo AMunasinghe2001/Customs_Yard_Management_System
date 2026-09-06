@@ -705,6 +705,11 @@ class PerishableQuery {
 typedef PerishablePage = ({
   List<({String packageId, String itemId})> keys,
   Map<String, PackageModel> packages,
+
+  /// ⚠️ Item ids that SOLD at tender, with the price. A perishable that
+  /// sells never reaches the DG -- selling IS its final outcome -- so the page
+  /// cannot read the outcome from unsold_proposals alone.
+  Map<String, double> soldPriceByItem,
   int total,
 });
 
@@ -733,6 +738,7 @@ final perishablePageProvider =
         (packageId: page.packageIds[i], itemId: page.itemIds[i])
     ],
     packages: packages,
+    soldPriceByItem: page.soldPriceByItem,
     total: page.total,
   );
 });

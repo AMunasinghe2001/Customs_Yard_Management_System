@@ -380,13 +380,16 @@ class TenderHistorySection extends ConsumerWidget {
     // states, and the difference matters: Top Management may have ruled, or
     // the package may still be waiting for them — "no decision yet" is an
     // answer, and a blank space is not.
-    // ⚠️ Only for a package that has run out of tenders. A SOLD package ended
-    // by selling — it never reaches Top Management, so "Awaiting Top
-    // Management" there would be false. `soldById` is empty exactly when
-    // nothing sold, which is the same test the Unsold pages apply.
-    if (soldById.isEmpty) {
-      rows.add(_FinalOutcomeTile(proposal: proposal));
-    }
+    // ⚠️ A SOLD package ended by selling -- it never reaches Top
+    // Management, so "Awaiting Top Management" there would be false.
+    //
+    // It used to be HIDDEN in that case, which left the popup with no answer
+    // at all for goods that had plainly ended: a perishable sold for
+    // Rs 5,533,000 showed nothing here while the table behind it still read
+    // "Awaiting Top Management". Selling is an outcome, so it is drawn as
+    // one.
+    final soldPrice = mine.where((s) => s.sold).firstOrNull?.soldPrice;
+    rows.add(_FinalOutcomeTile(proposal: proposal, soldPrice: soldPrice));
 
     if (rows.isEmpty) return const SizedBox.shrink();
 
@@ -409,9 +412,19 @@ class TenderHistorySection extends ConsumerWidget {
 /// that showed nothing there could not be told apart from one whose outcome
 /// had simply failed to load.
 class _FinalOutcomeTile extends StatelessWidget {
-  const _FinalOutcomeTile({required this.proposal});
+  const _FinalOutcomeTile({required this.proposal, this.soldPrice});
 
   final UnsoldProposalModel? proposal;
+
+  /// What the goods fetched, when they SOLD instead of reaching Top
+  /// Management.
+  ///
+  /// ⚠️ A sale is a third state, not a kind of proposal. A perishable that
+  /// sells never goes to the DG at all -- selling IS the ending -- so reading
+  /// the outcome from unsold_proposals alone left CED/GL1/SR/30/2026 sold for
+  /// Rs 5,533,000 and still showing "Awaiting Top Management" on the page that
+  /// exists to say what became of it.
+  final double? soldPrice;
 
   IconData get _icon => switch (proposal?.proposal) {
         'destroy' => Icons.local_fire_department_rounded,
@@ -425,9 +438,13 @@ class _FinalOutcomeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ Checked FIRST. Selling ends the story, so nothing below may announce
+    // a decision that is still to come.
+    final sold = soldPrice;
     final decided = proposal != null;
-    final tint =
-        decided ? context.colors.successGreen : context.colors.warningAmber;
+    final tint = (sold != null || decided)
+        ? context.colors.successGreen
+        : context.colors.warningAmber;
 
     return material.Container(
       margin: const EdgeInsets.only(top: 10),
@@ -441,7 +458,8 @@ class _FinalOutcomeTile extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Icon(_icon, size: 16, color: tint),
+            Icon(sold != null ? Icons.sell_rounded : _icon,
+                size: 16, color: tint),
             const Gap(8),
             Text('FINAL OUTCOME',
                 style: TextStyle(
@@ -451,15 +469,25 @@ class _FinalOutcomeTile extends StatelessWidget {
                     fontWeight: FontWeight.w800)),
             const Spacer(),
             Text(
-                decided
-                    ? unsoldProposalLabel(proposal!.proposal)
-                    : 'Awaiting Top Management',
+                sold != null
+                    ? 'Sold'
+                    : decided
+                        ? unsoldProposalLabel(proposal!.proposal)
+                        : 'Awaiting Top Management',
                 style: TextStyle(
                     color: tint,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w800)),
           ]),
-          if (decided) ...[
+          if (sold != null) ...[
+            const Gap(6),
+            Text(
+                'Sold at tender for Rs ${sold.toStringAsFixed(2)}. These goods '
+                'never went to the Top Management Directorate — selling is '
+                'the outcome.',
+                style: TextStyle(
+                    color: context.colors.textSecondary, fontSize: 11.5)),
+          ] else if (decided) ...[
             const Gap(6),
             Text(
                 'Decided on '
@@ -4986,13 +5014,24 @@ class _SaleFinancialsSectionState
                   label: 'Sold Price (Rs)',
                   value: saleItem.soldPrice.toStringAsFixed(2),
                 ),
-                if (saleItem.appliedTaxes.isNotEmpty)
+                // ⚠️ The taxes STORED on this item -- the ones that were
+                // enabled at the moment it sold -- never today's tax table.
+                // Enabling a tax later must not change what a past sale was
+                // charged, and disabling one must not make the charge vanish.
+                // That is why each sold item carries its own list.
+                if (saleItem.appliedTaxes.isNotEmpty) ...[
                   ...saleItem.appliedTaxes.map((t) => _DetailItem(
                         icon: Icons.receipt_rounded,
                         label: '${t['name']} (${t['percentage']}%)',
                         value: ((t['amount'] as num?)?.toDouble() ?? 0)
                             .toStringAsFixed(2),
                       )),
+                  _DetailItem(
+                    icon: Icons.functions_rounded,
+                    label: 'Total Tax',
+                    value: taxSum.toStringAsFixed(2),
+                  ),
+                ],
                 _DetailItem(
                   icon: Icons.account_balance_wallet_rounded,
                   label: 'Total Sale Value (Inc. Taxes)',

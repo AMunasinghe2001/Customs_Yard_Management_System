@@ -766,8 +766,19 @@ class PackageService {
   /// `perishable_rows` view (postgres/24) answers both membership rules --
   /// nature is perishable, and it has not been sent unless a decision came
   /// back -- so only a page's worth ever leaves the database.
-  Future<({List<String> packageIds, List<String> itemIds, int total})>
-      getPerishableRowsPaged({
+  Future<
+      ({
+        List<String> packageIds,
+        List<String> itemIds,
+        // ⚠️ The item ids that SOLD at tender, with what they fetched.
+        //
+        // A perishable that sells never reaches the DG -- selling IS its
+        // final outcome -- so the page cannot read the outcome from
+        // unsold_proposals alone. Without this, CED/GL1/SR/30/2026 sold for
+        // Rs 5,533,000 and still read "Awaiting Top Management".
+        Map<String, double> soldPriceByItem,
+        int total
+      })> getPerishableRowsPaged({
     required int offset,
     required int limit,
     String? search,
@@ -809,10 +820,11 @@ class PackageService {
       return q;
     }
 
-    final rows = await AuthService._withNetworkRetry(() =>
-        narrow(supabase.from('perishable_rows').select('package_id, item_id'))
-            .order('effective_date', ascending: false)
-            .range(offset, offset + limit - 1));
+    final rows = await AuthService._withNetworkRetry(() => narrow(supabase
+            .from('perishable_rows')
+            .select('package_id, item_id, sold, sold_price'))
+        .order('effective_date', ascending: false)
+        .range(offset, offset + limit - 1));
     final total = await AuthService._withNetworkRetry(
         () => narrow(supabase.from('perishable_rows')).count());
 
@@ -825,6 +837,11 @@ class PackageService {
         for (final e in (rows as List))
           (e as Map<String, dynamic>)['item_id'].toString()
       ],
+      soldPriceByItem: {
+        for (final e in (rows as List))
+          if ((e as Map<String, dynamic>)['sold'] == true)
+            e['item_id'].toString(): parseDbNum(e['sold_price']) ?? 0,
+      },
       total: total as int,
     );
   }

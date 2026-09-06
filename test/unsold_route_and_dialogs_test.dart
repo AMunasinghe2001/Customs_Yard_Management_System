@@ -62,7 +62,12 @@ void main() {
           .join('\n');
       expect(RegExp(r'animateTo\(\d').hasMatch(code), isFalse,
           reason: 'a tab is being addressed by number again');
-      expect(dash, contains('goToDisposalTab(context, DisposalTab.unsoldTenders)'));
+      // ⚠️ And nothing navigates at all now: the officer is working THROUGH a
+      // sale, marking items one after another, and a jump means going back
+      // before the next one can be marked. The row leaves the page on its own
+      // and the message says where it went.
+      expect(code.contains('animateTo('), isFalse,
+          reason: 'marking an item navigates away again');
     });
 
     test('the controller length comes from the enum', () {

@@ -406,9 +406,18 @@ class UnsoldOutcomeChip extends StatelessWidget {
   /// the ADG's view passes [kAwaitingDg] to name the officer instead.
   final String pendingLabel;
 
+  /// The price it fetched, when the goods SOLD at tender instead.
+  ///
+  /// ⚠️ A sale is a different ending from a proposal, and the two must not be
+  /// confused: a perishable that sells never reaches the DG at all. Reading
+  /// the outcome from unsold_proposals alone left CED/GL1/SR/30/2026 sold for
+  /// Rs 5,533,000 and still showing "Awaiting Top Management".
+  final double? soldPrice;
+
   const UnsoldOutcomeChip({
     super.key,
     required this.proposal,
+    this.soldPrice,
     // ⚠️ Short enough to READ in the pill. The full
     // "Awaiting Top Management Directorate" was always clipped, so the word
     // that mattered -- who is being waited for -- was the part cut off. The
@@ -421,6 +430,21 @@ class UnsoldOutcomeChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ⚠️ Sold is checked FIRST. Selling is the outcome; there is nothing left
+    // for anyone to decide, so a pending label here would be wrong even if a
+    // proposal row somehow existed alongside it.
+    final sold = soldPrice;
+    if (sold != null) {
+      return statusPill(
+        context,
+        color: context.colors.successGreen,
+        icon: Icons.sell_rounded,
+        label: 'Sold',
+        tooltip: 'Sold at tender for Rs ${sold.toStringAsFixed(2)} — these '
+            'goods never went to the Top Management Directorate',
+      );
+    }
+
     final p = proposal;
     // ⚠️ The SAME fixed box the Destroyed and Delivered columns use. Sizing
     // each pill to its own text made a column of them ragged -- "Convert"

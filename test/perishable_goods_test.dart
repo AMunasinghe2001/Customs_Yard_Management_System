@@ -61,6 +61,10 @@ Widget _harness({
           return Future.value((
             keys: keys,
             packages: {for (final p in packages) p.id: p},
+            // ⚠️ Empty: none of these fixtures sold. A perishable that
+            // SELLS at tender has its outcome already -- it never reaches the
+            // DG -- so the page reads the sale as well as the proposal.
+            soldPriceByItem: const <String, double>{},
             total: keys.length,
           ));
         }),
