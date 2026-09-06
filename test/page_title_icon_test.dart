@@ -1,0 +1,197 @@
+// Page headings were marked with emoji, and emoji were the wrong tool.
+//
+// They render from a colour font, so they cannot be tinted: 🏷️ stayed orange
+// and ♻️ stayed green against a palette built from one gold accent, and none of
+// them changed with the light/dark theme -- the only thing on the page that
+// did not. They were also applied unevenly: Perishable, the one page reused
+// from the yard side, had no mark at all.
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:cus_yard_management/core/theme.dart';
+import 'package:cus_yard_management/widgets/page_title.dart';
+
+/// Everything a user actually reads on screen.
+final _screens = Directory('lib')
+    .listSync(recursive: true)
+    .whereType<File>()
+    .where((f) => f.path.endsWith('.dart'))
+    .toList();
+
+/// Colour-emoji planes. Deliberately NOT including U+FE0F or the dingbats
+/// block that ⚠️ lives in -- that one is all over the comments, on purpose.
+final _emoji = RegExp(r'[\u{1F300}-\u{1FAFF}]', unicode: true);
+
+void main() {
+  group('no emoji is left in anything the user reads', () {
+    test('not in a title, a label or a Text', () {
+      final offenders = <String>[];
+      for (final f in _screens) {
+        final lines = f.readAsLinesSync();
+        for (var i = 0; i < lines.length; i++) {
+          final line = lines[i];
+          final trimmed = line.trimLeft();
+          // The ⚠️ marks in comments are wanted; only strings count.
+          if (trimmed.startsWith('//') || trimmed.startsWith('*')) continue;
+          if (!_emoji.hasMatch(line)) continue;
+          if (line.contains('Text(') ||
+              line.contains('title:') ||
+              line.contains('label:')) {
+            offenders.add('${f.path}:${i + 1}');
+          }
+        }
+      }
+      expect(offenders, isEmpty,
+          reason: 'emoji cannot be tinted — use PageTitle/titleIcon instead');
+    });
+  });
+
+  group('the mark is an icon, and it takes the theme', () {
+    testWidgets('it is tinted with the same gold as the nav rail', (t) async {
+      await t.pumpWidget(MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: PageTitle('Perishable Goods', Icons.eco_rounded),
+        ),
+      ));
+      final icon = t.widget<Icon>(find.byIcon(Icons.eco_rounded));
+      // Read from the theme, not from a constant: the point is that the mark
+      // takes whatever gold the active theme carries.
+      final gold =
+          AppTheme.darkTheme.extension<AppColors>()!.primaryGold;
+      expect(icon.color, gold);
+    });
+
+    testWidgets('and it follows the theme, which an emoji could not',
+        (t) async {
+      await t.pumpWidget(MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+            body: PageTitle('Sold Goods', Icons.sell_rounded)),
+      ));
+      final darkText = t.widget<Text>(find.text('Sold Goods'));
+
+      // ⚠️ A fresh key, or Flutter reuses the element and never rebuilds the
+      // subtree -- the second pump would read back the FIRST theme's colour
+      // and the test would pass whatever the widget did.
+      await t.pumpWidget(MaterialApp(
+        key: const ValueKey('light'),
+        theme: AppTheme.lightTheme,
+        home: const Scaffold(
+            body: PageTitle('Sold Goods', Icons.sell_rounded)),
+      ));
+      final lightText = t.widget<Text>(find.text('Sold Goods'));
+
+      // ⚠️ The whole point: the heading changes with the theme. An emoji
+      // rendered the same bitmap in both.
+      expect(darkText.style?.color, isNot(lightText.style?.color));
+    });
+
+    testWidgets('a long title ellipsises rather than overflowing', (t) async {
+      // These headings sit beside a fixed 300px search box and a 220px yard
+      // filter, so the title is the only part that can give.
+      await t.pumpWidget(MaterialApp(
+        theme: AppTheme.darkTheme,
+        home: const Scaffold(
+          body: SizedBox(
+            width: 160,
+            child: PageTitle(
+                'Undestroyed Packages — Re-destruction', Icons.sell_rounded),
+          ),
+        ),
+      ));
+      expect(tester_noOverflow(t), isTrue);
+      final text = t.widget<Text>(
+          find.text('Undestroyed Packages — Re-destruction'));
+      expect(text.overflow, TextOverflow.ellipsis);
+    });
+  });
+
+  group('every Central Disposal page carries a mark', () {
+    final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync();
+
+    test('the shared Unsold tab takes one per instance', () {
+      expect(dash, contains('final IconData titleIcon;'));
+      // Government Use, Auction, Converted, Removed -- four reuses of one tab,
+      // each needing its own mark.
+      expect('titleIcon:'.allMatches(dash).length, greaterThanOrEqualTo(4));
+    });
+
+    test('Perishable is no longer the one page without a mark', () {
+      // ⚠️ This is the page the bug report was about. It is a YARD screen
+      // reused read-only in Central Disposal, so it missed the pass that gave
+      // every other tab its emoji.
+      final per = File('lib/screens/packages/perishable_goods_screen.dart')
+          .readAsStringSync();
+      expect(per, contains("PageTitle('Perishable Goods', Icons.eco_rounded)"));
+      expect(per, contains('titleIcon: Icons.eco_rounded'));
+    });
+
+    test('the heading reuses the icon its own tab shows', () {
+      // The eye should carry one mark from the tab it clicked to the heading
+      // that answers it.
+      for (final pair in [
+        ['Sold Goods', 'Icons.sell_rounded'],
+        ['Destroyed Goods', 'Icons.delete_forever_rounded'],
+        ['Disposal Requests', 'Icons.assignment_turned_in_rounded'],
+        ['Tender Sales', 'Icons.storefront_rounded'],
+        ['Tender Committees', 'Icons.groups_rounded'],
+      ]) {
+        expect(dash, contains("PageTitle('${pair[0]}', ${pair[1]})"),
+            reason: '${pair[0]} should use its tab strip icon');
+      }
+    });
+  });
+
+  group('the yard-side header gained the same option', () {
+    final header =
+        File('lib/widgets/disposal_page_header.dart').readAsStringSync();
+
+    test('the icon is optional, so nothing is forced to carry one', () {
+      expect(header, contains('final IconData? titleIcon;'));
+      expect(header, contains('if (titleIcon != null)'));
+    });
+
+    test('it is gold, like the rail', () {
+      expect(header, contains('color: context.colors.primaryGold'));
+    });
+
+    test('each held-goods page reuses its nav rail icon', () {
+      for (final e in {
+        'lib/screens/packages/detained_packages_screen.dart':
+            'Icons.gpp_maybe_rounded',
+        'lib/screens/packages/abandoned_packages_screen.dart':
+            'Icons.inbox_rounded',
+        'lib/screens/forfeited_packages/forfeited_packages_screen.dart':
+            'Icons.gavel_rounded',
+        'lib/screens/packages/other_packages_screen.dart':
+            'Icons.label_important_rounded',
+      }.entries) {
+        final src = File(e.key).readAsStringSync();
+        expect(src, contains('titleIcon: ${e.value}'),
+            reason: '${e.key} should match the nav rail');
+      }
+    });
+
+    test('those icons are the ones the rail actually names', () {
+      // ⚠️ Asserted against the rail itself, so the two cannot drift apart
+      // silently after someone edits one of them.
+      final rail = File('lib/widgets/app_shell.dart').readAsStringSync();
+      for (final pair in [
+        ["'Detained Goods', Icons.gpp_maybe_rounded"],
+        ["'Abandoned Goods', Icons.inbox_rounded"],
+        ["'Forfeited Goods', Icons.gavel_rounded"],
+        ["'Other Goods', Icons.label_important_rounded"],
+        ["'Perishable Goods', Icons.eco_rounded"],
+      ]) {
+        expect(rail, contains(pair[0]));
+      }
+    });
+  });
+}
+
+/// True when nothing overflowed during the pump.
+bool tester_noOverflow(WidgetTester t) {
+  return t.takeException() == null;
+}

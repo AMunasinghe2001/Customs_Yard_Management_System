@@ -109,7 +109,7 @@ void main() {
       'Disposal Requests', 'Tender Sales', 'Unsold Tenders', 'Committees',
       'Perishable',
       'Sold Goods', 'Unsold Goods', 'Destroyed Goods',
-      'Government Use', 'Auction', 'Converted', 'Removed',
+      'Government Use', 'Auction', 'Re-export', 'Converted', 'Removed',
       'Taxes', 'Expenses', 'Reports',
     ];
 
@@ -141,7 +141,8 @@ void main() {
           .map((m) => m.group(1)!)
           .toList();
       expect(filters, [
-        'government_use', 'auction', 'convert', 'remove_from_premises',
+        'government_use', 'auction', 're_export', 'convert',
+        'remove_from_premises',
       ]);
     });
 

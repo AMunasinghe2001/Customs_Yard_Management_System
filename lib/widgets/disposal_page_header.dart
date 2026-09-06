@@ -38,10 +38,17 @@ class DisposalPageHeader extends StatelessWidget {
   /// would like to be. Enough for the title plus a readable slice of subtitle.
   final double minTitleWidth;
 
+  /// Optional mark beside the title, tinted [AppColors.primaryGold] like the
+  /// nav rail's icons. ⚠️ An icon, never an emoji -- emoji come from a colour
+  /// font, so they ignore the theme and stay multi-coloured against a palette
+  /// built from one accent.
+  final IconData? titleIcon;
+
   const DisposalPageHeader({
     super.key,
     required this.title,
     required this.subtitle,
+    this.titleIcon,
     required this.trailing,
     this.trailingGap = 8,
     this.minTitleWidth = 190,
@@ -77,10 +84,31 @@ class DisposalPageHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.headlineLarge),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (titleIcon != null) ...[
+                        Icon(titleIcon,
+                            // Matches headlineLarge's height, so the mark sits
+                            // on the title rather than beside and above it.
+                            size: Theme.of(context)
+                                    .textTheme
+                                    .headlineLarge
+                                    ?.fontSize ??
+                                22,
+                            color: context.colors.primaryGold),
+                        const SizedBox(width: 10),
+                      ],
+                      // The title is the part that gives on a narrow window.
+                      Flexible(
+                        child: Text(title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style:
+                                Theme.of(context).textTheme.headlineLarge),
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 4),
                   Text(
                     subtitle,

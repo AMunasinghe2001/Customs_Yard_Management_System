@@ -6415,6 +6415,14 @@ class DisposalService {
     /// 'convert', 'remove_from_premises'. Null is the Unsold Goods page
     /// itself, which shows every package whatever its outcome.
     String? proposal,
+
+    /// The All / Pending / Delivered filter on the four Final Outcome pages.
+    /// Null is "All" -- a third answer, not a default.
+    ///
+    /// ⚠️ Filtered in SQL, not in Dart. These pages page in the database, so a
+    /// Dart-side filter would narrow the CURRENT page and leave the pager
+    /// counting rows the table no longer shows.
+    bool? delivered,
   }) async {
     // ⚠️ ONE closure for the rows and the count, or the pager's total and the
     // rows under it disagree.
@@ -6445,6 +6453,11 @@ class DisposalService {
       if (proposal != null && proposal.isNotEmpty) {
         q = q.eq('proposal', proposal);
       }
+      // ⚠️ A package with no outcome decided yet has a NULL delivered (the
+      // join found no proposal row), and "not delivered" must include it --
+      // eq(false) alone would hide every undecided package from Pending.
+      if (delivered == true) q = q.eq('delivered', true);
+      if (delivered == false) q = q.or('delivered.is.null,delivered.eq.false');
       return q;
     }
 

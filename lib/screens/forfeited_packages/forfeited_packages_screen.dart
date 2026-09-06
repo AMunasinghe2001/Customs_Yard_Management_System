@@ -343,6 +343,7 @@ class _ForfeitedPackagesScreenState
 
                   return DisposalPageHeader(
                     title: 'Forfeited Goods',
+                    titleIcon: Icons.gavel_rounded,
                     subtitle:
                         'Manage forfeited packages and their 30-day appeal periods',
                     trailing: [

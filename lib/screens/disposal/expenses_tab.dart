@@ -12,6 +12,7 @@ import '../../models/models.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_form_dialog.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -78,11 +79,7 @@ class ExpensesTab extends ConsumerWidget {
         children: [
           // Title · search · yard · date — the standard filter header.
           Row(children: [
-            Text('💰  Disposal Expenses',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            const PageTitle('Disposal Expenses', Icons.payments_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: _tabKey, hint: 'Search SR / goods\u2026'),

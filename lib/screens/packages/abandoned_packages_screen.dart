@@ -244,6 +244,7 @@ class _AbandonedPackagesScreenState
                   final actionable = counts.actionable;
                   return DisposalPageHeader(
                     title: 'Abandoned Goods',
+                    titleIcon: Icons.inbox_rounded,
                     subtitle: 'Manage abandoned goods and send them for disposal',
                     trailing: [
                       _AbandonedStatChip(

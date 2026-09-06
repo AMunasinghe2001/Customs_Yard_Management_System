@@ -25,6 +25,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
@@ -56,6 +57,12 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
+      // ⚠️ Must equal the Tab count AND the TabBarView child count.
+      //
+      // This said 16 while there were only 15 of each -- Flutter tolerates a
+      // length ABOVE the child count (the extra index simply has nothing to
+      // show), so the mismatch sat here unnoticed. Adding Re-export made the
+      // real count 16, which is why this number did not change.
       length: 16,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
@@ -331,6 +338,16 @@ class DisposalDashboardScreen extends ConsumerWidget {
                             mainAxisSize: MainAxisSize.min,
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
+                              Icon(Icons.flight_takeoff_rounded, size: 18),
+                              Gap(8),
+                              Text('Re-export'),
+                            ])),
+                    Tab(
+                        height: 44,
+                        child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
                               Icon(Icons.autorenew_rounded, size: 18),
                               Gap(8),
                               Text('Converted'),
@@ -392,7 +409,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 UnsoldProposalsTab(),
                 _DestroyedPackagesTab(),
                 UnsoldProposalsTab(
-                    title: '🏛️  Government Use Goods',
+                    title: 'Government Use Goods',
+                    titleIcon: Icons.account_balance_rounded,
                     countNoun: 'For government use',
                     proposalFilter: 'government_use',
                     tabKey: 'outcome-government-use',
@@ -402,7 +420,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'Unsold goods the Top Management Directorate assigns '
                         'to a government department will appear here.'),
                 UnsoldProposalsTab(
-                    title: '🔨  Auction Goods',
+                    title: 'Auction Goods',
+                    titleIcon: Icons.gavel_rounded,
                     countNoun: 'For auction',
                     proposalFilter: 'auction',
                     tabKey: 'outcome-auction',
@@ -411,8 +430,26 @@ class DisposalDashboardScreen extends ConsumerWidget {
                     emptySubtitle:
                         'Unsold goods the Top Management Directorate sends to '
                         'public auction will appear here.'),
+                // ⚠️ Re-export was a decision the DG could already make --
+                // it is in kUnsoldProposals and unsoldProposalLabel handles it
+                // -- but Central Disposal had no page for it, so goods sent
+                // back out of the country left Unsold Goods and appeared
+                // nowhere. The directorate that carries the decision out could
+                // not see what it was meant to carry out.
                 UnsoldProposalsTab(
-                    title: '♻️  Converted Goods',
+                    title: 'Re-export Goods',
+                    titleIcon: Icons.flight_takeoff_rounded,
+                    countNoun: 'For re-export',
+                    proposalFilter: 're_export',
+                    tabKey: 'outcome-re-export',
+                    emptyIcon: Icons.flight_takeoff_rounded,
+                    emptyMessage: 'No goods sent for re-export',
+                    emptySubtitle:
+                        'Unsold goods the Top Management Directorate sends '
+                        'back out of the country will appear here.'),
+                UnsoldProposalsTab(
+                    title: 'Converted Goods',
+                    titleIcon: Icons.autorenew_rounded,
                     countNoun: 'Converted',
                     proposalFilter: 'convert',
                     tabKey: 'outcome-convert',
@@ -422,7 +459,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'Unsold goods converted to another use or form will '
                         'appear here.'),
                 UnsoldProposalsTab(
-                    title: '🚪  Removed from the Premises',
+                    title: 'Removed from the Premises',
+                    titleIcon: Icons.logout_rounded,
                     countNoun: 'Removed',
                     proposalFilter: 'remove_from_premises',
                     tabKey: 'outcome-removed',
@@ -450,6 +488,16 @@ class DisposalDashboardScreen extends ConsumerWidget {
 /// provider would carry one tab's page number into the next.
 final _unsoldPageProvider =
     StateProvider.family<int, String>((ref, tabKey) => 0);
+
+/// The All / Pending / Delivered filter on each Final Outcome page.
+///
+/// ⚠️ Keyed by tabKey for the same reason the page number is: Government Use,
+/// Auction, Converted and Removed are four instances of ONE widget, so a
+/// shared provider would carry one page's filter into the next.
+///
+/// Null is "All" -- a third answer, not an unset default.
+final _unsoldDeliveryFilterProvider =
+    StateProvider.family<bool?, String>((ref, tabKey) => null);
 
 /// Packages that exhausted every avenue — the Valuation Tender, Tender 1-3 and
 /// the committee-valued tender all failed. READ-ONLY here: the DG decides the
@@ -481,9 +529,16 @@ class UnsoldProposalsTab extends ConsumerWidget {
   final String? emptySubtitle;
   final IconData emptyIcon;
 
+  /// The mark beside the page title. ⚠️ An icon, not an emoji: emoji render
+  /// from a colour font, so they ignore the theme entirely and stayed bright
+  /// multi-colour against a palette built from one accent. This tints with
+  /// [AppColors.accentGold] like the nav rail's icons do.
+  final IconData titleIcon;
+
   const UnsoldProposalsTab({
     super.key,
-    this.title = '📋  Unsold Goods',
+    this.title = 'Unsold Goods',
+    this.titleIcon = Icons.pending_actions_rounded,
     this.countNoun = 'Unsold',
     this.proposalFilter,
     this.tabKey = 'unsold-proposals',
@@ -520,11 +575,17 @@ class UnsoldProposalsTab extends ConsumerWidget {
     // The five outcome tabs share this widget, so `proposalFilter` is part of
     // the key: Government Use, Auction, Converted and Removed each ask for
     // their own outcome, and Unsold Goods (null) asks for all of them.
+    // Only the outcome pages carry the delivery filter -- see the control
+    // below for why Unsold Goods itself does not.
+    final deliveryFilter = proposalFilter == null
+        ? null
+        : ref.watch(_unsoldDeliveryFilterProvider(tabKey));
     final query = ExhaustedUnsoldQuery(
       page: ref.watch(_unsoldPageProvider(tabKey)),
       search: q,
       yard: yardFilter,
       proposal: proposalFilter,
+      delivered: deliveryFilter,
     );
     final async = ref.watch(exhaustedUnsoldPageProvider(query));
     final result = async.valueOrNull ??
@@ -557,15 +618,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
               // fixed 300 and the yard filter a fixed 220, so a bare Text had
               // nowhere to shrink and the Row overflowed by 47px at 752 wide.
               Expanded(
-                child: Text(
-                  title,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                child: PageTitle(title, titleIcon),
               ),
               const Gap(12),
               DisposalSearch(
@@ -583,18 +636,36 @@ class UnsoldProposalsTab extends ConsumerWidget {
               ),
             ],
           ).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
-          // Count pill, same as the Sold Packages tab.
-          Padding(
-            padding: const EdgeInsets.only(bottom: 14),
-            child: StatChip(
+          const Gap(12),
+          // ⚠️ Filter and count share ONE line, as they do on Sold and
+          // Destroyed. Two rows of chrome cost about a table row per page.
+          //
+          // The delivery filter appears only on the four Final Outcome pages.
+          // Unsold Goods itself (proposalFilter == null) lists packages whose
+          // outcome has NOT been decided, so there is nothing to hand over and
+          // an All/Pending/Delivered control there would filter on a column
+          // every row shares.
+          Row(children: [
+            if (proposalFilter != null)
+              _DeliverySegmentedFilter(
+                value: deliveryFilter,
+                onChanged: (v) {
+                  ref
+                      .read(_unsoldDeliveryFilterProvider(tabKey).notifier)
+                      .state = v;
+                  ref.read(_unsoldPageProvider(tabKey).notifier).state = 0;
+                },
+              ),
+            const Spacer(),
+            StatChip(
                 label:
                     '$countNoun in ${yardFilter == null ? 'all yards' : yardName(yardFilter)}',
                 // ⚠️ The DATABASE's count for this filter. `rows.length` is
                 // one page, so the pill would read 20 whatever the yards hold.
                 value: '$total',
                 color: amber),
-          ),
+          ]).animate().fadeIn(duration: 300.ms),
+          const Gap(14),
           Expanded(
             // The table renders even with no rows, so the column headers stay
             // on screen and an empty tab still says what it would list -- the
@@ -1077,11 +1148,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('🏷️  Sold Goods',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Sold Goods', Icons.sell_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'sold', hint: 'Search SR / item / sold by…'),
@@ -1095,14 +1162,31 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(12),
-          // Delivered / Pending segmented filter.
-          _DeliverySegmentedFilter(
-            value: deliveryFilter,
-            onChanged: (v) {
-              ref.read(_soldDeliveryFilterProvider.notifier).state = v;
-              setState(() => _page = 0);
-            },
-          ),
+          // ⚠️ The filter and the count share ONE line.
+          //
+          // They used to be two rows, each with its own gap under it -- about
+          // 60px of chrome above a table whose whole job is showing rows. They
+          // are the same height and the same shape (both 14/8 pills), so side
+          // by side they read as one control strip and the table starts a row
+          // higher.
+          Row(children: [
+            _DeliverySegmentedFilter(
+              value: deliveryFilter,
+              onChanged: (v) {
+                ref.read(_soldDeliveryFilterProvider.notifier).state = v;
+                setState(() => _page = 0);
+              },
+            ),
+            const Spacer(),
+            // The count reads from the SAME async value the table below does,
+            // so the number and the list can never disagree. Absent while it
+            // loads rather than showing a stale or zero count.
+            if (sold.valueOrNull != null)
+              StatChip(
+                  label: 'Sold in $yardLabel',
+                  value: '${sold.valueOrNull!.total}',
+                  color: green),
+          ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           Expanded(
             child: sold.when(
@@ -1128,13 +1212,6 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: StatChip(
-                          label: 'Sold in $yardLabel',
-                          value: '$total',
-                          color: green),
-                    ),
                     Expanded(
                       child: _listCard(
                         context,
@@ -1414,11 +1491,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('🔥  Destroyed Goods',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Destroyed Goods', Icons.delete_forever_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'destroyed', hint: 'Search SR / item / by…'),
@@ -1433,14 +1506,24 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(12),
-          _DeliverySegmentedFilter(
-            value: deliveryFilter,
-            trueLabel: 'Destroyed',
-            onChanged: (v) {
-              ref.read(_destroyedDeliveryFilterProvider.notifier).state = v;
-              setState(() => _page = 0);
-            },
-          ),
+          // ⚠️ Filter and count on ONE line -- see the Sold tab for why. Two
+          // rows of chrome cost roughly a table row on every page.
+          Row(children: [
+            _DeliverySegmentedFilter(
+              value: deliveryFilter,
+              trueLabel: 'Destroyed',
+              onChanged: (v) {
+                ref.read(_destroyedDeliveryFilterProvider.notifier).state = v;
+                setState(() => _page = 0);
+              },
+            ),
+            const Spacer(),
+            if (destroyed.valueOrNull != null)
+              StatChip(
+                  label: 'Destroyed in $yardLabel',
+                  value: '${destroyed.valueOrNull!.total}',
+                  color: green),
+          ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           Expanded(
             child: destroyed.when(
@@ -1472,13 +1555,6 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                   child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 14),
-                      child: StatChip(
-                          label: 'Destroyed in $yardLabel',
-                          value: '$total',
-                          color: green),
-                    ),
                     Expanded(
                       child: _listCard(
                         context,
@@ -1900,11 +1976,7 @@ class _DisposalRequestsTabState extends ConsumerState<_DisposalRequestsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('📥  Disposal Requests',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Disposal Requests', Icons.assignment_turned_in_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'requests', hint: 'Search SR / consignee…'),
@@ -2417,11 +2489,7 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('🔁  Unsold Goods — Re-tender',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Unsold Goods — Re-tender', Icons.replay_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'unsold', hint: 'Search SR / item / consignee…'),
@@ -2706,11 +2774,7 @@ class _TenderSalesTabState extends ConsumerState<_TenderSalesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('🏪  Tender Sales',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Tender Sales', Icons.storefront_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'tendersales', hint: 'Search sale no / SR…'),
@@ -4363,11 +4427,7 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('👥  Tender Committees',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Tender Committees', Icons.groups_rounded),
             const Gap(10),
             Expanded(
               child: Text(
@@ -5846,11 +5906,7 @@ class _DestructionsTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('🗑️  Destruction Sales',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Destruction Sales', Icons.delete_sweep_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'destructions', hint: 'Search sale no / SR…'),
@@ -7302,11 +7358,7 @@ class _UndestroyedReDestructionTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Undestroyed Packages — Re-destruction',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Undestroyed Packages — Re-destruction', Icons.local_fire_department_rounded),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'undestroyed', hint: 'Search SR / item / consignee…'),

@@ -531,7 +531,10 @@ void main() {
     test('the Central Disposal copy is built the way its neighbours are', () {
       final ro = src.substring(src.indexOf('if (widget.readOnly) ...['),
           src.indexOf('] else'));
-      expect(ro, contains('fontSize: 22'));
+      // The 22pt heading now comes from PageTitle, which every one of those
+      // neighbours also uses -- so this asserts the shared widget rather than
+      // a font size typed out again here.
+      expect(ro, contains('PageTitle('));
       expect(ro, contains('_searchBox(context)'));
       expect(ro, contains('YardAllFilter('));
       expect(ro, contains('StatChip('));
@@ -571,9 +574,15 @@ void main() {
           File('lib/screens/disposal/disposal_dashboard_screen.dart')
               .readAsStringSync();
       expect(disposal, contains('padding: const EdgeInsets.all(16)'));
-      // The StatChip carries the gap under it, as it does there — a Gap()
-      // as well would double it.
-      expect(src, contains('padding: const EdgeInsets.only(bottom: 14)'));
+      // ⚠️ The count pill no longer has a row of its own. It sits on the
+      // TITLE line, so there is exactly one Gap between the header and the
+      // table -- the pill carrying its own bottom padding as well would
+      // double it, which is what the old stacked layout did.
+      final ro = src.substring(src.indexOf('if (widget.readOnly) ...['),
+          src.indexOf('] else'));
+      expect(ro, contains('StatChip('));
+      expect(ro, isNot(contains('EdgeInsets.only(bottom: 14)')));
+      expect('const Gap(14)'.allMatches(ro).length, 1);
       expect(src, contains('if (!widget.readOnly) const Gap(16)'));
     });
 

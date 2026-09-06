@@ -16,6 +16,7 @@ import '../../widgets/disposal_page_header.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/year_filter.dart';
@@ -237,11 +238,23 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
             // and in a different shape.
             if (widget.readOnly) ...[
               Row(children: [
-                Text('Perishable Goods',
-                    style: TextStyle(
-                        color: context.colors.textPrimary,
-                        fontSize: 22,
-                        fontWeight: FontWeight.w700)),
+                const PageTitle('Perishable Goods', Icons.eco_rounded),
+                const Gap(12),
+                // ⚠️ The count sits on the TITLE line, not a row of its own.
+                //
+                // This page has no segmented filter to pair it with, so a
+                // second row would be a whole line of chrome carrying one
+                // pill. Beside the title it costs nothing and the table starts
+                // higher. Absent while loading rather than showing a stale or
+                // zero count.
+                if (async.valueOrNull != null)
+                  StatChip(
+                    label: 'Awaiting disposal',
+                    // The DATABASE's count for this filter, so the number and
+                    // the list can never disagree.
+                    value: '${async.valueOrNull!.total}',
+                    color: context.colors.dangerRed,
+                  ),
                 const Spacer(),
                 SizedBox(width: 280, child: _searchBox(context)),
                 const Gap(12),
@@ -261,26 +274,10 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                 ),
               ]).animate().fadeIn(duration: 300.ms),
               const Gap(14),
-              async.maybeWhen(
-                data: (rows) => Padding(
-                  // The chip carries the gap under it, as it does on Unsold
-                  // Tenders -- a Gap() as well would double it.
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: StatChip(
-                    label: 'Awaiting disposal',
-                    // Counts the rows the TABLE shows, so the number and the
-                    // list can never disagree.
-                    // The DATABASE's count for this filter, so the number
-                    // and the list can never disagree.
-                    value: '${rows.total}',
-                    color: context.colors.dangerRed,
-                  ),
-                ).animate().fadeIn(duration: 300.ms),
-                orElse: () => const SizedBox.shrink(),
-              ),
             ] else
               DisposalPageHeader(
-                title: '🍎  Perishable Goods',
+                title: 'Perishable Goods',
+                titleIcon: Icons.eco_rounded,
                 subtitle: 'Goods that spoil — no warehouse, no appeal window. '
                     'Send them for disposal without waiting.',
                 trailing: [

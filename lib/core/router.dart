@@ -244,6 +244,16 @@ final routerProvider = Provider<GoRouter>((ref) {
                   countLabel: 'For Auction',
                   proposalFilter: 'auction'))),
       GoRoute(
+          path: '/re-export-packages',
+          pageBuilder: (_, state) => NoTransitionPage(
+              key: state.pageKey,
+              child: const UnsoldPackagesScreen(
+                  route: '/re-export-packages',
+                  title: 'Re-export Goods',
+                  subtitle: 'Unsold goods sent back out of the country',
+                  countLabel: 'For Re-export',
+                  proposalFilter: 're_export'))),
+      GoRoute(
           path: '/converted-packages',
           pageBuilder: (_, state) => NoTransitionPage(
               key: state.pageKey,

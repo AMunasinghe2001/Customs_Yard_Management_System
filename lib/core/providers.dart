@@ -1324,6 +1324,9 @@ class ExhaustedUnsoldQuery {
   /// One of the four Final Outcome pages; null is Unsold Goods itself.
   final String? proposal;
 
+  /// The All / Pending / Delivered filter. Null is "All".
+  final bool? delivered;
+
   const ExhaustedUnsoldQuery({
     this.page = 0,
     this.search,
@@ -1333,6 +1336,7 @@ class ExhaustedUnsoldQuery {
     this.year,
     this.decided,
     this.proposal,
+    this.delivered,
   });
 
   @override
@@ -1345,12 +1349,12 @@ class ExhaustedUnsoldQuery {
       other.dateEnd == dateEnd &&
       other.year == year &&
       other.decided == decided &&
-      other.proposal == proposal;
+      other.proposal == proposal &&
+      other.delivered == delivered;
 
   @override
-  int get hashCode =>
-      Object.hash(page, search, yard, dateStart, dateEnd, year, decided,
-          proposal);
+  int get hashCode => Object.hash(page, search, yard, dateStart, dateEnd, year,
+      decided, proposal, delivered);
 }
 
 /// One page of Unsold Goods, chosen and filtered by the database.
@@ -1371,6 +1375,7 @@ final exhaustedUnsoldPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
         year: q.year,
         decided: q.decided,
         proposal: q.proposal,
+        delivered: q.delivered,
       );
 });
 
