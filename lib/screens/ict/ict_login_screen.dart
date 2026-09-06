@@ -4,13 +4,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
 import '../../core/dev_config.dart';
 import '../../models/models.dart';
+import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
 
 /// Two-step login for the ICT Directorate: password first, then an email
@@ -363,71 +363,14 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
         Row(children: [
           // Left - Dark ICT Branding (navy → cyan)
           Expanded(
-              flex: 5,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      const Color(0xFF050411),
-                      context.colors.primaryNavy,
-                      accent
-                    ],
-                  ),
-                ),
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      // Logo - big, no circle, tinted cyan for ICT
-                      SvgPicture.asset(
-                        'Sri_Lanka_Customs_logo_tinted.svg',
-                        width: 200,
-                        height: 200,
-                        theme: SvgTheme(currentColor: accent),
-                      ),
-                      const Gap(36),
-                      Text(
-                        'Sri Lanka Customs',
-                        style: TextStyle(
-                            color: accent,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.2),
-                      ).animate().slideY(begin: 0.5, duration: 500.ms).fadeIn(),
-                      const Text(
-                        'SR Management System',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                            color: Color(0xFFB0BEC5),
-                            fontSize: 16,
-                            height: 1.2),
-                      )
-                          .animate()
-                          .slideY(begin: 0.5, duration: 500.ms, delay: 100.ms)
-                          .fadeIn(),
-                      const Gap(28),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 10),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: accent.withOpacity(0.3)),
-                          borderRadius: BorderRadius.circular(24),
-                          color: accent.withOpacity(0.06),
-                        ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.terminal_rounded, color: accent, size: 16),
-                          const Gap(8),
-                          Text('ICT Directorate Portal',
-                              style: TextStyle(
-                                  color: accent,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600)),
-                        ]),
-                      ).animate().fadeIn(delay: 300.ms),
-                    ]),
-              )),
-          // Right - ICT Login form
+            flex: 5,
+            child: BrandPanel(
+              accent: accent,
+              deepColor: const Color(0xFF050411),
+              badgeLabel: 'ICT Directorate Portal',
+              badgeIcon: Icons.terminal_rounded,
+            ),
+          ),
           Expanded(
               flex: 4,
               child: Center(

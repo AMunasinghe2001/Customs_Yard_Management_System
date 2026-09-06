@@ -2,11 +2,11 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
 import '../../core/providers.dart';
+import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
 
 /// Split-screen yard-access chooser: left branding, right Officer / Admin tiles.
@@ -25,75 +25,13 @@ class YardAccessScreen extends ConsumerWidget {
           // ── Left: branding ──────────────────────────────────
           Expanded(
             flex: 5,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF060D1F),
-                    context.colors.primaryNavy,
-                    context.colors.customsBlue,
-                  ],
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SvgPicture.asset(
-                    'Sri_Lanka_Customs_logo_tinted.svg',
-                    width: 200,
-                    height: 200,
-                    theme: SvgTheme(currentColor: blue),
-                  )
-                      .animate()
-                      .scale(duration: 700.ms, curve: Curves.easeOutBack)
-                      .fadeIn(),
-                  const Gap(36),
-                  Text('Sri Lanka Customs',
-                          style: TextStyle(
-                              color: blue,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2))
-                      .animate()
-                      .slideY(begin: 0.3, duration: 500.ms, delay: 200.ms)
-                      .fadeIn(),
-                  const Gap(6),
-                  const Text('SR Management System',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: Color(0xFFB0BEC5),
-                              fontSize: 16,
-                              height: 1.2))
-                      .animate()
-                      .slideY(begin: 0.3, duration: 500.ms, delay: 300.ms)
-                      .fadeIn(),
-                  const Gap(28),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 28, vertical: 10),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: blue.withOpacity(0.3)),
-                      borderRadius: BorderRadius.circular(24),
-                      color: blue.withOpacity(0.06),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.warehouse_rounded, color: blue, size: 16),
-                      const Gap(8),
-                      Text('Yard Access',
-                          style: TextStyle(
-                              color: blue,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                    ]),
-                  ).animate().fadeIn(delay: 400.ms),
-                ],
-              ),
+            child: BrandPanel(
+              accent: context.colors.customsBlue,
+              deepColor: const Color(0xFF060D1F),
+              badgeLabel: 'Yard Access',
+              badgeIcon: Icons.warehouse_rounded,
             ),
           ),
-
-          // ── Right: chooser ───────────────────────────────────
           Expanded(
             flex: 4,
             child: Center(

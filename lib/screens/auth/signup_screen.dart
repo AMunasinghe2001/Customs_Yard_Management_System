@@ -2,12 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../core/providers.dart';
 import '../../services/services.dart';
+import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
 
@@ -85,77 +85,13 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
             // Left branding panel
             Expanded(
               flex: 5,
-              child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppTheme.primaryNavy,
-                      AppTheme.customsBlue,
-                      AppTheme.customsBlueLight
-                    ],
-                  ),
-                ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      width: 140,
-                      height: 140,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.1),
-                        border: Border.all(
-                            color: Colors.white.withOpacity(0.3), width: 2),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(20),
-                        child: SvgPicture.asset(
-                          'Sri_Lanka_Customs_logo.svg',
-                          colorFilter: const ColorFilter.mode(
-                              Colors.white, BlendMode.srcIn),
-                        ),
-                      ),
-                    ).animate().scale(duration: 600.ms).fadeIn(),
-                    const Gap(32),
-                    const Text(
-                      'Sri Lanka Customs',
-                      style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1),
-                    ).animate().slideY(begin: 0.5, duration: 500.ms).fadeIn(),
-                    const Gap(8),
-                    const Text(
-                      'SR Management System',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: Color(0xFFB0BEC5), fontSize: 15, height: 1.2),
-                    )
-                        .animate()
-                        .slideY(begin: 0.5, duration: 500.ms, delay: 100.ms)
-                        .fadeIn(),
-                    const Gap(24),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 8),
-                      decoration: BoxDecoration(
-                        border:
-                            Border.all(color: Colors.white.withOpacity(0.2)),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Text('Admin • Create New Account',
-                          style: TextStyle(
-                              color: Color(0xFFB0BEC5), fontSize: 13)),
-                    ).animate().fadeIn(delay: 300.ms),
-                  ],
-                ),
+              child: const BrandPanel(
+                accent: AppTheme.customsBlueLight,
+                deepColor: AppTheme.primaryNavy,
+                badgeLabel: 'Admin • Create New Account',
+                // No icon: this badge has never had one.
               ),
             ),
-
-            // Right panel - signup form
             Expanded(
               flex: 4,
               child: Center(

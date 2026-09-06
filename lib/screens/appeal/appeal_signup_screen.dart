@@ -3,12 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../core/providers.dart';
+import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
 
@@ -296,60 +296,11 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
         Row(children: [
           Expanded(
             flex: 5,
-            child: Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    const Color(0xFF0A0F2C),
-                    context.colors.primaryNavy,
-                    AppTheme.appealPurple
-                  ],
-                ),
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg',
-                          width: 200,
-                          height: 200,
-                          theme: SvgTheme(currentColor: accent))
-                      .animate()
-                      .scale(duration: 700.ms, curve: Curves.easeOutBack)
-                      .fadeIn(),
-                  const Gap(36),
-                  Text('Sri Lanka Customs',
-                      style: TextStyle(
-                          color: accent,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.2)),
-                  const Text('SR Management System',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                          color: Color(0xFFB0BEC5), fontSize: 16, height: 1.2)),
-                  const Gap(28),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 28, vertical: 10),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: accent.withOpacity(0.3)),
-                      borderRadius: BorderRadius.circular(24),
-                      color: accent.withOpacity(0.06),
-                    ),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(Icons.balance_rounded, color: accent, size: 16),
-                      const Gap(8),
-                      Text('Appeal • Create Account',
-                          style: TextStyle(
-                              color: accent,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600)),
-                    ]),
-                  ),
-                ],
-              ),
+            child: BrandPanel(
+              accent: AppTheme.appealPurple,
+              deepColor: const Color(0xFF0A0F2C),
+              badgeLabel: 'Appeal • Create Account',
+              badgeIcon: Icons.balance_rounded,
             ),
           ),
           Expanded(

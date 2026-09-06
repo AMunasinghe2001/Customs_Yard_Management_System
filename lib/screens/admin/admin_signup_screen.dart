@@ -3,9 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/brand_panel.dart';
 import '../../widgets/directorate_yard_picker.dart';
 import '../../services/services.dart';
 import '../../core/providers.dart';
@@ -283,72 +283,14 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
         Row(children: [
           // Left branding - dark admin theme with gold logo
           Expanded(
-              flex: 5,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      const Color(0xFF050411),
-                      context.colors.primaryNavy,
-                      context.colors.primaryGold
-                    ],
-                  ),
-                ),
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SvgPicture.asset(
-                        'Sri_Lanka_Customs_logo_tinted.svg',
-                        width: 200, height: 200,
-                        // Tinted + currentColor keeps the ship/plane cut-out visible
-                        // (colorFilter srcIn would flatten the whole logo to one colour).
-                        theme:
-                            SvgTheme(currentColor: context.colors.primaryGold),
-                      )
-                          .animate()
-                          .scale(duration: 700.ms, curve: Curves.easeOutBack)
-                          .fadeIn(),
-                      const Gap(36),
-                      Text('Sri Lanka Customs',
-                          style: TextStyle(
-                              color: context.colors.primaryGold,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2)),
-                      const Text('SR Management System',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: Color(0xFFB0BEC5),
-                              fontSize: 16,
-                              height: 1.2)),
-                      const Gap(28),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 10),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                              color:
-                                  context.colors.primaryGold.withOpacity(0.3)),
-                          borderRadius: BorderRadius.circular(24),
-                          color: context.colors.primaryGold.withOpacity(0.06),
-                        ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.person_add_rounded,
-                              color: context.colors.primaryGold, size: 16),
-                          const Gap(8),
-                          Text('DC / SDDC • Create Account',
-                              style: TextStyle(
-                                  color: context.colors.primaryGold,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600)),
-                        ]),
-                      ),
-                    ]),
-              )),
-
-          // Right - Signup form
+            flex: 5,
+            child: BrandPanel(
+              accent: context.colors.primaryGold,
+              deepColor: const Color(0xFF050411),
+              badgeLabel: 'DC / SDDC • Create Account',
+              badgeIcon: Icons.person_add_rounded,
+            ),
+          ),
           Expanded(
               flex: 4,
               child: Center(

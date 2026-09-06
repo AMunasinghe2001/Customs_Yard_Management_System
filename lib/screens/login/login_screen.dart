@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/secure_credentials.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import '../../core/theme.dart';
+import '../../widgets/brand_panel.dart';
 import '../../widgets/forgot_password_panel.dart';
 import '../../core/supabase_client.dart';
 import '../../core/providers.dart';
@@ -187,71 +187,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         Row(children: [
           // Left – branding
           Expanded(
-              flex: 5,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
-                    // Match the dark navy used by the other login screens (admin /
-                    // disposal / appeal) instead of the lighter customsBlueLight.
-                    // Fade into the portal's accent at the bottom-right for a soft
-                    // colour glow (matches the other portals' login screens).
-                    colors: [
-                      const Color(0xFF050411),
-                      context.colors.primaryNavy,
-                      context.colors.accentLightBlue
-                    ],
-                  ),
-                ),
-                child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SvgPicture.asset(
-                        'Sri_Lanka_Customs_logo_tinted.svg',
-                        width: 200,
-                        height: 200,
-                        theme: const SvgTheme(currentColor: Colors.white),
-                      ),
-                      const Gap(36),
-                      const Text('Sri Lanka Customs',
-                          style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 30,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.2)),
-                      const Gap(8),
-                      const Text('SR Management System',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              color: Color(0xFFB0BEC5),
-                              fontSize: 16,
-                              height: 1.2)),
-                      const Gap(28),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 28, vertical: 10),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                              color: context.colors.accentLightBlue
-                                  .withOpacity(0.4)),
-                          borderRadius: BorderRadius.circular(24),
-                          color:
-                              context.colors.accentLightBlue.withOpacity(0.08),
-                        ),
-                        child: Row(mainAxisSize: MainAxisSize.min, children: [
-                          Icon(Icons.person_outline_rounded,
-                              color: context.colors.accentLightBlue, size: 16),
-                          const Gap(8),
-                          Text('Officer Portal',
-                              style: TextStyle(
-                                  color: context.colors.accentLightBlue,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600)),
-                        ]),
-                      ),
-                    ]),
-              )),
-          // Right – login form
+            flex: 5,
+            child: BrandPanel(
+              accent: context.colors.accentLightBlue,
+              deepColor: const Color(0xFF050411),
+              badgeLabel: 'Officer Portal',
+              badgeIcon: Icons.person_outline_rounded,
+            ),
+          ),
           Expanded(
               flex: 4,
               child: Center(
