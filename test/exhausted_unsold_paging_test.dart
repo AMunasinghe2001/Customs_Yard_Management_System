@@ -7,6 +7,7 @@
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/providers.dart';
+import 'package:cus_yard_management/models/models.dart';
 
 void main() {
   final view =
@@ -114,10 +115,16 @@ void main() {
       expect(screen, contains('proposal: widget.proposalFilter,'));
     });
 
-    test('Decided / Awaiting is a null test on the outcome join', () {
+    test('the outcome filter reaches SQL, awaiting included', () {
+      // ⚠️ There is no "decided" test any more -- it lumped all six
+      // outcomes into one bucket, which is not a question an officer asks.
+      // Awaiting is still the null test it always was; the rest are equality
+      // on the outcome itself.
       final m = services.substring(services.indexOf('getExhaustedUnsoldPaged'));
-      expect(m, contains("q.not('proposal', 'is', null)"));
       expect(m, contains("q.isNull('proposal')"));
+      expect(m, contains("q = q.eq('proposal', outcome)"));
+      expect(m.contains("q.not('proposal', 'is', null)"), isFalse,
+          reason: 'the decided/awaiting flag is back');
     });
   });
 
@@ -135,15 +142,25 @@ void main() {
       expect(base, isNot(const ExhaustedUnsoldQuery(search: 'x')));
       expect(base, isNot(const ExhaustedUnsoldQuery(yard: 'GL1')));
       expect(base, isNot(const ExhaustedUnsoldQuery(year: '2026')));
-      expect(base, isNot(const ExhaustedUnsoldQuery(decided: true)));
+      expect(base, isNot(const ExhaustedUnsoldQuery(outcome: 'auction')));
       expect(base, isNot(const ExhaustedUnsoldQuery(proposal: 'auction')));
     });
 
-    test('All is a third answer for Decided / Awaiting', () {
+    test('the outcome filter and the PAGE are different things', () {
+      // ⚠️ `proposal` says which page this is; `outcome` narrows within
+      // it. Government Use passes proposal='government_use' and every row on
+      // it already is that -- confusing the two would make the page filter
+      // itself down to nothing.
+      const page = ExhaustedUnsoldQuery(proposal: 'auction');
+      const filter = ExhaustedUnsoldQuery(outcome: 'auction');
+      expect(page == filter, isFalse);
+    });
+
+    test('All is a third answer, and so is Awaiting', () {
       const all = ExhaustedUnsoldQuery();
-      const yes = ExhaustedUnsoldQuery(decided: true);
-      const no = ExhaustedUnsoldQuery(decided: false);
-      expect({all, yes, no}.length, 3);
+      const auction = ExhaustedUnsoldQuery(outcome: 'auction');
+      const awaiting = ExhaustedUnsoldQuery(outcome: kOutcomeAwaiting);
+      expect({all, auction, awaiting}.length, 3);
     });
   });
 

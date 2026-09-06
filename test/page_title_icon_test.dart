@@ -140,8 +140,12 @@ void main() {
       // every other tab its emoji.
       final per = File('lib/screens/packages/perishable_goods_screen.dart')
           .readAsStringSync();
-      expect(per, contains("PageTitle('Perishable Goods', Icons.eco_rounded)"));
-      expect(per, contains('titleIcon: Icons.eco_rounded'));
+      // ⚠️ Only the READ-ONLY copy carries a mark. That one is Central
+      // Disposal's; the yard's own copy has none, because the marks were only
+      // ever meant for that portal's tab strip.
+      expect(per, contains("PageTitle('Perishable Goods', Icons.eco_rounded"));
+      final yardHeader = per.substring(per.indexOf('] else'));
+      expect(yardHeader.contains('titleIcon:'), isFalse);
     });
 
     test('the heading reuses the icon its own tab shows', () {
@@ -154,7 +158,9 @@ void main() {
         ['Tender Sales', 'Icons.storefront_rounded'],
         ['Tender Committees', 'Icons.groups_rounded'],
       ]) {
-        expect(dash, contains("PageTitle('${pair[0]}', ${pair[1]})"),
+        // The call also passes the portal's accent now, so match up to the
+        // icon rather than to the closing bracket.
+        expect(dash, contains("PageTitle('${pair[0]}', ${pair[1]}"),
             reason: '${pair[0]} should use its tab strip icon');
       }
     });
@@ -169,28 +175,31 @@ void main() {
       expect(header, contains('if (titleIcon != null)'));
     });
 
-    test('it is gold, like the rail', () {
-      expect(header, contains('color: context.colors.primaryGold'));
+    test('it defaults to gold, and a portal may pass its own', () {
+      // ⚠️ Gold is the nav rail's colour and right for the yard. A
+      // directorate passes its own accent -- gold marks on Central Disposal's
+      // green pages looked borrowed from somewhere else, because they were.
+      expect(header, contains('titleIconColor ??'));
+      expect(header, contains('context.colors.primaryGold'));
     });
 
-    test('each held-goods page reuses its nav rail icon', () {
-      for (final e in {
-        'lib/screens/packages/detained_packages_screen.dart':
-            'Icons.gpp_maybe_rounded',
-        'lib/screens/packages/abandoned_packages_screen.dart':
-            'Icons.inbox_rounded',
-        'lib/screens/forfeited_packages/forfeited_packages_screen.dart':
-            'Icons.gavel_rounded',
-        'lib/screens/packages/other_packages_screen.dart':
-            'Icons.label_important_rounded',
-      }.entries) {
-        final src = File(e.key).readAsStringSync();
-        expect(src, contains('titleIcon: ${e.value}'),
-            reason: '${e.key} should match the nav rail');
+    test('the held-goods pages carry no mark at all', () {
+      // ⚠️ These are YARD pages. The heading marks were only ever meant for
+      // Central Disposal, whose tab strip they echo -- on the yard, where the
+      // nav rail already shows the icon beside the page name, a second copy
+      // in the heading said nothing new.
+      for (final path in [
+        'lib/screens/packages/detained_packages_screen.dart',
+        'lib/screens/packages/abandoned_packages_screen.dart',
+        'lib/screens/forfeited_packages/forfeited_packages_screen.dart',
+        'lib/screens/packages/other_packages_screen.dart',
+      ]) {
+        expect(File(path).readAsStringSync().contains('titleIcon:'), isFalse,
+            reason: '$path has a heading icon again');
       }
     });
 
-    test('those icons are the ones the rail actually names', () {
+    test('the rail still names an icon for each of those pages', () {
       // ⚠️ Asserted against the rail itself, so the two cannot drift apart
       // silently after someone edits one of them.
       final rail = File('lib/widgets/app_shell.dart').readAsStringSync();

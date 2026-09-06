@@ -79,7 +79,7 @@ class ExpensesTab extends ConsumerWidget {
         children: [
           // Title · search · yard · date — the standard filter header.
           Row(children: [
-            const PageTitle('Disposal Expenses', Icons.payments_rounded),
+            PageTitle('Disposal Expenses', Icons.payments_rounded, accent: context.colors.successGreen),
             const Spacer(),
             const DisposalSearch(
                 tabKey: _tabKey, hint: 'Search SR / goods\u2026'),

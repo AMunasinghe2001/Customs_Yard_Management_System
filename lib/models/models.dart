@@ -2052,6 +2052,21 @@ const List<String> kUnsoldProposals = [
   'remove_from_premises',
 ];
 
+/// The Final Outcome filter's value for "nobody has ruled yet".
+///
+/// ⚠️ A sentinel, not an outcome: it is deliberately not in
+/// [kUnsoldProposals], because no package is ever DECIDED to be awaiting. It
+/// exists so one filter can offer "awaiting" alongside the six real outcomes
+/// without a second nullable flag beside it.
+const String kOutcomeAwaiting = '__awaiting__';
+
+/// The Final Outcome filter's value for "sold at tender".
+///
+/// ⚠️ Only Perishable Goods offers this. A perishable that sells ends there
+/// and never reaches the DG, so on that page a sale IS a final outcome -- but
+/// it is not a proposal and must never be stored as one.
+const String kOutcomeSold = '__sold__';
+
 String unsoldProposalLabel(String? p) {
   switch (p) {
     case 'destroy':

@@ -56,7 +56,7 @@ void main() {
       expect(services, contains('Map<String, double> soldPriceByItem'));
       final fn = flat(services.substring(
           services.indexOf('getPerishableRowsPaged')));
-      expect(fn.substring(0, 1800),
+      expect(fn.substring(0, 3600),
           contains("select('package_id, item_id, sold, sold_price')"));
     });
 

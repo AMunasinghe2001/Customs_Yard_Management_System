@@ -324,7 +324,7 @@ class _PendingValuationTab extends ConsumerWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              PageTitle('Pending Valuation', Icons.calculate_rounded),
+              PageTitle('Pending Valuation', Icons.calculate_rounded, accent: gold),
               const Gap(12),
               requests.maybeWhen(
                 data: (list) => Container(
@@ -1176,7 +1176,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Unsold Tenders', Icons.replay_rounded),
+            PageTitle('Unsold Tenders', Icons.replay_rounded, accent: gold),
             const Gap(10),
             Text('Review bids · set a new valuation for re-tender',
                 style: TextStyle(

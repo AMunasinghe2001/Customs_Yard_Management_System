@@ -59,7 +59,7 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    PageTitle('Tender Sales', Icons.storefront_rounded),
+                    PageTitle('Tender Sales', Icons.storefront_rounded, accent: accent),
                     Text(
                         'Live sales at Central Disposal — a sale leaves this '
                         'page once every item is decided or its window closes',

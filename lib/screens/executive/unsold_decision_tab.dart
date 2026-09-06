@@ -104,7 +104,8 @@ class UnsoldDecisionTab extends ConsumerWidget {
                       perishable ? 'Unsold Perishables' : 'Unsold Goods',
                       perishable
                           ? Icons.eco_rounded
-                          : Icons.rule_folder_rounded),
+                          : Icons.rule_folder_rounded,
+                      accent: accent),
                   const Gap(2),
                   Text(
                       perishable

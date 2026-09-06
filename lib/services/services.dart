@@ -787,6 +787,15 @@ class PackageService {
     DateTime? dateEnd,
     String? year,
     String? activity,
+
+    /// The page's Final Outcome filter: one of kUnsoldProposals,
+    /// kOutcomeAwaiting, kOutcomeSold, or null for all.
+    ///
+    /// ⚠️ Sold is one of the choices HERE and nowhere else. A perishable that
+    /// sells at tender ends there and never reaches the DG, so on this page a
+    /// sale is a final outcome -- but it is not a proposal and must never be
+    /// stored as one.
+    String? outcome,
   }) async {
     // ⚠️ ONE closure for the rows and the count.
     PgQuery narrow(PgQuery q) {
@@ -816,6 +825,17 @@ class PackageService {
         final to =
             DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
         q = q.lte('effective_date', to.toIso8601String());
+      }
+      // ⚠️ Three kinds of answer, and they are not interchangeable: a Top
+      // Management proposal, a sale at tender, or nothing decided yet.
+      if (outcome == kOutcomeSold) {
+        q = q.eq('sold', true);
+      } else if (outcome == kOutcomeAwaiting) {
+        // Awaiting means NEITHER has happened -- a sold row is not awaiting
+        // anything, even though it has no proposal.
+        q = q.isNull('proposal').eq('sold', false);
+      } else if (outcome != null && outcome.isNotEmpty) {
+        q = q.eq('proposal', outcome);
       }
       return q;
     }
@@ -6475,12 +6495,19 @@ class DisposalService {
     DateTime? dateStart,
     DateTime? dateEnd,
     String? year,
-    bool? decided,
 
     /// One of the four Final Outcome pages: 'government_use', 'auction',
     /// 'convert', 'remove_from_premises'. Null is the Unsold Goods page
     /// itself, which shows every package whatever its outcome.
     String? proposal,
+
+    /// The page's Final Outcome filter: one of [kUnsoldProposals],
+    /// [kOutcomeAwaiting], or null for all of them.
+    ///
+    /// ⚠️ Distinct from [proposal], which says WHICH PAGE this is. Government
+    /// Use passes proposal='government_use' and every row on it is already
+    /// that; the filter narrows within whatever page it is.
+    String? outcome,
 
     /// The All / Pending / Delivered filter on the four Final Outcome pages.
     /// Null is "All" -- a third answer, not a default.
@@ -6513,9 +6540,18 @@ class DisposalService {
             DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
         q = q.lte('forfeited_at', end.toIso8601String());
       }
-      // Decided means an outcome EXISTS, which is a null test on the join.
-      if (decided == true) q = q.not('proposal', 'is', null);
-      if (decided == false) q = q.isNull('proposal');
+      // ⚠️ The page's own filter, by OUTCOME rather than by "decided or not".
+      //
+      // "Decided" lumped all six outcomes together, which is not a question
+      // anyone asks: an officer wants the ones going to auction, or back out
+      // of the country. Awaiting is still one of the choices -- "nobody has
+      // ruled yet" is an answer like any other -- and it is the null test the
+      // old flag used.
+      if (outcome == kOutcomeAwaiting) {
+        q = q.isNull('proposal');
+      } else if (outcome != null && outcome.isNotEmpty) {
+        q = q.eq('proposal', outcome);
+      }
       if (proposal != null && proposal.isNotEmpty) {
         q = q.eq('proposal', proposal);
       }

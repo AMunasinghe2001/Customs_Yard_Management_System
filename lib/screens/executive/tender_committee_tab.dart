@@ -150,7 +150,7 @@ class TenderCommitteeTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Tender Committees', Icons.groups_rounded),
+            PageTitle('Tender Committees', Icons.groups_rounded, accent: accent),
             const Gap(10),
             Expanded(
               child: Text(

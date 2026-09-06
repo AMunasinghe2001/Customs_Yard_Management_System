@@ -671,6 +671,10 @@ class PerishableQuery {
   /// The Post Status Activity filter; 'all' and null both mean no filter.
   final String? activity;
 
+  /// The Final Outcome filter: a proposal, kOutcomeSold, kOutcomeAwaiting,
+  /// or null for all.
+  final String? outcome;
+
   const PerishableQuery({
     this.page = 0,
     this.search,
@@ -679,6 +683,7 @@ class PerishableQuery {
     this.dateEnd,
     this.year,
     this.activity,
+    this.outcome,
   });
 
   @override
@@ -690,11 +695,14 @@ class PerishableQuery {
       other.dateStart == dateStart &&
       other.dateEnd == dateEnd &&
       other.year == year &&
-      other.activity == activity;
+      other.activity == activity &&
+      other.outcome == outcome;
 
   @override
+  // ⚠️ outcome is in BOTH == and hashCode, or the family key stays equal
+  // across a filter change and the provider never refetches.
   int get hashCode => Object.hash(
-      page, search, yardSrPrefix, dateStart, dateEnd, year, activity);
+      page, search, yardSrPrefix, dateStart, dateEnd, year, activity, outcome);
 }
 
 /// One page of Perishable Goods, with the packages behind it.
@@ -728,6 +736,7 @@ final perishablePageProvider =
         dateEnd: q.dateEnd,
         year: q.year,
         activity: q.activity,
+        outcome: q.outcome,
       );
   final packages = await ref
       .read(packageServiceProvider)
@@ -1325,7 +1334,13 @@ class ExhaustedUnsoldQuery {
   final String? year;
 
   /// The Decided / Awaiting filter. Null is "All" — a third answer.
-  final bool? decided;
+  /// The page's Final Outcome filter: one of kUnsoldProposals,
+  /// kOutcomeAwaiting, or null for all.
+  ///
+  /// ⚠️ Replaces a decided/awaiting flag. "Decided" lumped all six outcomes
+  /// together, which is not a question an officer asks -- they want the ones
+  /// going to auction, or back out of the country.
+  final String? outcome;
 
   /// One of the four Final Outcome pages; null is Unsold Goods itself.
   final String? proposal;
@@ -1340,7 +1355,7 @@ class ExhaustedUnsoldQuery {
     this.dateStart,
     this.dateEnd,
     this.year,
-    this.decided,
+    this.outcome,
     this.proposal,
     this.delivered,
   });
@@ -1354,13 +1369,13 @@ class ExhaustedUnsoldQuery {
       other.dateStart == dateStart &&
       other.dateEnd == dateEnd &&
       other.year == year &&
-      other.decided == decided &&
+      other.outcome == outcome &&
       other.proposal == proposal &&
       other.delivered == delivered;
 
   @override
   int get hashCode => Object.hash(page, search, yard, dateStart, dateEnd, year,
-      decided, proposal, delivered);
+      outcome, proposal, delivered);
 }
 
 /// One page of Unsold Goods, chosen and filtered by the database.
@@ -1379,7 +1394,7 @@ final exhaustedUnsoldPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
         dateStart: q.dateStart,
         dateEnd: q.dateEnd,
         year: q.year,
-        decided: q.decided,
+        outcome: q.outcome,
         proposal: q.proposal,
         delivered: q.delivered,
       );

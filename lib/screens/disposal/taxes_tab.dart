@@ -32,7 +32,7 @@ class TaxesTab extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const PageTitle('Tax Configuration', Icons.receipt_long_rounded),
+              PageTitle('Tax Configuration', Icons.receipt_long_rounded, accent: context.colors.successGreen),
               const Spacer(),
               _TaxSearchField(
                 onChanged: (v) =>

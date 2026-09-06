@@ -16,6 +16,7 @@ import '../../widgets/disposal_page_header.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/package_details_dialog.dart';
+import '../../widgets/outcome_filter.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
@@ -95,6 +96,13 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
   /// other held-goods pages answer — could not be asked here at all.
   DateTimeRange? _dateRange;
   String _activity = 'all';
+
+  /// A proposal, kOutcomeSold, kOutcomeAwaiting, or null for all.
+  ///
+  /// ⚠️ Sold is a choice HERE and nowhere else. A perishable that sells at
+  /// tender ends there and never reaches the DG, so on this page a sale is a
+  /// final outcome in its own right.
+  String? _outcomeFilter;
 
   /// Central Disposal only: which yard's goods to show. Null = every yard.
   String? _yardFilter;
@@ -206,6 +214,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
       dateEnd: _dateRange?.end,
       year: _yearFilter,
       activity: _activity,
+      outcome: _outcomeFilter,
     );
     final async = ref.watch(perishablePageProvider(query));
     // The DG's rulings, keyed by item. Both portals read the same map, so the
@@ -238,7 +247,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
             // and in a different shape.
             if (widget.readOnly) ...[
               Row(children: [
-                const PageTitle('Perishable Goods', Icons.eco_rounded),
+                PageTitle('Perishable Goods', Icons.eco_rounded, accent: context.colors.successGreen),
                 const Spacer(),
                 SizedBox(width: 280, child: _searchBox(context)),
                 const Gap(12),
@@ -253,6 +262,16 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                   value: _yardFilter,
                   onChanged: (v) => setState(() {
                     _yardFilter = v;
+                    _page = 0;
+                  }),
+                ),
+                const Gap(12),
+                OutcomeFilter(
+                  value: _outcomeFilter,
+                  outcomes: kUnsoldProposals,
+                  includeSold: true,
+                  onChanged: (v) => setState(() {
+                    _outcomeFilter = v;
                     _page = 0;
                   }),
                 ),
@@ -284,7 +303,6 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
             ] else
               DisposalPageHeader(
                 title: 'Perishable Goods',
-                titleIcon: Icons.eco_rounded,
                 subtitle: 'Goods that spoil — no warehouse, no appeal window. '
                     'Send them for disposal without waiting.',
                 trailing: [
@@ -432,6 +450,18 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                         .toList(),
                     onChanged: (v) => setState(() {
                       _activity = v ?? 'all';
+                      _page = 0;
+                    }),
+                  ),
+                  const SizedBox(width: 8),
+                  OutcomeFilter(
+                    value: _outcomeFilter,
+                    // Every ruling the DG can make, plus a sale -- which on
+                    // this page is an ending of its own.
+                    outcomes: kUnsoldProposals,
+                    includeSold: true,
+                    onChanged: (v) => setState(() {
+                      _outcomeFilter = v;
                       _page = 0;
                     }),
                   ),

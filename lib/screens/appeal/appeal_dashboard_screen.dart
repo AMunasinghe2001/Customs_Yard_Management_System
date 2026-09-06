@@ -217,7 +217,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Icon(Icons.balance_rounded, size: 18),
                       const Gap(8),
-                      const Flexible(child: PageTitle('Active Appeals', Icons.gavel_rounded)),
+                      Flexible(child: PageTitle('Active Appeals', Icons.gavel_rounded, accent: accent)),
                       if (activeCount > 0) ...[
                         const Gap(6),
                         _TabBadge(activeCount, accent),
@@ -229,7 +229,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Icon(Icons.gavel_rounded, size: 18),
                       const Gap(8),
-                      const Flexible(child: PageTitle('Decided Goods', Icons.fact_check_rounded)),
+                      Flexible(child: PageTitle('Decided Goods', Icons.fact_check_rounded, accent: accent)),
                       if (decidedCount > 0) ...[
                         const Gap(6),
                         _TabBadge(decidedCount, accent),

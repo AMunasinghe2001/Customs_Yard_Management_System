@@ -234,7 +234,6 @@ class _DetainedPackagesScreenState
                   final actionable = counts.actionable;
                   return DisposalPageHeader(
                     title: 'Detained Goods',
-                    titleIcon: Icons.gpp_maybe_rounded,
                     subtitle: 'Goods held under inquiry — decide their outcome '
                         'or send them for sale or destruction',
                     trailing: [

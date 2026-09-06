@@ -38,6 +38,9 @@ class DisposalPageHeader extends StatelessWidget {
   /// would like to be. Enough for the title plus a readable slice of subtitle.
   final double minTitleWidth;
 
+  /// The mark's colour, when one is shown. Defaults to gold.
+  final Color? titleIconColor;
+
   /// Optional mark beside the title, tinted [AppColors.primaryGold] like the
   /// nav rail's icons. ⚠️ An icon, never an emoji -- emoji come from a colour
   /// font, so they ignore the theme and stay multi-coloured against a palette
@@ -49,6 +52,7 @@ class DisposalPageHeader extends StatelessWidget {
     required this.title,
     required this.subtitle,
     this.titleIcon,
+    this.titleIconColor,
     required this.trailing,
     this.trailingGap = 8,
     this.minTitleWidth = 190,
@@ -96,7 +100,8 @@ class DisposalPageHeader extends StatelessWidget {
                                     .headlineLarge
                                     ?.fontSize ??
                                 22,
-                            color: context.colors.primaryGold),
+                            color: titleIconColor ??
+                                context.colors.primaryGold),
                         const SizedBox(width: 10),
                       ],
                       // The title is the part that gives on a narrow window.

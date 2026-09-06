@@ -100,7 +100,7 @@ class FinancialsTab extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      PageTitle('Financials', Icons.account_balance_wallet_rounded),
+                      PageTitle('Financials', Icons.account_balance_wallet_rounded, accent: accent),
                       const Gap(2),
                       Text(
                           canEdit

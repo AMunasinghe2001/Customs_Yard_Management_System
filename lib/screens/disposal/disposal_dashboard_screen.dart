@@ -26,6 +26,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
+import '../../widgets/outcome_filter.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
@@ -519,6 +520,14 @@ class DisposalDashboardScreen extends ConsumerWidget {
 final _unsoldPageProvider =
     StateProvider.family<int, String>((ref, tabKey) => 0);
 
+/// The Final Outcome filter on the Unsold Goods tab.
+///
+/// ⚠️ Keyed by tabKey like its neighbours: the five outcome pages are five
+/// instances of ONE widget, and a shared provider would carry one page's
+/// filter into the next.
+final _unsoldOutcomeFilterProvider =
+    StateProvider.family<String?, String>((ref, tabKey) => null);
+
 /// The All / Pending / Delivered filter on each Final Outcome page.
 ///
 /// ⚠️ Keyed by tabKey for the same reason the page number is: Government Use,
@@ -610,11 +619,18 @@ class UnsoldProposalsTab extends ConsumerWidget {
     final deliveryFilter = proposalFilter == null
         ? null
         : ref.watch(_unsoldDeliveryFilterProvider(tabKey));
+    // ⚠️ Only the unfiltered Unsold Goods tab can narrow by outcome. On an
+    // outcome page every row is already that outcome, so the filter could
+    // only ever return all of them or none.
+    final outcomeFilter = proposalFilter == null
+        ? ref.watch(_unsoldOutcomeFilterProvider(tabKey))
+        : null;
     final query = ExhaustedUnsoldQuery(
       page: ref.watch(_unsoldPageProvider(tabKey)),
       search: q,
       yard: yardFilter,
       proposal: proposalFilter,
+      outcome: outcomeFilter,
       delivered: deliveryFilter,
     );
     final async = ref.watch(exhaustedUnsoldPageProvider(query));
@@ -648,7 +664,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
               // fixed 300 and the yard filter a fixed 220, so a bare Text had
               // nowhere to shrink and the Row overflowed by 47px at 752 wide.
               Expanded(
-                child: PageTitle(title, titleIcon),
+                child: PageTitle(title, titleIcon, accent: context.colors.successGreen),
               ),
               const Gap(12),
               DisposalSearch(
@@ -676,6 +692,19 @@ class UnsoldProposalsTab extends ConsumerWidget {
           // an All/Pending/Delivered control there would filter on a column
           // every row shares.
           Row(children: [
+            if (proposalFilter == null) ...[
+              OutcomeFilter(
+                value: outcomeFilter,
+                outcomes: kUnsoldProposals,
+                onChanged: (v) {
+                  ref
+                      .read(_unsoldOutcomeFilterProvider(tabKey).notifier)
+                      .state = v;
+                  ref.read(_unsoldPageProvider(tabKey).notifier).state = 0;
+                },
+              ),
+              const Gap(12),
+            ],
             if (proposalFilter != null)
               _DeliverySegmentedFilter(
                 value: deliveryFilter,
@@ -1209,7 +1238,7 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Sold Goods', Icons.sell_rounded),
+            PageTitle('Sold Goods', Icons.sell_rounded, accent: context.colors.successGreen),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'sold', hint: 'Search SR / item / sold by…'),
@@ -1611,7 +1640,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Destroyed Goods', Icons.delete_forever_rounded),
+            PageTitle('Destroyed Goods', Icons.delete_forever_rounded, accent: context.colors.successGreen),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'destroyed', hint: 'Search SR / item / by…'),
@@ -2157,7 +2186,7 @@ class _DisposalRequestsTabState extends ConsumerState<_DisposalRequestsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Disposal Requests', Icons.assignment_turned_in_rounded),
+            PageTitle('Disposal Requests', Icons.assignment_turned_in_rounded, accent: context.colors.successGreen),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'requests', hint: 'Search SR / consignee…'),
@@ -2670,7 +2699,7 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Unsold Goods — Re-tender', Icons.replay_rounded),
+            PageTitle('Unsold Goods — Re-tender', Icons.replay_rounded, accent: context.colors.successGreen),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'unsold', hint: 'Search SR / item / consignee…'),
@@ -2961,7 +2990,7 @@ class _TenderSalesTabState extends ConsumerState<_TenderSalesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Tender Sales', Icons.storefront_rounded),
+            PageTitle('Tender Sales', Icons.storefront_rounded, accent: context.colors.successGreen),
             const Spacer(),
             const DisposalSearch(
                 tabKey: 'tendersales', hint: 'Search sale no / SR…'),
@@ -4650,7 +4679,7 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Tender Committees', Icons.groups_rounded),
+            PageTitle('Tender Committees', Icons.groups_rounded, accent: context.colors.successGreen),
             // ⚠️ No subtitle. This was the ONLY tab of sixteen carrying one,
             // and at any real window width it ellipsised mid-sentence -- so it
             // read as a broken line rather than as help. The empty state below

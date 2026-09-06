@@ -377,7 +377,6 @@ class _OtherPackagesScreenState extends ConsumerState<OtherPackagesScreen> {
                   final actionable = counts.actionable;
                   return DisposalPageHeader(
                     title: 'Other Goods',
-                    titleIcon: Icons.label_important_rounded,
                     subtitle: 'Manage packages with an "Other" status — '
                         'release, re-export or send for disposal',
                     trailing: [

@@ -11,6 +11,7 @@ import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
+import '../../widgets/outcome_filter.dart';
 import '../../widgets/year_filter.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
 import '../../widgets/package_details_dialog.dart';
@@ -67,8 +68,12 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
   DateTimeRange? _dateRange;
   String? _yearFilter;
 
-  /// null = all · false = awaiting the Top Management Directorate · true = decided
-  bool? _decidedFilter;
+  /// One of kUnsoldProposals, kOutcomeAwaiting, or null for all.
+  ///
+  /// ⚠️ Replaces a decided/awaiting flag. "Decided" put all six outcomes in
+  /// one bucket, which is not what an officer is looking for -- they want the
+  /// goods going to auction, or back out of the country.
+  String? _outcomeFilter;
   int _page = 0;
 
   @override
@@ -78,28 +83,6 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
   }
 
   /// Status chip, styled exactly like the Sold page's delivery filter.
-  Widget _statusChip(String label, bool? value, IconData icon) {
-    final selected = _decidedFilter == value;
-    final color = context.colors.primaryGold;
-    return OutlinedButton.icon(
-      onPressed: () => setState(() {
-        _decidedFilter = value;
-        _page = 0;
-      }),
-      icon: Icon(icon,
-          size: 16, color: selected ? color : context.colors.textSecondary),
-      label: Text(label,
-          style: TextStyle(
-              color: selected ? color : context.colors.textSecondary,
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.bold : FontWeight.normal)),
-      style: OutlinedButton.styleFrom(
-        side: BorderSide(color: selected ? color : context.colors.borderColor),
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-      ),
-    );
-  }
 
   // ⚠️ `_yardRows` and `_visibleRows` moved into the query. The yard scope and
   // the outcome filter are both columns on the `exhausted_unsold` view now
@@ -121,7 +104,7 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
       dateStart: _dateRange?.start,
       dateEnd: _dateRange?.end,
       year: _yearFilter,
-      decided: _decidedFilter,
+      outcome: _outcomeFilter,
       proposal: widget.proposalFilter,
     );
     final async = ref.watch(exhaustedUnsoldPageProvider(query));
@@ -294,16 +277,19 @@ class _UnsoldPackagesScreenState extends ConsumerState<UnsoldPackagesScreen> {
                             _page = 0;
                           }),
                         ),
-                        // Hidden on an outcome page: every row there is
-                        // already decided the same way, so filtering by
-                        // decided/awaiting would offer nothing.
-                        if (widget.proposalFilter == null) ...[
-                          _statusChip('All', null, Icons.all_inbox_rounded),
-                          _statusChip('Awaiting decision', false,
-                              Icons.schedule_rounded),
-                          _statusChip(
-                              'Decided', true, Icons.check_circle_rounded),
-                        ],
+                        // ⚠️ Hidden on an outcome page: every row there is
+                        // already that outcome, so the filter could only ever
+                        // return all of them or none.
+                        if (widget.proposalFilter == null)
+                          OutcomeFilter(
+                            value: _outcomeFilter,
+                            // Every outcome the DG can rule, plus awaiting.
+                            outcomes: kUnsoldProposals,
+                            onChanged: (v) => setState(() {
+                              _outcomeFilter = v;
+                              _page = 0;
+                            }),
+                          ),
                       ],
                     ),
                   ],
