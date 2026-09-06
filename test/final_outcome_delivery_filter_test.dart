@@ -254,10 +254,14 @@ void main() {
           dash.substring(dash.indexOf("PageTitle('Unsold Goods — Re-tender'"),
               dash.indexOf('class _TenderSalesTab')),
           'Unsold Tenders');
-      checkPage(
-          dash.substring(
-              dash.indexOf("PageTitle('Undestroyed Packages — Re-destruction'")),
-          'Re-destruction');
+      // ⚠️ Re-destruction is no longer here to check. Destruction is not a
+      // sale -- goods are destroyed on the yard's own decision or Top
+      // Management's -- so the "Destruction Sales" tab and the Undestroyed /
+      // Re-destruction pool it fed were dropped from the strip long ago. Their
+      // widgets stayed behind as dead code, carrying an auto-lapse rule with
+      // them, and have now gone too.
+      expect(dash.contains('Undestroyed Packages'), isFalse,
+          reason: 'the dead re-destruction page is back');
       checkPage(
           dash.substring(dash.indexOf("PageTitle('Destroyed Goods'"),
               dash.indexOf('class _UnsoldReTenderTab')),

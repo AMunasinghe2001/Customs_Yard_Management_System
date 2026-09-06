@@ -129,10 +129,14 @@ void main() {
           reason: 'A re-valued package goes straight into another tender.');
     });
 
-    test('Undestroyed seals on the newest destruction round', () {
-      expect(flat(dashboard),
-          contains('info.latestDestruction?.saleEnded == false'),
-          reason: 'Re-destruction rounds carry the same reserve price.');
+    test('there is no Undestroyed page left to seal', () {
+      // ⚠️ This checked the seal on the Undestroyed / Re-destruction page.
+      // Destruction is not a sale -- goods are destroyed on the yard's own
+      // decision or Top Management's, nothing is bid for, and there is no
+      // reserve price to seal. That page was dropped from the tab strip long
+      // ago; its widget lingered as dead code and has now gone with it.
+      expect(flat(dashboard).contains('latestDestruction'), isFalse,
+          reason: 'the dead re-destruction page is back');
     });
 
     test('the shared Unsold table derives the gate itself', () {

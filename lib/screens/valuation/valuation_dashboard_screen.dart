@@ -7,6 +7,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/table_pager.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
@@ -316,16 +317,14 @@ class _PendingValuationTab extends ConsumerWidget {
         (list) => list.where((r) => isPerishable(r) == perishableOnly).toList());
 
     return Padding(
-        padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24 -- see Central Disposal. A table page spends its
+      // vertical space on rows, not on chrome.
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(children: [
-              Text('Pending Valuation',
-                  style: TextStyle(
-                      color: context.colors.textPrimary,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700)),
+              PageTitle('Pending Valuation', Icons.calculate_rounded),
               const Gap(12),
               requests.maybeWhen(
                 data: (list) => Container(
@@ -1177,11 +1176,7 @@ class _UnsoldTendersValTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Unsold Tenders',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Unsold Tenders', Icons.replay_rounded),
             const Gap(10),
             Text('Review bids · set a new valuation for re-tender',
                 style: TextStyle(

@@ -172,9 +172,15 @@ void main() {
     });
 
     test('it shows only what is live, the same rule Disposal applies', () {
-      // So a sale leaves this page the moment Central Disposal finishes it.
+      // So a sale leaves this page the moment Central Disposal finishes it --
+      // and ONLY then.
       expect(tenderTab, contains('s.items.any((i) => !i.sold)'));
-      expect(tenderTab, contains('DateTime.now().isAfter(s.unsoldDeadline!)'));
+      // ⚠️ It used to leave when a working-day deadline passed as well,
+      // which meant a CLOCK finished the sale rather than an officer. That
+      // rule is gone from both portals; asserting it is gone here keeps the
+      // two in step, which is what this test is really about.
+      expect(tenderTab.contains('unsoldDeadline'), isFalse,
+          reason: 'a deadline is deciding what Top Management can see');
     });
 
     test('the caption says the page drops rows on its own', () {

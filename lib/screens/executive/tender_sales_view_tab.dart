@@ -7,6 +7,7 @@ import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -44,7 +45,10 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
     final async = ref.watch(tenderSalesProvider);
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. These pages are TABLES, and vertical chrome is rows
+      // the officer cannot see. Central Disposal tightened to this for the
+      // same reason; matching it also keeps the two portals looking alike.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -55,11 +59,7 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text('Tender Sales',
-                        style: TextStyle(
-                            color: context.colors.textPrimary,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w700)),
+                    PageTitle('Tender Sales', Icons.storefront_rounded),
                     Text(
                         'Live sales at Central Disposal — a sale leaves this '
                         'page once every item is decided or its window closes',
@@ -99,9 +99,9 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                 var visible = list.where((s) {
                   final hasPending = s.items.any((i) => !i.sold);
                   if (!hasPending) return false;
-                  final windowClosed = s.unsoldDeadline != null &&
-                      DateTime.now().isAfter(s.unsoldDeadline!);
-                  return !windowClosed;
+                  // ⚠️ No window -- see the Central Disposal tab. A sale
+                  // stays until every item has been marked.
+                  return true;
                 }).toList();
 
                 if (_yard != null) {

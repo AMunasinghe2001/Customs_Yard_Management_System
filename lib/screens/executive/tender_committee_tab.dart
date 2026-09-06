@@ -1,3 +1,4 @@
+import '../../widgets/page_title.dart';
 import '../../widgets/sealed_valuation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
@@ -141,16 +142,15 @@ class TenderCommitteeTab extends ConsumerWidget {
         const <DateTime, double>{};
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. These pages are TABLES, and vertical chrome is rows
+      // the officer cannot see. Central Disposal tightened to this for the
+      // same reason; matching it also keeps the two portals looking alike.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Text('Tender Committees',
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 22,
-                    fontWeight: FontWeight.w700)),
+            PageTitle('Tender Committees', Icons.groups_rounded),
             const Gap(10),
             Expanded(
               child: Text(

@@ -8,6 +8,7 @@ import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/styled_form_dialog.dart';
@@ -81,7 +82,10 @@ class UnsoldDecisionTab extends ConsumerWidget {
     final canDecide = _isDg(ref.watch(currentProfileProvider));
 
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. These pages are TABLES, and vertical chrome is rows
+      // the officer cannot see. Central Disposal tightened to this for the
+      // same reason; matching it also keeps the two portals looking alike.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -94,11 +98,13 @@ class UnsoldDecisionTab extends ConsumerWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(perishable ? 'Unsold Perishables' : 'Unsold Goods',
-                      style: TextStyle(
-                          color: context.colors.textPrimary,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700)),
+                  // The tab strip's own two icons, so each list is marked the
+                  // way the tab that opened it was.
+                  PageTitle(
+                      perishable ? 'Unsold Perishables' : 'Unsold Goods',
+                      perishable
+                          ? Icons.eco_rounded
+                          : Icons.rule_folder_rounded),
                   const Gap(2),
                   Text(
                       perishable

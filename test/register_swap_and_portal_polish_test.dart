@@ -136,13 +136,34 @@ void main() {
       expect(s.stage.label, 'Awaiting Decision');
     });
 
-    test('the window to decide has passed', () {
+    test('a month-old sale is STILL awaiting a decision, not lapsed', () {
+      // ⚠️ There is no longer a fourth stage. An item used to fall to
+      // Unsold on its own once a working-day window closed, so a CLOCK decided
+      // the outcome -- and a public holiday moved the deadline, which moved
+      // which packages reached the DG. Central Disposal marks every item by
+      // hand now, and a sale nobody has marked stays here however old it is.
       final s = _sale(
           date: now.subtract(const Duration(days: 30)),
           start: '10:00',
           end: '11:00');
-      expect(s.stage, TenderStage.lapsed);
-      expect(s.stage.label, 'Tender Closed');
+      expect(s.stage, TenderStage.awaitingDecision);
+      expect(s.stage.label, 'Awaiting Decision');
+    });
+
+    test('the sale says how long the decision has been outstanding', () {
+      // What replaced the deadline: not a cut-off, but a note in the header.
+      final s = _sale(
+          date: now.subtract(const Duration(days: 3)),
+          start: '10:00',
+          end: '11:00');
+      expect(s.sinceSaleStarted, isNotNull);
+      expect(s.sinceSaleStarted!.inDays, greaterThanOrEqualTo(2));
+    });
+
+    test('a sale that has not started yet reports no elapsed time', () {
+      final s = _sale(
+          date: now.add(const Duration(days: 2)), start: '10:00', end: '11:00');
+      expect(s.sinceSaleStarted, isNull);
     });
 
     test('an undated sale reads as open, never as decided', () {

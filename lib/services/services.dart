@@ -685,6 +685,33 @@ class PackageService {
     return out;
   }
 
+  /// The packages the FINANCIAL ledger needs, and only what it needs.
+  ///
+  /// ⚠️ [getAllPackages] returns every package with three embeds --
+  /// package_items, warehouse_entries with their warehouse AND the returning
+  /// officer's profile, plus the inspecting officer's profile. Measured against
+  /// the live database that is ~35ms in Postgres and 130-210ms by the time the
+  /// driver has decoded it, because the embeds alone are 419 kB of JSON.
+  ///
+  /// The ledger reads NONE of that. `buildSrFinancials` wants item quantities
+  /// and statuses, and the warehouse entries the storage charge is billed
+  /// against -- no warehouse names, no officer names. So this asks for those
+  /// and nothing else.
+  ///
+  /// The rows still come back as [PackageModel]; the omitted fields land as
+  /// their empty defaults, which no financial calculation touches.
+  Future<List<PackageModel>> getPackagesForLedger() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('packages')
+        .select('id, sr_number, yard, status, created_at, consignee_name, '
+            'package_items(*), warehouse_entries(*)')
+        .order('created_at', ascending: false));
+    return [
+      for (final e in (data as List))
+        PackageModel.fromJson(e as Map<String, dynamic>)
+    ];
+  }
+
   Future<List<PackageModel>> getAllPackages(
       {String? status, String? search, DateTime? since, String? yard}) async {
     var query = supabase.from('packages').select(
@@ -5472,6 +5499,25 @@ class DisposalService {
         .toList();
   }
 
+  /// The sale figures the FINANCIAL ledger needs, and only those.
+  ///
+  /// ⚠️ [getTenderSales] is the heaviest query in the app -- every sale,
+  /// its items, their forfeited rows, those rows' PACKAGES, and every package
+  /// item and warehouse entry underneath, five levels deep.
+  ///
+  /// `buildSrFinancials` reads four things off each item: whether it sold, what
+  /// it sold for, its applied taxes, and the forfeited row's item id and SR
+  /// number. Nothing below that. So this stops at the forfeited row.
+  Future<List<TenderSaleModel>> getTenderSalesForLedger() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sales')
+        .select('*, tender_sale_items(*, '
+            'forfeited_packages(id, item_id, sr_number, package_id, '
+            'consignee_name, forfeited_at, appeal_deadline))')
+        .order('created_at', ascending: false));
+    return (data as List).map((e) => TenderSaleModel.fromJson(e)).toList();
+  }
+
   Future<List<TenderSaleModel>> getTenderSales() async {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sales')
@@ -5491,10 +5537,10 @@ class DisposalService {
   /// The `tender_sale_summary` view (postgres/26) decides WHICH sales and in
   /// what order, then the full objects are loaded for that page alone.
   ///
-  /// ⚠️ [onlyPending] hides sales with nothing left to act on. The other half
-  /// of that rule — whether the SELL WINDOW has closed — cannot come from SQL:
-  /// it depends on `workingDeadline`, which rolls past weekends and Sri Lankan
-  /// public holidays fetched at runtime. The caller applies it to the page.
+  /// ⚠️ [onlyPending] hides sales with nothing left to act on — every item
+  /// marked. There is no second half to that rule any more: a sale used to
+  /// leave the page when a working-day window closed, which let a public
+  /// holiday decide what an officer could see.
   Future<({List<TenderSaleModel> rows, int total})> getTenderSalesPaged({
     required int offset,
     required int limit,
@@ -5603,13 +5649,16 @@ class DisposalService {
       // the Tender Sales page — it leaves this pool until it goes unsold again.
       final latest = [...ts]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt)); // newest first
-      final deadline = latest.first.unsoldDeadline;
-      final hasExplicitUnsold = latest.first.items
+      // ⚠️ MARKED unsold, never inferred from a clock.
+      //
+      // A package used to enter this pool once a working-day grace window
+      // closed, so the outcome was decided by the calendar: a public holiday
+      // moved the deadline, and the package moved with it. Worse, it left
+      // Central Disposal no way to record what actually happened -- the sale
+      // had already gone from their tab. Now an officer marks it, and until
+      // they do the package stays where it is.
+      final passed = latest.first.items
           .any((it) => it.forfeitedPackageId == id && it.unsold);
-      // Unsold if explicitly marked unsold OR after the sale-day's GRACE window
-      // closes (sale date + the following day).
-      final passed = hasExplicitUnsold ||
-          (deadline != null && DateTime.now().isAfter(deadline));
       if (passed) eligible[id] = ts;
     });
 
@@ -7151,12 +7200,10 @@ class DisposalService {
       // it leaves the Undestroyed pool until it genuinely goes undestroyed again.
       final latest = [...ts]
         ..sort((a, b) => b.createdAt.compareTo(a.createdAt)); // newest first
-      final deadline = latest.first.unsoldDeadline;
-      final hasExplicitUndestroyed = latest.first.items
+      // ⚠️ MARKED undestroyed, never inferred from a clock -- and
+      // destruction is not a sale, so a selling deadline never belonged here.
+      final passed = latest.first.items
           .any((it) => it.forfeitedPackageId == id && it.undestroyed);
-      // Undestroyed if explicitly marked undestroyed OR after the grace window closes.
-      final passed = hasExplicitUndestroyed ||
-          (deadline != null && DateTime.now().isAfter(deadline));
       if (passed) eligible[id] = ts;
     });
 

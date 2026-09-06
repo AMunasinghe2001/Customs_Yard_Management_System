@@ -100,11 +100,14 @@ void main() {
     });
 
     test('it mirrors the Tender Sales PAGE, not the closed-tender history', () {
-      // Same rule that page applies: unsold items remaining AND the window
-      // still open. That is what makes the report empty exactly when the
-      // page is empty.
+      // Same rule that page applies: unsold items remaining. That is what
+      // makes the report empty exactly when the page is empty.
       expect(b, contains('sale.items.any((i) => !i.sold)'));
-      expect(b, contains('DateTime.now().isAfter(sale.unsoldDeadline!)'));
+      // ⚠️ And no window. The report used to hide a sale once a
+      // working-day deadline passed, which hid work that was still
+      // outstanding -- the sale had unmarked items and nobody could see them.
+      expect(b.contains('unsoldDeadline'), isFalse,
+          reason: 'the report is hiding sales that still need a decision');
     });
 
     test('an item already sold has left the sale, so it is skipped', () {

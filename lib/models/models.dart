@@ -1,5 +1,4 @@
 import 'dart:convert';
-import '../core/holidays.dart';
 
 /// Reads a timestamp column that may arrive as either a `DateTime` or a String.
 ///
@@ -2420,9 +2419,16 @@ class TenderSaleItemModel {
 
 /// The stage a tender sale has reached, in order.
 ///
-/// Read off the sale's own three moments -- it opens when it is created, starts
-/// at [TenderSaleModel.saleMoment], closes at [TenderSaleModel.saleEndMoment],
-/// and its items lapse to Unsold at [TenderSaleModel.unsoldDeadline].
+/// Read off the sale's own two moments -- it opens when it is created, starts
+/// at [TenderSaleModel.saleMoment] and closes at
+/// [TenderSaleModel.saleEndMoment].
+///
+/// ⚠️ There is no fourth, "lapsed" stage any more. Items used to fall to
+/// Unsold on their own once a working-day window closed, so a CLOCK decided
+/// the outcome and a package could land on the DG's desk because a public
+/// holiday had passed rather than because anyone had looked at it. Central
+/// Disposal now marks every item by hand, and awaitingDecision is where a sale
+/// stays until it does.
 enum TenderStage {
   /// Announced, bidding not yet started.
   open('Tender Open', 'Bidding has not started yet'),
@@ -2431,10 +2437,7 @@ enum TenderStage {
   running('Tender Started', 'Bidding is open'),
 
   /// Bidding has closed; Central Disposal is marking each item sold or unsold.
-  awaitingDecision('Awaiting Decision', 'Central Disposal is deciding'),
-
-  /// The window to decide has passed; anything unmarked has gone to Unsold.
-  lapsed('Tender Closed', 'The window to decide has passed');
+  awaitingDecision('Awaiting Decision', 'Central Disposal is deciding');
 
   /// The chip's label.
   final String label;
@@ -2475,6 +2478,15 @@ class TenderSaleModel {
   });
 
   String get typeLabel => tenderSaleTypeLabel(tenderType);
+
+  /// A Special Tender Sale -- the round PERISHABLE goods go to.
+  ///
+  /// ⚠️ These get ONE round. Normal goods run the Valuation Tender plus
+  /// Tenders 1-3, a committee valuation and one more chance; goods that spoil
+  /// do not have months, so a failed special sale is the end of the road and
+  /// the decision cannot wait. Anything showing a sale is worth marking as
+  /// urgent should read this rather than testing the string again.
+  bool get isPerishableSale => tenderType == 'special';
 
   /// The exact moment the tender sale is scheduled to run — [saleDate] combined
   /// with [saleTime] ("HH:mm" / "HH:mm:ss"). Falls back to the date's midnight
@@ -2521,28 +2533,34 @@ class TenderSaleModel {
   /// names what the SALE is doing, and the last one names who is being waited
   /// on.
   TenderStage get stage {
-    if (saleEnded) {
-      // Bidding is over. Until the deadline passes, Central Disposal is
-      // deciding each item; after it, an unmarked item has lapsed to Unsold.
-      final deadline = unsoldDeadline;
-      if (deadline != null && DateTime.now().isAfter(deadline)) {
-        return TenderStage.lapsed;
-      }
-      return TenderStage.awaitingDecision;
-    }
+    // ⚠️ There is no longer a "lapsed" stage. An item used to fall to
+    // Unsold on its own once a working-day window closed, which meant a clock
+    // -- not an officer -- decided the outcome, and a package could reach the
+    // DG's desk because a holiday had passed rather than because anyone had
+    // looked at it. Central Disposal marks every item Sold or Unsold by hand,
+    // and the action stays available for as long as the sale exists.
+    if (saleEnded) return TenderStage.awaitingDecision;
     if (saleTimePassed) return TenderStage.running;
     return TenderStage.open;
   }
 
-  /// The moment the package leaves this sale as UNSOLD: the END of the next
-  /// WORKING day after the sale date (weekends & public holidays are skipped so
-  /// the officer always has an office day to mark it). After this, an item not
-  /// yet marked sold drops to the Unsold Tenders pool. Null when no date.
-  DateTime? get unsoldDeadline {
+  /// How long Central Disposal has had this sale, measured from the moment
+  /// bidding STARTED.
+  ///
+  /// This replaces the deadline: nothing expires, but the header says how long
+  /// the decision has been outstanding, so an item nobody has marked is
+  /// visible as such instead of silently lapsing.
+  Duration? get sinceSaleStarted {
     final d = saleDate;
     if (d == null) return null;
-    return workingDeadline(d);
+    final parts = (saleTime ?? '00:00').split(':');
+    final h = int.tryParse(parts.first) ?? 0;
+    final m = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+    final start = DateTime(d.year, d.month, d.day, h, m);
+    final now = DateTime.now();
+    return now.isAfter(start) ? now.difference(start) : null;
   }
+
 
   /// De-duplicated items: same (forfeited_package_id, fp.item_id) combination
   /// may appear as multiple TSI rows when the per-item RPC created extra entries.
@@ -2751,15 +2769,6 @@ class DestructionModel {
     return DateTime.now().isAfter(moment);
   }
 
-  /// The moment the package leaves this destruction as UNDESTROYED: the END of
-  /// the next WORKING day after the destruction date (weekends & public holidays
-  /// skipped). After this, an item not yet marked destroyed drops to the
-  /// Undestroyed pool. Null when no date.
-  DateTime? get unsoldDeadline {
-    final d = saleDate;
-    if (d == null) return null;
-    return workingDeadline(d);
-  }
 
   factory DestructionModel.fromJson(Map<String, dynamic> json) {
     final itemsJson = json['destruction_items'] as List? ?? const [];

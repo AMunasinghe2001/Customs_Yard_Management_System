@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../services/services.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/package_details_dialog.dart';
@@ -216,7 +217,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Icon(Icons.balance_rounded, size: 18),
                       const Gap(8),
-                      const Flexible(child: Text('Active Appeals', overflow: TextOverflow.ellipsis)),
+                      const Flexible(child: PageTitle('Active Appeals', Icons.gavel_rounded)),
                       if (activeCount > 0) ...[
                         const Gap(6),
                         _TabBadge(activeCount, accent),
@@ -228,7 +229,7 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                     child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
                       const Icon(Icons.gavel_rounded, size: 18),
                       const Gap(8),
-                      const Flexible(child: Text('Decided Goods', overflow: TextOverflow.ellipsis)),
+                      const Flexible(child: PageTitle('Decided Goods', Icons.fact_check_rounded)),
                       if (decidedCount > 0) ...[
                         const Gap(6),
                         _TabBadge(decidedCount, accent),
@@ -576,7 +577,9 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
   Widget build(BuildContext context) {
     final accent = widget.accent;
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24 -- see Central Disposal. A table page spends its
+      // vertical space on rows, not on chrome.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

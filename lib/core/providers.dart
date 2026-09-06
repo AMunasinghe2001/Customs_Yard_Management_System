@@ -2253,9 +2253,16 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
   // parallel it waits for the slowest.
   final disposal = ref.read(disposalServiceProvider);
   final results = await Future.wait([
-    ref.read(packageServiceProvider).getAllPackages(),
+    // ⚠️ The LEDGER's packages, not every package with every embed.
+    // getAllPackages() also brings each entry's warehouse and the returning
+    // officer's profile, plus the inspecting officer's -- 419 kB of JSON the
+    // financial roll-up never reads, and 130-210ms of driver time to decode.
+    ref.read(packageServiceProvider).getPackagesForLedger(),
     ref.watch(storageRateProvider.future),
-    disposal.getTenderSales(),
+    // ⚠️ The ledger's cut of the sales, stopping at the forfeited row.
+    // getTenderSales() goes three levels further -- packages, their items and
+    // their warehouse entries -- none of which buildSrFinancials reads.
+    disposal.getTenderSalesForLedger(),
     disposal.getFinancialExpenses(),
   ]);
   return buildSrFinancials(
@@ -2398,7 +2405,10 @@ final expensePageProvider =
   final results = await Future.wait([
     packageSvc.getPackagesByIds(ids.packageIds),
     ref.watch(storageRateProvider.future),
-    disposal.getTenderSales(),
+    // ⚠️ The ledger's cut of the sales, stopping at the forfeited row.
+    // getTenderSales() goes three levels further -- packages, their items and
+    // their warehouse entries -- none of which buildSrFinancials reads.
+    disposal.getTenderSalesForLedger(),
     disposal.getFinancialExpenses(),
   ]);
   final byId = results[0] as Map<String, PackageModel>;

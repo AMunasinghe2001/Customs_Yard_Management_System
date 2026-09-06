@@ -53,18 +53,28 @@ void main() {
     });
   });
 
-  group('the sell window stays in Dart, deliberately', () {
-    test('the view does not try to decide it', () {
-      // ⚠️ `workingDeadline` rolls past weekends AND Sri Lankan public
-      // holidays fetched from an API at runtime. There is no holiday table
-      // here, so a SQL version would disagree with the app on exactly the days
-      // that matter.
+  group('there is no sell window left to keep anywhere', () {
+    // ⚠️ This group used to say the opposite, and the reason it gave was
+    // sound: `workingDeadline` rolls past weekends AND Sri Lankan public
+    // holidays fetched from an API at runtime, so a SQL version would disagree
+    // with the app on exactly the days that matter.
+    //
+    // The answer was not to move the rule -- it was to drop it. A clock should
+    // not decide whether goods are unsold, and a public holiday should not
+    // change which packages reach the DG. Central Disposal marks every item by
+    // hand, so nothing has to be recomputed on either side.
+    test('the view still does not decide it', () {
       expect(view, isNot(contains('unsold_deadline')));
-      expect(view, contains('does NOT decide'));
     });
 
-    test('the screen applies it to the page it received', () {
-      expect(screen, contains('final windowClosed = s.unsoldDeadline != null'));
+    test('and neither does the screen', () {
+      expect(screen.contains('unsoldDeadline'), isFalse,
+          reason: 'a deadline is still hiding sales from the page');
+      expect(screen.contains('windowClosed'), isFalse);
+    });
+
+    test('an item leaves the page when it is MARKED, not when time passes', () {
+      expect(screen, contains('.where((s) => !s.sold)'));
     });
   });
 

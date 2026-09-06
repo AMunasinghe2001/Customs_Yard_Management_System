@@ -938,20 +938,40 @@ String _warehouseLocation(PackageModel? pkg, String? itemId) {
 /// cards. Ticks every second; reads "Xd Yh", "Yh Zm", or "Zm Ws" as it nears 0.
 /// Once the deadline passes it shows "Window closed" (the package then drops to
 /// the Unsold / Undestroyed pool on the next refresh).
-class _DeadlineCountdown extends StatefulWidget {
-  final DateTime? deadline;
-  final String label; // e.g. 'Sell within' / 'Destroy within'
-  const _DeadlineCountdown({required this.deadline, required this.label});
+/// How long a sale has been waiting for its outcome, counting UP from the
+/// moment bidding started.
+///
+/// ⚠️ This was a countdown ("Sell within 4h 12m") to a working-day
+/// deadline, after which the unmarked items fell to Unsold on their own. That
+/// made a CLOCK decide the outcome -- and because the deadline skipped public
+/// holidays fetched from an API, which packages reached the DG depended on the
+/// holiday calendar. Worse, once it expired the sale left the tab, so there
+/// was no longer anywhere to record what had actually happened.
+///
+/// Nothing expires now. This says how long the decision has been outstanding,
+/// so a sale nobody has marked is visible as such instead of quietly lapsing.
+class _ElapsedSinceSale extends StatefulWidget {
+  /// When bidding started. Null before the sale has a date.
+  final Duration? elapsed;
+
+  /// Perishables spoil, so their wait is shown in a warmer colour sooner.
+  final bool urgent;
+
+  const _ElapsedSinceSale({required this.elapsed, this.urgent = false});
+
   @override
-  State<_DeadlineCountdown> createState() => _DeadlineCountdownState();
+  State<_ElapsedSinceSale> createState() => _ElapsedSinceSaleState();
 }
 
-class _DeadlineCountdownState extends State<_DeadlineCountdown> {
+class _ElapsedSinceSaleState extends State<_ElapsedSinceSale> {
   Timer? _timer;
+
   @override
   void initState() {
     super.initState();
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+    // A minute is enough: this counts up in days and hours, and a per-second
+    // rebuild of every card on the page buys nothing.
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
       if (mounted) setState(() {});
     });
   }
@@ -965,38 +985,49 @@ class _DeadlineCountdownState extends State<_DeadlineCountdown> {
   String _fmt(Duration d) {
     if (d.inDays >= 1) return '${d.inDays}d ${d.inHours % 24}h';
     if (d.inHours >= 1) return '${d.inHours}h ${d.inMinutes % 60}m';
-    if (d.inMinutes >= 1) return '${d.inMinutes}m ${d.inSeconds % 60}s';
-    return '${d.inSeconds}s';
+    return '${d.inMinutes}m';
   }
 
   @override
   Widget build(BuildContext context) {
-    final dl = widget.deadline;
-    if (dl == null) return const SizedBox.shrink();
-    final remaining = dl.difference(DateTime.now());
-    final closed = remaining.isNegative;
-    final color = closed
+    final e = widget.elapsed;
+    if (e == null) return const SizedBox.shrink();
+
+    // Nothing is late -- there is no deadline to be late for. The colour says
+    // how long it has been, so a decision left for a week reads differently
+    // from one taken this morning.
+    final days = e.inDays;
+    final warmAt = widget.urgent ? 1 : 3;
+    final hotAt = widget.urgent ? 3 : 7;
+    final color = days >= hotAt
         ? context.colors.dangerRed
-        : remaining.inHours < 6
+        : days >= warmAt
             ? context.colors.warningAmber
-            : context.colors.successGreen;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.4)),
-      ),
-      child: Row(mainAxisSize: MainAxisSize.min, children: [
-        Icon(closed ? Icons.timer_off_rounded : Icons.timer_rounded,
-            size: 13, color: color),
-        const Gap(5),
-        Text(
-          closed ? 'Window closed' : '${widget.label} ${_fmt(remaining)}',
-          style: TextStyle(
-              color: color, fontSize: 11.5, fontWeight: FontWeight.w700),
+            : context.colors.textMuted;
+
+    return Tooltip(
+      message: widget.urgent
+          ? 'These goods spoil — mark each item Sold or Unsold as soon as '
+              'bidding closes'
+          : 'Time since bidding started. Mark each item Sold or Unsold to '
+              'close the sale.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: color.withOpacity(0.4)),
         ),
-      ]),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.schedule_rounded, size: 13, color: color),
+          const Gap(5),
+          Text(
+            '${_fmt(e)} since bidding started',
+            style: TextStyle(
+                color: color, fontSize: 11.5, fontWeight: FontWeight.w700),
+          ),
+        ]),
+      ),
     );
   }
 }
@@ -2887,14 +2918,14 @@ class _TenderSalesTabState extends ConsumerState<_TenderSalesTab> {
                   error: e,
                   onRetry: () => ref.refresh(tenderSalesPageProvider(query))),
               data: (result) {
-                // Filtered and paged by the database. The one test left here
-                // is the SELL WINDOW, which cannot move to SQL: it depends on
-                // `workingDeadline`, rolling past weekends and Sri Lankan
-                // public holidays fetched at runtime. Applied to this page.
+                // Filtered and paged by the database.
                 final visible = result.rows.where((s) {
-                  final windowClosed = s.unsoldDeadline != null &&
-                      DateTime.now().isAfter(s.unsoldDeadline!);
-                  return !windowClosed;
+                  // ⚠️ No window. A sale used to disappear from this tab
+                  // once a working-day deadline passed, taking its unmarked
+                  // items to Unsold with it -- so a CLOCK decided the outcome
+                  // and a public holiday could change which. The sale stays
+                  // until someone marks every item.
+                  return true;
                 }).toList();
 
                 if (result.total == 0) {
@@ -3074,14 +3105,12 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     // yard view-only page keeps them so the yard can see the full outcome.
     // Once the sell window has CLOSED, the un-sold items have moved to the
     // Unsold Tenders pool — drop them here too (Central Disposal view only).
-    final windowClosed = !widget.readOnly &&
-        widget.sale.unsoldDeadline != null &&
-        DateTime.now().isAfter(widget.sale.unsoldDeadline!);
+    // ⚠️ Unmarked items stay here to BE marked, however long that takes.
+    // They used to vanish when a deadline passed, which left an officer no way
+    // to record the outcome of a sale they had simply not got to yet.
     final Iterable<TenderSaleItemModel> source = widget.readOnly
         ? widget.sale.items
-        : windowClosed
-            ? const []
-            : widget.sale.items.where((s) => !s.sold);
+        : widget.sale.items.where((s) => !s.sold);
 
     // De-duplicate: same (forfeitedPackageId, packageItemId) may appear as
     // multiple TSI rows when the per-item RPC created extra entries. Keep the
@@ -3131,21 +3160,46 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     final green = context.colors.successGreen;
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
     final rows = _rows();
-    // Central Disposal: no actionable rows left (all sold, or the window closed
-    // and the un-sold items moved to Unsold Tenders) → drop the whole card. The
-    // yard view-only page (widget.readOnly) keeps the card to show the full outcome.
+    // Central Disposal: no actionable rows left (every item marked) → drop the
+    // whole card. The yard view-only page (widget.readOnly) keeps the card to
+    // show the full outcome.
     if (!widget.readOnly && rows.isEmpty) return const SizedBox.shrink();
     final total = widget.sale.totalCount;
     final sold = widget.sale.soldCount;
     final allSold = total > 0 && sold == total;
 
+    // ⚠️ A PERISHABLE sale that has started is marked out, because it is
+    // the one kind that cannot wait. These goods get a single round -- normal
+    // goods run five over months -- and they spoil while a decision is
+    // outstanding, so the card should be findable at a glance in a page of
+    // otherwise identical cards.
+    //
+    // Only once bidding has STARTED: before that there is nothing to act on,
+    // and highlighting every future special sale would make the mark mean
+    // nothing.
+    final urgentPerishable = !widget.readOnly &&
+        !allSold &&
+        widget.sale.isPerishableSale &&
+        widget.sale.saleTimePassed;
+    final amber = context.colors.warningAmber;
+
     return Container(
       decoration: BoxDecoration(
-        color: context.colors.cardDark,
+        color: urgentPerishable
+            // A wash, not a fill: the card still has to read as a card, and
+            // the text on it has to stay legible in both themes.
+            ? Color.alphaBlend(
+                amber.withOpacity(0.07), context.colors.cardDark)
+            : context.colors.cardDark,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
-            color:
-                allSold ? green.withOpacity(0.4) : context.colors.borderColor),
+          color: allSold
+              ? green.withOpacity(0.4)
+              : urgentPerishable
+                  ? amber.withOpacity(0.55)
+                  : context.colors.borderColor,
+          width: urgentPerishable ? 1.5 : 1,
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -3157,10 +3211,17 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: green.withOpacity(0.12),
+                  color: (urgentPerishable ? amber : green).withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: Icon(Icons.receipt_long_rounded, color: green, size: 20),
+                // The leaf marks perishables everywhere else in the app;
+                // the card that needs acting on carries the same mark.
+                child: Icon(
+                    urgentPerishable
+                        ? Icons.eco_rounded
+                        : Icons.receipt_long_rounded,
+                    color: urgentPerishable ? amber : green,
+                    size: 20),
               ),
               const Gap(14),
               Expanded(
@@ -3213,17 +3274,16 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                 color: context.colors.textMuted, fontSize: 12)),
                       ),
                     ]),
-                    // Live "Sell within" countdown to the unsold deadline — once
-                    // it closes, the remaining items drop to Unsold Tenders.
-                    // Central Disposal only — the yard's read-only view never
-                    // shows the timer (the window is the directorate's concern).
+                    // How long this sale has been waiting to be marked.
+                    // Central Disposal only -- the yard's read-only view is
+                    // not the one who has to act.
                     if (!widget.readOnly &&
                         !allSold &&
-                        widget.sale.unsoldDeadline != null) ...[
+                        widget.sale.sinceSaleStarted != null) ...[
                       const Gap(6),
-                      _DeadlineCountdown(
-                          deadline: widget.sale.unsoldDeadline,
-                          label: 'Sell within'),
+                      _ElapsedSinceSale(
+                          elapsed: widget.sale.sinceSaleStarted,
+                          urgent: widget.sale.isPerishableSale),
                     ],
                   ],
                 ),
@@ -3369,11 +3429,12 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                             ? _statusChip(context, 'Sold',
                                 Icons.check_circle_rounded, green)
                             : (() {
-                                final deadline = widget.sale.unsoldDeadline;
-                                final isUnsold = r.saleItem.unsold ||
-                                    (deadline != null &&
-                                        DateTime.now().isAfter(deadline));
-                                if (isUnsold) {
+                                // ⚠️ Marked, never inferred from a clock. An
+                                // item used to read Unsold once a working-day
+                                // window closed, which put a package on the
+                                // DG's desk because a holiday had passed
+                                // rather than because anyone had decided.
+                                if (r.saleItem.unsold) {
                                   return _statusChip(
                                       context,
                                       'Unsold',
@@ -3400,8 +3461,6 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                             Icons.gavel_rounded,
                                           TenderStage.awaitingDecision =>
                                             Icons.hourglass_top_rounded,
-                                          TenderStage.lapsed =>
-                                            Icons.lock_clock_rounded,
                                         },
                                         switch (stage) {
                                           // Bidding under way is the only
@@ -3409,8 +3468,6 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                                           // happening.
                                           TenderStage.running =>
                                             context.colors.successGreen,
-                                          TenderStage.lapsed =>
-                                            context.colors.textMuted,
                                           _ => context.colors.warningAmber,
                                         }),
                                   );
@@ -5968,121 +6025,6 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
 
 // ── Destructions ──────────────────────────────────────────────
 
-class _DestructionsTab extends ConsumerWidget {
-  const _DestructionsTab();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final green = context.colors.successGreen;
-    final sales = ref.watch(destructionsProvider);
-    return Padding(
-      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
-      // roughly a whole extra row of the table on every one of them.
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            PageTitle('Destruction Sales', Icons.delete_sweep_rounded),
-            const Spacer(),
-            const DisposalSearch(
-                tabKey: 'destructions', hint: 'Search sale no / SR…'),
-            const Gap(12),
-            YardAllFilter(
-              value: ref.watch(disposalYardFilterProvider('destructions')),
-              onChanged: (v) => ref
-                  .read(disposalYardFilterProvider('destructions').notifier)
-                  .state = v,
-            ),
-            const Gap(12),
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: green, foregroundColor: Colors.white),
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: const Text('New Destruction Sale',
-                  style: TextStyle(fontWeight: FontWeight.w600)),
-              onPressed: () => showDialog(
-                  context: context,
-                  builder: (_) => const _DestructionFormDialog()),
-            ),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(16),
-          Expanded(
-            child: sales.when(
-              skipLoadingOnReload: true,
-              loading: () =>
-                  Center(child: CircularProgressIndicator(color: green)),
-              error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(destructionsProvider)),
-              data: (list) {
-                final q = ref
-                    .watch(disposalSearchProvider('destructions'))
-                    .toLowerCase();
-                final yf =
-                    ref.watch(disposalYardFilterProvider('destructions'));
-                // Hide sales with no actionable rows left: every item destroyed
-                // (fully consumed), OR the destroy window has closed (the
-                // un-destroyed items have dropped to the Undestroyed pool).
-                var visible = list.where((s) {
-                  final hasPending = s.items.any((i) => !i.destroyed);
-                  if (!hasPending) return false;
-                  final windowClosed = s.unsoldDeadline != null &&
-                      DateTime.now().isAfter(s.unsoldDeadline!);
-                  return !windowClosed;
-                }).toList();
-                if (yf != null) {
-                  // Same reasoning as Tender Sales: match per item, not on the
-                  // sale's own yard, since a multi-directorate yard's items
-                  // can carry different SR-number prefixes within one sale.
-                  visible = visible
-                      .where((s) => s.items.any((i) => matchesYardFilter(
-                          yf, i.yard, i.forfeited?.srNumber ?? '')))
-                      .toList();
-                }
-                if (q.isNotEmpty) {
-                  visible = visible
-                      .where((s) =>
-                          (s.saleNumber ?? '').toLowerCase().contains(q) ||
-                          s.items.any((i) =>
-                              (i.forfeited?.srNumber ?? '')
-                                  .toLowerCase()
-                                  .contains(q) ||
-                              (i.forfeited?.consigneeName ?? '')
-                                  .toLowerCase()
-                                  .contains(q)))
-                      .toList();
-                }
-                if (visible.isEmpty) {
-                  return _listCard(
-                    context,
-                    const EmptyTableState(
-                        icon: Icons.local_fire_department_outlined,
-                        message: 'No active destruction sales',
-                        subtitle:
-                            'Create a destruction sale, or check the Undestroyed tab for items whose window has closed.'),
-                  );
-                }
-                // Detect re-destructions against ALL sales (the earlier sale's
-                // window may have closed and dropped out of `visible`).
-                final retenderIds = retenderDestructionIds(list);
-                return ListView.separated(
-                  itemCount: visible.length,
-                  separatorBuilder: (_, __) => const Gap(16),
-                  itemBuilder: (context, i) => DestructionCard(
-                      sale: visible[i],
-                      isRetender: retenderIds.contains(visible[i].id)),
-                ).animate().fadeIn(duration: 350.ms).slideY(begin: 0.05);
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Destruction Sale card (header + per-item detail table + Mark Destroyed) ─────────
-
 class _DestRow {
   final DestructionItemModel saleItem;
   final PackageItem? item;
@@ -6123,15 +6065,14 @@ class DestructionCard extends ConsumerWidget {
     // remain visible there, on the Destroyed Packages page). While the window is
     // open, un-destroyed items stay here so they can be marked. The yard's
     // read-only view keeps EVERY item (sold/unsold) so it can always be seen.
-    final windowClosed = !readOnly &&
-        sale.unsoldDeadline != null &&
-        DateTime.now().isAfter(sale.unsoldDeadline!);
+    // ⚠️ Destruction is not a sale -- goods are destroyed on the yard's own
+    // decision or Top Management's, and nothing is bid for -- so a selling
+    // clock never belonged here at all.
     // Destroyed items leave the Destruction Sales page (they move to Destroyed
     // Packages) — but stay on the yard's read-only view as the full outcome.
     final source =
         readOnly ? sale.items : sale.items.where((s) => !s.destroyed);
     for (final si in source) {
-      if (windowClosed) continue; // dropped to Undestroyed
       final pkg = si.forfeited?.packageDetails;
       final pkgItems = pkg?.items ?? const [];
       final fpItemId = si.forfeited?.itemId;
@@ -6231,17 +6172,12 @@ class DestructionCard extends ConsumerWidget {
                                 color: context.colors.textMuted, fontSize: 12)),
                       ),
                     ]),
-                    // Live "Destroy within" countdown to the undestroyed deadline
-                    // — once it closes, remaining items drop to Undestroyed.
-                    // Central Disposal only — the yard read-only view hides it.
-                    if (!readOnly &&
-                        !allDestroyed &&
-                        sale.unsoldDeadline != null) ...[
-                      const Gap(6),
-                      _DeadlineCountdown(
-                          deadline: sale.unsoldDeadline,
-                          label: 'Destroy within'),
-                    ],
+                    // ⚠️ No timer here at all. There was a "Destroy within"
+                    // countdown, borrowed wholesale from the tender side --
+                    // but destruction is not a sale. Nothing is bid for,
+                    // nothing has to be decided before a market closes, and
+                    // goods are destroyed on the yard's own decision or Top
+                    // Management's. A selling clock never belonged here.
                   ],
                 ),
               ),
@@ -6379,11 +6315,10 @@ class DestructionCard extends ConsumerWidget {
                             ? _statusChipWidget(context, 'Destroyed',
                                 Icons.check_circle_rounded, green)
                             : (() {
-                                final deadline = sale.unsoldDeadline;
-                                final isUndestroyed = r.saleItem.undestroyed ||
-                                    (deadline != null &&
-                                        DateTime.now().isAfter(deadline));
-                                if (isUndestroyed) {
+                                // ⚠️ Marked, never inferred from a clock --
+                                // and destruction is not a sale, so a selling
+                                // deadline never belonged here at all.
+                                if (r.saleItem.undestroyed) {
                                   return _statusChipWidget(
                                       context,
                                       'Undestroyed',
@@ -7404,250 +7339,6 @@ class _DestructionSaleHistoryDialog extends StatelessWidget {
     );
   }
 }
-
-class _UndestroyedReDestructionTab extends ConsumerWidget {
-  const _UndestroyedReDestructionTab();
-
-  String _itemName(ForfeitedPackageModel f) {
-    final items = f.packageDetails?.items ?? const [];
-    if (items.isEmpty) return 'Multiple/Unspecified';
-    // An item-scoped FP names its own item — show THAT, not "first +N".
-    if (f.itemId != null) {
-      final match = items.where((i) => i.id == f.itemId).firstOrNull;
-      if (match != null) return match.itemName;
-    }
-    if (items.length == 1) return items.first.itemName;
-    return '${items.first.itemName} +${items.length - 1}';
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final green = context.colors.successGreen;
-    final amber = context.colors.warningAmber;
-    final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
-    final async = ref.watch(undestroyedDestructionsProvider);
-
-    return Padding(
-      // ⚠️ 16, not 24. Eight pixels off each side of nine tab bodies is
-      // roughly a whole extra row of the table on every one of them.
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            PageTitle('Undestroyed Packages — Re-destruction', Icons.local_fire_department_rounded),
-            const Spacer(),
-            const DisposalSearch(
-                tabKey: 'undestroyed', hint: 'Search SR / item / consignee…'),
-            const Gap(12),
-            YardAllFilter(
-              value: ref.watch(disposalYardFilterProvider('undestroyed')),
-              onChanged: (v) => ref
-                  .read(disposalYardFilterProvider('undestroyed').notifier)
-                  .state = v,
-            ),
-            const Gap(12),
-            async.maybeWhen(
-              data: (list) => ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                    backgroundColor: green, foregroundColor: Colors.white),
-                icon: const Icon(Icons.auto_delete_rounded, size: 18),
-                label: const Text('Re-destruction',
-                    style: TextStyle(fontWeight: FontWeight.w600)),
-                onPressed: list.isEmpty
-                    ? null
-                    : () => showDialog(
-                          context: context,
-                          builder: (_) =>
-                              const _DestructionFormDialog(reDestruction: true),
-                        ).then((_) {
-                          ref.invalidate(undestroyedDestructionsProvider);
-                          ref.invalidate(destructionsProvider);
-                        }),
-              ),
-              orElse: () => const SizedBox(),
-            ),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(12),
-          // ⚠️ Same shape again: the count on its own line, to the RIGHT.
-          Row(children: [
-            const Spacer(),
-            if (async.valueOrNull != null)
-              StatChip(
-                  label: 'Undestroyed — re-destructionable',
-                  value: '${async.valueOrNull!.length}',
-                  color: amber),
-          ]).animate().fadeIn(duration: 300.ms),
-          const Gap(14),
-          Expanded(
-            child: async.when(
-              skipLoadingOnReload: true,
-              loading: () =>
-                  Center(child: CircularProgressIndicator(color: green)),
-              error: (e, _) => ErrorView(
-                  error: e,
-                  onRetry: () => ref.refresh(undestroyedDestructionsProvider)),
-              data: (list) {
-                final q = ref
-                    .watch(disposalSearchProvider('undestroyed'))
-                    .toLowerCase();
-                final yf = ref.watch(disposalYardFilterProvider('undestroyed'));
-                if (yf != null) {
-                  list = list
-                      .where((info) => matchesYardFilter(
-                          yf, info.forfeited.yard, info.forfeited.srNumber))
-                      .toList();
-                }
-                if (q.isNotEmpty) {
-                  list = list
-                      .where((info) =>
-                          info.forfeited.srNumber.toLowerCase().contains(q) ||
-                          info.forfeited.consigneeName
-                              .toLowerCase()
-                              .contains(q) ||
-                          _itemName(info.forfeited).toLowerCase().contains(q))
-                      .toList();
-                }
-                if (list.isEmpty) {
-                  return _listCard(
-                    context,
-                    const EmptyTableState(
-                        message:
-                            'No undestroyed packages — everything destructioned is destroyed or still in an active destruction window'),
-                  );
-                }
-                return _listCard(
-                  context,
-                  DataTable2(
-                    columnSpacing: 12,
-                    horizontalMargin: 16,
-                    fixedTopRows: 1,
-                    minWidth: 880,
-                    headingRowColor: _headingColor(context),
-                    columns: const [
-                      DataColumn2(label: Text('SR Number'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Case No'), size: ColumnSize.S),
-                      DataColumn2(
-                          label: Text('Goods Name'), size: ColumnSize.M),
-                      DataColumn2(
-                          label: Center(child: Text('Source')),
-                          size: ColumnSize.S),
-                      DataColumn2(
-                          label: Text('Qty'),
-                          size: ColumnSize.S,
-                          fixedWidth: 56),
-                      DataColumn2(label: Text('Reason'), size: ColumnSize.M),
-                      DataColumn2(label: Text('Location'), size: ColumnSize.M),
-                      DataColumn2(
-                          // "Latest": the cell shows the newest valuation —
-                          // sealed while the round it prices is still open.
-                          label: Text('Latest Valuation'),
-                          size: ColumnSize.S,
-                          fixedWidth: 145),
-                      DataColumn2(
-                          label: Center(child: Text('Destructions')),
-                          size: ColumnSize.S,
-                          fixedWidth: 120),
-                      DataColumn2(
-                          label: Center(child: Text('Details')),
-                          size: ColumnSize.S,
-                          fixedWidth: 64),
-                    ],
-                    rows: list.map((info) {
-                      final f = info.forfeited;
-                      final pkg = f.packageDetails;
-                      final item = f.itemId != null
-                          ? (pkg?.items
-                              .where((i) => i.id == f.itemId)
-                              .firstOrNull)
-                          : null;
-                      return DataRow(cells: [
-                        DataCell(TooltipText(f.srNumber,
-                            style: TextStyle(
-                                color: context.colors.accentLightBlue,
-                                fontWeight: FontWeight.w600))),
-                        DataCell(TooltipText(pkg?.caseNumber ?? '—',
-                            overflow: TextOverflow.ellipsis)),
-                        DataCell(TooltipText(_itemName(f),
-                            overflow: TextOverflow.ellipsis)),
-                        DataCell(Center(child: _SourceChip(source: f.source))),
-                        DataCell(TooltipText(
-                            '${f.entryQty ?? item?.quantity ?? '—'}')),
-                        DataCell(Builder(builder: (_) {
-                          final reason = _forfeitReasonText(item, f);
-                          return Tooltip(
-                            message: reason,
-                            child: Text(reason.isNotEmpty ? reason : '—',
-                                overflow: TextOverflow.ellipsis),
-                          );
-                        })),
-                        DataCell(TooltipText(_warehouseLocation(pkg, f.itemId),
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                                color: context.colors.textSecondary,
-                                fontSize: 12))),
-                        DataCell(_LatestValuationCell(
-                            f: f,
-                            qty: f.entryQty ?? item?.quantity,
-                            // Sealed while the newest destruction round is
-                            // still pending.
-                            sealedUntilSale:
-                                info.latestDestruction?.saleEnded == false)),
-                        DataCell(Center(
-                          child: _AttemptsBadge(
-                            count: info.timesAttempted,
-                            color: amber,
-                            onTap: () => showDialog(
-                              context: context,
-                              builder: (_) =>
-                                  _DestructionSaleHistoryDialog(info: info),
-                            ),
-                          ),
-                        )),
-                        DataCell(Center(
-                          child: pkg != null
-                              ? IconButton(
-                                  icon: Icon(Icons.info_outline_rounded,
-                                      color: context.colors.accentLightBlue,
-                                      size: 18),
-                                  onPressed: () => showDialog(
-                                    context: context,
-                                    builder: (_) => PackageDetailsDialog(
-                                      package: pkg,
-                                      storageRate: storageRate,
-                                      headerAccentColor: green,
-                                      useLegacySummary: true,
-                                      highlightItemId: f.itemId,
-                                      yardLabel: yardName(f.yard),
-                                      valuationUnitCost: f.valuationCost,
-                                      valuationTotalCost: f.valuationCost !=
-                                              null
-                                          ? f.valuationCost! * (f.entryQty ?? 1)
-                                          : null,
-                                      valuationQty: f.entryQty,
-                                      // Sealed while the newest round is open.
-                                      valuationSealedUntilSale:
-                                          info.latestDestruction?.saleEnded ==
-                                              false,
-                                    ),
-                                  ),
-                                )
-                              : const SizedBox.shrink(),
-                        )),
-                      ]);
-                    }).toList(),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── Select All / Clear All bar for the package picker lists ───────────────────
 
 class _SelectAllBar extends StatelessWidget {
   final int selectedCount;

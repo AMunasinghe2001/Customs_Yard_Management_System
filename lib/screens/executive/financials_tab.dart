@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
 import 'package:data_table_2/data_table_2.dart';
+import '../../widgets/page_title.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/styled_dropdown.dart';
@@ -85,7 +86,10 @@ class FinancialsTab extends ConsumerWidget {
         final sum = summariseSrs(rows);
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24. These pages are TABLES, and vertical chrome is rows
+      // the officer cannot see. Central Disposal tightened to this for the
+      // same reason; matching it also keeps the two portals looking alike.
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -96,11 +100,7 @@ class FinancialsTab extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text('Financials',
-                          style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 22,
-                              fontWeight: FontWeight.w700)),
+                      PageTitle('Financials', Icons.account_balance_wallet_rounded),
                       const Gap(2),
                       Text(
                           canEdit
@@ -649,11 +649,16 @@ class _GoodsBreakdownTable extends ConsumerWidget {
     final gold = context.colors.primaryGold;
 
     final taxesAsync = ref.watch(disposalTaxesProvider);
-    final configuredTaxNames = taxesAsync.value
-            ?.where((t) => t.isActive)
-            .map((t) => t.name)
-            .toList() ??
-        const ['VAT', 'PAL'];
+    // ⚠️ EVERY configured tax, active or not.
+    //
+    // 'Active' decides whether a tax is APPLIED when Central Disposal marks
+    // an item sold. It says nothing about the past: a tax switched off today
+    // may have been charged on hundreds of sales, and those figures are still
+    // money that moved. Filtering the column out here hid them -- the ledger
+    // showed VAT and PAL while Cess and Stamp Duty, both charged historically,
+    // simply had no column to appear in.
+    final configuredTaxNames =
+        taxesAsync.value?.map((t) => t.name).toList() ?? const ['VAT', 'PAL'];
     final taxNames = <String>[...configuredTaxNames];
     for (final r in rows) {
       final tMap = r.taxesByName;

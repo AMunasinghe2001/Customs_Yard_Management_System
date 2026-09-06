@@ -64,9 +64,13 @@ Future<void> _start() async {
   // Background auto-update check (Windows/macOS). Never throws.
   await initAutoUpdater();
 
-  // Fetch Sri Lanka public holidays for the sale/destruction working-day
-  // deadlines. Fire-and-forget — never blocks startup, falls back to the
-  // static list + weekend rule if offline.
+  // ⚠️ Still fetched, though nothing reads it today.
+  //
+  // It existed for the sale/destruction working-day DEADLINE, which has been
+  // removed: a clock should not decide whether goods are unsold, and a public
+  // holiday should not change which packages reach the DG. The calendar itself
+  // is still the right answer for anything that genuinely has to fall on an
+  // office day, so the warm-up stays rather than being rediscovered later.
   unawaited(loadPublicHolidays());
 
   runApp(

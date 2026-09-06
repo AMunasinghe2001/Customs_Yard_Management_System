@@ -184,6 +184,13 @@ class _ExecutiveDashboardScreenState
               ),
               child: TabBar(
                 controller: tabController,
+                // ⚠️ Scrollable, like Central Disposal's strip. Fixed tabs
+                // divide the width equally, so at any real window size the
+                // long labels -- 'Tender Committees', 'Unsold Perishables' --
+                // did not fit their share and painted the red RIGHT OVERFLOWED
+                // stripes over the header.
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 splashFactory: NoSplash.splashFactory,
                 overlayColor: WidgetStateProperty.all(Colors.transparent),
                 indicatorSize: TabBarIndicatorSize.tab,
@@ -202,6 +209,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.groups_rounded, size: 18),
@@ -212,6 +220,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.rule_folder_rounded, size: 18),
@@ -222,6 +231,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.eco_rounded, size: 18),
@@ -232,6 +242,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.storefront_rounded, size: 18),
@@ -242,6 +253,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.account_balance_wallet_rounded, size: 18),
@@ -252,6 +264,7 @@ class _ExecutiveDashboardScreenState
                   Tab(
                     height: 44,
                     child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(Icons.assessment_rounded, size: 18),

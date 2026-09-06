@@ -3745,9 +3745,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           var live = daySales.where((sale) {
             final hasPending = sale.items.any((i) => !i.sold);
             if (!hasPending) return false;
-            final windowClosed = sale.unsoldDeadline != null &&
-                DateTime.now().isAfter(sale.unsoldDeadline!);
-            return !windowClosed;
+            // ⚠️ No window -- an unmarked sale is still open work, and a
+            // report that hid it hid the work.
+            return true;
           }).toList();
           if (_yardArg != null) {
             live = live
