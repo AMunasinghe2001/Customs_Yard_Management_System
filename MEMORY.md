@@ -1187,6 +1187,111 @@ Added **`kUnsoldDecidedColumns`** (Final Outcome → **Decided On**) and **`unso
   against both the tab count and the body count rather than a number typed
   beside them.
 
+### No clock decides an outcome (2026-09-06)
+
+- ⚠️ **The auto-lapse is gone.** An item Central Disposal had not marked fell
+  to Unsold on its own once a working-day window closed — and `workingDeadline`
+  skips weekends AND Sri Lankan public holidays fetched from an API at runtime,
+  so **which packages reached the DG depended on the holiday calendar**. Worse,
+  the sale then left the tab, leaving no way to record what actually happened.
+  `unsoldDeadline` and `TenderStage.lapsed` are deleted; a test fails if either
+  returns.
+- Removing it uncovered two live bugs it had been covering for:
+  - ⚠️ **`tender_sale_items.unsold` and `destruction_items.undestroyed` did
+    not exist**, though the app wrote to both. "Mark Unsold" / "Mark
+    Undestroyed" had never worked, and the auto-lapse was the ONLY route into
+    either pool. [postgres/33](postgres/33_destruction_undestroyed_columns.sql),
+    [/34](postgres/34_tender_unsold_columns.sql) add them with a pair
+    constraint and a check that an item cannot be both outcomes. /34 also
+    backfills (one-shot, flag-guarded) what the deadline had already lapsed —
+    without it the pool would have emptied overnight.
+  - **Destruction is NOT a sale.** `destroyed_price` is income nowhere; goods
+    are destroyed on the yard's own decision or Top Management's. The
+    "Destruction Sales" tab and the Undestroyed/Re-destruction pool were
+    dropped from the strip long ago but **361 lines of dead widgets stayed**,
+    carrying the rule with them. Gone.
+- The countdown is now an **elapsed** timer ("3d 4h since bidding started"),
+  warming amber→red, sooner for perishables. A **perishable sale that has
+  started** is highlighted (amber wash, leaf icon) — one round, and they spoil
+  while a decision waits.
+- ⚠️ `has_pending` means **UNDECIDED**, not "not sold"
+  ([postgres/35](postgres/35_tender_summary_counts_unsold.sql)). Those were the
+  same thing only while a clock decided unsold. Central Disposal's tab is a
+  **WORKLIST** (82 sales, 5 with work left); the yard's is a **RECORD** and
+  lists everything.
+
+### The tender route is finite (2026-09-07)
+
+- **Valuation Tender → Tender 1 → 2 → 3** is all Central Disposal can run —
+  four rounds. Then Top Management appoints a **committee** to price it, and
+  when that round fails too the package is exhausted and the DG rules.
+- ⚠️ Nothing enforced it: CED/GL1/OA/07/2025 ran **five** rounds with zero
+  committees. [postgres/38](postgres/38_retender_stops_at_four.sql) holds a
+  package past four rounds out of `unsold_retender_pool` unless a committee
+  exists. It deliberately does NOT rewrite the rows it found — round 5 happened,
+  and editing that would falsify a record.
+- ⚠️ **That created an orphan**, and the fix is the lesson: the Committees tab
+  read the same pool, so the package the new rule held OUT of it appeared on NO
+  page — not the pool, not the DG's Unsold Goods (its committee round has not
+  failed, because it never had one), not the tab that appoints the committee.
+  [postgres/39](postgres/39_committee_pool_view.sql) gives that tab its own
+  view, and its verify block asserts **no package past four rounds is invisible
+  everywhere**. A package with nowhere to go is worse than one in the wrong
+  place.
+- `getCommitteesPaged(appointedOnly:)` — Central Disposal watches committees
+  that EXIST (it cannot appoint one); Top Management APPOINTS them and must see
+  the packages with none yet. In the query key, or the two tabs share a page.
+- **`EnterBidsDialog` is public and read-only-capable.** The DG had to price
+  goods that failed four rounds with none of the evidence — the bids and
+  re-valuations were reachable only from Central Disposal's table. Read-only
+  reuses the existing round LOCK rather than a second hiding rule.
+- ⚠️ Committee writes invalidate the **paged** providers, not just
+  `tenderCommitteesProvider`. That map is what each CELL reads; the paged ones
+  decide which packages BELONG on a page.
+
+### Top Management pages in SQL (2026-09-07)
+
+- All four tabs rendered whole lists. One page from each view is **4-5ms**;
+  `getTenderSales()` alone is **73ms**.
+- Unsold Goods and Unsold Perishables share ONE paged method, told apart by
+  **which view** decides membership — `exhausted_unsold` (five failed chances,
+  a committee, the ADG's submission) or `unsold_perishables` (one failed
+  Special Tender Sale). ⚠️ `perishable` is in `==` AND `hashCode`, or the tabs
+  share a cached page and one shows the other's list.
+- ⚠️ [postgres/37](postgres/37_unsold_perishables_marked.sql): the perishables
+  view was left behind by the auto-lapse removal. CED/GL1/SR/17/2026 sat with
+  `sold=false AND unsold=false` — nobody had decided — yet the DG was already
+  being asked to rule on it. Membership is **the mark** now.
+- ⚠️ **A perishable that SELLS never reaches the DG** — selling IS its outcome
+  ([postgres/36](postgres/36_perishable_sold_outcome.sql)). Read from
+  `tender_sale_items`, never written into `unsold_proposals`: inventing a
+  proposal row would put sold goods on the DG's desk and double-count them in
+  every report reading that table.
+
+### Filter by the outcome, and marks belong to their portal (2026-09-07)
+
+- "Decided" lumped all six outcomes into one bucket — not a question an officer
+  asks. [OutcomeFilter](lib/widgets/outcome_filter.dart) lists each by name,
+  Awaiting first. `kOutcomeAwaiting` / `kOutcomeSold` are **sentinels, not
+  outcomes**, deliberately outside `kUnsoldProposals`.
+- ⚠️ On Perishable, "awaiting" means **NEITHER** has happened — a sold row has
+  no proposal either, so testing only for a null proposal calls it awaiting.
+- ⚠️ **The control must match the company it keeps.** Central Disposal sets it
+  beside segmented CHIPS (13pt, 14/8, radius 10, tinted fill); the yard sets it
+  in a row of filter BUTTONS (12pt, radius 8, outlined). `chipStyle` is opt-in
+  per caller. A test reads the chip's seven measurements **out of the chip
+  widget** so restyling one reports the mismatch.
+- Every table page is three lines: **title + search + yard**, then **filter
+  opposite count**, then the table. Destroyed Goods sets it.
+- Heading marks are for **Central Disposal only** (they echo its tab strip); on
+  the yard the nav rail already shows the icon. Colour is the **portal's**:
+  gold on the yard, green in Central Disposal, purple in Appeal, teal in Top
+  Management.
+- ⚠️ **Tabs are addressed by name.** `animateTo(10)` was written when 10 meant
+  Unsold Tenders; adding Re-export shifted every index after Auction and threw
+  the officer to a page about goods leaving the country. `DisposalTab` enum,
+  and `length` reads from it.
+
 ### Mouse scrolling on desktop (2026-08-29)
 
 Flutter's desktop `ScrollBehavior` omits touch/mouse from `dragDevices` and hides the scrollbar, assuming a wheel is always available. On a PC where the wheel does not reach a nested list there was then **no way to scroll at all**.
