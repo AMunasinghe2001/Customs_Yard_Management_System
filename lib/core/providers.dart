@@ -2030,26 +2030,22 @@ class FinancialSummary {
 /// SR level: an SR's costs are the SUM of its packages' costs, and the single
 /// deposit is what those costs are charged against. The per-goods figures ride
 /// along inside each row so a package breakdown is still available.
-final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
-  ref.watch(packagesChangeTriggerProvider);
-  ref.watch(tenderSaleItemsChangeTriggerProvider);
-  ref.watch(destructionsChangeTriggerProvider);
-  ref.watch(financialExpensesRefreshProvider);
-
-  // Four independent fetches, two of them heavy nested queries. Awaiting them
-  // one after another meant the page waited for the SUM of all four; in
-  // parallel it waits for the slowest.
-  final disposal = ref.read(disposalServiceProvider);
-  final results = await Future.wait([
-    ref.read(packageServiceProvider).getAllPackages(),
-    ref.watch(storageRateProvider.future),
-    disposal.getTenderSales(),
-    disposal.getFinancialExpenses(),
-  ]);
-  final packages = results[0] as List<PackageModel>;
-  final rates = results[1] as Map<DateTime, double>;
-  final sales = results[2] as List<TenderSaleModel>;
-  final expenses = results[3] as List<FinancialExpenseModel>;
+/// The SR ledger for a given set of packages.
+///
+/// ⚠️ Extracted from `srFinancialsProvider` so the EXPENSES tab can build
+/// the same rows for ONE PAGE of SRs. The provider below still passes every
+/// package -- the Financials tab genuinely sums the whole ledger -- but a tab
+/// that shows twenty rows should not have to.
+///
+/// The nested shape is why this is a function rather than a view: the table
+/// and its detail dialog read the per-item `goods` list, and reproducing that
+/// in SQL would be a second definition of the same figures.
+List<SrFinancials> buildSrFinancials({
+  required List<PackageModel> packages,
+  required Map<DateTime, double> rates,
+  required List<TenderSaleModel> sales,
+  required List<FinancialExpenseModel> expenses,
+}) {
 
   // ── Sale proceeds + taxes, per goods item ─────────────────────────────────
   final proceedsByItem = <String, double>{};
@@ -2239,6 +2235,30 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
   // Newest SR first — the most recent work is what the yard is looking for.
   rows.sort((a, b) => compareSrNewestFirst(a.srNumber, b.srNumber));
   return rows;
+}
+
+final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
+  ref.watch(financialExpensesRefreshProvider);
+
+  // Four independent fetches, two of them heavy nested queries. Awaiting them
+  // one after another meant the page waited for the SUM of all four; in
+  // parallel it waits for the slowest.
+  final disposal = ref.read(disposalServiceProvider);
+  final results = await Future.wait([
+    ref.read(packageServiceProvider).getAllPackages(),
+    ref.watch(storageRateProvider.future),
+    disposal.getTenderSales(),
+    disposal.getFinancialExpenses(),
+  ]);
+  return buildSrFinancials(
+    packages: results[0] as List<PackageModel>,
+    rates: results[1] as Map<DateTime, double>,
+    sales: results[2] as List<TenderSaleModel>,
+    expenses: results[3] as List<FinancialExpenseModel>,
+  );
 });
 
 /// Totals a set of SR rows into a [FinancialSummary].
@@ -2280,6 +2300,99 @@ FinancialSummary summariseSrs(Iterable<SrFinancials> rows) {
 }
 
 /// Builds [FinancialSummary] by summing the whole SR ledger, cross-yard.
+/// What one page of the Disposal Expenses tab is asking for.
+@immutable
+class ExpenseQuery {
+  final int page;
+  final String? search;
+  final String? yardFilter;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+
+  const ExpenseQuery({
+    this.page = 0,
+    this.search,
+    this.yardFilter,
+    this.dateStart,
+    this.dateEnd,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is ExpenseQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardFilter == yardFilter &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd;
+
+  @override
+  int get hashCode =>
+      Object.hash(page, search, yardFilter, dateStart, dateEnd);
+}
+
+/// One page of the Disposal Expenses tab, with the totals across ALL of it.
+///
+/// ⚠️ `totals` is a separate query on purpose. The strip sums every filtered
+/// SR, not the page — computing it from twenty rows would report a fraction of
+/// the money and quietly understate what the directorate has spent.
+typedef ExpensePage = ({
+  List<SrFinancials> rows,
+  Map<String, double> totals,
+  int total,
+});
+
+final expensePageProvider =
+    FutureProvider.family<ExpensePage, ExpenseQuery>((ref, q) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
+  ref.watch(financialExpensesRefreshProvider);
+
+  final disposal = ref.read(disposalServiceProvider);
+  // ⚠️ On PackageService, not DisposalService: the view is about SRs and the
+  // packages behind them, which is that service's subject.
+  final packageSvc = ref.read(packageServiceProvider);
+  final ids = await packageSvc.getExpenseSrPageIds(
+    offset: q.page * kDispositionPageSize,
+    limit: kDispositionPageSize,
+    search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+    yardFilter: q.yardFilter,
+    dateStart: q.dateStart,
+    dateEnd: q.dateEnd,
+  );
+
+  // The totals run whatever the page holds — including an empty one, where
+  // they must still report the money the filter matches.
+  final totals = await packageSvc.getExpenseTotals(
+    search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+    yardFilter: q.yardFilter,
+    dateStart: q.dateStart,
+    dateEnd: q.dateEnd,
+  );
+
+  if (ids.packageIds.isEmpty) {
+    return (rows: const <SrFinancials>[], totals: totals, total: ids.total);
+  }
+
+  // ⚠️ The heavy part, for THIS page's packages only. The nested goods list is
+  // what the table and its dialog read, so it cannot come from the view.
+  final results = await Future.wait([
+    packageSvc.getPackagesByIds(ids.packageIds),
+    ref.watch(storageRateProvider.future),
+    disposal.getTenderSales(),
+    disposal.getFinancialExpenses(),
+  ]);
+  final byId = results[0] as Map<String, PackageModel>;
+  final rows = buildSrFinancials(
+    packages: [for (final id in ids.packageIds) if (byId[id] != null) byId[id]!],
+    rates: results[1] as Map<DateTime, double>,
+    sales: results[2] as List<TenderSaleModel>,
+    expenses: results[3] as List<FinancialExpenseModel>,
+  );
+  return (rows: rows, totals: totals, total: ids.total);
+});
+
 final financialSummaryProvider = FutureProvider<FinancialSummary>(
     (ref) async => summariseSrs(await ref.watch(srFinancialsProvider.future)));
 

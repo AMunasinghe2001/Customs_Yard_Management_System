@@ -2276,6 +2276,20 @@ The **same** `unsold_retender_pool` ([29](postgres/29_unsold_retender_pool_view.
 
 ⚠️ **Perishable was already done** — Central Disposal renders the same `PerishableGoodsScreen(readOnly: true)` that was paged on the yard side.
 
-**Remaining:** Expenses.
+## Central Disposal paging, 12 of 12: Disposal Expenses — and the work is done (2026-09-06)
+
+The last tab, and the one I had **measured and deliberately skipped** earlier. That decision was taken on **one yard** (3.6ms, 0.2ms); Central Disposal shows 28, so it no longer held.
+
+**`sr_expense_summary`** ([30](postgres/30_sr_expense_summary_view.sql)) answers only what this tab needs — which SRs have money to account for, and what was spent — **not** the whole of `SrFinancials`. The sale proceeds, per-tax breakdown and storage charges stay where they are; the Financials tab still uses them, and reproducing that shape would be two definitions of the same figures. Verified: total spend **1,588,075** matches `financial_expenses` exactly.
+
+⚠️ **An expense keys EITHER to a package item OR to the SR number alone** — 16 by item, 55 by SR here. Matching one way would have silently dropped most of the money; the view groups by SR number and the verify asserts no expense row is orphaned.
+
+⚠️ **`_matchesDateRange` had a fallback worth rescuing**: when a row has no date it matched on **the year in the SR number**. A legacy SR can carry no usable date, and losing that would hide it from *every* date filter. The view's `activity_date` falls back the same way, and a verify asserts no row is dateless.
+
+⚠️ **The totals strip had to change shape.** It summed the rows on screen — right while the table held every row, **wrong** the moment it held twenty, when it would report one page's money as the directorate's total. It now takes SQL sums over the whole filter, computed **before** the empty-page early return so a filter matching money but no page-1 rows still reports it.
+
+⚠️ **`buildSrFinancials` was extracted from the provider** so a page can build the same rows. A function, not a view: the table and its dialog read the per-item `goods` list. The whole-ledger provider still calls it, so the Financials tab is unchanged — confirmed by the suite passing before and after the extraction alone.
+
+**Every Central Disposal tab now pages in SQL**, except Taxes (4 rows, a rate table) and Perishable (already done on the yard side).
 
 ⚠️ **Two `flutter test` runs racing showed 6 phantom failures.** A backgrounded run overlapping a foreground one produces failures that do not reproduce. Re-run alone before chasing them.

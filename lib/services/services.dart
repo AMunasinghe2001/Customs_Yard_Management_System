@@ -914,6 +914,116 @@ class PackageService {
     ];
   }
 
+  /// One page of the Disposal Expenses tab: the SRs with money to account for.
+  ///
+  /// ⚠️ Returns PACKAGE IDS, not rows. The table and its detail dialog need
+  /// the full `SrFinancials` — the nested goods list, per item — so the caller
+  /// builds those for the page. What the view settles is WHICH SRs and in what
+  /// order, which is the part that used to cost the whole yard.
+  Future<({List<String> packageIds, int total})> getExpenseSrPageIds({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        // ⚠️ The SR prefix as well as the yard column: a row with no yard of
+        // its own must not be silently hidden from a yard it plainly belongs
+        // to, which is the fallback the tab already applies.
+        q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+      }
+      if (dateStart != null) {
+        final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('activity_date', from.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final to =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('activity_date', to.toIso8601String());
+      }
+      return q;
+    }
+
+    final rows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('sr_expense_summary').select('package_id'))
+            .order('activity_date', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('sr_expense_summary')).count());
+
+    return (
+      packageIds: [
+        for (final e in (rows as List))
+          (e as Map<String, dynamic>)['package_id'].toString()
+      ],
+      total: total as int,
+    );
+  }
+
+  /// The expense totals across every SR the current filter matches.
+  ///
+  /// ⚠️ Its own query, and it must be. The totals strip sums EVERY filtered
+  /// row, not the page — computing it from twenty rows would report a fraction
+  /// of the money and quietly understate what the directorate has spent.
+  Future<Map<String, double>> getExpenseTotals({
+    String? search,
+    String? yardFilter,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+  }) async {
+    var q = supabase.from('sr_expense_summary').select(
+        'destroying_deposit, destruction_expense, advertising_expense, '
+        'labour_expense, transport_expense, auction_expense, refund');
+    final s = search?.trim() ?? '';
+    if (s.isNotEmpty) {
+      q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%');
+    }
+    if (yardFilter != null && yardFilter.isNotEmpty) {
+      q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+    }
+    if (dateStart != null) {
+      final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+      q = q.gte('activity_date', from.toIso8601String());
+    }
+    if (dateEnd != null) {
+      final to = DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+      q = q.lte('activity_date', to.toIso8601String());
+    }
+    final rows = await AuthService._withNetworkRetry(() => q);
+    final out = <String, double>{
+      'deposit': 0,
+      'destruction': 0,
+      'advertising': 0,
+      'labour': 0,
+      'transport': 0,
+      'auction': 0,
+      'refund': 0,
+    };
+    for (final e in (rows as List)) {
+      final m = e as Map<String, dynamic>;
+      out['deposit'] =
+          out['deposit']! + (parseDbNum(m['destroying_deposit']) ?? 0);
+      out['destruction'] =
+          out['destruction']! + (parseDbNum(m['destruction_expense']) ?? 0);
+      out['advertising'] =
+          out['advertising']! + (parseDbNum(m['advertising_expense']) ?? 0);
+      out['labour'] = out['labour']! + (parseDbNum(m['labour_expense']) ?? 0);
+      out['transport'] =
+          out['transport']! + (parseDbNum(m['transport_expense']) ?? 0);
+      out['auction'] =
+          out['auction']! + (parseDbNum(m['auction_expense']) ?? 0);
+      out['refund'] = out['refund']! + (parseDbNum(m['refund']) ?? 0);
+    }
+    return out;
+  }
+
   /// The SR numbers on Perishable Goods, for its year filter.
   Future<List<String>> getPerishableYears() async {
     final data = await AuthService._withNetworkRetry(

@@ -51,8 +51,20 @@ class ExpensesTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
     final amber = context.colors.warningAmber;
-    final rowsAsync = ref.watch(srFinancialsProvider);
+    // ⚠️ One PAGE. `srFinancialsProvider` calls getAllPackages() AND
+    // getTenderSales() and rolls the whole yard up in Dart -- per item, per
+    // tax name. That was measured and left alone once, on ONE yard; this tab
+    // shows twenty-eight. `sr_expense_summary` (postgres/30) settles which
+    // SRs have money to account for, and the ledger is built for that page.
     final page = ref.watch(_expensePageProvider);
+    final query = ExpenseQuery(
+      page: page,
+      search: ref.watch(disposalSearchProvider(_tabKey)),
+      yardFilter: ref.watch(disposalYardFilterProvider(_tabKey)),
+      dateStart: ref.watch(_expenseDateRangeProvider)?.start,
+      dateEnd: ref.watch(_expenseDateRangeProvider)?.end,
+    );
+    final rowsAsync = ref.watch(expensePageProvider(query));
     final dateFilterType = ref.watch(_expenseDateFilterTypeProvider);
     final dateRange = ref.watch(_expenseDateRangeProvider);
     final dateLabel = _getExpenseDateFilterLabel(dateFilterType, dateRange);
@@ -96,40 +108,17 @@ class ExpensesTab extends ConsumerWidget {
               loading: () =>
                   Center(child: CircularProgressIndicator(color: green)),
               error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(srFinancialsProvider)),
-              data: (all) {
-                final q =
-                    ref.watch(disposalSearchProvider(_tabKey)).toLowerCase();
-                final yf = ref.watch(disposalYardFilterProvider(_tabKey));
-
-                // Only SRs that carry a deposit or already have a cost are
-                // worth listing — the rest have nothing to account for.
-                var rows = all.where(
-                    (r) => r.destroyingDeposit > 0 || r.depositSpent > 0);
-                if (yf != null) {
-                  // Fall back to the SR prefix when a row carries no yard of
-                  // its own, so the filter cannot silently hide goods that
-                  // plainly belong to the selected yard.
-                  rows = rows.where(
-                      (r) => (r.yard ?? yardOfSrNumber(r.srNumber)) == yf);
-                }
-                if (q.isNotEmpty) {
-                  rows =
-                      rows.where((r) => r.srNumber.toLowerCase().contains(q));
-                }
-                if (dateRange != null) {
-                  rows = rows.where((r) => _matchesDateRange(r, dateRange));
-                }
-                final list = rows.toList();
-
-                // A filter can leave the pager past the end.
+                  error: e,
+                  onRetry: () => ref.refresh(expensePageProvider(query))),
+              data: (result) {
+                // Filtered, sorted and paged by the database, including
+                // the "carries a deposit or has a cost" rule -- an SR with
+                // neither has nothing to show.
+                final pageRows = result.rows;
+                final total = result.total;
                 final maxPage =
-                    list.isEmpty ? 0 : (list.length - 1) ~/ kClientPageSize;
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
                 final safePage = page > maxPage ? maxPage : page;
-                final pageRows = list
-                    .skip(safePage * kClientPageSize)
-                    .take(kClientPageSize)
-                    .toList();
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,15 +127,19 @@ class ExpensesTab extends ConsumerWidget {
                     Row(children: [
                       StatChip(
                           label: 'SRs with a deposit',
-                          value: '${list.length}',
+                          // The DATABASE's count for this filter.
+                          value: '$total',
                           color: amber),
                       const Gap(12),
-                      Expanded(child: _TotalsStrip(rows: list)),
+                      // ⚠️ Totals across EVERY filtered SR, from their own
+                      // query -- summing the page would report a fraction of
+                      // the money and understate what has been spent.
+                      Expanded(child: _TotalsStrip(totals: result.totals)),
                     ]),
                     const Gap(14),
                     Expanded(child: _ExpensesTable(rows: pageRows)),
                     TablePager(
-                      total: list.length,
+                      total: total,
                       page: safePage,
                       onPageChanged: (p) =>
                           ref.read(_expensePageProvider.notifier).state = p,
@@ -235,20 +228,14 @@ class DisposalDateFilter extends StatelessWidget {
   }
 }
 
-bool _matchesDateRange(SrFinancials r, DateTimeRange range) {
-  final d = r.date;
-  if (d != null) {
-    return !d.isBefore(range.start) && !d.isAfter(range.end);
-  }
-  final yearMatch = RegExp(r'\b(20\d{2})\b').firstMatch(r.srNumber);
-  if (yearMatch != null) {
-    final srYear = int.tryParse(yearMatch.group(1)!);
-    if (srYear != null) {
-      return srYear >= range.start.year && srYear <= range.end.year;
-    }
-  }
-  return true;
-}
+// ⚠️ `_matchesDateRange` moved into `sr_expense_summary`'s `activity_date`
+// (postgres/30), fallbacks and all — when money was last spent, then the SR's
+// entry date, then created_at, and finally THE YEAR IN THE SR NUMBER.
+//
+// That last one is the reason it needed care: a legacy SR can carry no usable
+// date, and the app matched it on its number's year rather than dropping it
+// from every date filter. The view's verify block asserts no row is dateless,
+// because a dateless row is one a range filter hides without saying so.
 
 String _getExpenseDateFilterLabel(String type, DateTimeRange? range) {
   if (range == null || type == 'all') return 'All Time';
@@ -521,22 +508,24 @@ Future<int?> _showExpenseYearPickerDialog(
 
 /// Running totals for whatever the table is currently showing.
 class _TotalsStrip extends StatelessWidget {
-  final List<SrFinancials> rows;
-  const _TotalsStrip({required this.rows});
+  /// Summed in SQL across every SR the filter matches — see
+  /// `getExpenseTotals`.
+  ///
+  /// ⚠️ It used to add up the rows on screen. That was right while the table
+  /// held every row and became wrong the moment it held twenty: the strip
+  /// would have reported one page's worth of money as the directorate's total.
+  final Map<String, double> totals;
+  const _TotalsStrip({required this.totals});
 
   @override
   Widget build(BuildContext context) {
-    double deposit = 0, destruction = 0, advertising = 0, refund = 0;
-    double labour = 0, transport = 0, auction = 0;
-    for (final r in rows) {
-      deposit += r.destroyingDeposit;
-      destruction += r.destructionExpense;
-      advertising += r.advertisingExpense;
-      labour += r.labourExpense;
-      transport += r.transportExpense;
-      auction += r.auctionExpense;
-      refund += r.refund;
-    }
+    final deposit = totals['deposit'] ?? 0;
+    final destruction = totals['destruction'] ?? 0;
+    final advertising = totals['advertising'] ?? 0;
+    final labour = totals['labour'] ?? 0;
+    final transport = totals['transport'] ?? 0;
+    final auction = totals['auction'] ?? 0;
+    final refund = totals['refund'] ?? 0;
 
     return Wrap(
       spacing: 12,
