@@ -462,6 +462,44 @@ unner\Debug\cus_yard_management.exe`, Windows locks a running exe, and Flutter f
 - **"BOTTOM OVERFLOWED BY 1.00 PIXELS"** in the Sold table's Valuation column — `_SaleValuationCell`'s `Column` had no `mainAxisSize.min` and its `@ unit × qty · re-valued` sub-label could wrap to a 2nd line. Added `mainAxisSize: MainAxisSize.min` + `maxLines: 1, overflow: ellipsis`, and widened all four Valuation columns from `fixedWidth: 112` → `132`.
 - **High Panel header logo** — the earlier rename replaced the Customs emblem with `Icons.shield_moon_rounded`, leaving an empty box. Restored `SvgPicture.asset('Sri_Lanka_Customs_logo_tinted.svg', theme: SvgTheme(currentColor: accent))` (the `flutter_svg` import had to come back too). Per [logo-ship-plane], it MUST use `SvgTheme(currentColor:)` — a `colorFilter srcIn` flattens the eye/ship detail.
 
+### The sign-in panel animates, and the crest knockout follows it (2026-09-06)
+
+- ⚠️ **The crest's ship and aeroplane are NOT transparent.** They are two
+  paths painted a flat `#1a1764` -- the app's own dark navy -- because a real
+  knockout does not survive `flutter_svg` (the shapes sit on a filled disc, and
+  cutting them out needs an even-odd path or a mask the renderer drops).
+  Painting them the background colour is what makes them read as holes. See
+  [[logo-ship-plane]].
+- **That trick only holds while the background behind them IS that colour**, so
+  it was already visibly broken on any portal whose middle gradient stop is not
+  navy -- Top Management's teal showed two navy stickers on the crest.
+- [BrandPanel](lib/widgets/brand_panel.dart) is now the left half of **all
+  fourteen** sign-in / sign-up screens (each passes its own `accent`,
+  `deepColor` and badge; `badgeIcon` is nullable because one badge has never
+  had an icon). Every frame it computes the colour behind the crest -- the
+  gradient's MIDDLE stop -- and rewrites the fill in the SVG source via
+  `crestWithKnockout()` before `SvgPicture.string`. The holes stay holes for
+  the whole animation.
+- **9s, eased, stops travelling as well as colours** -- it sits behind a
+  password field, so it must read as light shifting rather than as an animation
+  playing.
+- ⚠️ **`withOpacity` cannot animate a colour on an opaque panel.** The
+  accent was first animated `Color.lerp(accent.withOpacity(0.55), accent, t)`,
+  which changes ONLY alpha -- red/green/blue never move, and with nothing behind
+  the panel it looked completely static. It now mixes towards `deepColor`. A
+  test measuring actual channel movement is what caught this.
+- ⚠️ **`rootBundle` does not serve project assets in the test harness**, so
+  the swap is tested against the real `.svg` file read from disk, not through
+  the widget. Asserting on a colour passed around the widget tree would prove
+  nothing: a knockout handed along correctly but never written into the SVG
+  looks identical in the tree and wrong on screen. Tests:
+  [brand_panel_test.dart](test/brand_panel_test.dart) (breaking the swap fails
+  four of them).
+- ⚠️ `pumpAndSettle` **never returns** on this widget -- the animation
+  repeats for as long as the screen is open. Use `pump(duration)`.
+- If the crest is ever re-exported with real transparency, delete
+  `kCrestKnockoutHex` and `crestWithKnockout` -- not the animation.
+
 ## Committee valuation = two steps; Valuation Dte stops after Tender 3 (2026-08-20)
 - **Central Disposal now uses the same round names as the Valuation portal** — `_roundLabel` in [disposal_dashboard_screen.dart](lib/screens/disposal/disposal_dashboard_screen.dart) calls the shared `tenderRoundLabel(attempt)`, so attempt 1 reads **"Valuation Tender"** (priced from Pending Valuation, not bids) and attempts 2-4 read **Tender 1/2/3**. It previously said "Tender 1/2/3/4".
 - **The Valuation Directorate hands over after Tender 3.** In [valuation_dashboard_screen.dart](lib/screens/valuation/valuation_dashboard_screen.dart) the re-valuation dialog now hides the editor and the Save button once `_rounds.length > kMaxBidTenderRounds`, showing a "Referred to the High Panel" notice instead — the 4th price is a committee decision, not theirs.
