@@ -1,3 +1,5 @@
+import '../disposal/disposal_dashboard_screen.dart'
+    show EnterBidsDialog;
 import '../../widgets/table_pager.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/sealed_valuation.dart';
@@ -17,6 +19,72 @@ import '../../widgets/styled_dropdown.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/package_details_dialog.dart';
 import 'package:intl/intl.dart';
+
+/// Opens the round-by-round history for one package: every valuation, and
+/// every bid.
+///
+/// ⚠️ READ-ONLY. Recording a bid is Central Disposal's act; Top Management
+/// reads what happened and decides. The same dialog serves both, so the two
+/// portals cannot come to describe one package's history differently.
+void _showHistory(BuildContext context, ReTenderSaleInfo info) {
+  showDialog(
+    context: context,
+    builder: (_) => EnterBidsDialog(
+      info: info,
+      readOnly: true,
+      accent: AppTheme.executiveTeal,
+    ),
+  );
+}
+
+/// How many bids a package has drawn across every round, as a way in to the
+/// history.
+class _CommitteeBidsCell extends ConsumerWidget {
+  final ReTenderSaleInfo info;
+  const _CommitteeBidsCell({required this.info});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final accent = AppTheme.executiveTeal;
+    // valueOrNull, NOT asData?.value: asData goes null while the provider
+    // re-fetches, so the count would flip to 0 and back and the table would
+    // look like it was constantly refreshing.
+    final count = ref
+            .watch(tenderBidsProvider(info.forfeited.id))
+            .valueOrNull
+            ?.values
+            .fold<int>(0, (s, l) => s + l.length) ??
+        0;
+    return Tooltip(
+      message: count == 0
+          ? 'No bids recorded in any round'
+          : '$count bid(s) across ${info.tenderCount} round(s)',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _showHistory(context, info),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: accent.withOpacity(count > 0 ? 0.14 : 0.06),
+            borderRadius: BorderRadius.circular(8),
+            border:
+                Border.all(color: accent.withOpacity(count > 0 ? 0.5 : 0.3)),
+          ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.sell_rounded,
+                size: 13,
+                color: count > 0 ? accent : context.colors.textMuted),
+            const Gap(5),
+            Text('$count',
+                style: TextStyle(
+                    color: count > 0 ? accent : context.colors.textMuted,
+                    fontWeight: FontWeight.w800)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
 
 /// True when the signed-in Top Management Directorate officer is the ADG — the post that
 /// submits a committee's valuation as the tender's final price.
@@ -294,6 +362,18 @@ class TenderCommitteeTab extends ConsumerWidget {
                             label: Center(child: Text('Times')),
                             size: ColumnSize.S,
                             fixedWidth: 70),
+                        // ⚠️ What the market has already said.
+                        //
+                        // The DG has to price goods that failed four rounds,
+                        // and the one thing that would inform that -- the
+                        // bids and the re-valuations of every round -- was
+                        // reachable only from Central Disposal's Unsold
+                        // Tenders table. The DG was asked to judge a value
+                        // with none of the evidence.
+                        DataColumn2(
+                            label: Center(child: Text('Bids')),
+                            size: ColumnSize.S,
+                            fixedWidth: 84),
                         DataColumn2(
                             label: Center(child: Text('Committee')),
                             size: ColumnSize.S,
@@ -341,7 +421,13 @@ class TenderCommitteeTab extends ConsumerWidget {
                               sealedUntilSale:
                                   info.latestSale?.saleEnded == false)),
                           DataCell(Center(
-                            child: Container(
+                            child: Tooltip(
+                              message: 'See every round: what it was valued '
+                                  'at, and what was bid',
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(8),
+                                onTap: () => _showHistory(context, info),
+                                child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 8, vertical: 3),
                               decoration: BoxDecoration(
@@ -352,12 +438,24 @@ class TenderCommitteeTab extends ConsumerWidget {
                                     color: context.colors.warningAmber
                                         .withOpacity(0.4)),
                               ),
-                              child: Text('${info.tenderCount}×',
-                                  style: TextStyle(
-                                      color: context.colors.warningAmber,
-                                      fontWeight: FontWeight.w800)),
+                              child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text('${info.tenderCount}×',
+                                        style: TextStyle(
+                                            color: context.colors.warningAmber,
+                                            fontWeight: FontWeight.w800)),
+                                    const Gap(4),
+                                    Icon(Icons.history_rounded,
+                                        size: 13,
+                                        color: context.colors.warningAmber),
+                                  ]),
+                                ),
+                              ),
                             ),
                           )),
+                          DataCell(Center(
+                              child: _CommitteeBidsCell(info: info))),
                           DataCell(Center(
                             child: Builder(builder: (context) {
                               // Appointed committees are view-only — the record
@@ -615,6 +713,14 @@ class _CommitteeDialogState extends ConsumerState<_CommitteeDialog> {
             yard: widget.info.forfeited.yard,
           );
       ref.invalidate(tenderCommitteesProvider);
+      // ⚠️ The by-id map above is what each CELL reads; these decide which
+      // packages belong on the page at all. Appointing a committee moves a
+      // package onto Central Disposal's Committees tab, and pricing one moves
+      // it back into the re-tender pool -- neither showed up until the other
+      // portal was reloaded by hand.
+      ref.invalidate(committeesPageProvider);
+      ref.invalidate(unsoldRetenderPageProvider);
+      ref.invalidate(exhaustedUnsoldPageProvider);
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1140,6 +1246,14 @@ class _CommitteeValuationDialogState
             note: _noteCtrl.text,
           );
       ref.invalidate(tenderCommitteesProvider);
+      // ⚠️ The by-id map above is what each CELL reads; these decide which
+      // packages belong on the page at all. Appointing a committee moves a
+      // package onto Central Disposal's Committees tab, and pricing one moves
+      // it back into the re-tender pool -- neither showed up until the other
+      // portal was reloaded by hand.
+      ref.invalidate(committeesPageProvider);
+      ref.invalidate(unsoldRetenderPageProvider);
+      ref.invalidate(exhaustedUnsoldPageProvider);
       if (!mounted) return;
       Navigator.pop(context);
       _ok('Committee valuation recorded: Rs. ${_money.format(cost)}');
@@ -1177,6 +1291,14 @@ class _CommitteeValuationDialogState
             yard: widget.info.forfeited.yard,
           );
       ref.invalidate(tenderCommitteesProvider);
+      // ⚠️ The by-id map above is what each CELL reads; these decide which
+      // packages belong on the page at all. Appointing a committee moves a
+      // package onto Central Disposal's Committees tab, and pricing one moves
+      // it back into the re-tender pool -- neither showed up until the other
+      // portal was reloaded by hand.
+      ref.invalidate(committeesPageProvider);
+      ref.invalidate(unsoldRetenderPageProvider);
+      ref.invalidate(exhaustedUnsoldPageProvider);
       ref.invalidate(tenderRevaluationsProvider(widget.info.forfeited.id));
       // Submitting makes the package re-tenderable, which these two decide.
       ref.invalidate(reTenderEligibleProvider);

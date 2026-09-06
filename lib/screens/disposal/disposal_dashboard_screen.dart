@@ -5402,7 +5402,7 @@ class _BidsCell extends ConsumerWidget {
       borderRadius: BorderRadius.circular(8),
       onTap: () => showDialog(
         context: context,
-        builder: (_) => _EnterBidsDialog(info: info),
+        builder: (_) => EnterBidsDialog(info: info),
       ),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -5428,15 +5428,34 @@ class _BidsCell extends ConsumerWidget {
 /// tender ROUND (attempt). Past rounds are shown READ-ONLY (their bids were
 /// already recorded); only the CURRENT (latest) round is editable — the
 /// Add-button spawns more amount fields and Save writes just that round.
-class _EnterBidsDialog extends ConsumerStatefulWidget {
+/// Every round a package has been through: its valuation, and the bids that
+/// came in.
+///
+/// ⚠️ Public and read-only-capable so Top Management can SEE this.
+///
+/// Before appointing a committee the DG has to price goods that have failed
+/// four rounds -- and the one thing that would tell them what the market has
+/// already said, the bids and the re-valuations, was reachable only from
+/// Central Disposal's Unsold Tenders table. The DG was asked to judge a value
+/// with none of the evidence.
+///
+/// [readOnly] hides the entry fields and the save button. Recording a bid is
+/// Central Disposal's act; Top Management reads the history and decides.
+class EnterBidsDialog extends ConsumerStatefulWidget {
   final ReTenderSaleInfo info;
-  const _EnterBidsDialog({required this.info});
+  final bool readOnly;
+
+  /// The portal's colour, so the dialog belongs to the page that opened it.
+  final Color? accent;
+
+  const EnterBidsDialog(
+      {super.key, required this.info, this.readOnly = false, this.accent});
 
   @override
-  ConsumerState<_EnterBidsDialog> createState() => _EnterBidsDialogState();
+  ConsumerState<EnterBidsDialog> createState() => _EnterBidsDialogState();
 }
 
-class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
+class _EnterBidsDialogState extends ConsumerState<EnterBidsDialog> {
   // Editable controllers for the CURRENT (latest) round only.
   final _controllers = <TextEditingController>[];
   // Saved amounts of the earlier rounds, for read-only display (round id → amts).
@@ -5946,6 +5965,11 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
   /// Committee valued also locks: once the committee has priced the goods the
   /// bids are evidence for a decision already taken and must not change.
   bool get _currentRoundLocked {
+    // ⚠️ A read-only viewer sees the SAME locked shape an officer sees once
+    // the round has been priced: the bids as chips, no entry fields, no save.
+    // Reusing the lock rather than adding a second hiding rule means the two
+    // cannot drift into showing different things.
+    if (widget.readOnly) return true;
     if (_revals[''] != null) return true;
     final c = ref
         .read(tenderCommitteesProvider)
@@ -5998,7 +6022,13 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
         .valueOrNull?[widget.info.forfeited.id];
     final isCommitteeLock =
         _revals[''] == null && c?.committeeValue != null;
-    final message = isCommitteeLock
+    // ⚠️ A viewer is not locked out -- recording a bid was never theirs to
+    // do. Saying "can no longer be changed" to Top Management would report a
+    // restriction where there is only a division of work.
+    final message = widget.readOnly
+        ? 'Bids are recorded by Central Disposal. This is the history for '
+          'this package: what each round was valued at, and what was bid.'
+        : isCommitteeLock
         ? 'The Top Management Directorate committee has valued this package, '
           'so the bids can no longer be changed.'
         : 'The Valuation Directorate has set this round’s valuation from '
@@ -6080,11 +6110,14 @@ class _EnterBidsDialogState extends ConsumerState<_EnterBidsDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final accent = context.colors.successGreen;
+    // The portal that opened it, so the dialog does not arrive wearing
+    // another directorate's colour.
+    final accent = widget.accent ?? context.colors.successGreen;
     final rounds = _rounds;
     final lastIdx = rounds.length - 1;
     return StyledFormDialog(
-      label: 'Record Bids',
+      // A viewer is not recording anything.
+      label: widget.readOnly ? 'Tender History' : 'Record Bids',
       title: widget.info.forfeited.srNumber,
       headerAccentColor: accent,
       icon: Icons.sell_rounded,

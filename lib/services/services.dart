@@ -5783,9 +5783,15 @@ class DisposalService {
 
   /// One page of the Committees tab, chosen in SQL.
   ///
-  /// ⚠️ The same pool as [getUnsoldRetenderPaged], narrowed twice: to packages
-  /// on their FOURTH round (the Valuation Tender and Tenders 1-3 all failed)
-  /// and to those with a committee actually appointed.
+  /// ⚠️ Its OWN view (`committee_pool`, postgres/39), not the re-tender
+  /// pool narrowed.
+  ///
+  /// It used to read `unsold_retender_pool`, which broke the moment
+  /// postgres/38 stopped Central Disposal re-tendering past four rounds
+  /// without a committee: that rule holds exactly these packages OUT of the
+  /// pool, so the tab that appoints their committee could no longer see them.
+  /// CED/GL1/OA/07/2025 (five rounds, no committee) appeared on no page at
+  /// all. A package with nowhere to go is worse than one in the wrong place.
   ///
   /// A card LEAVES this tab when the committee-priced tender also fails —
   /// which is when the package becomes exhausted, and the view already
@@ -5805,7 +5811,17 @@ class DisposalService {
     bool appointedOnly = true,
   }) async {
     PgQuery narrow(PgQuery q) {
-      q = q.eq('round_count', kMaxBidTenderRounds + 1);
+      // ⚠️ At LEAST four rounds, not exactly four.
+      //
+      // Exactly-four missed the packages that had already run a fifth round
+      // before postgres/38 stopped that from happening -- CED/GL1/OA/07/2025
+      // had five, no committee, and appeared on no page at all: not in the
+      // re-tender pool (the new rule holds it out), not on the DG's Unsold
+      // Goods (its committee round has not failed, because it never had one),
+      // and not here. A package with nowhere to go is worse than one in the
+      // wrong place.
+      // The view already selects >= 4 rounds -- that IS its membership rule
+      // -- so nothing more is needed here.
       if (appointedOnly) q = q.eq('has_committee', true);
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
@@ -5820,12 +5836,12 @@ class DisposalService {
 
     final idRows = await AuthService._withNetworkRetry(() =>
         narrow(supabase
-                .from('unsold_retender_pool')
+                .from('committee_pool')
                 .select('forfeited_package_id'))
             .order('sr_number', ascending: true)
             .range(offset, offset + limit - 1));
     final total = await AuthService._withNetworkRetry(
-        () => narrow(supabase.from('unsold_retender_pool')).count());
+        () => narrow(supabase.from('committee_pool')).count());
 
     final ids = [
       for (final e in (idRows as List))

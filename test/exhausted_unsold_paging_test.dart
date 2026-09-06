@@ -315,10 +315,19 @@ void main() {
     final method = services.substring(services.indexOf('getCommitteesPaged'));
 
     test('the fourth round and the committee are both SQL', () {
-      // The Valuation Tender plus Tenders 1-3 all failed.
-      expect(method, contains("q.eq('round_count', kMaxBidTenderRounds + 1)"));
+      // ⚠️ The round rule moved INTO a view of its own. The Committees tab
+      // used to narrow unsold_retender_pool -- but postgres/38 now holds
+      // packages past four rounds OUT of that pool (they need a committee
+      // before they can be offered again), so the tab that appoints their
+      // committee could no longer see them. committee_pool (postgres/39)
+      // carries the >= 4 rule itself.
+      //
+      // Still both in SQL, which is what this test is about.
+      final cpool =
+          File('postgres/39_committee_pool_view.sql').readAsStringSync();
+      expect(cpool, contains('a.round_count >= 4'));
       expect(method, contains("q.eq('has_committee', true)"));
-      expect(pool, contains('as has_committee'));
+      expect(cpool, contains('as has_committee'));
     });
 
     test('the flag agrees with the table it comes from', () {
