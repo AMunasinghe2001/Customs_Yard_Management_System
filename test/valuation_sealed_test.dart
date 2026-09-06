@@ -574,7 +574,17 @@ void main() {
       expect(flat(tab),
           isNot(contains('return c == null || !c.isSubmitted;')),
           reason: 'It leaves on its own once its tender has been held.');
-      expect(flat(tab), contains('var rows = list.toList();'));
+      // ⚠️ The tab pages in SQL now, so there is no Dart list to filter
+      // at all -- which is a stronger guarantee than the one this test was
+      // written for. The view (unsold_retender_pool) drops a package when its
+      // committee-priced tender has been HELD and failed, never when the ADG
+      // submits; asserting that here keeps the rule where it now lives.
+      expect(flat(tab), contains('committeesPageProvider(query)'));
+      expect(flat(tab), contains('final rows = result.rows;'));
+      final pool =
+          File('postgres/29_unsold_retender_pool_view.sql').readAsStringSync();
+      expect(pool.contains('submitted_at is null'), isFalse,
+          reason: 'the view drops a package for having been submitted');
     });
 
     test('the cell already has a submitted state to show', () {

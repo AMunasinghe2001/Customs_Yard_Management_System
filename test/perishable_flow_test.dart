@@ -135,9 +135,19 @@ void main() {
       expect(decision, contains('_uPageProvider(perishable)'));
     });
 
-    test('each list watches its own provider', () {
-      expect(decision,
-          contains('perishable ? unsoldPerishablesProvider : exhaustedUnsoldProvider'));
+    test('each list is served by its own VIEW', () {
+      // ⚠️ They used to be two whole-list providers; both now page in SQL
+      // through one method, told apart by which view decides membership --
+      // exhausted_unsold (five failed chances, a committee, the ADG's
+      // submission) or unsold_perishables (one failed Special Tender Sale).
+      //
+      // The separation is the point and is unchanged: a normal package and a
+      // perishable reach the DG by entirely different routes, and mixing them
+      // would put one on the desk far too early or far too late.
+      expect(decision, contains('perishable: perishable'));
+      final services = File('lib/services/services.dart').readAsStringSync();
+      expect(services,
+          contains("perishable ? 'unsold_perishables' : 'exhausted_unsold'"));
     });
   });
 }

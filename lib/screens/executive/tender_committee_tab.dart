@@ -1,3 +1,4 @@
+import '../../widgets/table_pager.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/sealed_valuation.dart';
 import 'package:flutter/material.dart';
@@ -116,6 +117,9 @@ class _CommitteeValuationCell extends StatelessWidget {
 }
 
 final _committeeSearchProvider = StateProvider<String>((ref) => '');
+/// Which page of the committee list is showing.
+final _committeePageProvider = StateProvider<int>((ref) => 0);
+
 final _committeeYardProvider =
     StateProvider<String?>((ref) => null); // null=all
 
@@ -129,12 +133,25 @@ class TenderCommitteeTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTheme.executiveTeal;
-    final async = ref.watch(committeeEligibleProvider);
+    // ⚠️ ONE PAGE, chosen in SQL. `committeeEligibleProvider` loaded every
+    // tender sale in every yard with its items and joins to find the handful
+    // on their fourth round -- and this tab had no pager at all, so it drew
+    // however many that was.
+    //
+    // appointedOnly: false because THIS is the page that appoints them. A
+    // package still waiting for a committee is exactly what the DG needs to
+    // see; Central Disposal's copy takes the default, since it can only watch.
+    final query = UnsoldRetenderQuery(
+      page: ref.watch(_committeePageProvider),
+      search: ref.watch(_committeeSearchProvider).trim(),
+      yardFilter: ref.watch(_committeeYardProvider),
+      appointedOnly: false,
+    );
+    final async = ref.watch(committeesPageProvider(query));
     final committees =
         // valueOrNull keeps the last map while re-fetching; asData?.value goes
         // null mid-reload and every row would briefly lose its committee.
         ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
-    final q = ref.watch(_committeeSearchProvider).trim().toLowerCase();
     final yardFilter = ref.watch(_committeeYardProvider);
     // Both the DG and the ADG appoint committees; the DC only observes.
     final canAppoint = !isExecutiveViewOnly(ref.watch(currentProfileProvider));
@@ -206,8 +223,8 @@ class TenderCommitteeTab extends ConsumerWidget {
                   Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(committeeEligibleProvider)),
-              data: (list) {
+                  onRetry: () => ref.refresh(committeesPageProvider(query))),
+              data: (result) {
                 // A package STAYS on this tab for the whole committee stage —
                 // appointment, the committee's valuation, AND after the ADG
                 // has submitted it. Dropping it at submission hid the finished
@@ -218,22 +235,25 @@ class TenderCommitteeTab extends ConsumerWidget {
                 // It leaves on its own once the committee-priced tender has
                 // been held and failed — the package is then exhausted and
                 // moves to the DG's Unsold Goods tab.
-                var rows = list.toList();
-                if (yardFilter != null) {
-                  rows = rows
-                      .where((info) => matchesYardFilter(yardFilter,
-                          info.forfeited.yard, info.forfeited.srNumber))
-                      .toList();
+                // ⚠️ Filtered and paged by the database: the search and the
+                // yard both reached SQL, so `rows` IS the page.
+                final rows = result.rows;
+                final total = result.total;
+
+                final maxPage =
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                final page =
+                    ref.watch(_committeePageProvider).clamp(0, maxPage);
+                if (page != ref.read(_committeePageProvider)) {
+                  // A filter change can leave the officer past the end.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    ref.read(_committeePageProvider.notifier).state = page;
+                  });
                 }
-                if (q.isNotEmpty) {
-                  rows = rows.where((info) {
-                    final f = info.forfeited;
-                    return f.srNumber.toLowerCase().contains(q) ||
-                        f.consigneeName.toLowerCase().contains(q) ||
-                        _cItemName(f).toLowerCase().contains(q);
-                  }).toList();
-                }
-                return Container(
+
+                return Column(children: [
+                  Expanded(
+                    child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: context.colors.cardDark,
@@ -419,7 +439,19 @@ class TenderCommitteeTab extends ConsumerWidget {
                       }).toList(),
                     ),
                   ),
-                );
+                    ),
+                  ),
+                  // ⚠️ The DATABASE's count. `rows.length` is one page, so the
+                  // pager would only ever say "20 of 20" -- and this tab had
+                  // no pager at all, drawing however many packages the yards
+                  // happened to hold.
+                  TablePager(
+                    total: total,
+                    page: page,
+                    onPageChanged: (p) =>
+                        ref.read(_committeePageProvider.notifier).state = p,
+                  ),
+                ]);
               },
             ),
           ),

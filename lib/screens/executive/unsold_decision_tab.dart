@@ -8,6 +8,8 @@ import '../../core/theme.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
+import '../disposal/disposal_shared.dart';
+import '../../widgets/outcome_filter.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
@@ -29,9 +31,13 @@ final _uSearchProvider =
     StateProvider.family<String, bool>((ref, perishable) => '');
 final _uYardProvider =
     StateProvider.family<String?, bool>((ref, perishable) => null);
-/// null = all · false = still undecided · true = decided
-final _uDecidedProvider =
-    StateProvider.family<bool?, bool>((ref, perishable) => null);
+/// The Final Outcome filter: a proposal, kOutcomeAwaiting, or null for all.
+///
+/// ⚠️ Was a decided/awaiting flag, which lumped all six outcomes into one
+/// bucket -- not a question the DG asks. Keyed by `perishable` so the two
+/// tabs, which are different lists, do not share a filter.
+final _uOutcomeProvider =
+    StateProvider.family<String?, bool>((ref, perishable) => null);
 final _uPageProvider =
     StateProvider.family<int, bool>((ref, perishable) => 0);
 
@@ -60,22 +66,30 @@ class UnsoldDecisionTab extends ConsumerWidget {
 
   const UnsoldDecisionTab({super.key, this.perishable = false});
 
-  static const int _pageSize = 20;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTheme.executiveTeal;
-    final async = ref.watch(
-        perishable ? unsoldPerishablesProvider : exhaustedUnsoldProvider);
+    // ⚠️ ONE PAGE, chosen in SQL. `exhaustedUnsoldProvider` loaded EVERY
+    // tender sale in every yard with its items and joins, then narrowed to
+    // the handful that had run out of road -- and `unsoldPerishablesProvider`
+    // did the same to find the perishables. Both membership rules now live in
+    // views (postgres/23 and /32), so only a page's worth leaves the database.
+    final query = ExhaustedUnsoldQuery(
+      page: ref.watch(_uPageProvider(perishable)),
+      search: ref.watch(_uSearchProvider(perishable)).trim(),
+      yard: ref.watch(_uYardProvider(perishable)),
+      outcome: ref.watch(_uOutcomeProvider(perishable)),
+      perishable: perishable,
+    );
+    final async = ref.watch(exhaustedUnsoldPageProvider(query));
     // Top Management tender committees, keyed by forfeited_package_id — their
     // valuation supersedes the original for an unsold package.
     final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
         const <String, TenderCommitteeModel>{};
     final proposals =
         ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
-    final q = ref.watch(_uSearchProvider(perishable)).trim().toLowerCase();
     final yardFilter = ref.watch(_uYardProvider(perishable));
-    final decidedFilter = ref.watch(_uDecidedProvider(perishable));
+    final outcomeFilter = ref.watch(_uOutcomeProvider(perishable));
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
     // Only the DG may decide; the ADG sees the same table, read-only.
@@ -147,31 +161,35 @@ class UnsoldDecisionTab extends ConsumerWidget {
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(12),
+          // ⚠️ The filter line: the outcome at its left, the count opposite.
+          // Destroyed Goods sets this shape and every table page follows it,
+          // so an officer moving between tabs finds each control in the same
+          // place.
           Row(children: [
-            executiveFilterChip(context,
-                label: 'All', selected: decidedFilter == null, onTap: () {
-              ref.read(_uDecidedProvider(perishable).notifier).state = null;
-              ref.read(_uPageProvider(perishable).notifier).state = 0;
-            }),
-            const Gap(8),
-            executiveFilterChip(context,
-                label: 'Pending decision',
-                icon: Icons.hourglass_bottom_rounded,
-                colour: context.colors.warningAmber,
-                selected: decidedFilter == false, onTap: () {
-              ref.read(_uDecidedProvider(perishable).notifier).state = false;
-              ref.read(_uPageProvider(perishable).notifier).state = 0;
-            }),
-            const Gap(8),
-            executiveFilterChip(context,
-                label: 'Decided',
-                icon: Icons.check_circle_rounded,
-                colour: context.colors.successGreen,
-                selected: decidedFilter == true, onTap: () {
-              ref.read(_uDecidedProvider(perishable).notifier).state = true;
-              ref.read(_uPageProvider(perishable).notifier).state = 0;
-            }),
-          ]),
+            OutcomeFilter(
+              value: outcomeFilter,
+              outcomes: kUnsoldProposals,
+              // A perishable that SELLS at tender ends there and never
+              // reaches the DG, so on that list a sale is an outcome of its
+              // own. On the exhausted list nothing ever sold, by definition.
+              includeSold: perishable,
+              accent: accent,
+              chipStyle: true,
+              onChanged: (v) {
+                ref.read(_uOutcomeProvider(perishable).notifier).state = v;
+                ref.read(_uPageProvider(perishable).notifier).state = 0;
+              },
+            ),
+            const Spacer(),
+            // The DATABASE's count for this filter, so the number and the
+            // list can never disagree. Absent while loading rather than
+            // showing a stale or zero count.
+            if (async.valueOrNull != null)
+              StatChip(
+                  label: perishable ? 'Perishable' : 'Unsold',
+                  value: '${async.valueOrNull!.total}',
+                  color: accent),
+          ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           Expanded(
             child: async.when(
@@ -180,41 +198,23 @@ class UnsoldDecisionTab extends ConsumerWidget {
                   Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(perishable
-                      ? unsoldPerishablesProvider
-                      : exhaustedUnsoldProvider)),
-              data: (list) {
-                var rows = list;
-                if (yardFilter != null) {
-                  rows = rows
-                      .where((i) => matchesYardFilter(
-                          yardFilter, i.forfeited.yard, i.forfeited.srNumber))
-                      .toList();
-                }
-                if (q.isNotEmpty) {
-                  rows = rows.where((i) {
-                    final f = i.forfeited;
-                    return f.srNumber.toLowerCase().contains(q) ||
-                        f.consigneeName.toLowerCase().contains(q) ||
-                        unsoldItemName(f).toLowerCase().contains(q) ||
-                        (f.packageDetails?.caseNumber ?? '')
-                            .toLowerCase()
-                            .contains(q);
-                  }).toList();
-                }
-                if (decidedFilter != null) {
-                  rows = rows
-                      .where((i) =>
-                          proposals.containsKey(i.forfeited.id) ==
-                          decidedFilter)
-                      .toList();
-                }
-
+                  onRetry: () =>
+                      ref.refresh(exhaustedUnsoldPageProvider(query))),
+              data: (result) {
+                // ⚠️ Filtered and paged by the database: the search, the yard
+                // and the outcome all reached SQL. `pageRows` IS the page.
+                final pageRows = result.rows;
+                final total = result.total;
                 final maxPage =
-                    rows.isEmpty ? 0 : (rows.length - 1) ~/ _pageSize;
-                final page = ref.watch(_uPageProvider(perishable)).clamp(0, maxPage);
-                final pageRows =
-                    rows.skip(page * _pageSize).take(_pageSize).toList();
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                final page =
+                    ref.watch(_uPageProvider(perishable)).clamp(0, maxPage);
+                if (page != ref.read(_uPageProvider(perishable))) {
+                  // A filter change can leave the officer past the end.
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    ref.read(_uPageProvider(perishable).notifier).state = page;
+                  });
+                }
 
                 return Column(
                   children: [
@@ -295,9 +295,11 @@ class UnsoldDecisionTab extends ConsumerWidget {
                       ),
                     ),
                     TablePager(
-                      total: rows.length,
+                      // ⚠️ The DATABASE's count. `pageRows.length` is one
+                      // page, so the pager would only ever say "20 of 20".
+                      total: total,
                       page: page,
-                      pageSize: _pageSize,
+                      pageSize: kDispositionPageSize,
                       onPageChanged: (p) =>
                           ref.read(_uPageProvider(perishable).notifier).state = p,
                     ),

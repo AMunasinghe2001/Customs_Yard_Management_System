@@ -79,7 +79,13 @@ void main() {
     test('one filter closure serves the rows and the count', () {
       final m = services.substring(services.indexOf('getExhaustedUnsoldPaged'));
       expect(m, contains('PgQuery narrow(PgQuery q)'));
-      expect(m, contains("narrow(supabase.from('exhausted_unsold')).count()"));
+      // ⚠️ The view NAME is a variable now -- the same method serves the
+      // Unsold Goods list and the Unsold Perishables one, which differ only
+      // in which view decides membership. What this test is about is
+      // unchanged: ONE closure narrows both the rows and the count, or the
+      // pager's total disagrees with the rows under it.
+      expect(m, contains('narrow(supabase.from(view)).count()'));
+      expect(m, contains("perishable ? 'unsold_perishables' : 'exhausted_unsold'"));
     });
 
     test("the database's order is kept, not re-sorted in Dart", () {

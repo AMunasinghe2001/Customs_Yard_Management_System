@@ -5790,15 +5790,23 @@ class DisposalService {
   /// A card LEAVES this tab when the committee-priced tender also fails —
   /// which is when the package becomes exhausted, and the view already
   /// excludes those. So the `movedOn` set the tab used to build is gone.
+  /// [appointedOnly] narrows to packages that HAVE a committee.
+  ///
+  /// ⚠️ The two portals want different halves of the same pool. Central
+  /// Disposal watches committees that exist -- it cannot appoint one, so a
+  /// package still waiting for one is nothing it can act on. Top Management
+  /// APPOINTS them, so its tab must show the packages with none yet, or the
+  /// one thing that page is for would be impossible.
   Future<({List<ReTenderSaleInfo> rows, int total})> getCommitteesPaged({
     required int offset,
     required int limit,
     String? search,
     String? yardFilter,
+    bool appointedOnly = true,
   }) async {
     PgQuery narrow(PgQuery q) {
       q = q.eq('round_count', kMaxBidTenderRounds + 1);
-      q = q.eq('has_committee', true);
+      if (appointedOnly) q = q.eq('has_committee', true);
       final s = search?.trim() ?? '';
       if (s.isNotEmpty) {
         q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
@@ -6486,10 +6494,20 @@ class DisposalService {
   /// applies the identical four conditions in the database (see postgres/23),
   /// and only the named page's rounds are loaded afterwards.
   ///
-  /// [decided] is the page's Decided / Awaiting filter; null means both.
+  /// [perishable] serves the Unsold PERISHABLES tab from `unsold_perishables`
+  /// (postgres/32) instead.
+  ///
+  /// ⚠️ The two lists reach Top Management by entirely different routes and
+  /// must stay apart: a normal package arrives after five failed chances, a
+  /// committee valuation and the ADG's submission; a perishable arrives after
+  /// ONE failed Special Tender Sale, because goods that spoil cannot wait for
+  /// the long route. The VIEWS encode that difference -- everything after it
+  /// (the page, the filters, the rounds loaded for the page) is identical, so
+  /// the two share this method rather than drifting apart in two copies.
   Future<({List<ReTenderSaleInfo> rows, int total})> getExhaustedUnsoldPaged({
     required int offset,
     required int limit,
+    bool perishable = false,
     String? search,
     String? yard,
     DateTime? dateStart,
@@ -6563,12 +6581,13 @@ class DisposalService {
       return q;
     }
 
+    final view = perishable ? 'unsold_perishables' : 'exhausted_unsold';
     final rows = await AuthService._withNetworkRetry(() =>
-        narrow(supabase.from('exhausted_unsold').select('forfeited_package_id'))
+        narrow(supabase.from(view).select('forfeited_package_id'))
             .order('forfeited_at', ascending: false)
             .range(offset, offset + limit - 1));
     final total = await AuthService._withNetworkRetry(
-        () => narrow(supabase.from('exhausted_unsold')).count());
+        () => narrow(supabase.from(view)).count());
 
     final ids = [
       for (final e in (rows as List))

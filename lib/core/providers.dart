@@ -1348,6 +1348,13 @@ class ExhaustedUnsoldQuery {
   /// The All / Pending / Delivered filter. Null is "All".
   final bool? delivered;
 
+  /// Serve the Unsold PERISHABLES list instead.
+  ///
+  /// ⚠️ Part of the key, so the two tabs cannot share a cached page. They
+  /// are different lists reached by different routes -- one failed Special
+  /// Tender Sale versus five failed chances and a committee.
+  final bool perishable;
+
   const ExhaustedUnsoldQuery({
     this.page = 0,
     this.search,
@@ -1358,6 +1365,7 @@ class ExhaustedUnsoldQuery {
     this.outcome,
     this.proposal,
     this.delivered,
+    this.perishable = false,
   });
 
   @override
@@ -1371,11 +1379,12 @@ class ExhaustedUnsoldQuery {
       other.year == year &&
       other.outcome == outcome &&
       other.proposal == proposal &&
-      other.delivered == delivered;
+      other.delivered == delivered &&
+      other.perishable == perishable;
 
   @override
   int get hashCode => Object.hash(page, search, yard, dateStart, dateEnd, year,
-      outcome, proposal, delivered);
+      outcome, proposal, delivered, perishable);
 }
 
 /// One page of Unsold Goods, chosen and filtered by the database.
@@ -1397,6 +1406,7 @@ final exhaustedUnsoldPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
         outcome: q.outcome,
         proposal: q.proposal,
         delivered: q.delivered,
+        perishable: q.perishable,
       );
 });
 
@@ -1407,17 +1417,31 @@ class UnsoldRetenderQuery {
   final String? search;
   final String? yardFilter;
 
-  const UnsoldRetenderQuery({this.page = 0, this.search, this.yardFilter});
+  /// Committees only: narrow to packages that HAVE a committee.
+  ///
+  /// ⚠️ Central Disposal watches appointed committees; Top Management
+  /// APPOINTS them, so its tab must show the packages with none yet -- or the
+  /// one thing that page is for would be impossible.
+  final bool appointedOnly;
+
+  const UnsoldRetenderQuery(
+      {this.page = 0,
+      this.search,
+      this.yardFilter,
+      this.appointedOnly = true});
 
   @override
   bool operator ==(Object other) =>
       other is UnsoldRetenderQuery &&
       other.page == page &&
       other.search == search &&
-      other.yardFilter == yardFilter;
+      other.yardFilter == yardFilter &&
+      other.appointedOnly == appointedOnly;
 
   @override
-  int get hashCode => Object.hash(page, search, yardFilter);
+  // ⚠️ In BOTH, or the two tabs share a cached page and one shows the
+  // other portal's list.
+  int get hashCode => Object.hash(page, search, yardFilter, appointedOnly);
 }
 
 /// One page of the re-tender pool, chosen in SQL.
@@ -1446,6 +1470,9 @@ final committeesPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
         limit: kDispositionPageSize,
         search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
         yardFilter: q.yardFilter,
+        // Central Disposal watches appointed committees; Top Management
+        // appoints them and must see the packages with none yet.
+        appointedOnly: q.appointedOnly,
       );
 });
 

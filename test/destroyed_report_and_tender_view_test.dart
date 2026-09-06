@@ -172,13 +172,15 @@ void main() {
     });
 
     test('it shows only what is live, the same rule Disposal applies', () {
-      // So a sale leaves this page the moment Central Disposal finishes it --
-      // and ONLY then.
-      expect(tenderTab, contains('s.items.any((i) => !i.sold)'));
-      // ⚠️ It used to leave when a working-day deadline passed as well,
-      // which meant a CLOCK finished the sale rather than an officer. That
-      // rule is gone from both portals; asserting it is gone here keeps the
-      // two in step, which is what this test is really about.
+      // ⚠️ The rule moved into SQL and is now literally the same one, rather
+      // than a copy that has to be kept in step: `onlyPending` is the
+      // tender_sale_summary view's has_pending (postgres/35), which Central
+      // Disposal's own tab passes too.
+      //
+      // Of 82 sales, 5 have anything left to decide. This tab was showing all
+      // 82 -- Top Management was reading a list of finished work.
+      expect(tenderTab, contains('onlyPending: true'));
+      // And still no clock: a sale leaves when an officer marks every item.
       expect(tenderTab.contains('unsoldDeadline'), isFalse,
           reason: 'a deadline is deciding what Top Management can see');
     });
@@ -194,13 +196,24 @@ void main() {
       // sale-level yard code cannot tell them apart.
       expect(tenderTab, contains('_YardPicker('));
       expect(tenderTab, contains("StyledDropdownOption('__all__', 'All Yards')"));
-      expect(tenderTab,
-          contains("matchesYardFilter(\n                          _yard, i.yard, i.forfeited?.srNumber ?? '')"));
+      // ⚠️ The per-ITEM match is in SQL now -- tender_sale_summary carries a
+      // pipe-wrapped list of every yard a sale TOUCHES, precisely so the
+      // filter cannot key on the sale's own code. The reason it is per item
+      // is unchanged; only where it runs has moved.
+      expect(tenderTab, contains('yardFilter: _yard'));
+      final summary =
+          File('postgres/35_tender_summary_counts_unsold.sql').readAsStringSync();
+      expect(summary, contains('as yards'));
+      expect(summary, contains('not the sale'));
     });
 
-    test('re-tenders are detected against every sale, not just visible ones', () {
-      // The earlier tender's window may have closed and dropped out.
-      expect(tenderTab, contains('retenderTenderSaleIds(list)'));
+    test('re-tenders are detected against every sale, not just this page', () {
+      // ⚠️ The reason is the same and now matters more: with the page chosen
+      // in SQL, the earlier tender is almost never on it. Its own provider
+      // asks the database across all sales.
+      expect(tenderTab, contains('retenderSaleIdsProvider'));
+      expect(tenderTab.contains('retenderTenderSaleIds(list)'), isFalse,
+          reason: 'a page of twenty cannot see the sale that came before');
     });
   });
 }

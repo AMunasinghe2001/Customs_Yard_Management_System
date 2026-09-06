@@ -6,14 +6,13 @@ import 'package:gap/gap.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/yards.dart';
-import '../../models/models.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/table_pager.dart';
 import '../disposal/disposal_dashboard_screen.dart'
-    show TenderSaleCard, retenderTenderSaleIds;
+    show TenderSaleCard;
 
 /// Tender sales as the Top Management Directorate sees them: read-only, and
 /// showing exactly what Central Disposal is currently working on.
@@ -42,7 +41,23 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
     // the tab strip above them. This was customsBlue, which is a different
     // blue from the teal every other Top Management control uses.
     final accent = AppTheme.executiveTeal;
-    final async = ref.watch(tenderSalesProvider);
+    // ⚠️ ONE PAGE, and the SAME worklist rule Central Disposal applies.
+    //
+    // `tenderSalesProvider` is the heaviest query in the app -- every sale
+    // with its items, their forfeited rows, packages, package items and
+    // warehouse entries -- and this tab watched all twenty-eight yards'
+    // worth. It then showed every sale, including the seventy-odd whose items
+    // were all decided: Top Management was reading a list of finished work.
+    //
+    // `onlyPending` is the view's has_pending (postgres/35): a sale where
+    // something is still UNDECIDED. The two portals now agree on what is
+    // live.
+    final query = TenderSaleQuery(
+      page: _page,
+      yardFilter: _yard,
+      onlyPending: true,
+    );
+    final async = ref.watch(tenderSalesPageProvider(query));
 
     return Padding(
       // ⚠️ 16, not 24. These pages are TABLES, and vertical chrome is rows
@@ -92,29 +107,24 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
               loading: () =>
                   Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
-                  error: e, onRetry: () => ref.refresh(tenderSalesProvider)),
-              data: (list) {
-                // The same rule Central Disposal's tab applies, so the two
-                // agree on what is live.
-                var visible = list.where((s) {
-                  final hasPending = s.items.any((i) => !i.sold);
-                  if (!hasPending) return false;
-                  // ⚠️ No window -- see the Central Disposal tab. A sale
-                  // stays until every item has been marked.
-                  return true;
-                }).toList();
-
-                if (_yard != null) {
-                  // Matched per ITEM, not on the sale's own yard: a sale can
-                  // mix items from a multi-directorate yard, so the
-                  // sale-level code cannot tell them apart.
-                  visible = visible
-                      .where((s) => s.items.any((i) => matchesYardFilter(
-                          _yard, i.yard, i.forfeited?.srNumber ?? '')))
-                      .toList();
+                  error: e,
+                  onRetry: () => ref.refresh(tenderSalesPageProvider(query))),
+              data: (result) {
+                // ⚠️ Filtered and paged by the database. The yard filter and
+                // the "something is still undecided" rule both reached SQL,
+                // so `pageItems` IS the page.
+                final pageItems = result.rows;
+                final total = result.total;
+                final maxPage =
+                    total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
+                final page = _page.clamp(0, maxPage);
+                if (page != _page) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _page = page);
+                  });
                 }
 
-                if (visible.isEmpty) {
+                if (pageItems.isEmpty) {
                   return const EmptyTableState(
                     icon: Icons.storefront_outlined,
                     message: 'No tender sales running',
@@ -124,13 +134,12 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                   );
                 }
 
-                final maxPage =
-                    (visible.length - 1) ~/ kClientPageSize;
-                final page = _page.clamp(0, maxPage);
-                final pageItems = pageSlice(visible, page, kClientPageSize);
-                // Detected against ALL sales: the earlier tender's window may
-                // have closed and dropped out of `visible`.
-                final retenderIds = retenderTenderSaleIds(list);
+                // ⚠️ Over ALL sales, not this page: a sale would otherwise
+                // be marked new simply because its predecessor sat on the
+                // page before. Its own provider, as on Central Disposal.
+                final retenderIds =
+                    ref.watch(retenderSaleIdsProvider).valueOrNull ??
+                        const <String>{};
 
                 return Column(
                   children: [
@@ -138,8 +147,7 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                       padding: const EdgeInsets.only(bottom: 14),
                       child: Align(
                         alignment: Alignment.centerLeft,
-                        child: _LiveChip(
-                            count: visible.length, accent: accent),
+                        child: _LiveChip(count: total, accent: accent),
                       ),
                     ),
                     Expanded(
@@ -156,7 +164,8 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                       ),
                     ),
                     TablePager(
-                      total: visible.length,
+                      // The DATABASE's count for this filter.
+                      total: total,
                       page: page,
                       onPageChanged: (p) => setState(() => _page = p),
                     ),
