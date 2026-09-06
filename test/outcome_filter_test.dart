@@ -156,4 +156,155 @@ void main() {
       expect(perishable, contains("PageTitle('Perishable Goods'"));
     });
   });
+
+  group('every filter line has the same shape', () {
+    // ⚠️ Destroyed Goods sets it, and it is three lines:
+    //
+    //     Title                        search   yard
+    //     [filter]  ·················  [count]
+    //     Table
+    //
+    // The outcome dropdown first went onto the TITLE row beside the yard
+    // picker, which is a fourth layout: an officer moving between tabs should
+    // find each control in the same place every time.
+    /// Everything after the title Row -- the title Row ends at its own
+    /// entrance animation, so the next Row is the filter line.
+    String secondLine(String src, String titleAnchor) {
+      final i = src.indexOf(titleAnchor);
+      expect(i, greaterThan(-1), reason: 'no title found');
+      return src.substring(src.indexOf('.animate().fadeIn(', i));
+    }
+
+    test('Perishable puts the filter on the line under the title', () {
+      final per = File('lib/screens/packages/perishable_goods_screen.dart')
+          .readAsStringSync();
+      final ro = per.substring(per.indexOf('if (widget.readOnly) ...['),
+          per.indexOf('] else'));
+      final line = secondLine(ro, 'PageTitle(');
+      expect(line, contains('OutcomeFilter('),
+          reason: 'the filter is not on the second line');
+      expect(line, contains('StatChip('));
+      // Filter at the left, count at the right.
+      expect(line.indexOf('OutcomeFilter('),
+          lessThan(line.indexOf('const Spacer()')));
+      expect(line.indexOf('const Spacer()'), lessThan(line.indexOf('StatChip(')));
+    });
+
+    test('the title row carries only the search and the yard picker', () {
+      final per = File('lib/screens/packages/perishable_goods_screen.dart')
+          .readAsStringSync();
+      final ro = per.substring(per.indexOf('if (widget.readOnly) ...['),
+          per.indexOf('] else'));
+      final titleRow = ro.substring(
+          ro.indexOf('PageTitle('), ro.indexOf('.animate().fadeIn('));
+      expect(titleRow.contains('OutcomeFilter('), isFalse,
+          reason: 'the filter is up on the title row again');
+      expect(titleRow, contains('_searchBox(context)'));
+      expect(titleRow, contains('YardAllFilter('));
+    });
+
+    test('Unsold Goods does the same', () {
+      final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+          .readAsStringSync();
+      final tab = dash.substring(dash.indexOf('class UnsoldProposalsTab'));
+      final line = tab.substring(0, tab.indexOf('DataTable2('));
+      expect(line.indexOf('OutcomeFilter('),
+          lessThan(line.indexOf('StatChip(')));
+    });
+  });
+
+  group('the dropdown is drawn as a chip, like its neighbours', () {
+    final dd = File('lib/widgets/styled_dropdown.dart').readAsStringSync();
+    final dash = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+        .readAsStringSync();
+
+    /// The segmented filter chip's own numbers, read from the widget rather
+    /// than typed here -- if someone restyles the chips, this test says the
+    /// dropdown no longer matches instead of silently drifting.
+    String chipBody() {
+      final i = dash.indexOf('Widget seg(String label');
+      return dash.substring(i, dash.indexOf('return Row(children: [', i));
+    }
+
+    test('the chip and the dropdown share every measurement', () {
+      final chip = chipBody().replaceAll(RegExp(r'\s+'), ' ');
+      // The chipStyle branch, to where the default OutlinedButton begins.
+      final flatDd = dd.replaceAll(RegExp(r'\s+'), ' ');
+      final from = flatDd.indexOf('if (chipStyle) {');
+      final to = flatDd.indexOf('return OutlinedButton.icon(', from);
+      expect(from, greaterThan(-1));
+      expect(to, greaterThan(from));
+      final drop = flatDd.substring(from, to);
+      for (final m in [
+        'EdgeInsets.symmetric(horizontal: 14, vertical: 8)',
+        'BorderRadius.circular(10)',
+        'withOpacity(0.15)',
+        'withOpacity(0.6)',
+        'size: 15',
+        'fontSize: 13',
+        'FontWeight.w700 : FontWeight.w500',
+      ]) {
+        expect(chip, contains(m), reason: 'the chip changed: $m');
+        expect(drop, contains(m), reason: 'the dropdown does not match: $m');
+      }
+    });
+
+    test('it is opt-in, so the other twenty dropdowns are untouched', () {
+      expect(dd, contains('this.chipStyle = false'));
+      final f = File('lib/widgets/outcome_filter.dart').readAsStringSync();
+      expect(f, contains('this.chipStyle = false'),
+          reason: 'the filter forces a shape on every caller again');
+    });
+
+    test('the shape follows the company the control keeps', () {
+      // ⚠️ The two portals put this in different rows, and it has to
+      // match whichever it is in:
+      //
+      //   Central Disposal -- beside the All / Destroyed / Pending CHIPS.
+      //   The yard         -- in a row of filter BUTTONS (Date Range, Post
+      //                       Status Activity, the year), which are smaller
+      //                       and outlined.
+      //
+      // Forcing the chip shape on the yard made it taller than its
+      // neighbours and filled where they are not.
+      final cd = File('lib/screens/disposal/disposal_dashboard_screen.dart')
+          .readAsStringSync()
+          .replaceAll(RegExp(r'\s+'), ' ');
+      expect(cd, contains('chipStyle: true'));
+
+      final yardUnsold =
+          File('lib/screens/packages/unsold_packages_screen.dart')
+              .readAsStringSync();
+      expect(yardUnsold.contains('chipStyle'), isFalse,
+          reason: 'the yard is forcing the chip shape again');
+
+      // Perishable has BOTH copies in one file: the read-only one is Central
+      // Disposal's and takes the chip; the yard's own does not.
+      final per = File('lib/screens/packages/perishable_goods_screen.dart')
+          .readAsStringSync();
+      final ro = per.substring(per.indexOf('if (widget.readOnly) ...['),
+          per.indexOf('] else'));
+      final yard = per.substring(per.indexOf('] else'));
+      expect(ro, contains('chipStyle: true'));
+      expect(yard.contains('chipStyle'), isFalse);
+    });
+
+    test('the colour is the portal accent, and the yard keeps gold', () {
+      // Gold is the yard's: its nav rail, its other filter buttons, and this
+      // button's own default. Central Disposal passes its green.
+      expect(dd, contains('accentColor ?? context.colors.primaryGold'));
+      final yardUnsold =
+          File('lib/screens/packages/unsold_packages_screen.dart')
+              .readAsStringSync();
+      final i = yardUnsold.indexOf('OutcomeFilter(');
+      expect(yardUnsold.substring(i, i + 400).contains('accent:'), isFalse,
+          reason: 'the yard should fall through to gold');
+    });
+
+    test('a chosen value takes the portal accent, not always gold', () {
+      expect(dd, contains('accentColor ?? context.colors.primaryGold'));
+      final dashF = dash.replaceAll(RegExp(r'\s+'), ' ');
+      expect(dashF, contains('accent: context.colors.successGreen'));
+    });
+  });
 }

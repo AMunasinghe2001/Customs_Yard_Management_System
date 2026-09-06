@@ -37,12 +37,28 @@ class OutcomeFilter extends StatelessWidget {
   /// The value used for the "sold at tender" entry.
   static const String sold = '__sold__';
 
+  /// The portal's colour for a chosen value.
+  final Color? accent;
+
+  /// Draw at the size of Central Disposal's segmented filter chips.
+  ///
+  /// ⚠️ The two portals put this control in different company, and it has to
+  /// match whichever it is in. Central Disposal sets it beside the
+  /// All / Destroyed / Pending chips -- 13pt, a tinted fill when chosen. The
+  /// yard sets it in a row of filter BUTTONS (Date Range, Post Status
+  /// Activity, the year) which are smaller and outlined. Forcing the chip
+  /// shape on the yard made it taller than its neighbours and filled where
+  /// they are not.
+  final bool chipStyle;
+
   const OutcomeFilter({
     super.key,
     required this.value,
     required this.onChanged,
     required this.outcomes,
     this.includeSold = false,
+    this.accent,
+    this.chipStyle = false,
   });
 
   @override
@@ -51,6 +67,9 @@ class OutcomeFilter extends StatelessWidget {
       value: value,
       allLabel: 'All outcomes',
       icon: Icons.flag_rounded,
+      // Chip beside chips, button beside buttons -- see [chipStyle].
+      chipStyle: chipStyle,
+      accentColor: accent,
       onChanged: onChanged,
       options: [
         // ⚠️ First, not last. On a page waiting for the DG it is the state

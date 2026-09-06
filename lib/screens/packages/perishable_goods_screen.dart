@@ -265,16 +265,6 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                     _page = 0;
                   }),
                 ),
-                const Gap(12),
-                OutcomeFilter(
-                  value: _outcomeFilter,
-                  outcomes: kUnsoldProposals,
-                  includeSold: true,
-                  onChanged: (v) => setState(() {
-                    _outcomeFilter = v;
-                    _page = 0;
-                  }),
-                ),
               ]).animate().fadeIn(duration: 300.ms),
               const Gap(12),
               // ⚠️ The SAME shape Destroyed Goods and Government Use use:
@@ -289,6 +279,26 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
               // Absent while loading rather than showing a stale or zero
               // count.
               Row(children: [
+                // ⚠️ The filter sits at the LEFT of this line, opposite the
+                // count -- the shape Destroyed Goods sets and every tab in
+                // this portal follows. It was up on the title row beside the
+                // yard picker, which is a third layout again: an officer
+                // moving between tabs should find each control in the same
+                // place every time.
+                OutcomeFilter(
+                  value: _outcomeFilter,
+                  outcomes: kUnsoldProposals,
+                  includeSold: true,
+                  // Central Disposal's own green -- this is its copy --
+                  // and its chip shape, because it sits beside that portal's
+                  // filter chips.
+                  accent: context.colors.successGreen,
+                  chipStyle: true,
+                  onChanged: (v) => setState(() {
+                    _outcomeFilter = v;
+                    _page = 0;
+                  }),
+                ),
                 const Spacer(),
                 if (async.valueOrNull != null)
                   StatChip(

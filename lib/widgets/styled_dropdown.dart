@@ -123,6 +123,22 @@ class StyledDropdownButton<T> extends StatelessWidget {
   final bool includeAll;
   final double menuWidth;
 
+  /// Draw at the size and weight of the segmented filter chips beside it.
+  ///
+  /// ⚠️ The default is this button's own long-standing look -- 12pt text, an
+  /// 8px radius, no fill. Beside the All / Destroyed / Pending chips, which
+  /// are 13pt on a 10px radius with a tinted fill, it read as a smaller,
+  /// paler control of a different kind. On a filter line they are the same
+  /// KIND of thing and should look it.
+  ///
+  /// Opt-in, because most callers sit beside a search box rather than a chip
+  /// and the smaller shape is right there.
+  final bool chipStyle;
+
+  /// The colour a chosen value is drawn in. Defaults to the app's gold; a
+  /// directorate passes its own so the control belongs to its page.
+  final Color? accentColor;
+
   const StyledDropdownButton({
     super.key,
     required this.value,
@@ -134,6 +150,8 @@ class StyledDropdownButton<T> extends StatelessWidget {
     this.perPage = 8,
     this.includeAll = true,
     this.menuWidth = 300,
+    this.chipStyle = false,
+    this.accentColor,
   });
 
   String _currentLabel() {
@@ -162,29 +180,59 @@ class StyledDropdownButton<T> extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = value != null;
+    final accent = accentColor ?? context.colors.primaryGold;
+    final fg = selected ? accent : context.colors.textSecondary;
+
+    // ⚠️ The numbers below are the segmented filter chips' own, copied so the
+    // two line up exactly: padding 14/8, radius 10, icon 15, gap 6, 13pt, and
+    // a 0.15 fill behind a chosen value with a 0.6 border.
+    if (chipStyle) {
+      return Builder(builder: (btnContext) {
+        return InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => _open(btnContext),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? accent.withOpacity(0.15) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                  color: selected
+                      ? accent.withOpacity(0.6)
+                      : context.colors.borderColor),
+            ),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 15, color: fg),
+              const SizedBox(width: 6),
+              Text(_currentLabel(),
+                  style: TextStyle(
+                      color: fg,
+                      fontSize: 13,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500)),
+              const SizedBox(width: 4),
+              Icon(Icons.expand_more_rounded, size: 16, color: fg),
+            ]),
+          ),
+        );
+      });
+    }
+
     return Builder(builder: (btnContext) {
       return OutlinedButton.icon(
         onPressed: () => _open(btnContext),
-        icon: Icon(icon,
-            size: 16,
-            color: selected
-                ? context.colors.primaryGold
-                : context.colors.textSecondary),
+        icon: Icon(icon, size: 16, color: fg),
         label: Text(
           _currentLabel(),
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-              color: selected
-                  ? context.colors.primaryGold
-                  : context.colors.textSecondary,
+              color: fg,
               fontSize: 12,
               fontWeight: selected ? FontWeight.bold : FontWeight.normal),
         ),
         style: OutlinedButton.styleFrom(
           side: BorderSide(
-              color: selected
-                  ? context.colors.primaryGold
-                  : context.colors.borderColor),
+              color: selected ? accent : context.colors.borderColor),
           padding: const EdgeInsets.symmetric(horizontal: 12),
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),

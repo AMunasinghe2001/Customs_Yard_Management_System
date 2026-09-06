@@ -696,6 +696,8 @@ class UnsoldProposalsTab extends ConsumerWidget {
               OutcomeFilter(
                 value: outcomeFilter,
                 outcomes: kUnsoldProposals,
+                accent: context.colors.successGreen,
+                chipStyle: true,
                 onChanged: (v) {
                   ref
                       .read(_unsoldOutcomeFilterProvider(tabKey).notifier)
