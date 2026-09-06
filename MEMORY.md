@@ -1095,6 +1095,60 @@ The outcome pages (Government Use, Remanded, Auction, Converted, Removed) filter
 
 Added **`kUnsoldDecidedColumns`** (Final Outcome → **Decided On**) and **`unsoldDecidedOnCell()`**, which shows `decidedAt` with the outcome and the DG's note in its tooltip. Both the yard screen and the Central Disposal tab pick the column set from `proposalFilter == null`, so the unfiltered Unsold page keeps Final Outcome — there it genuinely varies.
 
+### Page marks, Re-export, and the delivery filter (2026-09-06)
+
+- ⚠️ **Page headings use an icon, never an emoji.**
+  [PageTitle](lib/widgets/page_title.dart) (and `DisposalPageHeader`'s optional
+  `titleIcon`) renders an `IconData` tinted `AppColors.primaryGold`, like the nav
+  rail. Emoji come from a colour font (Segoe UI Emoji): they **cannot be tinted**
+  — 🏷️ stays orange, ♻️ stays green — and they ignore the light/dark
+  theme, so they were the only thing on the page that did not change with it.
+  Against a one-accent palette they read as confetti. **Each heading reuses the
+  icon its own tab strip / nav rail entry shows**, so the eye carries one mark
+  from the tab it clicked to the heading that answers it.
+  [page_title_icon_test.dart](test/page_title_icon_test.dart) walks all of `lib/`
+  and fails on any emoji inside a `Text(`, `title:` or `label:` — the ⚠️ in
+  comments is deliberately allowed.
+  ⚠️ Perishable is the page that exposed this: it is a **yard screen reused
+  read-only** in Central Disposal, so it missed the pass that marked every other
+  tab and had no mark at all.
+
+- ⚠️ **Re-export now has a page** (Central Disposal tab `outcome-re-export`,
+  yard route `/re-export-packages`). The outcome was ALWAYS decidable — it is in
+  `kUnsoldProposals`, `unsoldProposalLabel` renders it, and `unsold_shared.dart`
+  has mapped it to `Icons.flight_takeoff_rounded` all along — but nothing
+  displayed the result, so goods sent back out of the country left Unsold Goods
+  and appeared **nowhere**. The directorate meant to carry the decision out could
+  not see what it was meant to carry out.
+
+- **All / Pending / Delivered on the four outcome pages**, the control Destroyed
+  Goods already had. `ExhaustedUnsoldQuery.delivered` →
+  `getExhaustedUnsoldPaged(delivered:)`. ⚠️ **Filtered in SQL**: these pages page
+  in the database, so a Dart-side filter would narrow the CURRENT page and leave
+  the pager counting rows the table no longer shows. ⚠️ Pending is
+  `delivered.is.null,delivered.eq.false` — a package with no proposal row has a
+  NULL `delivered`, and `eq(false)` alone would hide every undecided package.
+  ⚠️ The field is in **both** `==` and `hashCode`, or the family key stays equal
+  across a filter change and the provider never refetches. The filter provider is
+  `StateProvider.family` **keyed by tabKey** — five outcome pages are five
+  instances of ONE widget. Unsold Goods itself (`proposalFilter == null`) gets no
+  control: nothing is decided there, so it would filter on a column every row
+  shares. No migration — `exhausted_unsold` already carried `up.delivered`.
+
+- **The filter row and the count pill share ONE line** on Sold, Destroyed, the
+  five outcome pages and Perishable. They were two rows each with its own gap
+  (~60px of chrome above a table whose whole job is showing rows). The pill moved
+  above the `data:` callback, so it reads `async.valueOrNull!.total` — the SAME
+  async value the table does, so the number and the list still cannot disagree —
+  and is absent while loading rather than showing a stale or zero count.
+
+- ⚠️ **`DefaultTabController.length` said 16 with 15 tabs and 15 bodies.**
+  Flutter tolerates a length ABOVE the child count (the extra index simply has
+  nothing to show), so the mismatch sat unnoticed; adding Re-export made the real
+  count 16, which is why the number did not change. The test now checks `length`
+  against both the tab count and the body count rather than a number typed
+  beside them.
+
 ### Mouse scrolling on desktop (2026-08-29)
 
 Flutter's desktop `ScrollBehavior` omits touch/mouse from `dragDevices` and hides the scrollbar, assuming a wheel is always available. On a PC where the wheel does not reach a nested list there was then **no way to scroll at all**.
