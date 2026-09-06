@@ -13,6 +13,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/core/providers.dart';
 import 'package:cus_yard_management/models/models.dart';
+import 'package:cus_yard_management/screens/disposal/disposal_dashboard_screen.dart';
 
 /// True when [src] still stacks a count pill under a header.
 ///
@@ -131,7 +132,10 @@ void main() {
       // the child count -- the extra index just has nothing to show -- so it
       // sat unnoticed. Adding Re-export made the real count 16, which is why
       // the number did not have to change.
-      final len = RegExp(r'length: (\d+),').firstMatch(dash)!.group(1)!;
+      // ⚠️ The controller now reads DisposalTab.values.length, so the enum
+      // IS the number -- which is the point: it cannot drift from the strip.
+      expect(dash, contains('length: DisposalTab.values.length'));
+      final len = '${DisposalTab.values.length}';
 
       final strip =
           dash.substring(dash.indexOf('TabBar('), dash.indexOf('TabBarView('));

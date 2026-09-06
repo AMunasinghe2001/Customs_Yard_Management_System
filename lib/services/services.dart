@@ -7033,6 +7033,20 @@ class DisposalService {
 
   /// Mark one tender-sale package UNSOLD explicitly. Moves it immediately to
   /// the Unsold Tenders pool without waiting for the automatic deadline.
+  /// How many tender rounds this forfeited package has already sat in.
+  ///
+  /// ⚠️ Counted in SQL, on demand. The confirmation dialog needs it to say
+  /// what happens NEXT -- the route changes at round 4, when the package stops
+  /// going back to tender and goes to a Top Management committee instead --
+  /// and an officer should not have to know that rule by heart.
+  Future<int> tenderRoundCount(String forfeitedPackageId) async {
+    final n = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_items')
+        .eq('forfeited_package_id', forfeitedPackageId)
+        .count());
+    return n as int;
+  }
+
   Future<void> markTenderSaleItemUnsold({
     required String tenderSaleItemId,
   }) async {

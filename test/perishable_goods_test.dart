@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:cus_yard_management/screens/disposal/disposal_dashboard_screen.dart';
 import 'package:cus_yard_management/core/providers.dart';
 import 'package:cus_yard_management/core/theme.dart';
 import 'package:cus_yard_management/models/models.dart';
@@ -326,8 +327,12 @@ void main() {
     test('Central Disposal shows the page read-only', () {
       expect(dash, contains('PerishableGoodsScreen(readOnly: true)'));
       expect(dash, contains("Text('Perishable')"));
-      expect(dash, contains('length: 16,'),
+      // ⚠️ The length is read from the DisposalTab enum now, not typed --
+      // a hard-coded 16 here would have to be edited every time a tab is
+      // added, and the edit is what gets forgotten.
+      expect(dash, contains('length: DisposalTab.values.length'),
           reason: 'the new tab needs a slot, or the view throws');
+      expect(DisposalTab.values.map((t) => t.name), contains('perishable'));
     });
   });
 

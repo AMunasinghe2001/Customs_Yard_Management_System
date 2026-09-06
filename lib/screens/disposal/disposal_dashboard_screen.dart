@@ -21,6 +21,7 @@ import 'expenses_tab.dart';
 import '../packages/perishable_goods_screen.dart';
 import '../reports/reports_screen.dart';
 import '../../widgets/styled_dropdown.dart';
+import '../../widgets/confirm_dialog.dart';
 import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/package_details_dialog.dart';
 import '../../widgets/one_tap_date_picker.dart';
@@ -49,6 +50,39 @@ int? _disposalForfeitedQty(DisposalRequestItemModel it, PackageItem? pkgItem) {
   return q > 0 ? q : null;
 }
 
+/// The tabs, in the order the strip shows them.
+///
+/// ⚠️ Jumping to a tab by NUMBER is a bug waiting to happen, and it already
+/// was one: adding Re-export shifted every index after Auction, so
+/// `animateTo(10)` -- written when 10 meant Unsold Tenders -- silently started
+/// landing on Re-export. An officer who marked an item Unsold was thrown to a
+/// page about goods leaving the country, with a red bar over it.
+///
+/// Name the tab and look the index up. A wrong name is a compile error; a
+/// wrong number is a page nobody asked for.
+enum DisposalTab {
+  disposalRequests,
+  tenderSales,
+  unsoldTenders,
+  committees,
+  perishable,
+  soldGoods,
+  unsoldGoods,
+  destroyedGoods,
+  governmentUse,
+  auction,
+  reExport,
+  converted,
+  removed,
+  taxes,
+  expenses,
+  reports,
+}
+
+/// Move to [tab], by name.
+void goToDisposalTab(BuildContext context, DisposalTab tab) =>
+    DefaultTabController.of(context).animateTo(tab.index);
+
 class DisposalDashboardScreen extends ConsumerWidget {
   const DisposalDashboardScreen({super.key});
 
@@ -57,13 +91,11 @@ class DisposalDashboardScreen extends ConsumerWidget {
     final green = context.colors.successGreen;
     final profile = ref.watch(currentProfileProvider);
     return DefaultTabController(
-      // ⚠️ Must equal the Tab count AND the TabBarView child count.
-      //
-      // This said 16 while there were only 15 of each -- Flutter tolerates a
-      // length ABOVE the child count (the extra index simply has nothing to
-      // show), so the mismatch sat here unnoticed. Adding Re-export made the
-      // real count 16, which is why this number did not change.
-      length: 16,
+      // ⚠️ Taken from DisposalTab, not typed out. This said 16 while there
+      // were only 15 tabs and 15 bodies -- Flutter tolerates a length ABOVE
+      // the child count, so the mismatch sat here unnoticed. Reading the enum
+      // means the number cannot drift from the strip again.
+      length: DisposalTab.values.length,
       child: Scaffold(
         backgroundColor: context.colors.scaffoldBg,
         body: Column(
@@ -3651,45 +3683,44 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
 
   Future<void> _markUnsold(BuildContext context, WidgetRef ref,
       TenderSaleItemModel item, String? srNumber) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.colors.cardDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: context.colors.borderColor),
-        ),
-        title: Row(children: [
-          Icon(Icons.cancel_outlined,
-              color: context.colors.dangerRed, size: 20),
-          const Gap(10),
-          Text('Mark as Unsold',
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700)),
-        ]),
-        content: Text(
-          'Mark ${srNumber ?? 'this package'} as Unsold? It will be moved to the Unsold Tenders page for re-valuation.',
-          style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: TextStyle(color: context.colors.textMuted)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: context.colors.dangerRed,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm Unsold'),
-          ),
-        ],
-      ),
+    // ⚠️ The route out of Unsold is not the same at every round, and this is
+    // the moment the officer commits to it: rounds 2-4 go back to tender after
+    // Valuation re-prices them, round 5 goes to a Top Management committee,
+    // and past that the package has run out of road. Saying so here means the
+    // officer does not have to hold the rule in their head.
+    //
+    // Read on the tap, not watched: it is one count, and only this dialog
+    // wants it.
+    var rounds = 0;
+    try {
+      rounds = await ref
+          .read(disposalServiceProvider)
+          .tenderRoundCount(item.forfeitedPackageId);
+    } catch (_) {
+      // The count is context, not permission. If it cannot be read the
+      // officer can still record the outcome.
+    }
+    if (!context.mounted) return;
+
+    final confirmed = await ConfirmDialog.show(
+      context,
+      label: 'CONFIRM',
+      title: 'Mark as Unsold',
+      icon: Icons.label_off_rounded,
+      message: rounds > 0
+          ? 'Mark ${srNumber ?? 'this package'} as Unsold?\n\n'
+              'This was ${tenderRoundLabel(rounds).toLowerCase()} '
+              '(round $rounds). ${nextStepAfterUnsold(rounds)}'
+          : 'Mark ${srNumber ?? 'this package'} as Unsold? It goes to the '
+              'Unsold Tenders page, where the number of rounds it has already '
+              'had decides what happens next.',
+      confirmLabel: 'Confirm Unsold',
+      // ⚠️ Amber, not red. Recording that goods did not sell is an outcome
+      // being written down, not a destruction -- red is for what cannot be
+      // undone.
+      accent: context.colors.warningAmber,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     try {
       await ref
           .read(disposalServiceProvider)
@@ -3698,11 +3729,14 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
       ref.invalidate(unsoldTenderSalesProvider);
       ref.invalidate(reTenderEligibleProvider);
       if (context.mounted) {
-        DefaultTabController.of(context).animateTo(10);
+        goToDisposalTab(context, DisposalTab.unsoldTenders);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
               '${srNumber ?? 'Package'} marked as Unsold — moved to Unsold Tenders'),
-          backgroundColor: context.colors.dangerRed,
+          // ⚠️ Not red. Marking an item unsold is a completed action, not a
+          // failure -- and a red bar beside a page the officer did not ask for
+          // read as an error when nothing had gone wrong.
+          backgroundColor: context.colors.warningAmber,
         ));
       }
     } catch (e) {
@@ -5080,6 +5114,31 @@ class _LatestValuationCell extends ConsumerWidget {
 
 /// A clickable "N×" attempts badge that opens the tender/destruction history
 /// popup — merges the old "Times …" count column with the "…" history button.
+/// What happens to a package that has just gone unsold for the Nth time.
+///
+/// ⚠️ The route is not the same at every round, and the officer marking an
+/// item Unsold cannot see which one applies to it. Attempt 1 is the
+/// **Valuation Tender** (priced by the Valuation Directorate, not by bids);
+/// attempts 2-4 are **Tenders 1-3**, each priced from the previous round's
+/// unsold bids; past that the Top Management Directorate appoints a committee
+/// to value it, and when the committee's round fails too the package has run
+/// out of road and the DG decides its final outcome.
+String nextStepAfterUnsold(int attemptsSoFar) {
+  final next = attemptsSoFar + 1;
+  if (next <= 1) return 'Goes to the Valuation Tender.';
+  final n = next - 1;
+  if (n <= kMaxBidTenderRounds) {
+    return 'Valuation re-prices it from this round\'s bids, then it goes to '
+        'Tender $n.';
+  }
+  if (n == kMaxBidTenderRounds + 1) {
+    return 'Tenders 1-$kMaxBidTenderRounds are exhausted. The Top Management '
+        'Directorate appoints a committee to value it.';
+  }
+  return 'Every avenue is exhausted. It goes to the Top Management '
+      'Directorate, which decides the final outcome.';
+}
+
 class _AttemptsBadge extends StatelessWidget {
   final int count;
   final Color color;
@@ -5090,7 +5149,17 @@ class _AttemptsBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Tooltip(
-      message: 'View history',
+      // ⚠️ Says where the package is AND where it goes next. The number alone
+      // told an officer how many rounds had failed but not what marking it
+      // unsold again would do -- and the answer changes at round 4.
+      richMessage: TextSpan(children: [
+        TextSpan(
+            text: '${tenderRoundLabel(count)} \u2014 round $count of this '
+                'package\n',
+            style: const TextStyle(fontWeight: FontWeight.w700)),
+        TextSpan(text: '${nextStepAfterUnsold(count)}\n\n'),
+        const TextSpan(text: 'Click to see every round.'),
+      ]),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
@@ -6483,45 +6552,17 @@ class DestructionCard extends ConsumerWidget {
 
   Future<void> _markUndestroyed(BuildContext context, WidgetRef ref,
       DestructionItemModel item, String? srNumber) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: context.colors.cardDark,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: context.colors.borderColor),
-        ),
-        title: Row(children: [
-          Icon(Icons.cancel_outlined,
-              color: context.colors.dangerRed, size: 20),
-          const Gap(10),
-          Text('Mark as Undestroyed',
-              style: TextStyle(
-                  color: context.colors.textPrimary,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700)),
-        ]),
-        content: Text(
-          'Mark ${srNumber ?? 'this package'} as Undestroyed? It will be moved to the Undestroyed page.',
-          style: TextStyle(color: context.colors.textSecondary, fontSize: 13),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Cancel',
-                style: TextStyle(color: context.colors.textMuted)),
-          ),
-          FilledButton(
-            style: FilledButton.styleFrom(
-              backgroundColor: context.colors.dangerRed,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm Undestroyed'),
-          ),
-        ],
-      ),
+    final confirmed = await ConfirmDialog.show(
+      context,
+      label: 'CONFIRM',
+      title: 'Mark as Undestroyed',
+      icon: Icons.do_not_disturb_on_rounded,
+      message: 'Mark ${srNumber ?? 'this package'} as Undestroyed? The item '
+          'stays on this page with its outcome recorded.',
+      confirmLabel: 'Confirm Undestroyed',
+      accent: context.colors.warningAmber,
     );
-    if (confirmed != true) return;
+    if (!confirmed) return;
     try {
       await ref
           .read(disposalServiceProvider)
@@ -6529,11 +6570,12 @@ class DestructionCard extends ConsumerWidget {
       ref.read(destructionsRefreshProvider.notifier).trigger();
       ref.invalidate(undestroyedDestructionsProvider);
       if (context.mounted) {
-        DefaultTabController.of(context).animateTo(12);
+        // ⚠️ No tab to jump to: the Undestroyed page went with the rest of
+        // the destruction-sale machinery. The item stays on this page with its
+        // status changed, which is where the officer already is.
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(
-              '${srNumber ?? 'Package'} marked as Undestroyed — moved to Undestroyed'),
-          backgroundColor: context.colors.dangerRed,
+          content: Text('${srNumber ?? 'Package'} marked as Undestroyed'),
+          backgroundColor: context.colors.warningAmber,
         ));
       }
     } catch (e) {
