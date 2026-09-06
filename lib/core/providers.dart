@@ -2300,6 +2300,19 @@ FinancialSummary summariseSrs(Iterable<SrFinancials> rows) {
 }
 
 /// Builds [FinancialSummary] by summing the whole SR ledger, cross-yard.
+/// Destruction spend for a PAGE of SR numbers, keyed by SR.
+///
+/// ⚠️ Keyed by the joined list so a page is one query, not one per row. The
+/// Destroyed Goods cell used to watch `srFinancialsProvider` — the whole yard
+/// ledger — from inside each row, which is what made that tab lag.
+final destructionSpendProvider =
+    FutureProvider.family<Map<String, double>, String>((ref, srKey) async {
+  ref.watch(financialExpensesRefreshProvider);
+  final srNumbers =
+      srKey.split('|').where((s) => s.trim().isNotEmpty).toList();
+  return ref.read(packageServiceProvider).getDestructionSpendBySr(srNumbers);
+});
+
 /// What one page of the Disposal Expenses tab is asking for.
 @immutable
 class ExpenseQuery {

@@ -2293,3 +2293,15 @@ The last tab, and the one I had **measured and deliberately skipped** earlier. T
 **Every Central Disposal tab now pages in SQL**, except Taxes (4 rows, a rate table) and Perishable (already done on the yard side).
 
 ⚠️ **Two `flutter test` runs racing showed 6 phantom failures.** A backgrounded run overlapping a foreground one produces failures that do not reproduce. Re-run alone before chasing them.
+
+## The Destroyed tab still lagged after paging — and paging was not the cause (2026-09-06)
+
+⚠️ **The table was already paged. The lag was in a CELL.**
+
+`DestructionExpenseCell` watched **`srFinancialsProvider`** — `getAllPackages()` + `getTenderSales()`, rolled up per item and per tax name — to display **one figure**, then scanned that whole list linearly for its SR. Twenty rows meant twenty widgets each waiting on the entire yard's ledger.
+
+**Fix:** `getDestructionSpendBySr` reads `sr_expense_summary` (already built for the Expenses tab) for **one page's SR numbers** — measured at **0.7ms**. `DestructionExpenseScope`, an `InheritedWidget`, carries the page's key so all the cells share one query. ⚠️ An InheritedWidget rather than a constructor argument: the cells are built deep inside a `DataTable2` row builder, and threading the list through each would put the page's shape into every cell. ⚠️ The key is **sorted and de-duplicated** — an unstable family key opens a fresh query per rebuild, trading one slow load for a permanent one.
+
+⚠️ **Two dead cells removed**: `_DestructionValuationCell` and `_DestructionPriceCell` each watched `destructionItemForPackageItemProvider` — **two round trips per row**, the second with a deep nested join. Never rendered (the analyzer had been flagging them), but 40 queries a page if anyone wired them up.
+
+**The lesson: paging a table does not page what its CELLS fetch.** After paging a screen, check every cell widget for a provider watch — a per-row query is invisible in the tab's own code.

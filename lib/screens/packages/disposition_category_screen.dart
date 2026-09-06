@@ -395,7 +395,13 @@ class _DispositionCategoryScreenState
                       });
                     }
 
-                    return Column(
+                    // ⚠️ ONE spend query for the whole page. The Destruction
+                    // Expenses cells below read this scope rather than each
+                    // fetching the yard ledger — see DestructionExpenseCell.
+                    return DestructionExpenseScope(
+                      srKey: DestructionExpenseScope.keyFor(
+                          pageRows.map((r) => r.package.srNumber)),
+                      child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         Expanded(
@@ -689,7 +695,8 @@ class _DispositionCategoryScreenState
                     )
                         .animate()
                         .slideY(begin: 0.1, duration: 400.ms, delay: 300.ms)
-                        .fadeIn();
+                        .fadeIn(),
+                    );
                   },
                 ),
               ),

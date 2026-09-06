@@ -1024,6 +1024,27 @@ class PackageService {
     return out;
   }
 
+  /// What has been spent against each of [srNumbers], keyed by SR number.
+  ///
+  /// ⚠️ ONE query for a whole page. The Destroyed Goods table used to read
+  /// `srFinancialsProvider` from inside each row's cell — the entire yard
+  /// ledger (getAllPackages + getTenderSales, rolled up per item and per tax
+  /// name) fetched to display one figure, then scanned linearly for the
+  /// matching SR. That is the lag on that tab.
+  Future<Map<String, double>> getDestructionSpendBySr(
+      List<String> srNumbers) async {
+    if (srNumbers.isEmpty) return const {};
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('sr_expense_summary')
+        .select('sr_number, deposit_spent')
+        .inFilter('sr_number', srNumbers.toSet().toList()));
+    return {
+      for (final e in (rows as List))
+        (e as Map<String, dynamic>)['sr_number'].toString():
+            parseDbNum(e['deposit_spent']) ?? 0,
+    };
+  }
+
   /// The SR numbers on Perishable Goods, for its year filter.
   Future<List<String>> getPerishableYears() async {
     final data = await AuthService._withNetworkRetry(

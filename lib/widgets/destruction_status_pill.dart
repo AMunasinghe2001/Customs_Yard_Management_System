@@ -231,16 +231,26 @@ class DestructionExpenseCell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final fmt = NumberFormat('#,##0.00');
-    final async = ref.watch(srFinancialsProvider);
+    // ⚠️ ONE query for the whole page, keyed by its SR numbers — not the whole
+    // yard ledger, per row.
+    //
+    // This used to watch `srFinancialsProvider`: getAllPackages() plus
+    // getTenderSales(), rolled up per item and per tax name, fetched to
+    // display ONE figure and then scanned linearly for the matching SR. Twenty
+    // rows meant twenty widgets waiting on that, which is what made the
+    // Destroyed Goods tab lag on load.
+    final rowSrs = DestructionExpenseScope.of(context);
+    final async = ref.watch(destructionSpendProvider(rowSrs));
     return async.when(
+      // Keep the previous value while re-fetching, so a realtime event does
+      // not drop every cell to a spinner and back.
+      skipLoadingOnReload: true,
       loading: () => const SizedBox(
           width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
       error: (_, __) =>
           Text('—', style: TextStyle(color: context.colors.textMuted)),
-      data: (all) {
-        final SrFinancials? sr =
-            all.where((f) => f.srNumber.trim() == srNumber.trim()).firstOrNull;
-        final spent = sr?.depositSpent ?? 0;
+      data: (spendBySr) {
+        final spent = spendBySr[srNumber.trim()] ?? 0;
         if (spent <= 0) {
           return Text('—', style: TextStyle(color: context.colors.textMuted));
         }
@@ -254,4 +264,39 @@ class DestructionExpenseCell extends ConsumerWidget {
       },
     );
   }
+}
+
+/// The SR numbers on the page, so every [DestructionExpenseCell] under it
+/// shares ONE query.
+///
+/// ⚠️ An InheritedWidget rather than a constructor argument: the cells are
+/// built deep inside a DataTable2's row builder, and threading the list
+/// through every one of them would put the page's shape into each cell.
+class DestructionExpenseScope extends InheritedWidget {
+  /// The page's SR numbers, joined — this is the provider's family key, so it
+  /// must be stable for a given page or every rebuild opens a fresh query.
+  final String srKey;
+
+  const DestructionExpenseScope({
+    super.key,
+    required this.srKey,
+    required super.child,
+  });
+
+  /// Builds the key from a page's rows. Sorted and de-duplicated so the same
+  /// page always produces the same key whatever order the rows arrived in.
+  static String keyFor(Iterable<String> srNumbers) {
+    final set = srNumbers.map((s) => s.trim()).where((s) => s.isNotEmpty).toSet();
+    final list = set.toList()..sort();
+    return list.join('|');
+  }
+
+  static String of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<DestructionExpenseScope>()
+          ?.srKey ??
+      '';
+
+  @override
+  bool updateShouldNotify(DestructionExpenseScope old) => old.srKey != srKey;
 }

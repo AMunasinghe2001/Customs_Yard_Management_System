@@ -1452,7 +1452,13 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                     if (mounted) setState(() => _page = maxPage);
                   });
                 }
-                return Column(
+                // ⚠️ ONE spend query for the whole page. Every
+                // DestructionExpenseCell below reads this scope instead of
+                // fetching the yard ledger for itself — see the widget.
+                return DestructionExpenseScope(
+                  srKey: DestructionExpenseScope.keyFor(
+                      pageRows.map((r) => r.package.srNumber)),
+                  child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Padding(
@@ -1576,6 +1582,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                       onPageChanged: (p) => setState(() => _page = p),
                     ),
                   ],
+                ),
                 );
               },
             ),
@@ -1633,105 +1640,15 @@ String? _parseDestroyReceipt(String? returnNotes) {
   return s.isEmpty ? null : s;
 }
 
-/// The Valuation Directorate's valuation (unit × qty) for a destroyed item.
-class _DestructionValuationCell extends ConsumerWidget {
-  final PackageModel package;
-  final String? packageItemId;
+// ⚠️ `_DestructionValuationCell` and `_DestructionPriceCell` lived here and
+// were never rendered — the analyzer had been flagging both as unused. Each
+// watched `destructionItemForPackageItemProvider`, which is TWO round trips
+// per row, the second with a deep nested join. Had they been on the table
+// they would have cost forty queries a page.
+//
+// Removed rather than wired up: the columns they were written for are not on
+// this tab, and dead code that expensive is a trap for whoever adds them back.
 
-  /// The quantity shown in the row's Qty column — the valuation must multiply
-  /// by exactly this so "@ unit × qty" stays consistent with what the row shows.
-  final int? qty;
-  const _DestructionValuationCell(
-      {required this.package, this.packageItemId, this.qty});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}';
-    final async = ref.watch(destructionItemForPackageItemProvider(key));
-    return async.when(
-      // Keep the previous value while re-fetching: without this every
-      // realtime event drops every row's cell to a spinner and back,
-      // which reads as the whole table constantly refreshing.
-      skipLoadingOnReload: true,
-      loading: () => const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) =>
-          Text('—', style: TextStyle(color: context.colors.textMuted)),
-      data: (item) {
-        final fp = item?.forfeited;
-        final unitCost = fp?.valuationCost;
-        if (unitCost == null || fp == null) {
-          return Text('—', style: TextStyle(color: context.colors.textMuted));
-        }
-        final int effQty;
-        if (qty != null && qty! > 0) {
-          effQty = qty!;
-        } else if (fp.entryQty != null) {
-          effQty = fp.entryQty!;
-        } else if (fp.itemId != null) {
-          effQty = fp.packageDetails?.items
-                  .where((i) => i.id == fp.itemId)
-                  .firstOrNull
-                  ?.quantity ??
-              1;
-        } else {
-          effQty =
-              fp.packageDetails?.items.fold<int>(0, (s, i) => s + i.quantity) ??
-                  1;
-        }
-        final total = unitCost * effQty;
-        final fmt = NumberFormat('#,##0');
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('Rs ${fmt.format(total)}',
-                style: TextStyle(
-                    color: context.colors.primaryGold,
-                    fontWeight: FontWeight.w700)),
-            Text('@ ${fmt.format(unitCost)} × $effQty',
-                style:
-                    TextStyle(fontSize: 11, color: context.colors.textMuted)),
-          ],
-        );
-      },
-    );
-  }
-}
-
-/// The actual destruction price recorded when the item was destroyed (no taxes).
-class _DestructionPriceCell extends ConsumerWidget {
-  final PackageModel package;
-  final String? packageItemId;
-  const _DestructionPriceCell({required this.package, this.packageItemId});
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final key = '${package.id}|${packageItemId ?? ''}';
-    final async = ref.watch(destructionItemForPackageItemProvider(key));
-    return async.when(
-      // Keep the previous value while re-fetching: without this every
-      // realtime event drops every row's cell to a spinner and back,
-      // which reads as the whole table constantly refreshing.
-      skipLoadingOnReload: true,
-      loading: () => const SizedBox(
-          width: 16,
-          height: 16,
-          child: CircularProgressIndicator(strokeWidth: 2)),
-      error: (_, __) => const Text('—'),
-      data: (item) {
-        if (item == null) return const Text('—');
-        return Text('Rs ${item.destroyedPrice.toStringAsFixed(2)}',
-            style: const TextStyle(fontWeight: FontWeight.bold));
-      },
-    );
-  }
-}
-
-// Read-only sold price + tax total (watches the per-item provider so each sold
-// row shows its own price when a package has multiple separately-priced items).
-// Receipt number for a sold package item (watches the same per-item provider
-// as the financials cell so it matches the specific sold row).
 class _SaleReceiptCell extends ConsumerWidget {
   final String saleItemKey;
   const _SaleReceiptCell({required this.saleItemKey});
