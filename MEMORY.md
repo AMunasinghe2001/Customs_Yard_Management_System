@@ -2555,3 +2555,35 @@ Dart has always counted days in local time (`parseDbDate` calls `.toLocal()`), s
 **`FinancialSummary` moved to `models.dart`.** It lived in `providers.dart`, which `services.dart` cannot import (providers imports services; the other direction is a cycle) — moving it is what lets the service return the totals SQL computed.
 
 **Verify blocks that assert against the SCREENSHOT are worth the effort.** All ten figures the page was showing are in `postgres/41`'s verify block; the migration refuses to apply if any disagrees. That is what caught the timezone bug — and later proved the rate-period rewrite was exact.
+
+## Valuation, Appeal and the yard's Tender Sale paged in SQL (2026-09-07)
+
+Three portals, same shape: fetch everything, filter in Dart, `pageSlice` the result. ⚠️ **Client-side paging still loads everything; it only renders less.**
+
+| page | before | after |
+|---|---|---|
+| Valuation (3 tabs) | 345ms, **no pager at all** | 19ms + 29ms |
+| Appeal (2 tabs) | 245ms whole feed | 90ms a page |
+| Tender Sale (yard) | 154ms heaviest query | 49ms a page |
+
+New views: `valuation_rows` (42), `unsold_retender_pool` + `valued` (43), marked-unsold rule (44), `appeal_rows` (45), `tender_sale_summary` + `consignees` (46).
+
+### Three real bugs the ports uncovered
+
+⚠️ **`unsold_retender_pool` followed a CLOCK where the Dart followed the MARK.** The view admitted any package whatever had been recorded and carried a `round_moment_passed` column computed from `sale_moment < now()`. getUnsoldTenderSales() found 9 packages, the view listed 15 — the six extra were sales Central Disposal had still to record the outcome of, showing to Valuation as work. Fixed in postgres/44; the column stays as information and decides nothing.
+
+⚠️ **Top Management's Tender Sales filters were BOTH throwing** — `column "item_yards" does not exist`, `column "consignees" does not exist`. The service asked for `item_yards`, the view called it `yards`, and `consignees` never existed. Invisible because the unfiltered case everyone sees first kept working. postgres/46 fixes it and *proves* it by selecting on both columns in its verify block.
+
+⚠️ **`forfeited_packages` stores no `item_name`**, so a row fetched straight from it carries a null one and the Appeal screen's fallback shows the package's FIRST item — the wrong goods on any multi-item package.
+
+### Lessons
+
+⚠️ **Transcribe from the CODE, not from the comment above it.** The Appeal expansion's comment says "a per-item FP already names its single item so it is kept as-is"; the code expands it across the package's whole item list, and the code is what the directorate has been seeing (SR/52/2026: one forfeited row, three appeal rows).
+
+⚠️ **A dead `ref.watch` is still a fetch.** The Valuation scaffold watched the six-level feed query and never read it; `allForfeitedMapProvider` fetched every forfeited package with every item and nothing watched it at all.
+
+⚠️ **Three things must never be derived from a page**: a year dropdown (a year not listed reads as records that no longer exist), re-tender detection (a sale looks new because its predecessor sat on the page before), and any "N of M" count.
+
+⚠️ **Rewriting a whole view to add one column is exactly when a `where` clause goes missing** — postgres/44 re-asserts all four rules it inherits from /38 before it will apply.
+
+**Remaining unpaged** (measured, low impact): Central Disposal's Forfeited Packages (82ms) and Destruction Disposal (25ms) screens, Warehouses (164ms `getAllItemAppealOutcomes`), three spots in Admin. Small tables (taxes 4 rows, committees 8, proposals 10) need no paging.
