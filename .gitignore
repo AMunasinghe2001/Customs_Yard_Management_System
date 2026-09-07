@@ -53,6 +53,10 @@ run_flutter.ps1
 
 # Symbolication related
 app.*.symbols
+# Debug symbols from `tool/build_release.ps1` (--split-debug-info). Covered by
+# /build/ above, named here because committing them would undo --obfuscate for
+# anyone with the repo. Archive them with the installer instead.
+/build/symbols/
 
 # Obfuscation related
 app.*.map.json

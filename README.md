@@ -81,13 +81,64 @@ The app expects:
 
 ## Build
 
-To build a Windows executable:
+### Development
 
 ```bash
 flutter build windows
 ```
 
 Output is generated under `build/windows/x64/runner/Release/`.
+
+### Release (obfuscated)
+
+Use the release script — it audits for hardcoded secrets first, then builds
+with obfuscation and keeps the debug symbols:
+
+```powershell
+.	ooluild_release.ps1
+```
+
+It runs exactly this, filing symbols under the pubspec version:
+
+```bash
+flutter build windows --release   --obfuscate   --split-debug-info=build/symbols/<version>
+```
+
+**`--split-debug-info` is not optional when obfuscating.** `--obfuscate`
+renames the app's classes and methods in the compiled output; without the
+split, the mapping is discarded and a crash report from a shipped build can
+never be turned back into a readable stack trace.
+
+Decode a crash from a shipped build with the symbols from *that same* version:
+
+```bash
+flutter symbolize -i crash.txt   -d build/symbols/<version>/app.windows-x64.symbols
+```
+
+⚠️ **Archive `build/symbols/<version>/` alongside each installer.** It is
+gitignored on purpose — committing it would undo the obfuscation for anyone
+with the repo — so if it is not stored with the release, crash reports from
+that build are permanently unreadable.
+
+⚠️ **Obfuscation hides names, not strings.** A hardcoded password or API key
+is just as readable in an obfuscated binary (`strings app.exe` finds it), which
+is why the build script refuses to proceed when the secrets audit fails.
+
+### Configuration
+
+Credentials are never compiled in. Copy `.env.example` to `.env` and ship it
+beside the `.exe`; the app reads it at start-up, so a password can be rotated
+without a rebuild. Precedence is `--dart-define` > `.env` > compiled default.
+
+### Security audits
+
+```bash
+python tool/audit_client_security.py     # secrets, release logging, build flags
+python tool/audit_network_security.py    # TLS, SQL injection, RLS, exposure
+```
+
+Both exit non-zero on a critical finding, so they can gate a release. See
+[postgres/SECURITY.md](postgres/SECURITY.md) for the network and database side.
 
 ## Notes
 

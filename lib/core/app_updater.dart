@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'package:auto_updater/auto_updater.dart';
+
+import 'app_log.dart';
 /// Where the installer and the `appcast.xml` feed are published.
 ///
 /// This used to be derived from the Supabase project URL, because the feed
@@ -63,8 +65,7 @@ bool _isPrivateHost(String host) {
 /// visible rather than silently updating over an unauthenticated channel.
 bool _feedAllowed() {
   if (isUpdateFeedAcceptable(updateFeedUrl)) return true;
-  // ignore: avoid_print
-  print('SECURITY: refusing update feed "$updateFeedUrl" — use https://, or '
+  AppLog.security('refusing update feed "$updateFeedUrl" — use https://, or '
       'set ALLOW_INSECURE_UPDATE_FEED=true for an internal http:// host.');
   return false;
 }
@@ -87,8 +88,7 @@ Future<void> initAutoUpdater() async {
     // when a newer version is actually published in the appcast.
     await autoUpdater.checkForUpdates(inBackground: true);
   } catch (e) {
-    // ignore: avoid_print
-    print('DEBUG: auto-updater init failed: $e');
+    AppLog.warn('auto-updater init failed', error: e, tag: 'update');
   }
 }
 
@@ -103,7 +103,6 @@ Future<void> checkForUpdatesNow() async {
     await autoUpdater.setFeedURL(updateFeedUrl);
     await autoUpdater.checkForUpdates();
   } catch (e) {
-    // ignore: avoid_print
-    print('DEBUG: manual update check failed: $e');
+    AppLog.warn('manual update check failed', error: e, tag: 'update');
   }
 }

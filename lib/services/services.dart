@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart' show debugPrint;
+import '../core/app_log.dart';
 import '../core/supabase_client.dart';
 import '../core/app_session.dart';
 import '../core/security_policy.dart';
@@ -28,7 +29,7 @@ class AuthService {
       );
       return null; // The auth state change will be handled by Supabase listener
     } catch (e) {
-      print('DEBUG: AuthService.signInWithGoogle error: $e');
+      AppLog.warn('Google sign-in failed', error: e, tag: 'auth');
       rethrow;
     }
   }
@@ -158,7 +159,7 @@ class AuthService {
   Future<ProfileModel?> signIn(String email, String password) async {
     try {
       final resolvedEmail = email.trim();
-      print('DEBUG: AuthService.signIn attempting for: "$resolvedEmail"');
+      AppLog.debug('signIn attempting for: "$resolvedEmail"', tag: 'auth');
       await _checkLoginLockout(resolvedEmail);
 
       final response = await _withNetworkRetry(
@@ -194,7 +195,7 @@ class AuthService {
           'last_seen_at': DateTime.now().toUtc().toIso8601String(),
         }).eq('id', profile.id);
       } catch (e) {
-        print('DEBUG: AuthService.signIn - Status update failed: $e');
+        AppLog.warn('sign-in status update failed', error: e, tag: 'auth');
       }
 
       await _clearFailedLogin(resolvedEmail);
@@ -207,8 +208,10 @@ class AuthService {
 
       return profile;
     } on AuthApiException catch (e) {
-      print(
-          'DEBUG: signIn AuthApiException code=${e.code} status=${e.statusCode} msg=${e.message}');
+      AppLog.debug(
+          'signIn AuthApiException code=${e.code} status=${e.statusCode} '
+          'msg=${e.message}',
+          tag: 'auth');
       final msg = e.message.toLowerCase();
       if (e.code == 'email_not_confirmed' || msg.contains('not confirmed')) {
         throw Exception('email_not_confirmed');
@@ -220,7 +223,7 @@ class AuthService {
       }
       rethrow;
     } catch (e) {
-      print('DEBUG: signIn unexpected error: $e');
+      AppLog.warn('sign-in failed unexpectedly', error: e, tag: 'auth');
       if (e.toString().contains('login_locked')) {
         await AuditLogService().recordLog(
           userId: null,
@@ -489,7 +492,7 @@ class AuthService {
           'last_seen_at': null,
         }).eq('id', user.id);
       } catch (e) {
-        print('DEBUG: AuthService.signOut - Status update failed: $e');
+        AppLog.warn('sign-out status update failed', error: e, tag: 'auth');
       }
     }
     AppSession.clear();
@@ -522,7 +525,7 @@ class AuthService {
         'last_seen_at': DateTime.now().toUtc().toIso8601String(),
       }).eq('id', user.id);
     } catch (e) {
-      print('DEBUG: updateHeartbeat error: $e');
+      AppLog.warn('heartbeat update failed', error: e, tag: 'auth');
     }
   }
 
@@ -535,7 +538,7 @@ class AuthService {
         'last_seen_at': null, // instant offline (see signOut note)
       }).eq('id', user.id);
     } catch (e) {
-      print('DEBUG: setUserOffline error: $e');
+      AppLog.warn('could not set user offline', error: e, tag: 'auth');
     }
   }
 }
@@ -4067,7 +4070,7 @@ class AuditLogService {
             supabase.rpc('purge_old_audit_logs').then((_) {}, onError: (_) {}));
       }
     } catch (e) {
-      print('DEBUG: AuditLogService.recordLog error: $e');
+      AppLog.warn('audit log write failed', error: e, tag: 'audit');
     }
   }
 
@@ -4090,7 +4093,8 @@ class AuditLogService {
         }
       }
     } catch (e) {
-      print('DEBUG: AuditLogService.getPackageCreator error: $e');
+      AppLog.warn('could not resolve package creator', error: e,
+          tag: 'audit');
     }
     return null;
   }

@@ -24,6 +24,7 @@ import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/warehouse_selection_dialog.dart';
 import '../../widgets/print_barcode_dialog.dart';
 import '../../core/supabase_client.dart';
+import '../../core/app_log.dart';
 
 class InspectionScreen extends ConsumerStatefulWidget {
   const InspectionScreen({super.key});
@@ -335,7 +336,7 @@ class _InspectionScreenState extends ConsumerState<InspectionScreen>
         _srNumberCtrl.text = sr;
       });
     } catch (e) {
-      print('Error generating SR: $e');
+      AppLog.warn('SR generation failed', error: e, tag: 'inspection');
     }
   }
 

@@ -2670,3 +2670,36 @@ The appcast decides which installer the app downloads **and runs** — over HTTP
 None is remotely exploitable **only because `listen_addresses = localhost`**. That single setting is what is holding all three up — all must be closed before the database accepts its first network connection.
 
 ⚠️ **`officer_signup_otps` has RLS on with ZERO policies, and that is correct** — no policy means RLS denies everyone, making it a lockbox only a bypassing role may read. An audit that flags "no policies" as a gap is wrong here; the failure to catch is RLS being switched **off**. `tool/audit_network_security.py` knows the difference, and its first three SQL "findings" were false positives worth fixing in the checker rather than reporting.
+
+## Client-side hardening: print() was the whole problem (2026-09-07)
+
+Asked to remove hardcoded secrets, silence release logging, and set up obfuscation. **Secrets were already clean** — `AppEnv` had moved everything to `.env`/`--dart-define` back in August, and a scan for JWTs, API keys, tokens and credential-bearing URLs found nothing. The real finding was **logging**.
+
+### ⚠️ `print()` is NOT stripped from a release build
+
+40 bare `print()` calls were writing to stdout **in the shipped .exe**, exactly as in debug. Several carried real user data:
+
+- `services.dart:161` — **the e-mail being signed in with**
+- `main.dart:355` — **the signed-in user's id**
+- `services.dart:210` — auth failure code/status/message
+- `router.dart:55` — every navigation with login and admin state
+
+On a shared office PC that is a log of who signed in and when, for anyone who starts the app from a console.
+
+`lib/core/app_log.dart` is now the only way app code logs. `AppLog.debug` is **compiled out of release**; `warn`/`error` print the developer's message in release but **drop the `error:` payload** — an exception's `toString()` is how a record leaks without anyone intending it, because a Postgres error quotes the row it rejected and an auth error quotes the address. `AppLog.security` stays in release on purpose: an admin asking "why is auto-update off" needs that line in the build they run.
+
+⚠️ **The guard is `kReleaseMode`, not `kDebugMode` — they are not opposites.** A profile build is neither, and profile is what performance work runs on; keying off `kDebugMode` would silence exactly the build someone is measuring.
+
+### Obfuscation — verified, not assumed
+
+`tool/build_release.ps1` runs the secrets audit **first** (obfuscation hides names, not strings — a hardcoded password is just as readable in an obfuscated binary), then builds with `--obfuscate --split-debug-info=build/symbols/<version>`.
+
+Built it and checked the output rather than trusting the flag: `AuthService`, `PgQuery`, `AuditLogService`, `kGmailAppPassword` all return **0 hits** in the shipped binary, and the 5.5MB symbol file (an ELF debug table, so `strings` shows nothing — read it as bytes) still holds them 49/115/25 times. So `flutter symbolize` will work, **but only against the matching version's symbols** — which is why they are filed per pubspec version and must be archived with the installer.
+
+### ⚠️ Two checker bugs worth remembering
+
+`line.split('//')[0]` to strip a Dart comment **also truncates every URL at its scheme** — `https://x.supabase.co` became `https:`, silently blinding the scanner to the two findings it most needed to make (a project URL, and a password inside a connection string). Fixed with a quote-aware `strip_comment`. **Always plant a fake secret and confirm the scanner sees it** — 5 of 6 probes were caught, and the 2 misses were only visible because of the probe.
+
+The obfuscation check also flagged one script four times, judging per LINE when a build script legitimately spreads the two flags across an argument array and mentions `--obfuscate` again in its docs. Judge per FILE.
+
+`PG_PASSWORD` still defaults to `'postgres'` — removing it would break every local install, so `usingDefaultPassword` reports it and release builds say so out loud.

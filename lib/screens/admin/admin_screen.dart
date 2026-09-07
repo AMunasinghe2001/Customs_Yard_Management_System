@@ -20,6 +20,7 @@ import '../../widgets/table_pager.dart';
 import '../../widgets/empty_table_state.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../core/app_log.dart';
 
 Widget _tableActionButton({
   required BuildContext context,
@@ -1997,7 +1998,7 @@ class _StatusToggleState extends State<_StatusToggle> {
           _loading = true;
           _currentValue = v;
         });
-        print('DEBUG: _StatusToggle triggered for ${widget.label} to $v');
+        AppLog.debug('status toggle ${widget.label} -> $v', tag: 'admin');
         try {
           await widget.onChanged(v);
           _lastChangeTime = DateTime.now(); // Mark successful change

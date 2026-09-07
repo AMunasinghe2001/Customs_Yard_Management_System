@@ -8,6 +8,7 @@ import 'package:printing/printing.dart';
 import 'package:intl/intl.dart';
 import 'package:collection/collection.dart';
 import '../models/models.dart';
+import '../core/app_log.dart';
 
 class BarcodeService {
   /// Generate a barcode image for a package
@@ -21,7 +22,7 @@ class BarcodeService {
       // In production, you'd convert SVG to image using a proper library
       return null;
     } catch (e) {
-      print('Error generating barcode: $e');
+      AppLog.warn('barcode generation failed', error: e, tag: 'barcode');
       return null;
     }
   }
@@ -126,7 +127,7 @@ class BarcodeService {
         dynamicLayout: true,
       );
     } catch (e) {
-      print('Error printing: $e');
+      AppLog.warn('printing failed', error: e, tag: 'barcode');
       rethrow;
     }
   }
@@ -160,7 +161,7 @@ class BarcodeService {
       await file.writeAsBytes(bytes);
       return true;
     } catch (e) {
-      print('Error saving PDF: $e');
+      AppLog.warn('saving the PDF failed', error: e, tag: 'barcode');
       rethrow;
     }
   }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core/supabase_client.dart';
 import 'package:window_manager/window_manager.dart';
+import 'core/app_log.dart';
 import 'core/error_handling.dart';
 import 'core/theme.dart';
 import 'core/router.dart';
@@ -345,14 +346,14 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
 
   @override
   void onWindowClose() async {
-    print('DEBUG: Global window close caught...');
+    AppLog.debug('window close caught', tag: 'shutdown');
 
     // Hide the window immediately so the user feels an instant close
     await windowManager.hide();
 
     try {
       final user = supabase.auth.currentUser;
-      print('DEBUG: App closing. Current user ID: ${user?.id}');
+      AppLog.debug('closing; current user ${user?.id}', tag: 'shutdown');
 
       if (user != null) {
         await AuditLogService().recordLog(
@@ -373,14 +374,15 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
             .eq('id', user.id)
             .timeout(const Duration(seconds: 2));
 
-        print('DEBUG: Successfully set user offline in Database directly.');
+        AppLog.debug('set user offline in the database', tag: 'shutdown');
       } else {
-        print('DEBUG: No logged in user. Taking no DB action.');
+        AppLog.debug('no signed-in user; nothing to do', tag: 'shutdown');
       }
     } catch (e) {
-      print('DEBUG: Could not set offline on exit: $e');
+      AppLog.warn('could not set offline on exit', error: e,
+          tag: 'shutdown');
     } finally {
-      print('DEBUG: Destroying window process...');
+      AppLog.debug('destroying window', tag: 'shutdown');
       await windowManager.destroy();
     }
   }
@@ -388,7 +390,7 @@ class _CustomsAppState extends ConsumerState<CustomsApp>
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeModeProvider);
-    print('DEBUG: CustomsApp building with themeMode: $themeMode');
+    AppLog.debug('building with themeMode: $themeMode', tag: 'app');
     final router = ref.watch(routerProvider);
     return MaterialApp.router(
       title: 'Sri Lanka Customs SR Management System',

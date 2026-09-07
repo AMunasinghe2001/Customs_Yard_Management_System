@@ -57,8 +57,22 @@ class PgConfig {
   static String get username => AppEnv.read('PG_USER',
       dartDefine: _userDefine, fallback: 'postgres');
 
+  /// ⚠️ The fallback is the stock PostgreSQL development password, and it is
+  /// compiled into the binary. That is a convenience for a fresh local
+  /// checkout, NOT a credential — [usingDefaultPassword] reports when it is in
+  /// use so a shipped build can say so out loud rather than quietly
+  /// authenticating with a password anyone can guess.
+  ///
+  /// Removing the default outright would break every existing local install
+  /// on the next run, so it stays and is flagged instead.
+  static const String defaultPassword = 'postgres';
+
   static String get password => AppEnv.read('PG_PASSWORD',
-      dartDefine: _passwordDefine, fallback: 'postgres');
+      dartDefine: _passwordDefine, fallback: defaultPassword);
+
+  /// True when no `.env` or `--dart-define` supplied a password and the
+  /// compiled-in development default is being used.
+  static bool get usingDefaultPassword => password == defaultPassword;
 
   /// A LAN server usually has no TLS certificate, so the default is a plain
   /// connection. Set `PG_SSL=true` where the server does offer TLS.
@@ -142,6 +156,15 @@ class PgConfig {
   /// throws only when the deployment has asked to be strict — a warning that
   /// no one reads is the reason plaintext deployments survive.
   static void enforceTransportPolicy() {
+    // A shipped build authenticating with the stock 'postgres' password means
+    // no .env reached the machine. Worth saying in release, where it is the
+    // difference between "configured" and "running on a guessable default" —
+    // and it names no secret, only the fact that the default is in play.
+    if (usingDefaultPassword && kReleaseMode) {
+      debugPrint('SECURITY: PG_PASSWORD is unset — using the compiled-in '
+          'development default. Set it in the .env beside the executable.');
+    }
+
     final warning = transportWarning;
     if (warning == null) return;
     if (requireTls) {
