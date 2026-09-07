@@ -614,6 +614,33 @@ class PackageService {
   /// registered before directorates existed carry the short form, and an
   /// officer reading a number off an older label will type it that way. An
   /// exact match on one shape alone would report "not found" for the other.
+  /// The packages this yard touched TODAY, most recently first.
+  ///
+  /// ⚠️ The dashboards fetched EVERY package -- 176 rows at 159ms, each
+  /// with its items and warehouse entries -- to keep the twenty touched today.
+  ///
+  /// "Touched" includes a warehouse entry admitted or returned today, not just
+  /// the package row: Release, Re-export and Forfeit write only to
+  /// `warehouse_entries`, so a package's own timestamps cannot answer it.
+  /// `recent_package_activity` (postgres/51) settles that in SQL.
+  Future<List<PackageModel>> getRecentActivity({int limit = 20}) async {
+    final idRows = await AuthService._withNetworkRetry(() => supabase
+        .from('recent_package_activity')
+        .select('package_id')
+        .order('touched_at', ascending: false)
+        .limit(limit));
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['package_id'].toString()
+    ];
+    if (ids.isEmpty) return const [];
+
+    final byId = await getPackagesByIds(ids);
+    // Keep the view's order -- it sorted by the latest touch, which is what
+    // the dashboard is showing.
+    return [for (final id in ids) if (byId[id] != null) byId[id]!];
+  }
+
   Future<PackageModel?> getPackageBySrNumber(String srNumber) async {
     const select =
         '*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)), profiles(*)';

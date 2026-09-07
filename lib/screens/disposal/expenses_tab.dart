@@ -622,8 +622,12 @@ class _ExpensesTable extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final money = NumberFormat('#,##0.00');
-    final packages = ref.watch(livePackagesProvider).valueOrNull ?? [];
     final storageRate = ref.watch(storageRateProvider).valueOrNull ?? const {};
+    // ⚠️ The details popup fetches ITS OWN package, when it is opened.
+    //
+    // This watched `livePackagesProvider` -- every package in the yard, 176
+    // rows at 159ms -- so the table paid for them on every build, to serve a
+    // lookup that only runs when an officer clicks a row. Most never do.
 
     return Container(
       width: double.infinity,
@@ -782,10 +786,11 @@ class _ExpensesTable extends ConsumerWidget {
                     tooltip: 'View complete SR details',
                     icon: Icon(Icons.info_outline_rounded,
                         size: 18, color: context.colors.accentLightBlue),
-                    onPressed: () {
-                      final pkg = packages
-                          .where((p) => p.srNumber.trim() == r.srNumber.trim())
-                          .firstOrNull;
+                    onPressed: () async {
+                      final pkg = await ref
+                          .read(packageServiceProvider)
+                          .getPackageBySrNumber(r.srNumber.trim());
+                      if (!context.mounted) return;
                       if (pkg != null) {
                         showDialog(
                           context: context,

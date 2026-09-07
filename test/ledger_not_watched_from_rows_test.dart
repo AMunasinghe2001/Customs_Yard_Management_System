@@ -118,7 +118,11 @@ void main() {
       expect(providers, contains('dispositionPageWithPackagesProvider'));
       expect(providers, contains('getPackagesByIds'));
       final services = File('lib/services/services.dart').readAsStringSync();
-      final byIds = services.substring(services.indexOf('getPackagesByIds'));
+      // ⚠️ The DEFINITION, not the first mention. Another method now
+      // calls getPackagesByIds above it, and slicing from the call read that
+      // caller's body instead of the one under test.
+      final byIds = services.substring(
+          services.indexOf('Future<Map<String, PackageModel>> getPackagesByIds'));
       expect(byIds.substring(0, 600), contains(".inFilter('id'"),
           reason: 'the page must fetch its own packages, not all of them');
     });

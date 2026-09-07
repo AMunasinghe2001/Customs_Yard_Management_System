@@ -3061,38 +3061,27 @@ final financialsPageProvider =
   return (rows: page.rows, totals: totals, total: page.total);
 });
 
+/// The packages this yard touched TODAY, newest first.
+///
+/// ⚠️ Twenty rows, chosen in SQL. This fetched EVERY package in the
+/// yard with its items and warehouse entries -- 176 rows at 159ms -- filtered
+/// them to today in Dart, sorted them, and took twenty.
+///
+/// The membership is subtler than the package row: a warehouse entry admitted
+/// or returned today counts too, because Release, Re-export and Forfeit write
+/// only to `warehouse_entries`. `recent_package_activity` (postgres/51)
+/// carries that, and pins the date to Asia/Colombo so the answer does not
+/// depend on the reader's timezone.
+///
+/// ⚠️ TODAY means today, not "today or later". The Dart tested
+/// `isAfter(startOfDay)` with no upper bound, so an entry whose returned_at is
+/// next week counted as activity now -- two rows on the live data. A list
+/// headed "Recent Activity" reporting something that has not happened yet is
+/// worse than a short list.
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {
   ref.watch(packagesChangeTriggerProvider);
-  ref.watch(
-      warehouseEntriesChangeTriggerProvider); // also refresh on WH actions
-  final today = DateTime.now();
-  final startOfDay = DateTime(today.year, today.month, today.day);
-  final all = await ref.read(packageServiceProvider).getAllPackages();
-
-  // A package is "active today" if the package row itself was touched today OR
-  // any of its warehouse entries were admitted / returned today (covers Release,
-  // Re-export, Forfeit, etc. which only write to warehouse_entries, not packages).
-  final todayActivity = all.where((p) {
-    if (p.updatedAt.isAfter(startOfDay) || p.createdAt.isAfter(startOfDay)) {
-      return true;
-    }
-    return p.warehouseEntries.any((e) =>
-        e.admittedAt.isAfter(startOfDay) ||
-        (e.returnedAt != null && e.returnedAt!.isAfter(startOfDay)));
-  }).toList();
-
-  // Sort by the most recent touch across the package and its WH entries
-  DateTime _latestTouch(PackageModel p) {
-    var t = p.updatedAt;
-    for (final e in p.warehouseEntries) {
-      if (e.admittedAt.isAfter(t)) t = e.admittedAt;
-      if (e.returnedAt != null && e.returnedAt!.isAfter(t)) t = e.returnedAt!;
-    }
-    return t;
-  }
-
-  todayActivity.sort((a, b) => _latestTouch(b).compareTo(_latestTouch(a)));
-  return todayActivity.take(20).toList();
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  return ref.read(packageServiceProvider).getRecentActivity();
 });
 
 final categoryZoneSummaryProvider =
