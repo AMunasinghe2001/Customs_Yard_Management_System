@@ -2587,3 +2587,34 @@ New views: `valuation_rows` (42), `unsold_retender_pool` + `valued` (43), marked
 ⚠️ **Rewriting a whole view to add one column is exactly when a `where` clause goes missing** — postgres/44 re-asserts all four rules it inherits from /38 before it will apply.
 
 **Remaining unpaged** (measured, low impact): Central Disposal's Forfeited Packages (82ms) and Destruction Disposal (25ms) screens, Warehouses (164ms `getAllItemAppealOutcomes`), three spots in Admin. Small tables (taxes 4 rows, committees 8, proposals 10) need no paging.
+
+## The last four pages — and the multi-item bleed guard that never fired (2026-09-07)
+
+| page | before | after |
+|---|---|---|
+| Warehouses | 381ms | **102ms** |
+| Forfeited (yard) | 163ms, **no pager at all** | **74ms**, paged |
+| Admin activity log | 344ms (a YEAR of rows) | **45ms** (166 → 20) |
+| Destruction (yard) | 56ms | 54ms (39 rows; the shape, not the clock) |
+
+New views: `item_appeal_outcomes` (47), `warehouse_rows` (48), `forfeit_rows` (49), `destruction_summary` (50).
+
+**Officers & Admins deliberately left alone** — 11 profiles at 51ms, where a pager is chrome rather than a saving.
+
+### The two real bugs
+
+⚠️ **Warehouses was the Destroyed Goods mistake in THREE places at once.** The row filter read `packageDataProvider(e.packageId)` per entry, the row builder read it again, and the header counted its four figures by reading it twice more inside nested loops — a facility of 75 entries fired the same per-package fetch **four times over**. 52 packages: **249ms as separate calls, 46ms as one**. *Paging a table does not page what its cells fetch* — worth checking every time a table is paged.
+
+⚠️ **`getAllItemAppealOutcomes` could not resolve the rule it was applying.** `appealDecisionForItem` needs the package's ITEM COUNT to know whether a package-level decision may stand in for a missing per-item one — and `select('*')` embeds no package, so `packageDetails` was **always null** and the multi-item guard **could never fire**. A decision on one item reported every sibling decided, on four screens. postgres/47 carries the guard.
+
+⚠️ It is deliberately **not** the Appeal portal's `appeal_rows`: that view is `source = 'forfeit'` only, while a ruling can exist against detained, abandoned and other goods too — **65 of them on the live data**, which would have vanished from those four screens. A view built for one portal's feed is not a general answer.
+
+### The Forfeited port (the largest)
+
+122 lines of row-building Dart into `forfeit_rows`: the row-per-forfeit-EVENT rule, package-level coverage, the appeal-lifecycle exception to the final-disposition cut, `'other'` being terminal with or without a note, the legacy summary row and its pending-ruling exception, plus **three separate ways a record leaves the table** that lived in the service rather than the row builder (tendered, sold/destroyed, requested — the last keyed on the *originating* package and item, because a request stores a row that may be synthetic).
+
+⚠️ Its comment said one thing and its code another, again — and **the code is what the officers have been seeing**. Transcribe from the code, then check row-for-row before deleting it: 48 rows either way.
+
+### Now fully paged in SQL
+
+Every portal. Top Management (6 tabs), Central Disposal (16), Valuation (3), Appeal (2), ICT logs, and the yard's Financials, Warehouses, Forfeited, Destruction, Tender Sale and disposition pages. What remains unpaged is small by nature — taxes (4 rows), committees (8), proposals (10), profiles (11), warehouses (4).
