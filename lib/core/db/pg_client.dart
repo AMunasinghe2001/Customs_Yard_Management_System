@@ -50,6 +50,17 @@ class PgClient {
     final args = params ?? const <String, Object?>{};
     // Named arguments (`fn(name => @name`) rather than positional, because
     // that is how the SDK called them and how the functions declare defaults.
+    //
+    // ⚠️ An argument NAME is the one thing here that is pasted into SQL rather
+    // than bound: `@k` binds the value, but the `k =>` before it cannot be a
+    // parameter — Postgres needs the argument name as syntax. Every call site
+    // today passes a literal, so nothing user-controlled reaches this; the
+    // check is what keeps that true if a later refactor ever builds a params
+    // map from a field name. A rejected name fails loudly instead of
+    // extending the statement.
+    for (final k in args.keys) {
+      _requirePlainIdentifier(k, 'RPC argument name');
+    }
     final argSql = args.keys.map((k) => '$k => @$k').join(', ');
 
     // jsonb parameters have to be sent as text and cast, or the driver infers
@@ -71,8 +82,41 @@ class PgClient {
     return rows;
   }
 
-  static String _qualify(String fn) =>
-      fn.contains('.') ? fn : 'public.${'"$fn"'}';
+  /// A function or argument name that is safe to paste into SQL as syntax.
+  ///
+  /// Deliberately stricter than "escape the quotes": these names are never
+  /// user data — all 30-odd RPC call sites pass a string literal — so anything
+  /// outside `[A-Za-z_][A-Za-z0-9_$]*` means a caller is building a name from
+  /// somewhere it should not, and guessing at its intent by escaping it would
+  /// hide that. Length is capped at Postgres's own 63-byte identifier limit.
+  static void _requirePlainIdentifier(String name, String what) {
+    if (!_identifierPattern.hasMatch(name)) {
+      throw ArgumentError.value(name, what,
+          'must be a plain SQL identifier (letters, digits, underscore)');
+    }
+  }
+
+  static final RegExp _identifierPattern = RegExp(r'^[A-Za-z_][A-Za-z0-9_$]{0,62}$');
+
+  /// Schema-qualifies and quotes a function name.
+  ///
+  /// Both halves are validated, then quoted, so a name containing a dot is
+  /// read as `"schema"."function"` and never as one identifier — and a stray
+  /// quote is rejected outright rather than escaped into something that still
+  /// parses. `auth.record_failed_login` is a real call site, so the two-part
+  /// form has to keep working.
+  static String _qualify(String fn) {
+    final parts = fn.split('.');
+    if (parts.length > 2) {
+      throw ArgumentError.value(fn, 'RPC function', 'too many name parts');
+    }
+    for (final p in parts) {
+      _requirePlainIdentifier(p, 'RPC function name');
+    }
+    final schema = parts.length == 2 ? parts.first : 'public';
+    final name = parts.last;
+    return '"$schema"."$name"';
+  }
 }
 
 /// The app-wide handle. Named `supabase` on purpose: it keeps 198 call sites

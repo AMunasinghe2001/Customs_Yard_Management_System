@@ -2636,3 +2636,37 @@ Asked whether the 8-row committees and 10-row proposals tables needed paging —
 **Bids entered together carry the SAME `created_at` to the microsecond, and Postgres promises no order between tied rows.** The same two amounts came back **swapped from one read to the next** — and the edit dialog seeds one text field per bid in exactly that order, so an officer could reopen a round and find their figures rearranged. All four queries now break the tie on `id`; the page-wide pair also order by `forfeited_package_id` first, or one package's rows interleave with another's.
 
 **This is the third time a per-row provider watch has been the real cost** — Destroyed Goods, then Warehouses (three places at once), now the tender tables (six). When a table is paged, grep its cells for `ref.watch(...Provider(` before calling it done.
+
+## Network & database security: the code was fine, the server is not (2026-09-07)
+
+Asked to enforce TLS, prove there is no SQL injection, and restrict where the database accepts connections from. The audit came back **the opposite way round from what the ask assumed**: the Dart layer was already sound, and every real finding is server configuration on the live machine.
+
+### SQL injection: nothing to fix
+
+All 198 call sites go through `PgQuery`, and **every value is a bound `@p` parameter** — `eq/neq/gt/like/in/contains`, all insert/update/upsert values, and each leaf of an `or()` group. There is no hand-written SQL anywhere: `PgDatabase.query/execute` is unreachable outside `lib/core/db/`.
+
+Three things ARE interpolated, because **Postgres cannot bind an identifier** — it is syntax, not data. Column and table names go through `_quoteIdent`/`_quoteRel` (verified: `id"; drop table packages; --` comes out as one harmless quoted name), aliases are counter-generated, and `is`/`in` emit `null`/`true`/`false` as keywords chosen by a `switch`, never user text.
+
+⚠️ The one genuine gap was **`rpc()`**: it must write `name => @name`, and the `name =>` half cannot be a parameter, so the function name and every argument NAME were pasted in unvalidated. No call site passes anything but a literal, so nothing was exploitable — but that is a property of the callers, not of the code. Both are now checked against `^[A-Za-z_][A-Za-z0-9_$]{0,62}$` and **rejected rather than escaped**, and `_qualify` no longer builds `"schema.fn"` as a single quoted name.
+
+### TLS: the check has to come before the socket
+
+`PgConfig.enforceTransportPolicy()` runs in `_open()` **before connecting** — a plaintext connection to a remote host has already sent the password by the time the first query runs.
+
+Three states, not two: plaintext to **localhost is not a finding** (nothing crosses a wire, and warning there just trains people to ignore the warning that matters); unverified TLS to a remote host is one; plaintext to a remote host is the serious one. New `PG_REQUIRE_TLS=true` turns it into a start-up failure; the default stays warn-only so existing LAN installs keep working.
+
+⚠️ **`SslMode.require` encrypts but accepts ANY certificate.** Only `verifyFull` defeats a machine in the middle. Traffic that "is TLS" can still be read end to end.
+
+### The updater was the sharpest network surface
+
+The appcast decides which installer the app downloads **and runs** — over HTTP that is remote code execution, not eavesdropping. `isUpdateFeedAcceptable` now allows `https://` always, `http://` only with an explicit opt-in AND a private-range host, and a public `http://` URL never.
+
+### ⚠️ Three open findings, all server config
+
+1. **The app connects as `postgres` — a SUPERUSER, and superusers bypass RLS.** All 112 policies are currently decorative, including the `officer_signup_otps` deny-all lockbox. A `yard_app` least-privilege role is written out in `postgres/SECURITY.md`.
+2. **`pg_hba.conf` uses `trust`** on lines 117–126: no password is checked at all, so any process on the box connects as superuser by asking. `PG_PASSWORD` is not being verified.
+3. `ssl = off` on the server.
+
+None is remotely exploitable **only because `listen_addresses = localhost`**. That single setting is what is holding all three up — all must be closed before the database accepts its first network connection.
+
+⚠️ **`officer_signup_otps` has RLS on with ZERO policies, and that is correct** — no policy means RLS denies everyone, making it a lockbox only a bypassing role may read. An audit that flags "no policies" as a gap is wrong here; the failure to catch is RLS being switched **off**. `tool/audit_network_security.py` knows the difference, and its first three SQL "findings" were false positives worth fixing in the checker rather than reporting.

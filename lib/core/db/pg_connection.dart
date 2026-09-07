@@ -34,6 +34,7 @@ class PgConfig {
   static const String _passwordDefine = String.fromEnvironment('PG_PASSWORD');
   static const bool _sslDefine = bool.fromEnvironment('PG_SSL');
   static const bool _sslVerifyDefine = bool.fromEnvironment('PG_SSL_VERIFY');
+  static const bool _requireTlsDefine = bool.fromEnvironment('PG_REQUIRE_TLS');
   static const int _connectTimeoutDefine =
       int.fromEnvironment('PG_CONNECT_TIMEOUT', defaultValue: -1);
   static const int _poolSizeDefine =
@@ -90,6 +91,64 @@ class PgConfig {
   static SslMode get sslMode {
     if (!useSsl) return SslMode.disable;
     return verifySsl ? SslMode.verifyFull : SslMode.require;
+  }
+
+  /// Refuse to run without TLS. Off by default so existing LAN installs keep
+  /// working; set `PG_REQUIRE_TLS=true` on any deployment that leaves the
+  /// office network, and a misconfigured `.env` becomes a startup failure
+  /// rather than a silent downgrade to plaintext.
+  static bool get requireTls => AppEnv.readBool('PG_REQUIRE_TLS',
+      dartDefine: _requireTlsDefine, fallback: false);
+
+  /// Whether [host] is this machine. A loopback connection never leaves the
+  /// box, so there is no wire for anyone to tap and plaintext is genuinely
+  /// fine; anything else is a network hop, however short.
+  static bool get isLoopbackHost {
+    final h = host.trim().toLowerCase();
+    return h == 'localhost' ||
+        h == '127.0.0.1' ||
+        h == '::1' ||
+        h == '[::1]' ||
+        h.startsWith('127.');
+  }
+
+  /// What is wrong with the transport configuration, or null when it is sound.
+  ///
+  /// Three distinct states, because they carry very different risk:
+  ///
+  ///   * plaintext to a REMOTE host — every query, every seizure record and
+  ///     the login password itself cross the network readable by anything on
+  ///     the path. This is the one that matters.
+  ///   * TLS without verification — encrypted, but any machine in the middle
+  ///     may present its own certificate and decrypt the lot. Acceptable on a
+  ///     LAN with a self-signed certificate, not over the internet.
+  ///   * plaintext to localhost — not a finding; the traffic never leaves.
+  static String? get transportWarning {
+    if (!useSsl) {
+      if (isLoopbackHost) return null;
+      return 'PostgreSQL at $host is reached WITHOUT TLS. Queries, seizure '
+          'records and credentials cross the network in clear text. '
+          'Set PG_SSL=true (and PG_SSL_VERIFY=true off-LAN).';
+    }
+    if (!verifySsl && !isLoopbackHost) {
+      return 'TLS to $host is UNVERIFIED: the connection is encrypted but the '
+          'server certificate is not checked, so a machine in the middle can '
+          'still read it. Set PG_SSL_VERIFY=true outside a trusted LAN.';
+    }
+    return null;
+  }
+
+  /// Checked at start-up, before the first query. Logs whatever is wrong, and
+  /// throws only when the deployment has asked to be strict — a warning that
+  /// no one reads is the reason plaintext deployments survive.
+  static void enforceTransportPolicy() {
+    final warning = transportWarning;
+    if (warning == null) return;
+    if (requireTls) {
+      throw StateError('PG_REQUIRE_TLS is set but the connection is not '
+          'adequately secured. $warning');
+    }
+    debugPrint('⚠️  TRANSPORT SECURITY: $warning');
   }
 
   /// How many physical connections the pool may open.
@@ -249,6 +308,12 @@ class PgDatabase {
     // Someone else is already opening one — wait for theirs.
     final pending = _connecting;
     if (pending != null) return pending;
+
+    // Before the socket, not after: a plaintext connection to a remote server
+    // has already leaked the password by the time the first query runs, so a
+    // deployment that set PG_REQUIRE_TLS must fail here rather than connect
+    // and complain.
+    PgConfig.enforceTransportPolicy();
 
     // ⚠️ Every physical connection the pool opens starts a FRESH session with
     // no settings, so the signed-in user has to be re-declared on each one or
