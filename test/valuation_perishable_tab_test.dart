@@ -43,17 +43,31 @@ void main() {
     // ⚠️ It splits the SAME list rather than fetching a different one, so the
     // two tabs can never disagree: whatever the directorate holds appears on
     // exactly one of them.
-    test('both tabs come from one provider', () {
-      expect(val, contains('isPerishable(r) == perishableOnly'));
-      expect('valuationRequestsProvider'.allMatches(val).length,
-          greaterThanOrEqualTo(1));
+    test('both tabs come from one membership', () {
+      // ⚠️ The rule moved into SQL; the property did not change.
+      //
+      // This pinned `isPerishable(r) == perishableOnly`, the Dart filter over
+      // the whole feed. The portal now pages in the database, and
+      // `valuation_rows` (postgres/42) carries the split -- so the two tabs
+      // still partition ONE membership, they just do it before the rows
+      // arrive. The view's verify block asserts the partition itself.
+      expect(val, contains('perishable: perishableOnly'));
+      expect(val, contains('valuationFeedPageProvider('));
+      // One widget, one flag: the tabs cannot drift apart.
+      expect('_PendingValuationTab'.allMatches(val).length,
+          greaterThanOrEqualTo(3));
     });
 
     // ⚠️ EVERY item, not any: perishables arrive as their own request, so a
     // mixed one is not a perishable batch.
     test('a request is perishable only when every item is', () {
-      expect(val,
-          contains("r.items.every((i) => i.forfeited?.source == 'perishable')"));
+      // ⚠️ Asserted where the rule now lives. It was a `.every` in Dart;
+      // it is `bool_and(source = 'perishable')` in the view, over the PENDING
+      // items -- the ones the officer is actually being asked to cost.
+      final view = _read('postgres/42_valuation_rows_view.sql');
+      expect(view, contains("bool_and(source = 'perishable')"));
+      // And only the not-yet-forwarded items are counted.
+      expect(view, contains('where not dri.forwarded'));
     });
 
     // ⚠️ A short controller still PAINTS every tab, but clicks resolve

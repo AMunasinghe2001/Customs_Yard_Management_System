@@ -5919,11 +5919,29 @@ class DisposalService {
   /// package items and warehouse entries — three passes over the whole yard to
   /// draw twenty cards. `unsold_retender_pool` (postgres/29) answers the
   /// membership question once.
-  Future<({List<ReTenderSaleInfo> rows, int total})> getUnsoldRetenderPaged({
+  Future<({List<ReTenderSaleInfo> rows, Set<String> valued, int total})>
+      getUnsoldRetenderPaged({
     required int offset,
     required int limit,
     String? search,
     String? yardFilter,
+
+    /// Only packages Central Disposal can still re-tender on its own.
+    ///
+    /// ⚠️ The VALUATION portal passes true. Past the fourth round a package
+    /// belongs to Top Management -- a committee prices it and the ADG submits
+    /// it -- so this directorate has no work left on it, and a row it cannot
+    /// act on is worse than no row. Central Disposal's own tab passes false:
+    /// it needs to see the committee-priced ones too.
+    bool valuationRoundsOnly = false,
+
+    /// Pending (false) or already valued (true). Null is BOTH -- a third
+    /// answer, not a default.
+    ///
+    /// ⚠️ In SQL, not in Dart. This tab pages in the database now, so a
+    /// Dart-side filter would narrow the CURRENT page while the pager went on
+    /// counting rows the table no longer shows.
+    bool? valued,
   }) async {
     PgQuery narrow(PgQuery q) {
       final s = search?.trim() ?? '';
@@ -5934,13 +5952,19 @@ class DisposalService {
       if (yardFilter != null && yardFilter.isNotEmpty) {
         q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
       }
+      if (valuationRoundsOnly) {
+        q = q.lte('round_count', kMaxBidTenderRounds);
+      }
+      if (valued != null) {
+        q = q.eq('valued', valued);
+      }
       return q;
     }
 
     final idRows = await AuthService._withNetworkRetry(() =>
         narrow(supabase
                 .from('unsold_retender_pool')
-                .select('forfeited_package_id'))
+                .select('forfeited_package_id, valued'))
             // Most-tendered first, then by SR number — the app's own order.
             .order('round_count', ascending: false)
             .order('sr_number', ascending: true)
@@ -5952,8 +5976,22 @@ class DisposalService {
       for (final e in (idRows as List))
         (e as Map<String, dynamic>)['forfeited_package_id'].toString()
     ];
+    // ⚠️ Read off the SAME rows, not fetched again. This used to be
+    // getValuedCurrentRoundIds(), which called getUnsoldTenderSales() -- the
+    // heaviest query in the app -- a second time just to learn one boolean
+    // per row. The view carries it.
+    final valuedIds = <String>{
+      for (final e in (idRows as List))
+        if ((e as Map<String, dynamic>)['valued'] == true)
+          e['forfeited_package_id'].toString()
+    };
+
     if (ids.isEmpty) {
-      return (rows: const <ReTenderSaleInfo>[], total: total as int);
+      return (
+        rows: const <ReTenderSaleInfo>[],
+        valued: const <String>{},
+        total: total as int
+      );
     }
 
     final infos = await _reTenderInfoForIds(ids);
@@ -5961,8 +5999,41 @@ class DisposalService {
     // Keep the view's order.
     return (
       rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      valued: valuedIds,
       total: total as int,
     );
+  }
+
+  /// How many of the re-tender pool are still awaiting THIS directorate.
+  ///
+  /// ⚠️ Its own count, over the whole filter rather than the page. The tab
+  /// shows "N of M awaiting valuation", and folding that from twenty rows
+  /// would report one page of work as the directorate's whole queue.
+  Future<({int pending, int total})> getUnsoldRetenderCounts({
+    String? search,
+    String? yardFilter,
+    bool valuationRoundsOnly = false,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'item_name.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+      }
+      if (valuationRoundsOnly) {
+        q = q.lte('round_count', kMaxBidTenderRounds);
+      }
+      return q;
+    }
+
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('unsold_retender_pool')).count());
+    final pending = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('unsold_retender_pool')).eq('valued', false).count());
+    return (pending: pending as int, total: total as int);
   }
 
   /// One page of the Committees tab, chosen in SQL.
@@ -8065,21 +8136,107 @@ class AppealService {
 /// enters a cost per package item, then forwards the request to the Central
 /// Disposal Directorate. Only after forwarding does Central Disposal see it.
 class ValuationService {
-  /// Requests still awaiting valuation (across all yards), newest first, with
-  /// full package + item detail for the per-item cost form.
-  Future<List<DisposalRequestModel>> getValuationRequests() async {
+  /// One PAGE of the valuation feed, chosen in SQL.
+  ///
+  /// ⚠️ This portal had no paging at all -- not SQL paging, not even a
+  /// client-side pager. `ListView.separated(itemCount: list.length)` rendered
+  /// every request awaiting valuation, behind a query six levels deep:
+  /// requests to items to forfeited rows to packages to their items, and
+  /// separately to warehouse entries and their warehouses.
+  ///
+  /// Both membership rules ran in Dart afterwards, which is precisely why a
+  /// page could not be asked for by number:
+  ///
+  ///   * a request stays while ANY of its items is not yet forwarded
+  ///   * it belongs to the Perishable tab when EVERY pending item is
+  ///     perishable
+  ///
+  /// `valuation_rows` (postgres/42) answers both, so the page, the count and
+  /// the split are all SQL. The heavy detail is then fetched for THIS page's
+  /// requests only -- the per-item cost form genuinely needs it.
+  Future<({List<DisposalRequestModel> rows, int total})> getValuationFeedPaged({
+    required int offset,
+    required int limit,
+
+    /// Which tab: perishable batches, or everything else.
+    ///
+    /// ⚠️ Not a filter over one list but a partition of it. The two tabs
+    /// split the same membership, so a request appears on exactly one of them
+    /// and can never fall between.
+    required bool perishable,
+    String? search,
+    String? yardFilter,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      q = q.eq('is_perishable', perishable);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_numbers.ilike.%$s%,consignees.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        // ⚠️ The item yards too, not just the request's own. A request is
+        // filed by one yard but can hold goods from another, and the view
+        // carries a pipe-wrapped list of every yard it touches for exactly
+        // this reason.
+        q = q.or('yard.eq.$yardFilter,item_yards.ilike.%|$yardFilter|%');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('valuation_rows').select('id'))
+            .order('created_at', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('valuation_rows')).count());
+
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <DisposalRequestModel>[], total: total as int);
+    }
+
+    final rows = await _valuationRequestsByIds(ids);
+    // Keep the view's order: it sorted the page, and re-sorting here would
+    // quietly disagree with the page boundaries.
+    final byId = {for (final r in rows) r.id: r};
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
+  /// The full detail for a PAGE of requests, and only those.
+  ///
+  /// ⚠️ The embed is deep because the per-item cost form needs it: the
+  /// package's items to name the goods, and its warehouse entries because the
+  /// quantity being valued is the FORFEITED quantity, which is read off the
+  /// entries a forfeit returned. Narrowing it is a separate question from
+  /// paging; what matters here is that it now runs for twenty requests
+  /// instead of every one in the country.
+  Future<List<DisposalRequestModel>> _valuationRequestsByIds(
+      List<String> ids) async {
+    if (ids.isEmpty) return const [];
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_requests')
-        // Include warehouse_entries too so the details popup shows the full
-        // Item Details + Warehouse Summary (mirrors the Forfeited screen).
         .select(
             '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+        .inFilter('id', ids)
         .order('created_at', ascending: false));
-    // Per-item forwarding: a request stays in the Pending Valuation feed while
-    // ANY of its items is not yet forwarded. Only the not-yet-forwarded items
-    // are shown (already-forwarded items have moved on to Central Disposal).
+    return _pendingItemsOnly(data as List);
+  }
+
+  /// Keeps each request's NOT-YET-FORWARDED items, dropping any request left
+  /// with none.
+  ///
+  /// ⚠️ Shared by the paged feed and the whole-feed fetch, so the two can
+  /// never disagree about which items an officer is being asked to cost.
+  /// Already-forwarded items have moved on to Central Disposal.
+  List<DisposalRequestModel> _pendingItemsOnly(List data) {
     final result = <DisposalRequestModel>[];
-    for (final e in (data as List)) {
+    for (final e in data) {
       final r = DisposalRequestModel.fromJson(e as Map<String, dynamic>);
       final pending = r.items.where((i) => !i.forwarded).toList();
       if (pending.isEmpty) continue;
@@ -8095,6 +8252,22 @@ class ValuationService {
       ));
     }
     return result;
+  }
+
+  /// Requests still awaiting valuation (across all yards), newest first, with
+  /// full package + item detail for the per-item cost form.
+  Future<List<DisposalRequestModel>> getValuationRequests() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('disposal_requests')
+        // Include warehouse_entries too so the details popup shows the full
+        // Item Details + Warehouse Summary (mirrors the Forfeited screen).
+        .select(
+            '*, profiles!created_by(full_name), valued_profile:profiles!valued_by(full_name), disposal_request_items(*, forfeited_packages(*, packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+        .order('created_at', ascending: false));
+    // Per-item forwarding: a request stays in the Pending Valuation feed while
+    // ANY of its items is not yet forwarded. Only the not-yet-forwarded items
+    // are shown (already-forwarded items have moved on to Central Disposal).
+    return _pendingItemsOnly(data as List);
   }
 
   /// Save per-item costs (map of disposal_request_items.id → cost). When

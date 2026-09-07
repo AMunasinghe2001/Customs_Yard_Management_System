@@ -1428,11 +1428,23 @@ class UnsoldRetenderQuery {
   /// one thing that page is for would be impossible.
   final bool appointedOnly;
 
+  /// Valuation only: hide packages past the fourth round.
+  ///
+  /// ⚠️ Past four a package belongs to Top Management -- a committee
+  /// prices it -- so the Valuation Directorate has no work left on it, and a
+  /// row it cannot act on is worse than no row.
+  final bool valuationRoundsOnly;
+
+  /// Pending (false) / already valued (true) / both (null).
+  final bool? valued;
+
   const UnsoldRetenderQuery(
       {this.page = 0,
       this.search,
       this.yardFilter,
-      this.appointedOnly = true});
+      this.appointedOnly = true,
+      this.valuationRoundsOnly = false,
+      this.valued});
 
   @override
   bool operator ==(Object other) =>
@@ -1440,17 +1452,30 @@ class UnsoldRetenderQuery {
       other.page == page &&
       other.search == search &&
       other.yardFilter == yardFilter &&
-      other.appointedOnly == appointedOnly;
+      other.appointedOnly == appointedOnly &&
+      other.valuationRoundsOnly == valuationRoundsOnly &&
+      other.valued == valued;
 
   @override
   // ⚠️ In BOTH, or the two tabs share a cached page and one shows the
   // other portal's list.
-  int get hashCode => Object.hash(page, search, yardFilter, appointedOnly);
+  int get hashCode => Object.hash(
+      page, search, yardFilter, appointedOnly, valuationRoundsOnly, valued);
 }
 
 /// One page of the re-tender pool, chosen in SQL.
-final unsoldRetenderPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
-    UnsoldRetenderQuery>((ref, q) async {
+/// One page of the re-tender pool, and which of its rows are already priced.
+typedef RetenderPage = ({
+  List<ReTenderSaleInfo> rows,
+  /// ⚠️ Read off the SAME rows the page came from. This used to be
+  /// `valuedCurrentRoundProvider`, which called getUnsoldTenderSales() -- the
+  /// heaviest query in the app -- a SECOND time to learn one boolean per row.
+  Set<String> valued,
+  int total,
+});
+
+final unsoldRetenderPageProvider =
+    FutureProvider.family<RetenderPage, UnsoldRetenderQuery>((ref, q) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   ref.watch(tenderSaleItemsChangeTriggerProvider);
   ref.watch(tenderBidsChangeTriggerProvider);
@@ -1459,6 +1484,22 @@ final unsoldRetenderPageProvider = FutureProvider.family<ExhaustedUnsoldPage,
         limit: kDispositionPageSize,
         search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
         yardFilter: q.yardFilter,
+        valuationRoundsOnly: q.valuationRoundsOnly,
+        valued: q.valued,
+      );
+});
+
+/// "N of M awaiting valuation", over the whole filter rather than the page.
+final unsoldRetenderCountsProvider =
+    FutureProvider.family<({int pending, int total}), UnsoldRetenderQuery>(
+        (ref, q) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getUnsoldRetenderCounts(
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+        valuationRoundsOnly: q.valuationRoundsOnly,
       );
 });
 
@@ -1907,6 +1948,60 @@ final disposalRequestsProvider =
 // Shares the same realtime trigger as the disposal feed (both watch the
 // disposal_requests / _items tables), so forwarding a request live-updates both
 // the valuation list (it leaves) and the central-disposal list (it appears).
+/// What one page of a Valuation feed tab is asking for.
+///
+/// ⚠️ `perishable` is in the key as much as the page number is. The two
+/// tabs are the same widget with one flag flipped, so a key that left it out
+/// would serve the perishable tab whatever the ordinary tab had cached -- and
+/// the officer would be costing goods on the wrong clock.
+@immutable
+class ValuationFeedQuery {
+  final int page;
+  final bool perishable;
+  final String? search;
+  final String? yardFilter;
+
+  const ValuationFeedQuery({
+    this.page = 0,
+    required this.perishable,
+    this.search,
+    this.yardFilter,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is ValuationFeedQuery &&
+      other.page == page &&
+      other.perishable == perishable &&
+      other.search == search &&
+      other.yardFilter == yardFilter;
+
+  @override
+  int get hashCode => Object.hash(page, perishable, search, yardFilter);
+}
+
+/// One page of a Valuation feed tab, plus how many the filter matches.
+typedef ValuationFeedPage = ({List<DisposalRequestModel> rows, int total});
+
+/// The Valuation Directorate's feed, a page at a time.
+///
+/// ⚠️ This portal had NO paging -- not SQL, not even client-side. Every
+/// request awaiting valuation was fetched through a six-level embed and
+/// rendered at once. `valuation_rows` (postgres/42) carries both membership
+/// rules, so the page and the count are SQL and the deep fetch runs for one
+/// page of requests.
+final valuationFeedPageProvider =
+    FutureProvider.family<ValuationFeedPage, ValuationFeedQuery>((ref, q) async {
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  return ref.read(valuationServiceProvider).getValuationFeedPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        perishable: q.perishable,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+      );
+});
+
 final valuationRequestsProvider =
     FutureProvider<List<DisposalRequestModel>>((ref) async {
   ref.watch(disposalRequestsChangeTriggerProvider);

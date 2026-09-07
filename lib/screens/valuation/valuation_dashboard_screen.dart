@@ -77,7 +77,11 @@ class _ValuationDashboardScreenState
   Widget build(BuildContext context) {
     final gold = context.colors.primaryGold;
     final profile = ref.watch(currentProfileProvider);
-    final requests = ref.watch(valuationRequestsProvider);
+    // ⚠️ The scaffold watched `valuationRequestsProvider` and never read it.
+    // A dead watch is still a fetch: opening the portal ran the six-level
+    // feed query — every request awaiting valuation, with its packages, their
+    // items and their warehouse entries — to render a header that says
+    // nothing about them. The tabs fetch their own page.
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -307,14 +311,18 @@ class _PendingValuationTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final gold = context.colors.primaryGold;
-    // A request is perishable when EVERY item is -- perishables arrive as
-    // their own request, so a mixed one is not a perishable batch.
-    bool isPerishable(DisposalRequestModel r) =>
-        r.items.isNotEmpty &&
-        r.items.every((i) => i.forfeited?.source == 'perishable');
 
-    final requests = ref.watch(valuationRequestsProvider).whenData(
-        (list) => list.where((r) => isPerishable(r) == perishableOnly).toList());
+    // ⚠️ The split is in SQL now, and so is the page.
+    //
+    // Both tabs used to watch the WHOLE feed and then keep the requests whose
+    // every pending item was (or was not) perishable — with no pager at all,
+    // so every request awaiting valuation rendered at once behind a six-level
+    // embed. `valuation_rows` carries the same rule (postgres/42, whose
+    // verify block asserts the two tabs still partition the feed exactly),
+    // and the deep fetch now runs for one page of requests.
+    final page = ref.watch(_valFeedPageProvider(perishableOnly));
+    final query = ValuationFeedQuery(page: page, perishable: perishableOnly);
+    final feed = ref.watch(valuationFeedPageProvider(query));
 
     return Padding(
       // ⚠️ 16, not 24 -- see Central Disposal. A table page spends its
@@ -326,8 +334,11 @@ class _PendingValuationTab extends ConsumerWidget {
             Row(children: [
               PageTitle('Pending Valuation', Icons.calculate_rounded, accent: gold),
               const Gap(12),
-              requests.maybeWhen(
-                data: (list) => Container(
+              feed.maybeWhen(
+                // ⚠️ The SERVER's count, not the page's. `rows.length` is the
+                // page size now and would report 20 requests however many the
+                // directorate is actually holding.
+                data: (data) => Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
@@ -335,7 +346,7 @@ class _PendingValuationTab extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(color: gold.withOpacity(0.3)),
                   ),
-                  child: Text('${list.length} request(s)',
+                  child: Text('${data.total} request(s)',
                       style: TextStyle(
                           color: gold,
                           fontWeight: FontWeight.w700,
@@ -346,16 +357,16 @@ class _PendingValuationTab extends ConsumerWidget {
             ]).animate().fadeIn(duration: 300.ms),
             const Gap(16),
             Expanded(
-              child: requests.when(
+              child: feed.when(
                 skipLoadingOnReload: true,
                 loading: () => Center(
                     child: CircularProgressIndicator(color: gold)),
                 error: (e, _) => ErrorView(
                     error: e,
                     onRetry: () =>
-                        ref.refresh(valuationRequestsProvider)),
-                data: (list) {
-                  if (list.isEmpty) {
+                        ref.refresh(valuationFeedPageProvider(query))),
+                data: (data) {
+                  if (data.rows.isEmpty) {
                     return SizedBox(
                       width: double.infinity,
                       child: EmptyStateCard(
@@ -365,15 +376,34 @@ class _PendingValuationTab extends ConsumerWidget {
                               'Monitoring all ${kYards.length} yards — new disposal requests will appear here for costing.'),
                     );
                   }
-                  return ListView.separated(
-                    itemCount: list.length,
-                    separatorBuilder: (_, __) => const Gap(16),
-                    itemBuilder: (context, i) =>
-                        _ValuationRequestCard(request: list[i]),
-                  )
-                      .animate()
-                      .fadeIn(duration: 350.ms)
-                      .slideY(begin: 0.05);
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Expanded(
+                        child: ListView.separated(
+                          itemCount: data.rows.length,
+                          separatorBuilder: (_, __) => const Gap(16),
+                          itemBuilder: (context, i) =>
+                              _ValuationRequestCard(request: data.rows[i]),
+                        )
+                            .animate()
+                            .fadeIn(duration: 350.ms)
+                            .slideY(begin: 0.05),
+                      ),
+                      // ⚠️ Paged against the SERVER's total. This tab had no
+                      // pager at all; one added over a page-at-a-time fetch
+                      // must count from SQL, or it pins itself to page 1.
+                      TablePager(
+                        total: data.total,
+                        page: page,
+                        pageSize: kDispositionPageSize,
+                        accent: gold,
+                        onPageChanged: (v) => ref
+                            .read(_valFeedPageProvider(perishableOnly).notifier)
+                            .state = v,
+                      ),
+                    ],
+                  );
                 },
               ),
             ),
@@ -749,8 +779,11 @@ class _ForwardAllButtonState extends ConsumerState<_ForwardAllButton> {
       await ref
           .read(valuationServiceProvider)
           .forwardAllValuationItems(widget.request.id);
+      // ⚠️ The TRIGGER, which the paged feed watches too. Invalidating
+      // valuationRequestsProvider alone would refresh the whole-feed fetch --
+      // which nothing on screen reads any more -- and leave the tab showing
+      // the request that has just been forwarded away.
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
-      ref.invalidate(valuationRequestsProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: const Text('All items forwarded to Central Disposal.'),
@@ -844,8 +877,11 @@ class _ItemValuationDialogState extends ConsumerState<_ItemValuationDialog> {
       final svc = ref.read(valuationServiceProvider);
       await svc.setValuationItemCost(widget.item.id, cost);
       if (forward) await svc.forwardValuationItem(widget.item.id);
+      // ⚠️ The TRIGGER, which the paged feed watches too. Invalidating
+      // valuationRequestsProvider alone would refresh the whole-feed fetch --
+      // which nothing on screen reads any more -- and leave the tab showing
+      // the request that has just been forwarded away.
       ref.read(disposalRequestsRefreshProvider.notifier).trigger();
-      ref.invalidate(valuationRequestsProvider);
       if (!mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1012,8 +1048,17 @@ class _DispoChip extends StatelessWidget {
   }
 }
 
+/// Which page each feed tab is on, keyed by whether it is the perishable one.
+///
+/// ⚠️ A family, not two providers. The two tabs are the same widget with one
+/// flag flipped; a single page counter would carry the officer's position on
+/// one tab across to the other, which reads as the list having jumped.
+final _valFeedPageProvider =
+    StateProvider.family<int, bool>((ref, perishable) => 0);
+
 // ── Unsold Tenders (Valuation view: bids + re-valuation) ─────────────────────
 final _valUnsoldSearchProvider = StateProvider<String>((ref) => '');
+final _valUnsoldPageProvider = StateProvider<int>((ref) => 0);
 final _valUnsoldYardProvider = StateProvider<String?>((ref) => null); // null=all
 
 /// Which rows the Unsold Tenders table shows:
@@ -1162,14 +1207,45 @@ class _UnsoldTendersValTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final gold = context.colors.primaryGold;
-    final async = ref.watch(unsoldTenderSalesProvider);
-    final q = ref.watch(_valUnsoldSearchProvider).toLowerCase();
+    final q = ref.watch(_valUnsoldSearchProvider);
     final yardFilter = ref.watch(_valUnsoldYardProvider);
     final statusFilter = ref.watch(_valUnsoldStatusProvider);
-    final valued =
-        ref.watch(valuedCurrentRoundProvider).valueOrNull ?? const <String>{};
+    final pageIndex = ref.watch(_valUnsoldPageProvider);
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
+
+    // ⚠️ THREE whole-yard queries became one page.
+    //
+    // The tab watched `unsoldTenderSalesProvider` — every tender sale with
+    // its items, forfeited rows, packages, package items and warehouse
+    // entries — and then `valuedCurrentRoundProvider`, which called that SAME
+    // query a second time purely to learn one boolean per row. Both were
+    // fetched in full and then filtered in Dart, with no pager at all.
+    //
+    // `unsold_retender_pool` already answered the membership question;
+    // postgres/43 adds the `valued` flag to it, so the page, the filters and
+    // the count are SQL and the flag rides along on the rows themselves.
+    //
+    // ⚠️ `valuationRoundsOnly` is where the old `tenderCount <=
+    // kMaxBidTenderRounds` guard went. Past the fourth round a package
+    // belongs to Top Management — a committee prices it and the ADG submits
+    // it — so a row here is one this officer cannot act on.
+    final query = UnsoldRetenderQuery(
+      page: pageIndex,
+      search: q.trim().isEmpty ? null : q.trim(),
+      yardFilter: yardFilter,
+      valuationRoundsOnly: true,
+      valued: statusFilter,
+    );
+    final async = ref.watch(unsoldRetenderPageProvider(query));
+    // ⚠️ The "N of M" counts run over the whole FILTER, not the page: folding
+    // them from twenty rows would report one page of work as the
+    // directorate's queue.
+    final counts = ref.watch(unsoldRetenderCountsProvider(UnsoldRetenderQuery(
+      search: q.trim().isEmpty ? null : q.trim(),
+      yardFilter: yardFilter,
+      valuationRoundsOnly: true,
+    )));
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -1185,15 +1261,23 @@ class _UnsoldTendersValTab extends ConsumerWidget {
             // Search — same style as the Central Disposal Unsold page.
             _ValSearchField(
               value: q,
-              onChanged: (v) =>
-                  ref.read(_valUnsoldSearchProvider.notifier).state = v,
+              // ⚠️ Back to page 1 on every filter change. The table pages
+              // in the database now, so keeping the page number would leave
+              // an officer on page 5 of a filter that matches two rows --
+              // an empty table that looks like no results.
+              onChanged: (v) {
+                ref.read(_valUnsoldSearchProvider.notifier).state = v;
+                ref.read(_valUnsoldPageProvider.notifier).state = 0;
+              },
             ),
             const Gap(12),
             // Yard filter — same styled dropdown as Central Disposal.
             _ValYardFilter(
               value: yardFilter,
-              onChanged: (v) =>
-                  ref.read(_valUnsoldYardProvider.notifier).state = v,
+              onChanged: (v) {
+                ref.read(_valUnsoldYardProvider.notifier).state = v;
+                ref.read(_valUnsoldPageProvider.notifier).state = 0;
+              },
             ),
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(12),
@@ -1202,26 +1286,26 @@ class _UnsoldTendersValTab extends ConsumerWidget {
           Row(children: [
             _ValStatusFilter(
               value: statusFilter,
-              onChanged: (v) =>
-                  ref.read(_valUnsoldStatusProvider.notifier).state = v,
+              onChanged: (v) {
+                ref.read(_valUnsoldStatusProvider.notifier).state = v;
+                ref.read(_valUnsoldPageProvider.notifier).state = 0;
+              },
             ),
             const Spacer(),
             // How much work is actually waiting on this directorate.
-            Builder(builder: (context) {
-              // Same exclusion as the table: Top Management Directorate packages are not this
-              // directorate's work, so they must not inflate the count.
-              final all = (async.valueOrNull ?? const <ReTenderSaleInfo>[])
-                  .where((i) => i.tenderCount <= kMaxBidTenderRounds)
-                  .toList();
-              final pending = all
-                  .where((i) => !valued.contains(i.forfeited.id))
-                  .length;
-              if (all.isEmpty) return const SizedBox.shrink();
-              return Text(
-                  '$pending of ${all.length} awaiting valuation',
-                  style: TextStyle(
-                      color: context.colors.textMuted, fontSize: 12));
-            }),
+            //
+            // ⚠️ Counted in SQL over the whole filter. Both figures used to
+            // be folded from the fetched list, which was the whole yard —
+            // now that the table holds one page, folding it would report
+            // twenty as the directorate's entire queue.
+            counts.maybeWhen(
+              data: (c) => c.total == 0
+                  ? const SizedBox.shrink()
+                  : Text('${c.pending} of ${c.total} awaiting valuation',
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 12)),
+              orElse: () => const SizedBox.shrink(),
+            ),
           ]),
           const Gap(14),
           Expanded(
@@ -1230,37 +1314,19 @@ class _UnsoldTendersValTab extends ConsumerWidget {
               loading: () => Center(child: CircularProgressIndicator(color: gold)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(unsoldTenderSalesProvider)),
-              data: (list) {
-                // Packages past Tender 3 belong to the Top Management Directorate: a committee
-                // prices them and the ADG submits it, so the Valuation
-                // Directorate has no work left on them. Drop them entirely
-                // rather than showing rows this officer cannot act on.
-                var rows = list
-                    .where((info) => info.tenderCount <= kMaxBidTenderRounds)
-                    .toList();
-                if (yardFilter != null) {
-                  rows = rows
-                      .where((info) => matchesYardFilter(yardFilter,
-                          info.forfeited.yard, info.forfeited.srNumber))
-                      .toList();
-                }
-                if (q.isNotEmpty) {
-                  rows = rows.where((info) {
-                    final f = info.forfeited;
-                    return f.srNumber.toLowerCase().contains(q) ||
-                        f.consigneeName.toLowerCase().contains(q) ||
-                        _valItemName(f).toLowerCase().contains(q);
-                  }).toList();
-                }
-                // Pending vs Valued for THIS round.
-                if (statusFilter != null) {
-                  rows = rows
-                      .where((info) =>
-                          valued.contains(info.forfeited.id) == statusFilter)
-                      .toList();
-                }
-                return Container(
+                  onRetry: () =>
+                      ref.refresh(unsoldRetenderPageProvider(query))),
+              data: (data) {
+                // ⚠️ No filtering here any more. The round limit, the yard,
+                // the search and the Pending/Valued choice are all in the SQL
+                // above — filtering a page in Dart would narrow what the
+                // officer sees while the pager went on counting rows the
+                // table no longer shows.
+                final rows = data.rows;
+                final valued = data.valued;
+                return Column(children: [
+                  Expanded(
+                    child: Container(
                   width: double.infinity,
                   decoration: BoxDecoration(
                     color: context.colors.cardDark,
@@ -1358,9 +1424,22 @@ class _UnsoldTendersValTab extends ConsumerWidget {
                           ],
                         );
                       }).toList(),
+                        ),
+                      ),
                     ),
                   ),
-                );
+                  // ⚠️ This table had no pager at all — it rendered every
+                  // unsold package in every yard. Paged against the SERVER's
+                  // count, since `rows.length` is now the page size.
+                  TablePager(
+                    total: data.total,
+                    page: pageIndex,
+                    pageSize: kDispositionPageSize,
+                    accent: gold,
+                    onPageChanged: (v) =>
+                        ref.read(_valUnsoldPageProvider.notifier).state = v,
+                  ),
+                ]);
               },
             ),
           ),
