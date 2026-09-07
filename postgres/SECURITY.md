@@ -418,3 +418,233 @@ account could release any consignment in any yard. It now carries the same
 guard as its sibling `disposal_toggle_delivery_status` (Central Disposal, or an
 officer of that yard) and is granted to `authenticated` only. Verified live: a
 wrong-yard officer gets `not authorized`; Central Disposal is allowed.
+
+---
+
+## 7. Audit trail: append-only
+
+Applied by [53_audit_append_only.sql](53_audit_append_only.sql).
+Audit with `python tool/audit_backup_readiness.py`.
+
+### What was wrong
+
+`audit_logs` sat in the generic list of yard-scoped data tables, so it received
+the same policy as `packages`:
+
+```sql
+create policy yard_all on public.audit_logs
+  for all using (yard = auth_user_yard()) with check (...);
+```
+
+**`for all` includes UPDATE and DELETE.** Any officer could edit or delete the
+audit rows for their own yard - including the rows recording what they had just
+done. A trail whose subject can rewrite it is not evidence of anything.
+
+### What enforces it now
+
+Several layers, because each one alone has a hole:
+
+| Layer | Stops | Bypassed by |
+|---|---|---|
+| RLS policies (`audit_insert`, `audit_select` only - no UPDATE/DELETE policy exists) | ordinary roles | a superuser |
+| `force row level security` | the table owner | a superuser |
+| `revoke update, delete, truncate` | roles without the grant | a superuser |
+| **BEFORE UPDATE / DELETE row triggers** | **everyone, superuser included** | - |
+| **BEFORE TRUNCATE statement trigger** | **everyone** | - |
+
+**The triggers are the layer that actually holds today**, because the app
+connects as the superuser `postgres`, which bypasses RLS and grants (see the
+open finding in section 3). Until that moves to `yard_app`, the policies are
+defence in depth and the triggers are the control.
+
+**TRUNCATE does not fire row triggers and is not a DELETE.** With only the row
+triggers in place, `truncate audit_logs` succeeded as superuser and would have
+emptied the entire table in one statement - the worst case this section exists
+to prevent. It needs its own statement-level trigger.
+
+**Impersonation needed a trigger too.** The `audit_insert` policy already says
+a caller may only write as themselves, but a superuser ignores policies: acting
+as a signed-in officer, an insert naming *another* user's id was accepted. The
+same rule is now restated in the insert trigger, which no role bypasses.
+
+Verified as superuser - the strongest possible caller:
+
+```
+INSERT (own id)          -> ALLOWED     (logging works)
+INSERT (another user id) -> BLOCKED     (no forging entries)
+UPDATE                   -> BLOCKED
+DELETE                   -> BLOCKED
+TRUNCATE                 -> BLOCKED
+```
+
+### The one sanctioned deletion
+
+`purge_old_audit_logs()` keeps the 365-day window the app relies on. It is the
+only path that can remove a row, via a transaction-local flag
+(`app.audit_purge`) the trigger recognises - and **it records its own run** in
+the log, so a gap in the trail has a matching entry explaining it rather than
+looking like tampering.
+
+### What is recorded
+
+Every entry now carries `client_addr` (the server's own view of the socket,
+from `inet_client_addr()`), `app_name`, `db_user` and `created_at`, stamped by
+a trigger so a caller can neither forge them nor forget them.
+
+Two event classes that were **never reaching the log** now do:
+
+- **Failed logins.** `auth.record_failed_login` incremented a counter and
+  locked the account but wrote nothing - the table held **zero** failed-login
+  rows, so a brute-force attempt left no trace beyond a counter that clears on
+  the next success. It now logs every attempt with the attempt count, the
+  client address, and the lockout event at attempt 5. It logs attempts against
+  **non-existent** e-mails too: someone guessing addresses is exactly what an
+  audit trail should show.
+
+  `audit_logs.user_id` is a foreign key to **`profiles`**, not `auth.users`.
+  An auth user with no profile row made this insert violate that key, and
+  because the insert runs inside `record_failed_login`, the violation
+  propagated out and **broke the sign-in attempt itself**. Logging a failed
+  login must never be able to break logging in - so the FK column is left null
+  when no profile exists, while `entity_id` (plain text, no key) keeps the real
+  id.
+
+- **Role and privilege changes.** Role is changed by a plain `UPDATE` on
+  `profiles` from several screens, so there is no single call site to
+  instrument. An `AFTER UPDATE` trigger catches `role`, `is_active`, `yard` and
+  `directorate` changes with before/after values - **including a change made
+  directly in pgAdmin**, which is the case that matters most. It records
+  *who did it* (`auth.uid()`), not who it was done to; a null there means a
+  direct database edit, which is itself worth seeing.
+
+---
+
+## 8. Backups and Point-in-Time Recovery
+
+### Daily backups
+
+[tool/backup_database.ps1](../tool/backup_database.ps1) takes a compressed
+custom-format dump, **verifies it**, then retires old ones.
+
+```powershell
+.\tool\backup_database.ps1
+.\tool\backup_database.ps1 -Destination E:\Backups -RetentionDays 90
+```
+
+**A backup nobody has restored is a guess.** The script runs
+`pg_restore --list` over every file it writes - that reads the whole archive
+and fails on a truncated one, the failure mode that otherwise stays invisible
+until the day it matters. It also asserts `audit_logs` is in the archive: a
+dump that restores cleanly but without the trail would look like a success and
+leave you with a system that has no history.
+
+Retention deletes old files **last**, only after the new one is written and
+verified, so a failed run never leaves you with nothing.
+
+`pg_dump` is **not on PATH on this machine** - PostgreSQL 18.6 was unpacked to
+`C:\pgsql-extract` rather than installed - so the script locates the binaries
+itself. A scheduled task would otherwise fail with "not recognized as the name
+of a cmdlet", and its only symptom is a failed run nobody reads.
+
+`--verbose` and `2>&1` are deliberately absent: `pg_dump` writes progress to
+stderr, and in Windows PowerShell 5.1 redirecting a native command's stderr
+wraps each line in an ErrorRecord - a completely successful dump came back
+looking like a failure. Judge the run by `$LASTEXITCODE`.
+
+**Schedule it** (daily 01:00, as SYSTEM or a service account) - see
+`Register-ScheduledTask` with `-Execute powershell.exe` and
+`-Argument '-NoProfile -ExecutionPolicy Bypass -File <repo>\tool\backup_database.ps1'`,
+on a `New-ScheduledTaskTrigger -Daily -At 1:00AM`, with `-RunLevel Highest`.
+
+Give it credentials without putting a password in the task: create
+`%APPDATA%\postgresql\pgpass.conf` containing
+`localhost:5432:Customs_SR_DB:postgres:<password>`, readable only by that
+account. `PGPASSWORD` also works but is visible in the process environment.
+
+### Retention schedule
+
+| Copy | Kept | Where |
+|---|---|---|
+| Daily full dump | 30 days | `D:\Backups` - **a different physical disk from the database** |
+| Monthly archive (1st of month) | 12 months | off-machine: NAS, or an encrypted external drive held elsewhere |
+| Yearly archive | 7 years | off-site, per record-retention policy |
+
+The audit trail keeps **365 days**, so a 30-day backup window cannot answer an
+audit question older than a month. The monthly archives are what make the
+retention promise real - keep them at least as long as the trail.
+
+A backup on the same disk as the database is not a backup: the failure that
+takes the disk takes both. At least one copy must be off-machine.
+
+### Point-in-Time Recovery (PITR)
+
+**Current state: `archive_mode = off`.** PITR is *not* available today - the
+most that can be recovered is the last nightly dump, so up to 24 hours of
+seizure records, valuations and audit entries would be lost. `wal_level` is
+already `replica`, which is sufficient; only archiving is missing.
+
+To enable, in `postgresql.conf`:
+
+```conf
+wal_level = replica                 # already set
+archive_mode = on                   # requires a restart, not a reload
+archive_command = 'copy "%p" "E:\\WAL_Archive\\%f"'   # Windows
+archive_timeout = 300               # force a segment every 5 min, so the
+                                    # recovery window is bounded on a quiet day
+```
+
+Then restart the service and confirm archiving actually runs - a failing
+`archive_command` silently fills `pg_wal` until the disk is full:
+
+```sql
+select archived_count, failed_count, last_archived_wal, last_failed_wal
+  from pg_stat_archiver;
+```
+
+`failed_count` climbing is an outage in waiting, not a warning. The audit
+script checks it.
+
+**Taking a base backup** (the anchor PITR replays WAL onto):
+
+```powershell
+pg_basebackup -h localhost -U postgres -D E:\Backups\base_2026-09-07 -Ft -z -P
+```
+
+**Restoring to a point in time** - for example, just before a bad bulk update:
+
+1. Stop PostgreSQL.
+2. Move the current data directory aside (**do not delete it** - it is
+   evidence, and the only copy of anything since the base backup).
+3. Restore the base backup into a clean data directory.
+4. Create `recovery.signal` in that directory, and in `postgresql.conf`:
+
+   ```conf
+   restore_command = 'copy "E:\\WAL_Archive\\%f" "%p"'
+   recovery_target_time = '2026-09-07 14:25:00+05:30'
+   recovery_target_action = 'promote'
+   ```
+
+5. Start PostgreSQL. It replays WAL to that instant and promotes.
+6. **Verify before letting anyone in**: check `select count(*) from audit_logs`
+   and the last `created_at`, and confirm the bad change is absent.
+
+### Restore drill
+
+Do this quarterly, on a scratch database - not on production, and not only on
+paper. This exact sequence was run against a real backup of this database:
+
+```
+psql -U postgres -c "create database restore_test"
+pg_restore -U postgres -d restore_test D:\Backups\Customs_SR_DB_<stamp>.dump
+psql -U postgres -d restore_test -c "select count(*) from audit_logs"
+psql -U postgres -c "drop database restore_test"
+```
+
+Result: 579 audit rows, 176 packages and 11 profiles recovered - **and the
+append-only protections came back with them.** The triggers, the two policies
+and `force row level security` are all part of the dump, so a restored copy is
+as tamper-resistant as the original. Confirmed by attempting a `DELETE` on the
+restored table: refused.
+
+Record each drill (date, dump used, row counts, who ran it). An untested
+backup procedure is the one that fails during the incident.

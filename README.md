@@ -136,7 +136,12 @@ without a rebuild. Precedence is `--dart-define` > `.env` > compiled default.
 python tool/audit_client_security.py     # secrets, release logging, build flags
 python tool/audit_network_security.py    # TLS, SQL injection, RLS, exposure
 python tool/audit_user_security.py       # OTP/2FA, password policy, RBAC
+python tool/audit_backup_readiness.py    # append-only audit trail, backups, PITR
 ```
+
+Daily backups: `.	oolackup_database.ps1` (see
+[postgres/SECURITY.md](postgres/SECURITY.md) §8 for the scheduled task,
+retention schedule, and the PITR restore procedure).
 
 Both exit non-zero on a critical finding, so they can gate a release. See
 [postgres/SECURITY.md](postgres/SECURITY.md) for the network and database side.

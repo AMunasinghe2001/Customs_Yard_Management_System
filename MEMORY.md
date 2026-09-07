@@ -2741,3 +2741,54 @@ The audit reported 5 false failures because it read **every** definition of a fu
 Also: `update\s+\w` matched the word "update" inside `password_updated_at`, flagging two read-only `select` functions as unguarded writers — a function declared `stable`/`immutable` **cannot** write, so check that first. And anchoring "stale password rule" on the word "pass" within 200 characters matched `parts.length < 3`.
 
 **Verify a clean audit by breaking something on purpose** — flipping `kDevSkipOtp = true` and planting a weak rule both got caught.
+
+
+## The audit trail could be rewritten by the people it audits (2026-09-07)
+
+Fourth security pass — tamper-proof logging and backup readiness.
+
+### ⚠️ `audit_logs` had `FOR ALL`, so officers could edit their own trail
+
+`audit_logs` sat in the **generic list of yard-scoped data tables** in `02_schema.sql`, so it received the same policy as `packages`:
+
+```sql
+create policy yard_all on public.audit_logs
+  for all using (yard = auth_user_yard()) with check (...);
+```
+
+**`for all` includes UPDATE and DELETE.** Any officer could edit or delete the audit rows for their own yard — including the rows recording what they had just done. A trail whose subject can rewrite it is not evidence.
+
+Now: only `audit_insert` and `audit_select` policies exist (no policy for a command = denied), plus `force row level security`, plus revoked grants, plus triggers.
+
+⚠️ **The triggers are the only layer that actually holds today**, because the app connects as superuser `postgres`, which bypasses RLS *and* grants. The policies are defence in depth for when the app moves to `yard_app`.
+
+### ⚠️ Three holes found only by ATTACKING it, not by reading config
+
+1. **TRUNCATE fires no row triggers and is not a DELETE.** With the UPDATE/DELETE row triggers in place, `truncate audit_logs` **succeeded** as superuser — one statement, whole table gone. Needs a separate `before truncate ... for each statement` trigger.
+2. **Impersonation.** The `audit_insert` policy says "only as yourself", but a superuser ignores policies: acting as a signed-in officer, an insert naming **another user's id was accepted**. The rule had to be restated in the insert trigger.
+3. **Logging a failed login broke logging IN.** `audit_logs.user_id` is an FK to **`profiles`**, not `auth.users`. An auth user with no profile row violated it, and since the insert runs *inside* `record_failed_login`, the violation propagated out and **failed the whole sign-in attempt**. The FK column is now left null when no profile exists; `entity_id` (plain text, no key) keeps the real id.
+
+**Read the attempt, never the configuration.** `pg_policies` and `information_schema` both say nothing useful about a superuser.
+
+### Two event classes were never reaching the log
+
+- **Failed logins: literally zero rows.** `record_failed_login` incremented a counter and locked the account but wrote nothing — a brute-force attempt left no trace beyond a counter that clears on the next success. Now logs every attempt with count + client IP, the lockout at attempt 5, and **attempts against non-existent e-mails** (address-guessing is exactly what a trail should show).
+- **Role changes.** Changed by plain `UPDATE`s on `profiles` from several screens — no single call site to instrument. An `AFTER UPDATE` **trigger** catches role/is_active/yard/directorate with before/after values, **including edits made directly in pgAdmin**, which is the case that matters most. Records `auth.uid()` — *who did it*, not who it was done to; a null there means a direct DB edit, itself worth seeing.
+
+Every row now carries `client_addr` (from `inet_client_addr()`), `app_name`, `db_user`, stamped by a trigger so it can be neither forged nor forgotten.
+
+Retention (`purge_old_audit_logs`, 365 days) is the **one** sanctioned deletion, via a txn-local `app.audit_purge` flag the trigger recognises — and **it logs its own run**, so a gap has a matching entry instead of looking like tampering.
+
+### Backups: restore actually tested, not just documented
+
+`tool/backup_database.ps1` — `pg_dump -Fc`, then **`pg_restore --list` over every file it writes** (catches a truncated archive, the failure that stays invisible until it matters) and asserts `audit_logs` is in it. Retention deletes **last**, after the new dump verifies.
+
+⚠️ **`pg_dump` is NOT on PATH here** — PostgreSQL 18.6 was unpacked to `C:\pgsql-extract\pgsql\bin`, not installed. A scheduled task fails with "not recognized as the name of a cmdlet" and nobody reads the failed run. The script resolves the binaries itself.
+
+⚠️ **No `--verbose`, no `2>&1`.** pg_dump writes progress to stderr, and PowerShell 5.1 wraps a native command's redirected stderr in ErrorRecords — a **completely successful dump looked like a failure**. Judge by `$LASTEXITCODE`.
+
+**Restore drill actually run**: restored into a scratch DB → 579 audit rows, 176 packages, 11 profiles — **and the append-only protections came back with it** (triggers, policies and FORCE RLS are all in the dump; `DELETE` on the restored copy was refused). Scratch DB dropped afterwards.
+
+⚠️ **`archive_mode = off` — PITR is not available**, so up to 24h is recoverable only to the last nightly dump. `wal_level` is already `replica`; only archiving is missing. Enabling it needs a **restart**, not a reload, and a failing `archive_command` silently fills `pg_wal` until the disk is full — the audit checks `pg_stat_archiver.failed_count`.
+
+**Verified the audit by breaking it**: dropping the delete and truncate triggers turned 0 failures into 5.
