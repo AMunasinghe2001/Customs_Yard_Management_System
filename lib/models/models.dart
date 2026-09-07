@@ -1686,6 +1686,86 @@ class SrLedgerRow {
   bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
 }
 
+/// One row of the yard's Forfeited table, straight from `forfeit_rows`.
+///
+/// ⚠️ Deliberately flat. The screen built these from a fetch of every
+/// forfeited package with its items and warehouse entries, then held three
+/// live objects per row -- the forfeited record, the item and the entry -- so
+/// a table of 48 lines needed all 42 records in memory.
+///
+/// The row carries what the TABLE shows; the popup fetches the package it
+/// needs, for the one row an officer opened.
+class ForfeitRowData {
+  final String forfeitedPackageId;
+  final String packageId;
+  final String? itemId;
+
+  /// The forfeit warehouse entry this row is the record of, when it is one.
+  final String? entryId;
+
+  final String srNumber;
+  final String consigneeName;
+  final String? yard;
+  final String itemName;
+  final String? hsCode;
+  final int qty;
+  final DateTime forfeitedDate;
+  final String officer;
+  final String? itemStatus;
+  final String? itemDecision;
+
+  /// The Post Status Activity: the entry's hold reason, else the item's, else
+  /// the forfeited record's -- so the column is never blank.
+  final String reason;
+
+  /// 1 = a forfeit EVENT, 2 = a covered live item with no event, 3 = the
+  /// legacy summary row.
+  ///
+  /// ⚠️ Kept because the three are genuinely different rows, not a display
+  /// detail: an event names a quantity and an officer, an item row names
+  /// neither, and a summary row stands for a record with no item detail at
+  /// all.
+  final int rowKind;
+
+  const ForfeitRowData({
+    required this.forfeitedPackageId,
+    required this.packageId,
+    this.itemId,
+    this.entryId,
+    required this.srNumber,
+    this.consigneeName = '',
+    this.yard,
+    this.itemName = '',
+    this.hsCode,
+    this.qty = 0,
+    required this.forfeitedDate,
+    this.officer = '—',
+    this.itemStatus,
+    this.itemDecision,
+    this.reason = '—',
+    this.rowKind = 2,
+  });
+
+  factory ForfeitRowData.fromJson(Map<String, dynamic> json) => ForfeitRowData(
+        forfeitedPackageId: json['forfeited_package_id'].toString(),
+        packageId: json['package_id'].toString(),
+        itemId: json['item_id']?.toString(),
+        entryId: json['entry_id']?.toString(),
+        srNumber: json['sr_number']?.toString() ?? '',
+        consigneeName: json['consignee_name']?.toString() ?? '',
+        yard: json['yard'] as String?,
+        itemName: json['item_name']?.toString() ?? '',
+        hsCode: json['hs_code'] as String?,
+        qty: parseDbInt(json['qty']) ?? 0,
+        forfeitedDate: parseDbDateRequired(json['forfeited_date']),
+        officer: json['officer']?.toString() ?? '—',
+        itemStatus: json['item_status'] as String?,
+        itemDecision: json['item_decision'] as String?,
+        reason: json['reason']?.toString() ?? '—',
+        rowKind: parseDbInt(json['row_kind']) ?? 2,
+      );
+}
+
 /// What the Appeal Directorate has ruled about one goods item.
 ///
 /// A DECISION ends the 30-day wait: once the directorate has ruled, the yard

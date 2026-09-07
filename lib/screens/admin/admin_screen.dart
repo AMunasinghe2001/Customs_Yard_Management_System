@@ -2066,7 +2066,11 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
 
   @override
   Widget build(BuildContext context) {
-    final logs = ref.watch(allLogsProvider);
+    // ⚠️ One page from SQL. This fetched a YEAR of log rows and paged
+    // them here -- retention keeps twelve months, so the fetch grows all
+    // year and is largest exactly when an admin most wants to look
+    // something up. 166 rows at 344ms against 45ms for a page.
+    final logs = ref.watch(yardLogsPageProvider(_page));
     return Padding(
       padding: const EdgeInsets.fromLTRB(28, 16, 28, 28),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -2082,8 +2086,8 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                 child: CircularProgressIndicator(
                     color: context.colors.primaryGold)),
             error: (e, _) => Center(child: InlineError(e)),
-            data: (list) {
-              final pageItems = pageSlice(list, _page, kClientPageSize);
+            data: (data) {
+              final pageItems = data.rows;
               return Column(children: [
                 Expanded(
                     child: Container(
@@ -2180,10 +2184,12 @@ class _LogsTabState extends ConsumerState<_LogsTab> {
                         .animate()
                         .slideY(begin: 0.1, duration: 400.ms, delay: 200.ms)
                         .fadeIn()),
+                // ⚠️ The SERVER's count: `pageItems.length` is the page
+                // size now and would pin the pager to page 1.
                 TablePager(
-                  total: list.length,
+                  total: data.total,
                   page: _page,
-                  pageSize: kClientPageSize,
+                  pageSize: kDispositionPageSize,
                   onPageChanged: (p) => setState(() => _page = p),
                 ),
               ]);
@@ -2264,7 +2270,11 @@ class _StorageChargesTabState extends ConsumerState<_StorageChargesTab> {
 
       ref.invalidate(storageRateProvider);
       ref.invalidate(storageRateHistoryProvider);
-      ref.invalidate(allLogsProvider);
+      // ⚠️ The PAGED log, which is what the screen reads now. Invalidating
+      // allLogsProvider alone refreshed a fetch nothing renders any more, and
+      // the rate change would not show in the log until the admin navigated
+      // away and back.
+      ref.invalidate(yardLogsPageProvider);
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(

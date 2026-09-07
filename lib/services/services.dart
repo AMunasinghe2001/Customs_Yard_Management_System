@@ -1860,6 +1860,163 @@ class PackageService {
 // ── Warehouse Service ────────────────────────────────────────
 
 class WarehouseService {
+  /// One PAGE of a warehouse's live contents, chosen in SQL.
+  ///
+  /// ⚠️ The page used to load a whole facility's entries, filter them here
+  /// on six conditions -- one of which needed the PACKAGE ITEM behind each
+  /// entry, so it read a getPackageById per row -- and then page the result
+  /// with `pageSlice`, which still loads everything and only renders less.
+  ///
+  /// `warehouse_rows` (postgres/48) carries the membership and every filter
+  /// column, checked entry-for-entry against the Dart on all four facilities.
+  Future<({List<WarehouseEntryModel> rows, int total})> getWarehouseRowsPaged({
+    required String warehouseId,
+    required int offset,
+    required int limit,
+
+    /// The item-status chips: 'all', 'confiscated', or a status like
+    /// 'Forfeit' / 'Detain'.
+    String status = 'all',
+
+    /// The hold reason, or 'all'.
+    String reason = 'all',
+    String? search,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      q = q.eq('warehouse_id', warehouseId);
+
+      if (status == 'confiscated') {
+        // ⚠️ The PACKAGE is confiscated, not the item. That chip has
+        // always read the package-level status, and the two are different
+        // questions.
+        q = q.eq('is_package_confiscated', true);
+      } else if (status != 'all' && status.isNotEmpty) {
+        q = q.eq('item_status', status);
+      }
+
+      if (reason != 'all' && reason.isNotEmpty) {
+        q = q.eq('hold_reason', reason);
+      }
+
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'hold_reason.ilike.%$s%');
+      }
+
+      if (dateStart != null) {
+        final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('admitted_at', from.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final to = DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('admitted_at', to.toIso8601String());
+      }
+      if (year != null && year.isNotEmpty) {
+        // ⚠️ EITHER year, not both. An SR filed in one year can be
+        // admitted in the next, and an officer looking for either should
+        // find it -- the screen has always matched this way.
+        q = q.or('sr_year.eq.$year,admitted_year.eq.$year');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('warehouse_rows').select('entry_id'))
+            .order('admitted_at', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('warehouse_rows')).count());
+
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['entry_id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <WarehouseEntryModel>[], total: total as int);
+    }
+
+    // ⚠️ The entries for THIS page, not the facility. The screen used to
+    // fetch every live entry with its warehouse, package and both officers'
+    // profiles -- 83ms for one facility -- purely so a page of ids could be
+    // looked up in it.
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('warehouse_entries')
+        .select(
+            '*, warehouses(*), packages(*), admitted_profile:profiles!admitted_by(full_name, badge_number), returned_profile:profiles!returned_by(full_name, badge_number)')
+        .inFilter('id', ids));
+    final byId = {
+      for (final e in (data as List))
+        (e as Map<String, dynamic>)['id'].toString():
+            WarehouseEntryModel.fromJson(e)
+    };
+    // Keep the view's order -- re-sorting here would disagree with the page
+    // boundaries the query used.
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
+  /// The hold reasons and item statuses a warehouse actually holds.
+  ///
+  /// ⚠️ From the whole facility, not the page. A dropdown built from twenty
+  /// rows offers only what is on screen, and an option that is missing reads
+  /// as goods that are not there.
+  Future<({List<String> reasons, List<String> statuses, List<String> years})>
+      getWarehouseFilterOptions(String warehouseId) async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('warehouse_rows')
+        .select('hold_reason, item_status, sr_year, admitted_year')
+        .eq('warehouse_id', warehouseId));
+
+    final reasons = <String>{};
+    final statuses = <String>{};
+    final years = <String>{};
+    for (final e in (data as List)) {
+      final m = e as Map<String, dynamic>;
+      final r = (m['hold_reason'] as String?)?.trim();
+      if (r != null && r.isNotEmpty) reasons.add(r);
+      final st = (m['item_status'] as String?)?.trim();
+      if (st != null && st.isNotEmpty) statuses.add(st);
+      for (final y in [m['sr_year'], m['admitted_year']]) {
+        final v = y?.toString().trim();
+        if (v != null && v.isNotEmpty) years.add(v);
+      }
+    }
+    return (
+      reasons: reasons.toList()..sort(),
+      statuses: statuses.toList()..sort(),
+      years: years.toList()..sort((a, b) => b.compareTo(a)),
+    );
+  }
+
+  /// What one facility holds, counted by item status.
+  ///
+  /// ⚠️ Counted in SQL. The header read `packageDataProvider(...)` from
+  /// inside two nested loops -- once to drop the goods that have left the yard
+  /// and once per status chip -- so a facility of 75 entries fired the same
+  /// per-package fetch four times over. `warehouse_rows` already excludes the
+  /// departed goods and carries the normalised status.
+  Future<({int total, int detain, int forfeit, int abandoned})>
+      getWarehouseStatusCounts(String warehouseId) async {
+    Future<int> countOf(String? status) async {
+      var q = supabase.from('warehouse_rows').eq('warehouse_id', warehouseId);
+      if (status != null) q = q.eq('item_status', status);
+      return await AuthService._withNetworkRetry(() => q.count()) as int;
+    }
+
+    return (
+      total: await countOf(null),
+      detain: await countOf('Detain'),
+      forfeit: await countOf('Forfeit'),
+      abandoned: await countOf('Abandoned'),
+    );
+  }
+
   Future<List<WarehouseModel>> getWarehouses() async {
     final data = await supabase.from('warehouses').select().order('code');
     return [
@@ -3670,6 +3827,51 @@ class DirectorateService {
 class AuditLogService {
   static final Random _rand = Random();
 
+  /// One PAGE of this yard's activity log.
+  ///
+  /// ⚠️ The Admin screen fetched a YEAR of log rows and paged them in
+  /// Dart. Retention keeps twelve months, so the fetch grows all year and is
+  /// largest exactly when an admin most wants to look something up.
+  ///
+  /// The narrowing is the same as [getAllLogs] and is stated once for both the
+  /// page and the count: this yard, and only its OWN staff -- directorate
+  /// accounts are head-office and must not appear here even when they share a
+  /// yard code.
+  Future<({List<AuditLogModel> rows, int total})> getYardLogsPaged({
+    required int offset,
+    required int limit,
+  }) async {
+    final oneYearAgo =
+        DateTime.now().subtract(const Duration(days: 365)).toIso8601String();
+
+    T narrow<T>(T q) {
+      var query = q as dynamic;
+      query = query
+          .eq('yard', AppSession.currentYard)
+          .inFilter('profiles.role', ['admin', 'officer'])
+          .gte('created_at', oneYearAgo);
+      return query as T;
+    }
+
+    final rows = await AuthService._withNetworkRetry(() => narrow(supabase
+            .from('audit_logs')
+            .select('*, profiles!inner(full_name, role)'))
+        .order('created_at', ascending: false)
+        .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(() => narrow(supabase
+            .from('audit_logs')
+            .select('id, profiles!inner(role)'))
+        .count());
+
+    return (
+      rows: [
+        for (final e in (rows as List))
+          AuditLogModel.fromJson(e as Map<String, dynamic>)
+      ],
+      total: total is int ? total : (total as num).toInt(),
+    );
+  }
+
   Future<List<AuditLogModel>> getAllLogs() async {
     // Admins only see activity from their OWN yard, and ONLY from the yard's own
     // staff — yard admins and officers. Directorate accounts (disposal / appeal
@@ -3943,6 +4145,143 @@ class PackageCategoryService {
 // ── Forfeited Packages Service ──────────────────────────────
 
 class ForfeitedPackageService {
+  /// One PAGE of the yard's Forfeited table, chosen in SQL.
+  ///
+  /// ⚠️ 122 lines of Dart moved into `forfeit_rows` (postgres/49). The
+  /// screen walked every forfeited package with its items and warehouse
+  /// entries -- 42 records becoming 48 rows, 259ms -- and had NO pager at
+  /// all, so every row rendered at once.
+  ///
+  /// The view carries all of it: the row-per-forfeit-EVENT rule, the
+  /// package-level coverage rule, the appeal-lifecycle exception to the
+  /// final-disposition cut, the legacy summary row, and the three separate
+  /// ways a record leaves the table (tendered, sold/destroyed, requested).
+  /// Checked row-for-row against the Dart on the live data.
+  Future<
+      ({
+        List<ForfeitRowData> rows,
+        int total,
+        Map<String, ForfeitedPackageModel> packages
+      })> getForfeitRowsPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+
+    /// The Post Status Activity chip, or 'all'.
+    String activity = 'all',
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        // ⚠️ TOKEN match on the SR number, so a partial like "GL1/13"
+        // still finds "GL1/SR/13/2026". Every "/"- or space-separated piece
+        // must appear; the consignee is matched whole.
+        final tokens = s
+            .split(RegExp(r'[\s/]+'))
+            .where((t) => t.isNotEmpty)
+            .toList();
+        for (final t in tokens) {
+          q = q.or('sr_number.ilike.%$t%,consignee_name.ilike.%$s%');
+        }
+        if (tokens.isEmpty) {
+          q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%');
+        }
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+      }
+      if (dateStart != null) {
+        final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('forfeited_date', from.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final to = DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('forfeited_date', to.toIso8601String());
+      }
+      if (year != null && year.isNotEmpty) {
+        q = q.ilike('sr_number', '%/$year');
+      }
+      if (activity != 'all' && activity.isNotEmpty) {
+        q = q.eq('reason', activity);
+      }
+      return q;
+    }
+
+    final data = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('forfeit_rows').select(
+                'forfeited_package_id, package_id, item_id, entry_id, '
+                'sr_number, consignee_name, yard, item_name, hs_code, qty, '
+                'forfeited_date, officer, item_status, item_decision, '
+                'reason, row_kind'))
+            // Most-recently forfeited first, by the moment it was recorded.
+            .order('sort_moment', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('forfeit_rows')).count());
+
+    final rows = [
+      for (final e in (data as List))
+        ForfeitRowData.fromJson(e as Map<String, dynamic>)
+    ];
+    if (rows.isEmpty) {
+      return (rows: rows, total: total as int, packages: const <String, ForfeitedPackageModel>{});
+    }
+
+    // ⚠️ The forfeited RECORDS behind this page, one query.
+    //
+    // The table's appeal column reads a good deal off the record -- the
+    // deadline, the hold and its note, the per-item decision and its label --
+    // and the details popup wants the whole package. Fetching them for a page
+    // is what makes the row itself able to stay flat.
+    final fpIds = rows.map((r) => r.forfeitedPackageId).toSet().toList();
+    final fpData = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .inFilter('id', fpIds));
+
+    return (
+      rows: rows,
+      total: total as int,
+      packages: <String, ForfeitedPackageModel>{
+        for (final e in (fpData as List))
+          (e as Map<String, dynamic>)['id'].toString():
+              ForfeitedPackageModel.fromJson(e)
+      },
+    );
+  }
+
+  /// The two figures the Forfeited header shows.
+  ///
+  /// ⚠️ Counted over the whole table, not the page -- and counting the
+  /// SAME rows the table renders, one per forfeited item or disposition event.
+  /// The header used to fold them from the raw package list, which includes
+  /// records that produce no forfeit row at all.
+  Future<({int total, int actionable})> getForfeitCounts() async {
+    final total = await AuthService._withNetworkRetry(
+        () => supabase.from('forfeit_rows').count());
+    final actionable = await AuthService._withNetworkRetry(() =>
+        supabase.from('forfeit_rows').eq('is_actionable', true).count());
+    return (total: total as int, actionable: actionable as int);
+  }
+
+  /// The SR years the Forfeited table's year filter offers.
+  ///
+  /// ⚠️ Over the whole table, not the page: a year missing from the
+  /// dropdown reads as records that no longer exist.
+  Future<List<String>> getForfeitRowYears() async {
+    final data = await AuthService._withNetworkRetry(
+        () => supabase.from('forfeit_rows').select('sr_number'));
+    return [
+      for (final e in (data as List))
+        (e as Map<String, dynamic>)['sr_number']?.toString() ?? ''
+    ];
+  }
+
   /// Get all forfeited packages
   /// Get all forfeited packages (that are not yet in a tender)
   Future<List<ForfeitedPackageModel>> getForfeitedPackages() async {
@@ -4220,35 +4559,39 @@ class ForfeitedPackageService {
   /// The per-package variant issues one query per row, which a table cannot
   /// afford; this fetches the lot once so a list can look each row up.
   Future<Map<String, ItemAppealOutcome>> getAllItemAppealOutcomes() async {
-    final data = await AuthService._withNetworkRetry(
-        () => supabase.from('forfeited_packages').select('*'));
+    // ⚠️ Read from `item_appeal_outcomes`, which resolves both rules PER
+    // ITEM -- and resolves one of them correctly where this could not.
+    //
+    // This used to be `forfeited_packages.select('*')`: every column of every
+    // forfeited row, 171ms, to build a map of two booleans per item. Worse,
+    // `appealDecisionForItem` needs the package item COUNT to know whether a
+    // package-level decision may stand in for a missing per-item one -- and
+    // `select('*')` embeds no package, so `packageDetails` was always null and
+    // the multi-item guard could never fire. A decision on one item therefore
+    // reported every sibling decided, which is the exact bleed the model
+    // documents and defends against.
+    //
+    // The view (postgres/47) carries the guard, so the four screens reading
+    // this now agree with the Appeal portal about what has been ruled.
+    //
+    // ⚠️ Its OWN view, not the Appeal portal's `appeal_rows`. That one is
+    // that portal's feed and is `source = 'forfeit'` only, while a ruling can
+    // exist against detained, abandoned and other goods too -- 65 of them on
+    // the live data, which would have vanished from these four screens.
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('item_appeal_outcomes')
+        .select('item_id, decision, on_hold'));
 
     final out = <String, ItemAppealOutcome>{};
     for (final e in (data as List)) {
-      final f = ForfeitedPackageModel.fromJson(e as Map<String, dynamic>);
-      // A per-item row speaks for its own item.
-      if (f.itemId != null) {
-        out[f.itemId!] = ItemAppealOutcome(
-          decision: f.appealDecisionForItem(f.itemId),
-          onHold: f.heldItemIds.isNotEmpty
-              ? f.heldItemIds.contains(f.itemId)
-              : f.appealHold,
-        );
-        continue;
-      }
-      // A package-level row: its per-item map names the items it ruled on.
-      for (final itemId in f.itemAppealDecisions.keys) {
-        out[itemId] = ItemAppealOutcome(
-          decision: f.appealDecisionForItem(itemId),
-          onHold: f.heldItemIds.contains(itemId),
-        );
-      }
-      for (final itemId in f.heldItemIds) {
-        out.putIfAbsent(
-            itemId,
-            () => ItemAppealOutcome(
-                decision: f.appealDecisionForItem(itemId), onHold: true));
-      }
+      final m = e as Map<String, dynamic>;
+      final itemId = m['item_id']?.toString();
+      if (itemId == null || itemId.isEmpty) continue;
+      final decision = (m['decision'] as String?)?.trim();
+      out[itemId] = ItemAppealOutcome(
+        decision: (decision?.isEmpty ?? true) ? null : decision,
+        onHold: m['on_hold'] == true,
+      );
     }
     return out;
   }
@@ -7569,6 +7912,121 @@ class DisposalService {
   }
 
   // --- Destructions ---
+
+  /// One PAGE of destructions, chosen in SQL.
+  ///
+  /// ⚠️ The yard's page loaded EVERY destruction with its items, their
+  /// forfeited rows, packages, package items and warehouse entries, filtered
+  /// by yard, search, date range and year in Dart, and paged the result with
+  /// `pageSlice` -- which still loads everything and only renders less.
+  ///
+  /// `destruction_summary` (postgres/50) answers the filters and the count;
+  /// the heavy fetch then runs for one page.
+  Future<({List<DestructionModel> rows, int total})> getDestructionsPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sale_number.ilike.%$s%,sr_numbers.ilike.%$s%,'
+            'consignees.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        // ⚠️ Any ITEM's yard, not the destruction's own -- and the
+        // forfeited row's yard stands in where destruction_items.yard is
+        // empty, which is the screen's `effectiveYard` rule.
+        q = q.or('item_yards.ilike.%|$yardFilter|%,'
+            'sr_numbers.ilike.%/$yardFilter/%');
+      }
+      if (dateStart != null) {
+        final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('sale_date', from.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final to = DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('sale_date', to.toIso8601String());
+      }
+      if (year != null && year.isNotEmpty) {
+        // ⚠️ A destruction with NO date matched no year before and must not
+        // start matching one now: the range, not a string test on a null.
+        q = q.gte('sale_date', '$year-01-01');
+        q = q.lte('sale_date', '$year-12-31T23:59:59');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase.from('destruction_summary').select('id'))
+            .order('created_at', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('destruction_summary')).count());
+
+    final ids = [
+      for (final e in (idRows as List))
+        (e as Map<String, dynamic>)['id'].toString()
+    ];
+    if (ids.isEmpty) {
+      return (rows: const <DestructionModel>[], total: total as int);
+    }
+
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('destructions')
+        .select(
+            '*, profiles!created_by(full_name), destruction_items(*, forfeited_packages(*, disposal_request_items!forfeited_package_id(valuation_cost), packages(*, package_items(*), warehouse_entries(*, warehouses(*)))))')
+        .inFilter('id', ids)
+        .order('created_at', ascending: false));
+    final byId = {
+      for (final e in (data as List))
+        (e as Map<String, dynamic>)['id'].toString(): DestructionModel.fromJson(e)
+    };
+    // Keep the view's order -- re-sorting here would disagree with the page
+    // boundaries the query used.
+    return (
+      rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
+      total: total as int,
+    );
+  }
+
+  /// The years the destruction year filter offers.
+  ///
+  /// ⚠️ Over ALL destructions. Built from a page the dropdown would offer
+  /// only the years on screen, and a year that is not listed reads as records
+  /// that no longer exist.
+  Future<List<String>> getDestructionYears() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('destruction_summary')
+        .select('sale_date')
+        .order('sale_date', ascending: false));
+    final years = <String>{};
+    for (final e in (data as List)) {
+      final d = parseDbDate((e as Map<String, dynamic>)['sale_date']);
+      if (d != null) years.add(d.year.toString());
+    }
+    return years.toList()..sort((a, b) => b.compareTo(a));
+  }
+
+  /// The ids of destructions that RE-DESTROY goods from an earlier one.
+  ///
+  /// ⚠️ Over ALL destructions, not the page: derived from twenty rows a
+  /// destruction would be called new simply because its predecessor sat on the
+  /// page before.
+  Future<Set<String>> getRedestructionIds() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('destruction_summary')
+        .select('id, is_redestruction')
+        .eq('is_redestruction', true));
+    return {
+      for (final e in (data as List))
+        (e as Map<String, dynamic>)['id'].toString()
+    };
+  }
 
   Future<List<DestructionModel>> getDestructions() async {
     final data = await AuthService._withNetworkRetry(() => supabase

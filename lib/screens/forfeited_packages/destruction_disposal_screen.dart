@@ -6,7 +6,6 @@ import 'package:intl/intl.dart';
 import '../../core/providers.dart';
 import '../../core/theme.dart';
 import '../../core/app_session.dart';
-import '../../models/models.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/date_range_picker_dialog.dart' as custom;
@@ -55,9 +54,30 @@ class _DestructionDisposalScreenState
 
   @override
   Widget build(BuildContext context) {
-    final salesAsync = ref.watch(destructionsProvider);
     final search = ref.watch(destructionSearchProvider);
     final myYard = AppSession.currentYard;
+
+    // ⚠️ One page from SQL. This screen loaded EVERY destruction with
+    // its items, their forfeited rows, packages, package items and warehouse
+    // entries, then filtered by yard, search, date range and year here and
+    // paged the result with `pageSlice` -- which still loads everything and
+    // only renders less.
+    final query = DestructionQuery(
+      page: _page,
+      search: search.trim().isEmpty ? null : search.trim(),
+      // The yard is the FILTER: this page is "destructions that include
+      // packages from this yard", matched on the yards the ITEMS carry.
+      yardFilter: myYard,
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+    );
+    final salesAsync = ref.watch(destructionsPageProvider(query));
+    // ⚠️ Over ALL destructions, not this page: derived from twenty rows
+    // a destruction would be called new because its predecessor sat on the
+    // page before.
+    final redestructionIds =
+        ref.watch(redestructionIdsProvider).valueOrNull ?? const <String>{};
 
     return AppShell(
       currentRoute: '/destruction-disposals',
@@ -189,13 +209,11 @@ class _DestructionDisposalScreenState
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: ((salesAsync.valueOrNull ??
-                                  const <DestructionModel>[])
-                              .where((s) => s.saleDate != null)
-                              .map((s) => s.saleDate!.year.toString())
-                              .toSet()
-                              .toList()
-                            ..sort((a, b) => b.compareTo(a))),
+                          // ⚠️ From ALL destructions, not the page.
+                          years: ref
+                                  .watch(destructionYearsProvider)
+                                  .valueOrNull ??
+                              const <String>[],
                           onChanged: (v) => setState(() {
                             _yearFilter = v;
                             _page = 0;
@@ -220,47 +238,15 @@ class _DestructionDisposalScreenState
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(destructionsProvider)),
-                  data: (sales) {
-                    // Keep only sales with at least one package from this yard.
-                    // Use effectiveYard so rows whose destruction_items.yard is
-                    // empty (older data) still match via the forfeited package.
-                    var visible = sales
-                        .where((s) =>
-                            myYard == null ||
-                            s.items.any((i) => i.effectiveYard == myYard))
-                        .toList();
-
-                    final q = search.toLowerCase();
-                    if (q.isNotEmpty) {
-                      visible = visible
-                          .where((s) =>
-                              (s.saleNumber ?? '').toLowerCase().contains(q) ||
-                              s.items.any((i) =>
-                                  (i.forfeited?.srNumber ?? '')
-                                      .toLowerCase()
-                                      .contains(q)))
-                          .toList();
-                    }
-                    if (_dateRange != null) {
-                      final start = DateTime(_dateRange!.start.year,
-                          _dateRange!.start.month, _dateRange!.start.day);
-                      final end = DateTime(_dateRange!.end.year,
-                          _dateRange!.end.month, _dateRange!.end.day,
-                          23, 59, 59);
-                      visible = visible.where((s) {
-                        final d = s.saleDate;
-                        return d != null &&
-                            !d.isBefore(start) &&
-                            !d.isAfter(end);
-                      }).toList();
-                    }
-                    if (_yearFilter != null) {
-                      visible = visible
-                          .where((s) =>
-                              s.saleDate?.year.toString() == _yearFilter)
-                          .toList();
-                    }
+                      onRetry: () =>
+                          ref.refresh(destructionsPageProvider(query))),
+                  data: (data) {
+                    // ⚠️ Nothing is filtered here any more. The yard, the
+                    // search, the date range and the year are all SQL
+                    // predicates -- filtering a page would narrow the twenty
+                    // rows on screen while the pager went on counting the
+                    // destructions it had just removed.
+                    final visible = data.rows;
 
                     if (visible.isEmpty) {
                       return Container(
@@ -292,9 +278,8 @@ class _DestructionDisposalScreenState
                       );
                     }
 
-                    final pageItems =
-                        pageSlice(visible, _page, kClientPageSize);
-                    final retenderIds = retenderDestructionIds(visible);
+                    final pageItems = visible;
+                    final retenderIds = redestructionIds;
                     return Column(
                       children: [
                         Expanded(
@@ -315,9 +300,11 @@ class _DestructionDisposalScreenState
                               .fadeIn(),
                         ),
                         TablePager(
-                          total: visible.length,
+                          // ⚠️ The SERVER's count: `visible.length` is
+                          // the page size now.
+                          total: data.total,
                           page: _page,
-                          pageSize: kClientPageSize,
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],

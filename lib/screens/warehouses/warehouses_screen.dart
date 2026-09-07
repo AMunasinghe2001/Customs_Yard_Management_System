@@ -234,93 +234,69 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
 
   @override
   Widget build(BuildContext context) {
-    final entries = ref.watch(liveWarehouseEntriesProvider(warehouse.id));
     // Appeal rulings, keyed by item id. A decision releases the goods early;
     // a hold keeps them frozen past the deadline.
     final appealOutcomes =
         ref.watch(allItemAppealOutcomesProvider).valueOrNull ??
             const <String, ItemAppealOutcome>{};
-    return entries.when(
+    final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
+    final reasonFilter =
+        ref.watch(warehouseReasonFilterProvider(warehouse.id));
+    final search =
+        ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
+    final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
+        {DateTime(2020, 1, 1): 50.0};
+    final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
+    final yearFilter = ref.watch(warehouseYearFilterProvider(warehouse.id));
+
+    // ⚠️ The membership, all six filters and the page are SQL now.
+    //
+    // This page fetched every live entry in the facility -- with its
+    // warehouse, its package and both officers' profiles -- built a
+    // `filteredList` by walking it, reading a package per row to test one of
+    // the filters, and then cut a page out with `pageSlice`, which still
+    // loads everything and only renders less. `warehouse_rows` (postgres/48)
+    // carries the same rules, checked entry-for-entry against that code on
+    // all four facilities.
+    final query = WarehouseQuery(
+      warehouseId: warehouse.id,
+      page: _page,
+      status: filter,
+      reason: reasonFilter,
+      search: search.trim().isEmpty ? null : search.trim(),
+      dateStart: dateRange?.start,
+      dateEnd: dateRange?.end,
+      year: yearFilter,
+    );
+    final pageAsync = ref.watch(warehousePageProvider(query));
+    // ⚠️ ONE query for the page's packages, not one per row.
+    //
+    // The row builder needs the package behind an entry and used to read
+    // `packageDataProvider(...)` for each -- a getPackageById per row, each
+    // pulling the package with its items, its warehouse entries, those
+    // entries' warehouses and the returning officer's profile. Measured on
+    // Warehouse 01: 52 packages, 249ms as separate calls against 46ms as one.
+    //
+    // The same mistake the Destroyed Goods tab was fixed for: paging a table
+    // does not page what its CELLS fetch.
+    final packagesById =
+        ref.watch(warehousePackagesProvider(query)).valueOrNull ??
+            const <String, PackageModel>{};
+
+    return pageAsync.when(
       loading: () => Center(
           child: CircularProgressIndicator(color: context.colors.primaryGold)),
       error: (e, _) => ErrorView(
           error: e,
-          onRetry: () =>
-              ref.refresh(liveWarehouseEntriesProvider(warehouse.id))),
-      data: (list) {
-        final filter = ref.watch(warehouseStatusFilterProvider(warehouse.id));
-        final reasonFilter =
-            ref.watch(warehouseReasonFilterProvider(warehouse.id));
-        final search =
-            ref.watch(warehouseSearchProvider(warehouse.id)).toLowerCase();
-        final storageRateHistory = ref.watch(storageRateProvider).valueOrNull ??
-            {DateTime(2020, 1, 1): 50.0};
-
-        final dateRange = ref.watch(warehouseDateRangeProvider(warehouse.id));
-        final yearFilter = ref.watch(warehouseYearFilterProvider(warehouse.id));
-        final showReturned = ref.watch(warehouseEntryFilterProvider);
-        final filteredList = list.where((e) {
-          if (e.isReturned) return false;
-          // Goods with a final disposition (Released / Sold / Re-exported /
-          // Destroyed / Other) have left the yard — never show them here.
-          final pkgForStatus =
-              ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-          if (pkgForStatus != null && e.packageItemId != null) {
-            final it = pkgForStatus.items
-                .where((i) => i.id == e.packageItemId)
-                .firstOrNull;
-            if (_itemLeftYard(it?.status)) return false;
-          }
-          if (filter != 'all') {
-            if (filter == 'confiscated') {
-              if (!e.isPackageConfiscated) return false;
-            } else {
-              // ref.watch so the filter reacts when package data loads in any warehouse tab
-              final pkg =
-                  ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-              if (pkg != null) {
-                final item = e.packageItemId != null
-                    ? pkg.items
-                        .where((i) => i.id == e.packageItemId)
-                        .firstOrNull
-                    : null;
-                final rawStatus = item?.status ?? '';
-                // Normalise: treat 'Forfiet' (typo) same as 'Forfeit'
-                final normStatus = rawStatus.toLowerCase() == 'forfiet'
-                    ? 'Forfeit'
-                    : rawStatus;
-                if (normStatus != filter) return false;
-              }
-              // If pkg not cached yet, include entry (will re-filter on next build)
-            }
-          }
-          if (reasonFilter != 'all' && e.holdReason != reasonFilter)
-            return false;
-          if (dateRange != null) {
-            final date = e.admittedAt;
-            final startOfDay = DateTime(dateRange.start.year,
-                dateRange.start.month, dateRange.start.day);
-            final endOfDay = DateTime(dateRange.end.year, dateRange.end.month,
-                dateRange.end.day, 23, 59, 59);
-            if (date.isBefore(startOfDay) || date.isAfter(endOfDay))
-              return false;
-          }
-          if (yearFilter != null) {
-            final sr = e.srNumber ?? '';
-            final srMatches = srYearMatches(sr, yearFilter);
-            final admittedMatches = e.admittedAt.year.toString() == yearFilter;
-            if (!srMatches && !admittedMatches) return false;
-          }
-          if (search.isNotEmpty) {
-            final matchesSr =
-                (e.srNumber?.toLowerCase() ?? '').contains(search);
-            final matchesConsignee =
-                (e.consigneeName?.toLowerCase() ?? '').contains(search);
-            final matchesReason = e.holdReason.toLowerCase().contains(search);
-            if (!matchesSr && !matchesConsignee && !matchesReason) return false;
-          }
-          return true;
-        }).toList();
+          onRetry: () => ref.refresh(warehousePageProvider(query))),
+      data: (page) {
+        final pageRows = page.rows;
+        // ⚠️ The whole `filteredList` walk is gone. It tested six
+        // conditions over the facility's entire entry list -- one of them by
+        // reading a package per row -- and every one of them is now a SQL
+        // predicate on `warehouse_rows`. Filtering a page here instead would
+        // narrow the twenty rows on screen while the pager went on counting
+        // the entries it had just removed.
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(28, 0, 28, 28),
@@ -499,8 +475,18 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                       Consumer(builder: (context, ref, _) {
                         final yFilter = ref
                             .watch(warehouseYearFilterProvider(warehouse.id));
-                        final years =
-                            srYears(list.map((e) => e.srNumber ?? ''));
+                        // ⚠️ Both years the filter can match, from the whole
+                        // facility. This listed only the SR numbers' years,
+                        // while the filter matches the SR year OR the
+                        // admission year — so a year an officer could
+                        // genuinely filter by was missing from the dropdown
+                        // that offers it.
+                        final years = ref
+                                .watch(warehouseFilterOptionsProvider(
+                                    warehouse.id))
+                                .valueOrNull
+                                ?.years ??
+                            const <String>[];
                         return YearFilterButton(
                           value: yFilter,
                           years: years,
@@ -578,11 +564,9 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                               size: ColumnSize.S,
                               fixedWidth: 60),
                         ],
-                        rows: pageSlice(filteredList, _page, kClientPageSize)
+                        rows: pageRows
                             .map((e) {
-                          final pkg = ref
-                              .watch(packageDataProvider(e.packageId))
-                              .valueOrNull;
+                          final pkg = packagesById[e.packageId];
                           String status = e.isReturned
                               ? 'returned'
                               : (e.isPackageConfiscated
@@ -787,9 +771,11 @@ class _WarehouseTabState extends ConsumerState<_WarehouseTab> {
                           .slideY(begin: 0.1, duration: 400.ms, delay: 100.ms)
                           .fadeIn()),
                   TablePager(
-                    total: filteredList.length,
+                    // ⚠️ The SERVER's count: `pageRows.length` is the page
+                    // size now and would pin the pager to page 1.
+                    total: page?.total ?? 0,
                     page: _page,
-                    pageSize: kClientPageSize,
+                    pageSize: kDispositionPageSize,
                     onPageChanged: (p) => setState(() => _page = p),
                   ),
                 ],
@@ -976,44 +962,21 @@ class _WarehousesHeaderWithStats extends ConsumerWidget {
         builder: (context, _) {
           final activeTab = tabController.index;
           final warehouse = warehouses[activeTab];
-          final entries = ref
-                  .watch(liveWarehouseEntriesProvider(warehouse.id))
-                  .valueOrNull ??
-              [];
-
-          // In-yard entries only: drop returned and final-disposition (gone) items.
-          // ref.watch so header stats rebuild when package data loads for any warehouse
-          final inYard = entries.where((e) {
-            if (e.isReturned) return false;
-            if (e.packageItemId != null) {
-              final pkg =
-                  ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-              final item =
-                  pkg?.items.where((i) => i.id == e.packageItemId).firstOrNull;
-              if (_itemLeftYard(item?.status)) return false;
-            }
-            return true;
-          }).toList();
-
-          // Count in-yard entries by their item status, matching the filter
-          // chips below (All / Detain / Forfeit / Abandoned).
-          int statusCount(String target) => inYard.where((e) {
-                if (e.packageItemId == null) return false;
-                final pkg =
-                    ref.watch(packageDataProvider(e.packageId)).valueOrNull;
-                final item = pkg?.items
-                    .where((i) => i.id == e.packageItemId)
-                    .firstOrNull;
-                final raw = item?.status ?? '';
-                // Normalise the 'Forfiet' typo to 'Forfeit'
-                final norm = raw.toLowerCase() == 'forfiet' ? 'Forfeit' : raw;
-                return norm == target;
-              }).length;
-
-          final int total = inYard.length;
-          final int detain = statusCount('Detain');
-          final int forfeit = statusCount('Forfeit');
-          final int abandoned = statusCount('Abandoned');
+          // ⚠️ Counted in SQL, over the whole facility.
+          //
+          // These four figures were folded from a fetch of every live entry,
+          // and each fold read `packageDataProvider(...)` per entry -- once to
+          // drop the goods that have left the yard, then again inside every
+          // status chip, so a facility of 75 entries fired the same per-package
+          // fetch four times over. `warehouse_rows` already excludes the
+          // departed goods and carries the normalised status.
+          final counts = ref
+              .watch(warehouseStatusCountsProvider(warehouse.id))
+              .valueOrNull;
+          final int total = counts?.total ?? 0;
+          final int detain = counts?.detain ?? 0;
+          final int forfeit = counts?.forfeit ?? 0;
+          final int abandoned = counts?.abandoned ?? 0;
 
           return Padding(
             padding: const EdgeInsets.fromLTRB(28, 28, 28, 0),

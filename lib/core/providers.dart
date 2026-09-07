@@ -902,6 +902,123 @@ final packageDataProvider =
   return ref.read(packageServiceProvider).getPackageById(id);
 });
 
+/// What one page of a warehouse tab is asking for.
+///
+/// ⚠️ The warehouse id belongs in the key with everything else. The tabs
+/// are one widget per facility; a key without it would serve whichever
+/// facility asked first, and an officer would be looking at another
+/// warehouse's contents under this one's name.
+@immutable
+class WarehouseQuery {
+  final String warehouseId;
+  final int page;
+  final String status;
+  final String reason;
+  final String? search;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
+  const WarehouseQuery({
+    required this.warehouseId,
+    this.page = 0,
+    this.status = 'all',
+    this.reason = 'all',
+    this.search,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is WarehouseQuery &&
+      other.warehouseId == warehouseId &&
+      other.page == page &&
+      other.status == status &&
+      other.reason == reason &&
+      other.search == search &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year;
+
+  @override
+  int get hashCode => Object.hash(
+      warehouseId, page, status, reason, search, dateStart, dateEnd, year);
+}
+
+/// One page of a warehouse's live contents: the entry ids, and how many the
+/// filter matches.
+typedef WarehousePage = ({List<WarehouseEntryModel> rows, int total});
+
+final warehousePageProvider =
+    FutureProvider.family<WarehousePage, WarehouseQuery>((ref, q) async {
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(packagesChangeTriggerProvider);
+  return ref.read(warehouseServiceProvider).getWarehouseRowsPaged(
+        warehouseId: q.warehouseId,
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        status: q.status,
+        reason: q.reason,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+      );
+});
+
+/// What one facility holds, by item status -- the header's four figures.
+///
+/// ⚠️ In SQL. The header counted them by reading a package per entry,
+/// inside two nested loops, so a facility of 75 entries fired the same
+/// per-package fetch four times over.
+final warehouseStatusCountsProvider = FutureProvider.family<
+    ({int total, int detain, int forfeit, int abandoned}), String>(
+        (ref, warehouseId) async {
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(packagesChangeTriggerProvider);
+  return ref
+      .read(warehouseServiceProvider)
+      .getWarehouseStatusCounts(warehouseId);
+});
+
+/// The reasons, statuses and years one warehouse actually holds.
+///
+/// ⚠️ Over the whole facility, not the page: an option missing from a
+/// dropdown reads as goods that are not there.
+final warehouseFilterOptionsProvider = FutureProvider.family<
+    ({List<String> reasons, List<String> statuses, List<String> years}),
+    String>((ref, warehouseId) async {
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  return ref
+      .read(warehouseServiceProvider)
+      .getWarehouseFilterOptions(warehouseId);
+});
+
+/// The packages behind ONE PAGE of a warehouse's entries, keyed by id.
+///
+/// ⚠️ One query for the page, not one per row -- and for the PAGE, not the
+/// facility.
+///
+/// The warehouse table read `packageDataProvider(e.packageId)` from inside its
+/// row filter AND from inside its row builder: a getPackageById per entry,
+/// each pulling the package with its items, its warehouse entries, those
+/// entries' warehouses and the returning officer's profile. Measured on
+/// Warehouse 01: 52 packages, 249ms as separate calls against 46ms as one.
+///
+/// It is the same mistake the Destroyed Goods tab was fixed for: paging a
+/// table does not page what its CELLS fetch.
+final warehousePackagesProvider =
+    FutureProvider.family<Map<String, PackageModel>, WarehouseQuery>(
+        (ref, q) async {
+  ref.watch(packagesChangeTriggerProvider);
+  final page = await ref.watch(warehousePageProvider(q).future);
+  final ids = page.rows.map((e) => e.packageId).toSet().toList();
+  if (ids.isEmpty) return const {};
+  return ref.read(packageServiceProvider).getPackagesByIds(ids);
+});
+
 // ── Admin Data Providers ───────────────────────────────────────
 final allProfilesProvider = FutureProvider<List<ProfileModel>>((ref) async {
   ref.watch(profilesChangeTriggerProvider);
@@ -1000,6 +1117,21 @@ final auditLogsChangeTriggerProvider = StreamProvider<int>((ref) async* {
     )
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
+});
+
+/// One page of the Admin screen's activity log.
+///
+/// ⚠️ The screen fetched a YEAR of rows and paged them in Dart --
+/// retention keeps twelve months, so that fetch grows all year and is largest
+/// exactly when an admin most wants to look something up. 166 rows, 344ms,
+/// against 45ms for a page.
+final yardLogsPageProvider = FutureProvider.family<
+    ({List<AuditLogModel> rows, int total}), int>((ref, page) async {
+  ref.watch(auditLogsChangeTriggerProvider);
+  return ref.read(auditLogServiceProvider).getYardLogsPaged(
+        offset: page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+      );
 });
 
 final allLogsProvider = FutureProvider<List<AuditLogModel>>((ref) async {
@@ -1160,6 +1292,90 @@ final allItemAppealOutcomesProvider =
     FutureProvider<Map<String, ItemAppealOutcome>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
   return ref.read(forfeitedPackageServiceProvider).getAllItemAppealOutcomes();
+});
+
+/// What one page of the Forfeited table is asking for.
+@immutable
+class ForfeitQuery {
+  final int page;
+  final String? search;
+  final String? yardFilter;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+  final String activity;
+
+  const ForfeitQuery({
+    this.page = 0,
+    this.search,
+    this.yardFilter,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+    this.activity = 'all',
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is ForfeitQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardFilter == yardFilter &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year &&
+      other.activity == activity;
+
+  @override
+  int get hashCode => Object.hash(
+      page, search, yardFilter, dateStart, dateEnd, year, activity);
+}
+
+typedef ForfeitPage = ({
+  List<ForfeitRowData> rows,
+  int total,
+  /// The forfeited records behind THIS page, for the appeal column and the
+  /// details popup.
+  Map<String, ForfeitedPackageModel> packages,
+});
+
+/// One page of the yard's Forfeited table.
+///
+/// ⚠️ 122 lines of Dart moved into `forfeit_rows` (postgres/49). The screen
+/// built its rows by walking every forfeited package with its items and
+/// warehouse entries, and had no pager at all -- 48 rows rendered at once, and
+/// growing with the yard.
+final forfeitPageProvider =
+    FutureProvider.family<ForfeitPage, ForfeitQuery>((ref, q) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getForfeitRowsPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+        activity: q.activity,
+      );
+});
+
+/// The Forfeited header's two figures, counted over the whole table.
+final forfeitCountsProvider =
+    FutureProvider<({int total, int actionable})>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getForfeitCounts();
+});
+
+/// The SR years the Forfeited table's year filter offers.
+///
+/// ⚠️ Over the whole table, not the page.
+final forfeitRowYearsProvider = FutureProvider<List<String>>((ref) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getForfeitRowYears();
 });
 
 final forfeitedPackagesProvider =
@@ -1863,6 +2079,73 @@ final destructionsChangeTriggerProvider = StreamProvider<int>((ref) async* {
     )
     ..subscribe();
   ref.onDispose(() => supabase.removeChannel(channel));
+});
+
+/// What one page of the yard's Destruction page is asking for.
+@immutable
+class DestructionQuery {
+  final int page;
+  final String? search;
+  final String? yardFilter;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
+  const DestructionQuery({
+    this.page = 0,
+    this.search,
+    this.yardFilter,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is DestructionQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardFilter == yardFilter &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year;
+
+  @override
+  int get hashCode =>
+      Object.hash(page, search, yardFilter, dateStart, dateEnd, year);
+}
+
+typedef DestructionPage = ({List<DestructionModel> rows, int total});
+
+/// One page of destructions, chosen in SQL and then loaded in full.
+final destructionsPageProvider =
+    FutureProvider.family<DestructionPage, DestructionQuery>((ref, q) async {
+  ref.watch(destructionsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getDestructionsPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
+      );
+});
+
+/// The years the destruction year filter offers, over ALL destructions.
+final destructionYearsProvider = FutureProvider<List<String>>((ref) async {
+  ref.watch(destructionsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getDestructionYears();
+});
+
+/// The destructions that RE-DESTROY goods from an earlier one.
+///
+/// ⚠️ Its own query over ALL destructions. Derived from one page, a
+/// destruction would be marked new simply because its predecessor sat on the
+/// page before.
+final redestructionIdsProvider = FutureProvider<Set<String>>((ref) async {
+  ref.watch(destructionsChangeTriggerProvider);
+  return ref.read(disposalServiceProvider).getRedestructionIds();
 });
 
 final destructionsProvider =
