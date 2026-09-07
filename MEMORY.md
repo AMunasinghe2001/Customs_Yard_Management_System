@@ -2529,3 +2529,29 @@ End to end, old four vs new four: **357-465ms → 167-204ms**.
 **The lesson: `Future.wait` helps when the wait is I/O. When the cost is CPU-bound decode on a single isolate, it only makes each caller wait longer for the same total work.**
 
 ⚠️ **Five tests were pinning how code was WRITTEN, not what it does** — an exact select string, the order clauses were chained in, `widget.readOnly ?` where the flag has since been split into `readOnly` + `showDecidedItems`, `!i.sold` where the page now reads `!i.sold && !i.unsold`. Every one failed on a change that had *improved* the behaviour it was guarding. Two more traps hit while fixing them: `flat()` collapses the newlines, so **drop comment lines from the RAW source before slicing**, and a comment that names the old code (`daily_rate`, `kOutcomeAwaiting`) reads to a substring check as the code still being there.
+
+## Financials paged in SQL — and the timezone bug it uncovered (2026-09-07)
+
+The page loaded the WHOLE ledger to show twenty rows: every package in every yard with its items and warehouse entries, every tender sale, every expense row — then `.where` to filter, `.skip().take()` to page, `summariseSrs` to total, all on the UI isolate.
+
+`postgres/41_sr_financials_view.sql` computes the same ten figures per SR, so filter, order, page and totals are all SQL. Warm, live:
+
+```
+the old whole-ledger load   357-465ms
+narrowed + serial           167-204ms
+one page + SQL totals       102-135ms
+```
+
+⚠️ **`::date` on a timestamptz follows the SESSION's timezone, and the app and psql do not agree.** psql here inherits **Asia/Colombo**; the app's driver connects as **UTC**. The same warehouse entry therefore landed on a different DAY for each, and the storage charge read **88,100 higher through the app than through psql** — the same view, the same database, two answers. That is why the view's verify block passed while the app-side comparison failed.
+
+Dart has always counted days in local time (`parseDbDate` calls `.toLocal()`), so **every date in a view must say `at time zone 'Asia/Colombo'` explicitly**. The migration proves it: it re-reads its own figures under `set local timezone to 'UTC'` and fails if any moves.
+
+**This applies to every existing view with a `::date` cast** — `perishable_rows`, `held_goods_rows`, `sr_expense_summary`, `disposition_rows`. Only `sr_financials` has been audited so far; the others compute dates for FILTERING rather than for money, so a day's drift shifts which rows a date filter catches at a boundary rather than changing a figure. Worth a pass.
+
+⚠️ **Day-by-day `generate_series` is the clear way to say a rule and the slow way to compute it.** Storage counted a day at a time with a rate lookup per day: 89ms. A rate holds until the next one starts, so the same figure is `rate × units × days of overlap with each rate period`: **16ms**, identical to the cent. ⚠️ Keep an explicit period BEFORE the first recorded rate at the model's default of 50, or goods admitted before the rate table was filled in silently charge nothing.
+
+⚠️ **A narrowed select can be wrong in silence.** `destroying_deposit` is nullable, so dropping it from the ledger query threw nothing and reported **every deposit as LKR 0**. The non-null casts (`package_id`, `item_name`, `warehouse_id`, `hold_reason`) at least throw. A test now asserts every column the roll-up reads is in the select.
+
+**`FinancialSummary` moved to `models.dart`.** It lived in `providers.dart`, which `services.dart` cannot import (providers imports services; the other direction is a cycle) — moving it is what lets the service return the totals SQL computed.
+
+**Verify blocks that assert against the SCREENSHOT are worth the effort.** All ten figures the page was showing are in `postgres/41`'s verify block; the migration refuses to apply if any disagrees. That is what caught the timezone bug — and later proved the rate-period rewrite was exact.
