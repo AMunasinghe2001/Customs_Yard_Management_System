@@ -54,15 +54,23 @@ void main() {
                 total: 1,
               ))),
           // Also stubbed, for the same reason: both are read during build.
-          unsoldProposalsProvider.overrideWith(
-              (ref) => Future.value(const <String, UnsoldProposalModel>{})),
+          // ⚠️ The PAGE-wide provider, which is what the tab reads.
+          // Both were whole-table fetches used as one-`[fpId]`-per-row
+          // lookups; the tab now asks for its page's ids only.
+          pageProposalsProvider.overrideWith(
+              (ref, key) => Future.value(const <String, UnsoldProposalModel>{})),
           storageRateProvider.overrideWith(
               (ref) => Future.value(const <DateTime, double>{})),
           // Stubbed for the same reason as the others: the Valuation column now
           // reads the Top Management committee's figure, and without this the
           // widget opens a real socket to PostgreSQL.
-          tenderCommitteesProvider.overrideWith(
-              (ref) => Future.value(const <String, TenderCommitteeModel>{})),
+          pageCommitteesProvider.overrideWith(
+              (ref, key) => Future.value(const <String, TenderCommitteeModel>{})),
+          // The four table cells read the page's bids and re-valuations.
+          pageBidsProvider.overrideWith((ref, key) =>
+              Future.value(const <String, Map<String, List<double>>>{})),
+          pageRevaluationsProvider.overrideWith((ref, key) => Future.value(
+              const <String, Map<String, TenderRevaluationModel>>{})),
           // The yard filter dropdown is now DB-driven (ICT's Yards &
           // Directorates table), so rendering it opens a real socket unless
           // its source providers are stubbed too.
@@ -156,7 +164,7 @@ void main() {
                 rows: [ReTenderSaleInfo(forfeited: forfeited, sales: const [])],
                 total: 1,
               ))),
-          unsoldProposalsProvider.overrideWith((ref) => Future.value({
+          pageProposalsProvider.overrideWith((ref, key) => Future.value({
                 'fp-1': UnsoldProposalModel(
                   id: 'prop-1',
                   forfeitedPackageId: 'fp-1',
@@ -171,8 +179,13 @@ void main() {
           // Stubbed for the same reason as the others: the Valuation column now
           // reads the Top Management committee's figure, and without this the
           // widget opens a real socket to PostgreSQL.
-          tenderCommitteesProvider.overrideWith(
-              (ref) => Future.value(const <String, TenderCommitteeModel>{})),
+          pageCommitteesProvider.overrideWith(
+              (ref, key) => Future.value(const <String, TenderCommitteeModel>{})),
+          // The four table cells read the page's bids and re-valuations.
+          pageBidsProvider.overrideWith((ref, key) =>
+              Future.value(const <String, Map<String, List<double>>>{})),
+          pageRevaluationsProvider.overrideWith((ref, key) => Future.value(
+              const <String, Map<String, TenderRevaluationModel>>{})),
           // The yard filter dropdown is now DB-driven (ICT's Yards &
           // Directorates table), so rendering it opens a real socket unless
           // its source providers are stubbed too.

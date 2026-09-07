@@ -28,6 +28,7 @@ import '../../widgets/one_tap_date_picker.dart';
 import '../../widgets/disposal_profile_dialog.dart';
 import '../../widgets/outcome_filter.dart';
 import '../../widgets/page_title.dart';
+import '../../widgets/tender_page_scope.dart';
 import '../../widgets/table_pager.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
@@ -608,14 +609,8 @@ class UnsoldProposalsTab extends ConsumerWidget {
     final blue = context.colors.accentLightBlue;
     // The shared "every avenue exhausted" list, so this tab, the yard page and
     // the Top Management Directorate all show exactly the same packages.
-    // Top Management tender committees, keyed by forfeited_package_id — their
-    // valuation supersedes the original for an unsold package.
-    final committees = ref.watch(tenderCommitteesProvider).valueOrNull ??
-        const <String, TenderCommitteeModel>{};
     final q = ref.watch(disposalSearchProvider(tabKey)).toLowerCase();
     final yardFilter = ref.watch(disposalYardFilterProvider(tabKey));
-    final proposals =
-        ref.watch(unsoldProposalsProvider).valueOrNull ?? const {};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         const <DateTime, double>{};
 
@@ -651,6 +646,26 @@ class UnsoldProposalsTab extends ConsumerWidget {
     final result = async.valueOrNull ??
         (rows: const <ReTenderSaleInfo>[], total: 0);
     final rows = result.rows;
+
+    // ⚠️ The committees and the DG's rulings for THIS PAGE, one query
+    // each.
+    //
+    // Both were read as LOOKUPS -- one `[fpId]` per row -- but fetched every
+    // committee and every ruling in the country to serve them. Eight and ten
+    // rows today; both pools are fed by all twenty-eight yards, and a
+    // committee is appointed for every package that survives four rounds.
+    //
+    // Top Management's committee valuation supersedes the original for an
+    // unsold package, which is why the row needs it at all.
+    //
+    // The key is sorted and de-duplicated: a family key is compared by
+    // value, so an unstable one opens a fresh query on every rebuild.
+    final pageKey = packageKeyOf(rows.map((r) => r.forfeited.id));
+    final committees =
+        ref.watch(pageCommitteesProvider(pageKey)).valueOrNull ??
+            const <String, TenderCommitteeModel>{};
+    final proposals =
+        ref.watch(pageProposalsProvider(pageKey)).valueOrNull ?? const {};
 
     final total = result.total;
     final maxPage = total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
@@ -754,6 +769,14 @@ class UnsoldProposalsTab extends ConsumerWidget {
                       Expanded(
                         child: _listCard(
                           context,
+                          // ⚠️ The page's ids, once, for every cell below.
+                          //
+                          // Four of these cells fetched their OWN row's bids or
+                          // re-valuations, so twenty rows meant twenty round trips per
+                          // cell. Paging a table does not page what its cells fetch.
+                          TenderPageScope(
+                            packageKey: pageKey,
+                            child:
                           DataTable2(
                             columnSpacing: 12,
                             horizontalMargin: 16,
@@ -840,7 +863,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
                                 ),
                               );
                             }).toList(),
-                          ),
+                          ),)
                         ),
                       ),
                       if (total > 0)
@@ -4704,8 +4727,6 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
   @override
   Widget build(BuildContext context) {
     final accent = context.colors.accentLightBlue;
-    final committees =
-        ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
 
     // ⚠️ One PAGE, one query. This tab used to read THREE providers and
     // intersect them in Dart: committeeEligibleProvider (itself a filter over
@@ -4723,6 +4744,21 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
       yardFilter: ref.watch(_committeesYardProvider),
     );
     final eligible = ref.watch(committeesPageProvider(query));
+
+    // ⚠️ The committees for THIS PAGE, one query.
+    //
+    // The tab read `tenderCommitteesProvider` -- every committee in the
+    // country -- and then looked up one `[fpId]` per row. Eight rows today,
+    // but the pool is fed by all twenty-eight yards and a committee is
+    // appointed for every package that survives four tender rounds.
+    //
+    // The key is sorted and de-duplicated: a family key is compared by value,
+    // so an unstable one opens a fresh query on every rebuild.
+    final pageKey = packageKeyOf(
+        (eligible.valueOrNull?.rows ?? const <ReTenderSaleInfo>[])
+            .map((r) => r.forfeited.id));
+    final committees =
+        ref.watch(pageCommitteesProvider(pageKey)).valueOrNull ?? const {};
 
     // A filter change starts at the top rather than on page 4 of the old set.
     ref.listen(disposalSearchProvider('committees'),
@@ -5143,6 +5179,47 @@ class _TenderSaleHistoryDialog extends StatelessWidget {
 /// Unsold-tenders "Valuation" cell: shows the LATEST tender re-valuation (blue,
 /// tagged "re-valued") when the Valuation Directorate has set one for the
 /// current round; otherwise the package's original valuation.
+/// One row's re-valuations, from the PAGE's query where there is one.
+///
+/// ⚠️ Four cells on this table each fetched their own row's figures --
+/// twenty rows meant twenty round trips per cell. `TenderPageScope` carries
+/// the page's ids so one query serves them all; measured at page size, 74ms
+/// as separate calls against 14ms as one.
+///
+/// ⚠️ Falls back to the single-package provider when there is no scope.
+/// These cells are also built inside DIALOGS, which have no page around them,
+/// and a cell that simply showed nothing there would be a blank where a
+/// valuation belongs.
+Map<String, TenderRevaluationModel> _revalsFor(
+    BuildContext context, WidgetRef ref, String fpId) {
+  final key = TenderPageScope.of(context);
+  if (key.isEmpty) {
+    return ref.watch(tenderRevaluationsProvider(fpId)).valueOrNull ?? const {};
+  }
+  return ref.watch(pageRevaluationsProvider(key)).valueOrNull?[fpId] ??
+      const {};
+}
+
+/// One row's bids, from the PAGE's query where there is one. See [_revalsFor].
+Map<String, List<double>> _bidsFor(
+    BuildContext context, WidgetRef ref, String fpId) {
+  final key = TenderPageScope.of(context);
+  if (key.isEmpty) {
+    return ref.watch(tenderBidsProvider(fpId)).valueOrNull ?? const {};
+  }
+  return ref.watch(pageBidsProvider(key)).valueOrNull?[fpId] ?? const {};
+}
+
+/// One row's committee, from the PAGE's query where there is one.
+TenderCommitteeModel? _committeeFor(
+    BuildContext context, WidgetRef ref, String fpId) {
+  final key = TenderPageScope.of(context);
+  if (key.isEmpty) {
+    return ref.watch(tenderCommitteesProvider).valueOrNull?[fpId];
+  }
+  return ref.watch(pageCommitteesProvider(key)).valueOrNull?[fpId];
+}
+
 class _UnsoldValuationCell extends ConsumerWidget {
   final ReTenderSaleInfo info;
   final int? qty;
@@ -5157,9 +5234,8 @@ class _UnsoldValuationCell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final f = info.forfeited;
-    final revals =
-        ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
-    final committee = ref.watch(tenderCommitteesProvider).valueOrNull?[f.id];
+    final revals = _revalsFor(context, ref, f.id);
+    final committee = _committeeFor(context, ref, f.id);
 
     // A `tender_revaluations` row is the RESERVE PRICE OF THE ROUND IT IS
     // KEYED TO — proven against live data, see TenderHistorySection. So the
@@ -5239,8 +5315,7 @@ class _LatestValuationCell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final revals =
-        ref.watch(tenderRevaluationsProvider(f.id)).valueOrNull ?? const {};
+    final revals = _revalsFor(context, ref, f.id);
     final reval = _latestReval(revals);
     return _ValuationCell(
       f: f,
@@ -5335,10 +5410,8 @@ class _ReTenderStatusCell extends ConsumerWidget {
     final fpId = info.forfeited.id;
     final current = info.latestSale?.id;
 
-    final revals =
-        ref.watch(tenderRevaluationsProvider(fpId)).valueOrNull ?? const {};
-    final committees =
-        ref.watch(tenderCommitteesProvider).valueOrNull ?? const {};
+    final revals = _revalsFor(context, ref, fpId);
+    final committee = _committeeFor(context, ref, fpId);
 
     // "Re-valued" means the NEXT round is priced — the PENDING row. A figure
     // on the current round is that round's own reserve, which every held round
@@ -5347,7 +5420,7 @@ class _ReTenderStatusCell extends ConsumerWidget {
     final hasReval = revals[''] != null;
     // A committee value counts as "valued" even before the ADG submits it —
     // that is exactly the "Committee valued" state.
-    final hasCommitteeValue = committees[fpId]?.committeeValue != null;
+    final hasCommitteeValue = committee?.committeeValue != null;
 
     return _ReTenderStatusChip(
         eligible: eligible,
@@ -5449,12 +5522,11 @@ class _BidsCell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final green = context.colors.successGreen;
-    final async = ref.watch(tenderBidsProvider(info.forfeited.id));
     // valueOrNull, NOT asData?.value: asData is null while the provider
     // re-fetches, so the count flips to 0 and back — the table then looks
-    // like it is constantly refreshing.
-    final count =
-        async.valueOrNull?.values.fold<int>(0, (s, l) => s + l.length) ?? 0;
+    // like it is constantly refreshing. _bidsFor keeps that property.
+    final bids = _bidsFor(context, ref, info.forfeited.id);
+    final count = bids.values.fold<int>(0, (s, l) => s + l.length);
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: () => showDialog(

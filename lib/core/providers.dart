@@ -2795,6 +2795,71 @@ FinancialSummary summariseSrs(Iterable<SrFinancials> rows) {
 /// ⚠️ Keyed by the joined list so a page is one query, not one per row. The
 /// Destroyed Goods cell used to watch `srFinancialsProvider` — the whole yard
 /// ledger — from inside each row, which is what made that tab lag.
+/// A page's forfeited-package ids as one stable family key.
+///
+/// ⚠️ SORTED and de-duplicated. A family key is compared by value, so
+/// an unstable one opens a fresh query on every rebuild -- trading one slow
+/// load for a permanent one. This is the same key shape `destructionSpendProvider`
+/// uses, and for the same reason.
+String packageKeyOf(Iterable<String> ids) =>
+    (ids.where((s) => s.trim().isNotEmpty).toSet().toList()..sort()).join('|');
+
+List<String> _idsFromKey(String key) =>
+    key.split('|').where((s) => s.trim().isNotEmpty).toList();
+
+/// The bids for ONE PAGE of packages: package id -> round id -> amounts.
+///
+/// ⚠️ `tenderBidsProvider` is keyed by a single package and the tables
+/// read it from inside their ROW BUILDERS -- twenty rows, twenty round trips.
+/// Measured at page size: 57ms as separate calls against 22ms as one.
+///
+/// The mistake the Destroyed Goods tab and then the Warehouses page were both
+/// fixed for: paging a table does not page what its CELLS fetch.
+final pageBidsProvider =
+    FutureProvider.family<Map<String, Map<String, List<double>>>, String>(
+        (ref, key) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref
+      .read(disposalServiceProvider)
+      .getTenderBidsForPackages(_idsFromKey(key));
+});
+
+/// The re-valuations for ONE PAGE of packages.
+///
+/// ⚠️ Measured at page size: 74ms as separate calls against 14ms as one.
+final pageRevaluationsProvider = FutureProvider.family<
+    Map<String, Map<String, TenderRevaluationModel>>, String>((ref, key) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref
+      .read(disposalServiceProvider)
+      .getTenderRevaluationsForPackages(_idsFromKey(key));
+});
+
+/// The committees for ONE PAGE of packages.
+///
+/// ⚠️ The tables read this as a lookup -- one `[fpId]` per row -- but
+/// fetched every committee in the country to serve it, from six places. Eight
+/// rows today; the pool is fed by all twenty-eight yards, and a committee is
+/// appointed for every package that survives four tender rounds.
+final pageCommitteesProvider =
+    FutureProvider.family<Map<String, TenderCommitteeModel>, String>(
+        (ref, key) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref
+      .read(disposalServiceProvider)
+      .getTenderCommitteesForPackages(_idsFromKey(key));
+});
+
+/// The DG's rulings for ONE PAGE of packages.
+final pageProposalsProvider =
+    FutureProvider.family<Map<String, UnsoldProposalModel>, String>(
+        (ref, key) async {
+  ref.watch(tenderBidsChangeTriggerProvider);
+  return ref
+      .read(disposalServiceProvider)
+      .getUnsoldProposalsForPackages(_idsFromKey(key));
+});
+
 final destructionSpendProvider =
     FutureProvider.family<Map<String, double>, String>((ref, srKey) async {
   ref.watch(financialExpensesRefreshProvider);

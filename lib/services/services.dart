@@ -6575,13 +6575,88 @@ class DisposalService {
     return list;
   }
 
+  /// The bids for a PAGE of packages: package id -> round id -> amounts.
+  ///
+  /// ⚠️ One query for the page, not one per row. `tenderBidsProvider`
+  /// is a family keyed by forfeited package, and the tables read it from
+  /// inside their row builders -- so twenty rows meant twenty round trips.
+  /// Measured at page size: 57ms as separate calls against 22ms as one.
+  ///
+  /// It is the mistake the Destroyed Goods tab, and then the Warehouses page,
+  /// were both fixed for: paging a table does not page what its CELLS fetch.
+  Future<Map<String, Map<String, List<double>>>> getTenderBidsForPackages(
+      List<String> forfeitedPackageIds) async {
+    if (forfeitedPackageIds.isEmpty) return const {};
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_bids')
+        .select('forfeited_package_id, tender_sale_id, amount')
+        .inFilter('forfeited_package_id', forfeitedPackageIds.toSet().toList())
+        // ⚠️ Ordered by PACKAGE first, then by when each bid was
+        // entered, then by id. Ordering by created_at alone interleaves the
+        // packages, and a package's own bids then come back in a different
+        // order than the per-package query gives -- which matters, because the
+        // edit dialog seeds one text field per bid in exactly this order.
+        //
+        // ⚠️ The id is the TIEBREAK, and it is not decoration: bids
+        // entered together carry the SAME created_at to the microsecond, and
+        // Postgres promises no order between tied rows. Without it the same
+        // two amounts came back swapped between one read and the next.
+        .order('forfeited_package_id', ascending: true)
+        .order('created_at', ascending: true)
+        .order('id', ascending: true));
+    final out = <String, Map<String, List<double>>>{};
+    for (final e in (rows as List)) {
+      final m = e as Map<String, dynamic>;
+      final fpId = m['forfeited_package_id'].toString();
+      out
+          .putIfAbsent(fpId, () => <String, List<double>>{})
+          .putIfAbsent((m['tender_sale_id'] as String?) ?? '', () => [])
+          .add(parseDbNum(m['amount']) ?? 0);
+    }
+    return out;
+  }
+
+  /// The re-valuations for a PAGE of packages: package id -> round id -> row.
+  ///
+  /// ⚠️ One query for the page, for the same reason as
+  /// [getTenderBidsForPackages]. Measured at page size: 74ms as separate calls
+  /// against 14ms as one.
+  Future<Map<String, Map<String, TenderRevaluationModel>>>
+      getTenderRevaluationsForPackages(List<String> forfeitedPackageIds) async {
+    if (forfeitedPackageIds.isEmpty) return const {};
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_revaluations')
+        .select('*')
+        .inFilter('forfeited_package_id', forfeitedPackageIds.toSet().toList())
+        // ⚠️ By PACKAGE first, then created_at, then id: "latest wins"
+        // below relies on each package's own rows arriving in order, and rows
+        // written together share a created_at to the microsecond.
+        .order('forfeited_package_id', ascending: true)
+        .order('created_at', ascending: true)
+        .order('id', ascending: true));
+    final out = <String, Map<String, TenderRevaluationModel>>{};
+    for (final e in (rows as List)) {
+      final model = TenderRevaluationModel.fromJson(e as Map<String, dynamic>);
+      // latest wins, as the per-package version does (ordered asc)
+      out.putIfAbsent(model.forfeitedPackageId, () => {})[
+          model.tenderSaleId ?? ''] = model;
+    }
+    return out;
+  }
+
   Future<Map<String, List<double>>> getTenderBidsByRound(
       String forfeitedPackageId) async {
     final rows = await AuthService._withNetworkRetry(() => supabase
         .from('tender_bids')
         .select('tender_sale_id, amount')
         .eq('forfeited_package_id', forfeitedPackageId)
-        .order('created_at', ascending: true));
+        // ⚠️ The id breaks the tie. Bids entered together share a
+        // created_at to the microsecond, and Postgres promises no order
+        // between tied rows -- so this list came back in a different order
+        // from one read to the next, and the edit dialog seeds one text field
+        // per bid in exactly this order.
+        .order('created_at', ascending: true)
+        .order('id', ascending: true));
     final byRound = <String, List<double>>{};
     for (final e in (rows as List)) {
       byRound
@@ -6847,7 +6922,9 @@ class DisposalService {
         .from('tender_revaluations')
         .select('*')
         .eq('forfeited_package_id', forfeitedPackageId)
-        .order('created_at', ascending: true));
+        // ⚠️ Same tiebreak: "latest wins" needs a defined order.
+        .order('created_at', ascending: true)
+        .order('id', ascending: true));
     final byRound = <String, TenderRevaluationModel>{};
     for (final e in (rows as List)) {
       final m = TenderRevaluationModel.fromJson(e as Map<String, dynamic>);
@@ -6972,6 +7049,29 @@ class DisposalService {
   // ── Tender committees (ADG appoints the members for >3× unsold packages) ─
 
   /// All appointed committees, keyed by forfeited_package_id.
+  /// The committees for a PAGE of packages, keyed by forfeited package id.
+  ///
+  /// ⚠️ Narrowed to the page. The tables read this as a LOOKUP -- one
+  /// `[fpId]` per row -- but fetched every committee in the country to serve
+  /// it, from six separate places. Eight rows today; the pool is fed by all
+  /// twenty-eight yards, and a committee is appointed for every package that
+  /// survives four tender rounds.
+  Future<Map<String, TenderCommitteeModel>> getTenderCommitteesForPackages(
+      List<String> forfeitedPackageIds) async {
+    if (forfeitedPackageIds.isEmpty) return const {};
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_committees')
+        .select('*')
+        .inFilter('forfeited_package_id',
+            forfeitedPackageIds.toSet().toList()));
+    final out = <String, TenderCommitteeModel>{};
+    for (final e in (rows as List)) {
+      final m = TenderCommitteeModel.fromJson(e as Map<String, dynamic>);
+      out[m.forfeitedPackageId] = m;
+    }
+    return out;
+  }
+
   Future<Map<String, TenderCommitteeModel>> getTenderCommittees() async {
     final rows = await AuthService._withNetworkRetry(
         () => supabase.from('tender_committees').select('*'));
@@ -7060,6 +7160,27 @@ class DisposalService {
   // ── Unsold proposals (the Top Management Directorate's final outcome) ────────────────────
 
   /// Every recorded final outcome, keyed by forfeited_package_id.
+  /// The DG's rulings for a PAGE of packages, keyed by forfeited package id.
+  ///
+  /// ⚠️ Narrowed to the page, for the same reason as
+  /// [getTenderCommitteesForPackages]: the tables read it one `[fpId]` at a
+  /// time and fetched every ruling in the country to do it.
+  Future<Map<String, UnsoldProposalModel>> getUnsoldProposalsForPackages(
+      List<String> forfeitedPackageIds) async {
+    if (forfeitedPackageIds.isEmpty) return const {};
+    final rows = await AuthService._withNetworkRetry(() => supabase
+        .from('unsold_proposals')
+        .select('*')
+        .inFilter('forfeited_package_id',
+            forfeitedPackageIds.toSet().toList()));
+    final out = <String, UnsoldProposalModel>{};
+    for (final e in (rows as List)) {
+      final m = UnsoldProposalModel.fromJson(e as Map<String, dynamic>);
+      out[m.forfeitedPackageId] = m;
+    }
+    return out;
+  }
+
   Future<Map<String, UnsoldProposalModel>> getUnsoldProposals() async {
     final rows = await AuthService._withNetworkRetry(
         () => supabase.from('unsold_proposals').select('*'));
