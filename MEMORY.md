@@ -2502,3 +2502,30 @@ The last tab, and the one I had **measured and deliberately skipped** earlier. T
 ⚠️ **Two dead cells removed**: `_DestructionValuationCell` and `_DestructionPriceCell` each watched `destructionItemForPackageItemProvider` — **two round trips per row**, the second with a deep nested join. Never rendered (the analyzer had been flagging them), but 40 queries a page if anyone wired them up.
 
 **The lesson: paging a table does not page what its CELLS fetch.** After paging a screen, check every cell widget for a provider watch — a per-row query is invisible in the tab's own code.
+
+## Financials: the narrowing that lied, and Future.wait making it slower (2026-09-07)
+
+The page still waited a second or two. Two separate causes, both found by **measuring**, and one of them the exact opposite of what the code looked like.
+
+**1. `select('*')` on the embeds.** `package_items(*)` and `warehouse_entries(*)` bring 19 and 18 columns; `buildSrFinancials` and `calculatePackageCharge` between them read six and three. Naming the columns took **420 kB of embedded JSON down to 117 kB**. Postgres was answering the packages query in **15ms** — the rest was the driver decoding rows into Dart objects.
+
+⚠️ **A narrowed select fails in two different ways, and only one of them is loud.** `PackageItem.fromJson` and `WarehouseEntryModel.fromJson` cast `package_id`, `item_name`, `warehouse_id` and `hold_reason` as non-null, so dropping those threw `type 'Null' is not a subtype of type 'String'` at parse time — obvious. But `destroying_deposit` is **nullable**: dropping it threw nothing and silently reported **every deposit on the page as LKR 0**. A test now asserts every column the roll-up reads is in the select, because the compiler cannot.
+
+(`daily_rate` was the one column genuinely safe to drop — `calculatePackageCharge` takes its rate from the historical rates map, day by day, and never reads the stored one.)
+
+**2. ⚠️ `Future.wait` was SLOWER than awaiting the four in turn.** Warm, three runs each:
+
+```
+one after another   167ms  186ms  204ms
+Future.wait         298ms  303ms  371ms
+```
+
+**The wait is not the network.** The four responses arrive together and then **queue to be decoded on this one isolate**, so nothing finishes sooner and every query's own latency grows — plus the scheduling overhead. Measured alone: packages 146ms, sales 74ms, expenses 54ms, rates **6ms**. Those same rates took **167ms** when issued alongside the others — 27× for a query returning a handful of rows.
+
+A test had been *pinning* `await Future.wait([` as the correct shape, with a comment explaining that serial execution "would give half of it back". It was wrong, and it was wrong from reasoning rather than from a measurement. It now pins the serial shape and carries the numbers.
+
+End to end, old four vs new four: **357-465ms → 167-204ms**.
+
+**The lesson: `Future.wait` helps when the wait is I/O. When the cost is CPU-bound decode on a single isolate, it only makes each caller wait longer for the same total work.**
+
+⚠️ **Five tests were pinning how code was WRITTEN, not what it does** — an exact select string, the order clauses were chained in, `widget.readOnly ?` where the flag has since been split into `readOnly` + `showDecidedItems`, `!i.sold` where the page now reads `!i.sold && !i.unsold`. Every one failed on a change that had *improved* the behaviour it was guarding. Two more traps hit while fixing them: `flat()` collapses the newlines, so **drop comment lines from the RAW source before slicing**, and a comment that names the old code (`daily_rate`, `kOutcomeAwaiting`) reads to a substring check as the code still being there.
