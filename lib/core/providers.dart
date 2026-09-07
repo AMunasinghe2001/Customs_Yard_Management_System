@@ -1768,11 +1768,19 @@ class TenderSaleQuery {
   /// the read-only views show everything.
   final bool onlyPending;
 
+  /// The yard page's own date filters.
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+  final String? year;
+
   const TenderSaleQuery({
     this.page = 0,
     this.search,
     this.yardFilter,
     this.onlyPending = false,
+    this.dateStart,
+    this.dateEnd,
+    this.year,
   });
 
   @override
@@ -1781,10 +1789,14 @@ class TenderSaleQuery {
       other.page == page &&
       other.search == search &&
       other.yardFilter == yardFilter &&
-      other.onlyPending == onlyPending;
+      other.onlyPending == onlyPending &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd &&
+      other.year == year;
 
   @override
-  int get hashCode => Object.hash(page, search, yardFilter, onlyPending);
+  int get hashCode => Object.hash(
+      page, search, yardFilter, onlyPending, dateStart, dateEnd, year);
 }
 
 typedef TenderSalePage = ({List<TenderSaleModel> rows, int total});
@@ -1800,7 +1812,20 @@ final tenderSalesPageProvider =
         search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
         yardFilter: q.yardFilter,
         onlyPending: q.onlyPending,
+        dateStart: q.dateStart,
+        dateEnd: q.dateEnd,
+        year: q.year,
       );
+});
+
+/// The years the Tender Sale page's year filter offers.
+///
+/// ⚠️ Over ALL sales, not the page. A dropdown built from one page offers
+/// only the years on screen, and a year that is not listed reads as records
+/// that no longer exist.
+final tenderSaleYearsProvider = FutureProvider<List<String>>((ref) async {
+  ref.watch(tenderSalesRefreshProvider);
+  return ref.read(disposalServiceProvider).getTenderSaleYears();
 });
 
 /// The sales that RE-TENDER goods from an earlier one.

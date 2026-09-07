@@ -53,21 +53,13 @@ final forfeitedPackageByIdProvider =
   return ForfeitedPackageModel.fromJson(data as Map<String, dynamic>);
 });
 
-// All forfeited packages (INCLUDING ones already placed in a tender), with
-// their package items — used by the tender table so tendered packages still
-// resolve to a real SR number / consignee / item list.
-final allForfeitedMapProvider =
-    FutureProvider<Map<String, ForfeitedPackageModel>>((ref) async {
-  ref.watch(forfeitedPackagesChangeTriggerProvider);
-  final data = await supabase
-      .from('forfeited_packages')
-      .select('*, packages(*, package_items(*))');
-  return {
-    for (final e in (data as List))
-      (e['id'] as String):
-          ForfeitedPackageModel.fromJson(e as Map<String, dynamic>)
-  };
-});
+// ⚠️ `allForfeitedMapProvider` lived here and nothing watched it.
+//
+// Its comment said the tender table used it "so tendered packages still
+// resolve to a real SR number / consignee / item list" — the paged query
+// fetches each sale's items with their forfeited rows, so the table resolves
+// them itself. Left in place it was a fetch of EVERY forfeited package with
+// every package item, kept alive by the file rather than by any reader.
 
 // ── Screen ─────────────────────────────────────────────────────
 
@@ -102,9 +94,31 @@ class _TenderDisposalScreenState
 
   @override
   Widget build(BuildContext context) {
-    final salesAsync = ref.watch(tenderSalesProvider);
     final search = ref.watch(tenderSearchProvider);
     final myYard = AppSession.currentYard;
+
+    // ⚠️ One page from SQL. This screen used to watch `tenderSalesProvider` —
+    // the heaviest query in the app, every sale in the country with its
+    // items, forfeited rows, packages, package items and warehouse entries —
+    // then filter it by yard, search, date range and year here and page the
+    // result with `pageSlice`. Client-side paging still loads everything; it
+    // only renders less.
+    final query = TenderSaleQuery(
+      page: _page,
+      search: search.trim().isEmpty ? null : search.trim(),
+      // The yard is the FILTER, not an afterthought: this page is "sales that
+      // include packages from this yard", and the view matches on the yards a
+      // sale's ITEMS carry rather than the sale's own column.
+      yardFilter: myYard,
+      dateStart: _dateRange?.start,
+      dateEnd: _dateRange?.end,
+      year: _yearFilter,
+    );
+    final salesAsync = ref.watch(tenderSalesPageProvider(query));
+    // ⚠️ Over ALL sales, not this page. Derived from twenty rows a sale would
+    // be called new simply because its predecessor sat on the page before.
+    final retenderIds =
+        ref.watch(retenderSaleIdsProvider).valueOrNull ?? const <String>{};
 
     return AppShell(
       currentRoute: '/tender-disposals',
@@ -226,13 +240,14 @@ class _TenderDisposalScreenState
                         const SizedBox(width: 8),
                         YearFilterButton(
                           value: _yearFilter,
-                          years: ((salesAsync.valueOrNull ??
-                                  const <TenderSaleModel>[])
-                              .where((s) => s.saleDate != null)
-                              .map((s) => s.saleDate!.year.toString())
-                              .toSet()
-                              .toList()
-                            ..sort((a, b) => b.compareTo(a))),
+                          // ⚠️ From ALL sales, not the page. Built from twenty
+                          // rows the dropdown would offer only the years on
+                          // screen, and a year that is not listed reads as
+                          // records that no longer exist.
+                          years: ref
+                                  .watch(tenderSaleYearsProvider)
+                                  .valueOrNull ??
+                              const <String>[],
                           onChanged: (v) => setState(() { _yearFilter = v; _page = 0; }),
                         ),
                       ],
@@ -254,44 +269,15 @@ class _TenderDisposalScreenState
                           color: context.colors.primaryGold)),
                   error: (e, _) => ErrorView(
                       error: e,
-                      onRetry: () => ref.refresh(tenderSalesProvider)),
-                  data: (sales) {
-                    // Keep only sales that contain at least one package from this
-                    // yard, then narrow each card's items to this yard's rows.
-                    var visible = sales
-                        .where((s) =>
-                            myYard == null ||
-                            s.items.any((i) => i.effectiveYard == myYard))
-                        .toList();
-
-                    final q = search.toLowerCase();
-                    if (q.isNotEmpty) {
-                      visible = visible
-                          .where((s) =>
-                              (s.saleNumber ?? '').toLowerCase().contains(q) ||
-                              s.items.any((i) => (i.forfeited?.srNumber ?? '')
-                                  .toLowerCase()
-                                  .contains(q)))
-                          .toList();
-                    }
-                    if (_dateRange != null) {
-                      final start = DateTime(_dateRange!.start.year,
-                          _dateRange!.start.month, _dateRange!.start.day);
-                      final end = DateTime(_dateRange!.end.year,
-                          _dateRange!.end.month, _dateRange!.end.day, 23, 59, 59);
-                      visible = visible.where((s) {
-                        final d = s.saleDate;
-                        return d != null &&
-                            !d.isBefore(start) &&
-                            !d.isAfter(end);
-                      }).toList();
-                    }
-                    if (_yearFilter != null) {
-                      visible = visible
-                          .where((s) =>
-                              s.saleDate?.year.toString() == _yearFilter)
-                          .toList();
-                    }
+                      onRetry: () =>
+                          ref.refresh(tenderSalesPageProvider(query))),
+                  data: (data) {
+                    // ⚠️ Nothing is filtered here any more. The yard, the
+                    // search, the date range and the year are all in the SQL
+                    // above — filtering a page would narrow the twenty rows on
+                    // screen while the pager went on counting the sales it had
+                    // just removed.
+                    final visible = data.rows;
 
                     if (visible.isEmpty) {
                       return Container(
@@ -323,20 +309,17 @@ class _TenderDisposalScreenState
                       );
                     }
 
-                    final pageItems =
-                        pageSlice(visible, _page, kClientPageSize);
-                    final retenderIds = retenderTenderSaleIds(visible);
                     return Column(
                       children: [
                         Expanded(
                           child: ListView.separated(
-                            itemCount: pageItems.length,
+                            itemCount: visible.length,
                             separatorBuilder: (_, __) => const Gap(16),
                             itemBuilder: (context, i) => TenderSaleCard(
-                                sale: pageItems[i],
+                                sale: visible[i],
                                 readOnly: true,
                                 isRetender:
-                                    retenderIds.contains(pageItems[i].id)),
+                                    retenderIds.contains(visible[i].id)),
                           )
                               .animate()
                               .slideY(
@@ -345,10 +328,12 @@ class _TenderDisposalScreenState
                                   delay: 300.ms)
                               .fadeIn(),
                         ),
+                        // ⚠️ Against the SERVER's count: `visible.length` is
+                        // the page size now and would pin the pager to page 1.
                         TablePager(
-                          total: visible.length,
+                          total: data.total,
                           page: _page,
-                          pageSize: kClientPageSize,
+                          pageSize: kDispositionPageSize,
                           onPageChanged: (p) => setState(() => _page = p),
                         ),
                       ],

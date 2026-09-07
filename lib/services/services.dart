@@ -5768,6 +5768,15 @@ class DisposalService {
     String? search,
     String? yardFilter,
     bool onlyPending = false,
+
+    /// The yard page's date-range and year filters.
+    ///
+    /// ⚠️ In SQL, like every other filter here. Applied to a fetched page they
+    /// would narrow the twenty rows on screen while the pager went on counting
+    /// the sales they had just removed.
+    DateTime? dateStart,
+    DateTime? dateEnd,
+    String? year,
   }) async {
     PgQuery narrow(PgQuery q) {
       if (onlyPending) q = q.eq('has_pending', true);
@@ -5785,6 +5794,22 @@ class DisposalService {
         // two neighbouring yards.
         q = q.or('item_yards.ilike.%|$yardFilter|%,'
             'sr_numbers.ilike.%/$yardFilter/%');
+      }
+      if (dateStart != null) {
+        final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+        q = q.gte('sale_date', from.toIso8601String());
+      }
+      if (dateEnd != null) {
+        final to =
+            DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+        q = q.lte('sale_date', to.toIso8601String());
+      }
+      if (year != null && year.isNotEmpty) {
+        // ⚠️ A sale with NO date matched no year before and must not start
+        // matching one now — so the range, not a string test that a null
+        // would slip through.
+        q = q.gte('sale_date', '$year-01-01');
+        q = q.lte('sale_date', '$year-12-31T23:59:59');
       }
       return q;
     }
@@ -5821,6 +5846,25 @@ class DisposalService {
       rows: [for (final id in ids) if (byId[id] != null) byId[id]!],
       total: total as int,
     );
+  }
+
+  /// The years the year filter offers, from the sale dates themselves.
+  ///
+  /// ⚠️ Its own query over ALL sales. Derived from a page, the dropdown
+  /// would offer only the years that happen to be on screen -- and picking a
+  /// year that is not there is how an officer concludes the records are gone.
+  Future<List<String>> getTenderSaleYears() async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('tender_sale_summary')
+        .select('sale_date')
+        .order('sale_date', ascending: false));
+    final years = <String>{};
+    for (final e in (data as List)) {
+      final d = parseDbDate((e as Map<String, dynamic>)['sale_date']);
+      if (d != null) years.add(d.year.toString());
+    }
+    final out = years.toList()..sort((a, b) => b.compareTo(a));
+    return out;
   }
 
   /// The ids of sales that RE-TENDER goods from an earlier sale.
