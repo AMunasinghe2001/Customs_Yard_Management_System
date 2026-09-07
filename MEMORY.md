@@ -2618,3 +2618,21 @@ New views: `item_appeal_outcomes` (47), `warehouse_rows` (48), `forfeit_rows` (4
 ### Now fully paged in SQL
 
 Every portal. Top Management (6 tabs), Central Disposal (16), Valuation (3), Appeal (2), ICT logs, and the yard's Financials, Warehouses, Forfeited, Destruction, Tender Sale and disposition pages. What remains unpaged is small by nature — taxes (4 rows), committees (8), proposals (10), profiles (11), warehouses (4).
+
+## Committees & proposals: the size was not the problem (2026-09-07)
+
+Asked whether the 8-row committees and 10-row proposals tables needed paging — they are fed by **all 28 yards**, and a committee is appointed for every package that survives four tender rounds, so the concern was right. But **how the rows read them** turned out to be the real cost, not the tables.
+
+⚠️ **Four cells each fetched their OWN row's figures.** `_UnsoldValuationCell`, `_LatestValuationCell`, `_ReTenderStatusCell` and `_BidsCell` all read `tenderRevaluationsProvider(fpId)` / `tenderBidsProvider(fpId)` inside `build` — twenty rows, twenty round trips **per cell**. Top Management's committee tab did the same. And `tenderCommitteesProvider` / `unsoldProposalsProvider` were used as **lookups** (one `[fpId]` per row) while fetching every committee and ruling in the country, from **six separate places**.
+
+**512ms per-row → 151ms page-wide** (and the page-wide figure *includes* committees and rulings, which the per-row one does not).
+
+`TenderPageScope` (a new widget, same shape as `DestructionExpenseScope`) carries the page's ids. ⚠️ The three helpers **fall back to the single-package providers when there is no scope** — these cells are also built inside dialogs, and one showing nothing there would be a blank where a valuation belongs.
+
+⚠️ **One definition of the family key.** `TenderPageScope.keyFor` delegates to `packageKeyOf`: two copies of "sorted, de-duplicated, pipe-joined" is two chances for a key built in the widget to miss the cache filled by the provider — and the symptom is a page that fetches twice and merely *looks* slow.
+
+### ⚠️ The ordering bug the port uncovered
+
+**Bids entered together carry the SAME `created_at` to the microsecond, and Postgres promises no order between tied rows.** The same two amounts came back **swapped from one read to the next** — and the edit dialog seeds one text field per bid in exactly that order, so an officer could reopen a round and find their figures rearranged. All four queries now break the tie on `id`; the page-wide pair also order by `forfeited_package_id` first, or one package's rows interleave with another's.
+
+**This is the third time a per-row provider watch has been the real cost** — Destroyed Goods, then Warehouses (three places at once), now the tender tables (six). When a table is paged, grep its cells for `ref.watch(...Provider(` before calling it done.
