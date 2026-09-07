@@ -31,10 +31,13 @@ Future<void> _start() async {
 
   await windowManager.ensureInitialized();
   WindowOptions windowOptions = const WindowOptions(
-    minimumSize: Size(1000, 700),
+    size: Size(1280, 800),
+    minimumSize: Size(1180, 720),
+    center: true,
     title: 'Sri Lanka Customs SR Management System',
   );
   windowManager.waitUntilReadyToShow(windowOptions, () async {
+    await windowManager.setMinimumSize(const Size(1180, 720));
     await windowManager.show();
     await windowManager.focus();
   });

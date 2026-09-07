@@ -223,6 +223,8 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
         const <String, UnsoldProposalModel>{};
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
+    final accent =
+        widget.readOnly ? context.colors.successGreen : context.colors.primaryGold;
 
     final body = Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -247,7 +249,10 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
             // and in a different shape.
             if (widget.readOnly) ...[
               Row(children: [
-                PageTitle('Perishable Goods', Icons.eco_rounded, accent: context.colors.successGreen),
+                PageTitle('Perishable Goods', Icons.eco_rounded,
+                    subtitle:
+                        'Time-sensitive perishable goods requiring expedited disposal or sale',
+                    accent: context.colors.successGreen),
                 const Spacer(),
                 SizedBox(width: 280, child: _searchBox(context)),
                 const Gap(12),
@@ -302,11 +307,21 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                 const Spacer(),
                 if (async.valueOrNull != null)
                   StatChip(
-                    label: 'Awaiting disposal',
+                    label: _outcomeFilter == kOutcomeAwaiting
+                        ? 'Awaiting DG decision'
+                        : (_outcomeFilter == kOutcomeSold
+                            ? 'Sold goods'
+                            : (_outcomeFilter != null
+                                ? unsoldProposalLabel(_outcomeFilter)
+                                : 'Awaiting disposal')),
                     // The DATABASE's count for this filter, so the number and
                     // the list can never disagree.
                     value: '${async.valueOrNull!.total}',
-                    color: context.colors.dangerRed,
+                    color: _outcomeFilter == kOutcomeAwaiting
+                        ? context.colors.warningAmber
+                        : (_outcomeFilter == kOutcomeSold
+                            ? context.colors.successGreen
+                            : context.colors.dangerRed),
                   ),
               ]).animate().fadeIn(duration: 300.ms),
               const Gap(14),
@@ -614,18 +629,17 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                                                   r.package.srNumber)),
                                               overflow: TextOverflow.ellipsis)),
                                         DataCell(Center(
-                                            child: UnsoldOutcomeChip(
+                                            child: _PerishableOutcomeChip(
                                                 proposal: outcomes[r.item.id],
-                                                // ⚠️ A perishable that SOLD
-                                                // at tender has its outcome
-                                                // already -- it never reaches
-                                                // the DG, so there is no
-                                                // proposal to read and the
-                                                // row used to sit on
-                                                // "Awaiting Top Management"
-                                                // for ever.
                                                 soldPrice: result
-                                                    .soldPriceByItem[r.item.id]))),
+                                                    .soldPriceByItem[r.item.id],
+                                                sent: result
+                                                        .sentByItem[r.item.id] ??
+                                                    false,
+                                                markedUnsold: result
+                                                        .markedUnsoldByItem[
+                                                    r.item.id] ??
+                                                    false))),
                                         DataCell(Center(
                                           child: IconButton(
                                             icon: Icon(
@@ -673,6 +687,7 @@ class _PerishableGoodsScreenState extends ConsumerState<PerishableGoodsScreen> {
                         total: result.total,
                         page: page,
                         pageSize: kDispositionPageSize,
+                        accent: accent,
                         onPageChanged: (p) => setState(() => _page = p),
                       ),
                     ],
@@ -740,5 +755,81 @@ class _CountChip extends StatelessWidget {
   }
 }
 
-/// How long this item has been waiting. Perishables spoil, so the number
-/// matters more here than on any other page — it reddens as it grows.
+/// The lifecycle outcome chip for perishable goods.
+///
+/// Distinguishes among:
+/// 1. Sold at tender -> "Sold" (Green)
+/// 2. DG decided outcome -> e.g. "Destroy" / "Convert" / "Government Use" (from unsoldOutcomeStyle)
+/// 3. Failed Special Tender Sale and marked unsold -> "Awaiting Top Management" (Orange)
+/// 4. Sent to Central Disposal in a request -> "In Tender" (Gold)
+/// 5. In Yard, not yet sent -> "In Yard" (Muted)
+class _PerishableOutcomeChip extends StatelessWidget {
+  final UnsoldProposalModel? proposal;
+  final double? soldPrice;
+  final bool sent;
+  final bool markedUnsold;
+
+  const _PerishableOutcomeChip({
+    required this.proposal,
+    required this.soldPrice,
+    required this.sent,
+    required this.markedUnsold,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final sold = soldPrice;
+    if (sold != null) {
+      return statusPill(
+        context,
+        color: context.colors.successGreen,
+        icon: Icons.sell_rounded,
+        label: 'Sold',
+        tooltip: 'Sold at tender for Rs ${sold.toStringAsFixed(2)} — these '
+            'goods never went to the Top Management Directorate',
+      );
+    }
+
+    final p = proposal;
+    if (p != null) {
+      final st = unsoldOutcomeStyle(context, p.proposal);
+      return statusPill(
+        context,
+        color: st.colour,
+        icon: st.icon,
+        label: p.label,
+        tooltip: p.note?.trim().isNotEmpty == true
+            ? p.note!.trim()
+            : 'Decided ${DateFormat('yyyy-MM-dd').format(p.decidedAt)}',
+      );
+    }
+
+    if (markedUnsold) {
+      return statusPill(
+        context,
+        color: context.colors.warningAmber,
+        icon: Icons.hourglass_bottom_rounded,
+        label: 'Awaiting Top Management',
+        tooltip: 'Failed Special Tender Sale — awaiting DG decision',
+      );
+    }
+
+    if (sent) {
+      return statusPill(
+        context,
+        color: context.colors.primaryGold,
+        icon: Icons.local_shipping_rounded,
+        label: 'In Tender',
+        tooltip: 'Sent to Central Disposal for Special Tender Sale',
+      );
+    }
+
+    return statusPill(
+      context,
+      color: context.colors.textMuted,
+      icon: Icons.inventory_2_outlined,
+      label: 'In Yard',
+      tooltip: 'Held in the yard — not yet sent for disposal',
+    );
+  }
+}

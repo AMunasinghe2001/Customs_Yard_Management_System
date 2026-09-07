@@ -2255,14 +2255,29 @@ Future<void> _seedTenderPipeline(Connection conn) async {
   // which shows the open ones. This puts a genuine second round in an open
   // sale: goods that failed once, being offered again.
   var reTenderedOpen = 0;
+  // ⚠️ Only packages that have rounds LEFT.
+  //
+  // This picked any unsold package and put it in another sale, whatever its
+  // history -- so a package already on its fourth round became a fifth, with
+  // no committee. That cannot happen: the Valuation Tender plus Tenders 1-3
+  // are all Central Disposal can run, and after those Top Management appoints
+  // a committee to price it. CED/GL1/OA/07/2025 ended up with five rounds and
+  // zero committees, which the app then had no page for.
+  //
+  // A package WITH a committee may go round again -- that fifth round is the
+  // committee-priced one -- so the rule is the same one postgres/38 enforces.
   final failedOnce = await conn.execute(
-    'select distinct tsi.forfeited_package_id, tsi.package_item_id '
+    'select tsi.forfeited_package_id, min(tsi.package_item_id::text) '
     'from public.tender_sale_items tsi '
     'join public.forfeited_packages fp on fp.id = tsi.forfeited_package_id '
     "where fp.source <> 'perishable' "
     '  and not exists (select 1 from public.tender_sale_items t2 '
     '                   where t2.forfeited_package_id = tsi.forfeited_package_id '
     '                     and t2.sold) '
+    'group by tsi.forfeited_package_id '
+    '  having count(*) < 4 '
+    '      or exists (select 1 from public.tender_committees tc '
+    '                  where tc.forfeited_package_id = tsi.forfeited_package_id) '
     'limit 3',
   );
   if (failedOnce.isNotEmpty) {

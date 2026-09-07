@@ -718,6 +718,8 @@ typedef PerishablePage = ({
   /// sells never reaches the DG -- selling IS its final outcome -- so the page
   /// cannot read the outcome from unsold_proposals alone.
   Map<String, double> soldPriceByItem,
+  Map<String, bool> sentByItem,
+  Map<String, bool> markedUnsoldByItem,
   int total,
 });
 
@@ -748,6 +750,8 @@ final perishablePageProvider =
     ],
     packages: packages,
     soldPriceByItem: page.soldPriceByItem,
+    sentByItem: page.sentByItem,
+    markedUnsoldByItem: page.markedUnsoldByItem,
     total: page.total,
   );
 });
@@ -2296,28 +2300,43 @@ final srFinancialsProvider = FutureProvider<List<SrFinancials>>((ref) async {
   ref.watch(destructionsChangeTriggerProvider);
   ref.watch(financialExpensesRefreshProvider);
 
-  // Four independent fetches, two of them heavy nested queries. Awaiting them
-  // one after another meant the page waited for the SUM of all four; in
-  // parallel it waits for the slowest.
+  // ⚠️ Four fetches, awaited ONE AFTER ANOTHER. Future.wait is slower here,
+  // which is the opposite of what it looks like.
+  //
+  // Measured against the live database, three runs, warm:
+  //
+  //     one after another   167ms  186ms  204ms
+  //     Future.wait         298ms  303ms  371ms
+  //
+  // The wait is not the network. Postgres answers the packages query in 15ms;
+  // the rest is the driver turning rows into Dart objects, and that runs on
+  // this isolate. Issued together, the four responses arrive together and then
+  // queue behind each other to be decoded on the one thread -- so nothing
+  // finishes sooner, every query's own latency grows, and the scheduling is
+  // pure overhead. Alone: packages 146ms, sales 74ms, expenses 54ms, rates
+  // 6ms; together those same rates took 167ms.
+  //
+  // Making these parallel again means measuring it again, not reasoning about
+  // it: a test pins the serial shape.
   final disposal = ref.read(disposalServiceProvider);
-  final results = await Future.wait([
-    // ⚠️ The LEDGER's packages, not every package with every embed.
-    // getAllPackages() also brings each entry's warehouse and the returning
-    // officer's profile, plus the inspecting officer's -- 419 kB of JSON the
-    // financial roll-up never reads, and 130-210ms of driver time to decode.
-    ref.read(packageServiceProvider).getPackagesForLedger(),
-    ref.watch(storageRateProvider.future),
-    // ⚠️ The ledger's cut of the sales, stopping at the forfeited row.
-    // getTenderSales() goes three levels further -- packages, their items and
-    // their warehouse entries -- none of which buildSrFinancials reads.
-    disposal.getTenderSalesForLedger(),
-    disposal.getFinancialExpenses(),
-  ]);
+
+  // ⚠️ The LEDGER's packages, not every package with every embed.
+  // getAllPackages() also brings each entry's warehouse and the returning
+  // officer's profile, plus the inspecting officer's -- 419 kB of JSON the
+  // financial roll-up never reads, and 130-210ms of driver time to decode.
+  final packages = await ref.read(packageServiceProvider).getPackagesForLedger();
+  // ⚠️ The ledger's cut of the sales, stopping at the forfeited row.
+  // getTenderSales() goes three levels further -- packages, their items and
+  // their warehouse entries -- none of which buildSrFinancials reads.
+  final sales = await disposal.getTenderSalesForLedger();
+  final rates = await ref.watch(storageRateProvider.future);
+  final expenses = await disposal.getFinancialExpenses();
+
   return buildSrFinancials(
-    packages: results[0] as List<PackageModel>,
-    rates: results[1] as Map<DateTime, double>,
-    sales: results[2] as List<TenderSaleModel>,
-    expenses: results[3] as List<FinancialExpenseModel>,
+    packages: packages,
+    rates: rates,
+    sales: sales,
+    expenses: expenses,
   );
 });
 
@@ -2450,21 +2469,22 @@ final expensePageProvider =
 
   // ⚠️ The heavy part, for THIS page's packages only. The nested goods list is
   // what the table and its dialog read, so it cannot come from the view.
-  final results = await Future.wait([
-    packageSvc.getPackagesByIds(ids.packageIds),
-    ref.watch(storageRateProvider.future),
-    // ⚠️ The ledger's cut of the sales, stopping at the forfeited row.
-    // getTenderSales() goes three levels further -- packages, their items and
-    // their warehouse entries -- none of which buildSrFinancials reads.
-    disposal.getTenderSalesForLedger(),
-    disposal.getFinancialExpenses(),
-  ]);
-  final byId = results[0] as Map<String, PackageModel>;
+  // ⚠️ One after another, for the reason [srFinancialsProvider] measures:
+  // the four decode on this isolate, so issuing them together only makes each
+  // one wait longer for the same total work.
+  final byId = await packageSvc.getPackagesByIds(ids.packageIds);
+  // ⚠️ The ledger's cut of the sales, stopping at the forfeited row.
+  // getTenderSales() goes three levels further -- packages, their items and
+  // their warehouse entries -- none of which buildSrFinancials reads.
+  final sales = await disposal.getTenderSalesForLedger();
+  final rates = await ref.watch(storageRateProvider.future);
+  final expenses = await disposal.getFinancialExpenses();
+
   final rows = buildSrFinancials(
     packages: [for (final id in ids.packageIds) if (byId[id] != null) byId[id]!],
-    rates: results[1] as Map<DateTime, double>,
-    sales: results[2] as List<TenderSaleModel>,
-    expenses: results[3] as List<FinancialExpenseModel>,
+    rates: rates,
+    sales: sales,
+    expenses: expenses,
   );
   return (rows: rows, totals: totals, total: ids.total);
 });

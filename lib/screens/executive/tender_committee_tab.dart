@@ -3,6 +3,7 @@ import '../disposal/disposal_dashboard_screen.dart'
 import '../../widgets/table_pager.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/sealed_valuation.dart';
+import 'executive_header.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -234,56 +235,36 @@ class TenderCommitteeTab extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            PageTitle('Tender Committees', Icons.groups_rounded, accent: accent),
-            const Gap(10),
+          Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             Expanded(
-              child: Text(
-                  canAppoint
-                      ? 'Packages still unsold after Tender 3 — appoint a committee'
-                      : 'Packages still unsold after Tender 3 — view only',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style:
-                      TextStyle(color: context.colors.textMuted, fontSize: 13)),
+              child: PageTitle(
+                'Tender Committees',
+                Icons.groups_rounded,
+                subtitle: canAppoint
+                    ? 'Packages still unsold after Tender 3 — appoint a committee'
+                    : 'Packages still unsold after Tender 3 — view only',
+                accent: accent,
+              ),
+            ),
+            const Gap(16),
+            ExecutiveSearchField(
+              hint: 'Search SR / item / consignee…',
+              onChanged: (v) {
+                ref.read(_committeeSearchProvider.notifier).state = v;
+                ref.read(_committeePageProvider.notifier).state = 0;
+              },
             ),
             const Gap(12),
             SizedBox(
-              width: 300,
-              child: TextField(
+              width: 220,
+              child: ExecutiveYardFilter(
+                value: yardFilter,
                 onChanged: (v) =>
-                    ref.read(_committeeSearchProvider.notifier).state = v,
-                style: TextStyle(
-                    color: context.colors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  isDense: true,
-                  hintText: 'Search SR / item / consignee…',
-                  prefixIcon:
-                      Icon(Icons.search_rounded, size: 20, color: accent),
-                  filled: true,
-                  fillColor: accent.withOpacity(0.06),
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
-                  enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent.withOpacity(0.4))),
-                  focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(14),
-                      borderSide: BorderSide(color: accent, width: 1.5)),
-                ),
+                    ref.read(_committeeYardProvider.notifier).state = v,
               ),
             ),
-            const Gap(12),
-            _CommitteeYardFilter(
-              value: yardFilter,
-              onChanged: (v) =>
-                  ref.read(_committeeYardProvider.notifier).state = v,
-            ),
           ]).animate().fadeIn(duration: 300.ms),
-          const Gap(16),
+          const Gap(12),
           Expanded(
             child: async.when(
               skipLoadingOnReload: true,
@@ -422,8 +403,14 @@ class TenderCommitteeTab extends ConsumerWidget {
                                   info.latestSale?.saleEnded == false)),
                           DataCell(Center(
                             child: Tooltip(
-                              message: 'See every round: what it was valued '
-                                  'at, and what was bid',
+                              message: info.tenderCount > 4
+                                  ? 'Central Disposal can run four rounds: '
+                                      'the Valuation Tender and Tenders 1-3. '
+                                      'This package has ${info.tenderCount}, '
+                                      'which predates the limit — click to '
+                                      'see them.'
+                                  : 'See every round: what it was valued at, '
+                                      'and what was bid',
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(8),
                                 onTap: () => _showHistory(context, info),
@@ -441,6 +428,15 @@ class TenderCommitteeTab extends ConsumerWidget {
                               child: Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
+                                    // ⚠️ Shown as it IS, not clamped. Four is
+                                    // the most Central Disposal can run
+                                    // (postgres/38 enforces it now), but a
+                                    // package seeded before that rule can
+                                    // carry more -- and those rounds really
+                                    // happened: bids were taken and
+                                    // valuations set. Displaying 4 for a
+                                    // package with 5 would hide a fact the
+                                    // tooltip can explain.
                                     Text('${info.tenderCount}×',
                                         style: TextStyle(
                                             color: context.colors.warningAmber,
@@ -546,6 +542,7 @@ class TenderCommitteeTab extends ConsumerWidget {
                   TablePager(
                     total: total,
                     page: page,
+                    accent: accent,
                     onPageChanged: (p) =>
                         ref.read(_committeePageProvider.notifier).state = p,
                   ),

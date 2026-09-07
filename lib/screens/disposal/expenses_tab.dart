@@ -79,8 +79,13 @@ class ExpensesTab extends ConsumerWidget {
         children: [
           // Title · search · yard · date — the standard filter header.
           Row(children: [
-            PageTitle('Disposal Expenses', Icons.payments_rounded, accent: context.colors.successGreen),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Disposal Expenses', Icons.payments_rounded,
+                  subtitle:
+                      'Operational expenditures, advertising, transport, and disposal costs',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: _tabKey, hint: 'Search SR / goods\u2026'),
             const Gap(12),
@@ -140,6 +145,7 @@ class ExpensesTab extends ConsumerWidget {
                     TablePager(
                       total: total,
                       page: safePage,
+                      accent: context.colors.successGreen,
                       onPageChanged: (p) =>
                           ref.read(_expensePageProvider.notifier).state = p,
                     ),
@@ -201,7 +207,7 @@ class DisposalDateFilter extends StatelessWidget {
           menuWidth: 200,
           splashRadius: 14,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           prefixIcon: Icon(
             filterType == 'day'
                 ? Icons.today_rounded

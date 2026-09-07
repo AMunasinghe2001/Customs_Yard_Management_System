@@ -99,20 +99,58 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   /// 'all' = every round side by side, else one of [kValuationRounds].
   String _valuationRound = 'all';
 
+  /// Physical yard code extracted from `_reportYard` (e.g. 'NNR' from 'NNR|CED', or 'ASIAN').
+  String? get _physicalYard {
+    if (_reportYard == null) return null;
+    final bar = _reportYard!.indexOf('|');
+    return bar < 0 ? _reportYard : _reportYard!.substring(0, bar);
+  }
+
   /// The yard passed to the data services. Executive mode → the picked yard
   /// (report cards are only shown once one is picked, so it's non-null here);
   /// disposal mode → the picked yard, or null for "All Yards" (cross-yard);
   /// officer mode → null, so RLS scopes data to the officer's own yard.
   String? get _yardArg =>
-      (widget.executiveMode || widget.disposalMode) ? _reportYard : null;
+      (widget.executiveMode || widget.disposalMode) ? _physicalYard : null;
+
+  /// Checks whether an item/row matches the currently selected yard and directorate.
+  bool _matchesSelectedYard(String? rowYard, String? rowSrNumber) {
+    if (!widget.executiveMode && !widget.disposalMode) return true;
+    if (_reportYard == null) return true;
+    final dirMap = ref.read(directorateSrPrefixMapProvider).valueOrNull;
+    final effectiveYard = rowYard ?? yardOfSrNumber(rowSrNumber);
+    return matchesYardFilter(_reportYard, effectiveYard, rowSrNumber ?? '',
+        prefixToCode: dirMap);
+  }
 
   /// Client-side yard filter for report lists whose service can't take a yard
   /// (e.g. forfeited packages). No-op in officer mode, and in disposal mode
   /// when "All Yards" is selected.
-  List<T> _filterByYard<T>(List<T> rows, String? Function(T) yardOf) {
+  List<T> _filterByYard<T>(List<T> rows, String? Function(T) yardOf,
+      [String? Function(T)? srNumberOf]) {
     if (!widget.executiveMode && !widget.disposalMode) return rows;
     if (_reportYard == null) return rows;
-    return rows.where((r) => yardOf(r) == _reportYard).toList();
+    final dirMap = ref.read(directorateSrPrefixMapProvider).valueOrNull;
+    return rows.where((r) {
+      final y = yardOf(r);
+      String? sr = srNumberOf?.call(r);
+      if (sr == null) {
+        if (r is ForfeitedPackageModel) {
+          sr = r.srNumber;
+        } else if (r is PackageModel) {
+          sr = r.srNumber;
+        } else if (r is WarehouseEntryModel) {
+          sr = r.srNumber;
+        } else if (r is SrFinancials) {
+          sr = r.srNumber;
+        } else if (r is ReTenderSaleInfo) {
+          sr = r.forfeited.srNumber;
+        }
+      }
+      final effectiveYard = y ?? yardOfSrNumber(sr);
+      return matchesYardFilter(_reportYard, effectiveYard, sr ?? '',
+          prefixToCode: dirMap);
+    }).toList();
   }
 
   // Track loading state for each button uniquely
@@ -484,17 +522,11 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
             StyledDropdownButton<String>(
               value: _reportYard,
               allLabel: widget.disposalMode ? 'All Yards' : 'Select Yard',
-              icon: Icons.location_city_rounded,
+              icon: Icons.warehouse_rounded,
               menuWidth: 260,
-              // A physical-yard picker -- reports are scoped by yard (server
-              // query / RLS), not split by directorate, since a report at a
-              // multi-directorate yard naturally covers all of that yard's
-              // goods regardless of which directorate filed them.
-              options: (ref.watch(yardsProvider).valueOrNull
-                          ?.where((y) => y.isActive)
-                          .toList() ??
-                      kYards.map((y) => YardModel(code: y.code, name: y.name, srPrefix: y.srPrefix)).toList())
-                  .map((y) => StyledDropdownOption(y.code, y.name))
+              options: (ref.watch(yardFilterOptionsProvider).valueOrNull ??
+                      [for (final y in kYards) YardFilterOption(value: y.code, label: y.name, filterYard: y.code)])
+                  .map((o) => StyledDropdownOption(o.value, o.label))
                   .toList(),
               onChanged: (v) => setState(() {
                 _reportYard = v;
@@ -1912,7 +1944,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       for (final info in exhausted) {
         final f = info.forfeited;
         // Respect the portal's yard picker and the date range above.
-        if (_yardArg != null && f.yard != _yardArg) continue;
+        if (!_matchesSelectedYard(f.yard, f.srNumber)) continue;
         if (_startDate != null && f.forfeitedAt.isBefore(_startDate!)) continue;
         if (_endDate != null &&
             f.forfeitedAt.isAfter(DateTime(
@@ -2017,10 +2049,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
       for (final r in all) {
         // SRs with nothing recorded would only pad the report out.
         if (r.isEmpty) continue;
-        // Respect the portal's yard picker. Falls back to the SR prefix when a
-        // row carries no yard, the same way the tab's filter does.
-        if (_yardArg != null &&
-            (r.yard ?? yardOfSrNumber(r.srNumber)) != _yardArg) {
+        // Respect the portal's yard picker.
+        if (!_matchesSelectedYard(
+            r.yard ?? yardOfSrNumber(r.srNumber), r.srNumber)) {
           continue;
         }
 
@@ -2171,7 +2202,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
 
       for (final info in exhausted) {
         final f = info.forfeited;
-        if (_yardArg != null && f.yard != _yardArg) continue;
+        if (!_matchesSelectedYard(f.yard, f.srNumber)) continue;
         if (_startDate != null && f.forfeitedAt.isBefore(_startDate!)) continue;
         if (_endDate != null &&
             f.forfeitedAt.isAfter(DateTime(
@@ -3538,7 +3569,9 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     try {
       final svc = ref.read(packageServiceProvider);
       final disposal = ref.read(disposalServiceProvider);
-      final packages = await svc.getAllPackages(yard: _yardArg);
+      final allPackages = await svc.getAllPackages(yard: _yardArg);
+      final packages = _filterByYard(
+          allPackages, (p) => yardOfSrNumber(p.srNumber), (p) => p.srNumber);
 
       String title;
       String headline;
@@ -3580,7 +3613,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               for (final it in s.dedupedItems)
                 if (it.sold &&
                     inPeriod(it.soldAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
+                    _matchesSelectedYard(
+                        it.yard, it.forfeited?.srNumber))
                   it
           ];
           double totalRev = 0;
@@ -3652,7 +3686,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 for (final it in dn.items)
                   if (it.destroyed &&
                       inPeriod(it.destroyedAt) &&
-                      (_yardArg == null || it.yard == _yardArg))
+                      _matchesSelectedYard(it.yard, it.forfeited?.srNumber))
                     it
             ].length;
             final balance = added - soldItems.length - destroyed;
@@ -3679,12 +3713,13 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           var tenders = allSales
               .where((sale) => inPeriod(sale.saleDate ?? sale.createdAt))
               .toList();
-          if (_yardArg != null) {
+          if (_reportYard != null) {
             // Per ITEM, not the sale's own yard: a sale can mix items from a
             // multi-directorate yard, so the sale-level code cannot tell them
             // apart.
             tenders = tenders
-                .where((sale) => sale.items.any((i) => i.yard == _yardArg))
+                .where((sale) => sale.items.any((i) => _matchesSelectedYard(
+                    i.yard, i.forfeited?.srNumber)))
                 .toList();
           }
           tenders.sort((a, b) => (b.saleDate ?? b.createdAt)
@@ -3708,7 +3743,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
                 ? DateFormat('yyyy-MM-dd').format(sale.saleDate!)
                 : '—';
             for (final it in sale.dedupedItems) {
-              if (_yardArg != null && it.yard != _yardArg) continue;
+              if (!_matchesSelectedYard(
+                  it.yard, it.forfeited?.srNumber)) {
+                continue;
+              }
               final f = it.forfeited;
               final pkgItems =
                   f?.packageDetails?.items ?? const <PackageItem>[];
@@ -3738,20 +3776,22 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           // showing on Top Management's own Tender Sales page at that moment,
           // so the print and the screen cannot disagree.
           //
-          // That page's rule -- unsold items remaining AND the window still
-          // open -- is applied here too, which is why this report empties
-          // when the page does and fills again on the next tender.
+          // A sale leaves this page once every item is decided (sold or unsold).
+          // Only items with status 'Awaiting Decision' (!sold && !unsold) appear.
           final daySales = await disposal.getTenderSales();
           var live = daySales.where((sale) {
-            final hasPending = sale.items.any((i) => !i.sold);
-            if (!hasPending) return false;
-            // ⚠️ No window -- an unmarked sale is still open work, and a
-            // report that hid it hid the work.
-            return true;
+            return sale.items.any((i) =>
+                !i.sold &&
+                !i.unsold &&
+                (_reportYard == null ||
+                    _matchesSelectedYard(i.yard, i.forfeited?.srNumber)));
           }).toList();
-          if (_yardArg != null) {
+          if (_reportYard != null) {
             live = live
-                .where((sale) => sale.items.any((i) => i.yard == _yardArg))
+                .where((sale) => sale.items.any((i) =>
+                    !i.sold &&
+                    !i.unsold &&
+                    _matchesSelectedYard(i.yard, i.forfeited?.srNumber)))
                 .toList();
           }
           live.sort((a, b) => (b.saleDate ?? b.createdAt)
@@ -3771,11 +3811,12 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
           rowItemIds = [];
           for (final sale in live) {
             for (final it in sale.dedupedItems) {
-              // Only the items still going under the hammer: one already
-              // marked sold has left the sale, and the screen does not list
-              // it either.
-              if (it.sold) continue;
-              if (_yardArg != null && it.yard != _yardArg) continue;
+              // Only goods whose status has not yet been updated to Sold or Unsold:
+              if (it.sold || it.unsold) continue;
+              if (!_matchesSelectedYard(
+                  it.yard, it.forfeited?.srNumber)) {
+                continue;
+              }
               final f = it.forfeited;
               final pkg = f?.packageDetails;
               final pkgItems = pkg?.items ?? const <PackageItem>[];
@@ -3915,7 +3956,8 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               for (final it in s.dedupedItems)
                 if (it.sold &&
                     inPeriod(it.soldAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
+                    _matchesSelectedYard(
+                        it.yard, it.forfeited?.srNumber))
                   it
           ];
           double soldVal = 0;
@@ -3935,7 +3977,7 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
               for (final it in dn.items)
                 if (it.destroyed &&
                     inPeriod(it.destroyedAt) &&
-                    (_yardArg == null || it.yard == _yardArg))
+                    _matchesSelectedYard(it.yard, it.forfeited?.srNumber))
                   it
           ];
           final destCnt = destroyedItems.length;
@@ -4213,8 +4255,10 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
     _setLoading(key, true);
     List<PackageModel> all;
     try {
-      all =
+      final pkgs =
           await ref.read(packageServiceProvider).getAllPackages(yard: _yardArg);
+      all = _filterByYard(
+          pkgs, (p) => yardOfSrNumber(p.srNumber), (p) => p.srNumber);
     } catch (e) {
       _showError(e.toString());
       return;
@@ -5197,8 +5241,28 @@ class _ReportsScreenState extends ConsumerState<ReportsScreen> {
   }
 
   List<T> _filterByDate<T>(List<T> list) {
-    if (_startDate == null && _endDate == null) return list;
-    return list.where((item) {
+    var result = list;
+    if (widget.executiveMode || widget.disposalMode) {
+      if (_reportYard != null) {
+        result = result.where((item) {
+          if (item is PackageModel) {
+            return _matchesSelectedYard(null, item.srNumber);
+          } else if (item is WarehouseEntryModel) {
+            return _matchesSelectedYard(null, item.srNumber);
+          } else if (item is ForfeitedPackageModel) {
+            return _matchesSelectedYard(item.yard, item.srNumber);
+          } else if (item is SrFinancials) {
+            return _matchesSelectedYard(item.yard, item.srNumber);
+          } else if (item is ReTenderSaleInfo) {
+            return _matchesSelectedYard(
+                item.forfeited.yard, item.forfeited.srNumber);
+          }
+          return true;
+        }).toList();
+      }
+    }
+    if (_startDate == null && _endDate == null) return result;
+    return result.where((item) {
       DateTime? dt;
       if (item is PackageModel) {
         dt = item.entryDate;

@@ -56,8 +56,13 @@ void main() {
       expect(services, contains('Map<String, double> soldPriceByItem'));
       final fn = flat(services.substring(
           services.indexOf('getPerishableRowsPaged')));
-      expect(fn.substring(0, 3600),
-          contains("select('package_id, item_id, sold, sold_price')"));
+      // ⚠️ The COLUMNS, not the whole select string. This asked for the
+      // exact literal and failed the day two more columns joined it, though
+      // the sale price it guards was still fetched.
+      final select = fn.substring(fn.indexOf("from('perishable_rows')"));
+      for (final column in ['sold', 'sold_price', 'package_id', 'item_id']) {
+        expect(select.substring(0, 300), contains(column));
+      }
     });
 
     test('the chip shows Sold and says what it fetched', () {
@@ -111,8 +116,15 @@ void main() {
     });
 
     test('the yard keeps every item — its page is a record', () {
+      // ⚠️ The FLAG that decides it, not its name. This pinned
+      // `widget.readOnly ?` and broke when read-only and "show every item"
+      // were split into two flags -- which is exactly what made Top
+      // Management able to be read-only AND a worklist. The rule here is that
+      // one flag chooses between every item and the undecided ones.
       final fn = flat(dash.substring(dash.indexOf('List<_TsRow> _rows()')));
-      expect(fn.substring(0, 900), contains('widget.readOnly ? widget.sale.items'));
+      final body = fn.substring(0, 900);
+      expect(body, contains('? widget.sale.items :'));
+      expect(body, contains('widget.showDecidedItems'));
     });
 
     test('marking an item does not throw the officer to another tab', () {

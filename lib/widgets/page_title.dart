@@ -20,6 +20,7 @@ import '../core/theme.dart';
 class PageTitle extends StatelessWidget {
   final String text;
   final IconData icon;
+  final String? subtitle;
 
   /// Matches the 22pt headings this replaces.
   final double fontSize;
@@ -33,11 +34,11 @@ class PageTitle extends StatelessWidget {
   final Color? accent;
 
   const PageTitle(this.text, this.icon,
-      {super.key, this.fontSize = 22, this.accent});
+      {super.key, this.subtitle, this.fontSize = 22, this.accent});
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final titleRow = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Icon(icon,
@@ -55,6 +56,26 @@ class PageTitle extends StatelessWidget {
               fontSize: fontSize,
               fontWeight: FontWeight.w700,
             ),
+          ),
+        ),
+      ],
+    );
+
+    if (subtitle == null) return titleRow;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        titleRow,
+        const Gap(2),
+        Text(
+          subtitle!,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: context.colors.textMuted,
+            fontSize: 13,
           ),
         ),
       ],

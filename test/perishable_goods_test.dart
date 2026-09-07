@@ -65,6 +65,17 @@ Widget _harness({
             // SELLS at tender has its outcome already -- it never reaches the
             // DG -- so the page reads the sale as well as the proposal.
             soldPriceByItem: const <String, double>{},
+            // The same `sent` set the keys above are filtered by, as the map
+            // the page reads. A fixture that marks an item sent must say so
+            // here too, or the row renders as though it never went out.
+            sentByItem: {
+              for (final k in keys)
+                k.itemId: sent.contains('${k.packageId}:${k.itemId}'),
+            },
+            // ⚠️ No fixture here marks a perishable unsold: these are
+            // proposals awaiting the DG, and an item marked unsold at tender
+            // has left that queue.
+            markedUnsoldByItem: const <String, bool>{},
             total: keys.length,
           ));
         }),

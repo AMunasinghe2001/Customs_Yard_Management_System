@@ -701,10 +701,42 @@ class PackageService {
   /// The rows still come back as [PackageModel]; the omitted fields land as
   /// their empty defaults, which no financial calculation touches.
   Future<List<PackageModel>> getPackagesForLedger() async {
+    // ⚠️ The COLUMNS the roll-up reads, not `*`.
+    //
+    // `package_items(*)` and `warehouse_entries(*)` bring 19 and 18 columns;
+    // buildSrFinancials and calculatePackageCharge between them read six and
+    // three. Measured: 420 kB of embedded JSON becomes 117 kB, and the driver
+    // spends its time decoding what nothing looks at -- ~100ms of the page's
+    // wait was JSON parse, not Postgres, which answers this in 15ms.
+    //
+    // The list is exactly what the charge calculation and the roll-up touch:
+    //   package -- sr_number, yard, status, created_at, consignee_name and
+    //              destroying_deposit, the six the row itself shows
+    //   items   -- id (keying the per-item split), quantity (the share),
+    //              status (a seized or disposed item is not charged),
+    //              item_name (the goods name on the row)
+    //   entries -- package_item_id (which item the entry bills), item_count,
+    //              admitted_at / returned_at / is_returned (the storage days)
+    //
+    // Two kinds of column had to stay that the calculation never reads:
+    // package_id, warehouse_id and hold_reason, which fromJson casts non-null
+    // and which throw "type 'Null' is not a subtype of type 'String'" without
+    // them. daily_rate is NOT among them -- the rate comes from the historical
+    // rates map, and the stored column is dead weight.
+    //
+    // Adding a field to that calculation means adding it here; a test asserts
+    // the two lists agree.
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('packages')
-        .select('id, sr_number, yard, status, created_at, consignee_name, '
-            'package_items(*), warehouse_entries(*)')
+        .select(
+            'id, sr_number, yard, status, created_at, consignee_name, '
+            // The destroying deposit is a FIGURE on the ledger row, not an
+            // embed. Dropping it does not throw -- it is nullable -- it
+            // silently reports every deposit as LKR 0.
+            'destroying_deposit, '
+            'package_items(id, package_id, item_name, quantity, status), '
+            'warehouse_entries(id, package_id, warehouse_id, package_item_id, '
+            'item_count, admitted_at, returned_at, is_returned, hold_reason)')
         .order('created_at', ascending: false));
     return [
       for (final e in (data as List))
@@ -777,6 +809,8 @@ class PackageService {
         // unsold_proposals alone. Without this, CED/GL1/SR/30/2026 sold for
         // Rs 5,533,000 and still read "Awaiting Top Management".
         Map<String, double> soldPriceByItem,
+        Map<String, bool> sentByItem,
+        Map<String, bool> markedUnsoldByItem,
         int total
       })> getPerishableRowsPaged({
     required int offset,
@@ -827,13 +861,12 @@ class PackageService {
         q = q.lte('effective_date', to.toIso8601String());
       }
       // ⚠️ Three kinds of answer, and they are not interchangeable: a Top
-      // Management proposal, a sale at tender, or nothing decided yet.
+      // Management proposal, a sale at tender, or genuinely awaiting DG decision.
       if (outcome == kOutcomeSold) {
         q = q.eq('sold', true);
       } else if (outcome == kOutcomeAwaiting) {
-        // Awaiting means NEITHER has happened -- a sold row is not awaiting
-        // anything, even though it has no proposal.
-        q = q.isNull('proposal').eq('sold', false);
+        // Genuinely awaiting DG decision: marked unsold at tender, not sold, no proposal yet
+        q = q.eq('marked_unsold', true).isNull('proposal').eq('sold', false);
       } else if (outcome != null && outcome.isNotEmpty) {
         q = q.eq('proposal', outcome);
       }
@@ -842,7 +875,7 @@ class PackageService {
 
     final rows = await AuthService._withNetworkRetry(() => narrow(supabase
             .from('perishable_rows')
-            .select('package_id, item_id, sold, sold_price'))
+            .select('package_id, item_id, sold, sold_price, sent, marked_unsold'))
         .order('effective_date', ascending: false)
         .range(offset, offset + limit - 1));
     final total = await AuthService._withNetworkRetry(
@@ -861,6 +894,16 @@ class PackageService {
         for (final e in (rows as List))
           if ((e as Map<String, dynamic>)['sold'] == true)
             e['item_id'].toString(): parseDbNum(e['sold_price']) ?? 0,
+      },
+      sentByItem: {
+        for (final e in (rows as List))
+          (e as Map<String, dynamic>)['item_id'].toString():
+              ((e['sent'] as bool?) ?? false),
+      },
+      markedUnsoldByItem: {
+        for (final e in (rows as List))
+          (e as Map<String, dynamic>)['item_id'].toString():
+              ((e['marked_unsold'] as bool?) ?? false),
       },
       total: total as int,
     );
@@ -5548,7 +5591,20 @@ class DisposalService {
   Future<List<TenderSaleModel>> getTenderSalesForLedger() async {
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sales')
-        .select('*, tender_sale_items(*, '
+        // ⚠️ Named columns, not `*`, for the same reason
+        // [getPackagesForLedger] names its own: the roll-up reads four fields
+        // off each item -- sold, sold_price, applied_taxes, and the forfeited
+        // row's item id and SR number -- and `*` brings a dozen more for the
+        // driver to decode.
+        //
+        // The forfeited columns beyond item_id/sr_number are there because
+        // ForfeitedPackageModel.fromJson casts them non-null; trimming them
+        // throws "type 'Null' is not a subtype of type 'String'" at parse
+        // time, which is how that was found the first time.
+        .select('id, sale_number, sale_date, sale_time, sale_end_time, '
+            'tender_type, yard, created_at, '
+            'tender_sale_items(id, tender_sale_id, forfeited_package_id, '
+            'yard, sold, sold_price, applied_taxes, '
             'forfeited_packages(id, item_id, sr_number, package_id, '
             'consignee_name, forfeited_at, appeal_deadline))')
         .order('created_at', ascending: false));

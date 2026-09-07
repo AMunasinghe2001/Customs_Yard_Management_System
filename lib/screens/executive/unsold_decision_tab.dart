@@ -108,32 +108,19 @@ class UnsoldDecisionTab extends ConsumerWidget {
           // take their height from the same kExecutiveFilterPadding.
           Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // The tab strip's own two icons, so each list is marked the
-                  // way the tab that opened it was.
-                  PageTitle(
-                      perishable ? 'Unsold Perishables' : 'Unsold Goods',
-                      perishable
-                          ? Icons.eco_rounded
-                          : Icons.rule_folder_rounded,
-                      accent: accent),
-                  const Gap(2),
-                  Text(
-                      perishable
-                          ? (canDecide
-                              ? 'Failed their Special Tender Sale — goods that spoil get no second round, so decide now'
-                              : 'Failed their Special Tender Sale — the DG decides the outcome')
-                          : (canDecide
-                              ? 'Every avenue exhausted — decide the final outcome'
-                              : 'Every avenue exhausted — the DG decides the final outcome'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                          color: context.colors.textMuted, fontSize: 13)),
-                ],
+              child: PageTitle(
+                perishable ? 'Unsold Perishables' : 'Unsold Goods',
+                perishable
+                    ? Icons.eco_rounded
+                    : Icons.rule_folder_rounded,
+                subtitle: perishable
+                    ? (canDecide
+                        ? 'Failed their Special Tender Sale — goods that spoil get no second round, so decide now'
+                        : 'Failed their Special Tender Sale — the DG decides the outcome')
+                    : (canDecide
+                        ? 'Every avenue exhausted — decide the final outcome'
+                        : 'Every avenue exhausted — the DG decides the final outcome'),
+                accent: accent,
               ),
             ),
             const Gap(16),
@@ -300,6 +287,7 @@ class UnsoldDecisionTab extends ConsumerWidget {
                       total: total,
                       page: page,
                       pageSize: kDispositionPageSize,
+                      accent: accent,
                       onPageChanged: (p) =>
                           ref.read(_uPageProvider(perishable).notifier).state = p,
                     ),

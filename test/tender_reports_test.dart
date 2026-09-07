@@ -23,6 +23,9 @@ TenderSaleModel _sale({
 void main() {
   final reports = _read('lib/screens/reports/reports_screen.dart');
 
+  /// Whitespace collapsed, so a call that wraps across lines still matches.
+  String flat(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
+
   // Each report's block, sliced between its own case label and the next.
   String block(String label, String next) => reports.substring(
       reports.indexOf("case '$label':"), reports.indexOf("case '$next':"));
@@ -69,8 +72,18 @@ void main() {
     test('the yard filter matches per item, not per sale', () {
       // A sale can mix items from a multi-directorate yard, so the
       // sale-level yard code cannot tell them apart.
-      expect(b, contains('sale.items.any((i) => i.yard == _yardArg)'));
-      expect(b, contains('if (_yardArg != null && it.yard != _yardArg) continue;'));
+      //
+      // ⚠️ PER ITEM is the rule; how an item's yard is matched is not.
+      // This pinned `i.yard == _yardArg` and failed when the match grew to
+      // read the SR number's own yard segment as well -- a strictly better
+      // match, and the rule this test guards had not changed.
+      expect(b, contains('sale.items.any((i) => '));
+      expect(b, contains('i.yard'));
+      // And the row loop skips an item from another yard, by the same match.
+      // Whitespace collapsed: the call wraps across lines, and a wrapped
+      // call is exactly what a single-line pattern misses.
+      expect(flat(b),
+          contains('_matchesSelectedYard( it.yard, it.forfeited?.srNumber)'));
     });
   });
 
@@ -100,9 +113,15 @@ void main() {
     });
 
     test('it mirrors the Tender Sales PAGE, not the closed-tender history', () {
-      // Same rule that page applies: unsold items remaining. That is what
-      // makes the report empty exactly when the page is empty.
-      expect(b, contains('sale.items.any((i) => !i.sold)'));
+      // Same rule that page applies: UNDECIDED items remaining. That is
+      // what makes the report empty exactly when the page is empty.
+      //
+      // ⚠️ Not sold is not the same as undecided -- an item marked unsold
+      // has left the page too. This test pinned `!i.sold` alone, which was
+      // the page's rule before marking arrived; it now reads both.
+      final live = b.substring(b.indexOf("case 'tender_day'"));
+      expect(live.substring(0, 900), contains('!i.sold'));
+      expect(live.substring(0, 900), contains('!i.unsold'));
       // ⚠️ And no window. The report used to hide a sale once a
       // working-day deadline passed, which hid work that was still
       // outstanding -- the sale had unmarked items and nobody could see them.
@@ -110,8 +129,11 @@ void main() {
           reason: 'the report is hiding sales that still need a decision');
     });
 
-    test('an item already sold has left the sale, so it is skipped', () {
-      expect(b, contains('if (it.sold) continue;'));
+    test('an item already decided has left the sale, so it is skipped', () {
+      // ⚠️ Sold OR unsold: both are decisions, and a decided item is off
+      // this sheet. The check used to name only `it.sold`.
+      final sheet = b.substring(b.indexOf("case 'tender_day'"));
+      expect(sheet, contains('it.sold || it.unsold) continue;'));
     });
 
     test('the location comes from the newest warehouse entry', () {

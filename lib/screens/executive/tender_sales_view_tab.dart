@@ -70,20 +70,11 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    PageTitle('Tender Sales', Icons.storefront_rounded, accent: accent),
-                    Text(
-                        'Live sales at Central Disposal — a sale leaves this '
-                        'page once every item is decided or its window closes',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                            color: context.colors.textSecondary,
-                            fontSize: 13)),
-                  ],
+                child: PageTitle(
+                  'Tender Sales',
+                  Icons.storefront_rounded,
+                  subtitle: 'Live sales at Central Disposal — a sale leaves this page once every item is decided or its window closes',
+                  accent: accent,
                 ),
               ),
               const Gap(16),
@@ -100,7 +91,7 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
               ),
             ],
           ).animate().fadeIn(duration: 300.ms),
-          const Gap(18),
+          const Gap(12),
           Expanded(
             child: async.when(
               skipLoadingOnReload: true,
@@ -158,7 +149,17 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                         // is what actually marks an item sold or unsold.
                         itemBuilder: (context, i) => TenderSaleCard(
                           sale: pageItems[i],
+                          // Top Management observes; Central Disposal is what
+                          // actually marks an item sold or unsold.
                           readOnly: true,
+                          // ⚠️ But this is a WORKLIST, not a record. An item
+                          // already marked has left Central Disposal's hands
+                          // -- it is on Sold Goods or in the Unsold Tenders
+                          // pool -- and showing it here presents finished work
+                          // as though a decision were still pending. The
+                          // YARD's copy of this card is the record and keeps
+                          // every item.
+                          showDecidedItems: false,
                           isRetender: retenderIds.contains(pageItems[i].id),
                         ),
                       ),
@@ -167,6 +168,7 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                       // The DATABASE's count for this filter.
                       total: total,
                       page: page,
+                      accent: accent,
                       onPageChanged: (p) => setState(() => _page = p),
                     ),
                   ],

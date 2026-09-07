@@ -78,7 +78,28 @@ void main() {
       expect(body, contains("if (outcome == kOutcomeSold) { q = q.eq('sold', true)"));
       // ⚠️ Awaiting means NEITHER has happened. A sold row has no proposal
       // either, so testing only for a null proposal would call it awaiting.
-      expect(body, contains("q.isNull('proposal').eq('sold', false)"));
+      //
+      // The three CONDITIONS, not the order they were chained in -- pinning
+      // the exact expression broke this test when a fourth was added, while
+      // the rule it guards had not changed at all.
+      // Comment lines dropped first, from the RAW source -- flat() has
+      // already collapsed the newlines out of `fn`, so there are no lines
+      // left there to drop. Without this the slice starts at the doc comment
+      // above the parameter, which names kOutcomeAwaiting too.
+      final code = flat(services
+          .substring(services.indexOf('getPerishableRowsPaged'))
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .take(120)
+          .join('\n'));
+      final awaiting = code.substring(code.indexOf('kOutcomeAwaiting'));
+      for (final clause in [
+        "isNull('proposal')",
+        "eq('sold', false)",
+        "eq('marked_unsold', true)",
+      ]) {
+        expect(awaiting.substring(0, 400), contains(clause));
+      }
     });
 
     test('only the perishable page offers it', () {

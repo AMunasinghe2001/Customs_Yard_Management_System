@@ -96,21 +96,13 @@ class FinancialsTab extends ConsumerWidget {
               // Title + subtitle · search · yard · date filter — header controls
               Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      PageTitle('Financials', Icons.account_balance_wallet_rounded, accent: accent),
-                      const Gap(2),
-                      Text(
-                          canEdit
-                              ? 'Income, expenditure and the distribution of sale proceeds'
-                              : 'Income, expenditure and the distribution of sale proceeds \u00b7 view only',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: context.colors.textMuted, fontSize: 13)),
-                    ],
+                  child: PageTitle(
+                    'Financials',
+                    Icons.account_balance_wallet_rounded,
+                    subtitle: canEdit
+                        ? 'Income, expenditure and the distribution of sale proceeds'
+                        : 'Income, expenditure and the distribution of sale proceeds · view only',
+                    accent: accent,
                   ),
                 ),
                 const Gap(12),
@@ -626,6 +618,7 @@ class _GoodsBreakdown extends ConsumerWidget {
         TablePager(
           total: rows.length,
           page: safePage,
+          accent: AppTheme.executiveTeal,
           onPageChanged: (p) => ref.read(_finPageProvider.notifier).state = p,
         ),
       ],

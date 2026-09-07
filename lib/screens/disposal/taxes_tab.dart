@@ -32,8 +32,13 @@ class TaxesTab extends ConsumerWidget {
         children: [
           Row(
             children: [
-              PageTitle('Tax Configuration', Icons.receipt_long_rounded, accent: context.colors.successGreen),
-              const Spacer(),
+              Expanded(
+                child: PageTitle('Tax Configuration', Icons.receipt_long_rounded,
+                    subtitle:
+                        'Statutory tax rates, customs levies, and automated fee calculations',
+                    accent: context.colors.successGreen),
+              ),
+              const Gap(16),
               _TaxSearchField(
                 onChanged: (v) =>
                     ref.read(_taxSearchProvider.notifier).state = v,
@@ -338,7 +343,7 @@ class _TaxSearchFieldState extends State<_TaxSearchField> {
           filled: true,
           fillColor: gold.withOpacity(0.06),
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           border: border(gold.withOpacity(0.4)),
           enabledBorder: border(gold.withOpacity(0.4)),
           focusedBorder: border(gold, 1.5),

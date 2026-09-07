@@ -24,7 +24,7 @@ import '../../widgets/styled_dropdown.dart';
 /// the dropdown's InkWell fills whatever box it is given and its hover splash
 /// would spill past the drawn border.
 const EdgeInsets kExecutiveFilterPadding =
-    EdgeInsets.symmetric(horizontal: 12, vertical: 14);
+    EdgeInsets.symmetric(horizontal: 14, vertical: 13.5);
 
 /// The search box every Top Management Directorate tab uses.
 ///

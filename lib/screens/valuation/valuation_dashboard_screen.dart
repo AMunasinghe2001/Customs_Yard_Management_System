@@ -1176,12 +1176,12 @@ class _UnsoldTendersValTab extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Unsold Tenders', Icons.replay_rounded, accent: gold),
-            const Gap(10),
-            Text('Review bids · set a new valuation for re-tender',
-                style: TextStyle(
-                    color: context.colors.textMuted, fontSize: 13)),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Unsold Tenders', Icons.replay_rounded,
+                  subtitle: 'Review bids · set a new valuation for re-tender',
+                  accent: gold),
+            ),
+            const Gap(16),
             // Search — same style as the Central Disposal Unsold page.
             _ValSearchField(
               value: q,

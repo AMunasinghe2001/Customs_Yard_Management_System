@@ -437,10 +437,14 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 // holding, but the yard is what sends the request.
                 PerishableGoodsScreen(readOnly: true),
                 _SoldPackagesTab(),
-                UnsoldProposalsTab(),
+                UnsoldProposalsTab(
+                    subtitle:
+                        'Packages that exhausted all tender rounds — the DG decides the final outcome'),
                 _DestroyedPackagesTab(),
                 UnsoldProposalsTab(
                     title: 'Government Use Goods',
+                    subtitle:
+                        'Unsold goods assigned to government departments and public institutions',
                     titleIcon: Icons.account_balance_rounded,
                     countNoun: 'For government use',
                     proposalFilter: 'government_use',
@@ -452,6 +456,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'to a government department will appear here.'),
                 UnsoldProposalsTab(
                     title: 'Auction Goods',
+                    subtitle:
+                        'Unsold goods approved and directed for public open auction',
                     titleIcon: Icons.gavel_rounded,
                     countNoun: 'For auction',
                     proposalFilter: 'auction',
@@ -469,6 +475,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                 // not see what it was meant to carry out.
                 UnsoldProposalsTab(
                     title: 'Re-export Goods',
+                    subtitle:
+                        'Unsold goods approved for re-exportation and return to origin',
                     titleIcon: Icons.flight_takeoff_rounded,
                     countNoun: 'For re-export',
                     proposalFilter: 're_export',
@@ -480,6 +488,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'back out of the country will appear here.'),
                 UnsoldProposalsTab(
                     title: 'Converted Goods',
+                    subtitle:
+                        'Unsold goods repurposed, recycled or converted to alternate utility',
                     titleIcon: Icons.autorenew_rounded,
                     countNoun: 'Converted',
                     proposalFilter: 'convert',
@@ -491,6 +501,8 @@ class DisposalDashboardScreen extends ConsumerWidget {
                         'appear here.'),
                 UnsoldProposalsTab(
                     title: 'Removed from the Premises',
+                    subtitle:
+                        'Unsold goods formally cleared and removed from customs storage areas',
                     titleIcon: Icons.logout_rounded,
                     countNoun: 'Removed',
                     proposalFilter: 'remove_from_premises',
@@ -547,6 +559,7 @@ final _unsoldDeliveryFilterProvider =
 class UnsoldProposalsTab extends ConsumerWidget {
   /// Page title, and the word inside the count pill.
   final String title;
+  final String? subtitle;
   final String countNoun;
 
   /// One of [kUnsoldProposals], or null to list every unsold package.
@@ -577,6 +590,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
   const UnsoldProposalsTab({
     super.key,
     this.title = 'Unsold Goods',
+    this.subtitle,
     this.titleIcon = Icons.pending_actions_rounded,
     this.countNoun = 'Unsold',
     this.proposalFilter,
@@ -664,7 +678,9 @@ class UnsoldProposalsTab extends ConsumerWidget {
               // fixed 300 and the yard filter a fixed 220, so a bare Text had
               // nowhere to shrink and the Row overflowed by 47px at 752 wide.
               Expanded(
-                child: PageTitle(title, titleIcon, accent: context.colors.successGreen),
+                child: PageTitle(title, titleIcon,
+                    subtitle: subtitle,
+                    accent: context.colors.successGreen),
               ),
               const Gap(12),
               DisposalSearch(
@@ -832,6 +848,7 @@ class UnsoldProposalsTab extends ConsumerWidget {
                           total: total,
                           page: page,
                           pageSize: kDispositionPageSize,
+                          accent: context.colors.successGreen,
                           onPageChanged: (p) => ref
                               .read(_unsoldPageProvider(tabKey).notifier)
                               .state = p,
@@ -1240,8 +1257,13 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Sold Goods', Icons.sell_rounded, accent: context.colors.successGreen),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Sold Goods', Icons.sell_rounded,
+                  subtitle:
+                      'Packages successfully awarded and sold at commercial tender',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: 'sold', hint: 'Search SR / item / sold by…'),
             const Gap(12),
@@ -1642,8 +1664,13 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Destroyed Goods', Icons.delete_forever_rounded, accent: context.colors.successGreen),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Destroyed Goods', Icons.delete_forever_rounded,
+                  subtitle:
+                      'Condemned packages destroyed and documented under customs supervision',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: 'destroyed', hint: 'Search SR / item / by…'),
             const Gap(12),
@@ -1811,6 +1838,7 @@ class _DestroyedPackagesTabState extends ConsumerState<_DestroyedPackagesTab> {
                       total: total,
                       page: _page,
                       pageSize: _pageSize,
+                      accent: green,
                       onPageChanged: (p) => setState(() => _page = p),
                     ),
                   ],
@@ -2188,8 +2216,13 @@ class _DisposalRequestsTabState extends ConsumerState<_DisposalRequestsTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Disposal Requests', Icons.assignment_turned_in_rounded, accent: context.colors.successGreen),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Disposal Requests', Icons.assignment_turned_in_rounded,
+                  subtitle:
+                      'Incoming disposition requests from customs yards awaiting review',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: 'requests', hint: 'Search SR / consignee…'),
             const Gap(12),
@@ -2701,8 +2734,13 @@ class _UnsoldReTenderTabState extends ConsumerState<_UnsoldReTenderTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Unsold Goods — Re-tender', Icons.replay_rounded, accent: context.colors.successGreen),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Unsold Goods — Re-tender', Icons.replay_rounded,
+                  subtitle:
+                      'Failed tender rounds undergoing re-valuation and tender re-scheduling',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: 'unsold', hint: 'Search SR / item / consignee…'),
             const Gap(12),
@@ -2992,8 +3030,13 @@ class _TenderSalesTabState extends ConsumerState<_TenderSalesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Tender Sales', Icons.storefront_rounded, accent: context.colors.successGreen),
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Tender Sales', Icons.storefront_rounded,
+                  subtitle:
+                      'Active commercial tenders, scheduled auctions, and bidding windows',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: 'tendersales', hint: 'Search sale no / SR…'),
             const Gap(12),
@@ -3166,8 +3209,27 @@ class TenderSaleCard extends ConsumerStatefulWidget {
   /// True when this sale re-tenders an item that went unsold in an earlier
   /// tender sale — shown as a "Re-tender" badge in the card header.
   final bool isRetender;
+
+  /// List every item, decided or not.
+  ///
+  /// ⚠️ `readOnly` used to mean this as well, and the two are not the same
+  /// thing. The YARD's page is a RECORD: it cannot act, and it wants the whole
+  /// outcome of the sale. Top Management's is a WORKLIST like Central
+  /// Disposal's -- it cannot act either, but an item already marked Sold or
+  /// Unsold has left the directorate's hands, and showing it again presents
+  /// finished work as though a decision were still pending.
+  ///
+  /// So the yard passes true and Top Management does not, while both stay
+  /// read-only.
+  final bool showDecidedItems;
+
   const TenderSaleCard(
-      {required this.sale, this.readOnly = false, this.isRetender = false});
+      {required this.sale,
+      this.readOnly = false,
+      this.isRetender = false,
+      // Default true: the yard's page is the one that had this behaviour, and
+      // every existing caller is that page.
+      this.showDecidedItems = true});
 
   @override
   ConsumerState<TenderSaleCard> createState() => _TenderSaleCardState();
@@ -3219,7 +3281,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     // Unmarked items stay, however long that takes: they used to vanish when a
     // working-day deadline passed, which left an officer no way to record the
     // outcome of a sale they had simply not got to yet.
-    final Iterable<TenderSaleItemModel> source = widget.readOnly
+    final Iterable<TenderSaleItemModel> source = widget.showDecidedItems
         ? widget.sale.items
         : widget.sale.items.where((s) => !s.sold && !s.unsold);
 
@@ -4681,14 +4743,13 @@ class _CommitteesTabState extends ConsumerState<_CommitteesTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            PageTitle('Tender Committees', Icons.groups_rounded, accent: context.colors.successGreen),
-            // ⚠️ No subtitle. This was the ONLY tab of sixteen carrying one,
-            // and at any real window width it ellipsised mid-sentence -- so it
-            // read as a broken line rather than as help. The empty state below
-            // already says the same thing in full, where someone actually
-            // needs it: "The Top Management Directorate appoints a committee
-            // for packages still unsold after Tender 3."
-            const Spacer(),
+            Expanded(
+              child: PageTitle('Tender Committees', Icons.groups_rounded,
+                  subtitle:
+                      'High-level committee valuations for packages unsold after Tender 3',
+                  accent: context.colors.successGreen),
+            ),
+            const Gap(16),
             const DisposalSearch(
                 tabKey: 'committees', hint: 'Search SR / item / consignee…'),
             const Gap(12),

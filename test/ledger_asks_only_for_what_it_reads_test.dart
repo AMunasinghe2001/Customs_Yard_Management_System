@@ -36,9 +36,8 @@ void main() {
       final body = flat(services.substring(
           start, services.indexOf('Future<List<PackageModel>> getAllPackages(')));
 
-      // What the roll-up genuinely needs.
-      expect(body, contains('package_items(*)'));
-      expect(body, contains('warehouse_entries(*)'));
+      expect(body, contains('package_items('));
+      expect(body, contains('warehouse_entries('));
 
       // ⚠️ And not the three it never touches. warehouses() and the two
       // profile joins are 419 kB of JSON for figures nobody adds up.
@@ -48,6 +47,57 @@ void main() {
       expect(body.contains('profiles(*)'), isFalse);
     });
 
+    test('every field the roll-up reads is in the select', () {
+      // ⚠️ The PROPERTY, not the mechanism. The select was narrowed from
+      // `package_items(*)` to a named list, which is faster and also silent
+      // when it is wrong: a missing nullable column does not throw, it just
+      // reports zero. destroying_deposit was dropped exactly that way and
+      // every deposit on the page read LKR 0 until this test was written.
+      //
+      // So the check is against what buildSrFinancials and
+      // calculatePackageCharge actually touch. Adding a figure to either means
+      // adding its column here and to the select -- which is the point.
+      final start = services.indexOf('getPackagesForLedger');
+      final body = flat(services.substring(
+          start, services.indexOf('Future<List<PackageModel>> getAllPackages(')));
+
+      const readByTheRollUp = [
+        // The row itself
+        'sr_number', 'yard', 'status', 'created_at', 'consignee_name',
+        'destroying_deposit',
+        // Per item: the split key, its share, whether it is chargeable, its name
+        'quantity', 'item_name',
+        // Per entry: which item it bills, how many units, and the days
+        'package_item_id', 'item_count', 'admitted_at', 'returned_at',
+        'is_returned',
+      ];
+      for (final column in readByTheRollUp) {
+        expect(body, contains(column),
+            reason: '$column is read by the financial roll-up but is not '
+                'asked for -- it will silently read as zero or null');
+      }
+    });
+
+    test('it does not ask for the rate column it never uses', () {
+      // calculatePackageCharge takes its rate from the historical rates map,
+      // day by day; warehouse_entries.daily_rate is not consulted. It is the
+      // one column that was safe to drop, so dropping it is worth pinning.
+      //
+      // ⚠️ Comment lines dropped first. The comment above the select NAMES
+      // daily_rate to record why it is absent, and a plain substring check
+      // reads that as the column still being asked for -- the same trap the
+      // provider check below already carries a warning about.
+      final start = services.indexOf('getPackagesForLedger');
+      final body = flat(services
+          .substring(start,
+              services.indexOf('Future<List<PackageModel>> getAllPackages('))
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n'));
+      expect(body.contains('daily_rate'), isFalse,
+          reason: 'the rate comes from the rates map, not the stored column');
+    });
+
     test('there is a sales query that stops at the forfeited row', () {
       expect(services,
           contains('Future<List<TenderSaleModel>> getTenderSalesForLedger'));
@@ -55,8 +105,14 @@ void main() {
       final body = flat(services.substring(start,
           services.indexOf('Future<List<TenderSaleModel>> getTenderSales(')));
 
-      expect(body, contains('tender_sale_items(*'));
+      expect(body, contains('tender_sale_items('));
       expect(body, contains('forfeited_packages('));
+
+      // The four fields the proceeds and tax totals read off each sale item.
+      for (final column in ['sold', 'sold_price', 'applied_taxes']) {
+        expect(body, contains(column),
+            reason: '$column is summed by buildSrFinancials');
+      }
 
       // ⚠️ The three levels below it: the roll-up reads the forfeited row's
       // item id and SR number, and nothing under it.
@@ -110,13 +166,37 @@ void main() {
           reason: 'a caller of buildSrFinancials still loads the heavy sales');
     });
 
-    test('they still run in parallel', () {
-      // ⚠️ Awaiting one after another means waiting for the sum. This was
-      // already true and must stay true: the saving is per-query, and serial
-      // execution would give half of it back.
-      final fn = flat(providers.substring(
-          providers.indexOf('final srFinancialsProvider')));
-      expect(fn.substring(0, 900), contains('await Future.wait(['));
+    test('they run one after another, not in Future.wait', () {
+      // ⚠️ This test used to assert the OPPOSITE, and was wrong.
+      //
+      // Future.wait looks like the fast shape and is not, because the wait is
+      // not the network. Postgres answers the packages query in 15ms; the rest
+      // is the driver decoding rows into Dart objects on this isolate.
+      // Issued together the four responses arrive together and then queue for
+      // that one thread, so every query's latency grows for the same total
+      // work. Measured against the live database, warm, three runs:
+      //
+      //     one after another   167ms  186ms  204ms
+      //     Future.wait         298ms  303ms  371ms
+      //
+      // If this is ever changed back, change it because a measurement says so.
+      final fn = flat(providers
+          .substring(providers.indexOf('final srFinancialsProvider'),
+              providers.indexOf('/// Totals a set of SR rows'))
+          .split('\n')
+          .where((l) => !l.trimLeft().startsWith('//'))
+          .join('\n'));
+      expect(fn.contains('Future.wait('), isFalse,
+          reason: 'measured slower than awaiting them one after another');
+      // All four are still fetched -- serial, not dropped.
+      for (final call in [
+        'getPackagesForLedger()',
+        'getTenderSalesForLedger()',
+        'getFinancialExpenses()',
+        'storageRateProvider',
+      ]) {
+        expect(fn, contains(call));
+      }
     });
   });
 
