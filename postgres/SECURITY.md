@@ -336,3 +336,85 @@ The three open items are all server configuration on the live machine, not app
 code. None is remotely exploitable while `listen_addresses = localhost`, and
 **all three must be closed before the database accepts its first network
 connection.**
+
+---
+
+## 6. User-level policies (MFA, passwords, RBAC)
+
+Applied by [52_user_security_policies.sql](52_user_security_policies.sql).
+Audit with `python tool/audit_user_security.py`.
+
+### Second factor
+
+The OTP-gated portals are Central Disposal, Valuation, Appeal, Executive and
+ICT. `kDevSkipOtp` used to be a plain `const bool` a developer flipped to
+`true` and was trusted to flip back — a second-factor bypass for every
+privileged portal, one forgotten line from shipping, with nothing in the built
+`.exe` to reveal it.
+
+It is now the AND of two things:
+
+```dart
+const bool kDevSkipOtp = _devSkipOtpDefine && !kReleaseMode;
+```
+
+- **`!kReleaseMode`** — a release build can never skip OTP, whatever the source
+  says. This is the half that cannot be forgotten.
+- **`--dart-define=DEV_SKIP_OTP=true`** — an explicit per-build opt-in, so
+  skipping OTP is something typed on a command line, not a state the repository
+  can be committed in.
+
+⚠️ `kReleaseMode`, not `!kDebugMode`: a **profile** build is neither, and
+keying off `kDebugMode` would have left profile builds able to skip the code.
+
+### Password strength
+
+**`public.password_policy_violation(text)` is the single definition** —
+12+ characters, upper, lower, digit, special, no common word, 128 max (bcrypt
+only hashes 72 bytes, so a longer one is refused rather than silently
+truncated). It returns the first failure as a sentence, or null.
+
+Called by `auth.sign_up` and `auth.change_password`, which is what makes it a
+control: both are reachable as RPCs without going through any screen.
+
+⚠️ Before this, **14 screens each carried their own `length < 8` check, one
+still allowed 6, and the server accepted anything over 5.** The weakest rule
+anywhere is the one that actually applies — and it was the server's.
+`PasswordPolicy` in `lib/core/security_policy.dart` now mirrors the SQL so the
+user sees the rule before submitting; a test pins the mirror to the migration
+so the two cannot drift.
+
+`auth.change_password` also **refuses the current password**. Without that, a
+90-day expiry prompt is satisfied by retyping the same password, which resets
+the clock and changes nothing.
+
+### Rotation
+
+`profiles.password_updated_at` (trigger-maintained) anchors a 90-day life with
+a 7-day warning. `public.password_age_status(uuid)` answers server-side —
+defaulting to the caller, and allowing another user's row only for `admin` /
+`ict`. `public.password_rotation_status` lists ages for the admin panel.
+
+⚠️ The SQL warns from **day 83** because the client warns for the last 7 days
+of 90. If you change one, change the other, or the app nags on a different day
+than the server and it reads as a bug.
+
+### RBAC
+
+Roles are enforced **in the database**, not by hiding buttons. 16 screens hide
+controls by role, and that is cosmetic — every privileged path is re-checked
+server-side by RLS policies and by explicit guards inside the functions.
+
+⚠️ **`SECURITY DEFINER` functions run with the definer's rights, so RLS does
+not apply inside them.** Whatever such a function does not check, it permits.
+The audit therefore checks every `SECURITY DEFINER` function that *writes*:
+19 of them, each re-verifying the caller (or listed as exempt with a reason —
+pre-authentication functions and triggers).
+
+**Found and fixed:** `disposal_toggle_outcome_delivery` was `SECURITY DEFINER`,
+granted to **`public`** (which includes `anon`), and asked nothing about its
+caller — while marking goods handed over *and* closing the warehouse entry. Any
+account could release any consignment in any yard. It now carries the same
+guard as its sibling `disposal_toggle_delivery_status` (Central Disposal, or an
+officer of that yard) and is granted to `authenticated` only. Verified live: a
+wrong-yard officer gets `not authorized`; Central Disposal is allowed.

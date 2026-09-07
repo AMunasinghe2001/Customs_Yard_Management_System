@@ -13,6 +13,7 @@ import '../../models/models.dart';
 import '../../services/services.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
 
 /// Two-step login for the Executive Office: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -268,8 +269,11 @@ class _ExecutiveLoginScreenState extends ConsumerState<ExecutiveLoginScreen> {
 
   Future<void> _submitNewPassword() async {
     final newPass = _newPassCtrl.text;
-    if (newPass.length < 8) {
-      setState(() => _error = 'Password must be at least 8 characters.');
+    // The database enforces this too (password_policy_violation); checking
+    // here just tells the user before a round trip.
+    final policyError = PasswordPolicy.violation(newPass);
+    if (policyError != null) {
+      setState(() => _error = policyError);
       return;
     }
     if (newPass != _confirmPassCtrl.text) {

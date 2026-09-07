@@ -11,6 +11,7 @@ import '../../core/providers.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
 
 /// Creates one of the two institutional Appeal Directorate accounts (AD / ADD).
 /// Position-based, head-office accounts (not personal) — only one per position
@@ -408,9 +409,7 @@ class _AppealSignupScreenState extends ConsumerState<AppealSignupScreen> {
                                     () => _obscurePass = !_obscurePass),
                               ),
                             ),
-                            validator: (v) => v == null || v.length < 8
-                                ? 'Min 8 characters'
-                                : null,
+                            validator: PasswordPolicy.validate,
                           ),
                           const Gap(14),
                           TextFormField(

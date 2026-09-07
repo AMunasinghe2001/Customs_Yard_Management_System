@@ -2703,3 +2703,41 @@ Built it and checked the output rather than trusting the flag: `AuthService`, `P
 The obfuscation check also flagged one script four times, judging per LINE when a build script legitimately spreads the two flags across an argument array and mentions `--obfuscate` again in its docs. Judge per FILE.
 
 `PG_PASSWORD` still defaults to `'postgres'` — removing it would break every local install, so `usingDefaultPassword` reports it and release builds say so out loud.
+
+## User-level security: the bypass, the 14 rules, and the RPC that asked nothing (2026-09-07)
+
+Third security pass — MFA, passwords, RBAC. One real hole, one real weakness, and RBAC that turned out to be genuinely sound.
+
+### ⚠️ `kDevSkipOtp` was one line from shipping a 2FA bypass
+
+`const bool kDevSkipOtp = false;` with a comment saying "flip back before shipping". A comment is a note, not a control — set it true and every privileged portal (Disposal, Valuation, Appeal, Executive, ICT) signs in on password alone, and **nothing in the built `.exe` would say so**.
+
+Now `_devSkipOtpDefine && !kReleaseMode`: a release build **cannot** skip OTP whatever the source says, and skipping it needs `--dart-define=DEV_SKIP_OTP=true` — something typed for one build, not a state the repo can be committed in.
+
+⚠️ `kReleaseMode`, not `!kDebugMode` — **profile builds are neither**, and would have kept the bypass.
+
+### ⚠️ The weakest password rule was the server's
+
+14 screens each carried their own `length < 8`; the forgot-password panel still allowed **6**; and `auth.sign_up` / `auth.change_password` accepted **anything over 5**. Client validation is a courtesy — both functions are reachable as RPCs — so **the rule that actually applied was the weakest one, on the server**.
+
+`public.password_policy_violation()` is now the single definition (12+, upper/lower/digit/special, no common word, 128 max because **bcrypt only hashes 72 bytes** — refuse rather than silently truncate). `PasswordPolicy` in Dart mirrors it, and a test pins the mirror to the migration so they cannot drift. All 14 call sites now delegate.
+
+`change_password` also **refuses the current password** — otherwise a 90-day prompt is satisfied by retyping the same one, resetting the clock and changing nothing.
+
+Rotation already existed client-side; `password_age_status()` now answers server-side too. ⚠️ SQL warns from **day 83** = 90 − 7, matching `ProfileModel.passwordWarnDays`. Change one, change the other.
+
+### ⚠️ `disposal_toggle_outcome_delivery` — SECURITY DEFINER, granted to `public`, no caller check
+
+It marks goods handed over **and closes the warehouse entry**, and asked nothing about who was calling. **SECURITY DEFINER means RLS does not apply inside it**, so any account — `public` includes `anon` — could release any consignment in any yard. Its own comment claimed "same shape as disposal_toggle_delivery_status"; that sibling checks, this one never did.
+
+Fixed with the sibling's exact guard and granted to `authenticated`. **Verified live in a rolled-back transaction**: wrong-yard officer → `not authorized`; Central Disposal → allowed.
+
+Otherwise RBAC is sound: 19 SECURITY DEFINER writers, every non-exempt one re-verifying the caller. Screen-level hiding (16 screens) is cosmetic and the DB re-checks independently.
+
+### ⚠️ Three more checker bugs — migrations redefine functions
+
+The audit reported 5 false failures because it read **every** definition of a function instead of the **last**. `04_auth.sql` still holds the original `sign_up`; migration `52_` replaces it. Files apply in name order, so **last definition wins** — the live DB agreed with 52 while the checker was quoting 04. Same trap hit the RBAC scan and the "weak length rule" check.
+
+Also: `update\s+\w` matched the word "update" inside `password_updated_at`, flagging two read-only `select` functions as unguarded writers — a function declared `stable`/`immutable` **cannot** write, so check that first. And anchoring "stale password rule" on the word "pass" within 200 characters matched `parts.length < 3`.
+
+**Verify a clean audit by breaking something on purpose** — flipping `kDevSkipOtp = true` and planting a weak rule both got caught.

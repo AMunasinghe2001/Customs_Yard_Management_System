@@ -8,6 +8,7 @@ import 'package:gap/gap.dart';
 import '../core/providers.dart';
 import '../core/theme.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import '../core/security_policy.dart';
 
 /// "I forgot my password", in three steps: name the account, prove you can
 /// read its mailbox, then set a new password.
@@ -115,8 +116,10 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
     if (s.contains('reset_not_available')) {
       return 'This account can no longer be reset. Contact the ICT Directorate.';
     }
-    if (s.contains('at least 6')) {
-      return 'Choose a password of at least 6 characters.';
+    // The server returns the policy's own wording (password_policy_violation),
+    // so pass it through rather than restating a rule that can drift.
+    if (s.contains('password must') || s.contains('password contains')) {
+      return e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
     }
     return 'Something went wrong. Please try again.';
   }
@@ -436,10 +439,9 @@ class _ForgotPasswordPanelState extends ConsumerState<ForgotPasswordPanel> {
           validator: (v) {
             final t = v ?? '';
             if (t.isEmpty) return 'New password required';
-            // The same minimum auth.change_password enforces, checked here so
-            // it is reported on the field rather than as a save failure.
-            if (t.length < 6) return 'At least 6 characters';
-            return null;
+            // The same rule auth.change_password enforces, checked here so it
+            // is reported on the field rather than as a save failure.
+            return PasswordPolicy.violation(t);
           },
         ),
         const Gap(14),

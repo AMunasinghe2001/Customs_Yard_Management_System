@@ -16,6 +16,7 @@ import '../../core/app_session.dart';
 import '../../services/services.dart';
 import '../../widgets/app_shell.dart';
 import '../../widgets/status_chip.dart';
+import '../../core/security_policy.dart';
 
 class EditProfileScreen extends ConsumerStatefulWidget {
   const EditProfileScreen({super.key});
@@ -427,7 +428,8 @@ class _EditProfileScreenState extends ConsumerState<EditProfileScreen> {
                         ),
                         validator: (v) {
                           if (v == null || v.isEmpty) return null; // optional
-                          if (v.length < 8) return 'Min 8 characters';
+                          // Blank means "leave the password alone"; a typed one must pass.
+                          return PasswordPolicy.violation(v);
                           return null;
                         },
                       ),

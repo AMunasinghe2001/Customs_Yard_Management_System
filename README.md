@@ -135,6 +135,7 @@ without a rebuild. Precedence is `--dart-define` > `.env` > compiled default.
 ```bash
 python tool/audit_client_security.py     # secrets, release logging, build flags
 python tool/audit_network_security.py    # TLS, SQL injection, RLS, exposure
+python tool/audit_user_security.py       # OTP/2FA, password policy, RBAC
 ```
 
 Both exit non-zero on a critical finding, so they can gate a release. See

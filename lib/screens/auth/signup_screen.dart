@@ -10,6 +10,7 @@ import '../../services/services.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
 
 class SignupScreen extends ConsumerStatefulWidget {
   const SignupScreen({super.key});
@@ -272,9 +273,7 @@ class _SignupScreenState extends ConsumerState<SignupScreen> {
                               ),
                             ),
                             obscureText: _obscurePass,
-                            validator: (v) => v == null || v.length < 8
-                                ? 'Min 8 characters'
-                                : null,
+                            validator: PasswordPolicy.validate,
                           )
                               .animate()
                               .slideX(

@@ -137,13 +137,22 @@ void main() {
       expect(src, contains('The passwords do not match'));
     });
 
-    test('the minimum length matches what the database enforces', () {
-      // auth.change_password raises below 6, so checking here reports it on
-      // the field instead of as a save failure.
-      expect(src, contains('At least 6 characters'));
+    test('the strength rule matches what the database enforces', () {
+      // The field checks the SAME rule auth.change_password raises on, so it
+      // is reported on the field instead of as a save failure.
+      //
+      // ⚠️ That rule used to be "at least 6 characters", stated separately
+      // here and in 04_auth.sql. It is now one policy —
+      // password_policy_violation in SQL, PasswordPolicy in Dart — so this
+      // asserts the panel DELEGATES rather than restating a length of its own,
+      // which is what let the two drift apart before.
+      expect(src, contains('PasswordPolicy.violation(t)'));
+      expect(src, isNot(contains('At least 6 characters')));
+
+      final policy = _read('postgres/52_user_security_policies.sql');
+      expect(policy, contains('length(p_password) < 12'));
+
       final sql = _read('postgres/05_password_reset.sql');
-      final auth = _read('postgres/04_auth.sql');
-      expect(auth, contains('length(p_password) < 6'));
       expect(sql, contains('perform auth.change_password(v_id, p_password);'),
           reason: 'the reset must reuse the one setter, not re-hash itself');
     });

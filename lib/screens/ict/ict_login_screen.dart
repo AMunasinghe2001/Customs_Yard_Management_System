@@ -12,6 +12,7 @@ import '../../core/dev_config.dart';
 import '../../models/models.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
 
 /// Two-step login for the ICT Directorate: password first, then an email
 /// OTP that must be verified on EVERY sign-in (identical flow to the appeal/
@@ -299,8 +300,11 @@ class _IctLoginScreenState extends ConsumerState<IctLoginScreen> {
   Future<void> _submitPasswordChange() async {
     final newPass = _newPassCtrl.text;
     final confirm = _confirmPassCtrl.text;
-    if (newPass.length < 8) {
-      setState(() => _error = 'Password must be at least 8 characters long');
+    // The database enforces this too (password_policy_violation); checking
+    // here just tells the user before a round trip.
+    final policyError = PasswordPolicy.violation(newPass);
+    if (policyError != null) {
+      setState(() => _error = policyError);
       return;
     }
     if (newPass != confirm) {

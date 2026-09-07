@@ -9,6 +9,7 @@ import '../../widgets/directorate_yard_picker.dart';
 import '../../services/services.dart';
 import '../../core/providers.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
 
 class OfficerSignupScreen extends ConsumerStatefulWidget {
   const OfficerSignupScreen({super.key});
@@ -416,9 +417,7 @@ class _OfficerSignupScreenState extends ConsumerState<OfficerSignupScreen> {
                               ),
                             ),
                             obscureText: _obscurePass,
-                            validator: (v) => v == null || v.length < 8
-                                ? 'Min 8 characters'
-                                : null,
+                            validator: PasswordPolicy.validate,
                           )
                               .animate()
                               .slideX(

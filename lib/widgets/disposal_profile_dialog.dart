@@ -11,6 +11,7 @@ import '../core/supabase_client.dart';
 import '../models/models.dart';
 import '../services/services.dart';
 import 'error_view.dart';
+import '../core/security_policy.dart';
 
 /// Profile view + edit dialog for an institutional directorate account
 /// (Central Disposal DC/SDDC, Appeal AD/ADD). Opened from the account chip in
@@ -483,7 +484,8 @@ class _DisposalProfileDialogState extends ConsumerState<DisposalProfileDialog> {
           ),
           validator: (v) {
             if (v == null || v.isEmpty) return null;
-            if (v.length < 8) return 'Min 8 characters';
+            // Blank means "leave the password alone"; a typed one must pass.
+                          return PasswordPolicy.violation(v);
             return null;
           },
         ),

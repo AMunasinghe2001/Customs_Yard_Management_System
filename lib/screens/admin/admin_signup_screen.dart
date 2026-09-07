@@ -11,6 +11,7 @@ import '../../services/services.dart';
 import '../../core/providers.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
 
 class AdminSignupScreen extends ConsumerStatefulWidget {
   const AdminSignupScreen({super.key});
@@ -539,9 +540,7 @@ class _AdminSignupScreenState extends ConsumerState<AdminSignupScreen> {
                                 ),
                               ),
                               obscureText: _obscurePass,
-                              validator: (v) => v == null || v.length < 8
-                                  ? 'Min 8 characters'
-                                  : null,
+                              validator: PasswordPolicy.validate,
                             )
                                 .animate()
                                 .slideX(

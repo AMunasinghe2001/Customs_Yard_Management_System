@@ -10,6 +10,7 @@ import '../../core/providers.dart';
 import '../../widgets/brand_panel.dart';
 import '../../widgets/styled_dropdown.dart';
 import '../../widgets/auth_back_button.dart';
+import '../../core/security_policy.dart';
 
 /// Creates institutional ICT Directorate accounts.
 /// Follows the exact directorate registration pattern (matching Disposal / Valuation).
@@ -410,9 +411,7 @@ class _IctSignupScreenState extends ConsumerState<IctSignupScreen> {
                                     () => _obscurePass = !_obscurePass),
                               ),
                             ),
-                            validator: (v) => v == null || v.length < 8
-                                ? 'Min 8 characters'
-                                : null,
+                            validator: PasswordPolicy.validate,
                           ),
                           const Gap(14),
                           TextFormField(
