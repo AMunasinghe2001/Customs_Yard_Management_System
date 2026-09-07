@@ -90,7 +90,7 @@ class _ValuationDashboardScreenState
         children: [
           // ── Top bar ──────────────────────────────────────────
           Container(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+            padding: const EdgeInsets.fromLTRB(24, 10, 24, 10),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.centerLeft,
@@ -214,7 +214,7 @@ class _ValuationDashboardScreenState
           // ── Tab bar ──────────────────────────────────────────
           Container(
             color: context.colors.cardDark,
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+            padding: const EdgeInsets.fromLTRB(20, 6, 20, 6),
             child: Container(
               decoration: BoxDecoration(
                 color: context.colors.surfaceDark,
@@ -1123,7 +1123,7 @@ class _ValSearchFieldState extends State<_ValSearchField> {
           filled: true,
           fillColor: gold.withOpacity(0.06),
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           border: border(gold.withOpacity(0.4)),
           enabledBorder: border(gold.withOpacity(0.4)),
           focusedBorder: border(gold, 1.5),
@@ -1169,7 +1169,7 @@ class _ValYardFilter extends ConsumerWidget {
           isDense: true,
           menuWidth: 220,
           contentPadding:
-              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 13.5),
           prefixIcon:
               Icon(Icons.warehouse_rounded, color: gold, size: 20),
           options: [
@@ -1247,7 +1247,9 @@ class _UnsoldTendersValTab extends ConsumerWidget {
       valuationRoundsOnly: true,
     )));
     return Padding(
-      padding: const EdgeInsets.all(24),
+      // ⚠️ 16, not 24 -- matching Central Disposal. A table page spends its
+      // vertical space on rows, not on chrome.
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

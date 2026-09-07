@@ -65,17 +65,21 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
   Widget build(BuildContext context) {
     final accent = AppTheme.appealPurple;
     final profile = ref.watch(currentProfileProvider);
-    final async = ref.watch(appealForfeitedPackagesProvider);
     final storageRate = ref.watch(storageRateProvider).valueOrNull ??
         {DateTime(2020, 1, 1): 50.0};
 
-    // Pre-compute counts for tab labels
-    final allList = async.valueOrNull ?? [];
-    final activeCount = allList
-        .where((f) => !f.hasAppealDecision &&
-            (!f.isAppealExpired || f.isAppealHeld))
-        .length;
-    final decidedCount = allList.where((f) => f.hasAppealDecision).length;
+    // ⚠️ The tab labels count in SQL, unfiltered.
+    //
+    // They were folded from a fetch of EVERY forfeited package in the
+    // country -- the same fetch both tabs then filtered and paged in Dart.
+    // The counts stay unfiltered on purpose: a tab label says how much work
+    // the directorate holds, not how much the current search matches.
+    final counts = ref.watch(appealPageProvider(
+        const AppealQuery(decided: false, page: 0)));
+    final decidedCounts = ref.watch(appealPageProvider(
+        const AppealQuery(decided: true, page: 0)));
+    final activeCount = counts.valueOrNull?.total ?? 0;
+    final decidedCount = decidedCounts.valueOrNull?.total ?? 0;
 
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
@@ -247,7 +251,6 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
               controller: _tabController,
               children: [
                 _ActiveTab(
-                  async: async,
                   accent: accent,
                   storageRate: storageRate,
                   page: _activePage,
@@ -259,7 +262,6 @@ class _AppealDashboardScreenState extends ConsumerState<AppealDashboardScreen>
                   listCard: _listCard,
                 ),
                 _DecidedTab(
-                  async: async,
                   accent: accent,
                   storageRate: storageRate,
                   page: _decidedPage,
@@ -544,7 +546,7 @@ class _TabBadge extends StatelessWidget {
 }
 
 class _ActiveTab extends ConsumerStatefulWidget {
-  final AsyncValue<List<ForfeitedPackageModel>> async;
+
   final Color accent;
   final Map<DateTime, double> storageRate;
   final int page;
@@ -556,7 +558,6 @@ class _ActiveTab extends ConsumerStatefulWidget {
   final Widget Function(BuildContext, Widget) listCard;
 
   const _ActiveTab({
-    required this.async,
     required this.accent,
     required this.storageRate,
     required this.page,
@@ -576,6 +577,19 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.accent;
+    // ⚠️ One page from SQL, filters included. This tab used to take a fetch of
+    // every forfeited package in the country, filter it here and page it with
+    // `pageSlice` — which still loads everything, it only renders less.
+    // `appeal_rows` (postgres/45) carries all five membership rules, asserted
+    // row-for-row against the model on live data.
+    final search = ref.watch(_appealSearchProvider).trim();
+    final query = AppealQuery(
+      page: widget.page,
+      decided: false,
+      search: search.isEmpty ? null : search,
+      yardFilter: ref.watch(_appealYardProvider),
+    );
+    final feed = ref.watch(appealPageProvider(query));
     return Padding(
       // ⚠️ 16, not 24 -- see Central Disposal. A table page spends its
       // vertical space on rows, not on chrome.
@@ -628,55 +642,37 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           // Stat chips
-          widget.async.maybeWhen(
-            data: (list) {
-              final active = list
-                  .where((f) => !f.hasAppealDecision &&
-                      (!f.isAppealExpired || f.isAppealHeld))
-                  .toList();
-              final held = active.where((f) => f.isAppealHeld).length;
-              final openWindow = active.where((f) => !f.isAppealHeld).length;
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 14),
-                child: Row(children: [
-                  _StatChip(label: 'Active', value: '${active.length}', color: context.colors.accentLightBlue),
-                  const Gap(12),
-                  _StatChip(label: 'In Appeal Window', value: '$openWindow', color: context.colors.successGreen),
-                  const Gap(12),
-                  _StatChip(label: 'On Appeal Hold', value: '$held', color: context.colors.warningAmber),
-                ]),
-              ).animate().fadeIn(duration: 300.ms);
-            },
+          // ⚠️ Counted in SQL over the whole active set under the same
+          // filters — not the page. Folded from twenty rows these would report
+          // twenty appeals however many the directorate is holding.
+          feed.maybeWhen(
+            data: (data) => Padding(
+              padding: const EdgeInsets.only(bottom: 14),
+              child: Row(children: [
+                _StatChip(label: 'Active', value: '${data.active}', color: context.colors.accentLightBlue),
+                const Gap(12),
+                _StatChip(label: 'In Appeal Window', value: '${data.inWindow}', color: context.colors.successGreen),
+                const Gap(12),
+                _StatChip(label: 'On Appeal Hold', value: '${data.held}', color: context.colors.warningAmber),
+              ]),
+            ).animate().fadeIn(duration: 300.ms),
             orElse: () => const SizedBox.shrink(),
           ),
           Expanded(
-            child: widget.async.when(
+            child: feed.when(
               skipLoadingOnReload: true,
               loading: () => Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(appealForfeitedPackagesProvider)),
-              data: (list) {
-                final q = ref.watch(_appealSearchProvider).toLowerCase();
-                final yard = ref.watch(_appealYardProvider);
-                var rows = list
-                    .where((f) => !f.hasAppealDecision &&
-                        (!f.isAppealExpired || f.isAppealHeld))
-                    .toList();
-                if (yard != null) {
-                  rows = rows
-                      .where((f) => matchesYardFilter(yard, f.yard, f.srNumber))
-                      .toList();
-                }
-                // Soonest deadline first, so the appeals needing attention
-                // most urgently lead instead of being paged out of sight.
-                rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
-                if (q.isNotEmpty) {
-                  rows = rows.where((f) =>
-                      f.srNumber.toLowerCase().contains(q) ||
-                      f.consigneeName.toLowerCase().contains(q) ||
-                      widget.itemName(f).toLowerCase().contains(q)).toList();
-                }
+                  onRetry: () => ref.refresh(appealPageProvider(query))),
+              data: (data) {
+                // ⚠️ Nothing is filtered or sorted here any more. The
+                // membership, the yard, the search and the soonest-deadline
+                // order are all in the SQL above — sorting a page would order
+                // twenty rows within themselves and leave the appeals needing
+                // attention most urgently paged out of sight, which is the
+                // very thing that sort existed to prevent.
+                final rows = data.rows;
                 return Column(children: [
                   Expanded(
                     child: widget.listCard(context,
@@ -700,16 +696,18 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
                           DataColumn2(label: Center(child: Text('Appeal State')), size: ColumnSize.S, fixedWidth: 150),
                           DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                         ],
-                        rows: pageSlice(rows, widget.page, kClientPageSize)
+                        rows: rows
                             .map((f) => widget.buildRow(context, f, widget.storageRate))
                             .toList(),
                       ),
                     ),
                   ),
+                  // ⚠️ Against the SERVER's count: `rows.length` is the page
+                  // size now and would pin the pager to page 1.
                   TablePager(
-                    total: rows.length,
+                    total: data.total,
                     page: widget.page,
-                    pageSize: kClientPageSize,
+                    pageSize: kDispositionPageSize,
                     onPageChanged: widget.onPageChanged,
                   ),
                 ]);
@@ -724,7 +722,7 @@ class _ActiveTabState extends ConsumerState<_ActiveTab> {
 
 // ── Decided Packages tab ──────────────────────────────────────────────────────
 class _DecidedTab extends ConsumerStatefulWidget {
-  final AsyncValue<List<ForfeitedPackageModel>> async;
+
   final Color accent;
   final Map<DateTime, double> storageRate;
   final int page;
@@ -735,7 +733,6 @@ class _DecidedTab extends ConsumerStatefulWidget {
   final Widget Function(BuildContext, Widget) listCard;
 
   const _DecidedTab({
-    required this.async,
     required this.accent,
     required this.storageRate,
     required this.page,
@@ -754,6 +751,20 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
   @override
   Widget build(BuildContext context) {
     final accent = widget.accent;
+    // One page from SQL, like the Active tab — the same view, the other flag.
+    //
+    // ⚠️ Ordered by when the ruling was MADE, newest first. This tab sorted by
+    // appeal deadline, carrying the Active tab's comment about "the appeals
+    // needing attention most urgently" — which says nothing about a closed
+    // appeal. A record is read newest-first.
+    final search = ref.watch(_appealSearchProvider).trim();
+    final query = AppealQuery(
+      page: widget.page,
+      decided: true,
+      search: search.isEmpty ? null : search,
+      yardFilter: ref.watch(_appealYardProvider),
+    );
+    final feed = ref.watch(appealPageProvider(query));
     return Padding(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -803,30 +814,15 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
           ]).animate().fadeIn(duration: 300.ms),
           const Gap(14),
           Expanded(
-            child: widget.async.when(
+            child: feed.when(
               skipLoadingOnReload: true,
               loading: () => Center(child: CircularProgressIndicator(color: accent)),
               error: (e, _) => ErrorView(
                   error: e,
-                  onRetry: () => ref.refresh(appealForfeitedPackagesProvider)),
-              data: (list) {
-                final q = ref.watch(_appealSearchProvider).toLowerCase();
-                final yard = ref.watch(_appealYardProvider);
-                var rows = list.where((f) => f.hasAppealDecision).toList();
-                if (yard != null) {
-                  rows = rows
-                      .where((f) => matchesYardFilter(yard, f.yard, f.srNumber))
-                      .toList();
-                }
-                // Soonest deadline first, so the appeals needing attention
-                // most urgently lead instead of being paged out of sight.
-                rows.sort((a, b) => a.appealDeadline.compareTo(b.appealDeadline));
-                if (q.isNotEmpty) {
-                  rows = rows.where((f) =>
-                      f.srNumber.toLowerCase().contains(q) ||
-                      f.consigneeName.toLowerCase().contains(q) ||
-                      widget.itemName(f).toLowerCase().contains(q)).toList();
-                }
+                  onRetry: () => ref.refresh(appealPageProvider(query))),
+              data: (data) {
+                // Membership, filters and order all live in the SQL above.
+                final rows = data.rows;
                 return Column(children: [
                   Expanded(
                     child: widget.listCard(context,
@@ -850,16 +846,17 @@ class _DecidedTabState extends ConsumerState<_DecidedTab> {
                           DataColumn2(label: Center(child: Text('Decision')), size: ColumnSize.S, fixedWidth: 160),
                           DataColumn2(label: Center(child: Text('Details')), size: ColumnSize.S, fixedWidth: 70),
                         ],
-                        rows: pageSlice(rows, widget.page, kClientPageSize)
+                        rows: rows
                             .map((f) => widget.buildDecidedRow(context, f, widget.storageRate))
                             .toList(),
                       ),
                     ),
                   ),
+                  // ⚠️ Against the SERVER's count, as on the Active tab.
                   TablePager(
-                    total: rows.length,
+                    total: data.total,
                     page: widget.page,
-                    pageSize: kClientPageSize,
+                    pageSize: kDispositionPageSize,
                     onPageChanged: widget.onPageChanged,
                   ),
                 ]);

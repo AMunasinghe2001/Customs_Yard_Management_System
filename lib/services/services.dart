@@ -7912,6 +7912,183 @@ class DisposalService {
 // Cross-yard read of forfeited packages (genuine forfeits only) so the Appeal
 // Directorate can place / lift an appeal hold while the 30-day window is open.
 class AppealService {
+  /// One PAGE of an Appeal tab, chosen in SQL.
+  ///
+  /// ⚠️ Both tabs used to fetch EVERY forfeited package in the country --
+  /// through packages, their items and their warehouse entries, ~208ms -- then
+  /// expand, filter and page the result in Dart with
+  /// `pageSlice(rows, page, kClientPageSize)`. Client-side paging still loads
+  /// everything; it only renders less.
+  ///
+  /// Five rules decided what the directorate sees and every one of them ran
+  /// here. `appeal_rows` (postgres/45) carries all five, transcribed from the
+  /// model and asserted row-for-row against it on the live data -- 136 rows,
+  /// 20 active, 9 decided, identical either way.
+  ///
+  /// The heavy detail is then fetched for THIS page only: the table shows the
+  /// goods name and deadline, and its popup the whole package.
+  Future<({List<ForfeitedPackageModel> rows, int total, int active, int inWindow, int held})>
+      getAppealRowsPaged({
+    required int offset,
+    required int limit,
+
+    /// Which tab: the appeals still open, or the ones already ruled on.
+    required bool decided,
+    String? search,
+    String? yardFilter,
+  }) async {
+    PgQuery narrow(PgQuery q) {
+      q = decided ? q.eq('has_decision', true) : q.eq('is_active', true);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'goods_name.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+      }
+      return q;
+    }
+
+    final idRows = await AuthService._withNetworkRetry(() =>
+        narrow(supabase
+                .from('appeal_rows')
+                .select('forfeited_package_id, item_id'))
+            // ⚠️ Soonest deadline first on the ACTIVE tab, so the appeals
+            // needing attention most urgently lead instead of being paged out
+            // of sight. The decided tab reads newest-ruling-first, which is
+            // the order a record is looked through.
+            .order(decided ? 'appeal_decided_at' : 'appeal_deadline',
+                ascending: !decided)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(
+        () => narrow(supabase.from('appeal_rows')).count());
+
+    // ⚠️ The three stat chips count the whole ACTIVE set under the same
+    // search and yard, whichever tab is open -- never the page, and never the
+    // decided rows. They were folded from the fetched list, which was every
+    // forfeit in the country; folded from a page they would report twenty.
+    //
+    // Their own narrowing, because `narrow` above answers to `decided`: on the
+    // Decided tab it would have counted rulings and labelled them Active.
+    PgQuery narrowActive(PgQuery q) {
+      q = q.eq('is_active', true);
+      final s = search?.trim() ?? '';
+      if (s.isNotEmpty) {
+        q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+            'goods_name.ilike.%$s%');
+      }
+      if (yardFilter != null && yardFilter.isNotEmpty) {
+        q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+      }
+      return q;
+    }
+
+    final active = await AuthService._withNetworkRetry(
+        () => narrowActive(supabase.from('appeal_rows')).count());
+    final inWindow = await AuthService._withNetworkRetry(() =>
+        narrowActive(supabase.from('appeal_rows'))
+            .eq('in_appeal_window', true)
+            .count());
+    final held = await AuthService._withNetworkRetry(() =>
+        narrowActive(supabase.from('appeal_rows')).eq('is_held', true).count());
+
+    final ids = <String>[];
+    final itemForFp = <String, String?>{};
+    for (final e in (idRows as List)) {
+      final m = e as Map<String, dynamic>;
+      final fpId = m['forfeited_package_id'].toString();
+      ids.add(fpId);
+      itemForFp[fpId] = m['item_id']?.toString();
+    }
+    if (ids.isEmpty) {
+      return (
+        rows: const <ForfeitedPackageModel>[],
+        total: total as int,
+        active: active as int,
+        inWindow: inWindow as int,
+        held: held as int
+      );
+    }
+
+    final rows = await _appealRowsForIds(ids, itemForFp);
+    return (
+      rows: rows,
+      total: total as int,
+      active: active as int,
+      inWindow: inWindow as int,
+      held: held as int
+    );
+  }
+
+  /// The full detail behind a page of appeal rows.
+  ///
+  /// ⚠️ The view names a (forfeited row, item) pair; the model this screen
+  /// is built on is one object per ROW, with `itemId` set to the item the row
+  /// is about. So the fetched forfeited rows are re-pointed at the item the
+  /// view chose -- the same thing the Dart expansion did, for one page.
+  Future<List<ForfeitedPackageModel>> _appealRowsForIds(
+      List<String> ids, Map<String, String?> itemForFp) async {
+    final data = await AuthService._withNetworkRetry(() => supabase
+        .from('forfeited_packages')
+        .select(
+            '*, packages(*, package_items(*), warehouse_entries(*, warehouses(*), returned_profile:profiles!returned_by(full_name, badge_number)))')
+        .inFilter('id', ids.toSet().toList()));
+
+    final byId = <String, ForfeitedPackageModel>{
+      for (final e in (data as List))
+        (e as Map<String, dynamic>)['id'].toString():
+            ForfeitedPackageModel.fromJson(e)
+    };
+
+    // Keep the view order: it sorted the page, and re-sorting here would
+    // quietly disagree with the page boundaries.
+    final out = <ForfeitedPackageModel>[];
+    for (final fpId in ids) {
+      final f = byId[fpId];
+      if (f == null) continue;
+      final itemId = itemForFp[fpId];
+      if (itemId == null) {
+        out.add(f);
+        continue;
+      }
+      final item =
+          f.packageDetails?.items.where((i) => i.id == itemId).firstOrNull;
+      // ⚠️ Re-point even when the id already matches. `forfeited_packages`
+      // stores no item_name, so a row fetched straight from it carries a null
+      // one — and the screen's fallback then shows the package's FIRST item,
+      // which is the wrong goods on any multi-item package. The name has to
+      // be read off the item the row is actually about.
+      if (itemId == f.itemId && item?.itemName == f.itemName) {
+        out.add(f);
+        continue;
+      }
+      out.add(ForfeitedPackageModel(
+        id: f.id,
+        packageId: f.packageId,
+        srNumber: f.srNumber,
+        consigneeName: f.consigneeName,
+        forfeitedAt: f.forfeitedAt,
+        appealDeadline: f.appealDeadline,
+        reason: f.reason,
+        yard: f.yard,
+        source: f.source,
+        appealHold: f.appealHold,
+        appealHoldNote: f.appealHoldNote,
+        appealHeldAt: f.appealHeldAt,
+        heldItemIds: f.heldItemIds,
+        appealDecision: f.appealDecision,
+        appealDecisionNote: f.appealDecisionNote,
+        appealDecidedAt: f.appealDecidedAt,
+        itemAppealDecisions: f.itemAppealDecisions,
+        packageDetails: f.packageDetails,
+        itemId: itemId,
+        itemName: item?.itemName ?? f.itemName,
+      ));
+    }
+    return out;
+  }
+
   /// Every genuine forfeited package across all yards (newest deadline first),
   /// with full package + warehouse detail. Unlike the disposal query this does
   /// NOT exclude tendered / requested packages — appeals can be raised at any

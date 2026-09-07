@@ -1674,6 +1674,68 @@ final disposalForfeitedPackagesProvider =
 /// Everything the Appeal Directorate can act on: genuine forfeits (which have
 /// real forfeited_packages rows) PLUS Detain / Abandoned / "Other" goods still
 /// inside their 30-day window (synthesised, since they have no row yet).
+/// What one page of an Appeal tab is asking for.
+///
+/// ⚠️ `decided` belongs in the key as much as the page number does. The two
+/// tabs are one query with one flag flipped; a key without it would serve the
+/// Decided tab whatever Active had cached, and an officer would be looking at
+/// closed appeals believing they were open.
+@immutable
+class AppealQuery {
+  final int page;
+  final bool decided;
+  final String? search;
+  final String? yardFilter;
+
+  const AppealQuery({
+    this.page = 0,
+    required this.decided,
+    this.search,
+    this.yardFilter,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is AppealQuery &&
+      other.page == page &&
+      other.decided == decided &&
+      other.search == search &&
+      other.yardFilter == yardFilter;
+
+  @override
+  int get hashCode => Object.hash(page, decided, search, yardFilter);
+}
+
+/// One page of an Appeal tab, with the counts its stat chips show.
+typedef AppealPage = ({
+  List<ForfeitedPackageModel> rows,
+  int total,
+  /// ⚠️ Counted over the whole ACTIVE set under the same filters, on either
+  /// tab -- these chips describe the directorate's workload, not the page.
+  int active,
+  int inWindow,
+  int held,
+});
+
+/// The Appeal Directorate's feed, a page at a time.
+///
+/// ⚠️ Both tabs used to watch [appealForfeitedPackagesProvider] -- every
+/// forfeited package in the country with its package, items and warehouse
+/// entries -- then filter it and page it with `pageSlice`. Client-side paging
+/// still loads everything; it only renders less. `appeal_rows` (postgres/45)
+/// carries all five membership rules.
+final appealPageProvider =
+    FutureProvider.family<AppealPage, AppealQuery>((ref, q) async {
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  return ref.read(appealServiceProvider).getAppealRowsPaged(
+        offset: q.page * kDispositionPageSize,
+        limit: kDispositionPageSize,
+        decided: q.decided,
+        search: (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim(),
+        yardFilter: q.yardFilter,
+      );
+});
+
 final appealForfeitedPackagesProvider =
     FutureProvider<List<ForfeitedPackageModel>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
