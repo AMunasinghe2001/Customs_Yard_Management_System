@@ -56,34 +56,37 @@ class FinancialsTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final accent = AppTheme.executiveTeal;
-    final rowsAsync = ref.watch(srFinancialsProvider);
     final canEdit = !isExecutiveViewOnly(ref.watch(currentProfileProvider));
-    final q = ref.watch(_finSearchProvider).trim().toLowerCase();
+    final q = ref.watch(_finSearchProvider).trim();
     final yardFilter = ref.watch(_finYardProvider);
     final dateFilterType = ref.watch(_finDateFilterTypeProvider);
     final dateRange = ref.watch(_finDateRangeProvider);
+    final page = ref.watch(_finPageProvider);
 
-    return rowsAsync.when(
+    // WARN The filter goes to SQL, not to a `.where` over the whole ledger.
+    //
+    // This page used to load every SR in the system -- each package with its
+    // items and warehouse entries, every tender sale, every expense row --
+    // and filter, page and total them here. That is what made it take a
+    // second or two to open. The view answers all three in SQL now, and the
+    // totals still run over the WHOLE filter rather than the page, so the
+    // cards keep describing the same slice the table lists.
+    final query = FinancialsQuery(
+      page: page,
+      search: q.isEmpty ? null : q,
+      yardFilter: yardFilter,
+      dateStart: dateFilterType == 'all' ? null : dateRange?.start,
+      dateEnd: dateFilterType == 'all' ? null : dateRange?.end,
+    );
+    final pageAsync = ref.watch(financialsPageProvider(query));
+
+    return pageAsync.when(
       loading: () => Center(child: CircularProgressIndicator(color: accent)),
-      error: (e, _) =>
-          ErrorView(error: e, onRetry: () => ref.refresh(srFinancialsProvider)),
-      data: (all) {
-        // Filter FIRST, then total — so every card on the page reports the
-        // same slice the table below it lists.
-        var filtered = all.where((r) => !r.isEmpty);
-        if (yardFilter != null) {
-          filtered = filtered.where((r) => matchesYardFilter(
-              yardFilter, r.yard ?? yardOfSrNumber(r.srNumber), r.srNumber));
-        }
-        if (dateRange != null && dateFilterType != 'all') {
-          filtered = filtered.where((r) => _matchesDateRange(r, dateRange));
-        }
-        if (q.isNotEmpty) {
-          filtered =
-              filtered.where((r) => r.srNumber.toLowerCase().contains(q));
-        }
-        final rows = filtered.toList();
-        final sum = summariseSrs(rows);
+      error: (e, _) => ErrorView(
+          error: e, onRetry: () => ref.refresh(financialsPageProvider(query))),
+      data: (data) {
+        final rows = data.rows;
+        final sum = data.totals;
 
         return SingleChildScrollView(
       // ⚠️ 16, not 24. These pages are TABLES, and vertical chrome is rows
@@ -244,7 +247,7 @@ class FinancialsTab extends ConsumerWidget {
                   .slideY(begin: 0.06),
               const Gap(12),
 
-              _GoodsBreakdown(rows: rows)
+              _GoodsBreakdown(rows: rows, total: data.total)
                   .animate()
                   .fadeIn(duration: 500.ms)
                   .slideY(begin: 0.06),
@@ -561,18 +564,25 @@ class _SplitTile extends StatelessWidget {
 /// Laid out like every other table in the portal: the heading sits ABOVE the
 /// card, and the card holds nothing but the table.
 class _GoodsBreakdown extends ConsumerWidget {
-  final List<SrFinancials> rows;
-  const _GoodsBreakdown({required this.rows});
+  /// This page's rows -- already the page, not the ledger.
+  final List<SrLedgerRow> rows;
+
+  /// How many rows the FILTER matches, from the server's own count. The pager
+  /// needs the total; the table only ever holds one page of it.
+  final int total;
+
+  const _GoodsBreakdown({required this.rows, required this.total});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final page = ref.watch(_finPageProvider);
 
-    // A filter can leave the pager past the end of the list.
-    final maxPage = rows.isEmpty ? 0 : (rows.length - 1) ~/ kClientPageSize;
+    // WARN Clamped against the SERVER's count. This used to page a list held
+    // in memory; with the rows coming a page at a time, `rows.length` is the
+    // page size and would pin the pager to page 1.
+    final maxPage = total == 0 ? 0 : (total - 1) ~/ kDispositionPageSize;
     final safePage = page.clamp(0, maxPage);
-    final pageRows =
-        rows.skip(safePage * kClientPageSize).take(kClientPageSize).toList();
+    final pageRows = rows;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -616,7 +626,7 @@ class _GoodsBreakdown extends ConsumerWidget {
           ),
         ),
         TablePager(
-          total: rows.length,
+          total: total,
           page: safePage,
           accent: AppTheme.executiveTeal,
           onPageChanged: (p) => ref.read(_finPageProvider.notifier).state = p,
@@ -632,7 +642,7 @@ class _GoodsBreakdown extends ConsumerWidget {
 /// lines, the three expenditure lines, the net, then the proceeds split — so a
 /// reader can trace any headline figure down to the SR that produced it.
 class _GoodsBreakdownTable extends ConsumerWidget {
-  final List<SrFinancials> rows;
+  final List<SrLedgerRow> rows;
   const _GoodsBreakdownTable({required this.rows});
 
   @override
@@ -798,20 +808,14 @@ class _GoodsBreakdownTable extends ConsumerWidget {
   static String _dash(double v) => v == 0 ? '\u2014' : _money.format(v);
 }
 
-bool _matchesDateRange(SrFinancials r, DateTimeRange range) {
-  final d = r.date;
-  if (d != null) {
-    return !d.isBefore(range.start) && !d.isAfter(range.end);
-  }
-  final yearMatch = RegExp(r'\b(20\d{2})\b').firstMatch(r.srNumber);
-  if (yearMatch != null) {
-    final srYear = int.tryParse(yearMatch.group(1)!);
-    if (srYear != null) {
-      return srYear >= range.start.year && srYear <= range.end.year;
-    }
-  }
-  return true;
-}
+// ⚠️ The date filter moved into SQL, and so did its fallback.
+//
+// This used to be `_matchesDateRange`, applied in Dart over the whole
+// ledger. It had a rule worth keeping: an SR with no date of its own falls
+// back to the YEAR IN ITS SR NUMBER rather than dropping out of a filtered
+// view. That rule now lives in the view's `activity_date` -- the SR's first
+// warehouse admission, else its entry date, else the year matched out of the
+// SR number -- so a dateless SR is still found by a year filter.
 
 String _getDateFilterLabel(String type, DateTimeRange? range) {
   if (range == null || type == 'all') return 'All Time';

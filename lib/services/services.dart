@@ -1133,6 +1133,134 @@ class PackageService {
     return out;
   }
 
+  /// One PAGE of the Financials ledger, from the `sr_financials` view.
+  ///
+  /// ⚠️ The Financials page used to load the WHOLE ledger and filter it in
+  /// Dart: every package with its items and warehouse entries, every tender
+  /// sale, every expense row -- decoded on the UI isolate so a header strip
+  /// could add up ten numbers. That is what made the page take a second or two
+  /// to appear.
+  ///
+  /// The view computes the same ten figures per SR (postgres/41, whose verify
+  /// block asserts them against what the page was showing), so filtering,
+  /// ordering, paging and totalling all happen in SQL.
+  Future<({List<SrLedgerRow> rows, int total})> getSrFinancialsPaged({
+    required int offset,
+    required int limit,
+    String? search,
+    String? yardFilter,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+  }) async {
+    final rows = await AuthService._withNetworkRetry(() =>
+        _narrowFinancials(
+                supabase.from('sr_financials').select(
+                    'sr_number, yard, consignee_name, goods_name, quantity, '
+                    'package_count, sr_charges, destroying_deposit, '
+                    'sale_proceeds, taxes, destruction_expense, '
+                    'advertising_expense, labour_expense, transport_expense, '
+                    'auction_expense, deposit_spent, refund, activity_date'),
+                search: search,
+                yardFilter: yardFilter,
+                dateStart: dateStart,
+                dateEnd: dateEnd)
+            .order('activity_date', ascending: false)
+            .range(offset, offset + limit - 1));
+    final total = await AuthService._withNetworkRetry(() => _narrowFinancials(
+          supabase.from('sr_financials'),
+          search: search,
+          yardFilter: yardFilter,
+          dateStart: dateStart,
+          dateEnd: dateEnd,
+        ).count());
+
+    return (
+      rows: [
+        for (final e in (rows as List))
+          SrLedgerRow.fromJson(e as Map<String, dynamic>)
+      ],
+      total: total as int,
+    );
+  }
+
+  /// The ten totals across every SR the filter matches.
+  ///
+  /// ⚠️ Its own query, over the WHOLE filter rather than the page. Summing
+  /// twenty rows would report one page of money as the directorate's total --
+  /// the same mistake the Expenses tab had to be corrected for.
+  Future<FinancialSummary> getSrFinancialTotals({
+    String? search,
+    String? yardFilter,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+  }) async {
+    final rows = await AuthService._withNetworkRetry(() => _narrowFinancials(
+          supabase.from('sr_financials').select(
+              'sr_charges, destroying_deposit, sale_proceeds, taxes, '
+              'destruction_expense, advertising_expense, labour_expense, '
+              'transport_expense, auction_expense, refund'),
+          search: search,
+          yardFilter: yardFilter,
+          dateStart: dateStart,
+          dateEnd: dateEnd,
+        ));
+
+    double col(String key) => (rows as List).fold<double>(
+        0, (a, r) => a + (parseDbNum((r as Map<String, dynamic>)[key]) ?? 0));
+
+    return FinancialSummary(
+      srCharges: col('sr_charges'),
+      destroyingDeposits: col('destroying_deposit'),
+      saleProceeds: col('sale_proceeds'),
+      taxes: col('taxes'),
+      destructionExpenses: col('destruction_expense'),
+      advertisingExpenses: col('advertising_expense'),
+      labourExpenses: col('labour_expense'),
+      transportExpenses: col('transport_expense'),
+      auctionExpenses: col('auction_expense'),
+      // ⚠️ Summed as the view computed it, per SR and floored at zero. A
+      // refund is the unspent part of ONE SR's deposit, so an SR that
+      // overspent refunds nothing rather than a negative -- it cannot be
+      // derived from the deposit and spend totals.
+      refunds: col('refund'),
+    );
+  }
+
+  /// The filter the ledger page applies, shared by its rows, its count and its
+  /// totals.
+  ///
+  /// ⚠️ ONE closure for all three. When the rows and the totals narrow
+  /// separately they drift, and the strip then reports money the table below
+  /// it does not list.
+  PgQuery _narrowFinancials(
+    PgQuery q, {
+    String? search,
+    String? yardFilter,
+    DateTime? dateStart,
+    DateTime? dateEnd,
+  }) {
+    final s = search?.trim() ?? '';
+    if (s.isNotEmpty) {
+      q = q.or('sr_number.ilike.%$s%,consignee_name.ilike.%$s%,'
+          'goods_name.ilike.%$s%');
+    }
+    if (yardFilter != null && yardFilter.isNotEmpty) {
+      // ⚠️ The SR prefix as well as the yard column: a row with no yard of
+      // its own must not be hidden from a yard it plainly belongs to, which is
+      // the fallback the page already applied in Dart.
+      q = q.or('yard.eq.$yardFilter,sr_number.ilike.%/$yardFilter/%');
+    }
+    if (dateStart != null) {
+      final from = DateTime(dateStart.year, dateStart.month, dateStart.day);
+      q = q.gte('activity_date', from.toIso8601String());
+    }
+    if (dateEnd != null) {
+      final to = DateTime(dateEnd.year, dateEnd.month, dateEnd.day, 23, 59, 59);
+      q = q.lte('activity_date', to.toIso8601String());
+    }
+    return q;
+  }
+
   /// What has been spent against each of [srNumbers], keyed by SR number.
   ///
   /// ⚠️ ONE query for a whole page. The Destroyed Goods table used to read

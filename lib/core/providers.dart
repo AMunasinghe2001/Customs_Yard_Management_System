@@ -2025,60 +2025,6 @@ final financialExpensesProvider =
 final financialExpensesRefreshProvider =
     StateNotifierProvider<RefreshTrigger, int>((ref) => RefreshTrigger());
 
-/// Every figure the Financials tab shows, computed in one place.
-///
-/// INCOME is derived from records the system already holds:
-///   SR (storage) charges  — accrued on every warehouse entry
-///   Destroying deposits   — packages.destroying_deposit, one per SR
-///   Sale proceeds         — tender_sale_items.sold_price
-///   Taxes                 — the applied_taxes attached to those sales
-///
-/// EXPENSES are the hand-entered rows above.
-///
-/// The sale-proceeds split is NOT part of income/expenditure — it says where
-/// the proceeds go afterwards, so it is reported separately.
-class FinancialSummary {
-  final double srCharges;
-  final double destroyingDeposits;
-  final double saleProceeds;
-  final double taxes;
-
-  final double destructionExpenses;
-  final double advertisingExpenses;
-  final double labourExpenses;
-  final double transportExpenses;
-  final double auctionExpenses;
-  final double refunds;
-
-  const FinancialSummary({
-    this.srCharges = 0,
-    this.destroyingDeposits = 0,
-    this.saleProceeds = 0,
-    this.taxes = 0,
-    this.destructionExpenses = 0,
-    this.advertisingExpenses = 0,
-    this.labourExpenses = 0,
-    this.transportExpenses = 0,
-    this.auctionExpenses = 0,
-    this.refunds = 0,
-  });
-
-  double get totalIncome =>
-      srCharges + destroyingDeposits + saleProceeds + taxes;
-
-  double get totalExpenditure =>
-      destructionExpenses +
-      advertisingExpenses +
-      labourExpenses +
-      transportExpenses +
-      auctionExpenses +
-      refunds;
-
-  double get netBalance => totalIncome - totalExpenditure;
-
-  /// Where the sale proceeds are distributed. Independent of the net balance.
-  SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
-}
 
 /// The ledger, one [SrFinancials] row per SR — cross-yard.
 ///
@@ -2495,6 +2441,94 @@ final financialSummaryProvider = FutureProvider<FinancialSummary>(
 final disposalTaxesProvider =
     FutureProvider<List<DisposalTaxModel>>((ref) async {
   return ref.read(disposalServiceProvider).getTaxes();
+});
+
+/// What one page of the Financials tab is asking for.
+///
+/// ⚠️ Every field appears in BOTH `==` and `hashCode`. A family key that
+/// forgets one never refetches when that field changes -- the page silently
+/// keeps showing the previous filter's rows.
+@immutable
+class FinancialsQuery {
+  final int page;
+  final String? search;
+  final String? yardFilter;
+  final DateTime? dateStart;
+  final DateTime? dateEnd;
+
+  const FinancialsQuery({
+    required this.page,
+    this.search,
+    this.yardFilter,
+    this.dateStart,
+    this.dateEnd,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is FinancialsQuery &&
+      other.page == page &&
+      other.search == search &&
+      other.yardFilter == yardFilter &&
+      other.dateStart == dateStart &&
+      other.dateEnd == dateEnd;
+
+  @override
+  int get hashCode =>
+      Object.hash(page, search, yardFilter, dateStart, dateEnd);
+}
+
+/// One page of the Financials ledger, plus the totals over the whole filter.
+typedef FinancialsPage = ({
+  List<SrLedgerRow> rows,
+  FinancialSummary totals,
+  int total,
+});
+
+/// The Financials tab: a PAGE of rows and the totals for the whole filter.
+///
+/// ⚠️ The tab used to watch [srFinancialsProvider] -- every package in
+/// every yard with its items and warehouse entries, every tender sale and
+/// every expense row -- then filter and total them in Dart. 420 kB of JSON
+/// decoded on the UI isolate so a header strip could show ten numbers, which
+/// is what made the page take a second or two to open.
+///
+/// Both queries read `sr_financials` (postgres/41), which computes the same
+/// ten figures per SR in SQL; the view's verify block asserts them against
+/// what the page was showing before it existed.
+final financialsPageProvider =
+    FutureProvider.family<FinancialsPage, FinancialsQuery>((ref, q) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  ref.watch(destructionsChangeTriggerProvider);
+  ref.watch(financialExpensesRefreshProvider);
+
+  final svc = ref.read(packageServiceProvider);
+  final search = (q.search?.trim().isEmpty ?? true) ? null : q.search!.trim();
+
+  // ⚠️ One after another, for the reason [srFinancialsProvider] measures:
+  // both decode on this isolate, so issuing them together only makes each wait
+  // longer for the same total work.
+  final page = await svc.getSrFinancialsPaged(
+    offset: q.page * kDispositionPageSize,
+    limit: kDispositionPageSize,
+    search: search,
+    yardFilter: q.yardFilter,
+    dateStart: q.dateStart,
+    dateEnd: q.dateEnd,
+  );
+
+  // ⚠️ The totals run over the WHOLE filter, including when the page is
+  // empty: a filter that matches money but no rows on page 1 must still report
+  // that money.
+  final totals = await svc.getSrFinancialTotals(
+    search: search,
+    yardFilter: q.yardFilter,
+    dateStart: q.dateStart,
+    dateEnd: q.dateEnd,
+  );
+
+  return (rows: page.rows, totals: totals, total: page.total);
 });
 
 final recentPackagesProvider = FutureProvider<List<PackageModel>>((ref) async {

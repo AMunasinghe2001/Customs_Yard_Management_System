@@ -3350,8 +3350,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
     // Only once bidding has STARTED: before that there is nothing to act on,
     // and highlighting every future special sale would make the mark mean
     // nothing.
-    final urgentPerishable = !widget.readOnly &&
-        !allSold &&
+    final urgentPerishable = !allSold &&
         widget.sale.isPerishableSale &&
         widget.sale.saleTimePassed;
     final amber = context.colors.warningAmber;
@@ -3448,10 +3447,7 @@ class _TenderSaleCardState extends ConsumerState<TenderSaleCard> {
                       ),
                     ]),
                     // How long this sale has been waiting to be marked.
-                    // Central Disposal only -- the yard's read-only view is
-                    // not the one who has to act.
-                    if (!widget.readOnly &&
-                        !allSold &&
+                    if (!allSold &&
                         widget.sale.sinceSaleStarted != null) ...[
                       const Gap(6),
                       _ElapsedSinceSale(

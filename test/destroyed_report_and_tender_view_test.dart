@@ -194,8 +194,11 @@ void main() {
     test('it has a yard dropdown, matched per item not per sale', () {
       // A sale can mix items from a multi-directorate yard, so the
       // sale-level yard code cannot tell them apart.
-      expect(tenderTab, contains('_YardPicker('));
-      expect(tenderTab, contains("StyledDropdownOption('__all__', 'All Yards')"));
+      // ⚠️ A yard DROPDOWN, not one particular widget. This named
+      // `_YardPicker` and broke when the tab moved to the portal's shared
+      // ExecutiveYardFilter -- which is what made every Top Management
+      // dropdown look alike, and left the rule here untouched.
+      expect(tenderTab, contains('YardFilter('));
       // ⚠️ The per-ITEM match is in SQL now -- tender_sale_summary carries a
       // pipe-wrapped list of every yard a sale TOUCHES, precisely so the
       // filter cannot key on the sale's own code. The reason it is per item

@@ -1490,6 +1490,202 @@ class SrFinancials {
   bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
 }
 
+/// The ten figures the Financials page's header strip shows.
+///
+/// ⚠️ A MODEL, not a provider. It lived in providers.dart, which
+/// services.dart cannot import -- providers imports services, and the other
+/// direction would be a cycle. Moving it here is what lets the service
+/// return the totals SQL computed instead of the page folding them in Dart.
+/// Every figure the Financials tab shows, computed in one place.
+///
+/// INCOME is derived from records the system already holds:
+///   SR (storage) charges  — accrued on every warehouse entry
+///   Destroying deposits   — packages.destroying_deposit, one per SR
+///   Sale proceeds         — tender_sale_items.sold_price
+///   Taxes                 — the applied_taxes attached to those sales
+///
+/// EXPENSES are the hand-entered rows above.
+///
+/// The sale-proceeds split is NOT part of income/expenditure — it says where
+/// the proceeds go afterwards, so it is reported separately.
+class FinancialSummary {
+  final double srCharges;
+  final double destroyingDeposits;
+  final double saleProceeds;
+  final double taxes;
+
+  final double destructionExpenses;
+  final double advertisingExpenses;
+  final double labourExpenses;
+  final double transportExpenses;
+  final double auctionExpenses;
+  final double refunds;
+
+  const FinancialSummary({
+    this.srCharges = 0,
+    this.destroyingDeposits = 0,
+    this.saleProceeds = 0,
+    this.taxes = 0,
+    this.destructionExpenses = 0,
+    this.advertisingExpenses = 0,
+    this.labourExpenses = 0,
+    this.transportExpenses = 0,
+    this.auctionExpenses = 0,
+    this.refunds = 0,
+  });
+
+  double get totalIncome =>
+      srCharges + destroyingDeposits + saleProceeds + taxes;
+
+  double get totalExpenditure =>
+      destructionExpenses +
+      advertisingExpenses +
+      labourExpenses +
+      transportExpenses +
+      auctionExpenses +
+      refunds;
+
+  double get netBalance => totalIncome - totalExpenditure;
+
+  /// Where the sale proceeds are distributed. Independent of the net balance.
+  SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
+}
+
+/// One row of the Financials ledger, read straight from the `sr_financials`
+/// view.
+///
+/// ⚠️ Deliberately NOT [SrFinancials]. That class derives every figure by
+/// folding a per-goods list, which is what makes it right for a dialog showing
+/// the split across an SR's items -- and what made the page load every
+/// package, item and warehouse entry in the system to render a table of
+/// twenty rows.
+///
+/// This carries the figures the view already computed. The two agree to the
+/// cent, asserted against live data by the view's own verify block and by a
+/// test comparing the ten totals both ways.
+class SrLedgerRow {
+  final String srNumber;
+  final String? yard;
+  final String? consigneeName;
+  final String goodsName;
+  final int quantity;
+  final int packageCount;
+  final DateTime? date;
+
+  final double srCharges;
+  final double destroyingDeposit;
+  final double saleProceeds;
+  final double taxes;
+
+  /// The per-tax breakdown, one entry per tax NAME.
+  ///
+  /// ⚠️ The names are data, not a fixed list: the table draws a column per
+  /// tax, and a tax added tomorrow must appear without a migration. These are
+  /// the amounts STORED on each sale -- the taxes that were enabled at the
+  /// moment of sale, not the ones enabled today.
+  final Map<String, double> taxesByName;
+
+  final double destructionExpense;
+  final double advertisingExpense;
+  final double labourExpense;
+  final double transportExpense;
+  final double auctionExpense;
+  final double refund;
+
+  const SrLedgerRow({
+    required this.srNumber,
+    this.yard,
+    this.consigneeName,
+    this.goodsName = '',
+    this.quantity = 0,
+    this.packageCount = 0,
+    this.date,
+    this.srCharges = 0,
+    this.destroyingDeposit = 0,
+    this.saleProceeds = 0,
+    this.taxes = 0,
+    this.taxesByName = const {},
+    this.destructionExpense = 0,
+    this.advertisingExpense = 0,
+    this.labourExpense = 0,
+    this.transportExpense = 0,
+    this.auctionExpense = 0,
+    this.refund = 0,
+  });
+
+  factory SrLedgerRow.fromJson(Map<String, dynamic> json) {
+    final rawTaxes = json['taxes_by_name'];
+    return SrLedgerRow(
+      srNumber: json['sr_number']?.toString() ?? '',
+      yard: json['yard'] as String?,
+      consigneeName: json['consignee_name'] as String?,
+      goodsName: json['goods_name']?.toString() ?? '',
+      quantity: parseDbInt(json['quantity']) ?? 0,
+      packageCount: parseDbInt(json['package_count']) ?? 0,
+      date: parseDbDate(json['activity_date']),
+      srCharges: parseDbNum(json['sr_charges']) ?? 0,
+      destroyingDeposit: parseDbNum(json['destroying_deposit']) ?? 0,
+      saleProceeds: parseDbNum(json['sale_proceeds']) ?? 0,
+      taxes: parseDbNum(json['taxes']) ?? 0,
+      // ⚠️ jsonb reaches the driver as a Map already, but a driver that
+      // hands it back as a String must not crash the page -- the ledger has
+      // been bitten by exactly that seam before, with numeric.
+      taxesByName: switch (rawTaxes) {
+        Map<String, dynamic> m => {
+            for (final e in m.entries) e.key: parseDbNum(e.value) ?? 0,
+          },
+        String s when s.trim().isNotEmpty => () {
+            try {
+              final decoded = jsonDecode(s);
+              if (decoded is Map) {
+                return <String, double>{
+                  for (final e in decoded.entries)
+                    e.key.toString(): parseDbNum(e.value) ?? 0,
+                };
+              }
+            } catch (_) {
+              // Unreadable JSON is no taxes, not a broken page.
+            }
+            return const <String, double>{};
+          }(),
+        _ => const <String, double>{},
+      },
+      destructionExpense: parseDbNum(json['destruction_expense']) ?? 0,
+      advertisingExpense: parseDbNum(json['advertising_expense']) ?? 0,
+      labourExpense: parseDbNum(json['labour_expense']) ?? 0,
+      transportExpense: parseDbNum(json['transport_expense']) ?? 0,
+      auctionExpense: parseDbNum(json['auction_expense']) ?? 0,
+      refund: parseDbNum(json['refund']) ?? 0,
+    );
+  }
+
+  /// Every cost charged against the deposit.
+  double get depositSpent =>
+      destructionExpense +
+      advertisingExpense +
+      labourExpense +
+      transportExpense +
+      auctionExpense;
+
+  /// Costs beyond what the deposit covered. Zero when the deposit was enough.
+  double get deficit =>
+      (depositSpent - destroyingDeposit) > 0
+          ? depositSpent - destroyingDeposit
+          : 0;
+
+  double get totalIncome =>
+      srCharges + destroyingDeposit + saleProceeds + taxes;
+
+  double get totalExpenditure => depositSpent + refund;
+
+  double get netBalance => totalIncome - totalExpenditure;
+
+  /// Where this SR's sale proceeds are distributed.
+  SaleProceedsSplit get split => SaleProceedsSplit(saleProceeds);
+
+  bool get isEmpty => totalIncome == 0 && totalExpenditure == 0;
+}
+
 /// What the Appeal Directorate has ruled about one goods item.
 ///
 /// A DECISION ends the 30-day wait: once the directorate has ruled, the yard

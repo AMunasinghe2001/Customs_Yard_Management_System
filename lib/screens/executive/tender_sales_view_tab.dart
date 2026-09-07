@@ -5,14 +5,13 @@ import 'package:gap/gap.dart';
 
 import '../../core/providers.dart';
 import '../../core/theme.dart';
-import '../../core/yards.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/empty_table_state.dart';
 import '../../widgets/error_view.dart';
-import '../../widgets/styled_dropdown.dart';
 import '../../widgets/table_pager.dart';
 import '../disposal/disposal_dashboard_screen.dart'
     show TenderSaleCard;
+import 'executive_header.dart';
 
 /// Tender sales as the Top Management Directorate sees them: read-only, and
 /// showing exactly what Central Disposal is currently working on.
@@ -32,6 +31,7 @@ class TenderSalesViewTab extends ConsumerStatefulWidget {
 }
 
 class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
+  String _search = '';
   String? _yard; // null = all yards
   int _page = 0;
 
@@ -54,6 +54,7 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
     // live.
     final query = TenderSaleQuery(
       page: _page,
+      search: _search,
       yardFilter: _yard,
       onlyPending: true,
     );
@@ -68,6 +69,7 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Expanded(
                 child: PageTitle(
@@ -78,11 +80,18 @@ class _TenderSalesViewTabState extends ConsumerState<TenderSalesViewTab> {
                 ),
               ),
               const Gap(16),
+              ExecutiveSearchField(
+                hint: 'Search sale no / SR…',
+                onChanged: (v) => setState(() {
+                  _search = v;
+                  _page = 0;
+                }),
+              ),
+              const Gap(12),
               SizedBox(
-                width: 240,
-                child: _YardPicker(
+                width: 220,
+                child: ExecutiveYardFilter(
                   value: _yard,
-                  accent: accent,
                   onChanged: (v) => setState(() {
                     _yard = v;
                     _page = 0;
@@ -204,58 +213,6 @@ class _LiveChip extends StatelessWidget {
             style: TextStyle(
                 color: accent, fontSize: 12.5, fontWeight: FontWeight.w800)),
       ]),
-    );
-  }
-}
-
-/// The yard filter, listing ICT's live yards (falling back to the seed list).
-class _YardPicker extends ConsumerWidget {
-  final String? value;
-  final Color accent;
-  final ValueChanged<String?> onChanged;
-
-  const _YardPicker(
-      {required this.value, required this.accent, required this.onChanged});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final options = ref.watch(yardFilterOptionsProvider).valueOrNull ??
-        [
-          for (final y in kYards)
-            YardFilterOption(
-                value: y.code, label: y.name, filterYard: y.code)
-        ];
-    return Theme(
-      data: Theme.of(context).copyWith(
-        inputDecorationTheme: Theme.of(context).inputDecorationTheme.copyWith(
-              filled: true,
-              fillColor: accent.withOpacity(0.06),
-              border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
-              enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: accent.withOpacity(0.4))),
-              focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(14),
-                  borderSide: BorderSide(color: accent, width: 1.5)),
-            ),
-      ),
-      child: StyledDropdownFormField<String>(
-        value: value ?? '__all__',
-        label: 'Yard',
-        helperText: null,
-        isDense: true,
-        menuWidth: 260,
-        contentPadding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        prefixIcon: Icon(Icons.warehouse_rounded, color: accent, size: 20),
-        options: [
-          const StyledDropdownOption('__all__', 'All Yards'),
-          for (final o in options) StyledDropdownOption(o.value, o.label),
-        ],
-        onChanged: (v) => onChanged(v == '__all__' ? null : v),
-      ),
     );
   }
 }
