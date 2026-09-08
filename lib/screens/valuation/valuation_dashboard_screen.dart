@@ -1764,7 +1764,6 @@ class _ValBidsAndRevalDialogState
         StorageChargeNote(
           packageId: widget.info.forfeited.packageId,
           packageItemId: widget.info.forfeited.itemId,
-          compact: true,
         ),
         const Gap(10),
         // Full-width cost field; live total on its own line below so a large

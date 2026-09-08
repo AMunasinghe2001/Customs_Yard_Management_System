@@ -169,7 +169,15 @@ class TenderHistorySection extends ConsumerWidget {
   /// Quantity this row covers, so a per-item unit price can be totalled.
   final int? qty;
 
-  const TenderHistorySection({super.key, required this.forfeited, this.qty});
+  /// Whether to render the final outcome tile at the bottom.
+  final bool showFinalOutcome;
+
+  const TenderHistorySection({
+    super.key,
+    required this.forfeited,
+    this.qty,
+    this.showFinalOutcome = true,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -372,24 +380,58 @@ class TenderHistorySection extends ConsumerWidget {
       ));
     }
 
+    // If the package is at or past Tender 3 and no committee round tile was
+    // added yet, add the Committee Tender 1 tile with its current appointment /
+    // valuation / submission state.
+    final hasCommitteeTile =
+        rows.any((r) => r is _TenderRoundTile && r.isCommitteeRound);
+    if (!hasCommitteeTile && (ordered.length >= 4 || committee != null)) {
+      final isAppointed = committeeMembers.isNotEmpty;
+      final hasValue = committee?.committeeValue != null;
+      final isSubmitted = committee?.submittedValue != null;
+
+      final String? cPriceLabel;
+      final String cSubtitle;
+
+      if (!isAppointed) {
+        cPriceLabel = null;
+        cSubtitle = 'Awaiting committee appointment · no bidding';
+      } else if (!hasValue) {
+        cPriceLabel = null;
+        cSubtitle =
+            'Committee appointed (${committeeMembers.length} members) · Valuation pending';
+      } else if (!isSubmitted) {
+        final val = committee!.committeeValue!;
+        cPriceLabel =
+            'LKR ${money.format(val * effQty)}  (@ ${money.format(val)} × $effQty)';
+        cSubtitle =
+            'Valued by committee (${committeeMembers.length} members) · Awaiting ADG submission';
+      } else {
+        final val = committee!.submittedValue!;
+        cPriceLabel =
+            'LKR ${money.format(val * effQty)}  (@ ${money.format(val)} × $effQty)';
+        cSubtitle =
+            'Priced by the tender committee (${committeeMembers.length} members) · no bidding';
+      }
+
+      rows.add(_TenderRoundTile(
+        sealed: false,
+        label: 'Committee Tender 1',
+        isCommitteeRound: true,
+        committeeSubtitle: cSubtitle,
+        committeeMembers: committeeMembers,
+        committeeLoading: committeeAsync.isLoading,
+        priceLabel: cPriceLabel,
+        revalued: false,
+        bids: const [],
+      ));
+    }
+
     // ⚠️ How the story ENDS, at the end of the story.
-    //
-    // Every round above says what was tried; none of them says what was
-    // finally decided. On the Unsold pages that is the one thing the officer
-    // is looking for, and it was only in the table behind the popup. Two
-    // states, and the difference matters: Top Management may have ruled, or
-    // the package may still be waiting for them — "no decision yet" is an
-    // answer, and a blank space is not.
-    // ⚠️ A SOLD package ended by selling -- it never reaches Top
-    // Management, so "Awaiting Top Management" there would be false.
-    //
-    // It used to be HIDDEN in that case, which left the popup with no answer
-    // at all for goods that had plainly ended: a perishable sold for
-    // Rs 5,533,000 showed nothing here while the table behind it still read
-    // "Awaiting Top Management". Selling is an outcome, so it is drawn as
-    // one.
-    final soldPrice = mine.where((s) => s.sold).firstOrNull?.soldPrice;
-    rows.add(_FinalOutcomeTile(proposal: proposal, soldPrice: soldPrice));
+    if (showFinalOutcome) {
+      final soldPrice = mine.where((s) => s.sold).firstOrNull?.soldPrice;
+      rows.add(_FinalOutcomeTile(proposal: proposal, soldPrice: soldPrice));
+    }
 
     if (rows.isEmpty) return const SizedBox.shrink();
 
@@ -800,6 +842,9 @@ class _TenderRoundTile extends StatelessWidget {
   /// no committee was ever appointed for.
   final bool committeeLoading;
 
+  /// Custom subtitle for committee round (e.g. pending / valued / submitted).
+  final String? committeeSubtitle;
+
   const _TenderRoundTile({
     required this.label,
     required this.priceLabel,
@@ -808,6 +853,7 @@ class _TenderRoundTile extends StatelessWidget {
     this.soldLabel,
     required this.bids,
     this.isCommitteeRound = false,
+    this.committeeSubtitle,
     this.committeeMembers = const [],
     this.committeeLoading = false,
   });
@@ -910,12 +956,13 @@ class _TenderRoundTile extends StatelessWidget {
             Text(
                 committeeLoading
                     ? 'Priced by the tender committee · loading members…'
-                    : committeeMembers.isEmpty
-                        ? 'Priced by the tender committee · no bidding'
-                        : 'Priced by the tender committee '
-                            '(${committeeMembers.length} '
-                            '${committeeMembers.length == 1 ? 'member' : 'members'})'
-                            ' · no bidding',
+                    : (committeeSubtitle ??
+                        (committeeMembers.isEmpty
+                            ? 'Priced by the tender committee · no bidding'
+                            : 'Priced by the tender committee '
+                                '(${committeeMembers.length} '
+                                '${committeeMembers.length == 1 ? 'member' : 'members'})'
+                                ' · no bidding')),
                 style:
                     TextStyle(color: context.colors.textMuted, fontSize: 11.5)),
             if (committeeMembers.isNotEmpty) ...[
@@ -980,6 +1027,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
   /// The forfeited row whose tender history (per-round valuation + bids)
   /// should be shown. Set by the Unsold pages; null hides the section.
   final ForfeitedPackageModel? tenderHistoryFor;
+  final bool showFinalOutcome;
   final bool useWarehouseSummary;
 
   // Optional yard label (e.g. 'Grey Line 1') shown in the Warehouse Summary so
@@ -1059,6 +1107,7 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.highlightItemId,
     this.useLegacySummary = false,
     this.tenderHistoryFor,
+    this.showFinalOutcome = true,
     this.useWarehouseSummary = false,
     this.yardLabel,
     this.valuationUnitCost,
@@ -2806,6 +2855,7 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                           TenderHistorySection(
                             forfeited: widget.tenderHistoryFor!,
                             qty: widget.valuationQty,
+                            showFinalOutcome: widget.showFinalOutcome,
                           ),
                         // ⚠️ Directly ABOVE Warehouse Summary, and in the
                         // same frame. The two are read as a pair -- where
