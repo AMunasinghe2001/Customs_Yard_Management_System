@@ -211,6 +211,13 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                                 icon: Icons.eco_rounded,
                                 route: '/perishable-goods'),
                           ),
+                          const Gap(12),
+                          // ⚠️ The rate belongs with what the yard HOLDS:
+                          // it is the price those goods are accruing at, and
+                          // the accrued total sits opposite it in the row
+                          // below. Six tiles a row either way, so the two rows
+                          // line up column for column.
+                          Expanded(child: _StorageRateTile(ref: ref)),
                         ]),
                         const Gap(16),
                         _GroupHeading(
@@ -260,9 +267,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                             ),
                           ),
                           const Gap(12),
-                          // Current per-day storage rate, with the live total
-                          // accruing across all held goods as the subtitle.
-                          Expanded(child: _WarehouseChargeCard(ref: ref)),
+                          Expanded(child: _AccruedStorageTile(ref: ref)),
                         ]),
                       ],
                     ),
@@ -1066,89 +1071,70 @@ class _NextTenderSaleBanner extends StatelessWidget {
 /// Headline stat card for storage charges: shows the current per-day rate
 /// (e.g. "LKR 40 / day") as the big number, with the live total accruing across
 /// all goods still held in the yard shown underneath as a subtitle.
-class _WarehouseChargeCard extends StatelessWidget {
+// ⚠️ `_WarehouseChargeCard` lived here and is gone.
+//
+// It was the last card drawn in the old shape, and it packed two different
+// figures into one line: "Current W/H Rate · Accrued: LKR 242,3…". The
+// accrued total is 242,304,500 — nine digits — so the line it shared with a
+// label was always going to end in an ellipsis, and the number an officer
+// most wants from it was the part that got cut.
+//
+// They are two questions: what the rate IS, and what has built up. Two
+// tiles, in the same shape as everything else on the page.
+
+/// The per-day rate, as a tile.
+class _StorageRateTile extends StatelessWidget {
   final WidgetRef ref;
-  const _WarehouseChargeCard({required this.ref});
+  const _StorageRateTile({required this.ref});
 
   @override
   Widget build(BuildContext context) {
-    final gold = context.colors.primaryGold;
     final rate = ref.watch(currentStorageRateProvider);
-    final accrued = ref.watch(currentWarehouseChargeProvider);
-
-    final rateText = rate.maybeWhen(
-        data: (r) => 'LKR ${NumberFormat('#,##0').format(r)}',
-        orElse: () => '…');
-    final accruedText = accrued.maybeWhen(
-        data: (c) => 'Accrued: LKR ${NumberFormat('#,##0').format(c)}',
-        orElse: () => 'Accrued…');
-
-    return Container(
-      // Match _StatCard padding exactly so this card is the same height.
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: context.colors.borderColor),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [gold.withOpacity(0.10), context.colors.cardDark],
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(11),
-            decoration: BoxDecoration(
-              color: gold.withOpacity(0.15),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(Icons.payments_rounded, color: gold, size: 22),
-          ),
-          const Gap(14),
-          // Two equal halves so this card matches the other stat cards' height:
-          // the per-day rate (headline) and the live accrued total. Each half is
-          // a value + label line, mirroring [_StatCard].
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.baseline,
-                  textBaseline: TextBaseline.alphabetic,
-                  children: [
-                    Flexible(
-                      child: Text(rateText,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                              color: context.colors.textPrimary,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
-                              height: 1.1)),
-                    ),
-                    const Gap(3),
-                    Text('/day',
-                        style: TextStyle(
-                            color: context.colors.textMuted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600)),
-                  ],
-                ),
-                const Gap(2),
-                Text('Current W/H Rate · $accruedText',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                        color: context.colors.textSecondary, fontSize: 12)),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return _LifecycleTile(
+      stretch: true,
+      label: 'W/H rate per day',
+      value: rate.maybeWhen(
+          data: (r) => 'LKR ${NumberFormat('#,##0').format(r)}',
+          orElse: () => '…'),
+      color: context.colors.primaryGold,
+      icon: Icons.payments_rounded,
     );
   }
+}
+
+/// What has accrued on goods still in the yard.
+class _AccruedStorageTile extends StatelessWidget {
+  final WidgetRef ref;
+  const _AccruedStorageTile({required this.ref});
+
+  @override
+  Widget build(BuildContext context) {
+    final accrued = ref.watch(currentWarehouseChargeProvider);
+    return _LifecycleTile(
+      stretch: true,
+      label: 'Accrued, still held',
+      // ⚠️ COMPACT, because the full figure is nine digits and the
+      // tile is a fifth of a row. "LKR 242.3M" fits and is read at a
+      // glance; "LKR 242,304,500" does not fit and was being shown as
+      // "LKR 242,3…", which is not a number at all.
+      value: accrued.maybeWhen(
+          data: (a) => _compactLkr(a.accrued), orElse: () => '…'),
+      color: context.colors.primaryGold,
+      icon: Icons.savings_rounded,
+    );
+  }
+}
+
+/// A large rupee figure in as few characters as it can be read in.
+///
+/// ⚠️ Rounded to one decimal at each step, not truncated: 242,304,500
+/// reads "242.3M", and an officer comparing it with yesterday's needs the
+/// digit that moves. Below a million it stays fully written out, because
+/// there it fits.
+String _compactLkr(double v) {
+  if (v >= 1000000) return 'LKR ${(v / 1000000).toStringAsFixed(1)}M';
+  if (v >= 1000) return 'LKR ${(v / 1000).toStringAsFixed(1)}K';
+  return 'LKR ${NumberFormat('#,##0').format(v)}';
 }
 
 /// Per-warehouse capacity utilisation for the admin's yard, shown as compact

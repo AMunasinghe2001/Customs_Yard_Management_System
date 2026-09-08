@@ -3121,17 +3121,19 @@ final yardWarehouseCapacityProvider =
 /// Total storage charge currently accruing across all goods still held in the
 /// yard's warehouses (active, not-returned entries). Shown as a header stat on
 /// the Admin Dashboard.
-final currentWarehouseChargeProvider = FutureProvider<double>((ref) async {
-  final packages = await ref.watch(livePackagesProvider.future);
-  final rates = await ref.watch(storageRateProvider.future);
-  double total = 0;
-  for (final p in packages) {
-    for (final entry in p.warehouseEntries) {
-      if (entry.isReturned) continue;
-      total += entry.calculatePackageCharge(p.items, rates);
-    }
-  }
-  return total;
+/// Storage charges still RUNNING in this yard, and the entries carrying them.
+///
+/// ⚠️ This walked `livePackagesProvider` -- every package in the yard
+/// with its items and warehouse entries -- adding up charges in Dart. The
+/// same whole-table fetch the rest of the app has been moved off, on the one
+/// figure that changes every single day. `accrued_storage_by_yard`
+/// (postgres/52) computes it in SQL, and its verify block asserts the total
+/// against what the dashboard was showing.
+final currentWarehouseChargeProvider =
+    FutureProvider<({double accrued, int entries})>((ref) async {
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(storageRatesChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getAccruedStorage();
 });
 
 /// Forfeit → disposal lifecycle counts for the admin's yard: appeal holds /

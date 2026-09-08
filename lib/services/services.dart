@@ -5255,6 +5255,37 @@ class ForfeitedPackageService {
   ///
   /// These read the same views the nav rail's own pages read, so a figure here
   /// and the page it links to cannot disagree.
+  /// Storage charges still RUNNING in this yard, and how many entries carry
+  /// them.
+  ///
+  /// ⚠️ This was computed in Dart from `livePackagesProvider` -- every
+  /// package in the yard with its items and warehouse entries -- walked to
+  /// add up charges. The same whole-table fetch the rest of the app has been
+  /// moved off, on the one figure that changes every single day.
+  ///
+  /// ⚠️ NOT `sr_financials.sr_charges`. That is the whole bill ever
+  /// raised, returned goods included (368,984,450 on live data); this is
+  /// what is still ticking (242,304,500). Two different questions, both
+  /// wanted.
+  Future<({double accrued, int entries})> getAccruedStorage() async {
+    final yard = AppSession.currentYard;
+    var q = supabase
+        .from('accrued_storage_by_yard')
+        .select('accrued, live_entries');
+    if (yard != null && yard.isNotEmpty) {
+      q = q.or('yard.eq.$yard,sr_number.ilike.%/$yard/%');
+    }
+    final rows = await AuthService._withNetworkRetry(() => q);
+    var total = 0.0;
+    var entries = 0;
+    for (final e in (rows as List)) {
+      final m = e as Map<String, dynamic>;
+      total += parseDbNum(m['accrued']) ?? 0;
+      entries += parseDbInt(m['live_entries']) ?? 0;
+    }
+    return (accrued: total, entries: entries);
+  }
+
   Future<Map<String, int>> getYardHoldingCounts() async {
     final yard = AppSession.currentYard;
 
