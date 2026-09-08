@@ -88,16 +88,37 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ⚠️ The YARD's name, not the role's.
+                      //
+                      // "Admin Dashboard" said who was looking; every page
+                      // under it is filtered to one yard, and which yard
+                      // that is was only visible in a badge on the far side
+                      // of the header. An officer signed into two yards on
+                      // two machines could not tell the screens apart.
+                      //
+                      // The role has not been dropped -- it is under the
+                      // officer's name in the rail, where it says what they
+                      // may do rather than what they are looking at.
                       Text(
-                          ref.watch(currentProfileProvider)?.isAdmin == true
-                              ? 'Admin Dashboard'
-                              : 'Dashboard',
+                          myYard == null || myYard.isEmpty
+                              ? 'Dashboard'
+                              : '${yardName(myYard)} Dashboard',
                           style: Theme.of(context).textTheme.headlineLarge),
-                      Text(
-                          DateFormat('EEEE, d MMMM yyyy')
-                              .format(DateTime.now()),
+                      // ⚠️ A LIVE clock, ticking. A dashboard that
+                      // auto-refreshes every 25 seconds but shows a time
+                      // frozen at whenever it was opened is worse than one
+                      // showing no time at all -- the reader trusts it.
+                      StreamBuilder<DateTime>(
+                        stream: Stream.periodic(
+                            const Duration(seconds: 1), (_) => DateTime.now()),
+                        initialData: DateTime.now(),
+                        builder: (context, snap) => Text(
+                          DateFormat('EEEE, d MMMM yyyy · HH:mm:ss')
+                              .format(snap.data ?? DateTime.now()),
                           style:
-                              TextStyle(color: context.colors.textSecondary)),
+                              TextStyle(color: context.colors.textSecondary),
+                        ),
+                      ),
                     ],
                   ),
                   Row(mainAxisSize: MainAxisSize.min, children: [
@@ -744,6 +765,11 @@ class _ForfeitLifecycleSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // ⚠️ Every figure below counts GOODS, and the group titles say
+        // so. They did not, and three of them were counting something else:
+        // appeals only against forfeits (missing the detained, abandoned and
+        // other goods that raise them too), tender ATTEMPTS rather than
+        // goods, and disposal requests ever raised rather than outstanding.
         const _SectionHeader(title: 'Forfeit & Disposal Lifecycle'),
         const Gap(12),
         Expanded(
@@ -760,7 +786,7 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _LifecycleGroup(
-                      title: 'Appeal Directorate',
+                      title: 'Appeal Directorate · goods',
                       icon: Icons.gavel_rounded,
                       tiles: [
                         _LifecycleTile(
@@ -777,7 +803,7 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'Disposal Requests (Central Disposal)',
+                      title: 'Sent to Central Disposal · goods',
                       icon: Icons.local_shipping_rounded,
                       tiles: [
                         // ⚠️ AWAITING, not everything ever sent. This
@@ -785,26 +811,32 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                         // of which had long since been forwarded and acted
                         // on -- a heading about pending work showing a
                         // lifetime total.
+                        // ⚠️ These are the SAME goods the "Awaiting
+                        // Valuation" tile above counts, seen from the other
+                        // side: the yard has sent them, and the Valuation
+                        // Directorate has not costed them. Two tiles showing
+                        // 33 is not a coincidence, and a reader who works that
+                        // out for themselves has been made to work.
                         _LifecycleTile(
-                            label: 'Awaiting Sale',
+                            label: 'Sent, awaiting valuation',
                             value: '${d['requestedSale'] ?? 0}',
                             color: context.colors.primaryGold,
                             icon: Icons.sell_rounded),
                         _LifecycleTile(
-                            label: 'Awaiting Destruction',
+                            label: 'Sent for destruction',
                             value: '${d['requestedDestruction'] ?? 0}',
                             color: context.colors.dangerRed,
                             icon: Icons.delete_forever_rounded),
                         _LifecycleTile(
-                            label: 'Forwarded',
-                            value: '${(d['forwardedSale'] ?? 0) + (d['forwardedDestruction'] ?? 0)}',
+                            label: 'Forwarded, in progress',
+                            value: '${d['forwarded'] ?? 0}',
                             color: context.colors.textMuted,
                             icon: Icons.done_all_rounded),
                       ],
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'At Tender',
+                      title: 'At Tender · goods',
                       icon: Icons.storefront_rounded,
                       tiles: [
                         _LifecycleTile(
@@ -817,13 +849,17 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                         // the yard 116 items had failed at tender when 7 of
                         // them simply had no outcome recorded -- and those 7
                         // are somebody's outstanding work, not a result.
+                        // ⚠️ Goods still unsold, on their LATEST round --
+                        // not failed attempts. A package that fails four
+                        // times has four tender rows, so counting rows said
+                        // 109 when 27 lots of goods were unsold.
                         _LifecycleTile(
-                            label: 'Unsold',
+                            label: 'Unsold so far',
                             value: '${d['tenderUnsold'] ?? 0}',
                             color: context.colors.textMuted,
                             icon: Icons.remove_shopping_cart_rounded),
                         _LifecycleTile(
-                            label: 'Awaiting Outcome',
+                            label: 'Outcome not marked',
                             value: '${d['tenderUndecided'] ?? 0}',
                             color: context.colors.warningAmber,
                             icon: Icons.hourglass_empty_rounded),
@@ -831,7 +867,7 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'Destruction',
+                      title: 'Destruction · goods',
                       icon: Icons.local_fire_department_rounded,
                       tiles: [
                         // ⚠️ Both halves. The card showed only what had
@@ -839,7 +875,9 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                         // the ones an officer still has to go and do -- were
                         // invisible.
                         _LifecycleTile(
-                            label: 'Queued',
+                            // ⚠️ Scheduled but NOT YET DESTROYED -- the
+                            // ones an officer still has to go and do.
+                            label: 'Scheduled, not yet done',
                             value: '${d['queuedForDestruction'] ?? 0}',
                             color: context.colors.warningAmber,
                             icon: Icons.schedule_rounded),

@@ -91,8 +91,19 @@ resolved as (
 select distinct on (r.item_id)
   r.item_id,
   r.decision,
-  r.on_hold
+  r.on_hold,
+  -- ⚠️ The yard the goods are in, so a caller can narrow without an
+  -- embed. This is a VIEW, so it carries no foreign key for PostgREST to
+  -- join through -- a caller trying `package_items!inner(...)` gets a
+  -- resolve error, which is how this column came to be added.
+  --
+  -- Both the column and the SR number's own segment, because a row filed by
+  -- one directorate can sit in another's yard.
+  p.yard,
+  p.sr_number
 from resolved r
+join public.package_items pi_y on pi_y.id = r.item_id
+join public.packages p on p.id = pi_y.package_id
 order by
   r.item_id,
   ((case when r.decision is not null then 2 else 0 end)

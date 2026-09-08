@@ -321,11 +321,21 @@ class _AppShellState extends ConsumerState<AppShell> {
                                 fontSize: 13),
                             overflow: TextOverflow.ellipsis),
                         Text(
-                            // Admins are the yard's DC / SDDC officers — show
-                            // that title instead of the raw 'ADMIN' role.
-                            profile.isAdmin
-                                ? 'DC / SDDC'
-                                : profile.role.toUpperCase(),
+                            // ⚠️ The officer's POST, not their permission
+                            // level.
+                            //
+                            // This showed "DC / SDDC" for every admin and the
+                            // raw role for everyone else -- so a Deputy
+                            // Commissioner and a Senior Deputy Commissioner
+                            // read identically, and an officer read "OFFICER".
+                            // `role` has only two yard values; which post an
+                            // officer actually holds is `job_role`, set by ICT
+                            // at provisioning.
+                            //
+                            // postShortTitle falls back to exactly the old
+                            // text for an account provisioned before ICT
+                            // recorded a post, so nothing regresses.
+                            profile.postShortTitle.toUpperCase(),
                             style: TextStyle(
                                 color: context.colors.primaryGold,
                                 fontSize: 10,

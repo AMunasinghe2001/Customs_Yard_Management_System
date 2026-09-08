@@ -153,49 +153,108 @@ void main() {
     });
   });
 
-  group('the lifecycle figures say what they mean', () {
+  group('the lifecycle figures count GOODS', () {
     final fn = code(services.substring(
         services.indexOf('getForfeitLifecycleSummary() async {')));
-    final body = fn.substring(0, 4200);
+    final body = fn.substring(0, 4600);
 
-    test('appeal decisions are counted PER ITEM', () {
-      // ⚠️ This read the `appeal_decision` COLUMN and nothing else, so
-      // it reported 0 decisions while 12 per-item rulings sat in
-      // `item_appeal_decisions` -- the yard was told the directorate had
-      // ruled on nothing when it had ruled on nine of its packages.
-      expect(body, contains("countOf('appeal_rows'"));
-      expect(body, contains("eq('has_decision', true)"));
-      expect(body, contains("eq('is_held', true)"));
+    test('appeals cover every kind of goods, not just forfeits', () {
+      // ⚠️ This read `forfeited_packages` filtered to source='forfeit',
+      // so it saw 3 holds and 12 decisions while the directorate had ruled
+      // on 77 items and frozen 26. Detained, abandoned and other goods raise
+      // appeals exactly as forfeits do, and theirs were the majority.
+      expect(body, contains("from('item_appeal_outcomes')"));
+      expect(body.contains("eq('source', 'forfeit')"), isFalse,
+          reason: 'the appeal count is narrowed to forfeits again');
     });
 
-    test('disposal requests split pending from forwarded', () {
-      // ⚠️ It counted every request the yard had EVER raised -- 168 on
-      // live data, of which 135 had long since been forwarded and acted on.
-      // A figure under a heading about pending work should be the 33 that
-      // have not moved.
+    test('the outcomes view carries its own yard', () {
+      // ⚠️ It is a VIEW, so PostgREST has no foreign key to embed
+      // through -- `package_items!inner(...)` fails to resolve, which is how
+      // the column came to be added. postgres/47 carries `yard` and
+      // `sr_number` for this caller.
+      final view =
+          File('postgres/47_item_appeal_outcomes_view.sql').readAsStringSync();
+      expect(view, contains('p.yard'));
+      expect(view, contains('p.sr_number'));
+      expect(body, contains('yard,sr_number.ilike'));
+    });
+
+    test('tender figures count PACKAGES on their latest round', () {
+      // ⚠️ tender_sale_items rows are ATTEMPTS. A package that fails
+      // four times has four rows, so counting rows reported 109 unsold when
+      // 27 lots of goods were unsold -- wrong by a factor of four. And a
+      // package that failed twice and then sold is SOLD; its failures are
+      // history, not an outcome.
+      expect(body, contains('everSold'));
+      expect(body, contains('latestOutcome'));
+      expect(body, contains("tender_sales!inner(created_at)"));
+      expect(code(screen), contains("label: 'Unsold so far'"));
+    });
+
+    test('disposal requests split outstanding from forwarded', () {
+      // ⚠️ It counted every request the yard had EVER raised -- 168 --
+      // under a heading about pending work. 135 had long since moved on.
       expect(body, contains("r['forwarded'] == true"));
-      expect(body, contains('forwardedSale'));
-      expect(body, contains('forwardedDestruction'));
-      expect(code(screen), contains("label: 'Awaiting Sale'"));
+      expect(code(screen), contains("label: 'Sent, awaiting valuation'"));
       expect(code(screen).contains("label: 'Sent for Sale'"), isFalse);
     });
 
-    test('unsold is not "not sold"', () {
-      // ⚠️ An item nobody has marked yet is UNDECIDED. Lumping the two
-      // told the yard 116 items had failed at tender when 7 of them simply
-      // had no outcome recorded -- and those 7 are somebody's outstanding
-      // work, not a result.
-      expect(body, contains("r['unsold'] == true"));
-      expect(body, contains('tenderUndecided'));
-      expect(code(screen), contains("label: 'Awaiting Outcome'"));
+    test('destruction shows the queue as well as the done', () {
+      // ⚠️ 23 items sitting in a queue -- the ones an officer still has
+      // to go and do -- were invisible behind a card showing only what had
+      // been destroyed.
+      expect(body, contains('queuedForDestruction'));
+      expect(code(screen), contains("label: 'Scheduled, not yet done'"));
     });
 
-    test('destruction shows the queue as well as the done', () {
-      // ⚠️ The card showed only what had been destroyed, so 23 items
-      // sitting in a queue -- the ones an officer still has to go and do --
-      // were invisible.
-      expect(body, contains('queuedForDestruction'));
-      expect(code(screen), contains("label: 'Queued'"));
+    test('valuation is counted in items, like everything beside it', () {
+      // ⚠️ `valuation_rows` is one row per REQUEST, so counting rows
+      // gave 9 while the Valuation Directorate had 33 goods to cost -- and
+      // every card beside it counts goods.
+      final holdings = code(services.substring(
+          services.indexOf('Future<Map<String, int>> getYardHoldingCounts')));
+      expect(holdings.substring(0, 3000), contains('pending_count'));
+    });
+
+    test('the group titles say what a figure counts', () {
+      final c = code(screen);
+      expect(c, contains("title: 'Appeal Directorate \u00b7 goods'"));
+      expect(c, contains("title: 'At Tender \u00b7 goods'"));
+      expect(c, contains("title: 'Sent to Central Disposal \u00b7 goods'"));
+      expect(c, contains("title: 'Destruction \u00b7 goods'"));
+    });
+  });
+
+  group('the header names the yard and keeps time', () {
+    test('the title is the yard, not the role', () {
+      // ⚠️ Every page under this dashboard is filtered to one yard, and
+      // which yard that was appeared only in a badge on the far side of the
+      // header. An officer signed into two yards on two machines could not
+      // tell the screens apart.
+      final c = code(screen);
+      expect(c, contains('yardName(myYard)} Dashboard'));
+      expect(c.contains("'Admin Dashboard'"), isFalse);
+    });
+
+    test('the clock ticks', () {
+      // ⚠️ A dashboard that auto-refreshes every 25 seconds while
+      // showing a time frozen at whenever it was opened is worse than one
+      // showing no time -- the reader trusts it.
+      final c = code(screen);
+      expect(c, contains('StreamBuilder<DateTime>'));
+      expect(c, contains('HH:mm:ss'));
+    });
+
+    test('the rail shows the POST, not the permission level', () {
+      // ⚠️ `role` has only two yard values, so a Deputy Commissioner
+      // and a Senior Deputy Commissioner read identically and an officer read
+      // "OFFICER". Which post an officer holds is `job_role`, set by ICT at
+      // provisioning; postShortTitle falls back to the old text for an
+      // account provisioned before that was recorded.
+      final shell = File('lib/widgets/app_shell.dart').readAsStringSync();
+      expect(code(shell), contains('profile.postShortTitle.toUpperCase()'));
+      expect(code(shell).contains("profile.isAdmin ? 'DC / SDDC'"), isFalse);
     });
   });
 
