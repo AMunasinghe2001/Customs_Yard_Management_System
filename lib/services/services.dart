@@ -8333,13 +8333,25 @@ class DisposalService {
     }
   }
 
+  /// ⚠️ The buyer pays the storage before the goods go, exactly as a
+  /// releasing owner does. A sale used to hand them over on a bare flag,
+  /// and the yard had been storing them -- sometimes for years -- with the
+  /// charge shown on no form and collected on no receipt.
   Future<void> toggleDeliveryStatus(
-      String tenderSaleItemId, bool isDelivered) async {
+    String tenderSaleItemId,
+    bool isDelivered, {
+    String? receiptNo,
+    double? charge,
+    DateTime? handedAt,
+  }) async {
     await AuthService._withNetworkRetry(() => supabase.rpc(
           'disposal_toggle_delivery_status',
           params: {
             'p_item_id': tenderSaleItemId,
             'p_is_delivered': isDelivered,
+            'p_receipt_no': receiptNo,
+            'p_charge': charge,
+            'p_handed_at': handedAt?.toIso8601String(),
           },
         ));
   }

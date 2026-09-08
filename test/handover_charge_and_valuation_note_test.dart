@@ -88,6 +88,63 @@ void main() {
     });
   });
 
+  group('all THREE hand-overs collect the charge', () {
+    final mig61 =
+        File('postgres/61_sold_handover_receipt.sql').readAsStringSync();
+    final screen = code(File(
+            'lib/screens/packages/disposition_category_screen.dart')
+        .readAsStringSync());
+
+    test('a SALE pays its storage, like a release and a re-export', () {
+      // ⚠️ It did not. The button set `is_delivered` and the buyer walked
+      // out with goods the yard had been storing, sometimes for years, with
+      // the charge shown on no form and collected on no receipt.
+      expect(screen, contains('showHandoverForm('));
+      expect(screen, contains("actionLabel: 'Confirm Delivered'"));
+      expect(screen, contains('if (result == null) return;'));
+      expect(screen, contains('handedAt: result.handedOverAt'));
+    });
+
+    test('all three quote the SAME rule for the charge', () {
+      // ⚠️ From the SR's ENTRY DATE. Three forms quoting three figures
+      // for the same goods is worse than no figure at all, so they share
+      // one function.
+      expect(screen, contains('handoverCharge(entry, widget.package, rates)'));
+      expect(form, contains('package.entryDate ?? entry.admittedAt'));
+    });
+
+    test('the sold write drops its old signature too', () {
+      // ⚠️ The same overload trap migration 60 hit: adding parameters to
+      // `create or replace function` creates an OVERLOAD, and the
+      // 2-argument version stays resolvable.
+      expect(code(mig61),
+          contains('drop function if exists public.disposal_toggle_delivery_status(uuid, boolean)'));
+      expect(code(mig61), contains('an overload survives'));
+    });
+
+    test('the migration asserts the RULE, not the tally', () {
+      // ⚠️ It pinned 39 delivered and failed on its first run because an
+      // officer had marked a 40th through the button. Migration 55 made
+      // exactly this mistake; a count an officer can change is not an
+      // invariant.
+      expect(code(mig61), contains('a lot is delivered without having been sold'));
+      expect(mig61, contains('Assert the RULE, not the tally'));
+    });
+
+    test('nothing backfills a receipt', () {
+      // ⚠️ Those hand-overs happened before the form existed. Inventing a
+      // receipt number for them would put a fiction in the record, so a
+      // delivered row with no receipt is EXPECTED and only the reverse is
+      // impossible.
+      expect(code(mig61),
+          contains('tender_sale_items_handover_receipt_consistent'));
+      // ⚠️ The reverse -- delivered with NO receipt -- is expected, and
+      // the constraint permits it. Only a receipt without a delivery is
+      // impossible.
+      expect(code(mig61), contains('handover_receipt_no is null or is_delivered'));
+    });
+  });
+
   group('a valuation sees what the goods have already cost', () {
     test('every form that sets a price carries the note', () {
       // ⚠️ A valuation set without it is a number chosen in ignorance: goods
@@ -111,6 +168,28 @@ void main() {
       expect(committee, contains('StorageChargeNote('));
       // And the sale itself.
       expect(disposal, contains('StorageChargeNote('));
+    });
+
+    test('it appears for FORFEITED goods, which is most of them', () {
+      // ⚠️ `calculatePackageCharge` returns ZERO for confiscated,
+      // forfeit, abandoned and destroyed goods -- the state has taken them,
+      // so there is no owner left to bill. Right for an INVOICE, wrong for
+      // a VALUATION: 48 of the 168 goods that reach a valuation form carry
+      // exactly those statuses, so the note would never have appeared on
+      // the forms it was built for. It computes the days and the rate
+      // itself and says which figure it is showing.
+      expect(note, contains('double _spaceCost('));
+      expect(note, contains('var billable = true;'));
+      expect(note, contains('not billable, the state holds these goods'));
+      expect(note, contains('payable on collection'));
+    });
+
+    test('it walks the rate history day by day', () {
+      // ⚠️ Rates change mid-stay, and a single multiplication by
+      // today's rate would misprice every entry that spans a change --
+      // which, over a 703-day hold, is most of them.
+      expect(note, contains('for (var i = 0; i <= end.difference(start).inDays'));
+      expect(note, contains('if (!day.isBefore(at)) rate = r;'));
     });
 
     test('it charges only entries still HELD, and only this item', () {

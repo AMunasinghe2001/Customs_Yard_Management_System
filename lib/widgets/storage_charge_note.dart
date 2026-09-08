@@ -7,6 +7,35 @@ import '../core/providers.dart';
 import '../core/theme.dart';
 import '../models/models.dart';
 
+/// What one entry's space has cost, from [from] to today.
+///
+/// ⚠️ The same day-by-day walk `calculatePackageCharge` does -- rates
+/// change mid-stay, and a single multiplication by today's rate would
+/// misprice every entry that spans a rate change. What it does NOT do is
+/// zero the figure for forfeited goods: that rule belongs to billing, and
+/// this is about space.
+double _spaceCost({
+  required DateTime from,
+  required int units,
+  required Map<DateTime, double> rates,
+}) {
+  final start = DateTime(from.year, from.month, from.day);
+  final now = DateTime.now();
+  final end = DateTime(now.year, now.month, now.day);
+  var total = 0.0;
+  for (var i = 0; i <= end.difference(start).inDays; i++) {
+    final day = start.add(Duration(days: i));
+    var rate = 50.0; // the same fallback the model uses
+    rates.forEach((effectiveFrom, r) {
+      final at = DateTime(
+          effectiveFrom.year, effectiveFrom.month, effectiveFrom.day);
+      if (!day.isBefore(at)) rate = r;
+    });
+    total += units * rate;
+  }
+  return total;
+}
+
 /// What the goods have cost the yard in storage, as of today.
 ///
 /// ⚠️ Shown wherever somebody puts a PRICE on goods — the valuation forms, the
@@ -63,26 +92,33 @@ class StorageChargeNote extends ConsumerWidget {
 
     // Charged from the SR's ENTRY DATE, the same rule the Released Goods
     // table uses, so this figure and that column cannot disagree.
+    //
+    // ⚠️ `calculatePackageCharge` returns ZERO for goods whose status is
+    // confiscated / forfeit / abandoned / destroyed -- the state has taken
+    // them, so there is no owner left to bill. That is the right rule for
+    // an INVOICE and the wrong answer for a VALUATION: 48 of the 168 goods
+    // that reach a valuation form carry exactly those statuses, so the note
+    // would simply never appear on the forms it was built for.
+    //
+    // So the days and the rate are computed here, and the figure is labelled
+    // for what it is: what the SPACE has cost, whether or not anybody will
+    // be billed for it. An officer pricing goods that have occupied a zone
+    // for 703 days needs that number either way.
     double total = 0;
     DateTime? since;
+    var billable = true;
     for (final e in entries) {
       final start = pkg.entryDate ?? e.admittedAt;
       if (since == null || start.isBefore(since)) since = start;
-      total += WarehouseEntryModel(
-        id: e.id,
-        packageId: e.packageId,
-        packageItemId: e.packageItemId,
-        warehouseId: e.warehouseId,
-        warehouseName: e.warehouseName,
-        warehouseCode: e.warehouseCode,
-        holdReason: e.holdReason,
-        itemCount: e.itemCount,
-        admittedAt: start,
-        dailyRate: e.dailyRate,
-        // Null: to TODAY. These goods are still here, and the figure is what
-        // they have cost so far.
-        returnedAt: null,
-      ).calculatePackageCharge(pkg.items, rates);
+      final item =
+          pkg.items.where((i) => i.id == e.packageItemId).firstOrNull;
+      final status = (item?.status ?? '').trim().toLowerCase();
+      if (WarehouseEntryModel.isNoChargeStatus(status)) billable = false;
+      total += _spaceCost(
+        from: start,
+        units: e.itemCount,
+        rates: rates,
+      );
     }
     if (total <= 0) return const SizedBox.shrink();
 
@@ -90,16 +126,25 @@ class StorageChargeNote extends ConsumerWidget {
     final days = since == null
         ? null
         : DateTime.now().difference(since).inDays;
-    final caption = days == null
-        ? 'Accrued so far'
-        : 'Accrued over $days day${days == 1 ? '' : 's'} in storage';
+    final held = days == null
+        ? 'in storage'
+        : 'over $days day${days == 1 ? '' : 's'} in storage';
+    // ⚠️ Say WHICH figure this is. Billable goods will be invoiced for
+    // it; forfeited and abandoned goods will not, and an officer told
+    // "accrued" about goods nobody can be billed for would reasonably read
+    // it as money the yard is owed.
+    final caption = billable
+        ? 'Accrued $held \u00b7 payable on collection'
+        : 'Cost of space $held \u00b7 not billable, the state holds these goods';
 
     if (compact) {
       return Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.warehouse_rounded,
             size: 13, color: context.colors.textMuted),
         const Gap(5),
-        Text('Storage so far: LKR ${money.format(total)}',
+        Text(
+            '${billable ? 'Storage charge' : 'Storage cost'} so far: '
+            'LKR ${money.format(total)}',
             style: TextStyle(
                 color: context.colors.textSecondary,
                 fontSize: 11,
@@ -125,7 +170,10 @@ class StorageChargeNote extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text('Warehouse charge to date',
+              Text(
+                  billable
+                      ? 'Warehouse charge to date'
+                      : 'Storage cost to date',
                   style: TextStyle(
                       color: context.colors.textMuted,
                       fontSize: 10,

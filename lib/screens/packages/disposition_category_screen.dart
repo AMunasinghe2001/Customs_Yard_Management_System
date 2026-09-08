@@ -19,6 +19,7 @@ import '../../widgets/styled_form_dialog.dart';
 import '../../widgets/tooltip_text.dart';
 import '../../widgets/destruction_status_pill.dart';
 import '../../widgets/handover_cell.dart';
+import '../../widgets/handover_form_dialog.dart';
 import '../executive/unsold_shared.dart';
 
 /// Generic screen for a final-disposition category (Sold / Destroyed /
@@ -982,13 +983,59 @@ class _DeliveryStatusCell extends ConsumerStatefulWidget {
 class _DeliveryStatusCellState extends ConsumerState<_DeliveryStatusCell> {
   bool _saving = false;
 
+  /// What the goods have cost in storage, on the entry this row is about.
+  ///
+  /// ⚠️ The SR's ENTRY DATE to the sale, the same rule every other
+  /// hand-over uses -- so the three forms cannot quote three figures for
+  /// the same goods.
+  double _storageCharge() {
+    final entry = widget.package.warehouseEntries
+        .where((e) => e.packageItemId == widget.packageItemId)
+        .firstOrNull;
+    if (entry == null) return 0;
+    final rates = ref.read(storageRateProvider).valueOrNull;
+    if (rates == null) return 0;
+    return handoverCharge(entry, widget.package, rates);
+  }
+
   String get _key =>
       '${widget.package.id}|${widget.packageItemId ?? ''}|${widget.receipt ?? ''}';
 
   Future<void> _markDelivered(TenderSaleItemModel item) async {
+    // ⚠️ The same form the release and re-export hand-overs use. The
+    // buyer pays the storage before the goods go: this cell used to set a
+    // flag and let them walk out with goods the yard had been keeping for
+    // years, the charge collected on no receipt.
+    final result = await showHandoverForm(
+      context,
+      title: 'Release Sold Goods to Buyer',
+      actionLabel: 'Confirm Delivered',
+      icon: Icons.sell_rounded,
+      srNumber: widget.package.srNumber,
+      itemName: widget.package.items
+              .where((i) => i.id == widget.packageItemId)
+              .firstOrNull
+              ?.itemName ??
+          '—',
+      quantity: widget.package.warehouseEntries
+              .where((e) => e.packageItemId == widget.packageItemId)
+              .firstOrNull
+              ?.itemCount ??
+          0,
+      charge: _storageCharge(),
+      chargeCaption: 'Storage from the SR entry date to the sale',
+    );
+    if (result == null) return;
+
     setState(() => _saving = true);
     try {
-      await ref.read(disposalServiceProvider).toggleDeliveryStatus(item.id, true);
+      await ref.read(disposalServiceProvider).toggleDeliveryStatus(
+            item.id,
+            true,
+            receiptNo: result.receiptNo,
+            charge: result.charge,
+            handedAt: result.handedOverAt,
+          );
       // ⚠️ Invalidate the SHARED providers, not just this cell's. Central
       // Disposal's Sold table reads the same tender_sale_items row through
       // them, so refreshing only here would leave the two portals disagreeing
