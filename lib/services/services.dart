@@ -5596,13 +5596,12 @@ class ForfeitedPackageService {
     // rail's "Final Outcomes" section, one page each, all six reading
     // `unsold_proposals.proposal`.
     //
-    // ⚠️ RE-EXPORT IS TWO DIFFERENT PAGES, and they are different
-    // numbers. `/reexported-packages` (Disposed) counts 19: goods that
-    // left the country by any route, 17 of them recorded straight on a
-    // warehouse entry. `/re-export-packages` (Final Outcomes) counts the 2
-    // the DG RULED on. This block feeds the second -- the panel groups by
-    // who decided, so it must count what that page counts, or a tile would
-    // send an officer to a page showing a different figure.
+    // ⚠️ The rail lists FIVE pages here; the panel shows four. Re-export
+    // is the exception: its 2 ruled goods are a SUBSET of the 19 counted
+    // under RE-EXPORTED above, so a tile of its own would count the same
+    // goods twice on one panel. Where that split matters it already exists
+    // -- the Re-exported Goods page carries a Decided By column, because
+    // the difference is between ROWS on one page, not between two counts.
     //
     // `delivered` here is NOT NULL DEFAULT false, so every proposal is
     // delivered or pending -- no third state, unlike `disposition_rows`.
@@ -5662,11 +5661,17 @@ class ForfeitedPackageService {
       'outcomeReexportTotal': outcomeTotals['RE-EXPORTED'] ?? 0,
       'outcomeReexportDelivered': outcomeDelivered['RE-EXPORTED'] ?? 0,
       'outcomeReexportPending': outcomePending['RE-EXPORTED'] ?? 0,
-      // Top Management's five outcomes, each with its delivery split.
+      // Top Management's rulings, each with its delivery split.
+      //
+      // ⚠️ FOUR, not the rail's five. `re_export` is left out because
+      // its goods are already counted under RE-EXPORTED above -- measured,
+      // not assumed: both re_export proposals in this yard resolve to a
+      // `disposition_rows` row carrying that tag, while auction,
+      // government_use, convert and remove_from_premises resolve to none at
+      // all. Emitting it would put the same goods on the panel twice.
       for (final kind in const [
         'government_use',
         'auction',
-        're_export',
         'convert',
         'remove_from_premises',
       ]) ...{

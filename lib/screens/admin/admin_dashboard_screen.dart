@@ -975,13 +975,20 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                         // DG's rulings on goods nothing could sell, and they
                         // all read `unsold_proposals.proposal`.
                         //
-                        // ⚠️ RE-EXPORT IS TWO PAGES. This tile is
-                        // /re-export-packages, the RULING -- 2 goods. The
-                        // Disposed rail has its own /reexported-packages
-                        // counting 19, goods that left the country by any
-                        // route, 17 recorded straight on a warehouse entry
-                        // with no ruling behind them. A tile carrying 19 and
-                        // opening a page showing 2 is the bug this avoids.
+                        // ⚠️ Re-export is NOT here, though the rail lists
+                        // it in this section. Its 2 ruled goods are already
+                        // inside the 19 on the Re-exported tile below --
+                        // measured, not assumed: both proposals resolve to a
+                        // `disposition_rows` row tagged RE-EXPORTED. A tile
+                        // for them would count the same goods twice on one
+                        // panel, and the Re-exported Goods page already
+                        // separates the two routes with its Decided By
+                        // column -- which is the right place for a split
+                        // between ROWS rather than between pages.
+                        //
+                        // The other four are disjoint: goods taken into
+                        // government service, sent to auction, converted or
+                        // removed appear on no other tile.
                         //
                         // `delivered` on a proposal is NOT NULL DEFAULT
                         // false, so every one is delivered or pending --
@@ -1013,18 +1020,6 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                             color: context.colors.primaryGold,
                             icon: Icons.gavel_rounded,
                             route: '/auction-packages'),
-                        _SplitTile(
-                            label: 'Re-export ruling',
-                            total: (d['proposal_re_export_total'] ?? 0) as int,
-                            delivered:
-                                (d['proposal_re_export_delivered'] ?? 0) as int,
-                            pending:
-                                (d['proposal_re_export_pending'] ?? 0) as int,
-                            deliveredLabel: 'delivered',
-                            pendingLabel: 'awaiting',
-                            color: context.colors.accentLightBlue,
-                            icon: Icons.flight_takeoff_rounded,
-                            route: '/re-export-packages'),
                         _SplitTile(
                             label: 'Converted',
                             total: (d['proposal_convert_total'] ?? 0) as int,
@@ -1060,16 +1055,20 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                       title: 'Re-exported · goods',
                       icon: Icons.flight_takeoff_rounded,
                       tiles: [
-                        // ⚠️ The DISPOSED page, /reexported-packages: goods
-                        // that left the country by ANY route -- 19, of which
-                        // only 2 came from a DG ruling. The other 17 were
-                        // recorded straight on a warehouse entry, and appear
-                        // nowhere in the group above. That is why this is
-                        // its own group rather than a sixth tile there: the
-                        // two counts answer different questions and open
-                        // different pages.
+                        // ⚠️ ONE tile for every re-export, whichever route
+                        // recorded it: 17 sent straight back by the yard's
+                        // Final Disposition, 2 ruled by the DG after every
+                        // tender round failed. The rail lists those 2 under
+                        // Final Outcomes, but they are a SUBSET of these 19,
+                        // not a separate population -- a second tile would
+                        // count the same goods twice.
+                        //
+                        // Where the split matters it already exists: the
+                        // Re-exported Goods page carries a Decided By
+                        // column, because the difference is between ROWS on
+                        // one page, not between two counts.
                         _SplitTile(
-                            label: 'Re-exported, all routes',
+                            label: 'Re-exported',
                             total: (d['outcomeReexportTotal'] ?? 0) as int,
                             delivered:
                                 (d['outcomeReexportDelivered'] ?? 0) as int,

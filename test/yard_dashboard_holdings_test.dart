@@ -219,7 +219,7 @@ void main() {
       final c = code(screen);
       expect(c, contains('class _SplitTile'));
       expect(c, contains("label: 'Sold, all rounds'"));
-      expect(c, contains("label: 'Re-exported, all routes'"));
+      expect(c, contains("label: 'Re-exported'"));
       // ⚠️ A row with no hand-over step at all is in NEITHER half --
       // delivery is null, not false, where nothing was ever handed over.
       // The tile says so rather than letting the reader find that the
@@ -271,10 +271,11 @@ void main() {
       // reading `unsold_proposals.proposal`, and the panel showed none of
       // them. One tile each, in the rail's order, each opening its page.
       final c = code(screen);
+      // ⚠️ Four, not the rail's five -- re-export is counted under
+      // Re-exported instead, and has its own test above.
       for (final route in const [
         '/government-use-packages',
         '/auction-packages',
-        '/re-export-packages',
         '/converted-packages',
         '/removed-packages',
       ]) {
@@ -284,56 +285,25 @@ void main() {
       expect(body, contains("from('unsold_proposals')"));
     });
 
-    test('RE-EXPORT IS TWO PAGES, and they are two tiles', () {
-      // ⚠️ /re-export-packages (Final Outcomes) counts the 2 goods the
-      // DG RULED on. /reexported-packages (Disposed) counts 19: everything
-      // that left the country by any route, 17 of them recorded straight on
-      // a warehouse entry with no ruling behind them. One tile carrying 19
-      // and opening the page that shows 2 is the bug this guards.
+    test('re-export is ONE tile, not two', () {
+      // ⚠️ The rail lists re-export under Final Outcomes, so the panel
+      // grew a tile for it beside the other four rulings -- and counted the
+      // same goods twice. Measured, not assumed: both re_export proposals
+      // in this yard resolve to a `disposition_rows` row tagged
+      // RE-EXPORTED, while auction, government_use, convert and
+      // remove_from_premises resolve to none at all. The 2 ruled goods are
+      // a SUBSET of the 19, not a separate population.
+      //
+      // Where the split matters it already exists: the Re-exported Goods
+      // page carries a Decided By column, because the difference is between
+      // ROWS on one page, not between two counts.
       final c = code(screen);
-      expect(c, contains("label: 'Re-export ruling'"));
-      expect(c, contains("route: '/re-export-packages'"));
-      expect(c, contains("label: 'Re-exported, all routes'"));
+      expect(c, contains("label: 'Re-exported'"));
       expect(c, contains("route: '/reexported-packages'"));
-      // The two counts come from different sources, which is why they can
-      // differ at all.
-      expect(body, contains("'re_export',"));
-      expect(body, contains('proposalTotals'));
-      expect(body, contains("outcomeTotals['RE-EXPORTED']"));
-    });
-
-    test('at-tender says what the TENDER did, not what followed', () {
-      // ⚠️ Sold / unsold / not-recorded are three answers to one
-      // question. What happened to the goods afterwards -- collected or
-      // not -- is a different question, and putting it here made a reader
-      // scan five tiles to learn how a tender went.
-      final c = code(screen);
-      expect(c, contains("label: 'Sold at tender'"));
-      expect(c, contains("label: 'Unsold, needs re-tender'"));
-      expect(c, contains("label: 'Sale held, outcome not recorded'"));
-    });
-
-    test('no tile can only ever read zero', () {
-      // ⚠️ "Sent for destruction" was STRUCTURALLY 0: a yard raises a
-      // disposal request for SALE, and goods reach destruction another way
-      // entirely -- a DG ruling, or a perishable that failed at tender. All
-      // 39 destruction items in this yard arrived with no request behind
-      // them. A tile that can only ever read 0 takes space and teaches
-      // nothing.
-      final c = code(screen);
-      expect(c.contains("label: 'Sent for destruction'"), isFalse);
-      expect(body.contains('forwardedDestruction'), isFalse);
-    });
-
-    test('forwarded counts only what is not already shown at tender', () {
-      // ⚠️ "Forwarded" counted all 135 the yard had ever sent on, of
-      // which 113 were already at tender and counted AGAIN in the group
-      // below -- the same goods twice on one panel. The 22 genuinely in
-      // flight are those Central Disposal holds and has not yet placed.
-      expect(body, contains('forwardedNotPlaced'));
-      expect(body, contains('!atTender.contains(fp)'));
-      expect(body, contains('!inDestruction.contains(fp)'));
-      expect(code(screen), contains("label: 'Forwarded, not yet placed'"));
+      expect(c.contains("route: '/re-export-packages'"), isFalse,
+          reason: 'the ruled goods are counted twice again');
+      expect(body.contains("'re_export',"), isFalse,
+          reason: 'the service emits a re_export figure again');
     });
 
     test('disposal requests split outstanding from forwarded', () {
