@@ -411,162 +411,161 @@ class TenderHistorySection extends ConsumerWidget {
 /// that has run out of tenders sits with the DG until they rule, and a popup
 /// that showed nothing there could not be told apart from one whose outcome
 /// had simply failed to load.
-/// A disposition the YARD recorded, with whether the goods have gone.
+/// An ending with a HAND-OVER the yard is still waiting on.
 ///
-/// ⚠️ Deliberately the same shape as [_FinalOutcomeTile], which serves
-/// Top Management's rulings: one panel, one heading, the decision on the
-/// right and the hand-over underneath. Two visually different endings for
-/// what an officer reads as the same event is the confusion this removes.
-class YardOutcome {
-  /// 'RE-EXPORTED', 'SOLD', 'DESTROYED', 'OTHER', 'RELEASED'.
-  final String finalTag;
+/// ⚠️ Re-export and Release only. Both are two events wearing one date:
+/// the yard RULES it -- writing the tag or the receipt -- and the goods
+/// LEAVE later, when a ship sails or an owner arrives. Only the first was
+/// ever stored, so both pages reported every row as finished on the day it
+/// was decided.
+///
+/// ⚠️ NOT Sold or Destroyed. Those already state their ending twice --
+/// Sold has the tender history's Final Outcome panel and a Sold Price
+/// column, Destroyed has a Destruction Status & Financials section -- and a
+/// third panel there repeated what was directly above it.
+enum HandoverKind {
+  reexport(
+    title: 'Re-export Outcome',
+    icon: Icons.flight_takeoff_rounded,
+    decidedLabel: 'Decision Recorded',
+    doneLabel: 'Shipped On',
+    pendingLabel: 'Shipping Status',
+    doneValue: 'Shipped',
+    pendingValue: 'Not yet shipped',
+    pendingHint: 'Still held by the yard',
+    noteLabel: 'Reason Recorded',
+  ),
+  released(
+    title: 'Release Outcome',
+    icon: Icons.keyboard_return_rounded,
+    decidedLabel: 'Release Recorded',
+    doneLabel: 'Collected On',
+    pendingLabel: 'Collection Status',
+    doneValue: 'Collected',
+    pendingValue: 'Not yet collected',
+    pendingHint: 'Still held by the yard',
+    noteLabel: 'Release Note',
+  );
 
-  /// The note the officer wrote when recording it.
+  const HandoverKind({
+    required this.title,
+    required this.icon,
+    required this.decidedLabel,
+    required this.doneLabel,
+    required this.pendingLabel,
+    required this.doneValue,
+    required this.pendingValue,
+    required this.pendingHint,
+    required this.noteLabel,
+  });
+
+  final String title;
+  final IconData icon;
+  final String decidedLabel;
+  final String doneLabel;
+  final String pendingLabel;
+  final String doneValue;
+  final String pendingValue;
+  final String pendingHint;
+  final String noteLabel;
+}
+
+class HandoverOutcome {
+  final HandoverKind kind;
+
+  /// The note the officer wrote when recording the disposition.
   final String? note;
 
   /// When the disposition was recorded.
   final DateTime? decidedAt;
 
-  /// Whether the goods have physically left.
+  /// Whether the goods have physically gone.
+  final bool delivered;
+
+  /// The day they went, when one was recorded.
   ///
-  /// ⚠️ Null means there is NO hand-over step for this ending -- released
-  /// goods walk out with their owner, and there is nobody to wait for.
-  /// Null is not false, and drawing it as "not yet delivered" would put
-  /// goods in a queue that does not exist.
-  final bool? delivered;
+  /// ⚠️ Null even on a DELIVERED row: rows marked delivered before the
+  /// date column existed carry no day. The heading alone is the whole of
+  /// what is known about those, and inventing a date would be worse.
   final DateTime? deliveredAt;
 
-  const YardOutcome({
-    required this.finalTag,
+  const HandoverOutcome({
+    required this.kind,
     this.note,
     this.decidedAt,
-    this.delivered,
+    required this.delivered,
     this.deliveredAt,
   });
 }
 
-class _YardOutcomeTile extends StatelessWidget {
-  const _YardOutcomeTile({required this.outcome});
+/// The hand-over, in the same frame as Warehouse Summary.
+///
+/// ⚠️ A [_DetailSection] of [_DetailItem]s, not a tinted banner. It sits
+/// directly above Warehouse Summary and the two are read as a pair -- where
+/// the goods are, and whether they have gone -- so a banner in a different
+/// visual language between the dialog's other sections made the popup look
+/// assembled from two designs.
+class _HandoverSection extends StatelessWidget {
+  const _HandoverSection({required this.outcome});
 
-  final YardOutcome outcome;
-
-  static const _labels = {
-    'RE-EXPORTED': 'Re-exported',
-    'SOLD': 'Sold',
-    'DESTROYED': 'Destroyed',
-    'RELEASED': 'Released',
-    'OTHER': 'Other disposition',
-  };
-
-  static const _icons = {
-    'RE-EXPORTED': Icons.flight_takeoff_rounded,
-    'SOLD': Icons.sell_rounded,
-    'DESTROYED': Icons.local_fire_department_rounded,
-    'RELEASED': Icons.keyboard_return_rounded,
-    'OTHER': Icons.category_rounded,
-  };
-
-  /// What the goods are waiting FOR differs by ending, and "pending" said
-  /// none of it.
-  static const _awaiting = {
-    'RE-EXPORTED': 'Not yet shipped \u2014 still held by the yard',
-    'SOLD': 'Not yet collected \u2014 still held by the yard',
-    'DESTROYED': 'Not yet destroyed \u2014 still held by the yard',
-  };
-
-  static const _done = {
-    'RE-EXPORTED': 'Shipped',
-    'SOLD': 'Collected by the buyer',
-    'DESTROYED': 'Destroyed',
-  };
+  final HandoverOutcome outcome;
 
   @override
   Widget build(BuildContext context) {
-    final tag = outcome.finalTag.toUpperCase();
-    final delivered = outcome.delivered;
-    // ⚠️ The panel is GREEN once the goods have gone, amber while they
-    // are still standing in the yard -- the same colours the Top Management
-    // panel uses for the same distinction. An ending with no hand-over step
-    // is simply finished, so it is green too.
-    final tint = delivered == false
-        ? context.colors.warningAmber
-        : context.colors.successGreen;
-    final label = _labels[tag] ?? outcome.finalTag;
+    final k = outcome.kind;
+    final d = DateFormat('dd MMM yyyy');
     final note = (outcome.note ?? '').trim();
-
-    return material.Container(
-      margin: const EdgeInsets.only(top: 4, bottom: 4),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: tint.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: tint.withOpacity(0.35)),
-      ),
+    final gone = outcome.delivered;
+    return _DetailSection(
+      title: k.title,
+      icon: k.icon,
+      delay: 340,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Icon(_icons[tag] ?? Icons.flag_rounded, size: 16, color: tint),
-            const Gap(8),
-            Text('FINAL OUTCOME',
-                style: TextStyle(
-                    color: context.colors.textMuted,
-                    fontSize: 10,
-                    letterSpacing: 0.9,
-                    fontWeight: FontWeight.w800)),
-            const Spacer(),
-            Text(label,
-                style: TextStyle(
-                    color: tint,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800)),
-          ]),
-          if (outcome.decidedAt != null || note.isNotEmpty) ...[
-            const Gap(6),
-            Text(
-                [
-                  if (outcome.decidedAt != null)
-                    'Recorded on '
-                        '${DateFormat('dd MMM yyyy').format(outcome.decidedAt!)}',
-                  if (note.isNotEmpty) note,
-                ].join(' \u00b7 '),
-                style: TextStyle(
-                    color: context.colors.textSecondary, fontSize: 11.5)),
-          ],
-          // ⚠️ Recording a disposition is not the same as the goods
-          // leaving, and the yard is still storing them until they do. This
-          // line is the difference -- omitted entirely where the ending has
-          // no hand-over step, rather than claiming one is pending.
-          if (delivered != null) ...[
-            const Gap(6),
-            Row(children: [
-              Icon(
-                  delivered
+          // ⚠️ The two events side by side, because they are the whole
+          // point of this section: the yard RULED it, and the goods LEFT.
+          // One had been stored since the beginning; the other had nowhere
+          // to live at all until it was given a column, so every row read
+          // as finished on the day it was decided.
+          Row(
+            children: [
+              Expanded(
+                child: _DetailItem(
+                  icon: Icons.assignment_turned_in_rounded,
+                  label: k.decidedLabel,
+                  value: outcome.decidedAt == null
+                      ? '—'
+                      : d.format(outcome.decidedAt!),
+                ),
+              ),
+              const Gap(12),
+              Expanded(
+                child: _DetailItem(
+                  icon: gone
                       ? Icons.check_circle_rounded
                       : Icons.schedule_rounded,
-                  size: 13,
-                  color: delivered
+                  label: gone ? k.doneLabel : k.pendingLabel,
+                  value: gone
+                      ? (outcome.deliveredAt == null
+                          ? k.doneValue
+                          : d.format(outcome.deliveredAt!))
+                      : k.pendingValue,
+                  // The one figure on this section a reader scans for.
+                  valueColor: gone
                       ? context.colors.successGreen
-                      : context.colors.warningAmber),
-              const Gap(6),
-              Flexible(
-                child: Text(
-                    delivered
-                        ? (outcome.deliveredAt != null
-                            ? '${_done[tag] ?? 'Delivered'} on '
-                                '${DateFormat('dd MMM yyyy').format(outcome.deliveredAt!)}'
-                            : (_done[tag] ?? 'Delivered'))
-                        : (_awaiting[tag] ??
-                            'Not yet delivered \u2014 still held by the yard'),
-                    style: TextStyle(
-                        color: delivered
-                            ? context.colors.successGreen
-                            : context.colors.warningAmber,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600)),
+                      : context.colors.warningAmber,
+                  subValue: gone ? null : k.pendingHint,
+                ),
               ),
-            ]),
-          ],
+            ],
+          ),
+          if (note.isNotEmpty)
+            _DetailItem(
+              icon: Icons.notes_rounded,
+              label: k.noteLabel,
+              value: note,
+            ),
         ],
       ),
     );
@@ -1066,21 +1065,18 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.isSoldPage = false,
     this.allowEdit = false,
     this.srFinancials,
-    this.yardOutcome,
+    this.handover,
   });
 
   final SrFinancials? srFinancials;
 
-  /// What the YARD decided, for goods that never went to tender.
+  /// An ending the yard is still waiting to hand over — see [HandoverKind].
   ///
-  /// ⚠️ The Final Outcome panel lives inside [TenderHistorySection], so
-  /// goods with no tender rounds had no ending at all: a re-export the yard
-  /// recorded itself went straight from Warehouse Summary to System Entry
-  /// By, and the popup never said what became of it. The DG-ruled row
-  /// beside it in the same table showed a full outcome panel, so the two
-  /// halves of one page told different stories about the same kind of
-  /// event.
-  final YardOutcome? yardOutcome;
+  /// ⚠️ Re-export and Release only. Both were recorded once and reported
+  /// finished from that moment; neither popup said whether the goods had
+  /// actually gone. Sold and Destroyed already state their ending twice and
+  /// pass null here.
+  final HandoverOutcome? handover;
 
   @override
   ConsumerState<PackageDetailsDialog> createState() =>
@@ -2797,13 +2793,11 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             forfeited: widget.tenderHistoryFor!,
                             qty: widget.valuationQty,
                           ),
-                        // ⚠️ AFTER the tender history, so a package that
-                        // has both reads in order: what was tried, then how
-                        // it ended. Goods the yard decided on directly have
-                        // no history above this, and this is the whole
-                        // story.
-                        if (widget.yardOutcome != null)
-                          _YardOutcomeTile(outcome: widget.yardOutcome!),
+                        // ⚠️ Directly ABOVE Warehouse Summary, and in the
+                        // same frame. The two are read as a pair -- where
+                        // the goods are, and where they went.
+                        if (widget.handover != null)
+                          _HandoverSection(outcome: widget.handover!),
                         if (!widget.useWarehouseSummary)
                           _DetailSection(
                             title: 'Warehouse Summary',

@@ -8322,6 +8322,26 @@ class DisposalService {
         ));
   }
 
+  /// Record that RELEASED goods have actually been collected.
+  ///
+  /// ⚠️ A release has the same two events a re-export does: an officer
+  /// RULES the goods released, writing a receipt, and the owner later COMES
+  /// FOR THEM. Released Goods showed the first and had no answer for the
+  /// second, so all 33 rows looked finished while the yard could still be
+  /// storing every one of them.
+  ///
+  /// ⚠️ Like [toggleReexportDelivery] and unlike [toggleOutcomeDelivery],
+  /// this does not close the warehouse entry -- releasing already did.
+  Future<void> toggleReleasedDelivery(String entryId, bool delivered) async {
+    await AuthService._withNetworkRetry(() => supabase.rpc(
+          'yard_toggle_released_delivery',
+          params: {
+            'p_entry_id': entryId,
+            'p_delivered': delivered,
+          },
+        ));
+  }
+
   /// Flip a FINAL OUTCOME's hand-over flag (yard OR Central Disposal).
   ///
   /// ⚠️ Delivering also CLOSES THE WAREHOUSE ENTRY, inside the same statement

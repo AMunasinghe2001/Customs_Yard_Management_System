@@ -86,85 +86,122 @@ void main() {
       // so all 17 read Delivered from the moment the disposition was recorded
       // and no officer could say otherwise. Ruling a re-export and the goods
       // actually leaving are two events.
-      expect(screen, contains('class _ReexportDeliveryCell'));
-      expect(screen, contains('_ReexportDeliveryCell( entry: row.entry'));
+      expect(screen, contains('class _HandoverCell'));
+      expect(screen, contains('kind: _HandoverKind.reexport'));
       expect(screen, contains('delivered: r.delivered'));
       final models = code(File('lib/models/models.dart').readAsStringSync());
       expect(models, contains("delivered: json['delivered'] as bool?"));
     });
   });
 
-  group('a yard-decided ending shows an outcome panel', () {
+  group('an ending with a hand-over says whether the goods went', () {
     final dialog =
         code(File('lib/widgets/package_details_dialog.dart').readAsStringSync());
     final mig56 =
         File('postgres/56_delivery_carries_its_date.sql').readAsStringSync();
+    final mig57 =
+        File('postgres/57_released_delivery.sql').readAsStringSync();
 
-    test('goods with no tender still say how they ended', () {
-      // ⚠️ The Final Outcome panel lived INSIDE TenderHistorySection, so
-      // goods the yard decided on directly had no ending at all: the popup
-      // ran Warehouse Summary straight into System Entry By and never said
-      // what became of them. The DG-ruled row beside it in the same table
-      // showed a full panel, so one page told two different stories about
-      // the same kind of event.
-      expect(dialog, contains('class YardOutcome'));
-      expect(dialog, contains('class _YardOutcomeTile'));
-      expect(dialog, contains('widget.yardOutcome != null'));
-      expect(screen, contains('yardOutcome: row.fromTopManagement'));
+    test('re-export and release get a section; sold and destroyed do not', () {
+      // ⚠️ Both are two events wearing one date: the yard RULES it --
+      // writing the tag or the receipt -- and the goods LEAVE later, when a
+      // ship sails or an owner arrives. Only the ruling was ever stored, so
+      // both pages reported every row finished on the day it was decided.
+      //
+      // Sold and Destroyed already state their ending twice -- the tender
+      // history's Final Outcome panel and a Sold Price column; a Destruction
+      // Status & Financials section -- and a third panel there repeated what
+      // was directly above it.
+      expect(dialog, contains('enum HandoverKind'));
+      expect(dialog, contains('class _HandoverSection'));
+      expect(screen, contains("'RE-EXPORTED' => HandoverOutcome("));
+      expect(screen, contains("'RELEASED' => HandoverOutcome("));
+      expect(screen, contains('_ => null,'),
+          reason: 'sold and destroyed must fall through to no section');
     });
 
-    test('one ending per popup', () {
-      // ⚠️ A Top Management row keeps ITS panel -- that one carries the
-      // ruling, the decision date and the DG's note. Drawing both would put
-      // two FINAL OUTCOME headings on one dialog.
-      expect(screen, contains('yardOutcome: row.fromTopManagement ? null'));
+    test('the section is in the dialog\u0027s own language', () {
+      // ⚠️ A _DetailSection of _DetailItems, not a tinted banner. It sits
+      // directly above Warehouse Summary and the two are read as a pair --
+      // where the goods are, and whether they have gone -- so a banner in a
+      // different visual language made the popup look assembled from two
+      // designs.
+      final start = dialog.indexOf('class _HandoverSection');
+      final body = dialog.substring(start, start + 2400);
+      expect(body, contains('_DetailSection('));
+      expect(body, contains('_DetailItem('));
     });
 
-    test('an ending with no hand-over step draws no delivery line', () {
-      // ⚠️ Released goods walk out with their owner -- there is nobody to
-      // wait for. `delivered` is NULL there, and drawing null as "not yet
-      // delivered" would put goods in a queue that does not exist.
-      expect(dialog, contains('if (delivered != null) ...['));
+    test('a Top Management row keeps ITS panel, and only that one', () {
+      // ⚠️ Its ruling, decision date, note and hand-over are all in the
+      // tender history's Final Outcome panel. Drawing both would put two
+      // outcome sections on one dialog.
+      expect(screen, contains('handover: row.fromTopManagement ? null'));
     });
 
-    test('what the goods await is named by the ending', () {
-      // ⚠️ "Pending" says none of it. A sale waits for a buyer to
-      // collect, a re-export for a ship, a destruction for the burn.
-      expect(dialog, contains('Not yet shipped'));
-      expect(dialog, contains('Not yet collected'));
-      expect(dialog, contains('Not yet destroyed'));
+    test('one cell serves both hand-overs', () {
+      // ⚠️ They are the same interaction down to the column width -- a
+      // pill, one irreversible action, no revert -- and differ only in which
+      // column the answer lives in and what the goods are waiting FOR. Two
+      // near-identical widgets would drift, and the drift would show as two
+      // pages behaving differently for no reason a reader could see.
+      expect(screen, contains('enum _HandoverKind'));
+      expect(screen, contains('kind: _HandoverKind.reexport'));
+      expect(screen, contains('kind: _HandoverKind.released'));
+      expect(screen.contains('class _ReexportDeliveryCell'), isFalse,
+          reason: 'the duplicated cell is back');
+      expect(services, contains('toggleReexportDelivery'));
+      expect(services, contains('toggleReleasedDelivery'));
+    });
+
+    test('each write refuses the other kind of entry', () {
+      // ⚠️ Without the guards a function would flip its flag on an entry
+      // whose real delivery lives on another column or another table. A
+      // release is the entry with NO disposition tag -- exactly the rule the
+      // view's fourth source uses.
+      expect(code(mig56), contains('is not a re-export'));
+      expect(code(mig57), contains('is not a release'));
+      expect(code(mig57), contains('has not been released'));
+    });
+
+    test('released rows all answer, and none answers true yet', () {
+      // ⚠️ RELEASED used to answer NULL for every row -- no hand-over step
+      // existed. All 33 answer now, and none says delivered, because nobody
+      // has recorded a collection. Backfilling them to true would repeat
+      // migration 54's mistake with a different spelling.
+      expect(mig57, contains('BACKFILL: none'));
+      expect(code(mig57), contains('released rows still have no delivery answer'));
+      expect(code(mig57), contains('n_rel <> 33'));
     });
 
     test('a delivery date is gated on its own flag', () {
       // ⚠️ `tender_sale_items` and `destruction_items` carry NO delivery-
-      // consistency check -- only `unsold_proposals` does -- and the data
-      // drifted through the gap: 20 rows hold a delivered_at while reading
-      // not-delivered. The FLAG is the answer; a date beside a false flag is
-      // a leftover, not a hand-over. The migration asserts no such row can
-      // reach the view.
-      final c = code(mig56);
+      // consistency check -- only `unsold_proposals` and the two
+      // `warehouse_entries` pairs do -- and the data drifted through the
+      // gap: 20 rows hold a delivered_at while reading not-delivered. The
+      // FLAG is the answer; a date beside a false flag is a leftover.
+      final c = code(mig57);
       expect(c, contains('case when ti.is_delivered then ti.delivered_at end'));
       expect(c, contains('case when di.delivered then di.delivered_at end'));
+      expect(c,
+          contains('case when we.released_delivered then we.released_delivered_at end'));
       expect(c, contains('rows carry a delivery date but are not delivered'));
     });
 
     test('the migration asserts the RULE, not the tally', () {
       // ⚠️ Migration 55 pinned re-export deliveries at exactly 1 -- the
-      // count on the day it ran. Officers marked two more within the hour,
-      // so re-running it failed on a system working exactly as intended. 56
-      // asserts what must always hold instead: no re-export reports
-      // delivered without a recorded departure behind it.
-      expect(code(mig56),
+      // count on the day it ran. Officers marked two more within the hour
+      // through the button 55 had just created, so re-running it failed on a
+      // system working exactly as intended.
+      expect(code(mig57),
           contains('reports delivered with nothing recorded behind it'));
     });
 
     test('the table refreshes on every delivery source', () {
       // ⚠️ `dispositionPageProvider` watched packages, warehouse entries
-      // and bids -- but not `tender_sale_items`, which is where a sold
-      // lot's delivery lives. Marking one delivered updated the pill and
-      // left the row's own data stale until the page was reopened. The
-      // re-export path was safe only by accident, writing to a table that
-      // happened to be watched.
+      // and bids -- but not `tender_sale_items`, which is where a sold lot's
+      // delivery lives. Marking one delivered updated the pill and left the
+      // row's own data stale until the page was reopened.
       final providers =
           code(File('lib/core/providers.dart').readAsStringSync());
       final start = providers.indexOf('final dispositionPageProvider');

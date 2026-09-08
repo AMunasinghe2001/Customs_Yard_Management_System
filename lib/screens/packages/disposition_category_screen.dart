@@ -54,10 +54,14 @@ class _DispositionCategoryScreenState
   // true = delivered, false = pending.
   bool? _deliveryFilter;
 
+  // ⚠️ Released joins the delivery pages. A release is RULED and the
+  // goods are COLLECTED later; the page showed only the first, so all 33
+  // rows looked finished while the yard could still be storing them.
   bool get _hasDelivery =>
       widget.finalTag == 'SOLD' ||
       widget.finalTag == 'DESTROYED' ||
-      widget.finalTag == 'RE-EXPORTED';
+      widget.finalTag == 'RE-EXPORTED' ||
+      widget.finalTag == 'RELEASED';
 
   /// Everything this page is asking the database for.
   ///
@@ -484,7 +488,8 @@ class _DispositionCategoryScreenState
                                   label: Text('Sold Price'),
                                   size: ColumnSize.M),
                             if (widget.finalTag == 'SOLD' ||
-                                widget.finalTag == 'RE-EXPORTED')
+                                widget.finalTag == 'RE-EXPORTED' ||
+                                widget.finalTag == 'RELEASED')
                               // Same width as the Destroyed Goods status
                               // column: both hold the same fixed-size pill, so
                               // a narrower box here would clip it.
@@ -599,9 +604,18 @@ class _DispositionCategoryScreenState
                                             // and the goods actually leaving
                                             // are two events; this cell is
                                             // the second one.
-                                            : _ReexportDeliveryCell(
+                                            : _HandoverCell(
                                                 entry: row.entry,
-                                                delivered: row.delivered),
+                                                delivered: row.delivered,
+                                                kind: _HandoverKind.reexport),
+                                      )),
+                                    if (widget.finalTag == 'RELEASED')
+                                      DataCell(Center(
+                                        child: _HandoverCell(
+                                          entry: row.entry,
+                                          delivered: row.delivered,
+                                          kind: _HandoverKind.released,
+                                        ),
                                       )),
                                     if (widget.finalTag == 'DESTROYED')
                                       DataCell(DestructionExpenseCell(
@@ -719,37 +733,75 @@ class _DispositionCategoryScreenState
                                             // Disposal had recorded the
                                             // destruction expenses.
                                             srFinancials: srFin,
-                                            // ⚠️ What the YARD decided, for
-                                            // goods that never went to
-                                            // tender. The Final Outcome
-                                            // panel lives inside the tender
-                                            // history, so these popups had
-                                            // no ending at all: a re-export
-                                            // the yard recorded went from
-                                            // Warehouse Summary straight to
-                                            // System Entry By, while the
-                                            // DG-ruled row beside it in the
-                                            // same table showed a full
-                                            // outcome panel.
+                                            // ⚠️ RE-EXPORT and RELEASE only,
+                                            // and only a row the YARD
+                                            // recorded.
                                             //
-                                            // A Top Management row keeps ITS
-                                            // panel -- one ending per popup,
-                                            // and that one carries the
-                                            // ruling, the decision date and
-                                            // the DG's note.
-                                            yardOutcome: row.fromTopManagement
+                                            // Both are two events wearing
+                                            // one date: the yard rules it,
+                                            // and the goods leave later --
+                                            // a ship sails, an owner
+                                            // arrives. Only the ruling was
+                                            // ever stored, so both pages
+                                            // reported every row finished
+                                            // on the day it was decided.
+                                            //
+                                            // Sold and Destroyed pass null:
+                                            // they already state their
+                                            // ending twice, in the tender
+                                            // history's Final Outcome panel
+                                            // and a Sold Price column, or a
+                                            // Destruction Status &
+                                            // Financials section. A Top
+                                            // Management row does too --
+                                            // its ruling, date, note and
+                                            // hand-over are all in that
+                                            // same panel.
+                                            handover: row.fromTopManagement
                                                 ? null
-                                                : YardOutcome(
-                                                    finalTag: widget.finalTag,
-                                                    note: row.note.trim().isEmpty
-                                                        ? null
-                                                        : row.note.trim(),
-                                                    decidedAt:
-                                                        row.entry?.returnedAt,
-                                                    delivered: row.delivered,
-                                                    deliveredAt:
-                                                        row.deliveredAt,
-                                                  ),
+                                                : switch (widget.finalTag) {
+                                                    'RE-EXPORTED' =>
+                                                      HandoverOutcome(
+                                                        kind: HandoverKind
+                                                            .reexport,
+                                                        note: row.note
+                                                                .trim()
+                                                                .isEmpty
+                                                            ? null
+                                                            : row.note.trim(),
+                                                        decidedAt: row.entry
+                                                            ?.returnedAt,
+                                                        delivered:
+                                                            row.delivered ??
+                                                                false,
+                                                        deliveredAt:
+                                                            row.deliveredAt,
+                                                      ),
+                                                    'RELEASED' =>
+                                                      HandoverOutcome(
+                                                        kind: HandoverKind
+                                                            .released,
+                                                        // ⚠️ A release's
+                                                        // note is the
+                                                        // receipt line, and
+                                                        // the popup already
+                                                        // shows Receipt No
+                                                        // and Receipt Date
+                                                        // as their own
+                                                        // fields. Repeating
+                                                        // it here would say
+                                                        // the same thing a
+                                                        // third time.
+                                                        decidedAt: row.entry
+                                                            ?.returnedAt,
+                                                        delivered:
+                                                            row.delivered ??
+                                                                false,
+                                                        deliveredAt:
+                                                            row.deliveredAt,
+                                                      ),
+                                                    _ => null,
+                                                  },
                                           ),
                                         );
                                       },
@@ -986,27 +1038,49 @@ class _DeliveryStatusCellState extends ConsumerState<_DeliveryStatusCell> {
   }
 }
 
-/// Delivery status for a YARD-DECIDED re-export, and the action that
-/// changes it.
+/// The two hand-overs an ENTRY carries: a re-export shipping, a release
+/// being collected.
 ///
-/// ⚠️ Mirrors [_DeliveryStatusCell] deliberately -- one pill, one action,
-/// no revert. Goods that have left the country cannot un-leave, and a
-/// re-export that has not yet been collected is still the yard's to store.
-class _ReexportDeliveryCell extends ConsumerStatefulWidget {
+/// ⚠️ One cell, two kinds. They are the same interaction down to the
+/// column width -- a pill, one irreversible action, no revert -- and differ
+/// only in which column the answer lives in and what the goods are waiting
+/// FOR. Two near-identical widgets would drift, and the drift would show as
+/// two pages behaving slightly differently for no reason a reader could see.
+enum _HandoverKind {
+  reexport(
+    done: 'The goods have left for their country of origin',
+    prompt: 'Confirm the goods have left the yard',
+    waiting: 'Awaiting the yard to confirm departure',
+  ),
+  released(
+    done: 'The owner has collected the goods',
+    prompt: 'Confirm the owner has collected the goods',
+    waiting: 'Awaiting the yard to confirm collection',
+  );
+
+  const _HandoverKind(
+      {required this.done, required this.prompt, required this.waiting});
+
+  final String done;
+  final String prompt;
+  final String waiting;
+}
+
+class _HandoverCell extends ConsumerStatefulWidget {
   final WarehouseEntryModel? entry;
 
   /// The view's answer, so the pill is right on first paint rather than
   /// after a second fetch this cell would otherwise have to make.
   final bool? delivered;
-  const _ReexportDeliveryCell({required this.entry, this.delivered});
+  final _HandoverKind kind;
+  const _HandoverCell(
+      {required this.entry, required this.kind, this.delivered});
 
   @override
-  ConsumerState<_ReexportDeliveryCell> createState() =>
-      _ReexportDeliveryCellState();
+  ConsumerState<_HandoverCell> createState() => _HandoverCellState();
 }
 
-class _ReexportDeliveryCellState
-    extends ConsumerState<_ReexportDeliveryCell> {
+class _HandoverCellState extends ConsumerState<_HandoverCell> {
   bool _saving = false;
   bool? _optimistic;
 
@@ -1015,12 +1089,16 @@ class _ReexportDeliveryCellState
     if (id == null) return;
     setState(() => _saving = true);
     try {
-      await ref.read(disposalServiceProvider).toggleReexportDelivery(id, true);
+      final svc = ref.read(disposalServiceProvider);
+      await switch (widget.kind) {
+        _HandoverKind.reexport => svc.toggleReexportDelivery(id, true),
+        _HandoverKind.released => svc.toggleReleasedDelivery(id, true),
+      };
       // ⚠️ Hold the answer locally as well as refreshing. The table
       // rebuilds from `disposition_rows`, and until that round-trip lands
       // the pill would snap back to Pending under the reader's eyes.
       if (mounted) setState(() => _optimistic = true);
-      ref.read(tenderSaleItemsRefreshProvider.notifier).trigger();
+      ref.read(warehouseRefreshTriggerProvider.notifier).trigger();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: const Text('Marked as Delivered'),
@@ -1037,16 +1115,14 @@ class _ReexportDeliveryCellState
   @override
   Widget build(BuildContext context) {
     final delivered = _optimistic ?? widget.delivered ?? false;
-    // Only a yard confirms delivery; Central Disposal watches.
+    // Only a yard confirms a hand-over; Central Disposal watches.
     final profile = ref.watch(currentProfileProvider);
     final canEdit =
         profile != null && !profile.isDisposal && widget.entry != null;
     return Tooltip(
       message: delivered
-          ? 'The goods have left for their country of origin'
-          : (canEdit
-              ? 'Confirm the goods have left the yard'
-              : 'Awaiting the yard to confirm departure'),
+          ? widget.kind.done
+          : (canEdit ? widget.kind.prompt : widget.kind.waiting),
       child: DeliveryStatusPill(
         delivered: delivered,
         busy: _saving,
