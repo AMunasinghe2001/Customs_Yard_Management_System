@@ -2719,11 +2719,24 @@ class WarehouseService {
     final yard = AppSession.currentYard;
 
     final zones = await getWarehouseZones();
+    // ⚠️ `zone_occupancy_entries`, not `is_returned = false`.
+    //
+    // A release or a re-export CLOSES its warehouse entry the day the
+    // disposition is written, so 31 released and 15 re-exported lots
+    // vanished from their zones while still physically standing in them --
+    // an officer looking for space was told there was room a pallet was
+    // sitting in. The view keeps them until the hand-over is recorded
+    // (postgres/58); the figure went 187 to 233.
+    //
+    // ⚠️ The storage CHARGE deliberately does not follow. Billing ends
+    // when the yard rules -- the bill is issued and closed at that point,
+    // and the goods wait on their owner, not on the yard. Capacity is a
+    // physical question and billing a contractual one; they end on
+    // different days.
     final data = await AuthService._withNetworkRetry(() => supabase
-        .from('warehouse_entries')
+        .from('zone_occupancy_entries')
         .select('item_count, zone, warehouse_id, warehouses(name, code)')
-        .eq('yard', yard)
-        .eq('is_returned', false));
+        .eq('yard', yard));
 
     // warehouse_id → { name, code, "<zone lowercased>" → used, unzoned }
     final byWarehouse = <String, Map<String, dynamic>>{};

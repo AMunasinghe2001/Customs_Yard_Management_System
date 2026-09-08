@@ -11,8 +11,20 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:cus_yard_management/models/models.dart';
 
-String _flat(String p) =>
-    File(p).readAsStringSync().replaceAll(RegExp(r'\s+'), ' ');
+/// Source with comment lines dropped, then flattened.
+///
+/// ⚠️ The comments go from the RAW text, LINE BY LINE, before the
+/// whitespace collapse -- flattening first removes the newlines a `//` runs
+/// to, and every assertion below then matches prose as readily as code. It
+/// caught fire exactly that way: a comment in `_navOutcomes` explaining why
+/// re-export is NOT in that section -- which necessarily names it -- failed
+/// the assertion that the section does not mention it.
+String _flat(String p) => File(p)
+    .readAsStringSync()
+    .split('\n')
+    .where((l) => !l.trimLeft().startsWith('//'))
+    .join(' ')
+    .replaceAll(RegExp(r'\s+'), ' ');
 
 void main() {
   final page = _flat('lib/screens/packages/disposition_category_screen.dart');
@@ -95,8 +107,9 @@ void main() {
           shell.indexOf('const _navDisposed'), shell.indexOf('const _navOutcomes'));
       expect(disposed, contains("'Re-exported Goods'"));
       final outcomes = shell.substring(shell.indexOf('const _navOutcomes'));
+      // The NavItems, not the prose beside them -- see [_flat].
       expect(outcomes.substring(0, outcomes.indexOf(']')),
-          isNot(contains('Re-exported')));
+          isNot(contains('Re-export')));
     });
   });
 }

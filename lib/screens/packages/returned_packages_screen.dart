@@ -18,6 +18,8 @@ import '../../widgets/year_filter.dart';
 import '../../widgets/table_pager.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../widgets/tooltip_text.dart';
+import '../../widgets/destruction_status_pill.dart';
+import '../../widgets/handover_cell.dart';
 
 final returnedPackageSearchProvider = StateProvider<String>((ref) => '');
 final returnedPackageReasonFilterProvider =
@@ -68,6 +70,8 @@ class _ReturnedPackagesScreenState
         // Parsed by the view now, so the search box can match it in SQL.
         receiptNo: r.receiptNo,
         receiptDate: _extractReceiptDate(entry.returnNotes),
+        delivered: r.delivered,
+        deliveredAt: r.deliveredAt,
       ));
     }
     return out;
@@ -515,6 +519,17 @@ class _ReturnedPackagesScreenState
                                   DataColumn2(
                                       label: Text('Receipt No'),
                                       size: ColumnSize.M),
+                                  // ⚠️ The COLLECTION, which is not the
+                                  // release. The receipt above says an
+                                  // officer ruled the goods released; this
+                                  // says whether the owner has come for
+                                  // them. Same width as every other
+                                  // delivery column, because it holds the
+                                  // same fixed-size pill.
+                                  DataColumn2(
+                                      label: Center(child: Text('Delivery')),
+                                      fixedWidth:
+                                          kDestructionStatusColumnWidth),
                                   DataColumn2(
                                       label: Center(child: Text('Details')),
                                       size: ColumnSize.S,
@@ -595,6 +610,13 @@ class _ReturnedPackagesScreenState
                                               row.receiptNo ?? '—',
                                               overflow: TextOverflow.ellipsis)),
                                           DataCell(Center(
+                                            child: HandoverCell(
+                                              entry: row.entry,
+                                              delivered: row.delivered,
+                                              kind: HandoverEntryKind.released,
+                                            ),
+                                          )),
+                                          DataCell(Center(
                                               child: IconButton(
                                             icon: Icon(
                                                 Icons.info_outline_rounded,
@@ -611,6 +633,26 @@ class _ReturnedPackagesScreenState
                                                       storageRateHistory,
                                                   highlightEntry: row.entry,
                                                   useLegacySummary: true,
+                                                  // ⚠️ The same section
+                                                  // Re-exported Goods
+                                                  // carries. Both endings
+                                                  // are ruled once and
+                                                  // handed over later, and
+                                                  // an officer reading one
+                                                  // popup should not have
+                                                  // to learn a second
+                                                  // layout for the same
+                                                  // fact.
+                                                  handover: HandoverOutcome(
+                                                    kind:
+                                                        HandoverKind.released,
+                                                    decidedAt:
+                                                        row.entry.returnedAt,
+                                                    delivered:
+                                                        row.delivered ?? false,
+                                                    deliveredAt:
+                                                        row.deliveredAt,
+                                                  ),
                                                 ),
                                               );
                                             },
@@ -682,11 +724,22 @@ class _ReturnedRow {
   final String? receiptNo;
   final String? receiptDate;
 
+  /// Has the owner actually collected the goods?
+  ///
+  /// ⚠️ A release is two events wearing one date: an officer RULES it,
+  /// writing the receipt, and the owner COMES FOR THEM later. This page
+  /// showed only the first, so all 33 rows looked finished while the yard
+  /// could still be storing every one of them.
+  final bool? delivered;
+  final DateTime? deliveredAt;
+
   const _ReturnedRow({
     required this.package,
     required this.entry,
     required this.itemName,
     this.receiptNo,
     this.receiptDate,
+    this.delivered,
+    this.deliveredAt,
   });
 }

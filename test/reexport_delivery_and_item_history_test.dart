@@ -86,8 +86,10 @@ void main() {
       // so all 17 read Delivered from the moment the disposition was recorded
       // and no officer could say otherwise. Ruling a re-export and the goods
       // actually leaving are two events.
-      expect(screen, contains('class _HandoverCell'));
-      expect(screen, contains('kind: _HandoverKind.reexport'));
+      final cell =
+          code(File('lib/widgets/handover_cell.dart').readAsStringSync());
+      expect(cell, contains('class HandoverCell'));
+      expect(screen, contains('kind: HandoverEntryKind.reexport'));
       expect(screen, contains('delivered: r.delivered'));
       final models = code(File('lib/models/models.dart').readAsStringSync());
       expect(models, contains("delivered: json['delivered'] as bool?"));
@@ -145,9 +147,20 @@ void main() {
       // column the answer lives in and what the goods are waiting FOR. Two
       // near-identical widgets would drift, and the drift would show as two
       // pages behaving differently for no reason a reader could see.
-      expect(screen, contains('enum _HandoverKind'));
-      expect(screen, contains('kind: _HandoverKind.reexport'));
-      expect(screen, contains('kind: _HandoverKind.released'));
+      // ⚠️ It lives in its own FILE, because Released Goods is a
+      // different screen entirely (ReturnedPackagesScreen). Left private
+      // inside the disposition screen, the only way to give Released the
+      // same pill would have been to copy it -- two widgets for one
+      // interaction, which is exactly the drift the enum prevents.
+      final cell =
+          code(File('lib/widgets/handover_cell.dart').readAsStringSync());
+      expect(cell, contains('enum HandoverEntryKind'));
+      expect(cell, contains('class HandoverCell'));
+      expect(screen, contains('kind: HandoverEntryKind.reexport'));
+      final released = code(File(
+              'lib/screens/packages/returned_packages_screen.dart')
+          .readAsStringSync());
+      expect(released, contains('kind: HandoverEntryKind.released'));
       expect(screen.contains('class _ReexportDeliveryCell'), isFalse,
           reason: 'the duplicated cell is back');
       expect(services, contains('toggleReexportDelivery'));
@@ -208,6 +221,85 @@ void main() {
       final fn = providers.substring(start, start + 900);
       expect(fn, contains('tenderSaleItemsChangeTriggerProvider'));
       expect(fn, contains('warehouseEntriesChangeTriggerProvider'));
+    });
+  });
+
+  group('a zone is occupied until the goods actually leave', () {
+    final mig58 =
+        File('postgres/58_zone_holds_until_delivery.sql').readAsStringSync();
+
+    test('zone capacity reads the occupancy view, not is_returned', () {
+      // ⚠️ A release or a re-export CLOSES its warehouse entry the day
+      // the disposition is written, so 31 released and 15 re-exported lots
+      // vanished from their zones while still physically standing in them --
+      // an officer looking for space was told there was room a pallet was
+      // sitting in. Measured: 187 entries counted, 233 actually present.
+      final start = services.indexOf('getYardWarehouseCapacity');
+      final fn = services.substring(start, start + 1200);
+      expect(fn, contains("from('zone_occupancy_entries')"));
+      expect(fn.contains("eq('is_returned', false)"), isFalse,
+          reason: 'capacity is back on the ruling date');
+    });
+
+    test('the STORAGE CHARGE deliberately does not follow', () {
+      // ⚠️ Billing ends when the yard RULES -- the bill is issued and
+      // closed at that point, and the goods then wait on their owner, not
+      // on the yard. Capacity is a physical question and billing a
+      // contractual one; they end on different days, and wiring them
+      // together would bill an owner for their own delay.
+      expect(mig58, contains('STORAGE CHARGE deliberately does NOT change'));
+      final accrued =
+          File('postgres/52_accrued_storage_view.sql').readAsStringSync();
+      expect(accrued, contains('is_returned'),
+          reason: 'the charge still ends at the ruling');
+    });
+
+    test('the view can only ever ADD to what was counted', () {
+      // ⚠️ A smaller figure would mean the filter had dropped something
+      // genuinely held -- the one failure this change could cause that an
+      // officer would not notice until a zone overflowed.
+      expect(code(mig58), contains('zone occupancy SHRANK'));
+      // And a hand-over that HAS happened must free the space.
+      expect(code(mig58),
+          contains('goods that have been handed over still occupy a zone'));
+    });
+  });
+
+  group('the popup shows the state, not just the date', () {
+    final dialog =
+        code(File('lib/widgets/package_details_dialog.dart').readAsStringSync());
+
+    test('the hand-over section carries the same pill the table does', () {
+      // ⚠️ A reader who marked a row Delivered and then opened it had to
+      // re-read a date to check the change had taken -- the state they had
+      // just changed was the one thing the section did not show at a
+      // glance. Same two colours as the table's pill, because it answers
+      // the same question about the same row.
+      expect(dialog, contains('class _HandoverPill'));
+      expect(dialog, contains('_HandoverPill(delivered: gone, kind: k)'));
+      expect(dialog, contains("pillDone: 'SHIPPED'"));
+      expect(dialog, contains("pillDone: 'COLLECTED'"));
+    });
+  });
+
+  group('Released Goods has a hand-over of its own', () {
+    final released = code(
+        File('lib/screens/packages/returned_packages_screen.dart')
+            .readAsStringSync());
+
+    test('the page has a Delivery column and a pill in it', () {
+      // ⚠️ Released Goods is a SEPARATE screen (ReturnedPackagesScreen),
+      // not the shared disposition one, so the column added there did not
+      // reach it. A release is two events wearing one date exactly as a
+      // re-export is: the receipt says an officer ruled it, and nothing
+      // said whether the owner had come.
+      expect(released, contains("Center(child: Text('Delivery'))"));
+      expect(released, contains('kind: HandoverEntryKind.released'));
+    });
+
+    test('its popup carries the same section Re-exported does', () {
+      expect(released, contains('handover: HandoverOutcome('));
+      expect(released, contains('kind: HandoverKind.released'));
     });
   });
 

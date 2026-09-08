@@ -434,6 +434,8 @@ enum HandoverKind {
     pendingValue: 'Not yet shipped',
     pendingHint: 'Still held by the yard',
     noteLabel: 'Reason Recorded',
+    pillDone: 'SHIPPED',
+    pillPending: 'PENDING',
   ),
   released(
     title: 'Release Outcome',
@@ -445,6 +447,8 @@ enum HandoverKind {
     pendingValue: 'Not yet collected',
     pendingHint: 'Still held by the yard',
     noteLabel: 'Release Note',
+    pillDone: 'COLLECTED',
+    pillPending: 'PENDING',
   );
 
   const HandoverKind({
@@ -457,6 +461,8 @@ enum HandoverKind {
     required this.pendingValue,
     required this.pendingHint,
     required this.noteLabel,
+    required this.pillDone,
+    required this.pillPending,
   });
 
   final String title;
@@ -468,6 +474,8 @@ enum HandoverKind {
   final String pendingValue;
   final String pendingHint;
   final String noteLabel;
+  final String pillDone;
+  final String pillPending;
 }
 
 class HandoverOutcome {
@@ -556,6 +564,12 @@ class _HandoverSection extends StatelessWidget {
                       ? context.colors.successGreen
                       : context.colors.warningAmber,
                   subValue: gone ? null : k.pendingHint,
+                  // ⚠️ The same pill the TABLE shows, in the same two
+                  // colours. A reader who marked a row Delivered and then
+                  // opened it had to re-read a date to check it had taken --
+                  // the state they had just changed was the one thing the
+                  // section did not show at a glance.
+                  trailing: _HandoverPill(delivered: gone, kind: k),
                 ),
               ),
             ],
@@ -4590,6 +4604,46 @@ class _DetailSection extends StatelessWidget {
   }
 }
 
+/// The Delivered / Pending pill the hand-over section carries.
+///
+/// ⚠️ Deliberately the same two colours as the table's own pill -- green
+/// for gone, amber for still here -- because it answers the same question
+/// about the same row. A third colour scheme for the same fact would make
+/// the popup and the table look like two systems.
+class _HandoverPill extends StatelessWidget {
+  const _HandoverPill({required this.delivered, required this.kind});
+
+  final bool delivered;
+  final HandoverKind kind;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = delivered
+        ? context.colors.successGreen
+        : context.colors.warningAmber;
+    return material.Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: tint.withOpacity(0.4)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(
+            delivered
+                ? Icons.check_circle_rounded
+                : Icons.schedule_rounded,
+            size: 12,
+            color: tint),
+        const Gap(5),
+        Text(delivered ? kind.pillDone : kind.pillPending,
+            style: material.TextStyle(
+                color: tint, fontSize: 10.5, fontWeight: FontWeight.w800)),
+      ]),
+    );
+  }
+}
+
 class _DetailItem extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -4597,12 +4651,16 @@ class _DetailItem extends StatelessWidget {
   final String? subValue;
   final Color? valueColor;
 
+  /// A widget pinned to the RIGHT of the row -- a status pill, typically.
+  final Widget? trailing;
+
   const _DetailItem({
     required this.icon,
     required this.label,
     required this.value,
     this.subValue,
     this.valueColor,
+    this.trailing,
   });
 
   @override
@@ -4663,6 +4721,10 @@ class _DetailItem extends StatelessWidget {
                 ],
               ),
             ),
+            if (trailing != null) ...[
+              const Gap(8),
+              trailing!,
+            ],
           ],
         ),
       ),

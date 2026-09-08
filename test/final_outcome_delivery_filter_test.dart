@@ -153,12 +153,26 @@ void main() {
       expect(bodies, int.parse(len), reason: '$bodies bodies but length $len');
     });
 
-    test('the yard side has the page too', () {
+    test('re-export has NO page of its own', () {
+      // ⚠️ It used to. The DG's re-export ruling got a page listing the 2
+      // goods it covered -- and every one of them already appeared on
+      // Re-exported Goods, which lists all 19 that left the country by any
+      // route and marks each row Yard or Top Management in its Decided By
+      // column. Two pages for one population, one a strict subset of the
+      // other, meant a reader had to know which answered their question.
+      //
+      // The other four rulings keep their pages: their goods appear
+      // nowhere else.
       final router = File('lib/core/router.dart').readAsStringSync();
-      expect(router, contains("path: '/re-export-packages'"));
-      expect(router, contains("proposalFilter: 're_export'"));
+      expect(router.contains("path: '/re-export-packages'"), isFalse);
       final rail = File('lib/widgets/app_shell.dart').readAsStringSync();
-      expect(rail, contains("'/re-export-packages'"));
+      expect(rail.contains("'/re-export-packages'"), isFalse);
+      // The page that does answer it, with the split on its rows.
+      expect(router, contains("path: '/reexported-packages'"));
+      final screen = File(
+              'lib/screens/packages/disposition_category_screen.dart')
+          .readAsStringSync();
+      expect(screen, contains("label: Text('Decided By')"));
     });
 
     test('it uses the icon the app already gave re-export', () {
