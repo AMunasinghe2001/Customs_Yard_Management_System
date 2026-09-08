@@ -411,6 +411,168 @@ class TenderHistorySection extends ConsumerWidget {
 /// that has run out of tenders sits with the DG until they rule, and a popup
 /// that showed nothing there could not be told apart from one whose outcome
 /// had simply failed to load.
+/// A disposition the YARD recorded, with whether the goods have gone.
+///
+/// ⚠️ Deliberately the same shape as [_FinalOutcomeTile], which serves
+/// Top Management's rulings: one panel, one heading, the decision on the
+/// right and the hand-over underneath. Two visually different endings for
+/// what an officer reads as the same event is the confusion this removes.
+class YardOutcome {
+  /// 'RE-EXPORTED', 'SOLD', 'DESTROYED', 'OTHER', 'RELEASED'.
+  final String finalTag;
+
+  /// The note the officer wrote when recording it.
+  final String? note;
+
+  /// When the disposition was recorded.
+  final DateTime? decidedAt;
+
+  /// Whether the goods have physically left.
+  ///
+  /// ⚠️ Null means there is NO hand-over step for this ending -- released
+  /// goods walk out with their owner, and there is nobody to wait for.
+  /// Null is not false, and drawing it as "not yet delivered" would put
+  /// goods in a queue that does not exist.
+  final bool? delivered;
+  final DateTime? deliveredAt;
+
+  const YardOutcome({
+    required this.finalTag,
+    this.note,
+    this.decidedAt,
+    this.delivered,
+    this.deliveredAt,
+  });
+}
+
+class _YardOutcomeTile extends StatelessWidget {
+  const _YardOutcomeTile({required this.outcome});
+
+  final YardOutcome outcome;
+
+  static const _labels = {
+    'RE-EXPORTED': 'Re-exported',
+    'SOLD': 'Sold',
+    'DESTROYED': 'Destroyed',
+    'RELEASED': 'Released',
+    'OTHER': 'Other disposition',
+  };
+
+  static const _icons = {
+    'RE-EXPORTED': Icons.flight_takeoff_rounded,
+    'SOLD': Icons.sell_rounded,
+    'DESTROYED': Icons.local_fire_department_rounded,
+    'RELEASED': Icons.keyboard_return_rounded,
+    'OTHER': Icons.category_rounded,
+  };
+
+  /// What the goods are waiting FOR differs by ending, and "pending" said
+  /// none of it.
+  static const _awaiting = {
+    'RE-EXPORTED': 'Not yet shipped \u2014 still held by the yard',
+    'SOLD': 'Not yet collected \u2014 still held by the yard',
+    'DESTROYED': 'Not yet destroyed \u2014 still held by the yard',
+  };
+
+  static const _done = {
+    'RE-EXPORTED': 'Shipped',
+    'SOLD': 'Collected by the buyer',
+    'DESTROYED': 'Destroyed',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final tag = outcome.finalTag.toUpperCase();
+    final delivered = outcome.delivered;
+    // ⚠️ The panel is GREEN once the goods have gone, amber while they
+    // are still standing in the yard -- the same colours the Top Management
+    // panel uses for the same distinction. An ending with no hand-over step
+    // is simply finished, so it is green too.
+    final tint = delivered == false
+        ? context.colors.warningAmber
+        : context.colors.successGreen;
+    final label = _labels[tag] ?? outcome.finalTag;
+    final note = (outcome.note ?? '').trim();
+
+    return material.Container(
+      margin: const EdgeInsets.only(top: 4, bottom: 4),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: tint.withOpacity(0.35)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(_icons[tag] ?? Icons.flag_rounded, size: 16, color: tint),
+            const Gap(8),
+            Text('FINAL OUTCOME',
+                style: TextStyle(
+                    color: context.colors.textMuted,
+                    fontSize: 10,
+                    letterSpacing: 0.9,
+                    fontWeight: FontWeight.w800)),
+            const Spacer(),
+            Text(label,
+                style: TextStyle(
+                    color: tint,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800)),
+          ]),
+          if (outcome.decidedAt != null || note.isNotEmpty) ...[
+            const Gap(6),
+            Text(
+                [
+                  if (outcome.decidedAt != null)
+                    'Recorded on '
+                        '${DateFormat('dd MMM yyyy').format(outcome.decidedAt!)}',
+                  if (note.isNotEmpty) note,
+                ].join(' \u00b7 '),
+                style: TextStyle(
+                    color: context.colors.textSecondary, fontSize: 11.5)),
+          ],
+          // ⚠️ Recording a disposition is not the same as the goods
+          // leaving, and the yard is still storing them until they do. This
+          // line is the difference -- omitted entirely where the ending has
+          // no hand-over step, rather than claiming one is pending.
+          if (delivered != null) ...[
+            const Gap(6),
+            Row(children: [
+              Icon(
+                  delivered
+                      ? Icons.check_circle_rounded
+                      : Icons.schedule_rounded,
+                  size: 13,
+                  color: delivered
+                      ? context.colors.successGreen
+                      : context.colors.warningAmber),
+              const Gap(6),
+              Flexible(
+                child: Text(
+                    delivered
+                        ? (outcome.deliveredAt != null
+                            ? '${_done[tag] ?? 'Delivered'} on '
+                                '${DateFormat('dd MMM yyyy').format(outcome.deliveredAt!)}'
+                            : (_done[tag] ?? 'Delivered'))
+                        : (_awaiting[tag] ??
+                            'Not yet delivered \u2014 still held by the yard'),
+                    style: TextStyle(
+                        color: delivered
+                            ? context.colors.successGreen
+                            : context.colors.warningAmber,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _FinalOutcomeTile extends StatelessWidget {
   const _FinalOutcomeTile({required this.proposal, this.soldPrice});
 
@@ -904,9 +1066,21 @@ class PackageDetailsDialog extends ConsumerStatefulWidget {
     this.isSoldPage = false,
     this.allowEdit = false,
     this.srFinancials,
+    this.yardOutcome,
   });
 
   final SrFinancials? srFinancials;
+
+  /// What the YARD decided, for goods that never went to tender.
+  ///
+  /// ⚠️ The Final Outcome panel lives inside [TenderHistorySection], so
+  /// goods with no tender rounds had no ending at all: a re-export the yard
+  /// recorded itself went straight from Warehouse Summary to System Entry
+  /// By, and the popup never said what became of it. The DG-ruled row
+  /// beside it in the same table showed a full outcome panel, so the two
+  /// halves of one page told different stories about the same kind of
+  /// event.
+  final YardOutcome? yardOutcome;
 
   @override
   ConsumerState<PackageDetailsDialog> createState() =>
@@ -2623,6 +2797,13 @@ class _PackageDetailsDialogState extends ConsumerState<PackageDetailsDialog>
                             forfeited: widget.tenderHistoryFor!,
                             qty: widget.valuationQty,
                           ),
+                        // ⚠️ AFTER the tender history, so a package that
+                        // has both reads in order: what was tried, then how
+                        // it ended. Goods the yard decided on directly have
+                        // no history above this, and this is the whole
+                        // story.
+                        if (widget.yardOutcome != null)
+                          _YardOutcomeTile(outcome: widget.yardOutcome!),
                         if (!widget.useWarehouseSummary)
                           _DetailSection(
                             title: 'Warehouse Summary',

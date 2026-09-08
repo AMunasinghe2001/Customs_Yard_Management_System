@@ -94,6 +94,86 @@ void main() {
     });
   });
 
+  group('a yard-decided ending shows an outcome panel', () {
+    final dialog =
+        code(File('lib/widgets/package_details_dialog.dart').readAsStringSync());
+    final mig56 =
+        File('postgres/56_delivery_carries_its_date.sql').readAsStringSync();
+
+    test('goods with no tender still say how they ended', () {
+      // ⚠️ The Final Outcome panel lived INSIDE TenderHistorySection, so
+      // goods the yard decided on directly had no ending at all: the popup
+      // ran Warehouse Summary straight into System Entry By and never said
+      // what became of them. The DG-ruled row beside it in the same table
+      // showed a full panel, so one page told two different stories about
+      // the same kind of event.
+      expect(dialog, contains('class YardOutcome'));
+      expect(dialog, contains('class _YardOutcomeTile'));
+      expect(dialog, contains('widget.yardOutcome != null'));
+      expect(screen, contains('yardOutcome: row.fromTopManagement'));
+    });
+
+    test('one ending per popup', () {
+      // ⚠️ A Top Management row keeps ITS panel -- that one carries the
+      // ruling, the decision date and the DG's note. Drawing both would put
+      // two FINAL OUTCOME headings on one dialog.
+      expect(screen, contains('yardOutcome: row.fromTopManagement ? null'));
+    });
+
+    test('an ending with no hand-over step draws no delivery line', () {
+      // ⚠️ Released goods walk out with their owner -- there is nobody to
+      // wait for. `delivered` is NULL there, and drawing null as "not yet
+      // delivered" would put goods in a queue that does not exist.
+      expect(dialog, contains('if (delivered != null) ...['));
+    });
+
+    test('what the goods await is named by the ending', () {
+      // ⚠️ "Pending" says none of it. A sale waits for a buyer to
+      // collect, a re-export for a ship, a destruction for the burn.
+      expect(dialog, contains('Not yet shipped'));
+      expect(dialog, contains('Not yet collected'));
+      expect(dialog, contains('Not yet destroyed'));
+    });
+
+    test('a delivery date is gated on its own flag', () {
+      // ⚠️ `tender_sale_items` and `destruction_items` carry NO delivery-
+      // consistency check -- only `unsold_proposals` does -- and the data
+      // drifted through the gap: 20 rows hold a delivered_at while reading
+      // not-delivered. The FLAG is the answer; a date beside a false flag is
+      // a leftover, not a hand-over. The migration asserts no such row can
+      // reach the view.
+      final c = code(mig56);
+      expect(c, contains('case when ti.is_delivered then ti.delivered_at end'));
+      expect(c, contains('case when di.delivered then di.delivered_at end'));
+      expect(c, contains('rows carry a delivery date but are not delivered'));
+    });
+
+    test('the migration asserts the RULE, not the tally', () {
+      // ⚠️ Migration 55 pinned re-export deliveries at exactly 1 -- the
+      // count on the day it ran. Officers marked two more within the hour,
+      // so re-running it failed on a system working exactly as intended. 56
+      // asserts what must always hold instead: no re-export reports
+      // delivered without a recorded departure behind it.
+      expect(code(mig56),
+          contains('reports delivered with nothing recorded behind it'));
+    });
+
+    test('the table refreshes on every delivery source', () {
+      // ⚠️ `dispositionPageProvider` watched packages, warehouse entries
+      // and bids -- but not `tender_sale_items`, which is where a sold
+      // lot's delivery lives. Marking one delivered updated the pill and
+      // left the row's own data stale until the page was reopened. The
+      // re-export path was safe only by accident, writing to a table that
+      // happened to be watched.
+      final providers =
+          code(File('lib/core/providers.dart').readAsStringSync());
+      final start = providers.indexOf('final dispositionPageProvider');
+      final fn = providers.substring(start, start + 900);
+      expect(fn, contains('tenderSaleItemsChangeTriggerProvider'));
+      expect(fn, contains('warehouseEntriesChangeTriggerProvider'));
+    });
+  });
+
   group('a tender history belongs to ONE item', () {
     test("an item with no sale does not borrow the package's", () {
       // ⚠️ getTenderSaleItemForPackageItem fell back to the package when the

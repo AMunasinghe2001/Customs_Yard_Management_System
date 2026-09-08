@@ -496,6 +496,13 @@ final dispositionPageProvider =
   ref.watch(packagesChangeTriggerProvider);
   ref.watch(warehouseEntriesChangeTriggerProvider);
   ref.watch(tenderBidsChangeTriggerProvider);
+  // ⚠️ The DELIVERY column comes from `tender_sale_items` too, and
+  // this did not watch it -- so marking a sold lot delivered updated the
+  // pill and left the row's own data stale until the page was reopened.
+  // The re-export path is safe by accident (it writes to
+  // warehouse_entries, already watched above); this makes it deliberate
+  // for all four delivery sources.
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
   return ref.read(packageServiceProvider).getDispositionRowsPaged(
         finalTag: q.finalTag,
         offset: q.page * kDispositionPageSize,

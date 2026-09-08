@@ -128,6 +128,7 @@ class _DispositionCategoryScreenState
         forfeited: r.isTopManagement ? _forfeitedFor(r) : null,
         fromTopManagement: r.isTopManagement,
         delivered: r.delivered,
+        deliveredAt: r.deliveredAt,
       ));
     }
     return out;
@@ -718,6 +719,37 @@ class _DispositionCategoryScreenState
                                             // Disposal had recorded the
                                             // destruction expenses.
                                             srFinancials: srFin,
+                                            // ⚠️ What the YARD decided, for
+                                            // goods that never went to
+                                            // tender. The Final Outcome
+                                            // panel lives inside the tender
+                                            // history, so these popups had
+                                            // no ending at all: a re-export
+                                            // the yard recorded went from
+                                            // Warehouse Summary straight to
+                                            // System Entry By, while the
+                                            // DG-ruled row beside it in the
+                                            // same table showed a full
+                                            // outcome panel.
+                                            //
+                                            // A Top Management row keeps ITS
+                                            // panel -- one ending per popup,
+                                            // and that one carries the
+                                            // ruling, the decision date and
+                                            // the DG's note.
+                                            yardOutcome: row.fromTopManagement
+                                                ? null
+                                                : YardOutcome(
+                                                    finalTag: widget.finalTag,
+                                                    note: row.note.trim().isEmpty
+                                                        ? null
+                                                        : row.note.trim(),
+                                                    decidedAt:
+                                                        row.entry?.returnedAt,
+                                                    delivered: row.delivered,
+                                                    deliveredAt:
+                                                        row.deliveredAt,
+                                                  ),
                                           ),
                                         );
                                       },
@@ -842,6 +874,9 @@ class _CategoryRow {
   /// answer computed in Dart would be a second story to keep in step.
   final bool? delivered;
 
+  /// The day it was handed over, when one was recorded.
+  final DateTime? deliveredAt;
+
   const _CategoryRow({
     required this.package,
     this.entry,
@@ -853,6 +888,7 @@ class _CategoryRow {
     this.forfeited,
     this.fromTopManagement = false,
     this.delivered,
+    this.deliveredAt,
   });
 
   bool get isDestroyed {

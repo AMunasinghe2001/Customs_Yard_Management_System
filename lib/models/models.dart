@@ -1055,6 +1055,19 @@ class DispositionRow {
   /// reading null as pending would put it in the Pending filter forever.
   final bool? delivered;
 
+  /// The day the goods were handed over, when one was recorded.
+  ///
+  /// ⚠️ Resolved from the same source as [delivered] and GATED ON IT --
+  /// a date beside a false flag is a leftover, not a hand-over.
+  /// `tender_sale_items` and `destruction_items` carry no consistency
+  /// check (only `unsold_proposals` does), and 20 rows in this database
+  /// hold a date while reading not-delivered.
+  ///
+  /// ⚠️ Null on a DELIVERED row too: 20 more were marked delivered before
+  /// anything asked for a date. "Delivered" with no day is the whole of
+  /// what is known about those, and inventing one would be worse.
+  final DateTime? deliveredAt;
+
   /// The one date the page sorts on, whichever source the row came from.
   final DateTime happenedAt;
 
@@ -1078,6 +1091,7 @@ class DispositionRow {
     this.receiptNo,
     this.isDestroyed,
     this.delivered,
+    this.deliveredAt,
     required this.happenedAt,
   });
 
@@ -1101,6 +1115,7 @@ class DispositionRow {
         receiptNo: json['receipt_no']?.toString(),
         isDestroyed: json['is_destroyed'] as bool?,
         delivered: json['delivered'] as bool?,
+        deliveredAt: parseDbDate(json['delivered_at']),
         happenedAt: parseDbDate(json['happened_at']) ?? DateTime(1970),
       );
 
