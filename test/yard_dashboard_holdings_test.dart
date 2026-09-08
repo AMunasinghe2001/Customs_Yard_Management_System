@@ -123,28 +123,87 @@ void main() {
       expect(c.contains("label: 'Released Today'"), isFalse);
     });
 
-    test('five cards a row, which is what fits', () {
-      // ⚠️ Measured at a 1400px window: the body is 1124px, so six cards
-      // leave 86px for the label and five leave 124px. "Awaiting Valuation"
-      // with "sent, not yet costed" under it needs about 114px — six would
-      // clip both.
-      //
-      // Counting Expanded children inside the two rows is the closest a
-      // source test can get to that without pumping the screen.
+    test('the two rows use the SAME tile as the panel below', () {
+      // ⚠️ The dashboard drew its top strip with one shape and the
+      // lifecycle panel under it with another, for the same kind of figure.
+      // Two shapes made the reader work out twice what they were looking at,
+      // and the strip's cards were the larger of the two.
       final c = code(screen);
-      final firstRow = c.substring(c.indexOf("label: 'Detained'"));
-      final secondRowAt = c.indexOf("label: 'Awaiting Valuation'");
-      expect(secondRowAt, greaterThan(-1));
+      expect(c.contains('class _StatCard'), isFalse,
+          reason: 'the second shape is back');
+      // Five held + three waiting + today = nine stretched tiles up top.
+      expect('stretch: true'.allMatches(c).length, 9);
+    });
 
-      // Row one: Detained, Abandoned, Other, Forfeited, Perishable.
-      final rowOne = firstRow.substring(0, firstRow.indexOf("label: 'Awaiting"));
-      expect('_StatCard('.allMatches(rowOne).length, 5);
+    test('both rows are titled, with the shared heading', () {
+      // ⚠️ One definition of the heading, or a dashboard whose two
+      // halves are labelled in slightly different type reads as two
+      // dashboards.
+      final c = code(screen);
+      expect(c, contains("title: 'Held in Yard'"));
+      expect(c, contains("title: 'Waiting on Another Directorate'"));
+      expect(c, contains('class _GroupHeading'));
+      // The lifecycle groups use it too.
+      expect(c, contains('_GroupHeading(title: title, icon: icon)'));
+    });
+  });
 
-      // Row two: Valuation, Re-tenderable, Unsold, Recorded today, plus the
-      // charge card, which is its own widget.
-      final rowTwo = c.substring(secondRowAt);
-      expect('_StatCard('.allMatches(rowTwo).length, 4);
-      expect(rowTwo, contains('_WarehouseChargeCard('));
+  group('the lifecycle figures say what they mean', () {
+    final fn = code(services.substring(
+        services.indexOf('getForfeitLifecycleSummary() async {')));
+    final body = fn.substring(0, 4200);
+
+    test('appeal decisions are counted PER ITEM', () {
+      // ⚠️ This read the `appeal_decision` COLUMN and nothing else, so
+      // it reported 0 decisions while 12 per-item rulings sat in
+      // `item_appeal_decisions` -- the yard was told the directorate had
+      // ruled on nothing when it had ruled on nine of its packages.
+      expect(body, contains("countOf('appeal_rows'"));
+      expect(body, contains("eq('has_decision', true)"));
+      expect(body, contains("eq('is_held', true)"));
+    });
+
+    test('disposal requests split pending from forwarded', () {
+      // ⚠️ It counted every request the yard had EVER raised -- 168 on
+      // live data, of which 135 had long since been forwarded and acted on.
+      // A figure under a heading about pending work should be the 33 that
+      // have not moved.
+      expect(body, contains("r['forwarded'] == true"));
+      expect(body, contains('forwardedSale'));
+      expect(body, contains('forwardedDestruction'));
+      expect(code(screen), contains("label: 'Awaiting Sale'"));
+      expect(code(screen).contains("label: 'Sent for Sale'"), isFalse);
+    });
+
+    test('unsold is not "not sold"', () {
+      // ⚠️ An item nobody has marked yet is UNDECIDED. Lumping the two
+      // told the yard 116 items had failed at tender when 7 of them simply
+      // had no outcome recorded -- and those 7 are somebody's outstanding
+      // work, not a result.
+      expect(body, contains("r['unsold'] == true"));
+      expect(body, contains('tenderUndecided'));
+      expect(code(screen), contains("label: 'Awaiting Outcome'"));
+    });
+
+    test('destruction shows the queue as well as the done', () {
+      // ⚠️ The card showed only what had been destroyed, so 23 items
+      // sitting in a queue -- the ones an officer still has to go and do --
+      // were invisible.
+      expect(body, contains('queuedForDestruction'));
+      expect(code(screen), contains("label: 'Queued'"));
+    });
+  });
+
+  group('recent activity says what it shows', () {
+    test('it lists STATES, not activities', () {
+      // ⚠️ These are the distinct statuses a package's items are in
+      // right now. SR/24/2026 reads "Detain, destroyed" and said "2
+      // activities", which sounds like two things happened today -- one of
+      // them may have been recorded months ago. What put the package on the
+      // list is that SOMETHING touched it today.
+      final c = code(screen);
+      expect(c, contains('states'));
+      expect(c.contains('activities'), isFalse);
     });
   });
 }

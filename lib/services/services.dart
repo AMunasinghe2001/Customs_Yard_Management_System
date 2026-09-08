@@ -5328,60 +5328,114 @@ class ForfeitedPackageService {
   Future<Map<String, dynamic>> getForfeitLifecycleSummary() async {
     final yard = AppSession.currentYard;
 
-    // Forfeited packages in this yard → appeal hold / appeal decision counts.
-    final fpRows = await supabase
-        .from('forfeited_packages')
-        .select('id, appeal_hold, appeal_decision')
-        .eq('yard', yard)
-        .eq('source', 'forfeit');
-    int appealHold = 0;
-    int appealDecided = 0;
-    for (final r in (fpRows as List)) {
-      if (r['appeal_hold'] == true) appealHold++;
-      final dec = (r['appeal_decision'] as String?)?.trim();
-      if (dec != null && dec.isNotEmpty) appealDecided++;
+    PgQuery inYard(PgQuery q) => (yard == null || yard.isEmpty)
+        ? q
+        : q.or('yard.eq.$yard,sr_number.ilike.%/$yard/%');
+
+    Future<int> countOf(String view,
+        [PgQuery Function(PgQuery)? narrow]) async {
+      var q = inYard(supabase.from(view));
+      if (narrow != null) q = narrow(q);
+      return await AuthService._withNetworkRetry(() => q.count()) as int;
     }
 
-    // Disposal requests (this yard) → how many asked for sale vs destruction.
-    final reqRows = await supabase
+    // ── Appeal Directorate ────────────────────────────────────────────
+    //
+    // ⚠️ From `appeal_rows`, not from forfeited_packages directly.
+    //
+    // This read the `appeal_decision` COLUMN and nothing else, so it
+    // reported 0 decisions while 12 per-item rulings sat in
+    // `item_appeal_decisions` — the yard was told the directorate had ruled
+    // on nothing when it had ruled on nine of its packages. The view
+    // (postgres/45) resolves a decision per ITEM, with the multi-item guard
+    // that stops one item's ruling marking its siblings.
+    final appealHold = await countOf('appeal_rows', (q) => q.eq('is_held', true));
+    final appealDecided =
+        await countOf('appeal_rows', (q) => q.eq('has_decision', true));
+
+    // ── Disposal requests (Central Disposal) ──────────────────────────
+    //
+    // ⚠️ What is STILL WAITING, not everything ever sent.
+    //
+    // This counted every disposal_request_item the yard had ever raised —
+    // 168 on live data, of which 135 had long since been forwarded and
+    // acted on. A figure headed "Sent for Sale" under a heading of pending
+    // work should be the 33 that have not moved.
+    final reqRows = await AuthService._withNetworkRetry(() => supabase
         .from('disposal_request_items')
-        .select('disposition, forfeited_packages!inner(yard)')
-        .eq('forfeited_packages.yard', yard);
+        .select('disposition, forwarded, forfeited_packages!inner(yard)')
+        .eq('forfeited_packages.yard', yard));
     int requestedSale = 0;
     int requestedDestruction = 0;
+    int forwardedSale = 0;
+    int forwardedDestruction = 0;
     for (final r in (reqRows as List)) {
       final d = (r['disposition'] as String?)?.toLowerCase();
-      if (d == 'sale') requestedSale++;
-      if (d == 'destruction') requestedDestruction++;
+      final forwarded = r['forwarded'] == true;
+      if (d == 'sale') {
+        if (forwarded) {
+          forwardedSale++;
+        } else {
+          requestedSale++;
+        }
+      } else if (d == 'destruction') {
+        if (forwarded) {
+          forwardedDestruction++;
+        } else {
+          requestedDestruction++;
+        }
+      }
     }
 
-    // Tender-sale items (this yard) → sold vs not-yet-sold (unsold).
-    final tsRows = await supabase
+    // ── Tender sales ──────────────────────────────────────────────────
+    //
+    // ⚠️ UNSOLD is not "not sold". An item nobody has marked yet is
+    // UNDECIDED, and counting it as unsold told the yard 116 items had
+    // failed at tender when 7 of them simply had no outcome recorded. The
+    // same distinction postgres/35 had to make for `has_pending`.
+    final tsRows = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sale_items')
-        .select('sold')
-        .eq('yard', yard);
-    int tenderTotal = (tsRows as List).length;
-    int sold = tsRows.where((r) => r['sold'] == true).length;
-    int unsold = tenderTotal - sold;
+        .select('sold, unsold')
+        .eq('yard', yard));
+    int sold = 0, unsold = 0, undecided = 0;
+    for (final r in (tsRows as List)) {
+      if (r['sold'] == true) {
+        sold++;
+      } else if (r['unsold'] == true) {
+        unsold++;
+      } else {
+        undecided++;
+      }
+    }
 
-    // Destruction items (this yard) → queued vs destroyed.
-    final deRows = await supabase
+    // ── Destruction ───────────────────────────────────────────────────
+    //
+    // ⚠️ Both halves. The card showed only what had been destroyed, so
+    // 23 items sitting in a destruction QUEUE were invisible — the ones an
+    // officer still has to go and do.
+    final deRows = await AuthService._withNetworkRetry(() => supabase
         .from('destruction_items')
         .select('destroyed')
-        .eq('yard', yard);
-    int destroyed =
-        (deRows as List).where((r) => r['destroyed'] == true).length;
+        .eq('yard', yard));
+    int destroyed = 0, queuedForDestruction = 0;
+    for (final r in (deRows as List)) {
+      if (r['destroyed'] == true) {
+        destroyed++;
+      } else {
+        queuedForDestruction++;
+      }
+    }
 
     // Next scheduled tender-sale date (a sale_date today or in the future).
     final today = DateTime.now().toIso8601String().substring(0, 10);
-    final nextSale = await supabase
+    final nextSale = await AuthService._withNetworkRetry(() => supabase
         .from('tender_sales')
         .select('sale_date')
         .eq('yard', yard)
         .gte('sale_date', today)
         .order('sale_date', ascending: true)
         .limit(1)
-        .maybeSingle();
+        .maybeSingle());
     // `date` comes back as a DateTime from the local driver and as a String
     // from Supabase; normalise to the yyyy-MM-dd the UI expects.
     final nextSaleRaw = nextSale?['sale_date'];
@@ -5395,9 +5449,13 @@ class ForfeitedPackageService {
       'appealDecided': appealDecided,
       'requestedSale': requestedSale,
       'requestedDestruction': requestedDestruction,
+      'forwardedSale': forwardedSale,
+      'forwardedDestruction': forwardedDestruction,
       'tenderSold': sold,
       'tenderUnsold': unsold,
+      'tenderUndecided': undecided,
       'destroyed': destroyed,
+      'queuedForDestruction': queuedForDestruction,
       'nextTenderSaleDate': nextTenderSaleDate,
     };
   }
