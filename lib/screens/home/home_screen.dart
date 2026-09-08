@@ -50,19 +50,38 @@ class HomeScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Spacer(),
-                    // Logo
-                    SvgPicture.asset(
-                      'Sri_Lanka_Customs_logo.svg',
-                      width: 132,
-                      height: 132,
-                    )
-                        .animate()
-                        .scale(
-                            begin: const Offset(0.8, 0.8),
-                            duration: 500.ms,
-                            curve: Curves.easeOutBack)
-                        .fadeIn(),
-                    const Gap(18),
+                    // ⚠️ The seal is LIGHT MODE only.
+                    //
+                    // The asset is solid #231f87, a dark navy. Measured
+                    // against the two backgrounds it sits on:
+                    //
+                    //     light #F5F7FB   12.1x contrast   crisp
+                    //     dark  #0e0c3a    1.4x contrast   a dark smudge
+                    //
+                    // It is the same file either way -- nothing switches it --
+                    // so in dark mode it reads as a stain on the page rather
+                    // than a crest. The title below carries the identity, and
+                    // the six portal cards carry the colour.
+                    //
+                    // A tinted copy exists (Sri_Lanka_Customs_logo_tinted.svg,
+                    // used by BrandPanel) if this is ever wanted back in dark
+                    // mode -- but it needs the knockout treatment described in
+                    // brand_panel.dart, which is a different problem from this
+                    // one.
+                    if (ref.watch(themeModeProvider) != ThemeMode.dark) ...[
+                      SvgPicture.asset(
+                        'Sri_Lanka_Customs_logo.svg',
+                        width: 132,
+                        height: 132,
+                      )
+                          .animate()
+                          .scale(
+                              begin: const Offset(0.8, 0.8),
+                              duration: 500.ms,
+                              curve: Curves.easeOutBack)
+                          .fadeIn(),
+                      const Gap(18),
+                    ],
                     Text(
                       'Sri Lanka Customs',
                       style: TextStyle(
@@ -281,6 +300,33 @@ class _DriftingGlowsState extends State<DriftingGlows>
                 child: _GlowBlob(
                     color: c.primaryGold.withOpacity(0.12), size: 360),
               ),
+
+              // ⚠️ One faint glow per PORTAL, so the page carries every
+              // colour the cards below it do -- not just the two it started
+              // with. This is the page where an officer picks a portal, and
+              // the portals are the only thing on it that has a colour.
+              //
+              // ⚠️ Far fainter than the two above (0.05-0.07 against
+              // 0.12 and 0.35) and larger, so they read as tint rather than as
+              // four more lamps. Six blobs at the leading pair's strength
+              // would be a fairground.
+              //
+              // Each sits along a different edge and travels a different
+              // distance, so they never stack into one bright patch -- and the
+              // CENTRE is left alone, because that is where the seal and the
+              // cards are.
+              for (final g in <({Color colour, double dx, double dy, double size, double from})>[
+                (colour: AppTheme.appealPurple, dx: 0.30, dy: 0.10, size: 340, from: 0.10),
+                (colour: AppTheme.executiveTeal, dx: -0.28, dy: 0.14, size: 320, from: 0.72),
+                (colour: c.successGreen, dx: 0.22, dy: -0.18, size: 300, from: 0.55),
+                (colour: AppTheme.ictCyan, dx: -0.24, dy: -0.12, size: 300, from: 0.28),
+              ])
+                Positioned(
+                  left: w * g.from + t * (w * g.dx) - g.size / 2,
+                  top: h * (0.5 + g.dy) + t * (h * g.dy) - g.size / 2,
+                  child: _GlowBlob(
+                      color: g.colour.withOpacity(0.06), size: g.size),
+                ),
             ]);
           });
         },

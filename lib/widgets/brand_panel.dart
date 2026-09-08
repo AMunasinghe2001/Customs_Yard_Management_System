@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter_svg/flutter_svg.dart';
@@ -116,7 +118,66 @@ class _BrandPanelState extends State<BrandPanel>
   Color _behindCrest(BuildContext context, double t) {
     // A small lean, not a wash: at full strength the accent would tint the
     // whole middle of the panel and the crest would lose its contrast.
-    return Color.lerp(context.colors.primaryNavy, widget.accent, 0.10 * t)!;
+    //
+    // ⚠️ Scaled by how BRIGHT the accent is, for the same reason
+    // [_accentDepth] is. Gold leans much harder than teal at the same factor.
+    return Color.lerp(context.colors.primaryNavy, widget.accent,
+        0.10 * t * _accentDepth)!;
+  }
+
+  /// How far the accent corner is pulled back towards the deep colour.
+  ///
+  /// ⚠️ NOT a constant, which is what made the two GOLD portals look
+  /// wrong beside the others.
+  ///
+  /// The panels all mixed the accent with the deep colour by a fixed 0.35, so
+  /// how bright the corner ended up was entirely the accent's own brightness
+  /// -- and gold is far brighter than the rest. Relative luminance, on the
+  /// live palette:
+  ///
+  ///     gold   #D4A017  0.392      <- both gold portals
+  ///     teal   #0E7C86  0.162
+  ///     green  #2E7D32  0.155
+  ///     maroon #9E2A54  0.096
+  ///     purple #7B1FA2  0.078
+  ///
+  /// Gold is 2.4x the next brightest and 5x the dimmest, so at one factor its
+  /// corner reads as a lamp while purple's reads as a tint.
+  ///
+  /// Pulling the mix in proportion to luminance evens that out: a bright
+  /// accent is taken further back, a dark one is left nearly as it was. The
+  /// numbers below hold the DIM end where it already looked right -- 0.35 at
+  /// luminance 0.08 -- and take gold to about 0.62.
+  ///
+  /// This is a correction for BRIGHTNESS, not for hue: it says nothing about
+  /// which colour a portal uses, only how much light it throws.
+  double get _accentDepth {
+    // 0.08 -> 1.0 (unchanged), 0.40 -> ~1.8. Clamped so a future accent
+    // brighter than gold cannot wash the corner out entirely, and a black one
+    // cannot make it brighter than it was.
+    return (1.0 + (_accentLuminance - 0.08) * 2.5).clamp(1.0, 1.8);
+  }
+
+  /// How far a bright accent is held back even at the peak of the cycle.
+  ///
+  /// ⚠️ Zero for the dim accents, so the four portals that already
+  /// looked right are untouched. Gold gets about 0.25, which is what stops its
+  /// corner reaching pure #D4A017 -- the state the two gold panels were being
+  /// judged on.
+  double get _accentFloor =>
+      ((_accentLuminance - 0.17) * 0.9).clamp(0.0, 0.28);
+
+  /// Relative luminance of the accent, sRGB (WCAG).
+  ///
+  /// The channel weights are what make this about PERCEIVED brightness rather
+  /// than raw numbers -- green counts for roughly ten times what blue does,
+  /// which is why teal and green land together despite looking nothing alike.
+  double get _accentLuminance {
+    double channel(double c) =>
+        c <= 0.03928 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+    return 0.2126 * channel(widget.accent.r) +
+        0.7152 * channel(widget.accent.g) +
+        0.0722 * channel(widget.accent.b);
   }
 
   @override
@@ -147,7 +208,16 @@ class _BrandPanelState extends State<BrandPanel>
                 // much of the widget behind shows through -- which here is
                 // nothing. It looked static. Mixing in the deep colour is a
                 // real change of colour.
-                Color.lerp(accent, widget.deepColor, 0.35 * (1 - t))!,
+                // ⚠️ A FLOOR as well as a swing. `(1 - t)` reaches zero
+                // at the top of the cycle, which means the corner hits the
+                // pure accent -- and pure gold there is the brightest thing on
+                // any of the six panels. The floor is what a bright accent is
+                // held back BY; the swing is the movement on top of it.
+                Color.lerp(
+                    accent,
+                    widget.deepColor,
+                    (_accentFloor + 0.35 * _accentDepth * (1 - t))
+                        .clamp(0.0, 0.75))!,
               ],
               // ⚠️ The stops travel too, which is what makes this look like
               // light moving across the panel rather than a colour fading in
