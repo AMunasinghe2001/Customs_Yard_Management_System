@@ -907,31 +907,6 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'Destruction list · goods',
-                      icon: Icons.local_fire_department_rounded,
-                      tiles: [
-                        // ⚠️ This is the destruction TABLE -- what an
-                        // officer scheduled. It is not the Destroyed Goods
-                        // page, which shows 17: one package reached
-                        // destroyed through a warehouse entry tagged
-                        // [FINAL:DESTROYED] with no destruction_items row
-                        // behind it. Both are true of different questions,
-                        // so the list is here and the outcome is below,
-                        // rather than one number being wrong for one reader.
-                        _LifecycleTile(
-                            label: 'Scheduled, not yet destroyed',
-                            value: '${d['queuedForDestruction'] ?? 0}',
-                            color: context.colors.warningAmber,
-                            icon: Icons.schedule_rounded),
-                        _LifecycleTile(
-                            label: 'Destroyed on the list',
-                            value: '${d['destroyed'] ?? 0}',
-                            color: context.colors.dangerRed,
-                            icon: Icons.local_fire_department_rounded),
-                      ],
-                    ),
-                    const Gap(16),
-                    _LifecycleGroup(
                       title: 'Sold · goods',
                       icon: Icons.sell_rounded,
                       tiles: [
@@ -959,38 +934,142 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'Destroyed & re-exported · goods',
-                      icon: Icons.flag_rounded,
+                      title: 'Destroyed · goods',
+                      icon: Icons.local_fire_department_rounded,
                       tiles: [
-                        // ⚠️ The two ways goods leave WITHOUT being sold,
-                        // each with its delivery split on the same tile --
-                        // delivered and still-here are two halves of one
-                        // fact, and two tiles apiece made six saying what
-                        // two do.
+                        // ⚠️ ONE tile, split by WHETHER IT HAS BEEN
+                        // DESTROYED -- never by delivery. Nothing is handed
+                        // over to be burnt: 23 of the 39 carry no delivery
+                        // state at all, so a delivered/pending split read
+                        // "9 delivered · 7 awaiting" of 39 and left the
+                        // reader to wonder about the other 23. Done or not
+                        // done is the question this page answers.
                         //
-                        // ⚠️ This group is NOT the rail's "Final Outcomes"
-                        // section, which is the Top Management Directorate's
-                        // rulings on goods nothing could sell (Government
-                        // Use, Auction, Converted, Removed from Premises,
-                        // and its OWN /re-export-packages page). This counts
-                        // the yard's Disposed pages -- /destroyed-packages
-                        // and /reexported-packages -- so the names must not
-                        // borrow each other's, or the same words on the rail
-                        // and the panel would point at different tables.
+                        // Off `disposition_rows`, the same view
+                        // /destroyed-packages pages through, so the tile and
+                        // the page it opens cannot disagree. That is also
+                        // why it says 17 where the destruction LIST says 16:
+                        // one package reached destroyed on a warehouse entry
+                        // tagged [FINAL:DESTROYED] with no destruction_items
+                        // row behind it at all.
                         _SplitTile(
                             label: 'Destroyed',
                             total: (d['outcomeDestroyedTotal'] ?? 0) as int,
-                            delivered:
-                                (d['outcomeDestroyedDelivered'] ?? 0) as int,
+                            delivered: (d['outcomeDestroyedDone'] ?? 0) as int,
                             pending:
-                                (d['outcomeDestroyedPending'] ?? 0) as int,
-                            deliveredLabel: 'delivered',
-                            pendingLabel: 'awaiting',
+                                (d['outcomeDestroyedAwaiting'] ?? 0) as int,
+                            deliveredLabel: 'destroyed',
+                            pendingLabel: 'awaiting destruction',
                             color: context.colors.dangerRed,
                             icon: Icons.local_fire_department_rounded,
                             route: '/destroyed-packages'),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Top Management rulings · goods',
+                      icon: Icons.account_balance_rounded,
+                      tiles: [
+                        // ⚠️ The rail's "Final Outcomes" section, one tile
+                        // per page, in the rail's own order. These are the
+                        // DG's rulings on goods nothing could sell, and they
+                        // all read `unsold_proposals.proposal`.
+                        //
+                        // ⚠️ RE-EXPORT IS TWO PAGES. This tile is
+                        // /re-export-packages, the RULING -- 2 goods. The
+                        // Disposed rail has its own /reexported-packages
+                        // counting 19, goods that left the country by any
+                        // route, 17 recorded straight on a warehouse entry
+                        // with no ruling behind them. A tile carrying 19 and
+                        // opening a page showing 2 is the bug this avoids.
+                        //
+                        // `delivered` on a proposal is NOT NULL DEFAULT
+                        // false, so every one is delivered or pending --
+                        // there is no third state here, unlike the pages.
                         _SplitTile(
-                            label: 'Re-exported',
+                            label: 'Government use',
+                            total: (d['proposal_government_use_total'] ?? 0)
+                                as int,
+                            delivered:
+                                (d['proposal_government_use_delivered'] ?? 0)
+                                    as int,
+                            pending:
+                                (d['proposal_government_use_pending'] ?? 0)
+                                    as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.accentLightBlue,
+                            icon: Icons.account_balance_rounded,
+                            route: '/government-use-packages'),
+                        _SplitTile(
+                            label: 'Auction',
+                            total: (d['proposal_auction_total'] ?? 0) as int,
+                            delivered:
+                                (d['proposal_auction_delivered'] ?? 0) as int,
+                            pending:
+                                (d['proposal_auction_pending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.primaryGold,
+                            icon: Icons.gavel_rounded,
+                            route: '/auction-packages'),
+                        _SplitTile(
+                            label: 'Re-export ruling',
+                            total: (d['proposal_re_export_total'] ?? 0) as int,
+                            delivered:
+                                (d['proposal_re_export_delivered'] ?? 0) as int,
+                            pending:
+                                (d['proposal_re_export_pending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.accentLightBlue,
+                            icon: Icons.flight_takeoff_rounded,
+                            route: '/re-export-packages'),
+                        _SplitTile(
+                            label: 'Converted',
+                            total: (d['proposal_convert_total'] ?? 0) as int,
+                            delivered:
+                                (d['proposal_convert_delivered'] ?? 0) as int,
+                            pending:
+                                (d['proposal_convert_pending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.heldOrange,
+                            icon: Icons.autorenew_rounded,
+                            route: '/converted-packages'),
+                        _SplitTile(
+                            label: 'Removed from premises',
+                            total:
+                                (d['proposal_remove_from_premises_total'] ?? 0)
+                                    as int,
+                            delivered: (d[
+                                    'proposal_remove_from_premises_delivered'] ??
+                                0) as int,
+                            pending: (d[
+                                    'proposal_remove_from_premises_pending'] ??
+                                0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.textMuted,
+                            icon: Icons.logout_rounded,
+                            route: '/removed-packages'),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Re-exported · goods',
+                      icon: Icons.flight_takeoff_rounded,
+                      tiles: [
+                        // ⚠️ The DISPOSED page, /reexported-packages: goods
+                        // that left the country by ANY route -- 19, of which
+                        // only 2 came from a DG ruling. The other 17 were
+                        // recorded straight on a warehouse entry, and appear
+                        // nowhere in the group above. That is why this is
+                        // its own group rather than a sixth tile there: the
+                        // two counts answer different questions and open
+                        // different pages.
+                        _SplitTile(
+                            label: 'Re-exported, all routes',
                             total: (d['outcomeReexportTotal'] ?? 0) as int,
                             delivered:
                                 (d['outcomeReexportDelivered'] ?? 0) as int,

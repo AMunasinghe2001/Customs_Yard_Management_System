@@ -5526,31 +5526,23 @@ class ForfeitedPackageService {
       }
     });
 
-    // ⚠️ The destruction TABLE, which is not the destruction page.
+    // ⚠️ Read for its IDS alone -- which packages are on the
+    // destruction list, so "forwarded and not yet placed" can exclude them.
     //
-    // `destruction_items` is what an officer scheduled: 16 burnt, 23 still
-    // to do. The Destroyed Goods page shows 17, because one package reached
-    // destroyed through a warehouse entry tagged [FINAL:DESTROYED] with no
-    // destruction_items row behind it at all. Both numbers are true of
-    // different questions -- "what is on my destruction list" and "what has
-    // been destroyed" -- so the panel shows the list here and the outcome
-    // under Final Outcome, rather than picking one and being wrong for the
-    // other reader.
+    // Its counts are deliberately NOT shown. `destruction_items` says 16
+    // destroyed where the Destroyed Goods page says 17, because one package
+    // reached destroyed through a warehouse entry tagged [FINAL:DESTROYED]
+    // with no destruction_items row behind it at all. A dashboard tile that
+    // opens a page showing a different number is worse than no tile, so the
+    // destroyed figure comes from `disposition_rows` -- the page's own view.
     final destRows = await AuthService._withNetworkRetry(() => supabase
         .from('destruction_items')
-        .select('forfeited_package_id, destroyed')
+        .select('forfeited_package_id')
         .eq('yard', yard));
-    final inDestruction = <String>{};
-    int destroyed = 0, queuedForDestruction = 0;
-    for (final r in (destRows as List)) {
-      final m = r as Map<String, dynamic>;
-      inDestruction.add(m['forfeited_package_id'].toString());
-      if (m['destroyed'] == true) {
-        destroyed++;
-      } else {
-        queuedForDestruction++;
-      }
-    }
+    final inDestruction = <String>{
+      for (final r in (destRows as List))
+        (r as Map<String, dynamic>)['forfeited_package_id'].toString()
+    };
     final int forwardedNotPlaced = forwardedFps
         .where((fp) => !atTender.contains(fp) && !inDestruction.contains(fp))
         .length;
@@ -5567,22 +5559,66 @@ class ForfeitedPackageService {
     // nobody is coming for. Those rows are the tag's total minus the two.
     final finalRows = await AuthService._withNetworkRetry(() => supabase
         .from('disposition_rows')
-        .select('final_tag, delivered')
+        .select('final_tag, delivered, is_destroyed')
         .eq('yard', yard)
         .inFilter('final_tag', ['SOLD', 'DESTROYED', 'RE-EXPORTED']));
     final outcomeTotals = <String, int>{};
     final outcomeDelivered = <String, int>{};
     final outcomePending = <String, int>{};
+    int destroyedDone = 0, destroyedAwaiting = 0;
     for (final r in (finalRows as List)) {
       final m = r as Map<String, dynamic>;
       final tag = m['final_tag']?.toString();
       if (tag == null) continue;
       outcomeTotals[tag] = (outcomeTotals[tag] ?? 0) + 1;
+      if (tag == 'DESTROYED') {
+        // ⚠️ Destroyed splits by WHETHER IT HAS BEEN DESTROYED, never
+        // by delivery. Nothing is handed over to be burnt -- 23 of the 39
+        // have no delivery state at all, so a delivered/pending split
+        // would say 9 and 7 of 39 and leave the reader to wonder about
+        // the other 23. The question this page answers is done or not.
+        if (m['is_destroyed'] == true) {
+          destroyedDone++;
+        } else {
+          destroyedAwaiting++;
+        }
+        continue;
+      }
       final d = m['delivered'];
       if (d == true) {
         outcomeDelivered[tag] = (outcomeDelivered[tag] ?? 0) + 1;
       } else if (d == false) {
         outcomePending[tag] = (outcomePending[tag] ?? 0) + 1;
+      }
+    }
+
+    // ⚠️ Top Management's rulings on goods nothing could sell -- the
+    // rail's "Final Outcomes" section, one page each, all six reading
+    // `unsold_proposals.proposal`.
+    //
+    // ⚠️ RE-EXPORT IS TWO DIFFERENT PAGES, and they are different
+    // numbers. `/reexported-packages` (Disposed) counts 19: goods that
+    // left the country by any route, 17 of them recorded straight on a
+    // warehouse entry. `/re-export-packages` (Final Outcomes) counts the 2
+    // the DG RULED on. This block feeds the second -- the panel groups by
+    // who decided, so it must count what that page counts, or a tile would
+    // send an officer to a page showing a different figure.
+    //
+    // `delivered` here is NOT NULL DEFAULT false, so every proposal is
+    // delivered or pending -- no third state, unlike `disposition_rows`.
+    final proposalRows = await AuthService._withNetworkRetry(() => supabase
+        .from('unsold_proposals')
+        .select('proposal, delivered')
+        .eq('yard', yard));
+    final proposalTotals = <String, int>{};
+    final proposalDelivered = <String, int>{};
+    for (final r in (proposalRows as List)) {
+      final m = r as Map<String, dynamic>;
+      final kind = m['proposal']?.toString();
+      if (kind == null) continue;
+      proposalTotals[kind] = (proposalTotals[kind] ?? 0) + 1;
+      if (m['delivered'] == true) {
+        proposalDelivered[kind] = (proposalDelivered[kind] ?? 0) + 1;
       }
     }
 
@@ -5614,17 +5650,31 @@ class ForfeitedPackageService {
       'soldAwaitingDelivery': soldAwaitingDelivery,
       'tenderUnsold': unsold,
       'tenderUndecided': undecided,
-      'destroyed': destroyed,
-      'queuedForDestruction': queuedForDestruction,
       'outcomeSoldTotal': outcomeTotals['SOLD'] ?? 0,
       'outcomeSoldDelivered': outcomeDelivered['SOLD'] ?? 0,
       'outcomeSoldPending': outcomePending['SOLD'] ?? 0,
       'outcomeDestroyedTotal': outcomeTotals['DESTROYED'] ?? 0,
-      'outcomeDestroyedDelivered': outcomeDelivered['DESTROYED'] ?? 0,
-      'outcomeDestroyedPending': outcomePending['DESTROYED'] ?? 0,
+      'outcomeDestroyedDone': destroyedDone,
+      'outcomeDestroyedAwaiting': destroyedAwaiting,
+      // The Disposed page's re-export: goods that left the country by ANY
+      // route, only 2 of the 19 from a DG ruling. Kept SEPARATE from the
+      // proposal figure below, which is a different page.
       'outcomeReexportTotal': outcomeTotals['RE-EXPORTED'] ?? 0,
       'outcomeReexportDelivered': outcomeDelivered['RE-EXPORTED'] ?? 0,
       'outcomeReexportPending': outcomePending['RE-EXPORTED'] ?? 0,
+      // Top Management's five outcomes, each with its delivery split.
+      for (final kind in const [
+        'government_use',
+        'auction',
+        're_export',
+        'convert',
+        'remove_from_premises',
+      ]) ...{
+        'proposal_${kind}_total': proposalTotals[kind] ?? 0,
+        'proposal_${kind}_delivered': proposalDelivered[kind] ?? 0,
+        'proposal_${kind}_pending':
+            (proposalTotals[kind] ?? 0) - (proposalDelivered[kind] ?? 0),
+      },
       'nextTenderSaleDate': nextTenderSaleDate,
     };
   }

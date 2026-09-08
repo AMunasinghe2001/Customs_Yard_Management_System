@@ -154,9 +154,14 @@ void main() {
   });
 
   group('the lifecycle figures count GOODS', () {
+    // ⚠️ Cut at the method's own END, not at a character count. A
+    // fixed substring silently stops covering the tail of the method the
+    // moment it grows -- and the symptom is a test that passes because it
+    // never saw the code it was asserting about.
     final fn = code(services.substring(
         services.indexOf('getForfeitLifecycleSummary() async {')));
-    final body = fn.substring(0, 4600);
+    final bodyEnd = fn.indexOf("'nextTenderSaleDate': nextTenderSaleDate");
+    final body = bodyEnd > 0 ? fn.substring(0, bodyEnd) : fn;
 
     test('appeals cover every kind of goods, not just forfeits', () {
       // ⚠️ This read `forfeited_packages` filtered to source='forfeit',
@@ -214,7 +219,7 @@ void main() {
       final c = code(screen);
       expect(c, contains('class _SplitTile'));
       expect(c, contains("label: 'Sold, all rounds'"));
-      expect(c, contains("label: 'Re-exported'"));
+      expect(c, contains("label: 'Re-exported, all routes'"));
       // ⚠️ A row with no hand-over step at all is in NEITHER half --
       // delivery is null, not false, where nothing was ever handed over.
       // The tile says so rather than letting the reader find that the
@@ -232,37 +237,69 @@ void main() {
       expect(body, contains("'SOLD', 'DESTROYED', 'RE-EXPORTED'"));
     });
 
-    test('the destruction LIST and the destroyed OUTCOME are both shown', () {
-      // ⚠️ They are different numbers -- 16 and 17 -- and both are
-      // true. `destruction_items` is what an officer scheduled; the
-      // Destroyed Goods page counts one more, a package tagged
-      // [FINAL:DESTROYED] on its warehouse entry with nothing on the
-      // destruction list at all. Picking one would be wrong for one of the
-      // two readers, so the list is one group and the outcome another.
+    test('destroyed splits by DONE, never by delivery', () {
+      // ⚠️ Nothing is handed over to be burnt. 23 of the 39 destroyed
+      // rows carry no delivery state at all, so a delivered/pending split
+      // read "9 delivered \u00b7 7 awaiting" of 39 and left the reader to
+      // wonder about the other 23. Done or not done is the question the
+      // page answers, and `is_destroyed` is the column that answers it.
+      expect(body, contains("m['is_destroyed'] == true"));
       final c = code(screen);
-      expect(c, contains("title: 'Destruction list \u00b7 goods'"));
-      expect(c, contains("title: 'Destroyed & re-exported \u00b7 goods'"));
-      expect(c, contains("label: 'Destroyed on the list'"));
+      expect(c, contains("deliveredLabel: 'destroyed'"));
+      expect(c, contains("pendingLabel: 'awaiting destruction'"));
+      expect(c, contains("title: 'Destroyed \u00b7 goods'"));
     });
 
-    test('sold stands alone, and no group borrows the rail\u0027s name', () {
-      // ⚠️ Sold is the outcome the yard is measured by, the only one
-      // with money behind it, and far the largest -- 76 against 39 and 19.
-      // In a row of three it read as one option among equals.
-      //
-      // ⚠️ And "Final Outcomes" is taken: it is the rail's section for
-      // the Top Management Directorate's rulings on goods nothing could
-      // sell, with its own /re-export-packages page distinct from the
-      // yard's /reexported-packages. A group here by that name would put
-      // the same words on the rail and the panel pointing at different
-      // tables.
+    test('the destroyed figure comes from the PAGE, not the list', () {
+      // ⚠️ They disagree, and the page wins. `destruction_items` says
+      // 16 destroyed -- what an officer scheduled. /destroyed-packages says
+      // 17, because one package (Copper Wire Coils, CED/GL1/SR/24/2026)
+      // reached destroyed on a warehouse entry tagged [FINAL:DESTROYED]
+      // with no destruction_items row behind it at all. A tile that opens a
+      // page showing a different number is worse than no tile, so the table
+      // is read for its IDS alone -- which packages are already placed, so
+      // "forwarded, not yet placed" can exclude them.
+      expect(body, contains("from('destruction_items')"));
+      expect(body, contains("select('forfeited_package_id')"));
+      expect(body.contains('queuedForDestruction'), isFalse,
+          reason: 'the list count is back on the panel');
+      expect(code(screen), contains("route: '/destroyed-packages'"));
+    });
+
+    test('every Top Management ruling has its own tile', () {
+      // ⚠️ The rail's "Final Outcomes" section is five pages, all
+      // reading `unsold_proposals.proposal`, and the panel showed none of
+      // them. One tile each, in the rail's order, each opening its page.
       final c = code(screen);
-      expect(c, contains("title: 'Sold \u00b7 goods'"));
-      expect(c.contains("title: 'Final outcome"), isFalse);
-      expect(c.contains("title: 'Final Outcomes"), isFalse);
-      final shell = File('lib/widgets/app_shell.dart').readAsStringSync();
-      expect(code(shell), contains("NavSection('Final Outcomes'"),
-          reason: 'the rail owns that name');
+      for (final route in const [
+        '/government-use-packages',
+        '/auction-packages',
+        '/re-export-packages',
+        '/converted-packages',
+        '/removed-packages',
+      ]) {
+        expect(c, contains("route: '\u0024route'".replaceAll('\u0024route', route)),
+            reason: '\u0024route has no tile');
+      }
+      expect(body, contains("from('unsold_proposals')"));
+    });
+
+    test('RE-EXPORT IS TWO PAGES, and they are two tiles', () {
+      // ⚠️ /re-export-packages (Final Outcomes) counts the 2 goods the
+      // DG RULED on. /reexported-packages (Disposed) counts 19: everything
+      // that left the country by any route, 17 of them recorded straight on
+      // a warehouse entry with no ruling behind them. One tile carrying 19
+      // and opening the page that shows 2 is the bug this guards.
+      final c = code(screen);
+      expect(c, contains("label: 'Re-export ruling'"));
+      expect(c, contains("route: '/re-export-packages'"));
+      expect(c, contains("label: 'Re-exported, all routes'"));
+      expect(c, contains("route: '/reexported-packages'"));
+      // The two counts come from different sources, which is why they can
+      // differ at all.
+      expect(body, contains("'re_export',"));
+      expect(body, contains('proposalTotals'));
+      expect(body, contains("outcomeTotals['RE-EXPORTED']"));
     });
 
     test('at-tender says what the TENDER did, not what followed', () {
@@ -307,14 +344,6 @@ void main() {
       expect(code(screen).contains("label: 'Sent for Sale'"), isFalse);
     });
 
-    test('destruction shows the queue as well as the done', () {
-      // ⚠️ 23 items sitting in a queue -- the ones an officer still has
-      // to go and do -- were invisible behind a card showing only what had
-      // been destroyed.
-      expect(body, contains('queuedForDestruction'));
-      expect(code(screen), contains("label: 'Scheduled, not yet destroyed'"));
-    });
-
     test('valuation is counted in items, like everything beside it', () {
       // ⚠️ `valuation_rows` is one row per REQUEST, so counting rows
       // gave 9 while the Valuation Directorate had 33 goods to cost -- and
@@ -329,7 +358,7 @@ void main() {
       expect(c, contains("title: 'Appeal Directorate \u00b7 goods'"));
       expect(c, contains("title: 'At Tender \u00b7 goods'"));
       expect(c, contains("title: 'Sent to Central Disposal \u00b7 goods'"));
-      expect(c, contains("title: 'Destruction list \u00b7 goods'"));
+      expect(c, contains("title: 'Destroyed \u00b7 goods'"));
     });
   });
 
