@@ -5244,6 +5244,84 @@ class ForfeitedPackageService {
     return result;
   }
 
+  /// What this yard is holding RIGHT NOW, and what is waiting on someone.
+  ///
+  /// ⚠️ The dashboard could not answer "what is in my yard?".
+  ///
+  /// Its top row was five "today" cards — forfeited today, abandoned today,
+  /// destroyed today, released today — which read 0 on any day nothing
+  /// happened, which is most days. Meanwhile the yard held 226 items across
+  /// four Held Goods pages and the dashboard said nothing about any of them.
+  ///
+  /// These read the same views the nav rail's own pages read, so a figure here
+  /// and the page it links to cannot disagree.
+  Future<Map<String, int>> getYardHoldingCounts() async {
+    final yard = AppSession.currentYard;
+
+    /// ⚠️ The SR NUMBER's yard segment as well as the yard column.
+    ///
+    /// A row filed by one directorate can sit in another's yard, and matching
+    /// the column alone hides it from the yard actually holding the goods —
+    /// the rule every cross-yard page in the app already applies.
+    PgQuery inYard(PgQuery q) => (yard == null || yard.isEmpty)
+        ? q
+        : q.or('yard.eq.$yard,sr_number.ilike.%/$yard/%');
+
+    Future<int> countOf(String view,
+        [PgQuery Function(PgQuery)? narrow]) async {
+      var q = inYard(supabase.from(view));
+      if (narrow != null) q = narrow(q);
+      return await AuthService._withNetworkRetry(() => q.count()) as int;
+    }
+
+    final detained =
+        await countOf('held_goods_rows', (q) => q.eq('kind', 'DETAINED'));
+    final abandoned =
+        await countOf('held_goods_rows', (q) => q.eq('kind', 'ABANDONED'));
+    final other = await countOf('held_goods_rows', (q) => q.eq('kind', 'OTHER'));
+    final forfeited = await countOf('forfeit_rows');
+
+    // ⚠️ Perishables AWAITING THE DG, not every perishable. The page lists
+    // them all; what a yard admin needs from a dashboard is the ones that are
+    // stuck — marked unsold at tender, not sold, no ruling yet.
+    final perishableAwaiting = await countOf(
+        'perishable_rows',
+        (q) =>
+            q.eq('marked_unsold', true).isNull('proposal').eq('sold', false));
+
+    // Waiting on the Valuation Directorate: requests this yard has sent that
+    // nobody has costed yet.
+    //
+    // ⚠️ Its own narrowing. `valuation_rows` is one row per REQUEST, and a
+    // request can hold goods from several yards — so it carries pipe-wrapped
+    // `sr_numbers` and `item_yards` rather than the single `sr_number` the
+    // per-item views have. Reusing `inYard` here asks for a column that does
+    // not exist.
+    final awaitingValuation = await AuthService._withNetworkRetry(() {
+      var q = supabase.from('valuation_rows');
+      if (yard != null && yard.isNotEmpty) {
+        q = q.or('yard.eq.$yard,item_yards.ilike.%|$yard|%,'
+            'sr_numbers.ilike.%/$yard/%');
+      }
+      return q.count();
+    }) as int;
+
+    // Waiting on Central Disposal: still re-tenderable, or out of road.
+    final reTenderable = await countOf('unsold_retender_pool');
+    final exhausted = await countOf('exhausted_unsold');
+
+    return {
+      'detained': detained,
+      'abandoned': abandoned,
+      'other': other,
+      'forfeited': forfeited,
+      'perishableAwaiting': perishableAwaiting,
+      'awaitingValuation': awaitingValuation,
+      'reTenderable': reTenderable,
+      'exhausted': exhausted,
+    };
+  }
+
   /// Forfeit → disposal lifecycle counts for the current yard, used by the
   /// Admin Dashboard summary card. Counts are package-level (one forfeited
   /// package = one unit).

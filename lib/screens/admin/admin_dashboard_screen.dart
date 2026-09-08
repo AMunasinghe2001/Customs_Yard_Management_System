@@ -1,6 +1,7 @@
 ﻿import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gap/gap.dart';
 import 'package:intl/intl.dart';
@@ -134,55 +135,142 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                 const Gap(16),
               ],
 
-              // ── Operational stat cards ───────────────────────────────────
-              pkgStats
-                  .when(
+              // ── What the yard is HOLDING ─────────────────────
+              //
+              // ⚠️ This row used to be five "today" cards -- forfeited
+              // today, abandoned today, destroyed today, released today --
+              // which read 0 on any day nothing happened, which is most
+              // days. Meanwhile the yard held 226 items across four Held
+              // Goods pages and the dashboard said nothing about any of
+              // them.
+              //
+              // Today's activity is not lost; it is one card in the row
+              // below, which is the space it earns.
+              //
+              // Every figure here opens the page that holds it: a number an
+              // officer cannot act on is a number they have to go and find.
+              ref.watch(yardHoldingCountsProvider).when(
                     loading: () => const _StatsLoadingRow(),
-                    // Quiet on error — the single top banner owns the retry.
+                    // Quiet on error -- the single top banner owns the retry.
                     error: (e, _) => const _StatsLoadingRow(),
-                    // Plain row: every card now has the SAME 2-line content
-                    // (the W/H Rate card was flattened to match _StatCard), so
-                    // they line up at equal height without any stretch/
-                    // IntrinsicHeight wrapper (which broke layout because the
-                    // cards contain Expanded children).
-                    data: (data) => Row(
+                    data: (h) => Row(
                       children: [
                         Expanded(
                             child: _StatCard(
-                                label: 'Forfeited Today',
-                                value: "${data['forfeit'] ?? 0}",
-                                icon: Icons.gavel_rounded,
-                                color: context.colors.dangerRed)),
-                        const Gap(16),
+                                label: 'Detained',
+                                value: '${h['detained'] ?? 0}',
+                                icon: Icons.shield_rounded,
+                                color: context.colors.accentLightBlue,
+                                route: '/detained-packages')),
+                        const Gap(14),
                         Expanded(
                             child: _StatCard(
-                                label: 'Abandoned Today',
-                                value: "${data['abandon'] ?? 0}",
+                                label: 'Abandoned',
+                                value: '${h['abandoned'] ?? 0}',
                                 icon: Icons.inventory_2_rounded,
-                                color: context.colors.heldOrange)),
-                        const Gap(16),
+                                color: context.colors.heldOrange,
+                                route: '/abandoned-packages')),
+                        const Gap(14),
                         Expanded(
                             child: _StatCard(
-                                label: 'Destroyed Today',
-                                value: "${data['destroy'] ?? 0}",
-                                icon: Icons.local_fire_department_rounded,
-                                color: context.colors.warningAmber)),
-                        const Gap(16),
+                                label: 'Other Goods',
+                                value: '${h['other'] ?? 0}',
+                                icon: Icons.category_rounded,
+                                color: context.colors.textSecondary,
+                                route: '/other-packages')),
+                        const Gap(14),
                         Expanded(
                             child: _StatCard(
-                                label: 'Released Today',
-                                value: "${data['release'] ?? 0}",
-                                icon: Icons.check_circle_rounded,
-                                color: context.colors.successGreen)),
-                        const Gap(16),
-                        // Current per-day storage rate (headline) with the live
-                        // total accruing across all held goods as the subtitle.
-                        Expanded(child: _WarehouseChargeCard(ref: ref)),
+                                label: 'Forfeited',
+                                value: '${h['forfeited'] ?? 0}',
+                                icon: Icons.gavel_rounded,
+                                color: context.colors.dangerRed,
+                                route: '/forfeited-packages')),
+                        const Gap(14),
+                        Expanded(
+                            child: _StatCard(
+                                label: 'Perishable',
+                                value: '${h['perishableAwaiting'] ?? 0}',
+                                // ⚠️ Awaiting the DG, not every
+                                // perishable. The page lists them all; what
+                                // a yard admin needs from a dashboard is the
+                                // ones that are stuck.
+                                footnote: 'awaiting DG ruling',
+                                icon: Icons.eco_rounded,
+                                color: context.colors.successGreen,
+                                route: '/perishable-goods')),
                       ],
                     ),
                   )
                   .animate()
                   .fadeIn(delay: 100.ms)
+                  .slideY(begin: 0.1),
+
+              const Gap(14),
+
+              // ── Waiting on someone else, and today ───────────────
+              //
+              // ⚠️ The first three are OUTSTANDING work, and none of it
+              // is the yard's own to finish: a costing, a re-tender, a DG
+              // ruling. They are the figures an admin chases someone about.
+              ref.watch(yardHoldingCountsProvider).when(
+                    loading: () => const _StatsLoadingRow(),
+                    error: (e, _) => const _StatsLoadingRow(),
+                    data: (h) => Row(
+                      children: [
+                        Expanded(
+                            child: _StatCard(
+                                label: 'Awaiting Valuation',
+                                value: '${h['awaitingValuation'] ?? 0}',
+                                footnote: 'sent, not yet costed',
+                                icon: Icons.calculate_rounded,
+                                color: context.colors.primaryGold)),
+                        const Gap(14),
+                        Expanded(
+                            child: _StatCard(
+                                label: 'Re-tenderable',
+                                value: '${h['reTenderable'] ?? 0}',
+                                footnote: 'unsold, can go again',
+                                icon: Icons.replay_rounded,
+                                color: context.colors.warningAmber)),
+                        const Gap(14),
+                        Expanded(
+                            child: _StatCard(
+                                label: 'Unsold — exhausted',
+                                value: '${h['exhausted'] ?? 0}',
+                                footnote: 'every avenue tried',
+                                icon: Icons.block_rounded,
+                                color: context.colors.dangerRed,
+                                route: '/unsold-packages')),
+                        const Gap(14),
+                        // Today's activity, kept as ONE card rather than four.
+                        Expanded(
+                          child: pkgStats.maybeWhen(
+                            data: (d) => _StatCard(
+                                label: 'Recorded today',
+                                value: '${(d['forfeit'] ?? 0) + (d['abandon'] ?? 0) + (d['destroy'] ?? 0) + (d['release'] ?? 0)}',
+                                footnote: 'F ${d['forfeit'] ?? 0} · A ${d['abandon'] ?? 0} · D ${d['destroy'] ?? 0} · R ${d['release'] ?? 0}',
+                                icon: Icons.today_rounded,
+                                color: context.colors.accentLightBlue),
+                            orElse: () => const _StatsLoadingRow(),
+                          ),
+                        ),
+                        const Gap(14),
+                        // Current per-day storage rate, with the live total
+                        // accruing across all held goods as the subtitle.
+                        //
+                        // ⚠️ FIVE cards a row, not six. Measured at a
+                        // 1400px window: the body is 1124px, so six cards
+                        // leave 86px for the label and five leave 124px. The
+                        // longest label here -- "Awaiting Valuation", with
+                        // "sent, not yet costed" under it -- needs about
+                        // 114px, so six would clip both.
+                        Expanded(child: _WarehouseChargeCard(ref: ref)),
+                      ],
+                    ),
+                  )
+                  .animate()
+                  .fadeIn(delay: 150.ms)
                   .slideY(begin: 0.1),
 
               const Gap(20),
@@ -542,15 +630,41 @@ class _StatCard extends StatelessWidget {
   final String value;
   final IconData icon;
   final Color color;
+
+  /// Where this figure lives in full.
+  ///
+  /// ⚠️ Optional. A card that counts something the nav rail also has a
+  /// page for should open it -- a number an officer cannot act on is a number
+  /// they have to go and find. The "today" card has nowhere to go, so it does
+  /// not pretend to.
+  final String? route;
+
+  /// A second line under the label, for a card that carries a breakdown.
+  final String? footnote;
+
   const _StatCard({
     required this.label,
     required this.value,
     required this.icon,
     required this.color,
+    this.route,
+    this.footnote,
   });
 
   @override
   Widget build(BuildContext context) {
+    final card = _card(context);
+    if (route == null) return card;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        onTap: () => context.go(route!),
+        child: card,
+      ),
+    );
+  }
+
+  Widget _card(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -595,6 +709,12 @@ class _StatCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                         color: context.colors.textSecondary, fontSize: 12)),
+                if (footnote != null)
+                  Text(footnote!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: context.colors.textMuted, fontSize: 11)),
               ],
             ),
           ),

@@ -3137,6 +3137,20 @@ final currentWarehouseChargeProvider = FutureProvider<double>((ref) async {
 /// Forfeit → disposal lifecycle counts for the admin's yard: appeal holds /
 /// decisions and how requested packages ended up (tender sale / destruction /
 /// unsold), plus the next scheduled tender-sale date.
+/// What this yard is holding right now, and what is waiting on someone else.
+///
+/// ⚠️ These read the same views the nav rail's own pages read, so a
+/// figure on the dashboard and the page it links to cannot disagree.
+final yardHoldingCountsProvider =
+    FutureProvider<Map<String, int>>((ref) async {
+  ref.watch(packagesChangeTriggerProvider);
+  ref.watch(warehouseEntriesChangeTriggerProvider);
+  ref.watch(forfeitedPackagesChangeTriggerProvider);
+  ref.watch(disposalRequestsChangeTriggerProvider);
+  ref.watch(tenderSaleItemsChangeTriggerProvider);
+  return ref.read(forfeitedPackageServiceProvider).getYardHoldingCounts();
+});
+
 final forfeitLifecycleProvider =
     FutureProvider<Map<String, dynamic>>((ref) async {
   ref.watch(forfeitedPackagesChangeTriggerProvider);
