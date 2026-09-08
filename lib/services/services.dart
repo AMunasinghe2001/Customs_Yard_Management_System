@@ -5526,13 +5526,22 @@ class ForfeitedPackageService {
       }
     });
 
-    // Forwarded and not yet placed: the ones genuinely in flight.
+    // ⚠️ The destruction TABLE, which is not the destruction page.
+    //
+    // `destruction_items` is what an officer scheduled: 16 burnt, 23 still
+    // to do. The Destroyed Goods page shows 17, because one package reached
+    // destroyed through a warehouse entry tagged [FINAL:DESTROYED] with no
+    // destruction_items row behind it at all. Both numbers are true of
+    // different questions -- "what is on my destruction list" and "what has
+    // been destroyed" -- so the panel shows the list here and the outcome
+    // under Final Outcome, rather than picking one and being wrong for the
+    // other reader.
     final destRows = await AuthService._withNetworkRetry(() => supabase
         .from('destruction_items')
-        .select('forfeited_package_id, destroyed, delivered')
+        .select('forfeited_package_id, destroyed')
         .eq('yard', yard));
     final inDestruction = <String>{};
-    int destroyed = 0, queuedForDestruction = 0, destructionDelivered = 0;
+    int destroyed = 0, queuedForDestruction = 0;
     for (final r in (destRows as List)) {
       final m = r as Map<String, dynamic>;
       inDestruction.add(m['forfeited_package_id'].toString());
@@ -5540,15 +5549,42 @@ class ForfeitedPackageService {
         destroyed++;
       } else {
         queuedForDestruction++;
-        // ⚠️ DELIVERED means handed to the destruction contractor and
-        // not yet burnt -- the step between scheduling and doing, which the
-        // yard has finished and somebody else has not.
-        if (m['delivered'] == true) destructionDelivered++;
       }
     }
     final int forwardedNotPlaced = forwardedFps
         .where((fp) => !atTender.contains(fp) && !inDestruction.contains(fp))
         .length;
+
+    // ⚠️ Final outcome, from `disposition_rows` -- the SAME view the
+    // Sold / Destroyed / Re-exported pages page through, so a figure here
+    // and a row count there cannot disagree.
+    //
+    // Each tag splits by DELIVERY, because a lot handed over is finished
+    // and one still standing in the yard is not. Delivery is NULL where
+    // there is no hand-over step (an entry tagged final with no tender,
+    // destruction or proposal row behind it) -- null is not false, and
+    // counting it as pending would say goods are awaiting collection that
+    // nobody is coming for. Those rows are the tag's total minus the two.
+    final finalRows = await AuthService._withNetworkRetry(() => supabase
+        .from('disposition_rows')
+        .select('final_tag, delivered')
+        .eq('yard', yard)
+        .inFilter('final_tag', ['SOLD', 'DESTROYED', 'RE-EXPORTED']));
+    final outcomeTotals = <String, int>{};
+    final outcomeDelivered = <String, int>{};
+    final outcomePending = <String, int>{};
+    for (final r in (finalRows as List)) {
+      final m = r as Map<String, dynamic>;
+      final tag = m['final_tag']?.toString();
+      if (tag == null) continue;
+      outcomeTotals[tag] = (outcomeTotals[tag] ?? 0) + 1;
+      final d = m['delivered'];
+      if (d == true) {
+        outcomeDelivered[tag] = (outcomeDelivered[tag] ?? 0) + 1;
+      } else if (d == false) {
+        outcomePending[tag] = (outcomePending[tag] ?? 0) + 1;
+      }
+    }
 
     // Next scheduled tender-sale date (a sale_date today or in the future).
     final today = DateTime.now().toIso8601String().substring(0, 10);
@@ -5580,7 +5616,15 @@ class ForfeitedPackageService {
       'tenderUndecided': undecided,
       'destroyed': destroyed,
       'queuedForDestruction': queuedForDestruction,
-      'destructionDelivered': destructionDelivered,
+      'outcomeSoldTotal': outcomeTotals['SOLD'] ?? 0,
+      'outcomeSoldDelivered': outcomeDelivered['SOLD'] ?? 0,
+      'outcomeSoldPending': outcomePending['SOLD'] ?? 0,
+      'outcomeDestroyedTotal': outcomeTotals['DESTROYED'] ?? 0,
+      'outcomeDestroyedDelivered': outcomeDelivered['DESTROYED'] ?? 0,
+      'outcomeDestroyedPending': outcomePending['DESTROYED'] ?? 0,
+      'outcomeReexportTotal': outcomeTotals['RE-EXPORTED'] ?? 0,
+      'outcomeReexportDelivered': outcomeDelivered['RE-EXPORTED'] ?? 0,
+      'outcomeReexportPending': outcomePending['RE-EXPORTED'] ?? 0,
       'nextTenderSaleDate': nextTenderSaleDate,
     };
   }

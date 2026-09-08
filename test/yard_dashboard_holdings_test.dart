@@ -205,17 +205,75 @@ void main() {
       expect(body, contains('inWarehouse.contains'));
     });
 
-    test('sold splits by delivery, destruction by done', () {
-      // ⚠️ A lot sold but not collected is still the yard's to store
-      // and hand over; one that has gone is finished. The single "Sold: 76"
-      // hid 37 lots the yard was still holding. Destruction reads the same
-      // way, with DESTROYED where sold has DELIVERED.
-      expect(body, contains('soldDelivered'));
-      expect(body, contains('soldAwaitingDelivery'));
+    test('an outcome and its delivery split share one tile', () {
+      // ⚠️ Delivered and not-yet-delivered are two halves of ONE fact,
+      // and two tiles said they were two facts -- a reader had to notice
+      // they added up to a third tile's total to see the relationship at
+      // all. With sold, destroyed and re-exported each split that way the
+      // panel grew to nine tiles saying what three can.
       final c = code(screen);
-      expect(c, contains("label: 'Sold · delivered'"));
-      expect(c, contains("label: 'Sold · awaiting collection'"));
-      expect(c, contains("label: 'Destroyed'"));
+      expect(c, contains('class _SplitTile'));
+      expect(c, contains("label: 'Sold, all rounds'"));
+      expect(c, contains("label: 'Re-exported'"));
+      // ⚠️ A row with no hand-over step at all is in NEITHER half --
+      // delivery is null, not false, where nothing was ever handed over.
+      // The tile says so rather than letting the reader find that the
+      // arithmetic does not close.
+      expect(c, contains('total - delivered - pending'));
+    });
+
+    test('the final outcome comes from the pages\u0027 own view', () {
+      // ⚠️ `disposition_rows` is what Sold / Destroyed / Re-exported
+      // page through, so a figure here and a row count there cannot
+      // disagree. Counting the source tables instead would drift: one
+      // package reached destroyed through a warehouse entry alone, with no
+      // destruction_items row behind it.
+      expect(body, contains("from('disposition_rows')"));
+      expect(body, contains("'SOLD', 'DESTROYED', 'RE-EXPORTED'"));
+    });
+
+    test('the destruction LIST and the destroyed OUTCOME are both shown', () {
+      // ⚠️ They are different numbers -- 16 and 17 -- and both are
+      // true. `destruction_items` is what an officer scheduled; the
+      // Destroyed Goods page counts one more, a package tagged
+      // [FINAL:DESTROYED] on its warehouse entry with nothing on the
+      // destruction list at all. Picking one would be wrong for one of the
+      // two readers, so the list is one group and the outcome another.
+      final c = code(screen);
+      expect(c, contains("title: 'Destruction list \u00b7 goods'"));
+      expect(c, contains("title: 'Destroyed & re-exported \u00b7 goods'"));
+      expect(c, contains("label: 'Destroyed on the list'"));
+    });
+
+    test('sold stands alone, and no group borrows the rail\u0027s name', () {
+      // ⚠️ Sold is the outcome the yard is measured by, the only one
+      // with money behind it, and far the largest -- 76 against 39 and 19.
+      // In a row of three it read as one option among equals.
+      //
+      // ⚠️ And "Final Outcomes" is taken: it is the rail's section for
+      // the Top Management Directorate's rulings on goods nothing could
+      // sell, with its own /re-export-packages page distinct from the
+      // yard's /reexported-packages. A group here by that name would put
+      // the same words on the rail and the panel pointing at different
+      // tables.
+      final c = code(screen);
+      expect(c, contains("title: 'Sold \u00b7 goods'"));
+      expect(c.contains("title: 'Final outcome"), isFalse);
+      expect(c.contains("title: 'Final Outcomes"), isFalse);
+      final shell = File('lib/widgets/app_shell.dart').readAsStringSync();
+      expect(code(shell), contains("NavSection('Final Outcomes'"),
+          reason: 'the rail owns that name');
+    });
+
+    test('at-tender says what the TENDER did, not what followed', () {
+      // ⚠️ Sold / unsold / not-recorded are three answers to one
+      // question. What happened to the goods afterwards -- collected or
+      // not -- is a different question, and putting it here made a reader
+      // scan five tiles to learn how a tender went.
+      final c = code(screen);
+      expect(c, contains("label: 'Sold at tender'"));
+      expect(c, contains("label: 'Unsold, needs re-tender'"));
+      expect(c, contains("label: 'Sale held, outcome not recorded'"));
     });
 
     test('no tile can only ever read zero', () {
@@ -271,31 +329,44 @@ void main() {
       expect(c, contains("title: 'Appeal Directorate \u00b7 goods'"));
       expect(c, contains("title: 'At Tender \u00b7 goods'"));
       expect(c, contains("title: 'Sent to Central Disposal \u00b7 goods'"));
-      expect(c, contains("title: 'Destruction \u00b7 goods'"));
+      expect(c, contains("title: 'Destruction list \u00b7 goods'"));
     });
   });
 
   group('the header names the yard and keeps time', () {
-    test('the title is the yard, not the role', () {
-      // ⚠️ Every page under this dashboard is filtered to one yard, and
-      // which yard that was appeared only in a badge on the far side of the
-      // header. An officer signed into two yards on two machines could not
-      // tell the screens apart.
+    test('the title names the directorate and the yard', () {
+      // ⚠️ "Admin Dashboard" said who was looking, while every page
+      // under it is filtered to one yard. The yard code alone was no
+      // better: GL1 means nothing until you know it belongs to CED, and
+      // ICT groups yards under directorates precisely because that is the
+      // division that matters. So the header reads "CED · Grey Line 1
+      // Dashboard" and the badge opposite carries the directorate alone --
+      // the yard is spelled out once, not twice.
       final c = code(screen);
       expect(c, contains('yardName(myYard)} Dashboard'));
+      expect(c, contains('myPrefix'));
       expect(c.contains("'Admin Dashboard'"), isFalse);
-      // ⚠️ The CODE leads the title, and the badge opposite carries
-      // the code ALONE. A yard is known by its code on every SR number and
-      // every filter; the name alone made an officer map "Grey Line 1" back
-      // to the CED/GL1 they had just typed, and the badge repeating the
-      // name said the same thing twice.
-      // A literal $ cannot be written here any other way: escaped it is
-      // an escape, raw it keeps the backslash, interpolated it is a
-      // variable. The code unit is the only spelling that is just "$".
-      final dollar = String.fromCharCode(36);
-      // ignore: prefer_interpolation_to_compose_strings
-      expect(c, contains("'" + dollar + "myYard · "));
-      expect(c, contains("Text(yard == null || yard.isEmpty ? yardName(yard) : yard"));
+      expect(c, contains('_yardBadge(context, myYard, myPrefix)'));
+      // ⚠️ The badge is the FULL code, "CED/GL1" -- the form an
+      // officer types and reads off an SR number. The title spells the
+      // yard out in words; either half alone is the one they cannot use.
+      expect(c, contains("'\u0024prefix/\u0024code'"));
+    });
+
+    test('the directorate is READ, never hardcoded', () {
+      // ⚠️ ICT re-pairs yards and directorates from the portal at run
+      // time, so a const map would be a header that goes quietly wrong
+      // after an edit nobody remembers making. The profile's own
+      // directorate wins where it is set -- a yard under two of them (NNR
+      // is CED and PSD) has no single answer, and the account registered
+      // under one -- with `yard_directorates` as the fallback, and null
+      // where the yard sits under several, because a guess would put the
+      // wrong directorate on every page the officer opens.
+      final providers =
+          code(File('lib/core/providers.dart').readAsStringSync());
+      expect(providers, contains('myDirectoratePrefixProvider'));
+      expect(providers, contains('yardDirectoratesProvider.future'));
+      expect(providers, contains('if (forYard.length != 1) return null;'));
     });
 
     test('the clock ticks', () {

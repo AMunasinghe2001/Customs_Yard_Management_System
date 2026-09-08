@@ -70,6 +70,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
     final profiles = ref.watch(myYardProfilesProvider);
     final online = ref.watch(myYardOnlineProfilesProvider);
     final myYard = ref.watch(currentProfileProvider)?.yard;
+    // ⚠️ The DIRECTORATE that runs this yard, read from the ICT-
+    // maintained link table -- never hardcoded, because ICT re-pairs yards
+    // and directorates from the portal at run time.
+    final myPrefix = ref.watch(myDirectoratePrefixProvider).value;
 
     return AppShell(
       currentRoute: widget.currentRoute,
@@ -100,17 +104,27 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                       // officer's name in the rail, where it says what they
                       // may do rather than what they are looking at.
                       //
-                      // ⚠️ The CODE leads, the name follows. A yard is
-                      // known by its code on every SR number, every filter
-                      // and every conversation -- "Grey Line 1 Dashboard"
-                      // alone made an officer map the name back to the
-                      // CED/GL1 they had just typed. The badge opposite
-                      // carries the code alone, so the two together teach
-                      // the pairing to anyone who does not know it yet.
+                      // ⚠️ The DIRECTORATE leads, the yard's NAME follows:
+                      // "CED · Grey Line 1 Dashboard".
+                      //
+                      // "Admin Dashboard" said who was looking, while every
+                      // page under it is filtered to one yard. The yard code
+                      // alone was no better: GL1 is meaningless until you
+                      // know it belongs to CED, and ICT groups yards under
+                      // directorates precisely because that is the division
+                      // that matters. So the header names the directorate
+                      // and spells the yard out; the badge opposite carries
+                      // the directorate alone.
+                      //
+                      // The prefix arrives a frame late (it is a future), so
+                      // the title falls back to the yard name rather than
+                      // flashing an empty separator.
                       Text(
                           myYard == null || myYard.isEmpty
                               ? 'Dashboard'
-                              : '$myYard · ${yardName(myYard)} Dashboard',
+                              : (myPrefix == null || myPrefix.isEmpty
+                                  ? '${yardName(myYard)} Dashboard'
+                                  : '$myPrefix · ${yardName(myYard)} Dashboard'),
                           style: Theme.of(context).textTheme.headlineLarge),
                       // ⚠️ A LIVE clock, ticking. A dashboard that
                       // auto-refreshes every 25 seconds but shows a time
@@ -130,7 +144,7 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                     ],
                   ),
                   Row(mainAxisSize: MainAxisSize.min, children: [
-                    _yardBadge(context, myYard),
+                    _yardBadge(context, myYard, myPrefix),
                     const Gap(12),
                     _buildHeaderStats(context, online, profiles),
                   ]),
@@ -354,8 +368,12 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
 
   // Yard chip shown in the header so the admin knows the scope of everything
   // on this dashboard.
-  Widget _yardBadge(BuildContext context, String? yard) {
+  Widget _yardBadge(BuildContext context, String? yard, String? prefix) {
     final gold = context.colors.primaryGold;
+    final code = (yard == null || yard.isEmpty) ? '' : yard;
+    final label = code.isEmpty
+        ? yardName(yard)
+        : (prefix == null || prefix.isEmpty ? code : '$prefix/$code');
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
@@ -366,10 +384,11 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.warehouse_rounded, color: gold, size: 16),
         const Gap(8),
-        // ⚠️ The CODE, not the name. The title beside it already
-        // spells the name out; repeating it here says the same thing
-        // twice, while the code is what an officer types into a filter.
-        Text(yard == null || yard.isEmpty ? yardName(yard) : yard,
+        // ⚠️ The FULL code -- "CED/GL1". The title beside it spells the
+        // yard out in words; this is the same yard written the way it
+        // appears on an SR number and in every filter, which is the form an
+        // officer types. Either half alone is the one they cannot use.
+        Text(label,
             style: TextStyle(
                 color: gold, fontWeight: FontWeight.w700, fontSize: 13)),
       ]),
@@ -852,24 +871,24 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                       title: 'At Tender · goods',
                       icon: Icons.storefront_rounded,
                       tiles: [
-                        // ⚠️ Sold splits by DELIVERY. A lot that has been
-                        // sold but not collected is still the yard's to store
-                        // and hand over; one that has gone is finished. 76
-                        // sold is 39 gone and 37 still here.
+                        // ⚠️ What the TENDER did: sold, unsold, or held
+                        // with nobody having written down which. Three
+                        // answers to one question, which is why they sit
+                        // together -- and why what happened to the goods
+                        // AFTERWARDS is a separate group below rather than
+                        // more tiles here.
+                        //
+                        // Each is per PACKAGE on its LATEST round.
+                        // tender_sale_items rows are attempts: a package
+                        // that fails four times has four of them, so
+                        // counting rows said 109 unsold when 27 lots were.
+                        // A package that failed twice and then sold is
+                        // SOLD; its failures are history, not an outcome.
                         _LifecycleTile(
-                            label: 'Sold · delivered',
-                            value: '${d['soldDelivered'] ?? 0}',
+                            label: 'Sold at tender',
+                            value: '${d['tenderSold'] ?? 0}',
                             color: context.colors.successGreen,
-                            icon: Icons.check_circle_rounded),
-                        _LifecycleTile(
-                            label: 'Sold · awaiting collection',
-                            value: '${d['soldAwaitingDelivery'] ?? 0}',
-                            color: context.colors.warningAmber,
-                            icon: Icons.local_shipping_rounded),
-                        // ⚠️ Goods unsold on their LATEST round -- not
-                        // failed attempts. A package that fails four times
-                        // has four tender rows, so counting rows said 109
-                        // when 27 lots of goods were unsold.
+                            icon: Icons.gavel_rounded),
                         _LifecycleTile(
                             label: 'Unsold, needs re-tender',
                             value: '${d['tenderUnsold'] ?? 0}',
@@ -888,29 +907,100 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                     ),
                     const Gap(16),
                     _LifecycleGroup(
-                      title: 'Destruction · goods',
+                      title: 'Destruction list · goods',
                       icon: Icons.local_fire_department_rounded,
                       tiles: [
-                        // ⚠️ Scheduled but not yet burnt -- the ones an
-                        // officer still has to go and do.
+                        // ⚠️ This is the destruction TABLE -- what an
+                        // officer scheduled. It is not the Destroyed Goods
+                        // page, which shows 17: one package reached
+                        // destroyed through a warehouse entry tagged
+                        // [FINAL:DESTROYED] with no destruction_items row
+                        // behind it. Both are true of different questions,
+                        // so the list is here and the outcome is below,
+                        // rather than one number being wrong for one reader.
                         _LifecycleTile(
                             label: 'Scheduled, not yet destroyed',
                             value: '${d['queuedForDestruction'] ?? 0}',
                             color: context.colors.warningAmber,
                             icon: Icons.schedule_rounded),
-                        // ⚠️ Handed to the contractor and not yet burnt:
-                        // the step between scheduling and doing, which the
-                        // yard has finished and somebody else has not.
                         _LifecycleTile(
-                            label: 'Delivered for destruction',
-                            value: '${d['destructionDelivered'] ?? 0}',
-                            color: context.colors.heldOrange,
-                            icon: Icons.local_shipping_rounded),
-                        _LifecycleTile(
-                            label: 'Destroyed',
+                            label: 'Destroyed on the list',
                             value: '${d['destroyed'] ?? 0}',
                             color: context.colors.dangerRed,
                             icon: Icons.local_fire_department_rounded),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Sold · goods',
+                      icon: Icons.sell_rounded,
+                      tiles: [
+                        // ⚠️ Sold stands ALONE, not among the other
+                        // outcomes. It is the outcome the yard is measured
+                        // by and the only one with money behind it, and it
+                        // is far the largest -- 76 against 39 and 19. Sat
+                        // in a row of three it read as one option among
+                        // equals.
+                        //
+                        // Straight off `disposition_rows`, the same view the
+                        // Sold Goods page pages through, so a figure here
+                        // and a row count there cannot disagree.
+                        _SplitTile(
+                            label: 'Sold, all rounds',
+                            total: (d['outcomeSoldTotal'] ?? 0) as int,
+                            delivered: (d['outcomeSoldDelivered'] ?? 0) as int,
+                            pending: (d['outcomeSoldPending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting collection',
+                            color: context.colors.successGreen,
+                            icon: Icons.sell_rounded,
+                            route: '/sold-packages'),
+                      ],
+                    ),
+                    const Gap(16),
+                    _LifecycleGroup(
+                      title: 'Destroyed & re-exported · goods',
+                      icon: Icons.flag_rounded,
+                      tiles: [
+                        // ⚠️ The two ways goods leave WITHOUT being sold,
+                        // each with its delivery split on the same tile --
+                        // delivered and still-here are two halves of one
+                        // fact, and two tiles apiece made six saying what
+                        // two do.
+                        //
+                        // ⚠️ This group is NOT the rail's "Final Outcomes"
+                        // section, which is the Top Management Directorate's
+                        // rulings on goods nothing could sell (Government
+                        // Use, Auction, Converted, Removed from Premises,
+                        // and its OWN /re-export-packages page). This counts
+                        // the yard's Disposed pages -- /destroyed-packages
+                        // and /reexported-packages -- so the names must not
+                        // borrow each other's, or the same words on the rail
+                        // and the panel would point at different tables.
+                        _SplitTile(
+                            label: 'Destroyed',
+                            total: (d['outcomeDestroyedTotal'] ?? 0) as int,
+                            delivered:
+                                (d['outcomeDestroyedDelivered'] ?? 0) as int,
+                            pending:
+                                (d['outcomeDestroyedPending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.dangerRed,
+                            icon: Icons.local_fire_department_rounded,
+                            route: '/destroyed-packages'),
+                        _SplitTile(
+                            label: 'Re-exported',
+                            total: (d['outcomeReexportTotal'] ?? 0) as int,
+                            delivered:
+                                (d['outcomeReexportDelivered'] ?? 0) as int,
+                            pending:
+                                (d['outcomeReexportPending'] ?? 0) as int,
+                            deliveredLabel: 'delivered',
+                            pendingLabel: 'awaiting',
+                            color: context.colors.accentLightBlue,
+                            icon: Icons.flight_takeoff_rounded,
+                            route: '/reexported-packages'),
                       ],
                     ),
                     const Gap(16),
@@ -1060,6 +1150,128 @@ class _LifecycleTile extends StatelessWidget {
                     style: TextStyle(
                         color: context.colors.textSecondary,
                         fontSize: 11,
+                        fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// One tile carrying a figure and its DELIVERY split.
+///
+/// ⚠️ Delivered and not-yet-delivered are two halves of ONE fact, and
+/// two tiles said they were two facts. A reader had to notice the numbers
+/// added up to the total on a third tile to see the relationship at all --
+/// and with sold, destroyed and re-exported each split that way, the panel
+/// grew to nine tiles saying what three can.
+///
+/// The total leads; the split sits under it as "39 delivered · 37 pending".
+/// [pendingLabel] names the waiting half, because what a lot is waiting FOR
+/// differs by outcome -- collection for a sale, the contractor for a burn.
+class _SplitTile extends StatelessWidget {
+  final String label;
+  final int total;
+  final int delivered;
+  final int pending;
+  final Color color;
+  final IconData icon;
+  final String deliveredLabel;
+  final String pendingLabel;
+  final String? route;
+
+  const _SplitTile({
+    required this.label,
+    required this.total,
+    required this.delivered,
+    required this.pending,
+    required this.color,
+    required this.icon,
+    this.deliveredLabel = 'delivered',
+    this.pendingLabel = 'pending',
+    this.route,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tile = _tile(context);
+    if (route == null) return tile;
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+          onTap: () => context.go(route!), child: tile),
+    );
+  }
+
+  Widget _tile(BuildContext context) {
+    final muted = context.colors.textSecondary;
+    // ⚠️ Rows with no hand-over step at all are neither half -- an
+    // entry tagged final with no tender, destruction or proposal behind it
+    // has nobody to collect from. They are in the total and in neither
+    // number below it, so the tile says so rather than letting the reader
+    // find the arithmetic does not close.
+    final noStep = total - delivered - pending;
+    return Container(
+      width: 232,
+      height: 76,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: context.colors.cardDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const Gap(10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    Text('$total',
+                        style: TextStyle(
+                            color: color,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            height: 1.0)),
+                    const Gap(6),
+                    Expanded(
+                      child: Text(label,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                              color: context.colors.textPrimary,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700)),
+                    ),
+                  ],
+                ),
+                const Gap(3),
+                Text(
+                    noStep > 0
+                        ? '$delivered $deliveredLabel · $pending $pendingLabel '
+                            '· $noStep n/a'
+                        : '$delivered $deliveredLabel · $pending $pendingLabel',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                        color: muted,
+                        fontSize: 10.5,
                         fontWeight: FontWeight.w600)),
               ],
             ),

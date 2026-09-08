@@ -157,6 +157,42 @@ final yardFilterOptionsProvider =
   return out;
 });
 
+/// The SR prefix of the signed-in officer's directorate — "CED".
+///
+/// ⚠️ A yard code alone does not say who runs the yard. GL1 belongs to
+/// CED, and an SR number written there reads CED/GL1/SR/24/2026 — the pair
+/// is how the yard is named everywhere except, until now, the dashboard
+/// header. ICT maintains the pairing in `yard_directorates`, so it is read,
+/// never hardcoded.
+///
+/// The profile's own `directorate` wins when it is set: a yard under two
+/// directorates (NNR is CED and PSD) has no single answer, and the account
+/// registered under one of them. It is null on pre-directorate accounts,
+/// which is why the link table is the fallback — and null again when the
+/// yard sits under several, because guessing would put the wrong
+/// directorate in the title of every page the officer opens.
+final myDirectoratePrefixProvider = FutureProvider<String?>((ref) async {
+  final profile = ref.watch(currentProfileProvider);
+  final yard = profile?.yard;
+  if (yard == null || yard.isEmpty) return null;
+
+  var code = profile?.directorate;
+  if (code == null || code.isEmpty) {
+    final links = await ref.watch(yardDirectoratesProvider.future);
+    final forYard = links[yard] ?? const <String>[];
+    if (forYard.length != 1) return null;
+    code = forYard.first;
+  }
+
+  final directorates = await ref.watch(directoratesProvider.future);
+  for (final d in directorates) {
+    if (d.code == code) return d.srPrefix;
+  }
+  // A directorate ICT removed after the account was made: the code itself
+  // still names it better than nothing.
+  return code;
+});
+
 /// `{srPrefix: code}` for every live directorate — feeds
 /// [directorateOfSrNumber] so a filter split by directorate (see
 /// [yardFilterOptionsProvider]) recognises one ICT added at run time.
