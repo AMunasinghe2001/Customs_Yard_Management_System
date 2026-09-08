@@ -189,13 +189,62 @@ void main() {
       expect(body, contains('everSold'));
       expect(body, contains('latestOutcome'));
       expect(body, contains("tender_sales!inner(created_at)"));
-      expect(code(screen), contains("label: 'Unsold so far'"));
+      expect(code(screen), contains("label: 'Unsold, needs re-tender'"));
+    });
+
+    test('appeals count only goods still in a warehouse', () {
+      // ⚠️ A ruling on goods that have since left the yard is history:
+      // the directorate ruled, the yard acted, the goods are gone. Counting
+      // those gave 26 held and 77 decided; 15 and 31 are goods the yard is
+      // still holding, and only those are anybody's outstanding work.
+      //
+      // `warehouse_rows` is the same view the Warehouses page reads, so a
+      // hold counted here and a row on that page cannot disagree about what
+      // is present.
+      expect(body, contains("from('warehouse_rows')"));
+      expect(body, contains('inWarehouse.contains'));
+    });
+
+    test('sold splits by delivery, destruction by done', () {
+      // ⚠️ A lot sold but not collected is still the yard's to store
+      // and hand over; one that has gone is finished. The single "Sold: 76"
+      // hid 37 lots the yard was still holding. Destruction reads the same
+      // way, with DESTROYED where sold has DELIVERED.
+      expect(body, contains('soldDelivered'));
+      expect(body, contains('soldAwaitingDelivery'));
+      final c = code(screen);
+      expect(c, contains("label: 'Sold · delivered'"));
+      expect(c, contains("label: 'Sold · awaiting collection'"));
+      expect(c, contains("label: 'Destroyed'"));
+    });
+
+    test('no tile can only ever read zero', () {
+      // ⚠️ "Sent for destruction" was STRUCTURALLY 0: a yard raises a
+      // disposal request for SALE, and goods reach destruction another way
+      // entirely -- a DG ruling, or a perishable that failed at tender. All
+      // 39 destruction items in this yard arrived with no request behind
+      // them. A tile that can only ever read 0 takes space and teaches
+      // nothing.
+      final c = code(screen);
+      expect(c.contains("label: 'Sent for destruction'"), isFalse);
+      expect(body.contains('forwardedDestruction'), isFalse);
+    });
+
+    test('forwarded counts only what is not already shown at tender', () {
+      // ⚠️ "Forwarded" counted all 135 the yard had ever sent on, of
+      // which 113 were already at tender and counted AGAIN in the group
+      // below -- the same goods twice on one panel. The 22 genuinely in
+      // flight are those Central Disposal holds and has not yet placed.
+      expect(body, contains('forwardedNotPlaced'));
+      expect(body, contains('!atTender.contains(fp)'));
+      expect(body, contains('!inDestruction.contains(fp)'));
+      expect(code(screen), contains("label: 'Forwarded, not yet placed'"));
     });
 
     test('disposal requests split outstanding from forwarded', () {
       // ⚠️ It counted every request the yard had EVER raised -- 168 --
       // under a heading about pending work. 135 had long since moved on.
-      expect(body, contains("r['forwarded'] == true"));
+      expect(body, contains("m['forwarded'] == true"));
       expect(code(screen), contains("label: 'Sent, awaiting valuation'"));
       expect(code(screen).contains("label: 'Sent for Sale'"), isFalse);
     });
@@ -205,7 +254,7 @@ void main() {
       // to go and do -- were invisible behind a card showing only what had
       // been destroyed.
       expect(body, contains('queuedForDestruction'));
-      expect(code(screen), contains("label: 'Scheduled, not yet done'"));
+      expect(code(screen), contains("label: 'Scheduled, not yet destroyed'"));
     });
 
     test('valuation is counted in items, like everything beside it', () {
@@ -235,6 +284,18 @@ void main() {
       final c = code(screen);
       expect(c, contains('yardName(myYard)} Dashboard'));
       expect(c.contains("'Admin Dashboard'"), isFalse);
+      // ⚠️ The CODE leads the title, and the badge opposite carries
+      // the code ALONE. A yard is known by its code on every SR number and
+      // every filter; the name alone made an officer map "Grey Line 1" back
+      // to the CED/GL1 they had just typed, and the badge repeating the
+      // name said the same thing twice.
+      // A literal $ cannot be written here any other way: escaped it is
+      // an escape, raw it keeps the backslash, interpolated it is a
+      // variable. The code unit is the only spelling that is just "$".
+      final dollar = String.fromCharCode(36);
+      // ignore: prefer_interpolation_to_compose_strings
+      expect(c, contains("'" + dollar + "myYard · "));
+      expect(c, contains("Text(yard == null || yard.isEmpty ? yardName(yard) : yard"));
     });
 
     test('the clock ticks', () {

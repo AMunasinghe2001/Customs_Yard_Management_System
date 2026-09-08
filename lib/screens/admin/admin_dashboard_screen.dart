@@ -99,10 +99,18 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
                       // The role has not been dropped -- it is under the
                       // officer's name in the rail, where it says what they
                       // may do rather than what they are looking at.
+                      //
+                      // ⚠️ The CODE leads, the name follows. A yard is
+                      // known by its code on every SR number, every filter
+                      // and every conversation -- "Grey Line 1 Dashboard"
+                      // alone made an officer map the name back to the
+                      // CED/GL1 they had just typed. The badge opposite
+                      // carries the code alone, so the two together teach
+                      // the pairing to anyone who does not know it yet.
                       Text(
                           myYard == null || myYard.isEmpty
                               ? 'Dashboard'
-                              : '${yardName(myYard)} Dashboard',
+                              : '$myYard · ${yardName(myYard)} Dashboard',
                           style: Theme.of(context).textTheme.headlineLarge),
                       // ⚠️ A LIVE clock, ticking. A dashboard that
                       // auto-refreshes every 25 seconds but shows a time
@@ -358,7 +366,10 @@ class _AdminDashboardScreenState extends ConsumerState<AdminDashboardScreen> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.warehouse_rounded, color: gold, size: 16),
         const Gap(8),
-        Text(yardName(yard),
+        // ⚠️ The CODE, not the name. The title beside it already
+        // spells the name out; repeating it here says the same thing
+        // twice, while the code is what an officer types into a filter.
+        Text(yard == null || yard.isEmpty ? yardName(yard) : yard,
             style: TextStyle(
                 color: gold, fontWeight: FontWeight.w700, fontSize: 13)),
       ]),
@@ -765,11 +776,16 @@ class _ForfeitLifecycleSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // ⚠️ Every figure below counts GOODS, and the group titles say
-        // so. They did not, and three of them were counting something else:
-        // appeals only against forfeits (missing the detained, abandoned and
-        // other goods that raise them too), tender ATTEMPTS rather than
-        // goods, and disposal requests ever raised rather than outstanding.
+        // ⚠️ Every figure below counts GOODS, and counts them once.
+        //
+        // Getting there took several passes. Appeals were counted from
+        // forfeits alone, missing the detained, abandoned and other goods
+        // that raise them too. Tender rows are ATTEMPTS, so a package that
+        // failed four times was counted four times. "Sent for destruction"
+        // was structurally always 0 -- destruction never arrives through a
+        // disposal request -- and has been removed. And "Forwarded" counted
+        // 135 goods of which 113 appeared again under At Tender, so the same
+        // lot was on the panel twice.
         const _SectionHeader(title: 'Forfeit & Disposal Lifecycle'),
         const Gap(12),
         Expanded(
@@ -789,13 +805,19 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                       title: 'Appeal Directorate · goods',
                       icon: Icons.gavel_rounded,
                       tiles: [
+                        // ⚠️ Only goods STILL IN A WAREHOUSE. A ruling on
+                        // goods that have since left the yard is history --
+                        // the directorate ruled, the yard acted, the goods
+                        // are gone. 26 held and 77 decided over all time; 15
+                        // and 31 are goods the yard is still holding, and
+                        // only those are anybody's outstanding work.
                         _LifecycleTile(
-                            label: 'On Appeal Hold',
+                            label: 'On appeal hold',
                             value: '${d['appealHold'] ?? 0}',
                             color: context.colors.heldOrange,
                             icon: Icons.pan_tool_rounded),
                         _LifecycleTile(
-                            label: 'Decision Received',
+                            label: 'Ruling received',
                             value: '${d['appealDecided'] ?? 0}',
                             color: context.colors.accentLightBlue,
                             icon: Icons.how_to_reg_rounded),
@@ -806,32 +828,23 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                       title: 'Sent to Central Disposal · goods',
                       icon: Icons.local_shipping_rounded,
                       tiles: [
-                        // ⚠️ AWAITING, not everything ever sent. This
-                        // counted all 168 requests the yard had raised, 135
-                        // of which had long since been forwarded and acted
-                        // on -- a heading about pending work showing a
-                        // lifetime total.
-                        // ⚠️ These are the SAME goods the "Awaiting
-                        // Valuation" tile above counts, seen from the other
-                        // side: the yard has sent them, and the Valuation
-                        // Directorate has not costed them. Two tiles showing
-                        // 33 is not a coincidence, and a reader who works that
-                        // out for themselves has been made to work.
                         _LifecycleTile(
                             label: 'Sent, awaiting valuation',
                             value: '${d['requestedSale'] ?? 0}',
                             color: context.colors.primaryGold,
                             icon: Icons.sell_rounded),
+                        // ⚠️ Forwarded and NOT YET PLACED. "Forwarded"
+                        // counted all 135 the yard had ever sent on, of which
+                        // 113 were already at tender and counted again in the
+                        // group below -- the same goods twice, which is why
+                        // the panel could not be read. These 22 are the ones
+                        // genuinely in flight: Central Disposal has them and
+                        // has not put them anywhere.
                         _LifecycleTile(
-                            label: 'Sent for destruction',
-                            value: '${d['requestedDestruction'] ?? 0}',
-                            color: context.colors.dangerRed,
-                            icon: Icons.delete_forever_rounded),
-                        _LifecycleTile(
-                            label: 'Forwarded, in progress',
-                            value: '${d['forwarded'] ?? 0}',
+                            label: 'Forwarded, not yet placed',
+                            value: '${d['forwardedNotPlaced'] ?? 0}',
                             color: context.colors.textMuted,
-                            icon: Icons.done_all_rounded),
+                            icon: Icons.outbox_rounded),
                       ],
                     ),
                     const Gap(16),
@@ -839,29 +852,37 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                       title: 'At Tender · goods',
                       icon: Icons.storefront_rounded,
                       tiles: [
+                        // ⚠️ Sold splits by DELIVERY. A lot that has been
+                        // sold but not collected is still the yard's to store
+                        // and hand over; one that has gone is finished. 76
+                        // sold is 39 gone and 37 still here.
                         _LifecycleTile(
-                            label: 'Sold',
-                            value: '${d['tenderSold'] ?? 0}',
+                            label: 'Sold · delivered',
+                            value: '${d['soldDelivered'] ?? 0}',
                             color: context.colors.successGreen,
                             icon: Icons.check_circle_rounded),
-                        // ⚠️ UNSOLD is not "not sold". An item nobody has
-                        // marked yet is UNDECIDED, and lumping the two told
-                        // the yard 116 items had failed at tender when 7 of
-                        // them simply had no outcome recorded -- and those 7
-                        // are somebody's outstanding work, not a result.
-                        // ⚠️ Goods still unsold, on their LATEST round --
-                        // not failed attempts. A package that fails four
-                        // times has four tender rows, so counting rows said
-                        // 109 when 27 lots of goods were unsold.
                         _LifecycleTile(
-                            label: 'Unsold so far',
+                            label: 'Sold · awaiting collection',
+                            value: '${d['soldAwaitingDelivery'] ?? 0}',
+                            color: context.colors.warningAmber,
+                            icon: Icons.local_shipping_rounded),
+                        // ⚠️ Goods unsold on their LATEST round -- not
+                        // failed attempts. A package that fails four times
+                        // has four tender rows, so counting rows said 109
+                        // when 27 lots of goods were unsold.
+                        _LifecycleTile(
+                            label: 'Unsold, needs re-tender',
                             value: '${d['tenderUnsold'] ?? 0}',
                             color: context.colors.textMuted,
                             icon: Icons.remove_shopping_cart_rounded),
+                        // ⚠️ The sale has been HELD and nobody has
+                        // recorded what happened. Not a result -- a job for
+                        // an officer, which is why it has its own tile
+                        // instead of being folded into unsold.
                         _LifecycleTile(
-                            label: 'Outcome not marked',
+                            label: 'Sale held, outcome not recorded',
                             value: '${d['tenderUndecided'] ?? 0}',
-                            color: context.colors.warningAmber,
+                            color: context.colors.dangerRed,
                             icon: Icons.hourglass_empty_rounded),
                       ],
                     ),
@@ -870,17 +891,21 @@ class _ForfeitLifecycleSection extends StatelessWidget {
                       title: 'Destruction · goods',
                       icon: Icons.local_fire_department_rounded,
                       tiles: [
-                        // ⚠️ Both halves. The card showed only what had
-                        // been destroyed, so 23 items sitting in a queue --
-                        // the ones an officer still has to go and do -- were
-                        // invisible.
+                        // ⚠️ Scheduled but not yet burnt -- the ones an
+                        // officer still has to go and do.
                         _LifecycleTile(
-                            // ⚠️ Scheduled but NOT YET DESTROYED -- the
-                            // ones an officer still has to go and do.
-                            label: 'Scheduled, not yet done',
+                            label: 'Scheduled, not yet destroyed',
                             value: '${d['queuedForDestruction'] ?? 0}',
                             color: context.colors.warningAmber,
                             icon: Icons.schedule_rounded),
+                        // ⚠️ Handed to the contractor and not yet burnt:
+                        // the step between scheduling and doing, which the
+                        // yard has finished and somebody else has not.
+                        _LifecycleTile(
+                            label: 'Delivered for destruction',
+                            value: '${d['destructionDelivered'] ?? 0}',
+                            color: context.colors.heldOrange,
+                            icon: Icons.local_shipping_rounded),
                         _LifecycleTile(
                             label: 'Destroyed',
                             value: '${d['destroyed'] ?? 0}',
