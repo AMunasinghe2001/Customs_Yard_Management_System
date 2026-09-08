@@ -193,6 +193,23 @@ final myDirectoratePrefixProvider = FutureProvider<String?>((ref) async {
   return code;
 });
 
+/// One package with its items and warehouse entries, by id.
+///
+/// ⚠️ For DIALOGS, which need one package and open one at a time. Every
+/// other path to a package on this app fetches a whole table and narrows in
+/// Dart -- the cost this codebase has spent months moving into SQL -- so a
+/// form that wants a single row asks for a single row.
+///
+/// ⚠️ It watches `warehouseRefreshTriggerProvider`, so a storage figure
+/// drawn from it moves when an entry does. A charge that keeps the value it
+/// had when the dialog opened is worse than none: the officer reads a stale
+/// number and writes it on a receipt.
+final packageByIdProvider =
+    FutureProvider.family<PackageModel?, String>((ref, id) async {
+  ref.watch(warehouseRefreshTriggerProvider);
+  return ref.read(packageServiceProvider).getPackageById(id);
+});
+
 /// `{srPrefix: code}` for every live directorate — feeds
 /// [directorateOfSrNumber] so a filter split by directorate (see
 /// [yardFilterOptionsProvider]) recognises one ICT added at run time.

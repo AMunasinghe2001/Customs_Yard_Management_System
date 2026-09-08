@@ -13,6 +13,7 @@ import '../../core/providers.dart';
 import '../../core/yards.dart';
 import '../../models/models.dart';
 import '../../widgets/sealed_valuation.dart';
+import '../../widgets/storage_charge_note.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/empty_table_state.dart';
 import 'disposal_shared.dart';
@@ -1438,22 +1439,52 @@ class _SoldPackagesTabState extends ConsumerState<_SoldPackagesTab> {
                                             color:
                                                 context.colors.accentLightBlue,
                                             size: 18),
-                                        onPressed: () => showDialog(
-                                          context: context,
-                                          builder: (_) => PackageDetailsDialog(
-                                            package: r.package,
-                                            storageRate: storageRate,
-                                            headerAccentColor:
-                                                context.colors.successGreen,
-                                            highlightEntry: r.entry,
-                                            useLegacySummary: true,
-                                            isSoldPage: true,
-                                            // Same qty the table's Valuation
-                                            // cell multiplies by, so the popup
-                                            // cannot disagree with the row.
-                                            valuationQty: r.entry.itemCount,
-                                          ),
-                                        ),
+                                        onPressed: () {
+                                          // ⚠️ The TENDER HISTORY, which
+                                          // Central Disposal's popup did not
+                                          // show at all. The yard's Sold
+                                          // Goods popup has carried every
+                                          // round, re-valuation, bid and
+                                          // committee since it was written;
+                                          // the directorate that RUNS the
+                                          // tenders opened the same package
+                                          // and saw none of it.
+                                          //
+                                          // Read on the tap, not watched
+                                          // while the table builds -- the
+                                          // row already resolved this key
+                                          // for its Valuation cell, so it is
+                                          // in the cache and costs nothing
+                                          // here.
+                                          final saleItem = ref
+                                              .read(
+                                                  saleItemForPackageItemProvider(
+                                                      r.saleItemKey))
+                                              .asData
+                                              ?.value;
+                                          showDialog(
+                                            context: context,
+                                            builder: (_) =>
+                                                PackageDetailsDialog(
+                                              package: r.package,
+                                              storageRate: storageRate,
+                                              headerAccentColor:
+                                                  context.colors.successGreen,
+                                              highlightEntry: r.entry,
+                                              highlightItemId:
+                                                  r.entry.packageItemId,
+                                              useLegacySummary: true,
+                                              isSoldPage: true,
+                                              tenderHistoryFor:
+                                                  saleItem?.forfeited,
+                                              // Same qty the table's
+                                              // Valuation cell multiplies by,
+                                              // so the popup cannot disagree
+                                              // with the row.
+                                              valuationQty: r.entry.itemCount,
+                                            ),
+                                          );
+                                        },
                                       ),
                                     )),
                                   ]))
@@ -3975,6 +4006,16 @@ class _MarkSoldDialogState extends State<_MarkSoldDialog> {
               'This records the package as SOLD.',
               style:
                   TextStyle(color: context.colors.textSecondary, fontSize: 13)),
+          const Gap(12),
+          // ⚠️ What the goods cost to keep, beside what they fetched.
+          // A sale that recovers less than the storage bill behind it is
+          // a fact the officer recording it should see at the moment they
+          // record it -- not one discovered later in a report.
+          StorageChargeNote(
+            packageId: widget.item.forfeited?.packageId,
+            packageItemId: widget.item.forfeited?.itemId,
+          ),
+          const Gap(12),
           TextField(
             controller: _receiptC,
             decoration: const InputDecoration(labelText: 'Receipt Number *'),

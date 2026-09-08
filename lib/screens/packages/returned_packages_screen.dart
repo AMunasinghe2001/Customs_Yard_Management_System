@@ -614,6 +614,16 @@ class _ReturnedPackagesScreenState
                                               entry: row.entry,
                                               delivered: row.delivered,
                                               kind: HandoverEntryKind.released,
+                                              // ⚠️ The package and the
+                                              // rate history, so the button
+                                              // can price the storage the
+                                              // owner owes before the goods
+                                              // leave. Without them it
+                                              // falls back to a bare flag
+                                              // and the charge on this very
+                                              // row goes uncollected.
+                                              package: row.package,
+                                              rates: storageRateHistory,
                                             ),
                                           )),
                                           DataCell(Center(

@@ -8,6 +8,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:data_table_2/data_table_2.dart';
 import '../../core/theme.dart';
 import '../../widgets/page_title.dart';
+import '../../widgets/storage_charge_note.dart';
 import '../../widgets/table_pager.dart';
 import '../../core/providers.dart';
 import '../../core/yards.dart';
@@ -949,6 +950,16 @@ class _ItemValuationDialogState extends ConsumerState<_ItemValuationDialog> {
             ],
           ]),
           const Gap(14),
+          // ⚠️ What the goods have already COST to keep. A valuation set
+          // without it is a number chosen in ignorance: goods worth
+          // Rs 40,000 that have run up Rs 90,000 in storage are worth
+          // tendering at a different figure than the same goods admitted
+          // last week, and the officer could not see that from the form.
+          StorageChargeNote(
+            packageId: widget.item.forfeited?.packageId,
+            packageItemId: widget.item.forfeited?.itemId,
+          ),
+          const Gap(12),
           // Full-width cost field; the live total sits on its own line below so
           // a large total never squeezes / overflows the input.
           TextField(
@@ -1745,6 +1756,16 @@ class _ValBidsAndRevalDialogState
               style:
                   TextStyle(color: context.colors.textMuted, fontSize: 11)),
         ]),
+        const Gap(10),
+        // ⚠️ The storage bill is the reason a re-valuation usually goes
+        // DOWN. Goods that failed three tenders have been accruing the
+        // whole time, and the figure set here decides whether the next
+        // round recovers any of it.
+        StorageChargeNote(
+          packageId: widget.info.forfeited.packageId,
+          packageItemId: widget.info.forfeited.itemId,
+          compact: true,
+        ),
         const Gap(10),
         // Full-width cost field; live total on its own line below so a large
         // total never squeezes / overflows the input.

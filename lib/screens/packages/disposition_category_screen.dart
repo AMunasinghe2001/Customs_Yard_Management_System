@@ -608,7 +608,10 @@ class _DispositionCategoryScreenState
                                             : HandoverCell(
                                                 entry: row.entry,
                                                 delivered: row.delivered,
-                                                kind: HandoverEntryKind.reexport),
+                                                kind: HandoverEntryKind
+                                                    .reexport,
+                                                package: row.package,
+                                                rates: storageRateHistory),
                                       )),
                                     if (widget.finalTag == 'RELEASED')
                                       DataCell(Center(

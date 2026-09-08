@@ -1,6 +1,7 @@
 import '../disposal/disposal_dashboard_screen.dart'
     show EnterBidsDialog;
 import '../../widgets/table_pager.dart';
+import '../../widgets/storage_charge_note.dart';
 import '../../widgets/page_title.dart';
 import '../../widgets/sealed_valuation.dart';
 import 'executive_header.dart';
@@ -1390,6 +1391,17 @@ class _CommitteeValuationDialogState
                     style: TextStyle(
                         color: context.colors.textMuted, fontSize: 11)),
               ]),
+              const Gap(8),
+              // ⚠️ The committee is pricing goods that have been in the
+              // yard through four or more failed tenders, and the storage
+              // bill has been running the whole time. It is the single
+              // largest thing the figure has to answer for, and the form
+              // did not show it.
+              StorageChargeNote(
+                packageId: widget.info.forfeited.packageId,
+                packageItemId: widget.info.forfeited.itemId,
+                compact: true,
+              ),
               const Gap(8),
               Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
                 Expanded(

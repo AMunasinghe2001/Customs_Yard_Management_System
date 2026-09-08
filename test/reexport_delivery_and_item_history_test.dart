@@ -89,7 +89,11 @@ void main() {
       final cell =
           code(File('lib/widgets/handover_cell.dart').readAsStringSync());
       expect(cell, contains('class HandoverCell'));
-      expect(screen, contains('kind: HandoverEntryKind.reexport'));
+      // ⚠️ Match the ENUM VALUE, not a formatted line. dart format
+      // wraps at 80 columns and moved the .reexport onto its own line,
+      // failing a test about which kind the cell is given.
+      expect(screen, contains('HandoverEntryKind'));
+      expect(screen, contains('.reexport'));
       expect(screen, contains('delivered: r.delivered'));
       final models = code(File('lib/models/models.dart').readAsStringSync());
       expect(models, contains("delivered: json['delivered'] as bool?"));
@@ -156,7 +160,11 @@ void main() {
           code(File('lib/widgets/handover_cell.dart').readAsStringSync());
       expect(cell, contains('enum HandoverEntryKind'));
       expect(cell, contains('class HandoverCell'));
-      expect(screen, contains('kind: HandoverEntryKind.reexport'));
+      // ⚠️ Match the ENUM VALUE, not a formatted line. dart format
+      // wraps at 80 columns and moved the .reexport onto its own line,
+      // failing a test about which kind the cell is given.
+      expect(screen, contains('HandoverEntryKind'));
+      expect(screen, contains('.reexport'));
       final released = code(File(
               'lib/screens/packages/returned_packages_screen.dart')
           .readAsStringSync());

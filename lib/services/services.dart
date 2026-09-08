@@ -8354,12 +8354,21 @@ class DisposalService {
   ///
   /// ⚠️ Like [toggleReexportDelivery] and unlike [toggleOutcomeDelivery],
   /// this does not close the warehouse entry -- releasing already did.
-  Future<void> toggleReleasedDelivery(String entryId, bool delivered) async {
+  Future<void> toggleReleasedDelivery(
+    String entryId,
+    bool delivered, {
+    String? receiptNo,
+    double? charge,
+    DateTime? handedAt,
+  }) async {
     await AuthService._withNetworkRetry(() => supabase.rpc(
           'yard_toggle_released_delivery',
           params: {
             'p_entry_id': entryId,
             'p_delivered': delivered,
+            'p_receipt_no': receiptNo,
+            'p_charge': charge,
+            'p_handed_at': handedAt?.toIso8601String(),
           },
         ));
   }
@@ -8383,12 +8392,24 @@ class DisposalService {
   /// ⚠️ Unlike [toggleOutcomeDelivery] this does NOT close the warehouse
   /// entry: writing the tag already closed it, on the day the disposition
   /// was recorded. Re-closing would overwrite `returned_at` with today.
-  Future<void> toggleReexportDelivery(String entryId, bool delivered) async {
+  /// ⚠️ The receipt lands in the SAME statement as the flag. Two writes
+  /// leave a window where the goods are marked gone with no record of the
+  /// money, and a failure between them leaves it that way for good.
+  Future<void> toggleReexportDelivery(
+    String entryId,
+    bool delivered, {
+    String? receiptNo,
+    double? charge,
+    DateTime? handedAt,
+  }) async {
     await AuthService._withNetworkRetry(() => supabase.rpc(
           'yard_toggle_reexport_delivery',
           params: {
             'p_entry_id': entryId,
             'p_delivered': delivered,
+            'p_receipt_no': receiptNo,
+            'p_charge': charge,
+            'p_handed_at': handedAt?.toIso8601String(),
           },
         ));
   }
