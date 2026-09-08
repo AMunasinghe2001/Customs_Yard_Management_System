@@ -23,7 +23,14 @@
 
 set lock_timeout = '5s';
 
-create or replace view public.zone_occupancy_entries as
+-- ⚠️ DROP, not CREATE OR REPLACE. Postgres refuses to rename or reorder
+-- an existing view's columns, so adding one in the middle fails with
+--   cannot change name of view column "yard" to "warehouse_name"
+-- and the migration half-applies: the verify block then measures the OLD
+-- view and reports a failure that has nothing to do with the change.
+drop view if exists public.zone_occupancy_entries;
+
+create view public.zone_occupancy_entries as
 select
   we.id            as entry_id,
   we.package_id,
@@ -31,6 +38,16 @@ select
   we.item_count,
   we.zone,
   we.warehouse_id,
+  -- ⚠️ The warehouse's own name and code, carried HERE.
+  --
+  -- This is a VIEW, so PostgREST has no foreign key to embed through: a
+  -- caller asking for `warehouses(name, code)` gets
+  --   "no unique foreign key between zone_occupancy_entries and warehouses"
+  -- and the whole dashboard shows a database error. The same seam cost
+  -- postgres/47 a round trip; a view either carries what its callers need
+  -- or they cannot join to it at all.
+  wh.name          as warehouse_name,
+  wh.code          as warehouse_code,
   p.yard,
   -- Which of the three reasons this entry is still taking up space, so a
   -- caller can say so rather than the figure being unexplained.
@@ -43,6 +60,7 @@ select
   end              as occupancy_reason
 from public.warehouse_entries we
 join public.packages p on p.id = we.package_id
+left join public.warehouses wh on wh.id = we.warehouse_id
 where
   -- Still held: never returned at all.
   not coalesce(we.is_returned, false)
@@ -117,6 +135,19 @@ begin
     from public.accrued_storage_by_yard where yard = 'GL1';
   raise notice 'storage-charge rows for this yard: % (untouched by this view)',
     n_charging;
+
+  -- ⚠️ The embed seam. A caller that has to write `warehouses(name)` is
+  -- a caller that will fail at run time, so the columns must be here.
+  if not exists (select 1 from information_schema.columns
+                  where table_name = 'zone_occupancy_entries'
+                    and column_name = 'warehouse_name') then
+    raise exception 'the view does not carry warehouse_name';
+  end if;
+  if exists (select 1 from public.zone_occupancy_entries
+              where yard = 'GL1' and warehouse_id is not null
+                and warehouse_name is null) then
+    raise exception 'a warehouse_id resolves to no name';
+  end if;
 
   raise notice 'verified: a zone is occupied until the goods actually leave';
 end $verify$;

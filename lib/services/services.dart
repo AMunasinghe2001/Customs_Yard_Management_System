@@ -2733,9 +2733,15 @@ class WarehouseService {
     // and the goods wait on their owner, not on the yard. Capacity is a
     // physical question and billing a contractual one; they end on
     // different days.
+    // ⚠️ FLAT columns, not `warehouses(name, code)`. This is a VIEW, so
+    // PostgREST has no foreign key to embed through -- the embed threw
+    // "no unique foreign key between zone_occupancy_entries and
+    // warehouses" and put a database error across the whole dashboard.
+    // postgres/58 carries the name and code for exactly this reason.
     final data = await AuthService._withNetworkRetry(() => supabase
         .from('zone_occupancy_entries')
-        .select('item_count, zone, warehouse_id, warehouses(name, code)')
+        .select('item_count, zone, warehouse_id, warehouse_name, '
+            'warehouse_code')
         .eq('yard', yard));
 
     // warehouse_id → { name, code, "<zone lowercased>" → used, unzoned }
@@ -2754,7 +2760,10 @@ class WarehouseService {
       final row = e as Map<String, dynamic>;
       final whId = row['warehouse_id']?.toString() ?? '';
       if (whId.isEmpty) continue;
-      final agg = shell(whId, row['warehouses'] as Map?);
+      final agg = shell(whId, {
+        'name': row['warehouse_name'],
+        'code': row['warehouse_code'],
+      });
       final qty = parseDbInt(row['item_count']) ?? 0;
       final z = (row['zone'] ?? '').toString().trim().toLowerCase();
       if (z.isEmpty || z == 'n/a') {
@@ -2769,11 +2778,11 @@ class WarehouseService {
     final whNames = <String, Map<String, String>>{};
     for (final e in (data as List)) {
       final row = e as Map<String, dynamic>;
-      final wh = row['warehouses'] as Map?;
-      if (wh == null) continue;
+      final name = row['warehouse_name']?.toString();
+      if (name == null) continue;
       whNames[row['warehouse_id'].toString()] = {
-        'name': wh['name']?.toString() ?? 'Unknown',
-        'code': wh['code']?.toString() ?? '—',
+        'name': name,
+        'code': row['warehouse_code']?.toString() ?? '—',
       };
     }
     for (final z in zones) {

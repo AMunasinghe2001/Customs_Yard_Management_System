@@ -241,6 +241,31 @@ void main() {
           reason: 'capacity is back on the ruling date');
     });
 
+    test('the view carries its warehouse instead of embedding it', () {
+      // ⚠️ A VIEW has no foreign key, so PostgREST cannot embed through
+      // it. `warehouses(name, code)` threw "no unique foreign key between
+      // zone_occupancy_entries and warehouses" and put a database error
+      // across the whole dashboard -- the same seam that cost postgres/47 a
+      // round trip and postgres/48 another. A view either carries what its
+      // callers need or they cannot join to it at all.
+      expect(code(mig58), contains('warehouse_name'));
+      expect(code(mig58), contains('warehouse_code'));
+      final start = services.indexOf('getYardWarehouseCapacity');
+      final fn = services.substring(start, start + 1400);
+      expect(fn.contains('warehouses(name, code)'), isFalse,
+          reason: 'the embed is back, and it cannot resolve');
+    });
+
+    test('the migration DROPS the view before recreating it', () {
+      // ⚠️ `create or replace` cannot rename or reorder an existing
+      // view's columns: adding one in the middle fails with "cannot change
+      // name of view column" -- and the migration then HALF-APPLIES, so the
+      // verify block measures the OLD view and reports a failure that has
+      // nothing to do with the change.
+      expect(code(mig58),
+          contains('drop view if exists public.zone_occupancy_entries'));
+    });
+
     test('the STORAGE CHARGE deliberately does not follow', () {
       // ⚠️ Billing ends when the yard RULES -- the bill is issued and
       // closed at that point, and the goods then wait on their owner, not
