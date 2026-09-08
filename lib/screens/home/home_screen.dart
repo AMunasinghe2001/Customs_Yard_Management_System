@@ -1,18 +1,20 @@
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:gap/gap.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme.dart';
-import '../../core/providers.dart';
 
-class HomeScreen extends ConsumerWidget {
+// ⚠️ A plain StatelessWidget now. It was a ConsumerWidget only for the
+// theme toggle in its corner; with that gone this page reads nothing from
+// Riverpod, and leaving it a Consumer would invite the next reader to add a
+// watch here rather than in the portal that needs it.
+class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: context.colors.scaffoldBg,
       body: Stack(children: [
@@ -24,23 +26,15 @@ class HomeScreen extends ConsumerWidget {
         // Behind everything and pointer-transparent: this must never intercept
         // a click meant for a portal card.
         const Positioned.fill(child: DriftingGlows()),
-        Positioned(
-          top: 24,
-          right: 24,
-          child: IconButton(
-            icon: Icon(
-                ref.watch(themeModeProvider) == ThemeMode.dark
-                    ? Icons.light_mode_rounded
-                    : Icons.dark_mode_rounded,
-                color: context.colors.textPrimary),
-            tooltip: 'Toggle Theme',
-            onPressed: () {
-              final isDark = ref.read(themeModeProvider) == ThemeMode.dark;
-              ref.read(themeModeProvider.notifier).state =
-                  isDark ? ThemeMode.light : ThemeMode.dark;
-            },
-          ),
-        ),
+        // ⚠️ No theme toggle on this page.
+        //
+        // The portal chooser is a doorway -- an officer is here for two
+        // seconds on the way to their portal, and a control in the corner of
+        // it is one more thing in the way of the six cards it exists to show.
+        //
+        // Nothing is lost: every sign-in screen and every dashboard carries
+        // its own toggle, so the theme is still one click away wherever an
+        // officer actually spends time.
         SingleChildScrollView(
           child: ConstrainedBox(
             constraints:
@@ -50,38 +44,18 @@ class HomeScreen extends ConsumerWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     const Spacer(),
-                    // ⚠️ The seal is LIGHT MODE only.
-                    //
-                    // The asset is solid #231f87, a dark navy. Measured
-                    // against the two backgrounds it sits on:
-                    //
-                    //     light #F5F7FB   12.1x contrast   crisp
-                    //     dark  #0e0c3a    1.4x contrast   a dark smudge
-                    //
-                    // It is the same file either way -- nothing switches it --
-                    // so in dark mode it reads as a stain on the page rather
-                    // than a crest. The title below carries the identity, and
-                    // the six portal cards carry the colour.
-                    //
-                    // A tinted copy exists (Sri_Lanka_Customs_logo_tinted.svg,
-                    // used by BrandPanel) if this is ever wanted back in dark
-                    // mode -- but it needs the knockout treatment described in
-                    // brand_panel.dart, which is a different problem from this
-                    // one.
-                    if (ref.watch(themeModeProvider) != ThemeMode.dark) ...[
-                      SvgPicture.asset(
-                        'Sri_Lanka_Customs_logo.svg',
-                        width: 132,
-                        height: 132,
-                      )
-                          .animate()
-                          .scale(
-                              begin: const Offset(0.8, 0.8),
-                              duration: 500.ms,
-                              curve: Curves.easeOutBack)
-                          .fadeIn(),
-                      const Gap(18),
-                    ],
+                    SvgPicture.asset(
+                      'Sri_Lanka_Customs_logo.svg',
+                      width: 132,
+                      height: 132,
+                    )
+                        .animate()
+                        .scale(
+                            begin: const Offset(0.8, 0.8),
+                            duration: 500.ms,
+                            curve: Curves.easeOutBack)
+                        .fadeIn(),
+                    const Gap(18),
                     Text(
                       'Sri Lanka Customs',
                       style: TextStyle(

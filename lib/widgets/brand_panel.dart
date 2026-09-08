@@ -183,22 +183,67 @@ class _BrandPanelState extends State<BrandPanel>
       widget.deepColor,
       (_accentFloor + 0.35 * _accentDepth * (1 - t)).clamp(0.0, 0.75))!;
 
+  /// The colour the crest, the title and the badge are drawn in.
+  ///
+  /// ⚠️ The accent, UNLESS the accent cannot be read on this panel.
+  ///
+  /// Every portal drew its branding in its own accent, which works while the
+  /// accent is lighter than the panel behind it. Yard Access is #1A237E on
+  /// #060D1F -- a contrast ratio of 1.46 -- and its crest and title all but
+  /// disappeared. Measured against each panel's deep colour:
+  ///
+  ///     gold   #D4A017  8.15    Valuation, DC/SDDC
+  ///     teal   #0E7C86  3.91    Top Management
+  ///     green  #2E7D32  3.77    Central Disposal
+  ///     maroon #8E3A5F  2.69    ICT
+  ///     purple #7B1FA2  2.36    Appeal
+  ///     navy   #1A237E  1.46    Yard Access   <- unreadable
+  ///     white  #FFFFFF  19.4
+  ///
+  /// Below 1.9 the accent is dropped for white, which no panel can swallow.
+  ///
+  /// ⚠️ The threshold sits in the GAP, not next to a value. Yard
+  /// Access is 1.46 and the dimmest of the others is Appeal at 2.29 -- a wide
+  /// space with nothing in it, so 1.9 separates them without sitting close
+  /// enough to either that a small palette change would flip a panel. Picking
+  /// 2.2 would have left purple 0.09 from turning white, and a designer
+  /// nudging that swatch would have restyled a portal by accident.
+  ///
+  /// The five that read correctly keep their own colour, because the branding
+  /// being IN the portal's colour is the point of it. This is a floor, not a
+  /// restyle.
+  ///
+  /// The panel keeps its accent either way -- the gradient corner, the badge
+  /// fill and its border still carry it. Only the marks that have to be
+  /// legible change.
+  Color get _ink {
+    final deep = _relativeLuminance(widget.deepColor);
+    final accent = _accentLuminance;
+    final contrast =
+        (math.max(deep, accent) + 0.05) / (math.min(deep, accent) + 0.05);
+    return contrast < 1.9 ? Colors.white : widget.accent;
+  }
+
   /// Relative luminance of the accent, sRGB (WCAG).
   ///
   /// The channel weights are what make this about PERCEIVED brightness rather
   /// than raw numbers -- green counts for roughly ten times what blue does,
   /// which is why teal and green land together despite looking nothing alike.
-  double get _accentLuminance {
-    double channel(double c) =>
-        c <= 0.03928 ? c / 12.92 : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
-    return 0.2126 * channel(widget.accent.r) +
-        0.7152 * channel(widget.accent.g) +
-        0.0722 * channel(widget.accent.b);
+  double get _accentLuminance => _relativeLuminance(widget.accent);
+
+  /// Relative luminance of any colour, sRGB (WCAG).
+  static double _relativeLuminance(Color c) {
+    double channel(double v) =>
+        v <= 0.03928 ? v / 12.92 : math.pow((v + 0.055) / 1.055, 2.4).toDouble();
+    return 0.2126 * channel(c.r) +
+        0.7152 * channel(c.g) +
+        0.0722 * channel(c.b);
   }
 
   @override
   Widget build(BuildContext context) {
     final accent = widget.accent;
+    final ink = _ink;
     return AnimatedBuilder(
       animation: _c,
       builder: (context, _) {
@@ -257,11 +302,16 @@ class _BrandPanelState extends State<BrandPanel>
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _Crest(source: _source!, tint: accent, knockout: behind),
+              // ⚠️ Tinted with the INK, not the accent: on Yard Access
+              // the accent is #1A237E on a #060D1F panel and the crest all but
+              // disappeared. The knockout stays the colour actually BEHIND the
+              // crest -- that is what keeps the ship and the plane looking
+              // cut out, and it has nothing to do with the tint.
+              _Crest(source: _source!, tint: ink, knockout: behind),
               const SizedBox(height: 36),
               Text('Sri Lanka Customs',
                   style: TextStyle(
-                      color: accent,
+                      color: ink,
                       fontSize: 30,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 1.2)),
@@ -274,18 +324,21 @@ class _BrandPanelState extends State<BrandPanel>
                 padding:
                     const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
                 decoration: BoxDecoration(
+                  // The badge keeps the ACCENT in its border and fill --
+                  // this is where the portal's colour belongs, and neither is
+                  // asked to be legible.
                   border: Border.all(color: accent.withOpacity(0.3)),
                   borderRadius: BorderRadius.circular(24),
                   color: accent.withOpacity(0.06),
                 ),
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
                   if (widget.badgeIcon != null) ...[
-                    Icon(widget.badgeIcon, color: accent, size: 16),
+                    Icon(widget.badgeIcon, color: ink, size: 16),
                     const SizedBox(width: 8),
                   ],
                   Text(widget.badgeLabel,
                       style: TextStyle(
-                          color: accent,
+                          color: ink,
                           fontSize: 14,
                           fontWeight: FontWeight.w600)),
                 ]),
