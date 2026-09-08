@@ -158,14 +158,30 @@ class _BrandPanelState extends State<BrandPanel>
     return (1.0 + (_accentLuminance - 0.08) * 2.5).clamp(1.0, 1.8);
   }
 
-  /// How far a bright accent is held back even at the peak of the cycle.
+  /// How far the accent is held back even at the peak of the cycle.
   ///
-  /// ⚠️ Zero for the dim accents, so the four portals that already
-  /// looked right are untouched. Gold gets about 0.25, which is what stops its
-  /// corner reaching pure #D4A017 -- the state the two gold panels were being
+  /// ⚠️ A BASE for every portal, plus more for a bright one.
+  ///
+  /// The panels are wallpaper behind a sign-in form, and none of them should
+  /// reach its pure accent -- a corner of undiluted colour is what makes the
+  /// gradient read as a shape rather than as light. 0.22 for every portal is
+  /// the base; gold's extra 0.25 on top of it is what stops #D4A017 arriving
+  /// at full strength, which is the state the two gold panels were being
   /// judged on.
   double get _accentFloor =>
-      ((_accentLuminance - 0.17) * 0.9).clamp(0.0, 0.28);
+      (0.22 + ((_accentLuminance - 0.17) * 0.9).clamp(0.0, 0.28))
+          .clamp(0.0, 0.55);
+
+  /// The colour at the accent corner, at animation position [t].
+  ///
+  /// ⚠️ Never the pure accent. A corner of undiluted colour is what
+  /// makes a gradient read as a shape rather than as light -- and on gold,
+  /// which is far brighter than the other five accents, it is the state the
+  /// panel was being judged on.
+  Color _corner(Color accent, [double t = 1.0]) => Color.lerp(
+      accent,
+      widget.deepColor,
+      (_accentFloor + 0.35 * _accentDepth * (1 - t)).clamp(0.0, 0.75))!;
 
   /// Relative luminance of the accent, sRGB (WCAG).
   ///
@@ -196,33 +212,46 @@ class _BrandPanelState extends State<BrandPanel>
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
+              // ⚠️ SIX stops, EVENLY spaced. Both halves of that matter,
+              // and the second half is the one that is easy to get wrong.
+              //
+              // The panel used three stops at 0.0, ~0.47 and 1.0, so the whole
+              // colour change happened across the second half in one straight
+              // line. On the dim portals that reads as a wash; on gold, where
+              // the ends are far apart in brightness, the eye picks the ramp
+              // out as an EDGE running across the panel.
+              //
+              // Adding stops is not enough on its own. Measured on the gold
+              // panel -- biggest brightness step along the ramp divided by the
+              // average step, where 1.0 would be perfectly even:
+              //
+              //     3 stops (before)            3.53
+              //     5 stops, flat first third   6.15   <- worse
+              //     4 stops                     3.95
+              //     5 stops, even               2.77
+              //     6 stops, even               2.16   <- this
+              //     7 stops, even               2.95
+              //
+              // Holding the first third flat and then turning made it WORSE:
+              // the same change squeezed into less room. Even spacing is what
+              // removes the edge.
               colors: [
                 widget.deepColor,
+                Color.lerp(widget.deepColor, behind, 0.45)!,
                 behind,
-                // The accent corner brightens and dims. This is the movement
-                // the eye actually reads.
-                //
-                // ⚠️ Towards the DEEP colour, not towards transparency. Fading
-                // the accent's alpha leaves its red, green and blue untouched,
-                // so on an opaque panel the only thing that changes is how
-                // much of the widget behind shows through -- which here is
-                // nothing. It looked static. Mixing in the deep colour is a
-                // real change of colour.
-                // ⚠️ A FLOOR as well as a swing. `(1 - t)` reaches zero
-                // at the top of the cycle, which means the corner hits the
-                // pure accent -- and pure gold there is the brightest thing on
-                // any of the six panels. The floor is what a bright accent is
-                // held back BY; the swing is the movement on top of it.
-                Color.lerp(
-                    accent,
-                    widget.deepColor,
-                    (_accentFloor + 0.35 * _accentDepth * (1 - t))
-                        .clamp(0.0, 0.75))!,
+                Color.lerp(behind, _corner(accent), 0.38)!,
+                Color.lerp(behind, _corner(accent), 0.72)!,
+                // The corner itself. It brightens and dims, and this is the
+                // movement the eye actually reads.
+                _corner(accent, t),
               ],
-              // ⚠️ The stops travel too, which is what makes this look like
-              // light moving across the panel rather than a colour fading in
-              // place. Kept well apart so no two ever cross.
-              stops: [0.0, 0.42 + 0.10 * t, 1.0],
+              // ⚠️ The stops travel as one, which is what makes this look
+              // like light MOVING across the panel rather than a colour fading
+              // in place. Shifted together so the even spacing -- the thing
+              // that removes the band -- is preserved at every moment.
+              stops: [
+                for (var i = 0; i < 6; i++) (i / 5) * (1 - 0.06 * t) + 0.06 * t,
+              ],
             ),
           ),
           child: Column(
